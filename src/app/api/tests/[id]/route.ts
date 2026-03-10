@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { updateTestSchema } from "@/lib/schemas/test";
 import { NextRequest, NextResponse } from "next/server";
 
 type Params = { params: Promise<{ id: string }> };
@@ -20,12 +21,18 @@ export async function GET(_request: NextRequest, { params }: Params) {
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
   const body = await request.json();
+  const result = updateTestSchema.safeParse(body);
+
+  if (!result.success) {
+    return NextResponse.json(
+      { error: "Validation failed", issues: result.error.issues },
+      { status: 400 },
+    );
+  }
+
   const test = await prisma.test.update({
     where: { id: Number(id) },
-    data: {
-      ...(body.title !== undefined && { title: body.title }),
-      ...(body.content !== undefined && { content: body.content }),
-    },
+    data: result.data,
   });
   return NextResponse.json(test);
 }
