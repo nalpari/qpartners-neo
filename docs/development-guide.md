@@ -36,8 +36,8 @@ pnpm dev
 DATABASE_URL="mysql://root:password@localhost:3306/qpartners"
 DB_HOST="localhost"
 DB_PORT="3306"
-DB_USER="root"
-DB_PASSWORD="password"
+DB_USER="qpartners"
+DB_PASSWORD="interplug-dev"
 DB_NAME="qpartners"
 ```
 

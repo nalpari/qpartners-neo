@@ -9,8 +9,8 @@ function createPrismaClient(): PrismaClient {
   const adapter = new PrismaMariaDb({
     host: process.env.DB_HOST ?? "localhost",
     port: Number(process.env.DB_PORT ?? 3306),
-    user: process.env.DB_USER ?? "root",
-    password: process.env.DB_PASSWORD ?? "password",
+    user: process.env.DB_USER ?? "qpartners",
+    password: process.env.DB_PASSWORD ?? "interplug-dev",
     database: process.env.DB_NAME ?? "qpartners",
   });
   return new PrismaClient({ adapter });
