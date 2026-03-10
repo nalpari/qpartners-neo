@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import api from "@/lib/axios";
 
 interface Test {
   id: number;
@@ -12,8 +13,8 @@ interface Test {
 }
 
 async function fetchTests(): Promise<Test[]> {
-  const res = await fetch("/api/tests");
-  return res.json();
+  const { data } = await api.get<Test[]>("/tests");
+  return data;
 }
 
 export default function TestsPage() {
@@ -31,12 +32,11 @@ export default function TestsPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/tests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content: content || null }),
+      const { data } = await api.post<Test>("/tests", {
+        title,
+        content: content || null,
       });
-      return res.json();
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
@@ -47,12 +47,11 @@ export default function TestsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/tests/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editTitle, content: editContent || null }),
+      const { data } = await api.patch<Test>(`/tests/${id}`, {
+        title: editTitle,
+        content: editContent || null,
       });
-      return res.json();
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
@@ -62,7 +61,7 @@ export default function TestsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`/api/tests/${id}`, { method: "DELETE" });
+      await api.delete(`/tests/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });

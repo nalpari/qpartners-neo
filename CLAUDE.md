@@ -31,6 +31,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Client state**: Zustand stores in `src/lib/store.ts`
 - **Query provider**: `src/lib/query-provider.tsx` wraps app in `layout.tsx` (staleTime: 60s default)
 
+### HTTP Client
+
+- **Axios**: `src/lib/axios.ts` — `baseURL: "/api"` 설정된 공용 인스턴스, 클라이언트 컴포넌트에서 API 호출 시 사용
+
 ### Validation
 
 - **Zod**: `src/lib/schemas/`에 입력 검증 스키마 정의, API Route Handler에서 `safeParse`로 검증
