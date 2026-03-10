@@ -1,0 +1,95 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2026-03-09T09:03:30.554Z",
+  "activeFeatures": [
+    "qpartners-neo"
+  ],
+  "primaryFeature": "qpartners-neo",
+  "features": {
+    "qpartners-neo": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-03-09T08:58:21.722Z",
+        "lastUpdated": "2026-03-09T09:03:30.554Z"
+      },
+      "lastFile": "/Users/devgrr/interplug/qpartners-neo/next.config.ts"
+    }
+  },
+  "pipeline": {
+    "currentPhase": 1,
+    "level": "Dynamic",
+    "phaseHistory": []
+  },
+  "session": {
+    "startedAt": "2026-03-09T08:50:32.137Z",
+    "onboardingCompleted": false,
+    "lastActivity": "2026-03-09T09:03:30.554Z"
+  },
+  "history": [
+    {
+      "timestamp": "2026-03-09T08:58:21.722Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T08:58:23.919Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T08:58:25.870Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T08:58:31.880Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T08:58:32.679Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T08:59:15.441Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T09:00:07.562Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T09:00:31.238Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T09:00:50.620Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-09T09:03:30.554Z",
+      "feature": "qpartners-neo",
+      "phase": "do",
+      "action": "updated"
+    }
+  ]
+}

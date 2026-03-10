@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# QPartners Neo
+
+## Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Framework | Next.js 16 (App Router, React 19, React Compiler) |
+| Styling | Tailwind CSS v4 |
+| Database | MariaDB 11 (Docker) |
+| ORM | Prisma 7 (`@prisma/adapter-mariadb`) |
+| State (client) | Zustand |
+| State (server) | TanStack Query |
+| Package Manager | pnpm |
+| Containerization | Docker (multi-stage build, standalone output) |
+
+## Prerequisites
+
+- Node.js 22+
+- pnpm
+- Docker & Docker Compose
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Start database
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+docker compose up -d db
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Set up environment
 
-## Learn More
+`.env` 파일을 생성합니다:
 
-To learn more about Next.js, take a look at the following resources:
+```env
+# Prisma CLI (migrations, generate)
+DATABASE_URL="mysql://root:password@localhost:3306/qpartners"
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# App runtime (adapter connection)
+DB_HOST="localhost"
+DB_PORT="3306"
+DB_USER="root"
+DB_PASSWORD="password"
+DB_NAME="qpartners"
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. Generate Prisma client & run migrations
 
-## Deploy on Vercel
+```bash
+pnpm prisma generate
+pnpm prisma migrate dev --name init
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 5. Start dev server
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000)
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start development server |
+| `pnpm build` | Production build |
+| `pnpm start` | Start production server |
+| `pnpm lint` | Run ESLint |
+| `pnpm prisma generate` | Regenerate Prisma client |
+| `pnpm prisma migrate dev --name <name>` | Create and apply migration |
+| `pnpm prisma studio` | Open Prisma Studio (DB GUI) |
+
+## Docker
+
+### Full stack (production)
+
+```bash
+docker compose up -d --build
+```
+
+This starts both `app` (Next.js on port 3000) and `db` (MariaDB on port 3306). The app waits for the database healthcheck before starting.
+
+### Local development
+
+```bash
+# DB only in Docker, app runs locally
+docker compose up -d db
+pnpm dev
+```
+
+## Project Structure
+
+```
+src/
+├── app/                  # Next.js App Router pages & layouts
+│   ├── layout.tsx        # Root layout (QueryProvider wraps here)
+│   ├── page.tsx          # Home page
+│   └── globals.css       # Tailwind config & theme tokens
+├── lib/
+│   ├── prisma.ts         # Prisma client singleton (MariaDB adapter)
+│   ├── query-provider.tsx # TanStack Query provider (client component)
+│   └── store.ts          # Zustand store
+└── generated/prisma/     # Prisma generated client (gitignored)
+
+prisma/
+├── schema.prisma         # Database schema
+└── migrations/           # Migration files
+```
