@@ -31,9 +31,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Client state**: Zustand stores in `src/lib/store.ts`
 - **Query provider**: `src/lib/query-provider.tsx` wraps app in `layout.tsx` (staleTime: 60s default)
 
+### Validation
+
+- **Zod**: `src/lib/schemas/`에 입력 검증 스키마 정의, API Route Handler에서 `safeParse`로 검증
+
 ### Docker
 
-- Multi-stage Dockerfile (`deps` → `builder` → `runner`) with `output: "standalone"`
+- Multi-stage Dockerfile (`base` → `deps` → `builder` → `runner`) with `output: "standalone"`
 - `docker-compose.yml`: `app` (Next.js) + `db` (MariaDB), app waits for db healthcheck
 - Local dev: run `db` service only, app via `pnpm dev`
 
@@ -46,21 +50,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Guidelines
 
 ### 새 기능 추가 순서
-1. `src/types/`에 타입 정의
+1. `prisma/schema.prisma`에 모델 정의 → `pnpm prisma migrate dev --name <name>`
 2. `src/lib/schemas/`에 Zod 스키마 작성
-3. `src/hooks/queries/`에 API 훅 추가
-4. 컴포넌트 생성
-5. `src/app/(sub)/`에 라우트 추가
-6. `/storybook/`에 데모 페이지 추가 (공통 컴포넌트인 경우)
+3. `src/app/api/`에 Route Handler 추가
+4. 페이지 컴포넌트 생성 (`src/app/` 하위)
 
 ### TanStack Query
-- `query-keys.ts`에 쿼리 키 팩토리 패턴으로 정의
-- 계층적 키 사용으로 캐시 무효화 관리
-- 의존적 쿼리는 `enabled` 옵션 사용
-- **글로벌 로딩 스피너**: `useMutation` 사용 시 `GlobalMutationSpinner`가 자동으로 CubeLoader 오버레이 표시
-  - Query(조회): 각 컴포넌트에서 `isPending`으로 개별 로딩 처리
-  - Mutation(변경): 글로벌 스피너 자동 적용 (별도 코드 불필요)
-  - 상세: `reference-docs/Global-Loading-Spinner-guide.md`
+- `QueryProvider`가 root layout에서 앱 전체를 감싸고 있음 (`src/lib/query-provider.tsx`)
+- 기본 staleTime: 60초
+- query key는 배열 형태로 도메인별 네임스페이스 사용: `["tests"]`, `["tests", id]`
 
 ### Code Quality
 - 커밋 전 `pnpm lint` 실행
