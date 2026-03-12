@@ -8,10 +8,10 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: "3306"
-      DB_USER: qpartners
-      DB_PASSWORD: interplug-dev
-      DB_NAME: qpartners
-      DATABASE_URL: "mysql://qpartners:interplug-dev@db:3306/qpartners"
+      DB_USER: development
+      DB_PASSWORD: "UtCxBswla1g9beoV+dwe"
+      DB_NAME: development
+      DATABASE_URL: "mysql://development:UtCxBswla1g9beoV+dwe@db:3306/development"
     depends_on:
       db:
         condition: service_healthy
@@ -24,9 +24,9 @@ services:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: qpartners
-      MYSQL_USER: qpartners
-      MYSQL_PASSWORD: interplug-dev
+      MYSQL_DATABASE: development
+      MYSQL_USER: development
+      MYSQL_PASSWORD: "UtCxBswla1g9beoV+dwe"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:

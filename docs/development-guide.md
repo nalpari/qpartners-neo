@@ -33,12 +33,12 @@ pnpm dev
 ### 환경 변수 (.env)
 
 ```env
-DATABASE_URL="mysql://root:password@localhost:3306/qpartners"
+DATABASE_URL="mysql://root:password@localhost:3306/development"
 DB_HOST="localhost"
 DB_PORT="3306"
-DB_USER="qpartners"
-DB_PASSWORD="interplug-dev"
-DB_NAME="qpartners"
+DB_USER="development"
+DB_PASSWORD="<your-password>"
+DB_NAME="development"
 ```
 
 ## 2. 프로젝트 구조
@@ -230,7 +230,7 @@ docker compose logs -f db
 ### DB 접속
 
 ```bash
-docker exec -it qpartners-db mariadb -u root -ppassword qpartners
+docker exec -it qpartners-db mariadb -u root -ppassword development
 ```
 
 ## 6. 주요 명령어 요약

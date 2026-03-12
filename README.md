@@ -39,14 +39,14 @@ docker compose up -d db
 
 ```env
 # Prisma CLI (migrations, generate)
-DATABASE_URL="mysql://root:password@localhost:3306/qpartners"
+DATABASE_URL="mysql://root:password@localhost:3306/development"
 
 # App runtime (adapter connection)
 DB_HOST="localhost"
 DB_PORT="3306"
-DB_USER="qpartners"
-DB_PASSWORD="interplug-dev"
-DB_NAME="qpartners"
+DB_USER="development"
+DB_PASSWORD="<your-password>"
+DB_NAME="development"
 ```
 
 ### 4. Generate Prisma client & run migrations
