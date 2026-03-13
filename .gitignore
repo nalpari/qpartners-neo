@@ -43,8 +43,12 @@ next-env.d.ts
 /src/generated/prisma
 
 # bkit
+.bkit/
 docs/.pdca-status.json
 docs/.bkit-memory.json
+
+# reference docs
+docs/ref/
 
 # superset
 .superset/
