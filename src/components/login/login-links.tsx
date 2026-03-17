@@ -30,7 +30,10 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
           onClick={() => openPopup("id-inquiry", { activeTab })}
         />
         <span className="w-px h-3 bg-[#D9D9D9]" />
-        <LinkItem label="パスワードの初期化" href="#" />
+        <ButtonLinkItem
+          label="パスワードの初期化"
+          onClick={() => openPopup("password-reset", { activeTab })}
+        />
         <span className="w-px h-3 bg-[#D9D9D9]" />
         <LinkItem
           label="会員登録"
@@ -47,9 +50,9 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
           onClick={() => openPopup("id-inquiry", { activeTab })}
           className="rounded-t-[4px] border border-[#EEE]"
         />
-        <MobileLinkItem
+        <MobileButtonLinkItem
           label="パスワードの初期化"
-          href="#"
+          onClick={() => openPopup("password-reset", { activeTab })}
           className="border-x border-b border-[#EEE]"
         />
         <MobileLinkItem

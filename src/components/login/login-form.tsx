@@ -167,7 +167,7 @@ export function LoginForm({
                 label="ID Save"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
               <Checkbox
                 checked={agreeTerms}
                 onChange={onAgreeTermsChange}
@@ -176,12 +176,13 @@ export function LoginForm({
                 利用規約に同意する必要があります{" "}
                 <button
                   type="button"
+                  onClick={(e) => e.preventDefault()}
                   className="font-['Noto_Sans_JP'] font-semibold text-[#E97923] underline"
                 >
                   (表示)
                 </button>
               </span>
-            </div>
+            </label>
           </div>
         </div>
 

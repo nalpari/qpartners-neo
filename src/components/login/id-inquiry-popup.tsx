@@ -65,9 +65,9 @@ export function IdInquiryPopup() {
   }, [formData, handleClose]);
 
   return (
-    <div className={`id-inquiry-overlay ${isClosing ? "id-inquiry-overlay--closing" : ""}`} onClick={handleClose}>
+    <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`} onClick={handleClose}>
       <div
-        className="id-inquiry-popup"
+        className="popup-container"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -138,7 +138,7 @@ export function IdInquiryPopup() {
           </div>
 
           {/* 버튼 */}
-          <div className="id-inquiry-buttons">
+          <div className="popup-buttons">
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
