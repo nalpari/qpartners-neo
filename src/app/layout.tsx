@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { QueryProvider } from "@/lib/query-provider";
 import { Gnb } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
+import { PopupController } from "@/components/common/popup-controller";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
             </div>
             <Footer />
           </div>
+          <PopupController />
         </QueryProvider>
       </body>
     </html>

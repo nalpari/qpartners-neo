@@ -1,0 +1,103 @@
+// 팝업/모달 전용 스타일
+
+// 애니메이션 키프레임
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes popup-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes popup-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+}
+
+// ID 분실 문의 팝업 오버레이
+.id-inquiry-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  animation: overlay-fade-in 0.25s ease-out forwards;
+
+  &--closing {
+    animation: overlay-fade-out 0.2s ease-in forwards;
+  }
+}
+
+// 팝업 컨테이너
+.id-inquiry-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.05);
+  padding: 34px 24px;
+  margin: 18px;
+  animation: popup-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  .id-inquiry-overlay--closing & {
+    animation: popup-slide-out 0.2s ease-in forwards;
+  }
+
+  @media (min-width: 1024px) {
+    width: 620px;
+    padding: 34px 42px;
+    margin: 0;
+  }
+}
+
+// 하단 버튼 영역
+.id-inquiry-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding-bottom: 4px;
+
+  button {
+    width: 100%;
+  }
+
+  @media (min-width: 1024px) {
+    flex-direction: row;
+    justify-content: center;
+
+    button {
+      width: auto;
+      min-width: 97px;
+
+      &:last-child {
+        min-width: 150px;
+      }
+    }
+  }
+}

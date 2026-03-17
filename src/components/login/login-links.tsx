@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePopupStore } from "@/lib/store";
 
 type TabType = "dealer" | "installer" | "general";
 
@@ -18,12 +19,16 @@ interface LoginLinksProps {
 export function LoginLinks({ activeTab }: LoginLinksProps) {
   const registrationUrl = REGISTRATION_URLS[activeTab];
   const isExternal = registrationUrl.startsWith("http");
+  const openPopup = usePopupStore((s) => s.openPopup);
 
   return (
     <>
       {/* PC 레이아웃 — 가로 + 구분선 */}
       <div className="hidden lg:flex items-center justify-center gap-3">
-        <LinkItem label="ID紛失お問い合わせ" href="#" />
+        <ButtonLinkItem
+          label="ID紛失お問い合わせ"
+          onClick={() => openPopup("id-inquiry", { activeTab })}
+        />
         <span className="w-px h-3 bg-[#D9D9D9]" />
         <LinkItem label="パスワードの初期化" href="#" />
         <span className="w-px h-3 bg-[#D9D9D9]" />
@@ -37,9 +42,9 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
 
       {/* 모바일 레이아웃 — 세로 박스 */}
       <div className="flex lg:hidden flex-col w-full">
-        <MobileLinkItem
+        <MobileButtonLinkItem
           label="ID紛失お問い合わせ"
-          href="#"
+          onClick={() => openPopup("id-inquiry", { activeTab })}
           className="rounded-t-[4px] border border-[#EEE]"
         />
         <MobileLinkItem
@@ -56,6 +61,48 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
         />
       </div>
     </>
+  );
+}
+
+function ButtonLinkItem({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] font-normal cursor-pointer"
+    >
+      {label}
+      <Image src="/asset/images/contents/arrow_right.svg" alt="" width={6} height={10} />
+    </button>
+  );
+}
+
+function MobileButtonLinkItem({
+  label,
+  onClick,
+  className = "",
+}: {
+  label: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center h-[52px] bg-white cursor-pointer ${className}`}
+    >
+      <span className="flex items-center justify-center gap-2 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010] font-normal">
+        {label}
+        <Image src="/asset/images/contents/arrow_right.svg" alt="" width={4} height={8} />
+      </span>
+    </button>
   );
 }
 
