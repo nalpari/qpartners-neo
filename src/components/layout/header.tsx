@@ -16,14 +16,14 @@ const RELATED_SITES = [
 const CURRENT_SITE = "qmusubi";
 
 export function Gnb() {
-  const isLoggedIn = true;
+  const isLoggedIn = false;
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedSite, setSelectedSite] = useState<string>(CURRENT_SITE);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <div className="relative h-[78px]">
-      <header className="fixed top-0 left-0 flex items-center justify-center w-full py-4.5 bg-black z-50 h-[78px]">
+    <div className="relative h-[68px] lg:h-[78px]">
+      <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-50 h-[68px] lg:h-[78px] py-4.5">
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄 */}
           <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0">

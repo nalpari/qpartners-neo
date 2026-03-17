@@ -12,19 +12,19 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-const variantStyles: Record<ButtonVariant, string> = {
-  primary: "bg-[#E97923] text-white hover:bg-[#B05713]",
-  secondary: "bg-[#767676] text-white hover:bg-[#434141]",
-  outline:
-    "bg-white border border-[#C2CDDB] text-[#2E5884] hover:bg-[#E9EDF2]",
-};
-
-const mdBorderStyles: Record<ButtonVariant, string> = {
-  primary:
-    "border border-[#CB6212] shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:border-[#8A4007] hover:shadow-none",
-  secondary:
-    "border border-[#626262] shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:border-[#232323] hover:shadow-none",
-  outline: "",
+const variantStyles: Record<ButtonVariant, Record<ButtonSize, string>> = {
+  primary: {
+    md: "bg-[#E97923] border border-[#CB6212] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:bg-[#B05713] hover:border-[#8A4007] hover:shadow-none",
+    lg: "bg-[#E97923] text-white hover:bg-[#B05713]",
+  },
+  secondary: {
+    md: "bg-[#767676] border border-[#626262] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:bg-[#434141] hover:border-[#232323] hover:shadow-none",
+    lg: "bg-[#767676] text-white hover:bg-[#434141]",
+  },
+  outline: {
+    md: "bg-white border border-[#C2CDDB] text-[#2E5884] hover:bg-[#E9EDF2]",
+    lg: "bg-white border border-[#C2CDDB] text-[#2E5884] hover:bg-[#E9EDF2]",
+  },
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -46,10 +46,8 @@ export function Button({
       disabled={disabled}
       className={`inline-flex items-center justify-center rounded-[4px] font-['Noto_Sans_JP'] font-medium leading-[1.5] text-center whitespace-nowrap transition-colors duration-150 ${
         sizeStyles[size]
-      } ${
-        disabled
-          ? "opacity-50 cursor-not-allowed"
-          : `${variantStyles[variant]} ${size === "md" ? mdBorderStyles[variant] : ""}`
+      } ${variantStyles[variant][size]} ${
+        disabled ? "opacity-50 cursor-not-allowed" : ""
       } ${fullWidth ? "w-full" : ""} ${className}`}
       {...rest}
     >
