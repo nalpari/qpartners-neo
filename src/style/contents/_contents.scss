@@ -1,2 +1,19 @@
+.wrap{
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    .container{
+        flex: 1;
+    }
+}
+
 // Tailwind 유틸리티로 처리할 수 없는 커스텀 스타일
 // 컴포넌트에 kebab-case 클래스명을 부여하고 여기에 스타일을 작성한다
+
+// DatePicker wrapper reset
+.react-datepicker-wrapper,
+.react-datepicker__input-container {
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+}
