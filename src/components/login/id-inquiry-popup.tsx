@@ -96,7 +96,7 @@ export function IdInquiryPopup() {
         </div>
 
         {/* 본문 */}
-        <div className="flex flex-col gap-6 lg:gap-[30px] w-full">
+        <div className="flex flex-col gap-[30px] w-full">
           {/* 안내 문구 */}
           <div className="w-full">
             <p className="font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-medium leading-[1.5] text-[#101010]">
@@ -107,21 +107,25 @@ export function IdInquiryPopup() {
             </p>
           </div>
 
-          {/* 회원타입 (Read Only — 텍스트 표시) */}
-          <div className="flex flex-col gap-2 w-full">
-            <p className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]">
-              会員タイプ
-            </p>
-            <p className="font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-medium leading-[1.5] text-[#101010]">
-              {MEMBER_TYPES.find((t) => t.key === activeTab)?.label}
-            </p>
-          </div>
-
           {/* 폼 필드 */}
           <div className="flex flex-col gap-4 w-full">
+            {/* 회원타입 (Read Only) */}
+            <div className="flex flex-col gap-2 w-full">
+              <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]">
+                会員タイプ
+                <span className="text-[#FF1A1A]">*</span>
+              </label>
+              <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
+                <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
+                  {MEMBER_TYPES.find((t) => t.key === activeTab)?.label}
+                </span>
+              </div>
+            </div>
+
+            {/* 입력 필드 */}
             {FORM_FIELDS.map((field) => (
               <div key={field.key} className="flex flex-col gap-2 w-full">
-                <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]">
+                <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]">
                   {field.label}
                   <span className="text-[#FF1A1A]">*</span>
                 </label>

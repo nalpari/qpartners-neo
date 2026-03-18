@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { QueryProvider } from "@/lib/query-provider";
 import { Gnb } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
+import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
 import "@/style/style.scss";
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({
         <QueryProvider>
           <div className="wrap">
             <Gnb />
+            <Location />
             <div className="content">
               {children}
             </div>

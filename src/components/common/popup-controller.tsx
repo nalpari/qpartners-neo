@@ -4,6 +4,7 @@ import { usePopupStore } from "@/lib/store";
 import { IdInquiryPopup } from "@/components/login/id-inquiry-popup";
 import { PasswordResetPopup } from "@/components/login/password-reset-popup";
 import { PersonalInfoPopup } from "@/components/mypage/personal-info-popup";
+import { TwoFactorAuthPopup } from "@/components/login/two-factor-auth-popup";
 
 export function PopupController() {
   const activePopup = usePopupStore((s) => s.activePopup);
@@ -15,6 +16,8 @@ export function PopupController() {
       return <PasswordResetPopup />;
     case "personal-info":
       return <PersonalInfoPopup />;
+    case "two-factor-auth":
+      return <TwoFactorAuthPopup />;
     default:
       return null;
   }

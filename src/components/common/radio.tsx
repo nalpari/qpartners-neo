@@ -66,7 +66,9 @@ export function Radio({
       </span>
       {label && (
         <span
-          className="font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] whitespace-nowrap"
+          className={`font-['Noto_Sans_JP'] text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap ${
+            checked ? "text-[#e97923]" : "text-[#101010]"
+          }`}
         >
           {label}
         </span>

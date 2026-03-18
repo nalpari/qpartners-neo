@@ -1,0 +1,38 @@
+/* AG Grid 커스텀 테마 오버라이드 */
+
+/* 헤더 라운딩 */
+.ag-header {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 헤더 셀 중앙 정렬 */
+.ag-header-cell-label {
+  justify-content: center;
+}
+
+/* 홀짝 행 번갈아 배경색 */
+.ag-row-striped {
+  background-color: #fcfdff !important;
+}
+
+/* 행 hover */
+.ag-row:hover {
+  background-color: #f0f4f8 !important;
+}
+
+/* 루트 래퍼 border 제거 */
+.ag-root-wrapper {
+  border: none !important;
+}
+
+/* 리사이즈 핸들 숨김 */
+.ag-header-cell-resize {
+  display: none !important;
+}
+
+/* 스크롤바 영역 border 제거 */
+.ag-body-horizontal-scroll,
+.ag-body-vertical-scroll {
+  border: none !important;
+}

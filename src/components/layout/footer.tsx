@@ -3,44 +3,81 @@ import Image from "next/image";
 
 export function Footer() {
   return (
-    <footer className="flex items-center justify-center w-full border-t border-[rgba(0,0,0,0.04)] bg-[#fcfdff]">
-      <div className="flex items-start gap-40 w-[1440px] py-[46px]">
-        {/* 로고 영역 */}
-        <div className="shrink-0">
+    <footer className="flex items-center justify-center w-full border-t border-[#f5f5f5] bg-white">
+      {/* PC */}
+      <div className="hidden lg:flex items-center gap-[94px] w-[1440px] py-[20px]">
+        {/* 로고 + 사무국 */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <Image
             src="/asset/images/layout/footer_logo.svg"
             alt="Hanwha Japan"
-            width={163}
+            width={160}
             height={30}
           />
+          <span className="w-px h-3 bg-[rgba(16,16,16,0.2)]" />
+          <span className="font-['Pretendard'] font-semibold text-[14px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
+            Q.PARTNERS
+          </span>
+          <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#101010]">
+            事務局
+          </span>
         </div>
 
         {/* 정보 영역 */}
-        <div className="flex flex-col gap-2">
-          {/* 1행: 회사명 */}
-          <p className="font-['Noto_Sans_JP'] font-semibold text-[14px] leading-[1.5] text-[#333]">
-            한화재팬주식회사 Q.PARTNERS 사무국
-          </p>
-
-          {/* 2행: 연락처 + 이용약관 */}
-          <p className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-[1.5] text-[#999]">
-            Tel:0120-801-170 Email : q-partners@hqj.co.jp
-            <span className="mx-2">|</span>
-            문의접수시간 : 평일10:00-12:00 13:00-17:00
-            <span className="mx-2">|</span>
+        <div className="flex flex-col gap-3 items-center w-[684px]">
+          {/* 연락처 + 이용약관 */}
+          <div className="flex items-center gap-[7px] w-full">
+            <span className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-[1.5] text-[#767676] whitespace-nowrap">
+              Tel : 0120-801-170
+            </span>
+            <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
+            <span className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-[1.5] text-[#767676] whitespace-nowrap">
+              Email : q-partners@hqj.co.jp
+            </span>
+            <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
+            <span className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-[1.5] text-[#767676] whitespace-nowrap">
+              お問い合わせ受付時間 : 平日10:00-12:00 13:00-17:00
+            </span>
+            <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
             <Link
               href="/terms"
-              className="underline text-[#999] hover:text-[#333]"
+              className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#e97923] underline whitespace-nowrap"
             >
-              이용약관
+              利用規約
             </Link>
-          </p>
+          </div>
 
-          {/* 3행: 저작권 */}
-          <p className="font-['Pretendard'] font-normal text-[13px] leading-[1.5] text-[#999]">
+          {/* 저작권 */}
+          <p className="font-pretendard font-normal text-[13px] leading-[1.5] text-[#999] text-center w-full">
             COPYRIGHT©2026 Hanwha Japan All Rights Reserved.
           </p>
         </div>
+      </div>
+
+      {/* 모바일 */}
+      <div className="flex lg:hidden flex-col items-start w-full pt-[18px] pb-[28px] px-[24px]">
+        {/* 로고 + 사무국 */}
+        <div className="flex items-center gap-1.5 w-full">
+          <div className="flex items-center gap-1 h-[42px]">
+            <Image
+              src="/asset/images/layout/footer_logo.svg"
+              alt="Hanwha Japan"
+              width={136}
+              height={25}
+            />
+            <span className="font-pretendard font-medium text-[12px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
+              Q.PARTNERS
+            </span>
+          </div>
+          <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#101010] pb-1">
+            事務局
+          </span>
+        </div>
+
+        {/* 저작권 */}
+        <p className="font-pretendard font-normal text-[12px] leading-[1.5] text-[#999] pl-1">
+          COPYRIGHT©2026 Hanwha Japan All Rights Reserved.
+        </p>
       </div>
     </footer>
   );

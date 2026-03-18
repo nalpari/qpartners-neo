@@ -5,3 +5,4 @@ export { InputBox } from "./input-box";
 export { Radio } from "./radio";
 export { SelectBox } from "./select-box";
 export { Toggle } from "./toggle";
+export { Pagination } from "./pagination";

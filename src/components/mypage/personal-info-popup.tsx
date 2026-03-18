@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { usePopupStore } from "@/lib/store";
 import { Button, InputBox } from "@/components/common";
@@ -8,38 +9,6 @@ import { Button, InputBox } from "@/components/common";
 type EmailCheckResult = "ok" | "fail" | null;
 
 const CLOSE_ANIMATION_MS = 200;
-
-function EyeIcon({ visible }: { visible: boolean }) {
-  if (visible) {
-    return (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M12 5C7.45 5 3.57 7.95 2 12c1.57 4.05 5.45 7 10 7s8.43-2.95 10-7c-1.57-4.05-5.45-7-10-7z"
-          stroke="#999"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-        <circle cx="12" cy="12" r="3" stroke="#999" strokeWidth="1.5" fill="none" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M12 5C7.45 5 3.57 7.95 2 12c1.57 4.05 5.45 7 10 7s8.43-2.95 10-7c-1.57-4.05-5.45-7-10-7z"
-        stroke="#999"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <circle cx="12" cy="12" r="3" stroke="#999" strokeWidth="1.5" fill="none" />
-      <path d="M4 20L20 4" stroke="#999" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export function PersonalInfoPopup() {
   const router = useRouter();
@@ -98,7 +67,6 @@ export function PersonalInfoPopup() {
     if (email.trim() === "") return;
 
     // TODO: API 호출 (POST /api/members/check-email)
-    // 현재(API 미연동): 무조건 OK 결과로 처리
     setEmailChecked(true);
     setEmailCheckResult("ok");
   };
@@ -111,22 +79,24 @@ export function PersonalInfoPopup() {
     window.alert("저장되었습니다.");
   };
 
+  const labelClass =
+    "font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]";
+
   return (
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
-      onClick={handleCancel}
     >
       <div
         className="popup-container"
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="個人情報設定"
+        aria-label="会員情報の設定"
       >
         {/* 타이틀 */}
         <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
           <h2 className="flex-1 font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-semibold leading-[1.5] text-[#E97923]">
-            個人情報設定
+            <span className="hidden lg:inline">会員情報の設定</span>
+            <span className="lg:hidden">個人情報設定</span>
           </h2>
           <button
             type="button"
@@ -146,114 +116,121 @@ export function PersonalInfoPopup() {
         </div>
 
         {/* 본문 */}
-        <div className="flex flex-col gap-4 w-full">
-          {/* 이메일 필드 */}
-          <div className="flex flex-col gap-2 w-full">
-            <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]">
-              メールアドレス
-              <span className="text-[#FF1A1A]">*</span>
-            </label>
-            {hasExistingEmail ? (
-              <div className="flex flex-col lg:flex-row gap-2 items-start w-full">
-                <InputBox
-                  type="email"
-                  value={currentEmail}
-                  readOnly
-                  className="lg:flex-1"
-                />
-                <Button
-                  variant="outline"
-                  disabled
-                  className="w-full lg:w-[110px] shrink-0"
-                >
-                  冗長チェック
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col lg:flex-row gap-2 items-start w-full">
-                  <InputBox
-                    type="email"
-                    value={email}
-                    onChange={handleEmailChange}
-                    className="lg:flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={handleEmailCheck}
-                    className="w-full lg:w-[110px] shrink-0"
-                  >
-                    冗長チェック
-                  </Button>
+        <div className="flex flex-col gap-[24px] w-full">
+          <div className="flex flex-col gap-[16px] w-full">
+            {/* Eメール 필드 */}
+            <div className="flex flex-col gap-2 w-full">
+              <label className={labelClass}>
+                Eメール
+                <span className="text-[#FF1A1A]">*</span>
+              </label>
+              {hasExistingEmail ? (
+                /* 이메일 있는 경우: read-only 표시, 중복체크 버튼 숨김 */
+                <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
+                  <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
+                    {currentEmail}
+                  </span>
                 </div>
-                {emailCheckResult === "ok" && (
-                  <p className="text-[12px] text-[#22C55E] mt-1">
-                    使用可能なメールアドレスです。
-                  </p>
-                )}
-                {emailCheckResult === "fail" && (
-                  <p className="text-[12px] text-[#FF1A1A] mt-1">
-                    既に使用中のメールアドレスです。
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* 신규 비밀번호 */}
-          <div className="flex flex-col gap-2 w-full">
-            <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]">
-              新規パスワード
-              <span className="text-[#FF1A1A]">*</span>
-            </label>
-            <div className="relative w-full">
-              <input
-                type={showNewPassword ? "text" : "password"}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="6자리 이상 입력해 주세요"
-                className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-                aria-label={
-                  showNewPassword
-                    ? "パスワードを非表示"
-                    : "パスワードを表示"
-                }
-              >
-                <EyeIcon visible={showNewPassword} />
-              </button>
+              ) : (
+                /* 이메일 없는 경우: 입력 + 중복체크 */
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex flex-col lg:flex-row gap-2 items-start w-full">
+                    <InputBox
+                      type="email"
+                      value={email}
+                      onChange={handleEmailChange}
+                      className="lg:flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleEmailCheck}
+                      className="w-full lg:w-[110px] shrink-0"
+                    >
+                      冗長チェック
+                    </Button>
+                  </div>
+                  {emailCheckResult === "ok" && (
+                    <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#22C55E]">
+                      使用可能なメールアドレスです。
+                    </p>
+                  )}
+                  {emailCheckResult === "fail" && (
+                    <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a]">
+                      既に使用中のメールです.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* 신규 비밀번호 재입력 */}
-          <div className="flex flex-col gap-2 w-full">
-            <label className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]">
-              新規パスワード再入力
-              <span className="text-[#FF1A1A]">*</span>
-            </label>
-            <div className="relative w-full">
-              <input
-                type={showConfirmPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-                aria-label={
-                  showConfirmPassword
-                    ? "パスワードを非表示"
-                    : "パスワードを表示"
-                }
-              >
-                <EyeIcon visible={showConfirmPassword} />
-              </button>
+            {/* 新規パスワード */}
+            <div className="flex flex-col gap-2 w-full">
+              <label className={labelClass}>
+                新規パスワード
+                <span className="text-[#FF1A1A]">*</span>
+              </label>
+              <div className="relative w-full">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="6桁以上入力してください"
+                  className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[6px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#999]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((prev) => !prev)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
+                  aria-label={
+                    showNewPassword
+                      ? "パスワードを非表示"
+                      : "パスワードを表示"
+                  }
+                >
+                  <Image
+                    src={showNewPassword ? "/asset/images/contents/default_eye_show.svg" : "/asset/images/contents/default_eye_hide.svg"}
+                    alt=""
+                    width={20}
+                    height={14}
+                  />
+                </button>
+              </div>
+              <p className="font-['Noto_Sans_JP'] font-normal text-[13px] lg:text-[14px] leading-[1.5] text-[#1060b4]">
+                ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+              </p>
+            </div>
+
+            {/* 新規パスワード再入力 */}
+            <div className="flex flex-col gap-2 w-full">
+              <label className={labelClass}>
+                新規パスワード再入力
+                <span className="text-[#FF1A1A]">*</span>
+              </label>
+              <div className="relative w-full">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[6px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
+                  aria-label={
+                    showConfirmPassword
+                      ? "パスワードを非表示"
+                      : "パスワードを表示"
+                  }
+                >
+                  <Image
+                    src={showConfirmPassword ? "/asset/images/contents/default_eye_show.svg" : "/asset/images/contents/default_eye_hide.svg"}
+                    alt=""
+                    width={20}
+                    height={14}
+                  />
+                </button>
+              </div>
             </div>
           </div>
 

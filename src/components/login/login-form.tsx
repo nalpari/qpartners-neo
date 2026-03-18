@@ -173,7 +173,7 @@ export function LoginForm({
                 onChange={onAgreeTermsChange}
               />
               <span className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#101010] leading-[1.5]">
-                利用規約に同意する必要があります{" "}
+                利用規約に同意する必要があります
                 <button
                   type="button"
                   onClick={(e) => e.preventDefault()}

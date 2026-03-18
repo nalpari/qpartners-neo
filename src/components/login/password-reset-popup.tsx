@@ -79,7 +79,7 @@ export function PasswordResetPopup() {
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
   const labelClass =
-    "font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#767676]";
+    "font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]";
 
   return (
     <div
@@ -122,16 +122,20 @@ export function PasswordResetPopup() {
             パスワードを初期化するIDとEメールアドレスを入力してください
           </p>
 
-          {/* 회원타입 (Read Only) */}
-          <div className="flex flex-col gap-2 w-full">
-            <p className={labelClass}>会員タイプ</p>
-            <p className="font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-medium leading-[1.5] text-[#101010]">
-              {MEMBER_TYPES.find((t) => t.key === activeTab)?.label}
-            </p>
-          </div>
-
-          {/* 회원 유형별 폼 */}
+          {/* 폼 필드 */}
           <div className="flex flex-col gap-4 w-full">
+            {/* 회원타입 (Read Only) */}
+            <div className="flex flex-col gap-2 w-full">
+              <label className={labelClass}>
+                会員タイプ
+                <span className="text-[#FF1A1A]">*</span>
+              </label>
+              <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
+                <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
+                  {MEMBER_TYPES.find((t) => t.key === activeTab)?.label}
+                </span>
+              </div>
+            </div>
             {activeTab === "dealer" && (
               <>
                 <div className="flex flex-col gap-2 w-full">
@@ -207,23 +211,12 @@ export function PasswordResetPopup() {
               <>
                 <div className="flex flex-col gap-2 w-full">
                   <label className={labelClass}>
-                    ID(E-Mail)<span className="text-[#FF1A1A]">*</span>
+                    E-Mail<span className="text-[#FF1A1A]">*</span>
                   </label>
                   <input
                     type="email"
                     value={formData.idEmail}
                     onChange={(e) => handleChange("idEmail", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    氏名<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => handleChange("fullName", e.target.value)}
                     className={inputClass}
                   />
                 </div>
