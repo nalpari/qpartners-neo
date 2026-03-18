@@ -137,4 +137,6 @@ fix: Resolve prisma client singleton leak in dev mode
 
 ## Frontend
 
+- **React 19.2** 버전을 사용해야 한다. 의존성 추가 및 코드 작성 시 React 19.2 호환성을 반드시 확인할 것.
+
 ## Backend
