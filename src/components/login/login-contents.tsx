@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
@@ -16,15 +16,15 @@ export function LoginContents() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleTabChange = useCallback((tab: TabType) => {
+  const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     setId("");
     setPassword("");
     setShowPassword(false);
     setError(null);
-  }, []);
+  };
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = () => {
     if (!id.trim()) {
       setError("IDを入力してください");
       return;
@@ -42,7 +42,7 @@ export function LoginContents() {
     // 성공 시: ID 저장 처리 + router.push("/")
     // 실패 시: setError("IDとパスワードが正しくありません！")
     setError("IDとパスワードが正しくありません！");
-  }, [id, password, agreeTerms]);
+  };
 
   return (
     <main className="flex items-center justify-center lg:min-h-[calc(100vh-78px)]">

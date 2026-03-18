@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { usePopupStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
@@ -34,24 +34,24 @@ export function IdInquiryPopup() {
     phone: "",
   });
 
-  const handleFieldChange = useCallback((key: FormKey, value: string) => {
+  const handleFieldChange = (key: FormKey, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
-  }, []);
+  };
 
-  const resetForm = useCallback(() => {
+  const resetForm = () => {
     setFormData({ companyName: "", memberName: "", email: "", phone: "" });
-  }, []);
+  };
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
       resetForm();
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  }, [closePopup, resetForm]);
+  };
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = () => {
     const hasEmpty = FORM_FIELDS.some(
       (field) => formData[field.key].trim() === ""
     );
@@ -62,7 +62,7 @@ export function IdInquiryPopup() {
     window.alert(
       "문의 내용이 관리자에게 전달되었습니다. 확인 후 입력하신 연락처로 연락드리겠습니다.(처리에는 1~2 영업일이 소요될 수 있습니다.)"
     );
-  }, [formData, handleClose]);
+  };
 
   return (
     <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`} onClick={handleClose}>

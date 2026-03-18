@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import Image from "next/image";
 
 interface SelectOption {
@@ -33,11 +33,11 @@ export function SelectBox({
 
   const selectedOption = options.find((opt) => opt.value === value);
 
-  const handleBlur = useCallback((e: React.FocusEvent) => {
+  const handleBlur = (e: React.FocusEvent) => {
     if (!containerRef.current?.contains(e.relatedTarget)) {
       setIsOpen(false);
     }
-  }, []);
+  };
 
   const handleSelect = (optionValue: string) => {
     onChange?.(optionValue);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePopupStore } from "@/lib/store";
 import { Button, InputBox } from "@/components/common";
@@ -64,7 +64,7 @@ export function PersonalInfoPopup() {
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
 
-  const resetForm = useCallback(() => {
+  const resetForm = () => {
     setEmail("");
     setEmailChecked(false);
     setEmailCheckResult(null);
@@ -72,44 +72,44 @@ export function PersonalInfoPopup() {
     setConfirmPassword("");
     setShowNewPassword(false);
     setShowConfirmPassword(false);
-  }, []);
+  };
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
       resetForm();
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  }, [closePopup, resetForm]);
+  };
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = () => {
     handleClose();
     router.push("/login");
-  }, [handleClose, router]);
+  };
 
-  const handleEmailChange = useCallback((value: string) => {
+  const handleEmailChange = (value: string) => {
     setEmail(value);
     setEmailChecked(false);
     setEmailCheckResult(null);
-  }, []);
+  };
 
-  const handleEmailCheck = useCallback(() => {
+  const handleEmailCheck = () => {
     if (email.trim() === "") return;
 
     // TODO: API 호출 (POST /api/members/check-email)
     // 현재(API 미연동): 무조건 OK 결과로 처리
     setEmailChecked(true);
     setEmailCheckResult("ok");
-  }, [email]);
+  };
 
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     if (!isFormValid) return;
 
     // TODO: API 호출 (PUT /api/members/personal-info)
     handleClose();
     window.alert("저장되었습니다.");
-  }, [isFormValid, handleClose]);
+  };
 
   return (
     <div

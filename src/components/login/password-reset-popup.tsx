@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { usePopupStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
@@ -53,23 +53,20 @@ export function PasswordResetPopup() {
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
 
-  const handleChange = useCallback(
-    (key: keyof FormData, value: string) => {
-      setFormData((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
+  const handleChange = (key: keyof FormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  }, [closePopup]);
+  };
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = () => {
     if (!isFormValid(activeTab, formData)) return;
 
     // TODO: API 호출 (비밀번호 초기화)
@@ -77,7 +74,7 @@ export function PasswordResetPopup() {
     window.alert(
       "초기화 비밀번호가 이메일로 발송되었습니다. 로그인 후 비밀번호를 변경해 주세요."
     );
-  }, [activeTab, formData, handleClose]);
+  };
 
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
