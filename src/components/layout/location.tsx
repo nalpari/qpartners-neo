@@ -17,7 +17,7 @@ const ROUTE_MAP: Record<string, LocationItem> = {
     breadcrumbs: [{ label: "ログイン" }],
   },
   "/signup": {
-    icon: "/asset/images/layout/login_location.svg",
+    icon: "/asset/images/layout/signup_location.svg",
     title: "会員登録",
     breadcrumbs: [{ label: "会員登録" }],
   },

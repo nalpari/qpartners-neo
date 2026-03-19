@@ -47,7 +47,7 @@ export function LoginContents() {
   };
 
   return (
-    <main className="flex items-start justify-center w-full mt-[10px] lg:mt-0 lg:pt-[26px]">
+    <main className="flex items-start justify-center w-full mt-[10px] lg:mt-0 lg:pt-[26px] lg:pb-[120px]">
       <div className="flex w-full bg-white overflow-hidden lg:max-w-[1440px] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         {/* PC 좌측 — 이미지 패널 */}
         <div className="hidden lg:flex relative flex-col items-start overflow-hidden rounded-l-[12px] w-[860px] shrink-0 min-h-[600px]">

@@ -45,7 +45,7 @@ export function Checkbox({
             width="20"
             height="20"
             rx="4"
-            fill={checked ? "#E97923" : "transparent"}
+            fill={checked ? "#E97923" : "#fff"}
             className="transition-colors duration-200"
           />
           {!checked && (
