@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   CellStyleModule,
   ClientSideRowModelModule,
+  DragAndDropModule,
   ModuleRegistry,
   RowStyleModule,
   themeQuartz,
@@ -12,7 +13,7 @@ import {
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
-ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowStyleModule]);
+ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowStyleModule, DragAndDropModule]);
 
 const customTheme = themeQuartz.withParams({
   backgroundColor: "transparent",
@@ -52,7 +53,7 @@ export function DataGrid<T>({
       sortable: false,
       filter: false,
       resizable: false,
-      suppressMovable: true,
+      suppressMovable: false,
       cellStyle: { display: "flex", alignItems: "center" },
     }),
     []
