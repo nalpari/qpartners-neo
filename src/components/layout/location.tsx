@@ -26,6 +26,11 @@ const ROUTE_MAP: Record<string, LocationItem> = {
     title: "マイページ",
     breadcrumbs: [{ label: "マイページ" }],
   },
+  "/contents": {
+    icon: "/asset/images/layout/contents_location.svg",
+    title: "コンテンツ",
+    breadcrumbs: [{ label: "コンテンツ" }],
+  },
 };
 
 export function Location() {

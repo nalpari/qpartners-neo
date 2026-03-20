@@ -26,9 +26,9 @@
   border: none !important;
 }
 
-/* 리사이즈 핸들 숨김 */
-.ag-header-cell-resize {
-  display: none !important;
+/* 마지막 행 하단 보더 */
+.ag-row:last-child {
+  border-bottom: 1px solid #e6eef6 !important;
 }
 
 /* 스크롤바 영역 border 제거 */

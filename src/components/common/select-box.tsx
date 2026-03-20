@@ -83,7 +83,7 @@ export function SelectBox({
       {/* 드롭다운 */}
       {!inactive && (
         <div
-          className={`absolute top-full left-0 z-10 w-full mt-1 bg-white border border-[#EBEBEB] rounded-[6px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-200 origin-top ${
+          className={`absolute top-full left-0 z-10 w-full mt-1 bg-white border border-[#EBEBEB] rounded-[6px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] max-h-[240px] overflow-y-auto transition-all duration-200 origin-top ${
             isOpen
               ? "opacity-100 scale-y-100 visible"
               : "opacity-0 scale-y-95 invisible"

@@ -30,7 +30,7 @@ export function Toggle({
       />
       <span
         className={`relative shrink-0 w-[44px] h-[24px] rounded-full transition-colors duration-200 ${
-          checked ? "bg-[#E97923]" : "bg-[#D1D1D1]"
+          checked ? "bg-[#1060B4]" : "bg-[#D1D1D1]"
         } ${!disabled ? "active:scale-95" : ""}`}
       >
         <span

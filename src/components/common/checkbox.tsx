@@ -45,7 +45,7 @@ export function Checkbox({
             width="20"
             height="20"
             rx="4"
-            fill={checked ? "#E97923" : "#fff"}
+            fill={checked ? "#1060B4" : "#fff"}
             className="transition-colors duration-200"
           />
           {!checked && (
@@ -73,7 +73,9 @@ export function Checkbox({
       </span>
       {label && (
         <span
-          className="font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] whitespace-nowrap"
+          className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] overflow-hidden text-ellipsis whitespace-nowrap ${
+            checked ? "text-[#1060b4]" : "text-[#767676]"
+          }`}
         >
           {label}
         </span>

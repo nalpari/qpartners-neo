@@ -1,3 +1,4 @@
+import { ViewTransition } from "react";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { QueryProvider } from "@/lib/query-provider";
@@ -40,7 +41,7 @@ export default function RootLayout({
             <Gnb />
             <Location />
             <div className="content">
-              {children}
+              <ViewTransition>{children}</ViewTransition>
             </div>
             <Footer />
           </div>

@@ -35,6 +35,10 @@ const customTheme = themeQuartz.withParams({
   spacing: 0,
   cellHorizontalPadding: 18,
   headerCellHoverBackgroundColor: "#506273",
+  headerColumnResizeHandleDisplay: "block",
+  headerColumnResizeHandleWidth: 1,
+  headerColumnResizeHandleHeight: "14px",
+  headerColumnResizeHandleColor: "rgba(255, 255, 255, 0.3)",
 });
 
 interface DataGridProps<T> {
@@ -52,7 +56,7 @@ export function DataGrid<T>({
     () => ({
       sortable: false,
       filter: false,
-      resizable: false,
+      resizable: true,
       suppressMovable: false,
       cellStyle: { display: "flex", alignItems: "center" },
     }),

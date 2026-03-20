@@ -60,7 +60,8 @@ export function Gnb() {
             <ul className="flex items-center gap-[54px] pl-[60px]">
               <li>
                 <Link
-                  href="#"
+                  href="/contents"
+                  transitionTypes={["fade"]}
                   className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
                 >
                   コンテンツ
@@ -350,7 +351,8 @@ export function Gnb() {
           <nav className="flex flex-col flex-1">
             {/* コンテンツ */}
             <Link
-              href="#"
+              href="/contents"
+              transitionTypes={["fade"]}
               className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
               onClick={() => setIsMobileMenuOpen(false)}
             >
