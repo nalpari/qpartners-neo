@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -14,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-- **Framework**: Next.js 16, App Router (`src/app/`), React 19, React Compiler enabled
+- **Framework**: Next.js 16.2, App Router (`src/app/`), React 19, React Compiler enabled
 - **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss`; theme tokens in `src/app/globals.css` using `@theme inline`
 - **Path alias**: `@/*` maps to `./src/*`
 
