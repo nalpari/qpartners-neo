@@ -103,7 +103,7 @@ export function ContentsSearch({
         }`}
       >
         <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[34px]">
-          <div className="flex flex-col border border-[#EAF0F6] rounded-[6px] [&>*:first-child>*:first-child]:rounded-tl-[5px] [&>*:first-child>*:nth-child(2)]:rounded-tr-[5px] [&>*:last-child>*:first-child]:rounded-bl-[5px] [&>*:last-child>*:nth-child(2)]:rounded-br-[5px]">
+          <div className="flex flex-col gap-px bg-white border border-[#EAF0F6] rounded-[6px] [&>*:first-child>*:first-child]:rounded-tl-[5px] [&>*:first-child>*:nth-child(2)]:rounded-tr-[5px] [&>*:last-child>*:first-child]:rounded-bl-[5px] [&>*:last-child>*:nth-child(2)]:rounded-br-[5px]">
             {FILTER_CATEGORIES.map((category) => (
               <div key={category.key} className="flex items-center min-h-[58px]">
                 <div className="w-[112px] shrink-0 self-stretch flex items-center bg-[#F7F9FB] border-r border-b border-[#EAF0F6] pl-4 pr-2 py-2">
