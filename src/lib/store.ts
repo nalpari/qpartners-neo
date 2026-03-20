@@ -12,7 +12,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
 }));
 
-type PopupType = "id-inquiry" | "password-reset" | "personal-info" | "two-factor-auth" | null;
+type PopupType = "id-inquiry" | "password-reset" | "personal-info" | "two-factor-auth" | "zipcode-search" | "signup-complete" | null;
 
 interface PopupState {
   activePopup: PopupType;

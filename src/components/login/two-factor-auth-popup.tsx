@@ -16,6 +16,7 @@ export function TwoFactorAuthPopup() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(600);
 
   const isCodeValid = code.length === 6;
 
@@ -23,6 +24,20 @@ export function TwoFactorAuthPopup() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // 10분 카운트다운 타이머
+  useEffect(() => {
+    if (remainingSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => (prev <= 0 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [remainingSeconds]);
+
+  const timerMinutes = Math.floor(remainingSeconds / 60);
+  const timerSeconds = remainingSeconds % 60;
+  const timerDisplay = `${timerMinutes}:${String(timerSeconds).padStart(2, "0")}`;
+  const isTimerExpired = remainingSeconds <= 0;
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const filtered = e.target.value.replace(/\D/g, "").slice(0, 6);
@@ -48,6 +63,7 @@ export function TwoFactorAuthPopup() {
   const handleResend = () => {
     setCode("");
     setError(null);
+    setRemainingSeconds(600);
     inputRef.current?.focus();
     // TODO: POST /api/auth/two-factor/resend
   };
@@ -66,7 +82,7 @@ export function TwoFactorAuthPopup() {
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
     >
       <div
-        className="flex flex-col items-start bg-white overflow-hidden rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] w-[339px] px-6 py-[34px] gap-[26px] lg:w-[620px] lg:p-[42px] lg:gap-8"
+        className="popup-container gap-[26px] lg:gap-8"
         role="dialog"
         aria-modal="true"
         aria-label="2段階認証"
@@ -96,8 +112,25 @@ export function TwoFactorAuthPopup() {
 
           {/* 인증번호 + 재전송 + 오류 + 버튼 */}
           <div className="flex flex-col items-center w-full gap-6">
-            {/* 인증번호 입력 + 재전송 */}
-            <div className="flex flex-col w-full gap-6">
+            {/* 타이머 + 인증번호 입력 + 재전송 */}
+            <div className="flex flex-col w-full gap-3">
+              {/* 残り時間 */}
+              <div className="flex items-center gap-1.5">
+                <Image
+                  src="/asset/images/contents/clock_icon.svg"
+                  alt=""
+                  width={24}
+                  height={24}
+                  className="shrink-0"
+                />
+                <p className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] ${
+                  isTimerExpired ? "text-[#FF1A1A]" : "text-[#505050]"
+                }`}>
+                  残り時間 : {timerDisplay}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-6">
               <div className="flex flex-col lg:flex-row items-start gap-2 w-full">
                 <input
                   ref={inputRef}
@@ -133,6 +166,7 @@ export function TwoFactorAuthPopup() {
                   </p>
                 </div>
               )}
+              </div>
             </div>
 
             {/* 하단 버튼 */}

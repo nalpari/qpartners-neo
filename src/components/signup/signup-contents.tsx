@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { InputBox, Button, Checkbox } from "@/components/common";
+import { usePopupStore } from "@/lib/store";
 
 const EMAIL_CHECK_MESSAGES: Record<string, string> = {
   ok: "利用可能な電子メールです",
@@ -90,12 +91,11 @@ export function SignupContents() {
   // 회원등록 제출
   const handleSubmit = () => {
     if (!isFormValid) return;
-    // TODO: Confirm 팝업 + API 연동 (추후 구현)
-    const confirmed = window.confirm("Q.PARTNERS 一般会員として登録しますか？");
-    if (confirmed) {
-      window.alert("会員登録が完了しました。");
-      router.push("/login");
-    }
+    // TODO: API 연동 (추후 구현) — 현재는 바로 완료 팝업 표시
+    openPopup("signup-complete", {
+      userName: `${form.lastName} ${form.firstName}`,
+      userId: form.email,
+    });
   };
 
   // 취소
@@ -103,11 +103,16 @@ export function SignupContents() {
     router.push("/login");
   };
 
+  const { openPopup } = usePopupStore();
+
   // 주소검색
   const handleAddressSearch = () => {
-    // TODO: 주소검색 팝업 연동 — 현재는 목업 데이터로 채움
-    updateField("postalCode", "100-0001");
-    updateField("address1", "東京都千代田区");
+    openPopup("zipcode-search", {
+      onSelect: (address: { zipcode: string; prefecture: string; city: string; town: string }) => {
+        updateField("postalCode", address.zipcode);
+        updateField("address1", `${address.prefecture}${address.city}${address.town}`);
+      },
+    });
   };
 
   return (
@@ -124,7 +129,7 @@ export function SignupContents() {
             </h2>
 
             {/* 폼 행들 */}
-            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-6">
+            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-4">
               {/* 회원유형 (Read Only) */}
               <FormRow label="会員タイプ" isFirst>
                 <p className="font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5] lg:pl-6">
@@ -213,7 +218,7 @@ export function SignupContents() {
               会員情報 <span className="text-[#FF1A1A]">(*必須)</span>
             </h2>
 
-            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-6">
+            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-4">
               {/* 성명 (2칸) */}
               <FormRow label="氏名" required isFirst>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
@@ -410,7 +415,7 @@ function FormRow({
       {/* PC 테이블 행 */}
       <div className="hidden lg:flex h-[58px] items-center">
         <div
-          className={`w-[180px] h-full shrink-0 bg-[#F7F9FB] border-[#E4ECF4] flex items-center pl-4 pr-2 py-2 border-l border-r border-b ${
+          className={`w-[160px] h-full shrink-0 bg-[#F7F9FB] border-[#EAF0F6] flex items-center pl-4 pr-2 py-2 border-l border-r border-b ${
             isFirst ? "border-t rounded-tl-[6px]" : ""
           } ${isLast ? "rounded-bl-[6px]" : ""}`}
         >
@@ -420,7 +425,7 @@ function FormRow({
           </span>
         </div>
         <div
-          className={`flex-1 h-full border-[#E4ECF4] flex items-center gap-2 p-2 border-b border-r ${
+          className={`flex-1 h-full border-[#EAF0F6] flex items-center gap-2 p-2 border-b border-r ${
             isFirst ? "border-t rounded-tr-[6px]" : ""
           } ${isLast ? "rounded-br-[6px]" : ""}`}
         >
