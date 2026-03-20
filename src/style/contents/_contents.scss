@@ -16,6 +16,22 @@
 // Tailwind 유틸리티로 처리할 수 없는 커스텀 스타일
 // 컴포넌트에 kebab-case 클래스명을 부여하고 여기에 스타일을 작성한다
 
+// View Transition: fade (페이지 전환 fade in/out)
+::view-transition-old(fade) {
+  animation: fade-out 0.2s ease-in-out;
+}
+::view-transition-new(fade) {
+  animation: fade-in 0.2s ease-in-out;
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 // DatePicker wrapper reset
 .react-datepicker-wrapper,
 .react-datepicker__input-container {

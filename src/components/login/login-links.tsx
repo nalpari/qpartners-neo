@@ -141,7 +141,11 @@ function LinkItem({
       </a>
     );
   }
-  return <Link href={href}>{content}</Link>;
+  return (
+    <Link href={href} transitionTypes={["fade"]}>
+      {content}
+    </Link>
+  );
 }
 
 function MobileLinkItem({
@@ -181,7 +185,7 @@ function MobileLinkItem({
     );
   }
   return (
-    <Link href={href} className={boxClass}>
+    <Link href={href} className={boxClass} transitionTypes={["fade"]}>
       {content}
     </Link>
   );

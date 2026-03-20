@@ -22,7 +22,7 @@ export function Gnb() {
 
   return (
     <div className="relative h-[68px] lg:h-[78px]">
-      <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-50 h-[68px] lg:h-[78px] py-4.5">
+      <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5">
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄 */}
           <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0">
@@ -31,6 +31,8 @@ export function Gnb() {
               alt="Hanwha Japan"
               width={160}
               height={30}
+              unoptimized
+              style={{ height: "auto" }}
             />
             <span className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
             <span className="font-pretendard font-medium text-[14px] leading-[1.5] text-white uppercase whitespace-nowrap">
@@ -45,6 +47,8 @@ export function Gnb() {
               alt="Hanwha Japan"
               width={133}
               height={24}
+              unoptimized
+              style={{ height: "auto" }}
             />
             <span className="font-pretendard font-medium text-[12px] leading-[1.5] text-white uppercase whitespace-nowrap pl-[30px]">
               Q.PARTNERS

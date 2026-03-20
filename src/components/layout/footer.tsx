@@ -13,6 +13,8 @@ export function Footer() {
             alt="Hanwha Japan"
             width={160}
             height={30}
+            unoptimized
+            style={{ height: "auto" }}
           />
           <span className="w-px h-3 bg-[rgba(16,16,16,0.2)]" />
           <span className="font-['Pretendard'] font-semibold text-[14px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
@@ -64,6 +66,8 @@ export function Footer() {
               alt="Hanwha Japan"
               width={136}
               height={25}
+              unoptimized
+              style={{ height: "auto" }}
             />
             <span className="font-pretendard font-medium text-[12px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
               Q.PARTNERS

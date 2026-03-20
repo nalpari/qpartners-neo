@@ -291,7 +291,67 @@ docs/ref/
   04-report/{feature}.report.md
 ```
 
-## 11. PDCA Plan 단계 기획서 참조 (필수)
+## 11. View Transition (페이지 전환 애니메이션) (필수)
+
+Next.js 16.2+ 의 `viewTransition` 실험적 기능을 활용하여 **모든 내부 페이지 전환에 fade in/out 애니메이션을 적용**합니다.
+
+### 설정
+
+`next.config.ts`에 `experimental.viewTransition: true`가 활성화되어 있어야 합니다.
+
+### 사용법
+
+**1. `<Link>` 컴포넌트에 `transitionTypes` 지정**
+
+```tsx
+import Link from "next/link";
+
+<Link href="/signup" transitionTypes={["fade"]}>
+  会員登録
+</Link>
+```
+
+**2. `useRouter()`에서 사용**
+
+```tsx
+const router = useRouter();
+router.push("/signup", { transitionTypes: ["fade"] });
+```
+
+**3. 레이아웃에 `<ViewTransition>` 래핑**
+
+전환 효과를 적용할 라우트 그룹의 `layout.tsx`에 `<ViewTransition>`으로 children을 감쌉니다.
+
+```tsx
+import { ViewTransition } from "react";
+
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  return <ViewTransition>{children}</ViewTransition>;
+}
+```
+
+**4. CSS 애니메이션 정의**
+
+`src/style/contents/_contents.scss`에 fade 애니메이션이 정의되어 있습니다.
+
+```scss
+::view-transition-old(fade) {
+  animation: fade-out 0.2s ease-in-out;
+}
+::view-transition-new(fade) {
+  animation: fade-in 0.2s ease-in-out;
+}
+```
+
+### 규칙
+
+- **모든 내부 `<Link>`에 `transitionTypes={["fade"]}`를 필수 적용**한다
+- **`router.push()` / `router.replace()` 호출 시에도 `{ transitionTypes: ["fade"] }`를 필수 적용**한다
+- 전환 효과가 적용되는 라우트 그룹의 `layout.tsx`에 `<ViewTransition>` 래핑이 필요하다
+- 외부 링크(`target="_blank"`)에는 적용하지 않는다
+- 새로운 전환 타입 추가 시 `_contents.scss`에 대응하는 CSS 애니메이션을 함께 정의한다
+
+## 12. PDCA Plan 단계 기획서 참조 (필수)
 
 `/pdca plan` 실행 시 **반드시** `docs/ref/` 폴더 안의 `.png` 파일을 확인한 후 진행한다.
 기획서 이미지에는 기능 번호별 상세 스펙, 회원 유형별 입력 항목 차별화 등 Figma 디자인만으로는 파악할 수 없는 비즈니스 로직이 포함되어 있다.

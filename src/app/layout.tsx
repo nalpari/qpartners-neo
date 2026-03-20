@@ -5,6 +5,7 @@ import { Gnb } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
+import { ScrollToTop } from "@/components/common/scroll-to-top";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -34,6 +35,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <QueryProvider>
+          <ScrollToTop />
           <div className="wrap">
             <Gnb />
             <Location />
