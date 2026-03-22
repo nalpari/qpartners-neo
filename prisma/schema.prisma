@@ -23,10 +23,6 @@ enum UserSource {
   general
 }
 
-enum AccountStatus {
-  active
-  deleted
-}
 
 enum ContentStatus {
   draft
@@ -59,82 +55,19 @@ enum RecipientType {
 }
 
 // ─────────────────────────────────────────────
-// QSP 생성 테이블 (2개)
+// QSP 측 테이블 (TO-BE DB에 생성하지 않음)
 // ─────────────────────────────────────────────
-
-/// 일반회원 사용자 (QSP)
-/// 화면 근거: 회원가입 (p.16-18), 내정보/회사정보 수정 (p.34)
-model QpGeneralUser {
-  id              Int      @id @default(autoincrement())
-  // 법인정보
-  companyName     String   @map("company_name") @db.VarChar(255)
-  companyNameKana String   @map("company_name_kana") @db.VarChar(255)
-  zipcode         String   @db.VarChar(10)
-  address         String   @db.VarChar(500)
-  addressDetail   String?  @map("address_detail") @db.VarChar(500)
-  tel             String   @db.VarChar(20)
-  fax             String?  @db.VarChar(20)
-  corporateNumber String?  @map("corporate_number") @db.VarChar(20)
-  // 회원정보
-  lastName        String   @map("last_name") @db.VarChar(100)
-  firstName       String   @map("first_name") @db.VarChar(100)
-  lastNameKana    String   @map("last_name_kana") @db.VarChar(100)
-  firstNameKana   String   @map("first_name_kana") @db.VarChar(100)
-  email           String   @unique @db.VarChar(255)
-  passwordHash    String   @map("password_hash") @db.VarChar(255)
-  department      String?  @db.VarChar(100)
-  jobTitle        String?  @map("job_title") @db.VarChar(100)
-  // 감사
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  @@index([companyName], map: "idx_company_name")
-  @@map("qp_general_users")
-}
-
-/// QPartners 사용자 정보 (QSP)
-/// 화면 근거: 회원관리 (p.41-42), 로그인 (p.9-10), 2차인증 (p.14), 최초로그인 설정 (p.13)
-model QpInfo {
-  id                            Int           @id @default(autoincrement())
-  // 사용자 식별
-  userSource                    UserSource    @map("user_source")
-  userId                        String        @map("user_id") @db.VarChar(255)
-  // 회원유형 / 권한
-  userType                      String        @map("user_type") @db.VarChar(20)
-  userRole                      String        @map("user_role") @db.VarChar(50)
-  // 2차 인증
-  twoFactorEnabled              Boolean       @default(true) @map("two_factor_enabled")
-  twoFactorVerifiedAt           DateTime?     @map("two_factor_verified_at")
-  // 알림
-  loginNotification             Boolean       @default(true) @map("login_notification")
-  attributeChangeNotification   Boolean       @default(true) @map("attribute_change_notification")
-  // 상태
-  status                        AccountStatus @default(active)
-  // 탈퇴
-  withdrawn                     Boolean       @default(false)
-  withdrawnAt                   DateTime?     @map("withdrawn_at")
-  withdrawnReason               String?       @map("withdrawn_reason") @db.Text
-  // 접속/인증 이력
-  lastLoginAt                   DateTime?     @map("last_login_at")
-  // 이용약관
-  termsAgreedAt                 DateTime?     @map("terms_agreed_at")
-  // 최초로그인 설정
-  initialSetupDone              Boolean       @default(false) @map("initial_setup_done")
-  // 비밀번호
-  passwordChangedAt             DateTime?     @map("password_changed_at")
-  // ID Save
-  idSaveEnabled                 Boolean       @default(false) @map("id_save_enabled")
-  // 감사
-  createdAt                     DateTime      @default(now()) @map("created_at")
-  updatedAt                     DateTime      @updatedAt @map("updated_at")
-  updatedBy                     String?       @map("updated_by") @db.VarChar(255)
-
-  @@unique([userSource, userId], map: "idx_user_source_id")
-  @@index([userType], map: "idx_user_type")
-  @@index([userRole], map: "idx_user_role")
-  @@index([status], map: "idx_status")
-  @@map("qp_info")
-}
+// 아래 2개 테이블은 QSP DB에 존재하며, I/F를 통해 접근한다.
+// TO-BE Q.Partners-neo는 자체 DB에 사용자 정보를 저장하지 않는다.
+//
+// 1. 일반_USERS (qp_general_users) — 일반회원 정보
+//    - 회원가입 시 QSP I/F(A6)를 통해 insert
+//    - 화면 근거: 회원가입 (p.16-18), 내정보/회사정보 수정 (p.34)
+//
+// 2. Qpartners_정보 (qp_info) — 사용자별 Q.Partners 설정
+//    - 권한, 2차인증, 알림, 이용약관 등
+//    - 화면 근거: 회원관리 (p.41-42), 로그인 (p.9-10)
+// ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // TO-BE QPartners 테이블 (18개)
@@ -208,6 +141,8 @@ model Content {
   @@index([publishedAt], map: "idx_published_at")
   @@index([createdAt], map: "idx_created_at")
   @@index([authorSource, authorId], map: "idx_author")
+  @@index([status, publishedAt], map: "idx_status_published")
+  @@index([authorDepartment], map: "idx_author_department")
   @@map("contents")
 }
 
@@ -224,6 +159,7 @@ model ContentTarget {
 
   @@index([contentId], map: "idx_content_id")
   @@index([targetType], map: "idx_target_type")
+  @@index([targetType, startAt, endAt], map: "idx_target_period")
   @@map("content_targets")
 }
 
@@ -246,6 +182,7 @@ model Category {
   contents ContentCategory[]
 
   @@index([parentId], map: "idx_parent_id")
+  @@index([isActive, sortOrder], map: "idx_active_sort")
   @@map("categories")
 }
 
@@ -292,6 +229,7 @@ model PasswordResetToken {
   createdAt      DateTime   @default(now()) @map("created_at")
 
   @@index([userSource, externalUserId], map: "idx_user")
+  @@index([expiresAt], map: "idx_expires_at")
   @@map("password_reset_tokens")
 }
 
@@ -307,6 +245,7 @@ model TwoFactorCode {
   createdAt      DateTime   @default(now()) @map("created_at")
 
   @@index([userSource, externalUserId], map: "idx_user")
+  @@index([expiresAt], map: "idx_expires_at")
   @@map("two_factor_codes")
 }
 
@@ -453,6 +392,7 @@ model Menu {
   permissions QpRoleMenuPermission[]
 
   @@index([parentId], map: "idx_parent_id")
+  @@index([isActive, sortOrder], map: "idx_active_sort")
   @@map("menus")
 }
 
