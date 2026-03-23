@@ -13,7 +13,7 @@
 ## 1. Data Model (Prisma — 기존)
 
 ```
-Menu (menus)
+Menu (qp_menus)
 ├── id: Int (PK, auto)
 ├── parentId: Int? (FK → self, null=1-Level)
 ├── menuCode: String (unique, 50) — 수정 불가

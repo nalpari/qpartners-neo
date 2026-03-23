@@ -13,7 +13,7 @@
 ## 1. Data Model (Prisma — 기존)
 
 ```
-Category (categories)
+Category (qp_categories)
 ├── id: Int (PK, auto)
 ├── parentId: Int? (FK → self, null=1Depth)
 ├── categoryCode: String (unique, 50)

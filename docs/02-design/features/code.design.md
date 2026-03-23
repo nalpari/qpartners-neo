@@ -13,7 +13,7 @@
 ## 1. Data Model (Prisma — 기존)
 
 ```
-CodeHeader (code_headers)
+CodeHeader (qp_code_headers)
 ├── id: Int (PK, auto)
 ├── headerCode: String (unique, 20) — 수정 불가
 ├── headerId: String (50)
@@ -24,7 +24,7 @@ CodeHeader (code_headers)
 ├── createdAt / updatedAt
 └── details: CodeDetail[]
 
-CodeDetail (code_details)
+CodeDetail (qp_code_details)
 ├── id: Int (PK, auto)
 ├── headerId: Int (FK → CodeHeader)
 ├── code: String (20)

@@ -46,7 +46,7 @@ Next.js Route Handler (src/app/api/contents/)
 Prisma Client (src/lib/prisma.ts)
     │
     ▼
-MariaDB 11 (contents, content_targets, content_categories, content_attachments, download_logs)
+MariaDB 11 (qp_contents, qp_content_targets, qp_content_categories, qp_content_attachments, qp_download_logs)
 ```
 
 ### 2.2 Data Flow
@@ -71,7 +71,7 @@ Request → 헤더에서 사용자 정보 추출 → Zod 입력 검증 → 접�
 ### 3.1 Prisma 모델 (이미 생성됨)
 
 ```
-Content (contents)
+Content (qp_contents)
 ├── id: Int (PK, auto)
 ├── authorSource: UserSource (qsp|seko|general)
 ├── authorId: String(255)
@@ -92,18 +92,18 @@ Content (contents)
 ├── attachments: ContentAttachment[]
 └── downloadLogs: DownloadLog[]
 
-ContentTarget (content_targets)
+ContentTarget (qp_content_targets)
 ├── id: Int (PK)
 ├── contentId: Int (FK → Content)
 ├── targetType: TargetType (first_dealer|second_dealer|constructor|general|non_member)
 ├── startAt: DateTime?
 └── endAt: DateTime?
 
-ContentCategory (content_categories)
+ContentCategory (qp_content_categories)
 ├── contentId: Int (FK → Content, composite PK)
 └── categoryId: Int (FK → Category, composite PK)
 
-ContentAttachment (content_attachments)
+ContentAttachment (qp_content_attachments)
 ├── id: Int (PK)
 ├── contentId: Int (FK → Content)
 ├── fileName: String(255)
@@ -113,7 +113,7 @@ ContentAttachment (content_attachments)
 ├── sortOrder: Int (default: 0)
 └── createdAt: DateTime
 
-DownloadLog (download_logs)
+DownloadLog (qp_download_logs)
 ├── id: Int (PK)
 ├── userSource: UserSource
 ├── externalUserId: String(255)

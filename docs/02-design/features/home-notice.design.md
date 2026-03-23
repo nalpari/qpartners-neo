@@ -13,7 +13,7 @@
 ## 1. Data Model (Prisma — 기존)
 
 ```
-HomeNotice (home_notices)
+HomeNotice (qp_home_notices)
 ├── id: Int (PK, auto)
 ├── targetSuperAdmin: Boolean (default: false)
 ├── targetAdmin: Boolean (default: false)
