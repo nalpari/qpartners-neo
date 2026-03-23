@@ -19,40 +19,49 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const existing = await prisma.codeDetail.findFirst({
-      where: { id: Number(detailId), headerId: Number(id) },
+    const detail = await prisma.$transaction(async (tx) => {
+      const existing = await tx.codeDetail.findFirst({
+        where: { id: Number(detailId), headerId: Number(id) },
+      });
+
+      if (!existing) return null;
+
+      // code 변경 시 중복 체크
+      if (result.data.code && result.data.code !== existing.code) {
+        const duplicate = await tx.codeDetail.findUnique({
+          where: {
+            headerId_code: {
+              headerId: Number(id),
+              code: result.data.code,
+            },
+          },
+        });
+
+        if (duplicate) {
+          throw new Error(
+            `DUPLICATE:code '${result.data.code}' already exists in this header`,
+          );
+        }
+      }
+
+      return tx.codeDetail.update({
+        where: { id: Number(detailId) },
+        data: result.data,
+      });
     });
 
-    if (!existing) {
+    if (!detail) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // code 변경 시 중복 체크
-    if (result.data.code && result.data.code !== existing.code) {
-      const duplicate = await prisma.codeDetail.findUnique({
-        where: {
-          headerId_code: {
-            headerId: Number(id),
-            code: result.data.code,
-          },
-        },
-      });
-
-      if (duplicate) {
-        return NextResponse.json(
-          { error: `code '${result.data.code}' already exists in this header` },
-          { status: 409 },
-        );
-      }
-    }
-
-    const detail = await prisma.codeDetail.update({
-      where: { id: Number(detailId) },
-      data: result.data,
-    });
-
     return NextResponse.json({ data: detail });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("DUPLICATE:")) {
+      return NextResponse.json(
+        { error: error.message.slice("DUPLICATE:".length) },
+        { status: 409 },
+      );
+    }
     console.error("[PUT /api/codes/:id/details/:detailId]", error);
     return NextResponse.json(
       { error: "Failed to update code detail" },
@@ -66,17 +75,23 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
     const { id, detailId } = await params;
 
-    const existing = await prisma.codeDetail.findFirst({
-      where: { id: Number(detailId), headerId: Number(id) },
+    const deleted = await prisma.$transaction(async (tx) => {
+      const existing = await tx.codeDetail.findFirst({
+        where: { id: Number(detailId), headerId: Number(id) },
+      });
+
+      if (!existing) return false;
+
+      await tx.codeDetail.delete({
+        where: { id: Number(detailId) },
+      });
+
+      return true;
     });
 
-    if (!existing) {
+    if (!deleted) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    await prisma.codeDetail.delete({
-      where: { id: Number(detailId) },
-    });
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
