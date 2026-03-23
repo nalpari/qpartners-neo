@@ -1,7 +1,7 @@
 "use client";
 
 import { Checkbox } from "@/components/common";
-import { FILTER_CATEGORIES } from "./contents-filter-data";
+import { FILTER_CATEGORIES } from "../contents-filter-data";
 
 interface ContentsFormCategoryProps {
   categories: Record<string, string[]>;
@@ -27,9 +27,9 @@ export function ContentsFormCategory({
   };
 
   return (
-    <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[34px] w-[1440px]">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="font-['Noto_Sans_JP'] font-bold text-[16px] leading-[1.5] text-[#333]">
+    <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-4 pt-[34px] pb-6 px-6 w-[1440px]">
+      <div className="flex items-center justify-between">
+        <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
           カテゴリ
           <span className="text-[#FF1A1A]">*</span>
         </h2>
@@ -38,15 +38,15 @@ export function ContentsFormCategory({
         </span>
       </div>
 
-      <div className="flex flex-col gap-px border border-[#EAF0F6] rounded-[6px] [&>*:first-child>*:first-child]:rounded-tl-[5px] [&>*:first-child>*:nth-child(2)]:rounded-tr-[5px] [&>*:last-child>*:first-child]:rounded-bl-[5px] [&>*:last-child>*:nth-child(2)]:rounded-br-[5px]">
+      <div className="flex flex-col gap-1">
         {FILTER_CATEGORIES.map((category) => (
-          <div key={category.key} className="flex items-center min-h-[58px]">
-            <div className="w-[112px] shrink-0 self-stretch flex items-center bg-[#F7F9FB] border-r border-b border-[#EAF0F6] pl-4 pr-2 py-2">
+          <div key={category.key} className="flex gap-1 items-stretch min-h-[58px]">
+            <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
                 {category.label}
               </span>
             </div>
-            <div className="flex-1 flex flex-wrap items-center gap-x-[18px] gap-y-[8px] bg-[#FDFEFE] border-b border-[#EAF0F6] self-stretch pl-6 pr-2 py-2">
+            <div className="flex-1 flex flex-wrap items-center gap-x-[18px] gap-y-[8px] bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
               {category.items.map((item) => (
                 <Checkbox
                   key={item.value}

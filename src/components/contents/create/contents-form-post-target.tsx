@@ -166,27 +166,18 @@ export function ContentsFormPostTarget({
       </div>
 
       {/* 대상 테이블 */}
-      <div className="border border-[#EAF0F6] rounded-[6px]">
+      <div className="flex flex-col gap-1">
         {POST_TARGET_ROWS.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex">
+          <div key={rowIdx} className="flex gap-1">
             {row.map((item, colIdx) => {
-              const isLastRow = rowIdx === POST_TARGET_ROWS.length - 1;
               const target = item ? getTarget(item.key) : null;
 
               return (
-                <div key={colIdx} className="flex flex-1 h-[58px]">
+                <div key={colIdx} className="flex flex-1 gap-1 h-[58px]">
                   {/* Th */}
                   <div
-                    className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 ${
-                      item ? "bg-[#F7F9FB]" : "bg-[#FDFEFE]"
-                    } ${
-                      colIdx > 0 ? "border-l" : ""
-                    } border-r border-[#EAF0F6] ${
-                      !isLastRow ? "border-b border-[#EAF0F6]" : ""
-                    } ${
-                      rowIdx === 0 && colIdx === 0 ? "rounded-tl-[6px]" : ""
-                    } ${
-                      isLastRow && colIdx === 0 ? "rounded-bl-[6px]" : ""
+                    className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 rounded-[6px] border border-[#EAF0F6] ${
+                      item ? "bg-[#F7F9FB]" : "bg-white"
                     }`}
                   >
                     {item && (
@@ -196,19 +187,7 @@ export function ContentsFormPostTarget({
                     )}
                   </div>
                   {/* Form */}
-                  <div
-                    className={`flex-1 flex items-center gap-2 bg-[#FDFEFE] p-2 ${
-                      !isLastRow ? "border-b border-[#EAF0F6]" : ""
-                    } ${
-                      rowIdx === 0 && colIdx === row.length - 1
-                        ? "rounded-tr-[6px]"
-                        : ""
-                    } ${
-                      isLastRow && colIdx === row.length - 1
-                        ? "rounded-br-[6px]"
-                        : ""
-                    }`}
-                  >
+                  <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
                     {item && target && (
                       <>
                         <Checkbox

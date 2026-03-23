@@ -14,8 +14,8 @@ import {
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
-import { DUMMY_CONTENTS, isNew, isUpdated } from "./contents-dummy-data";
-import type { ContentItem } from "./contents-dummy-data";
+import { DUMMY_CONTENTS, isNew, isUpdated } from "../contents-dummy-data";
+import type { ContentItem } from "../contents-dummy-data";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },

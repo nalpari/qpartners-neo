@@ -1,4 +1,4 @@
-import { ContentsForm } from "@/components/contents/contents-form";
+import { ContentsForm } from "@/components/contents/create/contents-form";
 
 type Params = Promise<{ id: string }>;
 
