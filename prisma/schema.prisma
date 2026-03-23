@@ -82,7 +82,9 @@ model QpRole {
   description String?  @db.VarChar(500)
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String?  @map("created_by") @db.VarChar(255)
   updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedBy   String?  @map("updated_by") @db.VarChar(255)
 
   permissions QpRoleMenuPermission[]
 
@@ -100,7 +102,9 @@ model QpRoleMenuPermission {
   canUpdate Boolean  @default(false) @map("can_update")
   canDelete Boolean  @default(false) @map("can_delete")
   createdAt DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by") @db.VarChar(255)
   updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by") @db.VarChar(255)
 
   role QpRole @relation(fields: [roleCode], references: [roleCode])
   menu Menu   @relation(fields: [menuCode], references: [menuCode])
@@ -174,7 +178,9 @@ model Category {
   sortOrder      Int      @default(1) @map("sort_order")
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String?  @map("created_by") @db.VarChar(255)
   updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedBy      String?  @map("updated_by") @db.VarChar(255)
 
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children Category[] @relation("CategoryTree")
@@ -294,7 +300,9 @@ model MassMail {
   status             MailStatus @default(draft)
   sentAt             DateTime?  @map("sent_at")
   createdAt          DateTime   @default(now()) @map("created_at")
+  createdBy          String?    @map("created_by") @db.VarChar(255)
   updatedAt          DateTime   @updatedAt @map("updated_at")
+  updatedBy          String?    @map("updated_by") @db.VarChar(255)
 
   recipients  MassMailRecipient[]
   attachments MassMailAttachment[]
@@ -385,7 +393,9 @@ model Menu {
   showInMobile Boolean  @default(true) @map("show_in_mobile")
   sortOrder    Int      @default(1) @map("sort_order")
   createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String?  @map("created_by") @db.VarChar(255)
   updatedAt    DateTime @updatedAt @map("updated_at")
+  updatedBy    String?  @map("updated_by") @db.VarChar(255)
 
   parent      Menu?                  @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
   children    Menu[]                 @relation("MenuTree")
@@ -411,7 +421,9 @@ model CodeHeader {
   relNum3    Decimal? @map("rel_num3") @db.Decimal(15, 2)
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
+  createdBy  String?  @map("created_by") @db.VarChar(255)
   updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedBy  String?  @map("updated_by") @db.VarChar(255)
 
   details CodeDetail[]
 
@@ -432,7 +444,9 @@ model CodeDetail {
   sortOrder   Int      @default(0) @map("sort_order")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String?  @map("created_by") @db.VarChar(255)
   updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedBy   String?  @map("updated_by") @db.VarChar(255)
 
   header CodeHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
 
