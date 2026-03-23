@@ -33,15 +33,30 @@ const ROUTE_MAP: Record<string, LocationItem> = {
   },
 };
 
+function findLocation(pathname: string): LocationItem | null {
+  // 정확한 경로 매칭 우선
+  if (ROUTE_MAP[pathname]) return ROUTE_MAP[pathname];
+
+  // 상위 경로로 올라가며 매칭 시도 (예: /contents/create → /contents)
+  const segments = pathname.split("/").filter(Boolean);
+  while (segments.length > 0) {
+    segments.pop();
+    const parentPath = `/${segments.join("/")}`;
+    if (ROUTE_MAP[parentPath]) return ROUTE_MAP[parentPath];
+  }
+
+  return null;
+}
+
 export function Location() {
   const pathname = usePathname();
 
-  const location = ROUTE_MAP[pathname];
+  const location = findLocation(pathname);
 
   if (!location) return null;
 
   return (
-    <div className="flex flex-col items-center w-full bg-white lg:bg-[#F5F5F5]">
+    <div className="flex flex-col items-center w-full bg-white lg:bg-[#F7F9FB]">
       <div className="flex items-center justify-between w-full max-w-[1440px] pt-[10px] pb-[10px] px-6 lg:pt-[42px] lg:pb-[24px] lg:px-0">
         {/* 좌측: 아이콘 + 타이틀 */}
         <div className="flex flex-1 items-center gap-1 pr-1">

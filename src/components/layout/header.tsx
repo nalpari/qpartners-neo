@@ -25,14 +25,15 @@ export function Gnb() {
       <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5">
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄 */}
-          <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0">
+          <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0 relative">
             <Image
               src="/asset/images/layout/logo_hanwha.svg"
               alt="Hanwha Japan"
               width={160}
               height={30}
               unoptimized
-              style={{ height: "auto" }}
+              style={{ height: "auto"}}
+              loading="eager"
             />
             <span className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
             <span className="font-pretendard font-medium text-[14px] leading-[1.5] text-white uppercase whitespace-nowrap">

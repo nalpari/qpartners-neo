@@ -35,7 +35,6 @@ const customTheme = themeQuartz.withParams({
   spacing: 0,
   cellHorizontalPadding: 18,
   headerCellHoverBackgroundColor: "#506273",
-  headerColumnResizeHandleDisplay: "block",
   headerColumnResizeHandleWidth: 1,
   headerColumnResizeHandleHeight: "14px",
   headerColumnResizeHandleColor: "rgba(255, 255, 255, 0.3)",

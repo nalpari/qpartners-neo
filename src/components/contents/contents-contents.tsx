@@ -8,7 +8,7 @@ export function ContentsContents() {
   const isAdmin = true;
 
   return (
-    <main className="flex flex-col items-center gap-[18px] w-full pb-[120px]">
+    <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full pb-[10px] lg:pb-[48px]">
       <ContentsSearch isAdmin={isAdmin} />
       <ContentsTable isAdmin={isAdmin} />
     </main>
