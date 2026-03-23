@@ -20,11 +20,13 @@ export function ContentsDetailTarget({
               投稿対象
             </span>
           </div>
-          {/* 5개 대상 셀 */}
-          {postTargets.map((target) => (
+          {/* 5개 대상 셀: 처음 2개 flex-1, 나머지 3개 w-[254px] */}
+          {postTargets.map((target, idx) => (
             <div
               key={target.label}
-              className="flex-1 flex flex-col gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2"
+              className={`flex flex-col gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 self-stretch justify-center ${
+                idx < 2 ? "flex-1" : "w-[254px] shrink-0"
+              } ${idx === 0 ? "py-3" : "py-2"}`}
             >
               <span
                 className={`inline-flex items-center justify-center self-start px-2 py-[2px] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] truncate ${
