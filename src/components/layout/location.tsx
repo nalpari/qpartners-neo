@@ -27,7 +27,7 @@ const ROUTE_MAP: Record<string, LocationItem> = {
     breadcrumbs: [{ label: "コンテンツ" }],
   },
   "/inquiry": {
-    icon: "/asset/images/layout/login_location.svg",
+    icon: "/asset/images/contents/inquiry_location.svg",
     title: "お問い合わせ",
     breadcrumbs: [{ label: "お問い合わせ" }],
   },

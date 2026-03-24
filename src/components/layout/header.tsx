@@ -193,14 +193,15 @@ export function Gnb() {
 
                 {/* 버튼 그룹 */}
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
+                  <Link
+                    href="/mypage"
+                    transitionTypes={["fade"]}
                     className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                   >
                     <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
                       マイページ
                     </span>
-                  </button>
+                  </Link>
                   <button
                     type="button"
                     className="flex items-center justify-center gap-1.5 h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
@@ -215,12 +216,11 @@ export function Gnb() {
                       ログアウト
                     </span>
                   </button>
-                  {/* 톱니바퀴 (마이페이지) — 맨 오른쪽 */}
-                  <Link
-                    href="/mypage"
-                    transitionTypes={["fade"]}
+                  {/* 톱니바퀴 (管理者) — 맨 오른쪽 */}
+                  <button
+                    type="button"
                     className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                    aria-label="マイページ"
+                    aria-label="管理者設定"
                   >
                     <Image
                       src="/asset/images/layout/icon_admin.svg"
@@ -228,7 +228,7 @@ export function Gnb() {
                       width={21}
                       height={22}
                     />
-                  </Link>
+                  </button>
                 </div>
               </>
             ) : (
