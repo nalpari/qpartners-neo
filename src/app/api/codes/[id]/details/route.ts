@@ -91,14 +91,19 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: detail }, { status: 201 });
   } catch (error) {
-    if (
-      error instanceof PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return NextResponse.json(
-        { error: "Duplicate code in this header" },
-        { status: 409 },
-      );
+    if (error instanceof PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return NextResponse.json(
+          { error: "Duplicate code in this header" },
+          { status: 409 },
+        );
+      }
+      if (error.code === "P2003") {
+        return NextResponse.json(
+          { error: "Header deleted or does not exist" },
+          { status: 409 },
+        );
+      }
     }
     console.error("[POST /api/codes/:id/details]", error);
     return NextResponse.json(
