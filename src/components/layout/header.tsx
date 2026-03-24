@@ -215,11 +215,12 @@ export function Gnb() {
                       ログアウト
                     </span>
                   </button>
-                  {/* 톱니바퀴 (관리자) — 맨 오른쪽 */}
-                  <button
-                    type="button"
+                  {/* 톱니바퀴 (마이페이지) — 맨 오른쪽 */}
+                  <Link
+                    href="/mypage"
+                    transitionTypes={["fade"]}
                     className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                    aria-label="管理者設定"
+                    aria-label="マイページ"
                   >
                     <Image
                       src="/asset/images/layout/icon_admin.svg"
@@ -227,7 +228,7 @@ export function Gnb() {
                       width={21}
                       height={22}
                     />
-                  </button>
+                  </Link>
                 </div>
               </>
             ) : (

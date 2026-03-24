@@ -21,11 +21,6 @@ const ROUTE_MAP: Record<string, LocationItem> = {
     title: "会員登録",
     breadcrumbs: [{ label: "会員登録" }],
   },
-  "/mypage": {
-    icon: "/asset/images/layout/login_location.svg",
-    title: "マイページ",
-    breadcrumbs: [{ label: "マイページ" }],
-  },
   "/contents": {
     icon: "/asset/images/layout/contents_location.svg",
     title: "コンテンツ",
