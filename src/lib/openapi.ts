@@ -411,6 +411,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           codeNameEtc: { type: "string", nullable: true },
           relCode1: { type: "string", nullable: true },
           relCode2: { type: "string", nullable: true },
+          relCode3: { type: "string", nullable: true },
           relNum1: { type: "string", nullable: true },
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
@@ -482,6 +483,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           codeNameEtc: { type: "string", maxLength: 255, nullable: true },
           relCode1: { type: "string", maxLength: 50, nullable: true },
           relCode2: { type: "string", maxLength: 50, nullable: true },
+          relCode3: { type: "string", maxLength: 50, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,
@@ -500,6 +502,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           codeNameEtc: { type: "string", maxLength: 255, nullable: true },
           relCode1: { type: "string", maxLength: 50, nullable: true },
           relCode2: { type: "string", maxLength: 50, nullable: true },
+          relCode3: { type: "string", maxLength: 50, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,

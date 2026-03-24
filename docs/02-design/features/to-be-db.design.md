@@ -138,18 +138,15 @@ CREATE TABLE qp_info (
 
   -- 사용자 식별 ──────────────────────────────
   -- QSP 내 사용자 테이블과 user_id로 join
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-                      -- qsp     = QSP 기존 사용자 (사내회원, 판매점)
-                      -- seko    = AS-IS QPartners 시공점 (M_SUPPLIER kind=4/5/6/7) (M_SUPPLIER kind=4/5/6/7)
-                      -- general = qp_general_users 일반회원
-  user_id             VARCHAR(255) NOT NULL,             -- 소스별 사용자 식별자
-                      -- qsp: QSP 사용자 ID
-                      -- seko: AS-IS M_USER.id (시공점)
-                      -- general: qp_general_users.id
-
-  -- 회원유형 ─────────────────────────────────
-  -- 화면: 회원관리 목록 > 회원유형 (p.41)
-  user_type           VARCHAR(20) NOT NULL,              -- 관리자 / 판매점 / 일반
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+                      -- ADMIN   = 관리자
+                      -- DEALER  = 판매점
+                      -- SEKO    = 시공점 (AS-IS QPartners)
+                      -- GENERAL = 일반회원 (qp_general_users)
+  user_id             VARCHAR(255) NOT NULL,             -- 유형별 사용자 식별자
+                      -- ADMIN/DEALER: QSP 사용자 ID
+                      -- SEKO: AS-IS M_USER.id (시공점)
+                      -- GENERAL: qp_general_users.id
                       -- 화면 p.41 목록: 관리자, 판매점, 일반
 
   -- 사용자권한 ───────────────────────────────
@@ -219,8 +216,7 @@ CREATE TABLE qp_info (
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   updated_by          VARCHAR(255) DEFAULT NULL,         -- 화면: 수정자 (p.42 #1)
 
-  UNIQUE INDEX idx_user_source_id (user_source, user_id),
-  INDEX idx_user_type (user_type),
+  UNIQUE INDEX idx_user_type_id (user_type, user_id),
   INDEX idx_user_role (user_role),
   INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -273,7 +269,6 @@ INSERT INTO qp_roles (role_code, role_name, description) VALUES
 
 ```sql
 CREATE TABLE qp_role_menu_permissions (
-  id                  INT AUTO_INCREMENT PRIMARY KEY,
   role_code           VARCHAR(50) NOT NULL,              -- qp_roles.role_code 참조
   menu_code           VARCHAR(50) NOT NULL,              -- menus.menu_code 참조
 
@@ -287,7 +282,7 @@ CREATE TABLE qp_role_menu_permissions (
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  UNIQUE INDEX idx_role_menu (role_code, menu_code)
+  PRIMARY KEY (role_code, menu_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -322,12 +317,10 @@ CREATE TABLE contents (
 
   -- 관리정보 ──────────────────────────────────
   -- 화면: 콘텐츠 등록 > 관리정보 섹션 (p.25)
-  author_source       ENUM('qsp','seko','general') NOT NULL,  -- 게재담당자 소스
-  author_id           VARCHAR(255) NOT NULL,             -- 화면: "게재 담당자" (p.25 #1, read only, 등록자명 자동)
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,  -- 게재담당자 유형
+  user_id             VARCHAR(255) NOT NULL,             -- 화면: "게재 담당자" (p.25 #1, read only, 등록자명 자동)
   author_department   VARCHAR(100) DEFAULT NULL,         -- 화면: "담당부문" (p.25 #5, read only, QSP Department)
                                                          -- 저장 시점 값 유지 (p.27 Description)
-  updater_source      ENUM('qsp','seko','general') DEFAULT NULL,
-  updater_id          VARCHAR(255) DEFAULT NULL,         -- 화면: "갱신담당자" (p.25 #3, 최근 갱신자)
   approver_level      TINYINT DEFAULT NULL,              -- 화면: "최종승인자 *" 드롭다운 (p.25 #6)
                       -- 값 정의 (p.25 Description #6):
                       -- 1 = 担当(일본어)/실무담당자       순위 1
@@ -356,7 +349,7 @@ CREATE TABLE contents (
   INDEX idx_status (status),
   INDEX idx_published_at (published_at),
   INDEX idx_created_at (created_at),
-  INDEX idx_author (author_source, author_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -374,8 +367,10 @@ CREATE TABLE content_targets (
   start_at            DATETIME DEFAULT NULL,
   end_at              DATETIME DEFAULT NULL,
 
+  created_by          VARCHAR(255) DEFAULT NULL,
   INDEX idx_content_id (content_id),
   INDEX idx_target_type (target_type),
+  UNIQUE INDEX idx_content_target (content_id, target_type),
   FOREIGN KEY (content_id) REFERENCES contents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -450,15 +445,15 @@ CREATE TABLE content_attachments (
 ```sql
 CREATE TABLE password_reset_tokens (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   token               VARCHAR(255) NOT NULL,
   expires_at          DATETIME NOT NULL,
   used                BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   UNIQUE INDEX idx_token (token),
-  INDEX idx_user (user_source, external_user_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -471,14 +466,14 @@ CREATE TABLE password_reset_tokens (
 ```sql
 CREATE TABLE two_factor_codes (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   code                VARCHAR(6) NOT NULL,               -- 인증번호 6자리, 숫자만
   expires_at          DATETIME NOT NULL,                 -- 10분 이내
   verified            BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -501,15 +496,13 @@ CREATE TABLE home_notices (
   end_at              DATETIME NOT NULL,
   content             TEXT NOT NULL,
   url                 VARCHAR(500) DEFAULT NULL,
-  status              ENUM('scheduled','active','ended') NOT NULL DEFAULT 'scheduled',
-  author_source       ENUM('qsp','seko','general') NOT NULL,
-  author_id           VARCHAR(255) NOT NULL,
-  updater_source      ENUM('qsp','seko','general') DEFAULT NULL,
-  updater_id          VARCHAR(255) DEFAULT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
+  created_by          VARCHAR(255) DEFAULT NULL,
+  updated_by          VARCHAR(255) DEFAULT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  INDEX idx_status (status),
   INDEX idx_period (start_at, end_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -524,8 +517,8 @@ CREATE TABLE home_notices (
 CREATE TABLE mass_mails (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   sender_name         VARCHAR(255) NOT NULL,
-  author_source       ENUM('qsp','seko','general') NOT NULL,
-  author_id           VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   target_super_admin  BOOLEAN NOT NULL DEFAULT FALSE,
   target_admin        BOOLEAN NOT NULL DEFAULT FALSE,
   target_first_dealer BOOLEAN NOT NULL DEFAULT FALSE,
@@ -553,11 +546,12 @@ CREATE TABLE mass_mail_recipients (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   mass_mail_id        INT NOT NULL,
   recipient_type      ENUM('cc','bcc') NOT NULL,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   email               VARCHAR(255) NOT NULL,
 
   INDEX idx_mass_mail_id (mass_mail_id),
+  UNIQUE INDEX idx_mail_recipient (mass_mail_id, recipient_type, email),
   FOREIGN KEY (mass_mail_id) REFERENCES mass_mails(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -589,13 +583,13 @@ CREATE TABLE mass_mail_attachments (
 ```sql
 CREATE TABLE download_logs (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   content_id          INT NOT NULL,
   attachment_id       INT NOT NULL,
   downloaded_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id),
+  INDEX idx_user (user_type, user_id),
   INDEX idx_downloaded_at (downloaded_at),
   FOREIGN KEY (content_id) REFERENCES contents(id),
   FOREIGN KEY (attachment_id) REFERENCES content_attachments(id)
@@ -611,8 +605,8 @@ CREATE TABLE download_logs (
 ```sql
 CREATE TABLE inquiries (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') DEFAULT NULL,
+  user_id             VARCHAR(255) DEFAULT NULL,
   company_name        VARCHAR(255) NOT NULL,             -- 저장 시점 회사명
   user_name           VARCHAR(200) NOT NULL,             -- 저장 시점 성명
   tel                 VARCHAR(20) DEFAULT NULL,          -- 저장 시점 전화번호
@@ -622,7 +616,7 @@ CREATE TABLE inquiries (
   content             TEXT NOT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id),
+  INDEX idx_user (user_type, user_id),
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -720,6 +714,7 @@ CREATE TABLE code_details (
   code_name_etc       VARCHAR(255) DEFAULT NULL,
   rel_code1           VARCHAR(50) DEFAULT NULL,
   rel_code2           VARCHAR(50) DEFAULT NULL,
+  rel_code3           VARCHAR(50) DEFAULT NULL,
   rel_num1            DECIMAL(15,2) DEFAULT NULL,
   sort_order          INT NOT NULL DEFAULT 0,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
@@ -802,8 +797,8 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 ┌─────────────────┐              ┌───────────────────────────┐
 │ QSP 기존        │              │        qp_info            │
 │ 판매자 테이블   │──────────────▶│                           │
-└─────────────────┘   user_id    │  user_source, user_id,    │
-                      join       │  user_type, user_role,    │
+└─────────────────┘   user_id    │  user_type, user_id,      │
+                      join       │  user_role,               │
 ┌─────────────────┐              │  two_factor_enabled,      │
 │ QSP 기존        │              │  two_factor_verified_at,  │
 │ 사내회원        │──────────────▶│  login_notification,      │
@@ -869,15 +864,16 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 TO-BE 테이블에서 사용자를 참조할 때 FK를 사용할 수 없으므로 (외부 시스템), 다음 패턴을 사용:
 
 ```sql
-user_source       ENUM('qsp','seko','general') NOT NULL,
-external_user_id  VARCHAR(255) NOT NULL,
+user_type         ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+user_id           VARCHAR(255) NOT NULL,
 ```
 
-| user_source | 의미 | external_user_id 값 |
-|-------------|------|-------------------|
-| qsp | QSP 기존 사용자 (사내/판매점) | QSP 사용자 ID |
-| seko | AS-IS QPartners 시공점 (施工) | M_USER.id |
-| general | 일반회원 | qp_general_users.id |
+| user_type | 의미 | user_id 값 |
+|-----------|------|-----------|
+| ADMIN | 관리자 | QSP 사용자 ID |
+| DEALER | 판매점 | QSP 사용자 ID |
+| SEKO | 시공점 (AS-IS QPartners) | M_USER.id |
+| GENERAL | 일반회원 | qp_general_users.id |
 
 ---
 

@@ -17,12 +17,13 @@ datasource db {
 // Enums
 // ─────────────────────────────────────────────
 
-enum UserSource {
-  qsp
-  seko
-  general
+/// 사용자 유형 (관리자/판매점/시공점/일반회원)
+enum UserType {
+  ADMIN
+  DEALER
+  SEKO
+  GENERAL
 }
-
 
 enum ContentStatus {
   draft
@@ -38,12 +39,6 @@ enum TargetType {
   non_member
 }
 
-enum NoticeStatus {
-  scheduled
-  active
-  ended
-}
-
 enum MailStatus {
   draft
   sent
@@ -57,23 +52,17 @@ enum RecipientType {
 // ─────────────────────────────────────────────
 // QSP 측 테이블 (TO-BE DB에 생성하지 않음)
 // ─────────────────────────────────────────────
-// 아래 2개 테이블은 QSP DB에 존재하며, I/F를 통해 접근한다.
-// TO-BE Q.Partners-neo는 자체 DB에 사용자 정보를 저장하지 않는다.
-//
-// 1. 일반_USERS (qp_general_users) — 일반회원 정보
-//    - 회원가입 시 QSP I/F(A6)를 통해 insert
-//    - 화면 근거: 회원가입 (p.16-18), 내정보/회사정보 수정 (p.34)
-//
-// 2. Qpartners_정보 (qp_info) — 사용자별 Q.Partners 설정
-//    - 권한, 2차인증, 알림, 이용약관 등
-//    - 화면 근거: 회원관리 (p.41-42), 로그인 (p.9-10)
+// 1. qp_general_users — 일반회원 인적/법인정보
+// 2. qp_info — 모든 사용자의 QP 서비스 설정
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // TO-BE QPartners 테이블 (18개)
 // ─────────────────────────────────────────────
 
-/// QPartners 권한 정의
+// ━━━ 권한/메뉴 관련 (4개) ━━━
+
+/// 권한 정의
 /// 화면 근거: 권한관리 (p.49)
 model QpRole {
   id          Int      @id @default(autoincrement())
@@ -93,8 +82,8 @@ model QpRole {
 
 /// 역할별 메뉴 CRUD 권한
 /// 화면 근거: 권한관리 > Available Menu Setting (p.50)
+/// PK: [roleCode, menuCode] 복합키 — 동일 권한+메뉴 조합은 하나만 존재
 model QpRoleMenuPermission {
-  id        Int      @id @default(autoincrement())
   roleCode  String   @map("role_code") @db.VarChar(50)
   menuCode  String   @map("menu_code") @db.VarChar(50)
   canRead   Boolean  @default(false) @map("can_read")
@@ -109,275 +98,8 @@ model QpRoleMenuPermission {
   role QpRole @relation(fields: [roleCode], references: [roleCode])
   menu Menu   @relation(fields: [menuCode], references: [menuCode])
 
-  @@unique([roleCode, menuCode], map: "idx_role_menu")
+  @@id([roleCode, menuCode])
   @@map("qp_role_menu_permissions")
-}
-
-/// 콘텐츠
-/// 화면 근거: 콘텐츠 목록 (p.22-24), 등록 (p.25-27), 조회 (p.28-29), 수정 (p.30-31)
-model Content {
-  id               Int           @id @default(autoincrement())
-  // 관리정보
-  authorSource     UserSource    @map("author_source")
-  authorId         String        @map("author_id") @db.VarChar(255)
-  authorDepartment String?       @map("author_department") @db.VarChar(100)
-  updaterSource    UserSource?   @map("updater_source")
-  updaterId        String?       @map("updater_id") @db.VarChar(255)
-  approverLevel    Int?          @map("approver_level") @db.TinyInt
-  // 본문
-  title            String        @db.VarChar(500)
-  body             String?       @db.MediumText
-  // 상태
-  status           ContentStatus @default(draft)
-  // 일시
-  publishedAt      DateTime?     @map("published_at")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
-  // 조회수
-  viewCount        Int           @default(0) @map("view_count")
-
-  targets      ContentTarget[]
-  categories   ContentCategory[]
-  attachments  ContentAttachment[]
-  downloadLogs DownloadLog[]
-
-  @@index([status], map: "idx_status")
-  @@index([publishedAt], map: "idx_published_at")
-  @@index([createdAt], map: "idx_created_at")
-  @@index([authorSource, authorId], map: "idx_author")
-  @@index([status, publishedAt], map: "idx_status_published")
-  @@index([authorDepartment], map: "idx_author_department")
-  @@map("qp_contents")
-}
-
-/// 게시대상
-/// 화면 근거: 콘텐츠 등록 > 게시대상 체크박스 + 기간설정 (p.25 #7, #8)
-model ContentTarget {
-  id         Int        @id @default(autoincrement())
-  contentId  Int        @map("content_id")
-  targetType TargetType @map("target_type")
-  startAt    DateTime?  @map("start_at")
-  endAt      DateTime?  @map("end_at")
-
-  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
-
-  @@index([contentId], map: "idx_content_id")
-  @@index([targetType], map: "idx_target_type")
-  @@index([targetType, startAt, endAt], map: "idx_target_period")
-  @@map("qp_content_targets")
-}
-
-/// 카테고리
-/// 화면 근거: 카테고리 관리 (p.48), 콘텐츠 검색조건 (p.24), 콘텐츠 등록 (p.25-26)
-model Category {
-  id             Int      @id @default(autoincrement())
-  parentId       Int?     @map("parent_id")
-  categoryCode   String   @unique @map("category_code") @db.VarChar(50)
-  name           String   @db.VarChar(100)
-  isInternalOnly Boolean  @default(false) @map("is_internal_only")
-  sortOrder      Int      @default(1) @map("sort_order")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  createdBy      String?  @map("created_by") @db.VarChar(255)
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  updatedBy      String?  @map("updated_by") @db.VarChar(255)
-
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children Category[] @relation("CategoryTree")
-
-  contents ContentCategory[]
-
-  @@index([parentId], map: "idx_parent_id")
-  @@index([isActive, sortOrder], map: "idx_active_sort")
-  @@map("qp_categories")
-}
-
-/// 콘텐츠-카테고리 연결 (N:M)
-model ContentCategory {
-  contentId  Int @map("content_id")
-  categoryId Int @map("category_id")
-
-  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-
-  @@id([contentId, categoryId])
-  @@map("qp_content_categories")
-}
-
-/// 콘텐츠 첨부파일
-/// 화면 근거: 콘텐츠 등록 > 파일첨부 (p.27 #13), 상세 (p.29 #11, #12)
-model ContentAttachment {
-  id        Int      @id @default(autoincrement())
-  contentId Int      @map("content_id")
-  fileName  String   @map("file_name") @db.VarChar(255)
-  filePath  String   @map("file_path") @db.VarChar(500)
-  fileSize  BigInt?  @map("file_size")
-  mimeType  String?  @map("mime_type") @db.VarChar(100)
-  sortOrder Int      @default(0) @map("sort_order")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  content      Content       @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  downloadLogs DownloadLog[]
-
-  @@index([contentId], map: "idx_content_id")
-  @@map("qp_content_attachments")
-}
-
-/// 비밀번호 초기화
-/// 화면 근거: 비밀번호 초기화 팝업 (p.11), 변경 링크 메일 (p.12)
-model PasswordResetToken {
-  id             Int        @id @default(autoincrement())
-  userSource     UserSource @map("user_source")
-  externalUserId String     @map("external_user_id") @db.VarChar(255)
-  token          String     @unique @db.VarChar(255)
-  expiresAt      DateTime   @map("expires_at")
-  used           Boolean    @default(false)
-  createdAt      DateTime   @default(now()) @map("created_at")
-
-  @@index([userSource, externalUserId], map: "idx_user")
-  @@index([expiresAt], map: "idx_expires_at")
-  @@map("qp_password_reset_tokens")
-}
-
-/// 2차 인증
-/// 화면 근거: 2차인증 팝업 (p.14), 2단계 인증 알림메일 (p.15)
-model TwoFactorCode {
-  id             Int        @id @default(autoincrement())
-  userSource     UserSource @map("user_source")
-  externalUserId String     @map("external_user_id") @db.VarChar(255)
-  code           String     @db.VarChar(6)
-  expiresAt      DateTime   @map("expires_at")
-  verified       Boolean    @default(false)
-  createdAt      DateTime   @default(now()) @map("created_at")
-
-  @@index([userSource, externalUserId], map: "idx_user")
-  @@index([expiresAt], map: "idx_expires_at")
-  @@map("qp_two_factor_codes")
-}
-
-/// 홈화면 공지
-/// 화면 근거: 홈화면 공지관리 (p.46-47)
-model HomeNotice {
-  id                 Int          @id @default(autoincrement())
-  targetSuperAdmin   Boolean      @default(false) @map("target_super_admin")
-  targetAdmin        Boolean      @default(false) @map("target_admin")
-  targetFirstDealer  Boolean      @default(false) @map("target_first_dealer")
-  targetSecondDealer Boolean      @default(false) @map("target_second_dealer")
-  targetConstructor  Boolean      @default(false) @map("target_constructor")
-  targetGeneral      Boolean      @default(false) @map("target_general")
-  startAt            DateTime     @map("start_at")
-  endAt              DateTime     @map("end_at")
-  content            String       @db.Text
-  url                String?      @db.VarChar(500)
-  status             NoticeStatus @default(scheduled)
-  authorSource       UserSource   @map("author_source")
-  authorId           String       @map("author_id") @db.VarChar(255)
-  updaterSource      UserSource?  @map("updater_source")
-  updaterId          String?      @map("updater_id") @db.VarChar(255)
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
-
-  @@index([status], map: "idx_status")
-  @@index([startAt, endAt], map: "idx_period")
-  @@map("qp_home_notices")
-}
-
-/// 대량메일 발송
-/// 화면 근거: 대량메일발송 (p.43-45)
-model MassMail {
-  id                 Int        @id @default(autoincrement())
-  senderName         String     @map("sender_name") @db.VarChar(255)
-  authorSource       UserSource @map("author_source")
-  authorId           String     @map("author_id") @db.VarChar(255)
-  targetSuperAdmin   Boolean    @default(false) @map("target_super_admin")
-  targetAdmin        Boolean    @default(false) @map("target_admin")
-  targetFirstDealer  Boolean    @default(false) @map("target_first_dealer")
-  targetSecondDealer Boolean    @default(false) @map("target_second_dealer")
-  targetConstructor  Boolean    @default(false) @map("target_constructor")
-  targetGeneral      Boolean    @default(false) @map("target_general")
-  subject            String     @db.VarChar(500)
-  body               String     @db.MediumText
-  status             MailStatus @default(draft)
-  sentAt             DateTime?  @map("sent_at")
-  createdAt          DateTime   @default(now()) @map("created_at")
-  createdBy          String?    @map("created_by") @db.VarChar(255)
-  updatedAt          DateTime   @updatedAt @map("updated_at")
-  updatedBy          String?    @map("updated_by") @db.VarChar(255)
-
-  recipients  MassMailRecipient[]
-  attachments MassMailAttachment[]
-
-  @@index([status], map: "idx_status")
-  @@index([sentAt], map: "idx_sent_at")
-  @@map("qp_mass_mails")
-}
-
-/// 대량메일 CC/BCC 수신자
-model MassMailRecipient {
-  id             Int           @id @default(autoincrement())
-  massMailId     Int           @map("mass_mail_id")
-  recipientType  RecipientType @map("recipient_type")
-  userSource     UserSource    @map("user_source")
-  externalUserId String        @map("external_user_id") @db.VarChar(255)
-  email          String        @db.VarChar(255)
-
-  massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
-
-  @@index([massMailId], map: "idx_mass_mail_id")
-  @@map("qp_mass_mail_recipients")
-}
-
-/// 대량메일 첨부파일
-model MassMailAttachment {
-  id         Int      @id @default(autoincrement())
-  massMailId Int      @map("mass_mail_id")
-  fileName   String   @map("file_name") @db.VarChar(255)
-  filePath   String   @map("file_path") @db.VarChar(500)
-  fileSize   BigInt?  @map("file_size")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
-
-  @@index([massMailId], map: "idx_mass_mail_id")
-  @@map("qp_mass_mail_attachments")
-}
-
-/// 다운로드 기록
-/// 화면 근거: 마이페이지 > 다운로드 기록 (p.37)
-model DownloadLog {
-  id             Int        @id @default(autoincrement())
-  userSource     UserSource @map("user_source")
-  externalUserId String     @map("external_user_id") @db.VarChar(255)
-  contentId      Int        @map("content_id")
-  attachmentId   Int        @map("attachment_id")
-  downloadedAt   DateTime   @default(now()) @map("downloaded_at")
-
-  content    Content           @relation(fields: [contentId], references: [id])
-  attachment ContentAttachment @relation(fields: [attachmentId], references: [id])
-
-  @@index([userSource, externalUserId], map: "idx_user")
-  @@index([downloadedAt], map: "idx_downloaded_at")
-  @@map("qp_download_logs")
-}
-
-/// 문의등록
-/// 화면 근거: 마이페이지 > 문의등록 (p.38-39)
-model Inquiry {
-  id             Int        @id @default(autoincrement())
-  userSource     UserSource @map("user_source")
-  externalUserId String     @map("external_user_id") @db.VarChar(255)
-  companyName    String     @map("company_name") @db.VarChar(255)
-  userName       String     @map("user_name") @db.VarChar(200)
-  tel            String?    @db.VarChar(20)
-  email          String     @db.VarChar(255)
-  inquiryType    String?    @map("inquiry_type") @db.VarChar(100)
-  title          String     @db.VarChar(500)
-  content        String     @db.Text
-  createdAt      DateTime   @default(now()) @map("created_at")
-
-  @@index([userSource, externalUserId], map: "idx_user")
-  @@index([createdAt], map: "idx_created_at")
-  @@map("qp_inquiries")
 }
 
 /// 메뉴관리
@@ -406,7 +128,7 @@ model Menu {
   @@map("qp_menus")
 }
 
-/// 코드관리 헤더
+/// 공통코드 헤더
 /// 화면 근거: 관리자 > 코드 관리 (p.52)
 model CodeHeader {
   id         Int      @id @default(autoincrement())
@@ -430,7 +152,8 @@ model CodeHeader {
   @@map("qp_code_headers")
 }
 
-/// 코드관리 디테일
+/// 공통코드 상세
+/// 화면 근거: 관리자 > 코드 관리 > Detail (p.52)
 model CodeDetail {
   id          Int      @id @default(autoincrement())
   headerId    Int      @map("header_id")
@@ -440,6 +163,7 @@ model CodeDetail {
   codeNameEtc String?  @map("code_name_etc") @db.VarChar(255)
   relCode1    String?  @map("rel_code1") @db.VarChar(50)
   relCode2    String?  @map("rel_code2") @db.VarChar(50)
+  relCode3    String?  @map("rel_code3") @db.VarChar(50)
   relNum1     Decimal? @map("rel_num1") @db.Decimal(15, 2)
   sortOrder   Int      @default(0) @map("sort_order")
   isActive    Boolean  @default(true) @map("is_active")
@@ -453,6 +177,282 @@ model CodeDetail {
   @@unique([headerId, code], map: "idx_header_code")
   @@index([headerId], map: "idx_header_id")
   @@map("qp_code_details")
+}
+
+// ━━━ 콘텐츠 관련 (5개) ━━━
+
+/// 콘텐츠
+/// 화면 근거: 목록 (p.22-24), 등록 (p.25-27), 조회 (p.28-29), 수정 (p.30-31)
+model Content {
+  id               Int           @id @default(autoincrement())
+  // 사용자 식별 (게재담당자)
+  userType         UserType      @map("user_type")
+  userId           String        @map("user_id") @db.VarChar(255)
+  // 비즈니스 필드
+  authorDepartment String?       @map("author_department") @db.VarChar(100)
+  approverLevel    Int?          @map("approver_level") @db.TinyInt
+  title            String        @db.VarChar(500)
+  body             String?       @db.MediumText
+  status           ContentStatus @default(draft)
+  publishedAt      DateTime?     @map("published_at")
+  viewCount        Int           @default(0) @map("view_count")
+  // 감사
+  createdAt        DateTime      @default(now()) @map("created_at")
+  createdBy        String?       @map("created_by") @db.VarChar(255)
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  updatedBy        String?       @map("updated_by") @db.VarChar(255)
+
+  targets      ContentTarget[]
+  categories   ContentCategory[]
+  attachments  ContentAttachment[]
+  downloadLogs DownloadLog[]
+
+  @@index([status], map: "idx_status")
+  @@index([publishedAt], map: "idx_published_at")
+  @@index([createdAt], map: "idx_created_at")
+  @@index([userType, userId], map: "idx_user")
+  @@index([status, publishedAt], map: "idx_status_published")
+  @@index([authorDepartment], map: "idx_author_department")
+  @@map("qp_contents")
+}
+
+/// 콘텐츠 게시대상
+/// 화면 근거: 콘텐츠 등록 > 게시대상 체크박스 + 기간설정 (p.25 #7, #8)
+/// UK: [contentId, targetType] — 동일 콘텐츠에 같은 게시대상 중복 불가
+model ContentTarget {
+  id         Int        @id @default(autoincrement())
+  contentId  Int        @map("content_id")
+  targetType TargetType @map("target_type")
+  startAt    DateTime?  @map("start_at")
+  endAt      DateTime?  @map("end_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  createdBy  String?    @map("created_by") @db.VarChar(255)
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, targetType], map: "idx_content_target")
+  @@index([targetType, startAt, endAt], map: "idx_target_period")
+  @@map("qp_content_targets")
+}
+
+/// 카테고리
+/// 화면 근거: 카테고리 관리 (p.48)
+model Category {
+  id             Int      @id @default(autoincrement())
+  parentId       Int?     @map("parent_id")
+  categoryCode   String   @unique @map("category_code") @db.VarChar(50)
+  name           String   @db.VarChar(100)
+  isInternalOnly Boolean  @default(false) @map("is_internal_only")
+  sortOrder      Int      @default(1) @map("sort_order")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String?  @map("created_by") @db.VarChar(255)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedBy      String?  @map("updated_by") @db.VarChar(255)
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+
+  contents ContentCategory[]
+
+  @@index([parentId], map: "idx_parent_id")
+  @@index([isActive, sortOrder], map: "idx_active_sort")
+  @@map("qp_categories")
+}
+
+/// 콘텐츠-카테고리 연결 (N:M)
+/// PK: [contentId, categoryId] 복합키
+model ContentCategory {
+  contentId  Int @map("content_id")
+  categoryId Int @map("category_id")
+
+  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, categoryId])
+  @@map("qp_content_categories")
+}
+
+/// 콘텐츠 첨부파일
+/// 화면 근거: 등록 > 파일첨부 (p.27 #13), 상세 (p.29 #11, #12)
+model ContentAttachment {
+  id        Int      @id @default(autoincrement())
+  contentId Int      @map("content_id")
+  fileName  String   @map("file_name") @db.VarChar(255)
+  filePath  String   @map("file_path") @db.VarChar(500)
+  fileSize  BigInt?  @map("file_size")
+  mimeType  String?  @map("mime_type") @db.VarChar(100)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by") @db.VarChar(255)
+
+  content      Content       @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  downloadLogs DownloadLog[]
+
+  @@index([contentId], map: "idx_content_id")
+  @@map("qp_content_attachments")
+}
+
+// ━━━ 인증 관련 (2개) ━━━
+
+/// 비밀번호 재설정 토큰
+/// 화면 근거: 비밀번호 초기화 팝업 (p.11), 변경 링크 메일 (p.12)
+model PasswordResetToken {
+  id         Int        @id @default(autoincrement())
+  userType   UserType   @map("user_type")
+  userId     String     @map("user_id") @db.VarChar(255)
+  token      String     @unique @db.VarChar(255)
+  expiresAt  DateTime   @map("expires_at")
+  used       Boolean    @default(false)
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@index([userType, userId], map: "idx_user")
+  @@index([expiresAt], map: "idx_expires_at")
+  @@map("qp_password_reset_tokens")
+}
+
+/// 2차 인증 코드
+/// 화면 근거: 2차인증 팝업 (p.14), 2단계 인증 알림메일 (p.15)
+model TwoFactorCode {
+  id         Int        @id @default(autoincrement())
+  userType   UserType   @map("user_type")
+  userId     String     @map("user_id") @db.VarChar(255)
+  code       String     @db.VarChar(6)
+  expiresAt  DateTime   @map("expires_at")
+  verified   Boolean    @default(false)
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@index([userType, userId], map: "idx_user")
+  @@index([expiresAt], map: "idx_expires_at")
+  @@map("qp_two_factor_codes")
+}
+
+// ━━━ 서비스 운영 관련 ━━━
+
+/// 홈화면 공지
+/// 화면 근거: 홈화면 공지관리 (p.46-47)
+model HomeNotice {
+  id                 Int          @id @default(autoincrement())
+  userType           UserType     @map("user_type")
+  userId             String       @map("user_id") @db.VarChar(255)
+  targetSuperAdmin   Boolean      @default(false) @map("target_super_admin")
+  targetAdmin        Boolean      @default(false) @map("target_admin")
+  targetFirstDealer  Boolean      @default(false) @map("target_first_dealer")
+  targetSecondDealer Boolean      @default(false) @map("target_second_dealer")
+  targetConstructor  Boolean      @default(false) @map("target_constructor")
+  targetGeneral      Boolean      @default(false) @map("target_general")
+  startAt            DateTime     @map("start_at")
+  endAt              DateTime     @map("end_at")
+  content            String       @db.Text
+  url                String?      @db.VarChar(500)
+  createdAt          DateTime     @default(now()) @map("created_at")
+  createdBy          String?      @map("created_by") @db.VarChar(255)
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  updatedBy          String?      @map("updated_by") @db.VarChar(255)
+
+  @@index([startAt, endAt], map: "idx_period")
+  @@map("qp_home_notices")
+}
+
+/// 대량메일 발송
+/// 화면 근거: 대량메일발송 (p.43-45)
+model MassMail {
+  id                 Int        @id @default(autoincrement())
+  userType           UserType   @map("user_type")
+  userId             String     @map("user_id") @db.VarChar(255)
+  senderName         String     @map("sender_name") @db.VarChar(255)
+  targetSuperAdmin   Boolean    @default(false) @map("target_super_admin")
+  targetAdmin        Boolean    @default(false) @map("target_admin")
+  targetFirstDealer  Boolean    @default(false) @map("target_first_dealer")
+  targetSecondDealer Boolean    @default(false) @map("target_second_dealer")
+  targetConstructor  Boolean    @default(false) @map("target_constructor")
+  targetGeneral      Boolean    @default(false) @map("target_general")
+  subject            String     @db.VarChar(500)
+  body               String     @db.MediumText
+  status             MailStatus @default(draft)
+  sentAt             DateTime?  @map("sent_at")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  createdBy          String?    @map("created_by") @db.VarChar(255)
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  updatedBy          String?    @map("updated_by") @db.VarChar(255)
+
+  recipients  MassMailRecipient[]
+  attachments MassMailAttachment[]
+
+  @@index([status], map: "idx_status")
+  @@index([sentAt], map: "idx_sent_at")
+  @@map("qp_mass_mails")
+}
+
+/// 대량메일 CC/BCC 수신자
+/// UK: [massMailId, recipientType, email] — 같은 메일에 동일 수신자 중복 방지
+model MassMailRecipient {
+  id            Int           @id @default(autoincrement())
+  massMailId    Int           @map("mass_mail_id")
+  recipientType RecipientType @map("recipient_type")
+  userType      UserType      @map("user_type")
+  userId        String        @map("user_id") @db.VarChar(255)
+  email         String        @db.VarChar(255)
+
+  massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
+
+  @@unique([massMailId, recipientType, email], map: "idx_mail_recipient")
+  @@index([massMailId], map: "idx_mass_mail_id")
+  @@map("qp_mass_mail_recipients")
+}
+
+/// 대량메일 첨부파일
+model MassMailAttachment {
+  id         Int      @id @default(autoincrement())
+  massMailId Int      @map("mass_mail_id")
+  fileName   String   @map("file_name") @db.VarChar(255)
+  filePath   String   @map("file_path") @db.VarChar(500)
+  fileSize   BigInt?  @map("file_size")
+  createdAt  DateTime @default(now()) @map("created_at")
+  createdBy  String?  @map("created_by") @db.VarChar(255)
+
+  massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
+
+  @@index([massMailId], map: "idx_mass_mail_id")
+  @@map("qp_mass_mail_attachments")
+}
+
+/// 다운로드 기록
+/// 화면 근거: 마이페이지 > 다운로드 기록 (p.37)
+model DownloadLog {
+  id           Int        @id @default(autoincrement())
+  userType     UserType   @map("user_type")
+  userId       String     @map("user_id") @db.VarChar(255)
+  contentId    Int        @map("content_id")
+  attachmentId Int        @map("attachment_id")
+  downloadedAt DateTime   @default(now()) @map("downloaded_at")
+
+  content    Content           @relation(fields: [contentId], references: [id])
+  attachment ContentAttachment @relation(fields: [attachmentId], references: [id])
+
+  @@index([userType, userId], map: "idx_user")
+  @@index([downloadedAt], map: "idx_downloaded_at")
+  @@map("qp_download_logs")
+}
+
+/// 문의등록
+/// 화면 근거: 문의등록 (p.38-39) — 로그인 전에도 접근 가능
+model Inquiry {
+  id          Int         @id @default(autoincrement())
+  userType    UserType?   @map("user_type")
+  userId      String?     @map("user_id") @db.VarChar(255)
+  companyName String     @map("company_name") @db.VarChar(255)
+  userName    String     @map("user_name") @db.VarChar(200)
+  tel         String?    @db.VarChar(20)
+  email       String     @db.VarChar(255)
+  inquiryType String?    @map("inquiry_type") @db.VarChar(100)
+  title       String     @db.VarChar(500)
+  content     String     @db.Text
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  @@index([userType, userId], map: "idx_user")
+  @@index([createdAt], map: "idx_created_at")
+  @@map("qp_inquiries")
 }
 
 // ─────────────────────────────────────────────

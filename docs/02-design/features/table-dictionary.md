@@ -75,14 +75,13 @@ TO-BE Q.Partners-neo (서비스 운영)
 |------|------|
 | **테이블이 필요한 이유** | QSP의 **모든 사용자 테이블**(기존 사내회원, 판매점, 신규 일반회원)과 user_id로 join하여, QPartners 서비스에서만 필요한 설정(권한, 2차인증, 알림, 약관동의 등)을 통합 관리. 인적정보와 서비스 설정을 분리하여 QSP 측 스키마에 미치는 영향을 최소화 |
 | **화면 근거** | 회원관리 (p.41-42), 로그인 (p.9-10), 2차인증 (p.14), 최초로그인 설정 (p.13) |
-| **대상** | 전체 회원 (사내+판매점+일반, user_source로 구분) |
+| **대상** | 전체 회원 (사내+판매점+일반, user_type으로 구분) |
 
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| user_source | ENUM('qsp','seko','general') | 사용자 소스 구분 | 3탭 로그인 구조에 따른 사용자 분류 (p.9-10) |
-| user_id | VARCHAR(255) | 소스별 사용자 식별자 | qsp=QSP사용자ID, seko=AS-IS M_USER.id, general=qp_general_users.id |
-| user_type | VARCHAR(20) | 회원유형 (관리자/판매점/일반) | 회원관리 목록 > 회원유형 (p.41) |
+| user_type | ENUM('ADMIN','DEALER','SEKO','GENERAL') | 사용자 유형 구분 | ADMIN=관리자, DEALER=판매점, SEKO=시공점, GENERAL=일반회원 (p.9-10) |
+| user_id | VARCHAR(255) | 유형별 사용자 식별자 | ADMIN/DEALER=QSP사용자ID, SEKO=AS-IS M_USER.id, GENERAL=qp_general_users.id |
 | user_role | VARCHAR(50) | 사용자 권한 코드 | 회원관리 상세 > 사용자권한 드롭다운 (p.42 #3), 일반회원만 변경 가능 |
 | two_factor_enabled | BOOLEAN | 2차인증 유효/무효 | 회원관리 상세 (p.42 #5), 디폴트: 전원 유효 |
 | two_factor_verified_at | DATETIME? | 최근 2차인증 완료 일시 | 2차인증 팝업 (p.14), 인증 만료 판단에 사용 |
@@ -138,7 +137,6 @@ TO-BE Q.Partners-neo (서비스 운영)
 
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
-| id | INT PK | 자동증가 PK | - |
 | role_code | VARCHAR(50) FK | 권한코드 → qp_roles.role_code | 어떤 권한에 대한 설정인지 (p.50) |
 | menu_code | VARCHAR(50) FK | 메뉴코드 → qp_menus.menu_code | 어떤 메뉴에 대한 설정인지 (p.50) |
 | can_read | BOOLEAN | 조회 권한 | Menu Setting 팝업 > Read 체크박스 (p.50) |
@@ -150,7 +148,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | updated_at | DATETIME | 수정일시 | - |
 | updated_by | VARCHAR(255)? | 수정자 ID | 감사 추적용 |
 
-**복합 유니크**: `(role_code, menu_code)` — 동일 권한+메뉴 조합은 하나만 존재
+**복합 PK**: `(role_code, menu_code)` — 동일 권한+메뉴 조합은 하나만 존재
 
 ---
 
@@ -193,11 +191,9 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| author_source | ENUM(UserSource) | 게재담당자의 사용자 소스 (qsp/seko/general) | 3탭 로그인 구조에 따른 사용자 분류 |
-| author_id | VARCHAR(255) | 게재담당자 ID | 콘텐츠 등록 > "게재 담당자" (p.25 #1, read only, 등록자명 자동) |
+| user_type | ENUM(UserType) | 게재담당자의 사용자 유형 (ADMIN/DEALER/SEKO/GENERAL) | 사용자 유형에 따른 분류 |
+| user_id | VARCHAR(255) | 게재담당자 ID | 콘텐츠 등록 > "게재 담당자" (p.25 #1, read only, 등록자명 자동) |
 | author_department | VARCHAR(100)? | 담당부문 | 콘텐츠 등록 > "담당부문" (p.25 #5, read only), 등록자의 부서값 자동 적용 (p.27 Description). 저장 시점 값 유지 |
-| updater_source | ENUM(UserSource)? | 갱신담당자의 사용자 소스 | 수정 시 갱신자 추적 |
-| updater_id | VARCHAR(255)? | 갱신담당자 ID | 콘텐츠 등록 > "갱신담당자" (p.25 #3), 저장할 때마다 자동 업데이트 (p.30) |
 | approver_level | TINYINT? | 최종승인자 레벨 | 콘텐츠 등록 > "최종승인자 *" 드롭다운 (p.25 #6), 1=담당/2=소속장/3=사업부장/4=사장 |
 | title | VARCHAR(500) | 제목 (필수) | 콘텐츠 등록 > "제목 *" (p.26 #11) |
 | body | MEDIUMTEXT? | 내용 (에디터 적용) | 콘텐츠 등록 > "내용 *" (p.26 #12), WYSIWYG 에디터 HTML 저장 |
@@ -207,7 +203,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | updated_at | DATETIME | 갱신일 | 콘텐츠 목록 > "갱신일" (p.23 #7) |
 | view_count | INT | 조회수 | 콘텐츠 상세 > "조회 1,000" (p.28 #1), 상세 페이지 조회 시 +1 |
 
-**인덱스**: status, published_at, created_at, (author_source+author_id), author_department, (status+published_at)
+**인덱스**: status, published_at, created_at, (user_type+user_id), author_department, (status+published_at)
 
 ---
 
@@ -226,8 +222,11 @@ TO-BE Q.Partners-neo (서비스 운영)
 | target_type | ENUM(TargetType) | 게시대상 유형 | 콘텐츠 등록 > 게시대상 체크박스 (p.25 #7): first_dealer=1차점, second_dealer=2차이하, constructor=시공점, general=일반회원, non_member=비회원 |
 | start_at | DATETIME? | 게시 시작일 | 콘텐츠 등록 > 게시대상 기간설정 (p.25 #8), NULL=시작일 제한 없음 |
 | end_at | DATETIME? | 게시 종료일 | 콘텐츠 등록 > 게시대상 기간설정 (p.25 #8), NULL=종료일 제한 없음 |
+| created_at | DATETIME | 등록일시 | - |
+| created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
 
 **FK**: content_id → qp_contents.id (CASCADE DELETE)
+**UK**: `(content_id, target_type)` — 동일 콘텐츠+대상 유형 조합은 하나만 존재
 
 ---
 
@@ -306,8 +305,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| user_source | ENUM(UserSource) | 사용자 소스 (qsp/seko/general) | 회원유형별 비밀번호 초기화 입력 차별화 (p.11) |
-| external_user_id | VARCHAR(255) | 소스별 사용자 식별자 | user_source와 조합하여 대상 사용자 특정 |
+| user_type | ENUM(UserType) | 사용자 유형 (ADMIN/DEALER/SEKO/GENERAL) | 회원유형별 비밀번호 초기화 입력 차별화 (p.11) |
+| user_id | VARCHAR(255) | 유형별 사용자 식별자 | user_type과 조합하여 대상 사용자 특정 |
 | token | VARCHAR(255) UNIQUE | 일회용 토큰 (URL-safe) | 비밀번호 변경 링크에 포함되는 보안 토큰 |
 | expires_at | DATETIME | 토큰 만료 일시 | 보안상 제한 시간 설정 |
 | used | BOOLEAN | 사용 완료 여부 | 일회성 보장, 사용 후 재사용 불가 |
@@ -326,8 +325,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| user_source | ENUM(UserSource) | 사용자 소스 (qsp/seko/general) | 대상 사용자 식별 |
-| external_user_id | VARCHAR(255) | 소스별 사용자 식별자 | user_source와 조합하여 대상 사용자 특정 |
+| user_type | ENUM(UserType) | 사용자 유형 (ADMIN/DEALER/SEKO/GENERAL) | 대상 사용자 식별 |
+| user_id | VARCHAR(255) | 유형별 사용자 식별자 | user_type과 조합하여 대상 사용자 특정 |
 | code | VARCHAR(6) | 인증번호 6자리 | 2차인증 팝업 > 인증번호 입력란 (p.14), 숫자 6자리 |
 | expires_at | DATETIME | 만료 일시 | 10분 제한 (p.14), 초과 시 재전송 필요 |
 | verified | BOOLEAN | 인증 완료 여부 | 인증번호 검증 성공 시 true |
@@ -358,13 +357,12 @@ TO-BE Q.Partners-neo (서비스 운영)
 | end_at | DATETIME | 게시 종료일시 | 공지관리 > 기간설정 (p.46), now > end_at → ended |
 | content | TEXT | 공지 내용 | 공지관리 > 내용 (p.46), 텍스트 |
 | url | VARCHAR(500)? | 하이퍼링크 URL | 공지관리 > URL (p.46), 클릭 시 이동할 링크 |
-| status | ENUM(NoticeStatus) | 상태: scheduled/active/ended | 현재 시각 기준 동적 판별 (start_at/end_at 비교) |
-| author_source | ENUM(UserSource) | 등록자 사용자 소스 | 등록자 추적 |
-| author_id | VARCHAR(255) | 등록자 ID | 등록자 추적 |
-| updater_source | ENUM(UserSource)? | 수정자 사용자 소스 | 수정자 추적 |
-| updater_id | VARCHAR(255)? | 수정자 ID | 수정자 추적 |
+| user_type | ENUM(UserType) | 등록자 사용자 유형 | 등록자 추적 |
+| user_id | VARCHAR(255) | 등록자 ID | 등록자 추적 |
 | created_at | DATETIME | 등록일시 | - |
+| created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
 | updated_at | DATETIME | 수정일시 | - |
+| updated_by | VARCHAR(255)? | 수정자 ID | 감사 추적용 |
 
 ---
 
@@ -380,8 +378,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
 | sender_name | VARCHAR(255) | 발신자명 | 대량메일 등록 > 발신자명 (p.43) |
-| author_source | ENUM(UserSource) | 작성자 사용자 소스 | 작성자 추적 |
-| author_id | VARCHAR(255) | 작성자 ID | 작성자 추적 |
+| user_type | ENUM(UserType) | 작성자 사용자 유형 | 작성자 추적 |
+| user_id | VARCHAR(255) | 작성자 ID | 작성자 추적 |
 | target_super_admin | BOOLEAN | 슈퍼관리자 대상 | 대량메일 > 발송대상 체크박스 (p.43) |
 | target_admin | BOOLEAN | 관리자 대상 | 대량메일 > 발송대상 체크박스 (p.43) |
 | target_first_dealer | BOOLEAN | 1차점 대상 | 대량메일 > 발송대상 체크박스 (p.43) |
@@ -412,11 +410,12 @@ TO-BE Q.Partners-neo (서비스 운영)
 | id | INT PK | 자동증가 PK | - |
 | mass_mail_id | INT FK | 대량메일 ID → qp_mass_mails.id | 어떤 메일의 수신자인지 |
 | recipient_type | ENUM('cc','bcc') | 수신 유형 | cc=참조, bcc=숨은참조 (p.44-45) |
-| user_source | ENUM(UserSource) | 수신자 사용자 소스 | 한화 사내직원만 추가 가능 |
-| external_user_id | VARCHAR(255) | 수신자 식별자 | 소스별 사용자 ID |
+| user_type | ENUM(UserType) | 수신자 사용자 유형 | 한화 사내직원만 추가 가능 |
+| user_id | VARCHAR(255) | 수신자 식별자 | 유형별 사용자 ID |
 | email | VARCHAR(255) | 수신자 이메일 | 실제 발송에 사용할 이메일 주소 |
 
 **FK**: mass_mail_id → qp_mass_mails.id (CASCADE DELETE)
+**UK**: `(mass_mail_id, recipient_type, email)` — 동일 메일+수신유형+이메일 조합은 하나만 존재
 
 ---
 
@@ -452,8 +451,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| user_source | ENUM(UserSource) | 다운로드한 사용자의 소스 | 사용자 식별 |
-| external_user_id | VARCHAR(255) | 다운로드한 사용자 ID | user_source와 조합하여 대상 특정 |
+| user_type | ENUM(UserType) | 다운로드한 사용자의 유형 | 사용자 식별 |
+| user_id | VARCHAR(255) | 다운로드한 사용자 ID | user_type과 조합하여 대상 특정 |
 | content_id | INT FK | 콘텐츠 ID → qp_contents.id | 어떤 콘텐츠에서 다운로드했는지 |
 | attachment_id | INT FK | 첨부파일 ID → qp_content_attachments.id | 어떤 파일을 다운로드했는지 |
 | downloaded_at | DATETIME | 다운로드 일시 | 다운로드 기록 > 일시 (p.37) |
@@ -473,8 +472,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| user_source | ENUM(UserSource) | 문의자 사용자 소스 | 사용자 식별 |
-| external_user_id | VARCHAR(255) | 문의자 사용자 ID | 로그인 사용자의 경우 자동 설정 |
+| user_type | ENUM(UserType)? | 문의자 사용자 유형 | 사용자 식별 (비로그인 시 null) |
+| user_id | VARCHAR(255)? | 문의자 사용자 ID | 로그인 사용자의 경우 자동 설정 |
 | company_name | VARCHAR(255) | 회사명 (저장 시점 값) | 문의등록 > 회사명 (p.38 #1), 비로그인 시 직접 입력 (p.39) |
 | user_name | VARCHAR(200) | 성명 (저장 시점 값) | 문의등록 > 성명 (p.38 #2), 비로그인 시 직접 입력 (p.39) |
 | tel | VARCHAR(20)? | 전화번호 (저장 시점 값) | 문의등록 > 전화번호 (p.38 #3), 비로그인 시 직접 입력 (p.39) |
@@ -533,6 +532,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | code_name_etc | VARCHAR(255)? | 코드명 부가정보 | 코드명의 추가 설명이나 다국어 표기 |
 | rel_code1 | VARCHAR(50)? | 관련 코드 1 | 확장용 — 다른 코드 참조 시 사용 |
 | rel_code2 | VARCHAR(50)? | 관련 코드 2 | 확장용 |
+| rel_code3 | VARCHAR(50)? | 관련 코드 3 | 확장용 — 문의유형 등에서 담당자 이메일 3번째 저장 |
 | rel_num1 | DECIMAL(15,2)? | 관련 숫자 1 | 확장용 — 코드에 수치값 연결 시 사용 |
 | sort_order | INT | 정렬 순서 | 드롭다운/목록에서 표시 순서 |
 | is_active | BOOLEAN | 사용 여부 Y/N | 비활성화 시 해당 코드 선택 불가 |
@@ -550,10 +550,9 @@ TO-BE Q.Partners-neo (서비스 운영)
 
 | Enum | 값 | 설명 | 사용 테이블 |
 |------|-----|------|-----------|
-| UserSource | qsp, seko, general | 사용자 소스: QSP기존/AS-IS시공점/신규일반 | contents, home_notices, mass_mails, password_reset_tokens, two_factor_codes, download_logs, inquiries |
+| UserType | ADMIN, DEALER, SEKO, GENERAL | 사용자 유형: 관리자/판매점/시공점/일반회원 | contents, home_notices, mass_mails, password_reset_tokens, two_factor_codes, download_logs, inquiries |
 | ContentStatus | draft, published, deleted | 콘텐츠 상태 | contents |
 | TargetType | first_dealer, second_dealer, constructor, general, non_member | 게시대상 유형 | content_targets |
-| NoticeStatus | scheduled, active, ended | 공지 상태 | home_notices |
 | MailStatus | draft, sent | 메일 상태 | mass_mails |
 | RecipientType | cc, bcc | 수신 유형 | mass_mail_recipients |
 
