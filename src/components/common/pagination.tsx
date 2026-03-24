@@ -39,11 +39,11 @@ export function Pagination({
         </svg>
       </button>
 
-      {/* 이전 그룹 < */}
+      {/* 이전 페이지 < */}
       <button
         type="button"
-        onClick={() => onPageChange(Math.max(1, startPage - 1))}
-        disabled={currentGroup === 1}
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
         className="flex items-center justify-center size-6 border border-[#eaeaea] disabled:opacity-40"
         aria-label="前のページ"
       >
@@ -71,11 +71,11 @@ export function Pagination({
         );
       })}
 
-      {/* 다음 그룹 > */}
+      {/* 다음 페이지 > */}
       <button
         type="button"
-        onClick={() => onPageChange(Math.min(totalPages, endPage + 1))}
-        disabled={endPage >= totalPages}
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
         className="flex items-center justify-center size-6 border border-[#eaeaea] disabled:opacity-40"
         aria-label="次のページ"
       >
