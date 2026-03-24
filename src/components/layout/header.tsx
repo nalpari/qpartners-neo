@@ -22,7 +22,7 @@ export function Gnb() {
 
   return (
     <div className="relative h-[68px] lg:h-[78px]">
-      <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5">
+      <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5" style={{ viewTransitionName: "header" }}>
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄 */}
           <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0 relative">
@@ -66,6 +66,15 @@ export function Gnb() {
                   className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
                 >
                   コンテンツ
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/inquiry"
+                  transitionTypes={["fade"]}
+                  className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
+                >
+                  お問い合わせ
                 </Link>
               </li>
               {isLoggedIn && (
@@ -359,6 +368,33 @@ export function Gnb() {
             >
               <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
                 コンテンツ
+              </span>
+              <svg
+                width="6"
+                height="10"
+                viewBox="0 0 6 10"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M1 9L5 5L1 1"
+                  stroke="white"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
+
+            {/* お問い合わせ */}
+            <Link
+              href="/inquiry"
+              transitionTypes={["fade"]}
+              className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
+                お問い合わせ
               </span>
               <svg
                 width="6"

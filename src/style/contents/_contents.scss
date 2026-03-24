@@ -23,6 +23,12 @@
 ::view-transition-new(fade) {
   animation: fade-in 0.2s ease-in-out;
 }
+
+// Header: 전환 시 애니메이션 없이 고정 유지
+::view-transition-old(header),
+::view-transition-new(header) {
+  animation: none;
+}
 @keyframes fade-out {
   from { opacity: 1; }
   to { opacity: 0; }
