@@ -174,17 +174,47 @@ model User {
 }
 ```
 
-### 마이그레이션 적용
+### DB 반영 방법
+
+스키마 변경 사항을 DB에 반영하는 두 가지 방법이 있다.
+
+#### 방법 1: 마이그레이션 (권장 — 개발/운영)
 
 ```bash
-# 마이그레이션 생성 및 적용 (개발)
+# 마이그레이션 생성 및 적용
 pnpm prisma migrate dev --name add-user-model
+```
 
+- `prisma/schema.prisma`와 현재 DB 상태를 비교하여 마이그레이션 SQL을 자동 생성
+- `prisma/migrations/`에 이력 파일이 기록되어 변경 추적 가능
+- Prisma Client 자동 재생성 포함
+- **팀 프로젝트에서는 반드시 이 방법을 사용**해야 마이그레이션 이력이 Git에 남는다
+
+#### 방법 2: DB Push (빠른 프로토타이핑 전용)
+
+```bash
+# 마이그레이션 파일 없이 스키마를 DB에 직접 반영
+pnpm prisma db push
+```
+
+- 마이그레이션 파일을 생성하지 않고 스키마를 즉시 DB에 적용
+- 이력이 남지 않으므로 **프로토타이핑 용도로만** 사용
+- 기존 마이그레이션 이력과 충돌할 수 있어 주의 필요
+
+### 기타 Prisma 명령어
+
+```bash
 # Prisma 클라이언트 재생성 (마이그레이션 시 자동 실행됨)
 pnpm prisma generate
 
 # DB 상태를 GUI로 확인
 pnpm prisma studio
+
+# DB 연결 테스트 및 쿼리 실행
+npx prisma db execute --stdin <<< "SELECT 1;"
+
+# 현재 DB 상태를 스키마로 역추출 (기존 DB에서 시작할 때)
+npx prisma db pull
 ```
 
 ### 주의사항
@@ -192,6 +222,7 @@ pnpm prisma studio
 - 스키마 변경 후 반드시 `pnpm prisma generate` 실행 (migration 시 자동 포함)
 - `src/generated/prisma/`는 gitignore — 각 환경에서 `pnpm prisma generate`로 생성
 - 프로덕션 배포 시 `pnpm prisma migrate deploy` 사용
+- `db push`와 `migrate dev`를 혼용하지 않는다 — 하나의 방식을 일관되게 사용
 
 ## 5. Docker 운영
 
@@ -241,8 +272,11 @@ docker exec -it qpartners-db mariadb -u root -ppassword development
 | `pnpm build` | 프로덕션 빌드 |
 | `pnpm lint` | ESLint 실행 |
 | `pnpm prisma generate` | Prisma 클라이언트 재생성 |
-| `pnpm prisma migrate dev --name <name>` | 마이그레이션 생성 및 적용 |
+| `pnpm prisma migrate dev --name <name>` | 마이그레이션 생성 및 적용 (권장) |
+| `pnpm prisma db push` | 스키마를 DB에 직접 반영 (프로토타이핑) |
 | `pnpm prisma studio` | Prisma Studio (DB GUI) |
+| `npx prisma db execute --stdin <<< "SQL"` | DB 연결 테스트 및 SQL 실행 |
+| `npx prisma db pull` | 기존 DB에서 스키마 역추출 |
 | `docker compose up -d db` | MariaDB 컨테이너 시작 |
 | `docker compose up -d --build` | 전체 스택 빌드 및 시작 |
 | `docker compose down` | 컨테이너 중지 및 제거 |
