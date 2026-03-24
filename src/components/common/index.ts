@@ -8,3 +8,4 @@ export { Toggle } from "./toggle";
 export { Pagination } from "./pagination";
 export { MobileCardList } from "./mobile-card-list";
 export type { MobileCardField } from "./mobile-card-list";
+export { AlertDialog } from "./alert-dialog";

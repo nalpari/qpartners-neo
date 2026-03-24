@@ -12,7 +12,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
 }));
 
-type PopupType = "id-inquiry" | "password-reset" | "personal-info" | "two-factor-auth" | "zipcode-search" | "signup-complete" | null;
+type PopupType = "id-inquiry" | "password-reset" | "personal-info" | "two-factor-auth" | "zipcode-search" | "signup-complete" | "password-change" | "withdraw" | null;
 
 interface PopupState {
   activePopup: PopupType;
@@ -26,4 +26,27 @@ export const usePopupStore = create<PopupState>((set) => ({
   popupData: {},
   openPopup: (type, data = {}) => set({ activePopup: type, popupData: data }),
   closePopup: () => set({ activePopup: null, popupData: {} }),
+}));
+
+interface AlertOptions {
+  type: "alert" | "confirm";
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
+interface AlertState {
+  isOpen: boolean;
+  options: AlertOptions | null;
+  openAlert: (options: AlertOptions) => void;
+  closeAlert: () => void;
+}
+
+export const useAlertStore = create<AlertState>((set) => ({
+  isOpen: false,
+  options: null,
+  openAlert: (options) => set({ isOpen: true, options }),
+  closeAlert: () => set({ isOpen: false, options: null }),
 }));

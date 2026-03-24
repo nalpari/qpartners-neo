@@ -6,6 +6,7 @@ import { Gnb } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
+import { AlertDialog } from "@/components/common/alert-dialog";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -44,6 +45,7 @@ export default function RootLayout({
             <Footer />
           </div>
           <PopupController />
+          <AlertDialog />
         </QueryProvider>
       </body>
     </html>
