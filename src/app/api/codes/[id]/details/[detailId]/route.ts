@@ -1,7 +1,10 @@
-import { prisma } from "@/lib/prisma";
-import { updateCodeDetailSchema } from "@/lib/schemas/code";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
+import { prisma } from "@/lib/prisma";
+import { idParamSchema, updateCodeDetailSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string; detailId: string }> };
 
@@ -9,7 +12,22 @@ type Params = { params: Promise<{ id: string; detailId: string }> };
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { id, detailId } = await params;
-    const body = await request.json();
+    const parsedId = idParamSchema.safeParse(id);
+    const parsedDetailId = idParamSchema.safeParse(detailId);
+    if (!parsedId.success || !parsedDetailId.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 },
+      );
+    }
+
     const result = updateCodeDetailSchema.safeParse(body);
 
     if (!result.success) {
@@ -19,48 +37,30 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const detail = await prisma.$transaction(async (tx) => {
-      const existing = await tx.codeDetail.findFirst({
-        where: { id: Number(detailId), headerId: Number(id) },
-      });
-
-      if (!existing) return null;
-
-      // code 변경 시 중복 체크
-      if (result.data.code && result.data.code !== existing.code) {
-        const duplicate = await tx.codeDetail.findUnique({
-          where: {
-            headerId_code: {
-              headerId: Number(id),
-              code: result.data.code,
-            },
-          },
-        });
-
-        if (duplicate) {
-          throw new Error(
-            `DUPLICATE:code '${result.data.code}' already exists in this header`,
-          );
-        }
-      }
-
-      return tx.codeDetail.update({
-        where: { id: Number(detailId) },
-        data: result.data,
-      });
-    });
-
-    if (!detail) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (Object.keys(result.data).length === 0) {
+      return NextResponse.json(
+        { error: "No fields to update" },
+        { status: 400 },
+      );
     }
+
+    const detail = await prisma.codeDetail.update({
+      where: { id: parsedDetailId.data, headerId: parsedId.data },
+      data: result.data,
+    });
 
     return NextResponse.json({ data: detail });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("DUPLICATE:")) {
-      return NextResponse.json(
-        { error: error.message.slice("DUPLICATE:".length) },
-        { status: 409 },
-      );
+    if (error instanceof PrismaClientKnownRequestError) {
+      if (error.code === "P2025") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (error.code === "P2002") {
+        return NextResponse.json(
+          { error: "Duplicate code in this header" },
+          { status: 409 },
+        );
+      }
     }
     console.error("[PUT /api/codes/:id/details/:detailId]", error);
     return NextResponse.json(
@@ -74,27 +74,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
     const { id, detailId } = await params;
-
-    const deleted = await prisma.$transaction(async (tx) => {
-      const existing = await tx.codeDetail.findFirst({
-        where: { id: Number(detailId), headerId: Number(id) },
-      });
-
-      if (!existing) return false;
-
-      await tx.codeDetail.delete({
-        where: { id: Number(detailId) },
-      });
-
-      return true;
-    });
-
-    if (!deleted) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const parsedId = idParamSchema.safeParse(id);
+    const parsedDetailId = idParamSchema.safeParse(detailId);
+    if (!parsedId.success || !parsedDetailId.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
+
+    await prisma.codeDetail.delete({
+      where: { id: parsedDetailId.data, headerId: parsedId.data },
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     console.error("[DELETE /api/codes/:id/details/:detailId]", error);
     return NextResponse.json(
       { error: "Failed to delete code detail" },

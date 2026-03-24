@@ -1,7 +1,10 @@
-import { prisma } from "@/lib/prisma";
-import { createCodeDetailSchema } from "@/lib/schemas/code";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
+import { prisma } from "@/lib/prisma";
+import { createCodeDetailSchema, idParamSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,11 +12,16 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+    }
+
     const { searchParams } = request.nextUrl;
     const activeOnly = searchParams.get("activeOnly") !== "false";
 
     const header = await prisma.codeHeader.findUnique({
-      where: { id: Number(id) },
+      where: { id: parsed.data },
     });
 
     if (!header) {
@@ -22,7 +30,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const details = await prisma.codeDetail.findMany({
       where: {
-        headerId: Number(id),
+        headerId: parsed.data,
         ...(activeOnly && { isActive: true }),
       },
       orderBy: { sortOrder: "asc" },
@@ -42,7 +50,21 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 },
+      );
+    }
+
     const result = createCodeDetailSchema.safeParse(body);
 
     if (!result.success) {
@@ -53,39 +75,31 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const header = await prisma.codeHeader.findUnique({
-      where: { id: Number(id) },
+      where: { id: parsed.data },
     });
 
     if (!header) {
       return NextResponse.json({ error: "Header not found" }, { status: 404 });
     }
 
-    // 동일 headerId 내 code 중복 체크
-    const existing = await prisma.codeDetail.findUnique({
-      where: {
-        headerId_code: {
-          headerId: Number(id),
-          code: result.data.code,
-        },
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { error: `code '${result.data.code}' already exists in this header` },
-        { status: 409 },
-      );
-    }
-
     const detail = await prisma.codeDetail.create({
       data: {
         ...result.data,
-        headerId: Number(id),
+        headerId: parsed.data,
       },
     });
 
     return NextResponse.json({ data: detail }, { status: 201 });
   } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "Duplicate code in this header" },
+        { status: 409 },
+      );
+    }
     console.error("[POST /api/codes/:id/details]", error);
     return NextResponse.json(
       { error: "Failed to create code detail" },

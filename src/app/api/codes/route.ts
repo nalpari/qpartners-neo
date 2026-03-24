@@ -1,7 +1,10 @@
-import { prisma } from "@/lib/prisma";
-import { createCodeHeaderSchema } from "@/lib/schemas/code";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
+import { prisma } from "@/lib/prisma";
+import { createCodeHeaderSchema } from "@/lib/schemas/code";
 
 // GET /api/codes — Header Code 목록
 export async function GET(request: NextRequest) {
@@ -36,7 +39,16 @@ export async function GET(request: NextRequest) {
 // POST /api/codes — Header Code 등록
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 },
+      );
+    }
+
     const result = createCodeHeaderSchema.safeParse(body);
 
     if (!result.success) {
@@ -46,20 +58,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.codeHeader.findUnique({
-      where: { headerCode: result.data.headerCode },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { error: `headerCode '${result.data.headerCode}' already exists` },
-        { status: 409 },
-      );
-    }
-
     const header = await prisma.codeHeader.create({ data: result.data });
     return NextResponse.json({ data: header }, { status: 201 });
   } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: `headerCode '${(error.meta?.target as string[])?.join(", ") ?? "unknown"}' already exists` },
+        { status: 409 },
+      );
+    }
     console.error("[POST /api/codes]", error);
     return NextResponse.json(
       { error: "Failed to create code header" },

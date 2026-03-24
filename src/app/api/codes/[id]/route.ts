@@ -1,7 +1,10 @@
-import { prisma } from "@/lib/prisma";
-import { updateCodeHeaderSchema } from "@/lib/schemas/code";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
+import { prisma } from "@/lib/prisma";
+import { idParamSchema, updateCodeHeaderSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,8 +12,13 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+    }
+
     const header = await prisma.codeHeader.findUnique({
-      where: { id: Number(id) },
+      where: { id: parsed.data },
       include: { details: { orderBy: { sortOrder: "asc" } } },
     });
 
@@ -32,7 +40,21 @@ export async function GET(_request: NextRequest, { params }: Params) {
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body" },
+        { status: 400 },
+      );
+    }
+
     const result = updateCodeHeaderSchema.safeParse(body);
 
     if (!result.success) {
@@ -42,21 +64,26 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const existing = await prisma.codeHeader.findUnique({
-      where: { id: Number(id) },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (Object.keys(result.data).length === 0) {
+      return NextResponse.json(
+        { error: "No fields to update" },
+        { status: 400 },
+      );
     }
 
     const header = await prisma.codeHeader.update({
-      where: { id: Number(id) },
+      where: { id: parsed.data },
       data: result.data,
     });
 
     return NextResponse.json({ data: header });
   } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     console.error("[PUT /api/codes/:id]", error);
     return NextResponse.json(
       { error: "Failed to update code header" },

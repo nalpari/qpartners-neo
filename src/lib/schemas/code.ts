@@ -1,5 +1,23 @@
 import { z } from "zod";
 
+// ─── Shared ───
+
+/** Prisma Decimal(15,2) 호환 — number/string 입력을 string으로 변환하여 정밀도 보존 */
+const decimalField = z
+  .union([z.number(), z.string()])
+  .transform(String)
+  .pipe(
+    z.string().regex(/^-?\d{1,13}(\.\d{1,2})?$/, "유효한 소수 형식이 아닙니다"),
+  )
+  .nullable()
+  .default(null);
+
+/** URL path parameter ID 검증 */
+export const idParamSchema = z.coerce
+  .number()
+  .int("ID는 정수여야 합니다")
+  .positive("ID는 양수여야 합니다");
+
 // ─── CodeHeader ───
 
 export const createCodeHeaderSchema = z.object({
@@ -9,9 +27,9 @@ export const createCodeHeaderSchema = z.object({
   relCode1: z.string().max(50).nullable().default(null),
   relCode2: z.string().max(50).nullable().default(null),
   relCode3: z.string().max(50).nullable().default(null),
-  relNum1: z.number().nullable().default(null),
-  relNum2: z.number().nullable().default(null),
-  relNum3: z.number().nullable().default(null),
+  relNum1: decimalField,
+  relNum2: decimalField,
+  relNum3: decimalField,
   isActive: z.boolean().default(true),
 });
 
@@ -28,7 +46,7 @@ export const createCodeDetailSchema = z.object({
   codeNameEtc: z.string().max(255).nullable().default(null),
   relCode1: z.string().max(50).nullable().default(null),
   relCode2: z.string().max(50).nullable().default(null),
-  relNum1: z.number().nullable().default(null),
+  relNum1: decimalField,
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
 });
