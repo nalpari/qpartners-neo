@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: `headerCode '${(error.meta?.target as string[])?.join(", ") ?? "unknown"}' already exists` },
+        { error: "이미 존재하는 headerCode입니다" },
         { status: 409 },
       );
     }

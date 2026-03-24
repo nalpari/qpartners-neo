@@ -100,8 +100,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
       if (error.code === "P2003") {
         return NextResponse.json(
-          { error: "Header deleted or does not exist" },
-          { status: 409 },
+          { error: "Header not found" },
+          { status: 404 },
         );
       }
     }
