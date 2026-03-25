@@ -265,8 +265,10 @@ model Category {
 /// 콘텐츠-카테고리 연결 (N:M)
 /// PK: [contentId, categoryId] 복합키
 model ContentCategory {
-  contentId  Int @map("content_id")
-  categoryId Int @map("category_id")
+  contentId  Int      @map("content_id")
+  categoryId Int      @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  createdBy  String?  @map("created_by") @db.VarChar(255)
 
   content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
