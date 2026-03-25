@@ -6,7 +6,7 @@
 > **Author**: ck
 > **Date**: 2026-03-20
 > **Status**: Draft
-> **Reference**: (Q.Partners) 화면설계서_v1.0_260320
+> **Reference**: (Q.Partners) 화면설계서_v1.0_260324
 
 ## Executive Summary
 
@@ -73,7 +73,7 @@
 
 ### 1.3 공통 설계 원칙
 
-- 화면설계서 v1.0 (260320) 기준 컬럼 설계
+- 화면설계서 v1.0 (260324) 기준 컬럼 설계
 - 영문 스네이크케이스 컬럼명
 - 적절한 VARCHAR 크기 지정 (text 타입 남용 제거)
 - FK 제약 명시 (시스템 내 테이블 간)
@@ -85,7 +85,7 @@
 
 ### 2.1 qp_general_users (일반회원 사용자)
 
-**화면 근거**: 회원가입 (p.16-18), 내정보/회사정보 수정 (p.34)
+**화면 근거**: 회원가입 (p.16-18), 내정보/회사정보 수정 (p.32-38)
 **대상**: TO-BE 신규 가입 일반회원 + AS-IS 시공점 제외 회원
 **역할**: 순수 인적정보 + 법인정보만 저장 (QPartners 서비스 설정은 qp_info에서 관리)
 
@@ -102,7 +102,7 @@ CREATE TABLE qp_general_users (
   address2            VARCHAR(500) DEFAULT NULL,         -- 화면: 주소 상세 (빌딩명 등)
   tel                 VARCHAR(20) DEFAULT NULL,          -- 화면: 전화번호 * (000-0000-0000)
   fax                 VARCHAR(20) DEFAULT NULL,          -- 화면: FAX번호 (000-0000-0000)
-  corporate_number    VARCHAR(20) DEFAULT NULL,          -- 화면: 법인번호 (내정보 수정 p.34 #2)
+  corporate_number    VARCHAR(20) DEFAULT NULL,          -- 화면: 법인번호 (내정보 수정 p.39 #2)
 
   -- 회원정보 ──────────────────────────────────
   -- 화면: 회원가입 > 회원정보 섹션 (p.16)
@@ -128,7 +128,7 @@ CREATE TABLE qp_general_users (
 
 ### 2.2 qp_info (QPartners 사용자 정보)
 
-**화면 근거**: 회원관리 (p.41-42), 로그인 (p.9-10), 2차인증 (p.14), 최초로그인 설정 (p.13)
+**화면 근거**: 회원관리 (p.46-47), 로그인 (p.9-10), 2차인증 (p.14), 최초로그인 설정 (p.13)
 **역할**: QSP의 모든 사용자 테이블(qp_general_users, 기존 판매자, 기존 사내회원)과 user_id로 join하여 QPartners 서비스 관련 정보를 통합 관리
 **I/F**: 이 테이블의 정보를 포함하여 TO-BE QPartners에 사용자 정보를 I/F
 
@@ -138,60 +138,57 @@ CREATE TABLE qp_info (
 
   -- 사용자 식별 ──────────────────────────────
   -- QSP 내 사용자 테이블과 user_id로 join
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-                      -- qsp     = QSP 기존 사용자 (사내회원, 판매점)
-                      -- seko    = AS-IS QPartners 시공점 (M_SUPPLIER kind=4/5/6/7) (M_SUPPLIER kind=4/5/6/7)
-                      -- general = qp_general_users 일반회원
-  user_id             VARCHAR(255) NOT NULL,             -- 소스별 사용자 식별자
-                      -- qsp: QSP 사용자 ID
-                      -- seko: AS-IS M_USER.id (시공점)
-                      -- general: qp_general_users.id
-
-  -- 회원유형 ─────────────────────────────────
-  -- 화면: 회원관리 목록 > 회원유형 (p.41)
-  user_type           VARCHAR(20) NOT NULL,              -- 관리자 / 판매점 / 일반
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+                      -- ADMIN   = 관리자
+                      -- DEALER  = 판매점
+                      -- SEKO    = 시공점 (AS-IS QPartners)
+                      -- GENERAL = 일반회원 (qp_general_users)
+  user_id             VARCHAR(255) NOT NULL,             -- 유형별 사용자 식별자
+                      -- ADMIN/DEALER: QSP 사용자 ID
+                      -- SEKO: AS-IS M_USER.id (시공점)
+                      -- GENERAL: qp_general_users.id
                       -- 화면 p.41 목록: 관리자, 판매점, 일반
 
   -- 사용자권한 ───────────────────────────────
-  -- 화면: 회원관리 상세 > 사용자권한 드롭다운 (p.42 #3)
+  -- 화면: 회원관리 상세 > 사용자권한 드롭다운 (p.47 #3)
   -- 회원유형이 일반인 경우에만 변경 가능
   -- 그 외 사용자는 회원 유형값에 맞는 권한 자동 부여
   -- 값: SuperADMIN / ADMIN / Cus1 / Cus2 / Cus3 / Cus4 / Cus5
   user_role           VARCHAR(50) NOT NULL,              -- 권한관리 p.49의 권한코드 값
 
   -- 2차 인증 ─────────────────────────────────
-  -- 화면: 회원관리 상세 (p.42 #5)
+  -- 화면: 회원관리 상세 (p.47 #5)
   -- 디폴트: 관리자(당사) = 유효, 관리자 외 회원 = 유효
   two_factor_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
   -- 화면: 2차인증 팝업 (p.14) — 최근 인증 완료 일시
   two_factor_verified_at DATETIME DEFAULT NULL,
 
   -- 로그인 알림받기 ──────────────────────────
-  -- 화면: 회원관리 상세 (p.42 #6)
+  -- 화면: 회원관리 상세 (p.47 #6)
   -- 일반회원 대상. 체크 시 홈페이지 로그인한 경우 알림메일 발송
   -- 디폴트: 관리자(당사) = 무효, 관리자 외 회원 = 유효
   login_notification  BOOLEAN NOT NULL DEFAULT TRUE,
 
   -- 속성변경 알림받기 ────────────────────────
-  -- 화면: 회원관리 상세 (p.42 #7)
+  -- 화면: 회원관리 상세 (p.47 #7)
   -- 마이페이지 정보 변경 시 사용자 이메일로 알림메일 발송
   -- 디폴트: 관리자(당사) = 무효, 관리자 외 회원 = 유효
   attribute_change_notification BOOLEAN NOT NULL DEFAULT TRUE,
 
   -- 회원상태 ─────────────────────────────────
-  -- 화면: 회원관리 상세 (p.42 #8)
+  -- 화면: 회원관리 상세 (p.47 #8)
   status              ENUM('active','deleted') NOT NULL DEFAULT 'active',
                       -- active = Active (로그인 가능)
                       -- deleted = Delete (로그인 불가)
 
   -- 탈퇴 ─────────────────────────────────────
-  -- 화면: 회원관리 목록 > 탈퇴여부 (p.41), 상세 (p.42 #9)
-  withdrawn           BOOLEAN NOT NULL DEFAULT FALSE,    -- 화면: 탈퇴여부 Y/N (p.41)
-  withdrawn_at        DATETIME DEFAULT NULL,             -- 화면: 탈퇴일시 (p.42 #9)
-  withdrawn_reason    TEXT DEFAULT NULL,                  -- 화면: 탈퇴사유 (p.42 #9, p.36)
+  -- 화면: 회원관리 목록 > 탈퇴여부 (p.46), 상세 (p.47 #9)
+  withdrawn           BOOLEAN NOT NULL DEFAULT FALSE,    -- 화면: 탈퇴여부 Y/N (p.46)
+  withdrawn_at        DATETIME DEFAULT NULL,             -- 화면: 탈퇴일시 (p.47 #9)
+  withdrawn_reason    TEXT DEFAULT NULL,                  -- 화면: 탈퇴사유 (p.47 #9, p.41)
 
   -- 접속/인증 이력 ───────────────────────────
-  -- 화면: 회원관리 목록/상세 > 최근접속일시 (p.41, p.42)
+  -- 화면: 회원관리 목록/상세 > 최근접속일시 (p.46, p.47)
   last_login_at       DATETIME DEFAULT NULL,
 
   -- 이용약관 ─────────────────────────────────
@@ -205,7 +202,7 @@ CREATE TABLE qp_info (
   initial_setup_done  BOOLEAN NOT NULL DEFAULT FALSE,
 
   -- 비밀번호 ─────────────────────────────────
-  -- 화면: 비밀번호 변경 (p.35), 최초로그인 설정 (p.13)
+  -- 화면: 비밀번호 변경 (p.40), 최초로그인 설정 (p.13)
   password_changed_at DATETIME DEFAULT NULL,
 
   -- ID Save ──────────────────────────────────
@@ -214,13 +211,12 @@ CREATE TABLE qp_info (
   id_save_enabled     BOOLEAN NOT NULL DEFAULT FALSE,
 
   -- 감사 ─────────────────────────────────────
-  -- 화면: 회원관리 상세 > 등록일, 갱신일시(수정자) (p.42 #1)
+  -- 화면: 회원관리 상세 > 등록일, 갱신일시(수정자) (p.47 #1)
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated_by          VARCHAR(255) DEFAULT NULL,         -- 화면: 수정자 (p.42 #1)
+  updated_by          VARCHAR(255) DEFAULT NULL,         -- 화면: 수정자 (p.47 #1)
 
-  UNIQUE INDEX idx_user_source_id (user_source, user_id),
-  INDEX idx_user_type (user_type),
+  UNIQUE INDEX idx_user_type_id (user_type, user_id),
   INDEX idx_user_role (user_role),
   INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -232,18 +228,18 @@ CREATE TABLE qp_info (
 
 ### 3.1 qp_roles (QPartners 권한 정의)
 
-**화면 근거**: 권한관리 (p.49)
+**화면 근거**: 권한관리 (p.54)
 
 ```sql
 CREATE TABLE qp_roles (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
 
   -- 권한 정보 ────────────────────────────────
-  -- 화면: 권한관리 > 권한코드/권한명/권한설명 (p.49)
+  -- 화면: 권한관리 > 권한코드/권한명/권한설명 (p.54)
   role_code           VARCHAR(50) NOT NULL,              -- 화면: 권한코드 (수정 불가)
   role_name           VARCHAR(100) NOT NULL,             -- 화면: 권한명 (수정 가능)
   description         VARCHAR(500) DEFAULT NULL,         -- 화면: 권한설명 (수정 가능)
-  is_active           BOOLEAN NOT NULL DEFAULT TRUE,     -- 화면: 사용 여부 Y/N (p.49 #3)
+  is_active           BOOLEAN NOT NULL DEFAULT TRUE,     -- 화면: 사용 여부 Y/N (p.54 #3)
 
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -252,7 +248,7 @@ CREATE TABLE qp_roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-**초기 데이터 (p.49):**
+**초기 데이터 (p.54):**
 
 ```sql
 INSERT INTO qp_roles (role_code, role_name, description) VALUES
@@ -269,16 +265,15 @@ INSERT INTO qp_roles (role_code, role_name, description) VALUES
 
 ### 3.2 qp_role_menu_permissions (역할별 메뉴 CRUD 권한)
 
-**화면 근거**: 권한관리 > Available Menu Setting (p.50)
+**화면 근거**: 권한관리 > Available Menu Setting (p.55)
 
 ```sql
 CREATE TABLE qp_role_menu_permissions (
-  id                  INT AUTO_INCREMENT PRIMARY KEY,
   role_code           VARCHAR(50) NOT NULL,              -- qp_roles.role_code 참조
   menu_code           VARCHAR(50) NOT NULL,              -- menus.menu_code 참조
 
   -- CRUD 권한 ────────────────────────────────
-  -- 화면: Menu Setting 팝업 (p.50) — Read/Create/Update/Delete 체크박스
+  -- 화면: Menu Setting 팝업 (p.55) — Read/Create/Update/Delete 체크박스
   can_read            BOOLEAN NOT NULL DEFAULT FALSE,
   can_create          BOOLEAN NOT NULL DEFAULT FALSE,
   can_update          BOOLEAN NOT NULL DEFAULT FALSE,
@@ -287,11 +282,11 @@ CREATE TABLE qp_role_menu_permissions (
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  UNIQUE INDEX idx_role_menu (role_code, menu_code)
+  PRIMARY KEY (role_code, menu_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-**메뉴 구조 (p.50 기준):**
+**메뉴 구조 (p.55 기준):**
 
 | Level1 | Level2 |
 |--------|--------|
@@ -322,12 +317,10 @@ CREATE TABLE contents (
 
   -- 관리정보 ──────────────────────────────────
   -- 화면: 콘텐츠 등록 > 관리정보 섹션 (p.25)
-  author_source       ENUM('qsp','seko','general') NOT NULL,  -- 게재담당자 소스
-  author_id           VARCHAR(255) NOT NULL,             -- 화면: "게재 담당자" (p.25 #1, read only, 등록자명 자동)
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,  -- 게재담당자 유형
+  user_id             VARCHAR(255) NOT NULL,             -- 화면: "게재 담당자" (p.25 #1, read only, 등록자명 자동)
   author_department   VARCHAR(100) DEFAULT NULL,         -- 화면: "담당부문" (p.25 #5, read only, QSP Department)
                                                          -- 저장 시점 값 유지 (p.27 Description)
-  updater_source      ENUM('qsp','seko','general') DEFAULT NULL,
-  updater_id          VARCHAR(255) DEFAULT NULL,         -- 화면: "갱신담당자" (p.25 #3, 최근 갱신자)
   approver_level      TINYINT DEFAULT NULL,              -- 화면: "최종승인자 *" 드롭다운 (p.25 #6)
                       -- 값 정의 (p.25 Description #6):
                       -- 1 = 担当(일본어)/실무담당자       순위 1
@@ -356,7 +349,7 @@ CREATE TABLE contents (
   INDEX idx_status (status),
   INDEX idx_published_at (published_at),
   INDEX idx_created_at (created_at),
-  INDEX idx_author (author_source, author_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -374,8 +367,10 @@ CREATE TABLE content_targets (
   start_at            DATETIME DEFAULT NULL,
   end_at              DATETIME DEFAULT NULL,
 
+  created_by          VARCHAR(255) DEFAULT NULL,
   INDEX idx_content_id (content_id),
   INDEX idx_target_type (target_type),
+  UNIQUE INDEX idx_content_target (content_id, target_type),
   FOREIGN KEY (content_id) REFERENCES contents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -384,17 +379,17 @@ CREATE TABLE content_targets (
 
 ### 3.5 categories (카테고리)
 
-**화면 근거**: 카테고리 관리 (p.48), 콘텐츠 검색조건 (p.24), 콘텐츠 등록 (p.25-26)
+**화면 근거**: 카테고리 관리 (p.53), 콘텐츠 검색조건 (p.24), 콘텐츠 등록 (p.25-26)
 
 ```sql
 CREATE TABLE categories (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  parent_id           INT DEFAULT NULL,                  -- 상위 카테고리 (Depth-2까지, p.48 #8)
-  category_code       VARCHAR(50) NOT NULL,              -- 화면: 카테고리코드 * (p.48 #10)
-  name                VARCHAR(100) NOT NULL,             -- 화면: 카테고리명 * (p.48 #10)
-  is_internal_only    BOOLEAN NOT NULL DEFAULT FALSE,    -- 화면: 사내회원 전용 * Y/N (p.48 #9)
-  sort_order          INT NOT NULL DEFAULT 1,            -- 화면: 표시 순서 * (p.48 #10)
-  is_active           BOOLEAN NOT NULL DEFAULT TRUE,     -- 화면: 사용 여부 * Y/N (p.48 #10)
+  parent_id           INT DEFAULT NULL,                  -- 상위 카테고리 (Depth-2까지, p.53 #8)
+  category_code       VARCHAR(50) NOT NULL,              -- 화면: 카테고리코드 * (p.53 #10)
+  name                VARCHAR(100) NOT NULL,             -- 화면: 카테고리명 * (p.53 #10)
+  is_internal_only    BOOLEAN NOT NULL DEFAULT FALSE,    -- 화면: 사내회원 전용 * Y/N (p.53 #9)
+  sort_order          INT NOT NULL DEFAULT 1,            -- 화면: 표시 순서 * (p.53 #10)
+  is_active           BOOLEAN NOT NULL DEFAULT TRUE,     -- 화면: 사용 여부 * Y/N (p.53 #10)
 
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -450,15 +445,15 @@ CREATE TABLE content_attachments (
 ```sql
 CREATE TABLE password_reset_tokens (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   token               VARCHAR(255) NOT NULL,
   expires_at          DATETIME NOT NULL,
   used                BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   UNIQUE INDEX idx_token (token),
-  INDEX idx_user (user_source, external_user_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -471,14 +466,14 @@ CREATE TABLE password_reset_tokens (
 ```sql
 CREATE TABLE two_factor_codes (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   code                VARCHAR(6) NOT NULL,               -- 인증번호 6자리, 숫자만
   expires_at          DATETIME NOT NULL,                 -- 10분 이내
   verified            BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id)
+  INDEX idx_user (user_type, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -486,7 +481,7 @@ CREATE TABLE two_factor_codes (
 
 ### 3.10 home_notices (홈화면 공지)
 
-**화면 근거**: 홈화면 공지관리 (p.46-47)
+**화면 근거**: 홈화면 공지관리 (p.51-52)
 
 ```sql
 CREATE TABLE home_notices (
@@ -501,15 +496,13 @@ CREATE TABLE home_notices (
   end_at              DATETIME NOT NULL,
   content             TEXT NOT NULL,
   url                 VARCHAR(500) DEFAULT NULL,
-  status              ENUM('scheduled','active','ended') NOT NULL DEFAULT 'scheduled',
-  author_source       ENUM('qsp','seko','general') NOT NULL,
-  author_id           VARCHAR(255) NOT NULL,
-  updater_source      ENUM('qsp','seko','general') DEFAULT NULL,
-  updater_id          VARCHAR(255) DEFAULT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
+  created_by          VARCHAR(255) DEFAULT NULL,
+  updated_by          VARCHAR(255) DEFAULT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  INDEX idx_status (status),
   INDEX idx_period (start_at, end_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -518,14 +511,14 @@ CREATE TABLE home_notices (
 
 ### 3.11 mass_mails (대량메일 발송)
 
-**화면 근거**: 대량메일발송 (p.43-45)
+**화면 근거**: 대량메일발송 (p.48-50)
 
 ```sql
 CREATE TABLE mass_mails (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   sender_name         VARCHAR(255) NOT NULL,
-  author_source       ENUM('qsp','seko','general') NOT NULL,
-  author_id           VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   target_super_admin  BOOLEAN NOT NULL DEFAULT FALSE,
   target_admin        BOOLEAN NOT NULL DEFAULT FALSE,
   target_first_dealer BOOLEAN NOT NULL DEFAULT FALSE,
@@ -553,11 +546,12 @@ CREATE TABLE mass_mail_recipients (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   mass_mail_id        INT NOT NULL,
   recipient_type      ENUM('cc','bcc') NOT NULL,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   email               VARCHAR(255) NOT NULL,
 
   INDEX idx_mass_mail_id (mass_mail_id),
+  UNIQUE INDEX idx_mail_recipient (mass_mail_id, recipient_type, email),
   FOREIGN KEY (mass_mail_id) REFERENCES mass_mails(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -584,18 +578,18 @@ CREATE TABLE mass_mail_attachments (
 
 ### 3.14 download_logs (다운로드 기록)
 
-**화면 근거**: 마이페이지 > 다운로드 기록 (p.37)
+**화면 근거**: 마이페이지 > 다운로드 기록 (p.42)
 
 ```sql
 CREATE TABLE download_logs (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+  user_id             VARCHAR(255) NOT NULL,
   content_id          INT NOT NULL,
   attachment_id       INT NOT NULL,
   downloaded_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id),
+  INDEX idx_user (user_type, user_id),
   INDEX idx_downloaded_at (downloaded_at),
   FOREIGN KEY (content_id) REFERENCES contents(id),
   FOREIGN KEY (attachment_id) REFERENCES content_attachments(id)
@@ -606,23 +600,23 @@ CREATE TABLE download_logs (
 
 ### 3.15 inquiries (문의등록)
 
-**화면 근거**: 마이페이지 > 문의등록 (p.38-39)
+**화면 근거**: 마이페이지 > 문의등록 (p.43-44)
 
 ```sql
 CREATE TABLE inquiries (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  user_source         ENUM('qsp','seko','general') NOT NULL,
-  external_user_id    VARCHAR(255) NOT NULL,
+  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') DEFAULT NULL,
+  user_id             VARCHAR(255) DEFAULT NULL,
   company_name        VARCHAR(255) NOT NULL,             -- 저장 시점 회사명
   user_name           VARCHAR(200) NOT NULL,             -- 저장 시점 성명
   tel                 VARCHAR(20) DEFAULT NULL,          -- 저장 시점 전화번호
   email               VARCHAR(255) NOT NULL,             -- 저장 시점 이메일
-  inquiry_type        VARCHAR(100) DEFAULT NULL,         -- 문의유형 드롭다운 (p.38 #6)
+  inquiry_type        VARCHAR(100) DEFAULT NULL,         -- 문의유형 드롭다운 (p.43 #6)
   title               VARCHAR(500) NOT NULL,
   content             TEXT NOT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  INDEX idx_user (user_source, external_user_id),
+  INDEX idx_user (user_type, user_id),
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -631,7 +625,7 @@ CREATE TABLE inquiries (
 
 ### 3.16 menus (메뉴관리)
 
-**화면 근거**: 관리자 > 메뉴관리 (p.51)
+**화면 근거**: 관리자 > 메뉴관리 (p.56)
 
 ```sql
 CREATE TABLE menus (
@@ -653,7 +647,7 @@ CREATE TABLE menus (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-**초기 데이터 (p.51):**
+**초기 데이터 (p.56):**
 
 ```sql
 -- 1-Level 메뉴
@@ -684,7 +678,7 @@ INSERT INTO menus (parent_id, menu_code, menu_name, show_in_mobile, sort_order) 
 
 ### 3.17 code_headers (코드관리 헤더)
 
-**화면 근거**: 관리자 > 코드 관리 (p.52)
+**화면 근거**: 관리자 > 코드 관리 (p.57)
 
 ```sql
 CREATE TABLE code_headers (
@@ -720,6 +714,7 @@ CREATE TABLE code_details (
   code_name_etc       VARCHAR(255) DEFAULT NULL,
   rel_code1           VARCHAR(50) DEFAULT NULL,
   rel_code2           VARCHAR(50) DEFAULT NULL,
+  rel_code3           VARCHAR(50) DEFAULT NULL,
   rel_num1            DECIMAL(15,2) DEFAULT NULL,
   sort_order          INT NOT NULL DEFAULT 0,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
@@ -732,7 +727,7 @@ CREATE TABLE code_details (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-**초기 데이터 (p.52):**
+**초기 데이터 (p.57):**
 
 ```sql
 INSERT INTO code_headers (header_code, header_id, header_name) VALUES
@@ -750,8 +745,8 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 
 | # | 테이블 | 용도 | 화면 근거 |
 |---|--------|------|---------|
-| 1 | qp_general_users | 일반회원 순수 인적정보 + 법인정보 | 회원가입 p.16, 내정보수정 p.34 |
-| 2 | qp_info | 모든 사용자의 QP 서비스 설정 (user_id join) | 회원관리 p.41-42, 로그인 p.9, 2차인증 p.14, 최초설정 p.13 |
+| 1 | qp_general_users | 일반회원 순수 인적정보 + 법인정보 | 회원가입 p.16, 내정보수정 p.39 |
+| 2 | qp_info | 모든 사용자의 QP 서비스 설정 (user_id join) | 회원관리 p.46-47, 로그인 p.9, 2차인증 p.14, 최초설정 p.13 |
 
 ### TO-BE QPartners 테이블 (18개)
 
@@ -802,8 +797,8 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 ┌─────────────────┐              ┌───────────────────────────┐
 │ QSP 기존        │              │        qp_info            │
 │ 판매자 테이블   │──────────────▶│                           │
-└─────────────────┘   user_id    │  user_source, user_id,    │
-                      join       │  user_type, user_role,    │
+└─────────────────┘   user_id    │  user_type, user_id,      │
+                      join       │  user_role,               │
 ┌─────────────────┐              │  two_factor_enabled,      │
 │ QSP 기존        │              │  two_factor_verified_at,  │
 │ 사내회원        │──────────────▶│  login_notification,      │
@@ -869,15 +864,16 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 TO-BE 테이블에서 사용자를 참조할 때 FK를 사용할 수 없으므로 (외부 시스템), 다음 패턴을 사용:
 
 ```sql
-user_source       ENUM('qsp','seko','general') NOT NULL,
-external_user_id  VARCHAR(255) NOT NULL,
+user_type         ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
+user_id           VARCHAR(255) NOT NULL,
 ```
 
-| user_source | 의미 | external_user_id 값 |
-|-------------|------|-------------------|
-| qsp | QSP 기존 사용자 (사내/판매점) | QSP 사용자 ID |
-| seko | AS-IS QPartners 시공점 (施工) | M_USER.id |
-| general | 일반회원 | qp_general_users.id |
+| user_type | 의미 | user_id 값 |
+|-----------|------|-----------|
+| ADMIN | 관리자 | QSP 사용자 ID |
+| DEALER | 판매점 | QSP 사용자 ID |
+| SEKO | 시공점 (AS-IS QPartners) | M_USER.id |
+| GENERAL | 일반회원 | qp_general_users.id |
 
 ---
 
