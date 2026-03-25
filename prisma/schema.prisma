@@ -133,7 +133,7 @@ model Menu {
 model CodeHeader {
   id         Int      @id @default(autoincrement())
   headerCode String   @unique @map("header_code") @db.VarChar(20)
-  headerId   String   @map("header_id") @db.VarChar(50)
+  headerAlias String  @map("header_alias") @db.VarChar(50)
   headerName String   @map("header_name") @db.VarChar(255)
   relCode1   String?  @map("rel_code1") @db.VarChar(50)
   relCode2   String?  @map("rel_code2") @db.VarChar(50)
@@ -367,6 +367,7 @@ model MassMail {
   targetSecondDealer Boolean    @default(false) @map("target_second_dealer")
   targetConstructor  Boolean    @default(false) @map("target_constructor")
   targetGeneral      Boolean    @default(false) @map("target_general")
+  optOut             Boolean    @default(false) @map("opt_out")
   subject            String     @db.VarChar(500)
   body               String     @db.MediumText
   status             MailStatus @default(draft)

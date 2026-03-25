@@ -18,10 +18,6 @@ const validationErrorResponse: OpenAPIV3.ResponseObject = {
   },
 };
 
-const jsonContent = (
-  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject,
-): OpenAPIV3.MediaTypeObject => ({ schema });
-
 export const openApiSpec: OpenAPIV3.Document = {
   openapi: "3.0.3",
   info: {
@@ -384,10 +380,19 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       CodeHeader: {
         type: "object",
+        required: [
+          "id",
+          "headerCode",
+          "headerAlias",
+          "headerName",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           id: { type: "integer", example: 1 },
           headerCode: { type: "string", example: "STATUS" },
-          headerId: { type: "string", example: "STATUS" },
+          headerAlias: { type: "string", example: "STAT_CD" },
           headerName: { type: "string", example: "상태코드" },
           relCode1: { type: "string", nullable: true },
           relCode2: { type: "string", nullable: true },
@@ -397,11 +402,23 @@ export const openApiSpec: OpenAPIV3.Document = {
           relNum3: { type: "string", nullable: true },
           isActive: { type: "boolean", example: true },
           createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
         },
       },
       CodeDetail: {
         type: "object",
+        required: [
+          "id",
+          "headerId",
+          "code",
+          "displayCode",
+          "codeName",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           id: { type: "integer", example: 1 },
           headerId: { type: "integer", example: 1 },
@@ -416,15 +433,21 @@ export const openApiSpec: OpenAPIV3.Document = {
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
           createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
         },
       },
       CreateCodeHeader: {
         type: "object",
-        required: ["headerCode", "headerId", "headerName"],
+        required: ["headerCode", "headerAlias", "headerName"],
         properties: {
           headerCode: { type: "string", maxLength: 20, example: "STATUS" },
-          headerId: { type: "string", maxLength: 50, example: "STATUS" },
+          headerAlias: {
+            type: "string",
+            maxLength: 50,
+            example: "STAT_CD",
+          },
           headerName: {
             type: "string",
             maxLength: 255,
@@ -453,7 +476,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         description: "변경할 필드만 전송 (headerCode 수정 불가)",
         properties: {
-          headerId: { type: "string", maxLength: 50 },
+          headerAlias: { type: "string", maxLength: 50 },
           headerName: { type: "string", maxLength: 255 },
           relCode1: { type: "string", maxLength: 50, nullable: true },
           relCode2: { type: "string", maxLength: 50, nullable: true },

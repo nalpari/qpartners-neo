@@ -51,13 +51,13 @@
 
 | ID | Requirement | Priority | 화면설계서 |
 |----|-------------|----------|-----------|
-| FR-01 | 권한 목록 조회 — 권한코드, 권한명, 권한설명, 사용여부, Menu 버튼 | High | p.49 |
-| FR-02 | 사용여부 Y인 데이터만 조회 필터 | Medium | p.49 #3 |
-| FR-03 | 권한 추가 — 테이블 상단에 신규 행 생성 | High | p.49 #1 |
-| FR-04 | 권한 저장 — 권한코드 수정 불가, 권한 설명 수정 가능 | High | p.49 #2 |
-| FR-05 | Available Menu Setting 팝업 — 2레벨 메뉴 목록 + Read/Create/Update/Delete 체크박스 | High | p.50 |
-| FR-06 | 메뉴 권한 일괄 저장 | High | p.50 #5 |
-| FR-07 | 메뉴에 URL 등록 여부(Y) 표시 | Medium | p.50 #3 |
+| FR-01 | 권한 목록 조회 — 권한코드, 권한명, 권한설명, 사용여부, Menu 버튼 | High | p.54 |
+| FR-02 | 사용여부 Y인 데이터만 조회 필터 | Medium | p.54 #3 |
+| FR-03 | 권한 추가 — 테이블 상단에 신규 행 생성 | High | p.54 #1 |
+| FR-04 | 권한 저장 — 권한코드 수정 불가, 권한 설명 수정 가능 | High | p.54 #2 |
+| FR-05 | Available Menu Setting 팝업 — 2레벨 메뉴 목록 + Read/Create/Update/Delete 체크박스 | High | p.55 |
+| FR-06 | 메뉴 권한 일괄 저장 | High | p.55 #5 |
+| FR-07 | 메뉴에 URL 등록 여부(Y) 표시 | Medium | p.55 #3 |
 
 ---
 

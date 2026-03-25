@@ -5,13 +5,19 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
 function createPrismaClient(): PrismaClient {
   const adapter = new PrismaMariaDb({
-    host: process.env.DB_HOST!,
-    port: Number(process.env.DB_PORT!),
-    user: process.env.DB_USER!,
-    password: process.env.DB_PASSWORD!,
-    database: process.env.DB_NAME!,
+    host: requireEnv("DB_HOST"),
+    port: Number(requireEnv("DB_PORT")),
+    user: requireEnv("DB_USER"),
+    password: requireEnv("DB_PASSWORD"),
+    database: requireEnv("DB_NAME"),
   });
   return new PrismaClient({ adapter });
 }

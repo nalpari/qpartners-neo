@@ -23,7 +23,7 @@
 ## 1. Overview
 
 ### 1.1 Purpose
-Q.PARTNERS에서 사용하는 시스템 공통코드를 등록/관리하는 API. 화면설계서 p.52 기준.
+Q.PARTNERS에서 사용하는 시스템 공통코드를 등록/관리하는 API. 화면설계서 p.57 기준.
 
 ### 1.2 Background
 - TO-BE DB에 CodeHeader, CodeDetail 모델 이미 생성됨
@@ -50,13 +50,13 @@ Q.PARTNERS에서 사용하는 시스템 공통코드를 등록/관리하는 API.
 
 | ID | Requirement | Priority | 화면설계서 |
 |----|-------------|----------|-----------|
-| FR-01 | Header Code/Name Like 검색 | High | p.52 #1 |
-| FR-02 | 사용여부 Y인 데이터만 조회 필터 | Medium | p.52 #4 |
-| FR-03 | Header Code 추가 — headerCode, headerId, headerName, relCode1~3, relNum1~3, 사용여부 | High | p.52 #2 |
-| FR-04 | Header Code 저장 시 검색조건 유지 | Medium | p.52 #3 |
-| FR-05 | Header Code 클릭 시 하위 Code Detail 표시 | High | p.52 #5 |
-| FR-06 | Code Detail 인라인 수정 — Header Code는 수정 불가 | High | p.52 #5 |
-| FR-07 | Code Detail — code, displayCode, codeName, codeNameEtc, relCode1~2, relNum1, sortOrder, 사용여부 | High | p.52 |
+| FR-01 | Header Code/Name Like 검색 | High | p.57 #1 |
+| FR-02 | 사용여부 Y인 데이터만 조회 필터 | Medium | p.57 #4 |
+| FR-03 | Header Code 추가 — headerCode, headerId, headerName, relCode1~3, relNum1~3, 사용여부 | High | p.57 #2 |
+| FR-04 | Header Code 저장 시 검색조건 유지 | Medium | p.57 #3 |
+| FR-05 | Header Code 클릭 시 하위 Code Detail 표시 | High | p.57 #5 |
+| FR-06 | Code Detail 인라인 수정 — Header Code는 수정 불가 | High | p.57 #5 |
+| FR-07 | Code Detail — code, displayCode, codeName, codeNameEtc, relCode1~2, relNum1, sortOrder, 사용여부 | High | p.57 |
 
 ---
 
