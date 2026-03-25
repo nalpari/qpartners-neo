@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-const COOKIE_NAME = "qp-auth-token";
+import { COOKIE_NAME } from "@/lib/jwt";
 
 /** 인증 없이 접근 가능한 경로 */
 const PUBLIC_PATHS = [
@@ -40,8 +40,17 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    console.error("[middleware] JWT_SECRET 환경변수 미설정");
+    return NextResponse.json(
+      { error: "서버 설정 오류입니다" },
+      { status: 500 },
+    );
+  }
+
   try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const secret = new TextEncoder().encode(jwtSecret);
     await jwtVerify(token, secret);
     return NextResponse.next();
   } catch {
