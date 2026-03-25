@@ -40,7 +40,7 @@ export function DatePicker({
   return (
     <div className={`relative w-full min-w-[70px] ${className}`}>
       <div
-        className={`flex items-center gap-2 w-full h-[42px] px-4 border rounded-[4px] overflow-hidden transition-colors duration-150 ${
+        className={`flex items-center gap-2 w-full h-[44px] px-4 border rounded-[4px] overflow-hidden transition-colors duration-150 ${
           inactive
             ? "bg-[#F5F5F5] border-[#E0E0E0] cursor-not-allowed"
             : "bg-white border-[#EBEBEB] hover:border-[#D1D1D1] focus-within:border-[#101010]"

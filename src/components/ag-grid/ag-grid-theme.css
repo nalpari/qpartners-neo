@@ -36,3 +36,11 @@
 .ag-body-vertical-scroll {
   border: none !important;
 }
+
+/* 신규 행 노란 배경 */
+.ag-row-new {
+  background-color: #FFFDE7 !important;
+}
+.ag-row-new:hover {
+  background-color: #FFF9C4 !important;
+}

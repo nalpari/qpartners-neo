@@ -1,3 +1,5 @@
-export default function Page() {
-  return null;
+import { PermissionsContents } from "@/components/admin/permissions/permissions-contents";
+
+export default function AdminPermissionsPage() {
+  return <PermissionsContents />;
 }

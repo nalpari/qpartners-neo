@@ -45,6 +45,7 @@ interface DataGridProps<T> {
   rowData: T[];
   className?: string;
   maxHeight?: number;
+  getRowClass?: (params: RowClassParams<T>) => string | undefined;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -54,6 +55,7 @@ export function DataGrid<T>({
   rowData,
   className = "",
   maxHeight = DEFAULT_MAX_HEIGHT,
+  getRowClass: externalGetRowClass,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -67,6 +69,10 @@ export function DataGrid<T>({
   );
 
   const getRowClass = (params: RowClassParams<T>) => {
+    if (externalGetRowClass) {
+      const cls = externalGetRowClass(params);
+      if (cls) return cls;
+    }
     return params.node.rowIndex !== null && params.node.rowIndex % 2 !== 0
       ? "ag-row-striped"
       : undefined;
