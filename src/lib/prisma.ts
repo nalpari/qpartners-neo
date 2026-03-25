@@ -11,10 +11,19 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function requireEnvInt(name: string): number {
+  const raw = requireEnv(name);
+  const num = Number(raw);
+  if (!Number.isInteger(num) || num <= 0) {
+    throw new Error(`Env var ${name} must be a positive integer, got: "${raw}"`);
+  }
+  return num;
+}
+
 function createPrismaClient(): PrismaClient {
   const adapter = new PrismaMariaDb({
     host: requireEnv("DB_HOST"),
-    port: Number(requireEnv("DB_PORT")),
+    port: requireEnvInt("DB_PORT"),
     user: requireEnv("DB_USER"),
     password: requireEnv("DB_PASSWORD"),
     database: requireEnv("DB_NAME"),

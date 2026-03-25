@@ -11,7 +11,8 @@ const handler = ApiReference(config);
 export async function GET(request: Request) {
   try {
     return await handler(request);
-  } catch {
+  } catch (error) {
+    console.error("[GET /api-docs]", error);
     return NextResponse.json(
       { error: "API Reference를 불러올 수 없습니다." },
       { status: 500 },
