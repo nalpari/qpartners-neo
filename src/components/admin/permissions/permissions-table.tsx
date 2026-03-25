@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
-import { useAlertStore } from "@/lib/store";
+import { useAlertStore, usePopupStore } from "@/lib/store";
 import { DUMMY_PERMISSIONS } from "./permissions-dummy-data";
 import type { PermissionItem } from "./permissions-dummy-data";
 import type { RowClassParams } from "ag-grid-community";
@@ -176,16 +176,13 @@ export function PermissionsTable() {
   function MenuCellRenderer(params: ICellRendererParams<PermissionItem>) {
     const data = params.data;
     if (!data || data.isNew) return null;
+
+    const openPopup = usePopupStore.getState().openPopup;
+
     return (
       <Button
         variant="outline"
-        onClick={() =>
-          openAlert({
-            type: "alert",
-            message: "権限メニュー設定画面は準備中です。",
-            confirmLabel: "確認",
-          })
-        }
+        onClick={() => openPopup("permission-menu", { permissionName: data.name })}
         className="!h-[38px] !min-w-[80px] !px-4 !text-[13px]"
       >
         Menu
