@@ -227,6 +227,8 @@ model ContentTarget {
   endAt      DateTime?  @map("end_at")
   createdAt  DateTime   @default(now()) @map("created_at")
   createdBy  String?    @map("created_by") @db.VarChar(255)
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  updatedBy  String?    @map("updated_by") @db.VarChar(255)
 
   content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
@@ -285,6 +287,8 @@ model ContentAttachment {
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
   createdBy String?  @map("created_by") @db.VarChar(255)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by") @db.VarChar(255)
 
   content      Content       @relation(fields: [contentId], references: [id], onDelete: Cascade)
   downloadLogs DownloadLog[]
@@ -305,6 +309,7 @@ model PasswordResetToken {
   expiresAt  DateTime   @map("expires_at")
   used       Boolean    @default(false)
   createdAt  DateTime   @default(now()) @map("created_at")
+  createdBy  String?    @map("created_by") @db.VarChar(255)
 
   @@index([userType, userId], map: "idx_user")
   @@index([expiresAt], map: "idx_expires_at")
@@ -321,6 +326,7 @@ model TwoFactorCode {
   expiresAt  DateTime   @map("expires_at")
   verified   Boolean    @default(false)
   createdAt  DateTime   @default(now()) @map("created_at")
+  createdBy  String?    @map("created_by") @db.VarChar(255)
 
   @@index([userType, userId], map: "idx_user")
   @@index([expiresAt], map: "idx_expires_at")
@@ -394,6 +400,8 @@ model MassMailRecipient {
   userType      UserType      @map("user_type")
   userId        String        @map("user_id") @db.VarChar(255)
   email         String        @db.VarChar(255)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  createdBy     String?       @map("created_by") @db.VarChar(255)
 
   massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
 
@@ -411,6 +419,8 @@ model MassMailAttachment {
   fileSize   BigInt?  @map("file_size")
   createdAt  DateTime @default(now()) @map("created_at")
   createdBy  String?  @map("created_by") @db.VarChar(255)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedBy  String?  @map("updated_by") @db.VarChar(255)
 
   massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
 
@@ -450,6 +460,7 @@ model Inquiry {
   title       String     @db.VarChar(500)
   content     String     @db.Text
   createdAt   DateTime   @default(now()) @map("created_at")
+  createdBy  String?     @map("created_by") @db.VarChar(255)
 
   @@index([userType, userId], map: "idx_user")
   @@index([createdAt], map: "idx_created_at")
