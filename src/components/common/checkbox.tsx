@@ -2,6 +2,7 @@
 
 interface CheckboxProps {
   checked?: boolean;
+  indeterminate?: boolean;
   onChange?: (checked: boolean) => void;
   label?: string;
   disabled?: boolean;
@@ -11,6 +12,7 @@ interface CheckboxProps {
 
 export function Checkbox({
   checked = false,
+  indeterminate = false,
   onChange,
   label,
   disabled = false,
@@ -18,6 +20,7 @@ export function Checkbox({
   className = "",
 }: CheckboxProps) {
   const inactive = disabled || readOnly;
+  const isIndeterminate = indeterminate && !checked;
 
   return (
     <label
@@ -45,10 +48,10 @@ export function Checkbox({
             width="20"
             height="20"
             rx="4"
-            fill={checked ? "#1060B4" : "#fff"}
+            fill={checked ? "#1060B4" : isIndeterminate ? "#999" : "#fff"}
             className="transition-colors duration-200"
           />
-          {!checked && (
+          {!checked && !isIndeterminate && (
             <rect
               x="0.5"
               y="0.5"
@@ -59,16 +62,28 @@ export function Checkbox({
               className="transition-opacity duration-200"
             />
           )}
-          <path
-            d="M5.5 10L8.5 13L14.5 7"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="16"
-            strokeDashoffset={checked ? "0" : "16"}
-            className="transition-[stroke-dashoffset] duration-200"
-          />
+          {isIndeterminate ? (
+            <line
+              x1="6"
+              y1="10"
+              x2="14"
+              y2="10"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          ) : (
+            <path
+              d="M5.5 10L8.5 13L14.5 7"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="16"
+              strokeDashoffset={checked ? "0" : "16"}
+              className="transition-[stroke-dashoffset] duration-200"
+            />
+          )}
         </svg>
       </span>
       {label && (

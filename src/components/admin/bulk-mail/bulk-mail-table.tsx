@@ -1,11 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox, Checkbox, Button } from "@/components/common";
-import { useAlertStore } from "@/lib/store";
 import { DUMMY_BULK_MAILS } from "./bulk-mail-dummy-data";
 import type { BulkMailItem } from "./bulk-mail-dummy-data";
 
@@ -26,29 +25,20 @@ function TitleCellRenderer(params: ICellRendererParams<BulkMailItem>) {
   if (!data) return null;
 
   return (
-    <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer">
+    <button
+      type="button"
+      className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
+      onClick={() => {
+        window.location.href = `/admin/bulk-mail/${data.id}`;
+      }}
+    >
       {data.title}
-    </span>
-  );
-}
-
-function AttachmentCellRenderer(params: ICellRendererParams<BulkMailItem>) {
-  if (!params.data?.hasAttachment) return null;
-  return (
-    <div className="flex items-center justify-center w-full">
-      <Image
-        src="/asset/images/layout/download_icon.svg"
-        alt=""
-        width={16}
-        height={18}
-        unoptimized
-      />
-    </div>
+    </button>
   );
 }
 
 export function BulkMailTable() {
-  const { openAlert } = useAlertStore();
+  const router = useRouter();
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState("100");
   const [draftOnly, setDraftOnly] = useState(false);
@@ -61,11 +51,7 @@ export function BulkMailTable() {
   const totalPages = Math.ceil(totalCount / Number(perPage));
 
   const handleSendMail = () => {
-    openAlert({
-      type: "alert",
-      message: "メール発送画面は準備中です。",
-      confirmLabel: "確認",
-    });
+    router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
   const columnDefs = useMemo<ColDef<BulkMailItem>[]>(
@@ -103,9 +89,10 @@ export function BulkMailTable() {
         headerName: "添付ファイル",
         field: "hasAttachment",
         flex: 0.6,
-        cellRenderer: AttachmentCellRenderer,
+        cellDataType: false,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
+        valueFormatter: (params) => params.value ? "Y" : "N",
       },
       {
         headerName: "登録者名",
