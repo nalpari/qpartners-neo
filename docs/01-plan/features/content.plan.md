@@ -37,7 +37,7 @@ Q.PARTNERS 플랫폼의 핵심 기능인 콘텐츠(제품 자료, 뉴스, 기술
 
 ### 1.3 Related Documents
 
-- 화면설계서: `D:\인터플러그\Qpartners\화면설계서\(Q.Partners) 화면설계서_v1.0_260320(PDF).pdf` (p.22~31)
+- 화면설계서: `D:\인터플러그\Qpartners\화면설계서\(Q.Partners) 화면설계서_v1.0_260324(PDF).pdf` (p.22~31)
 - TO-BE DB 설계: `docs/02-design/features/to-be-db-v2.design.md`
 - Prisma Schema: `prisma/schema.prisma` (Content 관련 5개 모델)
 
@@ -85,7 +85,7 @@ Q.PARTNERS 플랫폼의 핵심 기능인 콘텐츠(제품 자료, 뉴스, 기술
 | FR-11 | 콘텐츠 수정 — 게재담당자/게재일 Read-only, 갱신담당자 자동 업데이트 | High | Pending | p.30~31 |
 | FR-12 | 콘텐츠 삭제 — 슈퍼관리자는 동일부문만, 단일관리자는 본인 등록만 | Medium | Pending | p.29 |
 | FR-13 | 첨부파일 업로드 — 파일 저장 + 메타데이터(파일명/크기/MIME) 기록 | High | Pending | p.27 |
-| FR-14 | 다운로드 기록 조회 — 제목/자료명 Like 검색, 삭제/기간만료 시 취소선 | Medium | Pending | p.37 |
+| FR-14 | 다운로드 기록 조회 — 제목/자료명 Like 검색, 삭제/기간만료 시 취소선 | Medium | Pending | p.42 |
 | FR-15 | 사내회원(슈퍼관리자+관리자) 게시대상 무관 항상 조회 가능 | High | Pending | 비즈니스 규칙 |
 | FR-16 | 사내전용 카테고리 빨간색 표시 + 권한자에게만 노출 | Medium | Pending | 비즈니스 규칙 |
 

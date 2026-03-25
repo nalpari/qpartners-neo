@@ -31,7 +31,7 @@ export const idParamSchema = z.coerce
 
 export const createCodeHeaderSchema = z.object({
   headerCode: z.string().min(1, "headerCode는 필수입니다").max(20),
-  headerId: z.string().min(1, "headerId는 필수입니다").max(50),
+  headerAlias: z.string().min(1, "headerAlias는 필수입니다").max(50),
   headerName: z.string().min(1, "headerName은 필수입니다").max(255),
   relCode1: z.string().max(50).nullable().default(null),
   relCode2: z.string().max(50).nullable().default(null),
@@ -43,7 +43,7 @@ export const createCodeHeaderSchema = z.object({
 });
 
 export const updateCodeHeaderSchema = z.object({
-  headerId: z.string().min(1, "headerId는 필수입니다").max(50).optional(),
+  headerAlias: z.string().min(1, "headerAlias는 필수입니다").max(50).optional(),
   headerName: z.string().min(1, "headerName은 필수입니다").max(255).optional(),
   relCode1: z.string().max(50).nullable().optional(),
   relCode2: z.string().max(50).nullable().optional(),
@@ -63,6 +63,7 @@ export const createCodeDetailSchema = z.object({
   codeNameEtc: z.string().max(255).nullable().default(null),
   relCode1: z.string().max(50).nullable().default(null),
   relCode2: z.string().max(50).nullable().default(null),
+  relCode3: z.string().max(50).nullable().default(null),
   relNum1: decimalFieldCreate,
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
@@ -75,6 +76,7 @@ export const updateCodeDetailSchema = z.object({
   codeNameEtc: z.string().max(255).nullable().optional(),
   relCode1: z.string().max(50).nullable().optional(),
   relCode2: z.string().max(50).nullable().optional(),
+  relCode3: z.string().max(50).nullable().optional(),
   relNum1: decimalFieldUpdate,
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
