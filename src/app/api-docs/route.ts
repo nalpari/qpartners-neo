@@ -8,9 +8,9 @@ const config = {
 
 const handler = ApiReference(config);
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    return await handler(request);
+    return await handler();
   } catch (error) {
     console.error("[GET /api-docs]", error);
     return NextResponse.json(
