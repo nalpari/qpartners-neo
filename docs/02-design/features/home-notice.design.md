@@ -25,13 +25,15 @@ HomeNotice (qp_home_notices)
 ├── endAt: DateTime
 ├── content: String (Text)
 ├── url: String? (500)
-├── status: NoticeStatus (scheduled|active|ended)
-├── authorSource: UserSource
-├── authorId: String (255)
-├── updaterSource: UserSource?
-├── updaterId: String? (255)
-├── createdAt / updatedAt
+├── userType: UserType (ADMIN|DEALER|SEKO|GENERAL)
+├── userId: String (255)
+├── createdAt: DateTime
+├── createdBy: String? (255)
+├── updatedAt: DateTime
+├── updatedBy: String? (255)
 ```
+
+> **Note**: `status` 컬럼은 DB에 존재하지 않음. `startAt`/`endAt`과 현재 시각을 비교하는 동적(computed) 값으로만 사용.
 
 ---
 
@@ -98,13 +100,13 @@ HomeNotice (qp_home_notices)
 **비즈니스 로직:**
 - 게시대상 최소 1개 이상 체크 필수
 - 활성(scheduled + active) 공지 5개 초과 시 등록 불가 → 400
-- authorSource, authorId 헤더에서 추출
-- status는 저장 시 startAt/endAt 기준 자동 판별
+- userType, userId 헤더에서 추출
+- status는 DB에 저장되지 않음 — 조회 시 startAt/endAt과 현재 시각 비교로 동적 산출 (computed field)
 
 ### `PUT /api/home-notices/[id]` — 공지 수정
 
 **수정 가능:** 전체 필드 (게시대상, 기간, 내용, URL)
-**자동 업데이트:** updaterSource, updaterId, updatedAt
+**자동 업데이트:** updatedBy, updatedAt
 
 ### `DELETE /api/home-notices/[id]` — 공지 삭제
 
