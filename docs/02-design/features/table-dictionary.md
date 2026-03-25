@@ -265,6 +265,8 @@ TO-BE Q.Partners-neo (서비스 운영)
 |------|------|------|------|
 | content_id | INT PK/FK | 콘텐츠 ID → qp_contents.id | 복합 PK의 일부 |
 | category_id | INT PK/FK | 카테고리 ID → qp_categories.id | 복합 PK의 일부 |
+| created_at | DATETIME | 등록일시 | - |
+| created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
 
 **복합 PK**: `(content_id, category_id)` — 양쪽 모두 CASCADE DELETE
 

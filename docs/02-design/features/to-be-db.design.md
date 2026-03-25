@@ -408,6 +408,8 @@ CREATE TABLE categories (
 CREATE TABLE content_categories (
   content_id          INT NOT NULL,
   category_id         INT NOT NULL,
+  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by          VARCHAR(255) NULL,
   PRIMARY KEY (content_id, category_id),
   FOREIGN KEY (content_id) REFERENCES contents(id) ON DELETE CASCADE,
   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
