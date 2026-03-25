@@ -36,7 +36,7 @@ export function AdminTab() {
   }
 
   return (
-    <nav className="flex gap-1 w-full max-w-[1440px]">
+    <nav className="flex gap-1 w-full max-w-[1440px] pb-[32px]">
       {TABS.map((tab) => {
         const active = isActive(tab);
         return (

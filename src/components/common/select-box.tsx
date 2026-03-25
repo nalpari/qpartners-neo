@@ -58,7 +58,7 @@ export function SelectBox({
           inactive
             ? "bg-[#F5F5F5] border-[#E0E0E0] cursor-not-allowed"
             : "bg-white border-[#EBEBEB] cursor-pointer hover:border-[#D1D1D1]"
-        } ${isOpen ? "border-[#E97923]" : ""}`}
+        } ${isOpen ? "border-[#1060B4]" : ""}`}
       >
         <span
           className={`flex-1 font-['Noto_Sans_JP'] text-sm leading-[1.5] truncate ${
@@ -96,7 +96,7 @@ export function SelectBox({
               onClick={() => handleSelect(option.value)}
               className={`flex items-center w-full px-4 h-[40px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-left transition-colors duration-100 ${
                 option.value === value
-                  ? "bg-[#FFF5ED] text-[#E97923]"
+                  ? "bg-[#EDF4FB] text-[#1060B4]"
                   : "text-[#101010] hover:bg-[#F5F5F5]"
               }`}
             >

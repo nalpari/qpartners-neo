@@ -1,3 +1,5 @@
-export default function Page() {
-  return null;
+import { MembersContents } from "@/components/admin/members/members-contents";
+
+export default function AdminMembersPage() {
+  return <MembersContents />;
 }

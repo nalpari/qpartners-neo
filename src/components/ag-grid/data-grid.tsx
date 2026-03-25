@@ -44,12 +44,16 @@ interface DataGridProps<T> {
   columnDefs: ColDef<T>[];
   rowData: T[];
   className?: string;
+  maxHeight?: number;
 }
+
+const DEFAULT_MAX_HEIGHT = 500;
 
 export function DataGrid<T>({
   columnDefs,
   rowData,
   className = "",
+  maxHeight = DEFAULT_MAX_HEIGHT,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -69,13 +73,16 @@ export function DataGrid<T>({
   };
 
   return (
-    <div className={`w-full ${className}`}>
+    <div
+      className={`w-full ${className}`}
+      style={maxHeight ? { height: maxHeight } : undefined}
+    >
       <AgGridReact<T>
         theme={customTheme}
         rowData={rowData}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
-        domLayout="autoHeight"
+        domLayout={maxHeight ? "normal" : "autoHeight"}
         getRowClass={getRowClass}
         suppressCellFocus
         suppressRowHoverHighlight={false}
