@@ -87,6 +87,7 @@ export function TwoFactorAuthPopup() {
         aria-modal="true"
         aria-label="2段階認証"
       >
+        <div className="popup-container__inner">
         {/* 타이틀 */}
         <div className="flex items-center justify-center w-full">
           <h2 className="font-['Noto_Sans_JP'] font-semibold text-[20px] leading-[1.5] text-[#101010] text-center">
@@ -183,6 +184,7 @@ export function TwoFactorAuthPopup() {
               </Button>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

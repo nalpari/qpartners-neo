@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ColDef } from "ag-grid-community";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox } from "@/components/common";
+import { usePopupStore } from "@/lib/store";
 import { DUMMY_MEMBERS } from "./members-dummy-data";
-import type { MemberItem } from "./members-dummy-data";
+import type { MemberDetailItem } from "./members-dummy-data";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -19,6 +20,23 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
+  const data = params.data;
+  if (!data) return null;
+
+  const openPopup = usePopupStore.getState().openPopup;
+
+  return (
+    <button
+      type="button"
+      className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
+      onClick={() => openPopup("member-detail", { member: data })}
+    >
+      {data.name}
+    </button>
+  );
+}
+
 export function MembersTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState("100");
@@ -26,7 +44,7 @@ export function MembersTable() {
   const totalCount = DUMMY_MEMBERS.length;
   const totalPages = Math.ceil(totalCount / Number(perPage));
 
-  const columnDefs = useMemo<ColDef<MemberItem>[]>(
+  const columnDefs = useMemo<ColDef<MemberDetailItem>[]>(
     () => [
       {
         headerName: "状態",
@@ -45,6 +63,7 @@ export function MembersTable() {
         headerName: "氏名",
         field: "name",
         flex: 1,
+        cellRenderer: NameCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -106,14 +125,13 @@ export function MembersTable() {
             options={PER_PAGE_OPTIONS}
             value={perPage}
             onChange={setPerPage}
-            
           />
         </div>
       </div>
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        <DataGrid<MemberItem>
+        <DataGrid<MemberDetailItem>
           columnDefs={columnDefs}
           rowData={DUMMY_MEMBERS}
         />

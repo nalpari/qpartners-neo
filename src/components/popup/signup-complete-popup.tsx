@@ -40,6 +40,7 @@ export function SignupCompletePopup() {
         aria-modal="true"
         aria-label="会員登録完了"
       >
+        <div className="popup-container__inner">
         {/* 타이틀 */}
         <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
           <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
@@ -96,6 +97,7 @@ export function SignupCompletePopup() {
               ログイン画面に移動
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>

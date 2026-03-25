@@ -92,6 +92,7 @@ export function PersonalInfoPopup() {
         aria-modal="true"
         aria-label="会員情報の設定"
       >
+        <div className="popup-container__inner">
         {/* 타이틀 */}
         <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
           <h2 className="flex-1 font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-semibold leading-[1.5] text-[#E97923]">
@@ -247,6 +248,7 @@ export function PersonalInfoPopup() {
               保存
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>

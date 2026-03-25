@@ -9,6 +9,7 @@ import { ZipcodeSearchPopup } from "@/components/popup/zipcode-search-popup";
 import { SignupCompletePopup } from "@/components/popup/signup-complete-popup";
 import { PasswordChangePopup } from "@/components/popup/password-change-popup";
 import { WithdrawPopup } from "@/components/popup/withdraw-popup";
+import { MemberDetailPopup } from "@/components/popup/member-detail-popup";
 
 export function PopupController() {
   const activePopup = usePopupStore((s) => s.activePopup);
@@ -30,6 +31,8 @@ export function PopupController() {
       return <PasswordChangePopup />;
     case "withdraw":
       return <WithdrawPopup />;
+    case "member-detail":
+      return <MemberDetailPopup />;
     default:
       return null;
   }

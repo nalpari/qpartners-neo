@@ -59,7 +59,7 @@ export function AlertDialog() {
             <Button
               variant="secondary"
               onClick={handleClose}
-              className="w-[97px]"
+              className="w-[68px]"
             >
               {options.cancelLabel ?? "キャンセル"}
             </Button>

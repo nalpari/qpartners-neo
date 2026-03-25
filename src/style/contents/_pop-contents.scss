@@ -49,18 +49,13 @@
   }
 }
 
-// 팝업 컨테이너 (공통)
+// 팝업 외부 래퍼 — border-radius 클리핑 전용
 .popup-container {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
   width: 100%;
   max-height: 90vh;
-  overflow-y: auto;
-  background-color: #fff;
   border-radius: 16px;
+  overflow: hidden;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.05);
-  padding: 24px 24px 34px;
   margin: 18px;
   animation: popup-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 
@@ -70,8 +65,23 @@
 
   @media (min-width: 1024px) {
     width: 620px;
-    padding: 34px 42px;
     margin: 0;
+  }
+}
+
+// 팝업 내부 스크롤 영역
+.popup-container__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 24px 24px 34px;
+
+  @media (min-width: 1024px) {
+    padding: 34px 42px;
   }
 }
 

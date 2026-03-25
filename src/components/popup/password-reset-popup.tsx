@@ -93,6 +93,7 @@ export function PasswordResetPopup() {
         aria-modal="true"
         aria-label="パスワードの初期化"
       >
+        <div className="popup-container__inner">
         {/* 타이틀 */}
         <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
           <h2 className="flex-1 font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-semibold leading-[1.5] text-[#E97923]">
@@ -233,6 +234,7 @@ export function PasswordResetPopup() {
               パスワードの初期化
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>
