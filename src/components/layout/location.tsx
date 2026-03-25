@@ -31,6 +31,11 @@ const ROUTE_MAP: Record<string, LocationItem> = {
     title: "お問い合わせ",
     breadcrumbs: [{ label: "お問い合わせ" }],
   },
+  "/admin": {
+    icon: "/asset/images/layout/manage_location.svg",
+    title: "マネージャー",
+    breadcrumbs: [{ label: "マネージャー" }],
+  },
 };
 
 function findLocation(pathname: string): LocationItem | null {

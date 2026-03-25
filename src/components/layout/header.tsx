@@ -217,8 +217,9 @@ export function Gnb() {
                     </span>
                   </button>
                   {/* 톱니바퀴 (管理者) — 맨 오른쪽 */}
-                  <button
-                    type="button"
+                  <Link
+                    href="/admin"
+                    transitionTypes={["fade"]}
                     className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                     aria-label="管理者設定"
                   >
@@ -228,7 +229,7 @@ export function Gnb() {
                       width={21}
                       height={22}
                     />
-                  </button>
+                  </Link>
                 </div>
               </>
             ) : (
@@ -475,12 +476,14 @@ export function Gnb() {
           <div className="bg-[#121212] rounded-[12px] py-[14px] mt-auto">
             {isLoggedIn ? (
               <div className="flex items-center justify-around px-7">
-                <button
-                  type="button"
+                <Link
+                  href="/mypage"
+                  transitionTypes={["fade"]}
                   className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap"
+                  onClick={() => setIsMobileMenuOpen(false)}
                 >
                   マイページ
-                </button>
+                </Link>
                 <span className="w-px h-[10px] bg-[#5b5b5b]" />
                 <button
                   type="button"
