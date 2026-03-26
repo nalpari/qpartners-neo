@@ -11,6 +11,13 @@
   justify-content: center;
 }
 
+/* 헤더 텍스트 줄바꿈 */
+.ag-header-cell-wrap .ag-header-cell-text {
+  white-space: pre-line;
+  text-align: center;
+  line-height: 1.3;
+}
+
 /* 홀짝 행 번갈아 배경색 */
 .ag-row-striped {
   background-color: #fcfdff !important;
@@ -19,6 +26,16 @@
 /* 행 hover */
 .ag-row:hover {
   background-color: #f0f4f8 !important;
+}
+
+/* 셀 선택/포커스 배경 제거 */
+.ag-cell-focus,
+.ag-cell-no-focus {
+  border: none !important;
+}
+.ag-cell-range-selected,
+.ag-cell-range-selected-1 {
+  background-color: transparent !important;
 }
 
 /* 루트 래퍼 border 제거 */

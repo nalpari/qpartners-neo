@@ -201,6 +201,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={0}
+            context={{ selectedLevel1Id }}
           />
         </div>
 

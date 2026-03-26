@@ -46,6 +46,7 @@ interface DataGridProps<T> {
   className?: string;
   maxHeight?: number;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
+  context?: Record<string, unknown>;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -56,6 +57,7 @@ export function DataGrid<T>({
   className = "",
   maxHeight = DEFAULT_MAX_HEIGHT,
   getRowClass: externalGetRowClass,
+  context,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -90,6 +92,7 @@ export function DataGrid<T>({
         defaultColDef={defaultColDef}
         domLayout={maxHeight ? "normal" : "autoHeight"}
         getRowClass={getRowClass}
+        context={context}
         suppressCellFocus
         suppressRowHoverHighlight={false}
         headerHeight={57}

@@ -26,11 +26,6 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
       {/* PC 레이아웃 — 가로 + 구분선 */}
       <div className="hidden lg:flex items-center justify-center gap-3">
         <ButtonLinkItem
-          label="ID紛失お問い合わせ"
-          onClick={() => openPopup("id-inquiry", { activeTab })}
-        />
-        <span className="w-px h-3 bg-[#D9D9D9]" />
-        <ButtonLinkItem
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
         />
@@ -46,14 +41,9 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
       {/* 모바일 레이아웃 — 세로 박스 */}
       <div className="flex lg:hidden flex-col w-full">
         <MobileButtonLinkItem
-          label="ID紛失お問い合わせ"
-          onClick={() => openPopup("id-inquiry", { activeTab })}
-          className="rounded-t-[4px] border border-[#EEE]"
-        />
-        <MobileButtonLinkItem
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
-          className="border-x border-b border-[#EEE]"
+          className="rounded-t-[4px] border border-[#EEE]"
         />
         <MobileLinkItem
           label="会員登録"

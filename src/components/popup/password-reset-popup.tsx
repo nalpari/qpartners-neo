@@ -37,11 +37,7 @@ function isFormValid(tab: TabType, data: FormData): boolean {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
     case "installer":
-      return (
-        data.email.trim() !== "" &&
-        data.lastName.trim() !== "" &&
-        data.firstName.trim() !== ""
-      );
+      return data.email.trim() !== "";
     case "general":
       return data.idEmail.trim() !== "" && data.fullName.trim() !== "";
   }
@@ -165,47 +161,17 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "installer" && (
-              <>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    E-Mail<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex gap-4 w-full">
-                  <div className="flex flex-col gap-2 flex-1">
-                    <label className={labelClass}>
-                      姓<span className="text-[#FF1A1A]">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.lastName}
-                      onChange={(e) =>
-                        handleChange("lastName", e.target.value)
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2 flex-1">
-                    <label className={labelClass}>
-                      名<span className="text-[#FF1A1A]">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.firstName}
-                      onChange={(e) =>
-                        handleChange("firstName", e.target.value)
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-              </>
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>
+                  E-Mail<span className="text-[#FF1A1A]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
             )}
 
             {activeTab === "general" && (
