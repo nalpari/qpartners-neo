@@ -164,7 +164,7 @@
 
 **비밀번호 정책:**
 - 8자 이상
-- 영문/숫자/기호 중 2가지 이상 조합
+- 영문대문자 + 영문소문자 + 숫자 조합
 
 **서버 처리 흐름:**
 1. 토큰 재검증 (유효 + 미사용 + 미만료)
@@ -191,7 +191,7 @@
 **Response (400 — 정책 위반):**
 ```json
 {
-  "error": "비밀번호는 영문/숫자/기호 중 2가지 이상을 조합하여 8자 이상이어야 합니다."
+  "error": "비밀번호는 영문대문자, 영문소문자, 숫자를 조합하여 8자 이상이어야 합니다."
 }
 ```
 
@@ -296,13 +296,12 @@ export const emailCheckSchema = z.object({
 
 **비밀번호 정책 검증 (커스텀):**
 ```typescript
-// 영문/숫자/기호 중 2가지 이상 조합
+// 영문대문자 + 영문소문자 + 숫자 조합
 function validatePasswordPolicy(password: string): boolean {
-  let types = 0;
-  if (/[a-zA-Z]/.test(password)) types++;
-  if (/[0-9]/.test(password)) types++;
-  if (/[^a-zA-Z0-9]/.test(password)) types++;
-  return password.length >= 8 && types >= 2;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  return password.length >= 8 && hasUpperCase && hasLowerCase && hasNumber;
 }
 ```
 
