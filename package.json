@@ -16,6 +16,7 @@
     "ag-grid-community": "^35.1.0",
     "ag-grid-react": "^35.1.0",
     "axios": "^1.13.6",
+    "jose": "^6.2.2",
     "mariadb": "^3.5.2",
     "next": "16.2.0",
     "openapi-types": "^12.1.3",
