@@ -23,16 +23,110 @@ export const openApiSpec: OpenAPIV3.Document = {
   info: {
     title: "Q.PARTNERS API",
     version: "1.0.0",
-    description: "Q.PARTNERS 공통코드 관리 API",
+    description: "Q.PARTNERS REST API — 인증, 공통코드 관리",
   },
   servers: [{ url: "/api", description: "Local API" }],
 
   tags: [
+    { name: "Auth", description: "인증 (로그인/로그아웃/사용자 정보)" },
     { name: "CodeHeader", description: "공통코드 헤더 관리" },
     { name: "CodeDetail", description: "공통코드 상세 관리" },
   ],
 
   paths: {
+    // ─── Auth ───
+    "/auth/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "로그인 (QSP 프록시)",
+        description: `QSP 외부 로그인 API를 프록시하여 인증 처리. 성공 시 JWT httpOnly 쿠키 설정.
+
+**테스트 계정:**
+| 유형 | ID | PW | userTp |
+|------|-----|------|--------|
+| 관리자 | 1301011 | 1234 | ADMIN |
+| 1차 판매점 | T01 | 1234 | DEALER |
+| 2차 판매점 | 201T01 | 1234 | DEALER |
+| 일반 | test1 | 1234 | GENERAL |`,
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LoginRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "로그인 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/LoginUser" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
+          "502": errorResponse("외부 인증 서버 오류"),
+        },
+      },
+    },
+    "/auth/logout": {
+      post: {
+        tags: ["Auth"],
+        summary: "로그아웃",
+        description: "인증 쿠키를 삭제하여 세션 종료.",
+        responses: {
+          "200": {
+            description: "로그아웃 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "로그아웃 되었습니다" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/auth/me": {
+      get: {
+        tags: ["Auth"],
+        summary: "현재 로그인 사용자 정보",
+        description: "JWT 쿠키에서 현재 로그인한 사용자 정보를 반환.",
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/LoginUser" },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증되지 않은 사용자입니다"),
+        },
+      },
+    },
+
     // ─── CodeHeader ───
     "/codes": {
       get: {
@@ -377,6 +471,35 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
         required: ["error", "issues"],
+      },
+      LoginRequest: {
+        type: "object",
+        required: ["loginId", "pwd"],
+        properties: {
+          loginId: { type: "string", example: "test1", description: "로그인 ID" },
+          pwd: { type: "string", example: "1234", description: "비밀번호" },
+          userTp: {
+            type: "string",
+            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            default: "GENERAL",
+            description: "사용자 유형",
+          },
+        },
+      },
+      LoginUser: {
+        type: "object",
+        properties: {
+          userId: { type: "string", example: "test1" },
+          userNm: { type: "string", nullable: true, example: "テスト太郎" },
+          userTp: { type: "string", example: "GENERAL" },
+          compCd: { type: "string", nullable: true, example: "5200" },
+          compNm: { type: "string", nullable: true },
+          email: { type: "string", nullable: true },
+          deptNm: { type: "string", nullable: true },
+          authCd: { type: "string", nullable: true, example: "NORMAL" },
+          storeLvl: { type: "string", nullable: true, description: "판매점 레벨 (1=1차, 2=2차)" },
+          statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
+        },
       },
       CodeHeader: {
         type: "object",
