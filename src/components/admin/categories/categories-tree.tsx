@@ -71,10 +71,12 @@ export function CategoriesTree({
         {treeData.map((parent) => (
           <div key={parent.id} className="flex flex-col gap-[4px]">
             {/* 1Depth Row */}
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(parent.id)}
-              className={`flex items-center h-[58px] pl-[18px] pr-[16px] py-[12px] rounded-[6px] bg-[#eef3f9] border w-full text-left transition-all duration-200 hover:bg-[#e5edf6] ${
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(parent.id); } }}
+              className={`flex items-center h-[58px] pl-[18px] pr-[16px] py-[12px] rounded-[6px] bg-[#eef3f9] border w-full text-left cursor-pointer transition-all duration-200 hover:bg-[#e5edf6] ${
                 selectedId === parent.id ? "border-[#101010]" : "border-[#d8e2ed]"
               }`}
             >
@@ -121,7 +123,7 @@ export function CategoriesTree({
                   {parent.sortOrder}
                 </span>
               </div>
-            </button>
+            </div>
 
             {/* 2Depth Rows — grid 트랜지션으로 펼침/접힘 애니메이션 */}
             <div
