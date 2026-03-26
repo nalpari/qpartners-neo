@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Checkbox } from "@/components/common/checkbox";
 import { Button } from "@/components/common/button";
+import { usePopupStore } from "@/lib/store";
 
 type TabType = "dealer" | "installer" | "general";
 
@@ -63,6 +64,7 @@ export function LoginForm({
   onClearId,
   onSubmit,
 }: LoginFormProps) {
+  const { openPopup } = usePopupStore();
   const config = TAB_CONFIG[activeTab];
 
   return (
@@ -176,8 +178,9 @@ export function LoginForm({
                 利用規約に同意する必要があります
                 <button
                   type="button"
-                  onClick={(e) => e.preventDefault()}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[#E97923] underline"
+                  onClick={(e) => { e.preventDefault(); openPopup("terms"); }
+                  }
+                  className="font-['Noto_Sans_JP'] font-semibold text-[#E97923] underline cursor-pointer"
                 >
                   (表示)
                 </button>

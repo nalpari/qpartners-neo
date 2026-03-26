@@ -11,6 +11,7 @@ import { WithdrawPopup } from "@/components/popup/withdraw-popup";
 import { MemberDetailPopup } from "@/components/popup/member-detail-popup";
 import { NoticeFormPopup } from "@/components/popup/notice-form-popup";
 import { PermissionMenuPopup } from "@/components/popup/permission-menu-popup";
+import { TermsPopup } from "@/components/popup/terms-popup";
 
 export function PopupController() {
   const activePopup = usePopupStore((s) => s.activePopup);
@@ -36,6 +37,8 @@ export function PopupController() {
       return <NoticeFormPopup />;
     case "permission-menu":
       return <PermissionMenuPopup />;
+    case "terms":
+      return <TermsPopup />;
     default:
       return null;
   }

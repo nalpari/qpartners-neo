@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { InputBox, Button, Checkbox } from "@/components/common";
+import { InputBox, Button, Checkbox, Radio } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 
 const EMAIL_CHECK_MESSAGES: Record<string, string> = {
@@ -33,6 +33,7 @@ export function SignupContents() {
     passwordConfirm: "",
     department: "",
     position: "",
+    newsletter: true,
     agreeTerms: false,
   });
 
@@ -129,9 +130,9 @@ export function SignupContents() {
             </h2>
 
             {/* 폼 행들 */}
-            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-4">
+            <div className="flex flex-col gap-4 mt-4 lg:gap-[4px] lg:mt-4">
               {/* 회원유형 (Read Only) */}
-              <FormRow label="会員タイプ" isFirst>
+              <FormRow label="会員タイプ">
                 <p className="font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5] lg:pl-6">
                   一般会員
                 </p>
@@ -160,7 +161,7 @@ export function SignupContents() {
                     value={form.postalCode}
                     readOnly
                     disabled
-                    className="lg:flex-1"
+                    className="w-full lg:w-[120px]"
                   />
                   <button
                     type="button"
@@ -202,7 +203,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* FAX 번호 */}
-              <FormRow label="FAX番号" isLast>
+              <FormRow label="FAX番号">
                 <InputBox
                   value={form.fax}
                   onChange={(v) => updateField("fax", v)}
@@ -218,15 +219,15 @@ export function SignupContents() {
               会員情報 <span className="text-[#FF1A1A]">(*必須)</span>
             </h2>
 
-            <div className="flex flex-col gap-4 mt-4 lg:gap-0 lg:mt-4">
+            <div className="flex flex-col gap-4 mt-4 lg:gap-[4px] lg:mt-4">
               {/* 성명 (2칸) */}
-              <FormRow label="氏名" required isFirst>
+              <FormRow label="氏名" required>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastName}
                     onChange={(v) => updateField("lastName", v)}
                     placeholder="姓"
-                    className="lg:flex-1"
+                    className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstName}
@@ -244,7 +245,7 @@ export function SignupContents() {
                     value={form.lastNameKana}
                     onChange={(v) => updateField("lastNameKana", v)}
                     placeholder="姓"
-                    className="lg:flex-1"
+                    className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstNameKana}
@@ -262,7 +263,7 @@ export function SignupContents() {
                     value={form.email}
                     onChange={(v) => updateField("email", v)}
                     type="email"
-                    className="lg:flex-1"
+                    className="w-full lg:w-[602px]"
                   />
                   <button
                     type="button"
@@ -272,7 +273,7 @@ export function SignupContents() {
                     冗長チェック
                   </button>
                   {emailCheckStatus !== "idle" && (
-                    <p className="font-['Noto_Sans_JP'] text-sm text-[#FF1A1A] leading-[1.5] lg:flex lg:items-center lg:pl-2 lg:pr-[18px] lg:shrink-0">
+                    <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0">
                       {EMAIL_CHECK_MESSAGES[emailCheckStatus]}
                     </p>
                   )}
@@ -319,11 +320,29 @@ export function SignupContents() {
               </FormRow>
 
               {/* 직책 */}
-              <FormRow label="役職" isLast>
+              <FormRow label="役職">
                 <InputBox
                   value={form.position}
                   onChange={(v) => updateField("position", v)}
                 />
+              </FormRow>
+
+              {/* 뉴스레터 수신 */}
+              <FormRow label="ニュースレターの受信" required>
+                <div className="flex items-center gap-[12px] lg:px-[16px]">
+                  <Radio
+                    checked={form.newsletter}
+                    onChange={() => updateField("newsletter", true)}
+                    label="許可"
+                    name="newsletter"
+                  />
+                  <Radio
+                    checked={!form.newsletter}
+                    onChange={() => updateField("newsletter", false)}
+                    label="拒否"
+                    name="newsletter"
+                  />
+                </div>
               </FormRow>
             </div>
 
@@ -337,7 +356,7 @@ export function SignupContents() {
                 />
                 <button
                   type="button"
-                  onClick={() => window.alert("利用規約の内容がここに表示されます。")}
+                  onClick={() => openPopup("terms")}
                   className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
                 >
                   見る
@@ -370,7 +389,7 @@ export function SignupContents() {
           />
           <button
             type="button"
-            onClick={() => window.alert("利用規約の内容がここに表示されます。")}
+            onClick={() => openPopup("terms")}
             className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
           >
             見る
@@ -400,35 +419,23 @@ export function SignupContents() {
 function FormRow({
   label,
   required,
-  isFirst,
-  isLast,
   children,
 }: {
   label: string;
   required?: boolean;
-  isFirst?: boolean;
-  isLast?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <>
-      {/* PC 테이블 행 */}
-      <div className="hidden lg:flex h-[58px] items-center">
-        <div
-          className={`w-[160px] h-full shrink-0 bg-[#F7F9FB] border-[#EAF0F6] flex items-center pl-4 pr-2 py-2 border-l border-r border-b ${
-            isFirst ? "border-t rounded-tl-[6px]" : ""
-          } ${isLast ? "rounded-bl-[6px]" : ""}`}
-        >
-          <span className="font-['Noto_Sans_JP'] font-medium text-sm text-[#45576F] overflow-hidden text-ellipsis whitespace-nowrap">
+      {/* PC 테이블 행 — gap-[4px] 개별 행 스타일 */}
+      <div className="hidden lg:flex h-[58px] items-center gap-[4px]">
+        <div className="w-[200px] h-full shrink-0 bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] flex items-center pl-[16px] pr-[8px] py-[8px]">
+          <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F] overflow-hidden text-ellipsis whitespace-nowrap">
             {label}
             {required && <span className="text-[#FF1A1A]">*</span>}
           </span>
         </div>
-        <div
-          className={`flex-1 h-full border-[#EAF0F6] flex items-center gap-2 p-2 border-b border-r ${
-            isFirst ? "border-t rounded-tr-[6px]" : ""
-          } ${isLast ? "rounded-br-[6px]" : ""}`}
-        >
+        <div className="flex-1 h-full border border-[#EAF0F6] rounded-[6px] flex items-center gap-[8px] p-[8px]">
           {children}
         </div>
       </div>
@@ -458,7 +465,7 @@ function PasswordInput({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-full lg:flex-1 h-[44px] px-4 bg-white border border-[#EBEBEB] rounded-[6px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
+    <div className="flex items-center gap-2 w-full lg:flex-1 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
       <input
         type={show ? "text" : "password"}
         value={value}
