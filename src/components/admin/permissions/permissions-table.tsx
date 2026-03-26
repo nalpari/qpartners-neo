@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef } from "react";
 import Image from "next/image";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -16,30 +16,22 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
-/** 셀 내 InputBox — 로컬 state로 포커스 유지, blur 시 부모 반영 */
+/** 셀 내 InputBox — 로컬 state로 완전 독립 관리, blur 시 ref에만 반영 (리렌더 없음) */
 function CellInput({
-  initialValue,
+  defaultValue,
   placeholder,
-  onCommit,
+  onChange,
 }: {
-  initialValue: string;
+  defaultValue: string;
   placeholder: string;
-  onCommit: (value: string) => void;
+  onChange: (value: string) => void;
 }) {
-  const [value, setValue] = useState(initialValue);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setValue(initialValue);
-  }, [initialValue]);
-
   return (
     <input
-      ref={inputRef}
       type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => onCommit(value)}
+      defaultValue={defaultValue}
+      onChange={(e) => onChange(e.target.value)}
+      onMouseDown={(e) => e.stopPropagation()}
       placeholder={placeholder}
       className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
     />
@@ -51,11 +43,14 @@ export function PermissionsTable() {
   const [rows, setRows] = useState<PermissionItem[]>(DUMMY_PERMISSIONS);
   const [activeOnly, setActiveOnly] = useState(false);
 
+  const newRowFieldsRef = useRef({ code: "", name: "", description: "" });
+
   const filteredRows = activeOnly ? rows.filter((r) => r.isActive === "Y") : rows;
   const hasNewRow = rows.some((r) => r.isNew);
 
   const handleAdd = () => {
     if (hasNewRow) return;
+    newRowFieldsRef.current = { code: "", name: "", description: "" };
     const newRow: PermissionItem = {
       id: `new-${Date.now()}`,
       code: "",
@@ -68,17 +63,30 @@ export function PermissionsTable() {
     setRows([newRow, ...rows]);
   };
 
+  const handleCancelAdd = () => {
+    setRows((prev) => prev.filter((r) => !r.isNew));
+    newRowFieldsRef.current = { code: "", name: "", description: "" };
+  };
+
   const handleSave = () => {
+    const fields = newRowFieldsRef.current;
     setRows((prev) =>
       prev.map((r) =>
-        r.isNew ? { ...r, isNew: false, isSaved: true } : r
+        r.isNew
+          ? { ...r, ...fields, isNew: false, isSaved: true }
+          : r
       )
     );
+    newRowFieldsRef.current = { code: "", name: "", description: "" };
     openAlert({
       type: "alert",
       message: "保存されました。",
       confirmLabel: "確認",
     });
+  };
+
+  const updateNewRowField = (field: "code" | "name" | "description", value: string) => {
+    newRowFieldsRef.current[field] = value;
   };
 
   const commitField = (id: string, field: keyof PermissionItem, value: string) => {
@@ -94,9 +102,9 @@ export function PermissionsTable() {
     if (data.isNew) {
       return (
         <CellInput
-          initialValue={data.code}
+          defaultValue={newRowFieldsRef.current.code}
           placeholder="コード入力"
-          onCommit={(v) => commitField(data.id, "code", v)}
+          onChange={(v) => updateNewRowField("code", v)}
         />
       );
     }
@@ -114,9 +122,9 @@ export function PermissionsTable() {
     if (data.isNew) {
       return (
         <CellInput
-          initialValue={data.name}
+          defaultValue={newRowFieldsRef.current.name}
           placeholder="権限名入力"
-          onCommit={(v) => commitField(data.id, "name", v)}
+          onChange={(v) => updateNewRowField("name", v)}
         />
       );
     }
@@ -134,9 +142,9 @@ export function PermissionsTable() {
     if (data.isNew) {
       return (
         <CellInput
-          initialValue={data.description}
+          defaultValue={newRowFieldsRef.current.description}
           placeholder="説明入力"
-          onCommit={(v) => commitField(data.id, "description", v)}
+          onChange={(v) => updateNewRowField("description", v)}
         />
       );
     }
@@ -199,6 +207,7 @@ export function PermissionsTable() {
         cellRenderer: CodeCellRenderer,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
+        suppressKeyboardEvent: () => true,
       },
       {
         headerName: "権限名",
@@ -206,6 +215,7 @@ export function PermissionsTable() {
         flex: 1.5,
         cellRenderer: NameCellRenderer,
         headerClass: "ag-header-cell-center",
+        suppressKeyboardEvent: () => true,
       },
       {
         headerName: "権限説明",
@@ -213,6 +223,7 @@ export function PermissionsTable() {
         flex: 2,
         cellRenderer: DescCellRenderer,
         headerClass: "ag-header-cell-center",
+        suppressKeyboardEvent: () => true,
       },
       {
         headerName: "使用可否",
@@ -250,9 +261,15 @@ export function PermissionsTable() {
           label="使用可否がYの値のみ表示"
         />
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleAdd} disabled={hasNewRow}>
-            追加
-          </Button>
+          {hasNewRow ? (
+            <Button variant="outline" onClick={handleCancelAdd}>
+              キャンセル
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={handleAdd}>
+              追加
+            </Button>
+          )}
           <Button variant="primary" onClick={handleSave}>
             保存
           </Button>

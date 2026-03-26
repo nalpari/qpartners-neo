@@ -69,7 +69,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
             <Button
               variant="secondary"
               onClick={handleEdit}
-              className="flex-1 lg:flex-none lg:w-[68px]"
+              className="!hidden lg:!inline-flex lg:w-[68px]"
             >
               修正
             </Button>

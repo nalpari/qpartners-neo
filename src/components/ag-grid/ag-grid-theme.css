@@ -44,3 +44,21 @@
 .ag-row-new:hover {
   background-color: #FFF9C4 !important;
 }
+
+/* Sort input: number spinner 제거 */
+.sort-input-no-spinner::-webkit-outer-spin-button,
+.sort-input-no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.sort-input-no-spinner {
+  -moz-appearance: textfield;
+}
+
+/* 메뉴관리: 선택된 1-Level 행 하이라이트 */
+.ag-row-selected-menu {
+  background-color: #EDF4FB !important;
+}
+.ag-row-selected-menu:hover {
+  background-color: #DBEAF7 !important;
+}
