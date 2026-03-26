@@ -99,7 +99,9 @@ ContentTarget (qp_content_targets)
 
 ContentCategory (qp_content_categories)
 ├── contentId: Int (FK → Content, composite PK)
-└── categoryId: Int (FK → Category, composite PK)
+├── categoryId: Int (FK → Category, composite PK)
+├── createdAt: DateTime
+└── createdBy: String?
 
 ContentAttachment (qp_content_attachments)
 ├── id: Int (PK)
