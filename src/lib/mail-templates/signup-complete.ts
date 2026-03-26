@@ -1,3 +1,13 @@
+/** HTML 특수문자 이스케이프 (XSS 방지) */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 interface SignupCompleteMailParams {
   userNm: string;
   email: string;
@@ -10,6 +20,12 @@ export function signupCompleteMailHtml({
   email,
   siteUrl,
 }: SignupCompleteMailParams): string {
+  if (!/^https?:\/\//.test(siteUrl)) {
+    throw new Error(`Invalid siteUrl: ${siteUrl}`);
+  }
+
+  const safeUserNm = escapeHtml(userNm);
+  const safeEmail = escapeHtml(email);
   const loginUrl = `${siteUrl}/login`;
   const mypageUrl = `${siteUrl}/mypage`;
 
@@ -29,7 +45,7 @@ export function signupCompleteMailHtml({
     <tr>
       <td style="padding:30px 40px;">
         <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
-          ${userNm} 様
+          ${safeUserNm} 様
         </p>
         <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
           この度は、Q.PARTNERSへの会員登録をいただき、誠にありがとうございます。<br>
@@ -39,7 +55,7 @@ export function signupCompleteMailHtml({
           <tr>
             <td style="padding:15px 20px;">
               <p style="margin:0 0 8px;font-size:13px;color:#666666;">登録メールアドレス</p>
-              <p style="margin:0;font-size:14px;color:#333333;font-weight:bold;">${email}</p>
+              <p style="margin:0;font-size:14px;color:#333333;font-weight:bold;">${safeEmail}</p>
             </td>
           </tr>
         </table>

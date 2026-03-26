@@ -23,6 +23,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 프로덕션 환경에서 HTTPS 강제 (비밀번호 평문 전송 방지)
+  if (
+    process.env.NODE_ENV === "production" &&
+    !QSP_SIGNUP_API_URL.startsWith("https://")
+  ) {
+    console.error("[POST /api/auth/signup] QSP_SIGNUP_API_URL must use HTTPS in production");
+    return NextResponse.json(
+      { error: "서버 설정 오류입니다" },
+      { status: 500 },
+    );
+  }
+
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
@@ -143,14 +155,19 @@ export async function POST(request: NextRequest) {
 
     // 이메일 중복 판별: QSP 메시지에 "既に" (이미) 포함 시 409 Conflict
     const isDuplicate = msg?.includes("既に") || msg?.includes("already");
+    // QSP 에러 메시지를 클라이언트에 직접 노출하지 않음 (내부 정보 유출 방지)
     return NextResponse.json(
-      { error: msg || "회원가입에 실패했습니다" },
+      { error: isDuplicate ? "이미 사용중인 이메일입니다" : "회원가입에 실패했습니다" },
       { status: isDuplicate ? 409 : 400 },
     );
   }
 
   // 5. 승인완료 메일 발송 (비동기 — 메일 실패해도 가입 성공 응답)
-  const siteUrl = process.env.SITE_URL ?? "https://dev.q-partners.q-cells.jp";
+  const siteUrl = process.env.SITE_URL;
+  if (!siteUrl) {
+    console.warn("[POST /api/auth/signup] SITE_URL 환경변수 미설정 — dev 기본값 사용");
+  }
+  const effectiveSiteUrl = siteUrl ?? "https://dev.q-partners.q-cells.jp";
   const userName = `${user2ndNm}${user1stNm}`;
 
   sendMail({
@@ -159,10 +176,13 @@ export async function POST(request: NextRequest) {
     html: signupCompleteMailHtml({
       userNm: userName,
       email,
-      siteUrl,
+      siteUrl: effectiveSiteUrl,
     }),
   }).catch((error) => {
-    console.error("[POST /api/auth/signup] 승인완료 메일 발송 실패:", error);
+    console.error(
+      `[POST /api/auth/signup] 승인완료 메일 발송 실패 — to=${email}, smtp_host=${process.env.SMTP_HOST ?? "UNSET"}`,
+      error instanceof Error ? { message: error.message, stack: error.stack } : error,
+    );
   });
 
   // 6. 성공 응답

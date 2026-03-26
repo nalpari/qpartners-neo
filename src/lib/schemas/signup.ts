@@ -67,3 +67,15 @@ export const qspSignupResponseSchema = z.object({
 });
 
 export type QspSignupResponse = z.infer<typeof qspSignupResponseSchema>;
+
+// ─── QSP 유저정보 조회 응답 (이메일 중복체크용) ───
+
+export const qspEmailCheckResponseSchema = z.object({
+  data: z.unknown().nullable(),
+  result: z.object({
+    resultCode: z.string(),
+    resultMsg: z.string(),
+  }),
+});
+
+export type QspEmailCheckResponse = z.infer<typeof qspEmailCheckResponseSchema>;

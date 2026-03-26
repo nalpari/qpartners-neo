@@ -2,19 +2,32 @@ import nodemailer from "nodemailer";
 
 function getTransporter() {
   const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT);
+  const portStr = process.env.SMTP_PORT;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  if (!host || !port || !user || !pass) {
-    throw new Error("SMTP 환경변수가 설정되지 않았습니다 (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS)");
+  const missing = [
+    !host && "SMTP_HOST",
+    !portStr && "SMTP_PORT",
+    !user && "SMTP_USER",
+    !pass && "SMTP_PASS",
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    throw new Error(`SMTP 환경변수 미설정: ${missing.join(", ")}`);
+  }
+
+  const port = Number(portStr);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`SMTP_PORT 값이 올바르지 않습니다: "${portStr}"`);
   }
 
   return nodemailer.createTransport({
-    host,
+    host: host!,
     port,
-    secure: false,
-    auth: { user, pass },
+    secure: port === 465,
+    requireTLS: port !== 465, // 587 사용 시 STARTTLS 강제
+    auth: { user: user!, pass: pass! },
   });
 }
 
