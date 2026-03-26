@@ -1,27 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
 
-import { COOKIE_NAME } from "@/lib/jwt";
+import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 
-/** 인증 없이 접근 가능한 경로 */
+/** 인증 없이 접근 가능한 API 경로 (matcher 범위 내 경로만 등록) */
 const PUBLIC_PATHS = [
-  "/",
   "/api/auth/login",
   "/api/auth/logout",
-  "/api-docs",
+  "/api/auth/me",
   "/api/openapi",
 ];
 
-/** 공개 경로 prefix */
-const PUBLIC_PREFIXES = [
-  "/_next",
-  "/favicon.ico",
-];
-
 function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.includes(pathname)) return true;
-  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return PUBLIC_PATHS.includes(pathname);
 }
 
 export async function middleware(request: NextRequest) {
@@ -40,27 +31,23 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    console.error("[middleware] JWT_SECRET 환경변수 미설정");
-    return NextResponse.json(
-      { error: "서버 설정 오류입니다" },
-      { status: 500 },
-    );
-  }
+  const user = await verifyToken(token);
 
-  try {
-    const secret = new TextEncoder().encode(jwtSecret);
-    await jwtVerify(token, secret);
-    return NextResponse.next();
-  } catch {
+  if (!user) {
     return NextResponse.json(
       { error: "토큰이 만료되었거나 유효하지 않습니다" },
       { status: 401 },
     );
   }
+
+  return NextResponse.next();
 }
 
+/**
+ * matcher: /api/* 경로만 보호.
+ * 페이지 라우트(/dashboard, /admin 등)는 현재 미존재.
+ * 페이지 추가 시 matcher 확장 또는 페이지별 인증 처리 필요.
+ */
 export const config = {
   matcher: ["/api/:path*"],
 };

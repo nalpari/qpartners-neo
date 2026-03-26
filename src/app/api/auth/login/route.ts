@@ -8,10 +8,10 @@ import {
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 
-const QSP_LOGIN_API_URL = process.env.QSP_LOGIN_API_URL;
-
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
+  // C3: 환경변수는 함수 내부에서 읽기 (Edge/서버리스 빌드타임 undefined 방지)
+  const QSP_LOGIN_API_URL = process.env.QSP_LOGIN_API_URL;
   if (!QSP_LOGIN_API_URL) {
     console.error("[POST /api/auth/login] QSP_LOGIN_API_URL 환경변수 미설정");
     return NextResponse.json(
@@ -33,8 +33,13 @@ export async function POST(request: NextRequest) {
 
   const result = loginRequestSchema.safeParse(body);
   if (!result.success) {
+    // M1: Zod 내부 구조 노출 방지 — 필드명+메시지만 반환
+    const fields = result.error.issues.map((i) => ({
+      field: i.path.join("."),
+      message: i.message,
+    }));
     return NextResponse.json(
-      { error: "Validation failed", issues: result.error.issues },
+      { error: "Validation failed", fields },
       { status: 400 },
     );
   }
@@ -47,11 +52,14 @@ export async function POST(request: NextRequest) {
     qspResponse = await fetch(QSP_LOGIN_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // M4: 10초 타임아웃
+      signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
         loginId,
         pwd,
         userTp,
         accsSiteCd: "QPARTNERS",
+        // I5: QSP API 규격상 로그인 요청 시 actLog="LOGOUT" 전송 (QSP 인터페이스 사양서 참조)
         actLog: "LOGOUT",
         requestId: crypto.randomUUID(),
       }),
@@ -64,12 +72,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // I6: QSP HTTP 비정상 응답 처리
+  if (!qspResponse.ok) {
+    console.error("[POST /api/auth/login] QSP 비정상 응답:", qspResponse.status);
+    return NextResponse.json(
+      { error: "외부 인증 서버 오류가 발생했습니다" },
+      { status: 502 },
+    );
+  }
+
   // 3. QSP 응답 파싱
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
   } catch {
-    console.error("[POST /api/auth/login] QSP 응답 파싱 실패");
+    console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패");
     return NextResponse.json(
       { error: "외부 인증 서버 응답을 처리할 수 없습니다" },
       { status: 502 },
@@ -109,8 +126,19 @@ export async function POST(request: NextRequest) {
     statCd: qsp.data.statCd,
   };
 
-  // 6. JWT 토큰 생성 + httpOnly 쿠키 설정
-  const token = await signToken(user);
+  // C2: JWT 생성 실패 처리
+  let token: string;
+  try {
+    token = await signToken(user);
+  } catch (error) {
+    console.error("[POST /api/auth/login] JWT 생성 실패:", error);
+    return NextResponse.json(
+      { error: "인증 처리 중 서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
+
+  // 6. httpOnly 쿠키 설정
   const response = NextResponse.json({ data: user });
 
   response.cookies.set(COOKIE_NAME, token, {

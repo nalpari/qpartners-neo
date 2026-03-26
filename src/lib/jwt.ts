@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 
+import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 
 const getSecret = () => {
@@ -26,18 +27,9 @@ export async function signToken(user: LoginUser): Promise<string> {
 export async function verifyToken(token: string): Promise<LoginUser | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
-    return {
-      userId: payload.userId as string,
-      userNm: payload.userNm as string | null,
-      userTp: payload.userTp as string,
-      compCd: payload.compCd as string | null,
-      compNm: payload.compNm as string | null,
-      email: payload.email as string | null,
-      deptNm: payload.deptNm as string | null,
-      authCd: payload.authCd as string | null,
-      storeLvl: payload.storeLvl as string | null,
-      statCd: payload.statCd as string | null,
-    };
+    const parsed = loginUserSchema.safeParse(payload);
+    if (!parsed.success) return null;
+    return parsed.data;
   } catch {
     return null;
   }
