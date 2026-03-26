@@ -41,7 +41,7 @@ export function AlertDialog() {
       onKeyDown={handleKeyDown}
     >
       <div
-        className="bg-white flex flex-col gap-[18px] overflow-hidden p-[24px] rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] w-[339px] lg:w-[350px] animate-[popup-slide-in_0.3s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+        className="bg-white flex flex-col gap-[18px] overflow-hidden p-[24px] rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] w-[350px] lg:w-[390px] animate-[popup-slide-in_0.3s_cubic-bezier(0.16,1,0.3,1)_forwards]"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
@@ -59,7 +59,7 @@ export function AlertDialog() {
             <Button
               variant="secondary"
               onClick={handleClose}
-              className="w-[68px]"
+              className="w-[97px]"
             >
               {options.cancelLabel ?? "キャンセル"}
             </Button>
@@ -67,7 +67,7 @@ export function AlertDialog() {
           <Button
             variant="primary"
             onClick={handleConfirm}
-            className= "w-[68px]"
+            className= "w-[97px]"
           >
             {options.confirmLabel ?? "確認"}
           </Button>

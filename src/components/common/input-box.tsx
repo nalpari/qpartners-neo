@@ -32,9 +32,9 @@ export function InputBox({
 
   return (
     <div
-      className={`flex items-center gap-2 w-full min-w-[70px] h-[44px] px-4 border rounded-[6px] overflow-hidden transition-colors duration-150 ${
+      className={`flex items-center gap-2 w-full min-w-[70px] h-[42px] px-4 border rounded-[4px] overflow-hidden transition-colors duration-150 ${
         inactive
-          ? "bg-[#F5F5F5] border-[#E0E0E0] cursor-not-allowed"
+          ? "bg-[#F5F5F5] border-[#EBEBEB] cursor-not-allowed"
           : "bg-white border-[#EBEBEB] hover:border-[#D1D1D1] focus-within:border-[#101010]"
       } ${className}`}
     >
@@ -47,7 +47,7 @@ export function InputBox({
         disabled={disabled}
         readOnly={readOnly}
         className={`flex-1 min-w-0 h-full font-['Noto_Sans_JP'] text-sm leading-[1.5] bg-transparent outline-none placeholder:text-[#AAAAAA] ${
-          inactive ? "text-[#AAAAAA] cursor-not-allowed" : "text-[#101010]"
+          inactive ? "text-[#999] cursor-not-allowed" : "text-[#101010]"
         }`}
       />
       {showClear && (

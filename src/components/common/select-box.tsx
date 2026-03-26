@@ -54,9 +54,9 @@ export function SelectBox({
         type="button"
         disabled={disabled}
         onClick={() => !inactive && setIsOpen((prev) => !prev)}
-        className={`flex items-center gap-2 w-full h-[44px] px-4 border rounded-[4px] text-left transition-colors duration-150 focus:border-[#101010] ${
+        className={`flex items-center gap-2 w-full h-[42px] px-4 border rounded-[4px] text-left transition-colors duration-150 focus:border-[#101010] ${
           inactive
-            ? "bg-[#F5F5F5] border-[#E0E0E0] cursor-not-allowed"
+            ? "bg-[#F5F5F5] border-[#EBEBEB] cursor-not-allowed"
             : "bg-white border-[#EBEBEB] cursor-pointer hover:border-[#D1D1D1]"
         } ${isOpen ? "border-[#1060B4]" : ""}`}
       >

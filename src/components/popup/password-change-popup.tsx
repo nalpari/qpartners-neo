@@ -26,8 +26,8 @@ export function PasswordChangePopup() {
     }
     if (!newPassword) {
       newErrors.new = "新規パスワードを入力してください";
-    } else if (newPassword.length < 8) {
-      newErrors.new = "8文字以上で入力してください";
+    } else if (!/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{8,}$/.test(newPassword)) {
+      newErrors.new = "英大文字・英小文字・数字を組み合わせて8文字以上で入力してください";
     }
     if (!confirmPassword) {
       newErrors.confirm = "新規パスワードを再入力してください";
@@ -137,7 +137,7 @@ export function PasswordChangePopup() {
                   <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">{errors.new}</p>
                 ) : (
                   <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060b4]">
-                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                    ※英大文字・英小文字・数字を組み合わせて8文字以上に設定
                   </p>
                 )}
               </div>

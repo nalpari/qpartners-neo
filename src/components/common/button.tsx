@@ -2,7 +2,7 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "outline";
+type ButtonVariant = "primary" | "secondary" | "point" | "outline";
 type ButtonSize = "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -20,6 +20,10 @@ const variantStyles: Record<ButtonVariant, Record<ButtonSize, string>> = {
   secondary: {
     md: "bg-[#767676] border border-[#626262] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:bg-[#434141] hover:border-[#232323] hover:shadow-none",
     lg: "bg-[#767676] text-white hover:bg-[#434141]",
+  },
+  point: {
+    md: "bg-[#506273] border border-[#405161] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] hover:bg-[#3e5061] hover:border-[#2e3f4f] hover:shadow-none",
+    lg: "bg-[#506273] text-white hover:bg-[#3e5061]",
   },
   outline: {
     md: "bg-white border border-[#C2CDDB] text-[#2E5884] hover:bg-[#E9EDF2]",
