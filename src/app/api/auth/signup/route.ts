@@ -138,12 +138,14 @@ export async function POST(request: NextRequest) {
 
   // 4. 성공/실패 판별
   if (qsp.result.resultCode !== "S") {
-    // QSP 에러 메시지에서 이메일 중복 등 판별
     const msg = qsp.result.resultMsg;
     console.error("[POST /api/auth/signup] QSP 등록 실패:", msg);
+
+    // 이메일 중복 판별: QSP 메시지에 "既に" (이미) 포함 시 409 Conflict
+    const isDuplicate = msg?.includes("既に") || msg?.includes("already");
     return NextResponse.json(
       { error: msg || "회원가입에 실패했습니다" },
-      { status: 409 },
+      { status: isDuplicate ? 409 : 400 },
     );
   }
 
