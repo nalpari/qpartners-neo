@@ -27,11 +27,12 @@ export function CategoriesContents() {
 
   const [categories, setCategories] = useState<CategoryItem[]>(DUMMY_CATEGORIES);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => {
-    const parentIds = DUMMY_CATEGORIES
-      .filter((c) => c.parentId === null)
-      .map((c) => c.id);
-    return new Set(parentIds);
+  const [expandedIds, setExpandedIds] = useState<Record<number, true>>(() => {
+    const map: Record<number, true> = {};
+    for (const c of DUMMY_CATEGORIES) {
+      if (c.parentId === null) map[c.id] = true;
+    }
+    return map;
   });
   const [isNewMode, setIsNewMode] = useState(false);
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
@@ -70,11 +71,11 @@ export function CategoriesContents() {
   // Plan SC: SC-02 — 펼침/접힘 토글
   const handleToggle = (id: number) => {
     setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
+      const next = { ...prev };
+      if (next[id]) {
+        delete next[id];
       } else {
-        next.add(id);
+        next[id] = true;
       }
       return next;
     });
@@ -116,7 +117,7 @@ export function CategoriesContents() {
       setIsNewMode(false);
 
       if (newItem.parentId !== null) {
-        setExpandedIds((prev) => new Set([...prev, newItem.parentId!]));
+        setExpandedIds((prev) => ({ ...prev, [newItem.parentId!]: true as const }));
       }
 
       openAlert({ type: "alert", message: "カテゴリを登録しました。" });

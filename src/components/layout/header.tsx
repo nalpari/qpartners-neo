@@ -218,7 +218,7 @@ export function Gnb() {
                   </button>
                   {/* 톱니바퀴 (管理者) — 맨 오른쪽 */}
                   <Link
-                    href="/admin"
+                    href="/admin/members"
                     transitionTypes={["fade"]}
                     className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                     aria-label="管理者設定"

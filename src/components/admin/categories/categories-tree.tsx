@@ -9,7 +9,7 @@ import type { CategoryTree } from "./categories-dummy-data";
 interface CategoriesTreeProps {
   treeData: CategoryTree[];
   selectedId: number | null;
-  expandedIds: Set<number>;
+  expandedIds: Record<number, true>;
   totalCount: number;
   filterInternalOnly: boolean;
   onSelect: (id: number) => void;
@@ -91,9 +91,9 @@ export function CategoriesTree({
                     }}
                     className="size-[24px] flex items-center justify-center transition-transform duration-200"
                     style={{
-                      transform: expandedIds.has(parent.id) ? "rotate(0deg)" : "rotate(-90deg)",
+                      transform: expandedIds[parent.id] ? "rotate(0deg)" : "rotate(-90deg)",
                     }}
-                    aria-label={expandedIds.has(parent.id) ? "折りたたむ" : "展開する"}
+                    aria-label={expandedIds[parent.id] ? "折りたたむ" : "展開する"}
                   >
                     <Image
                       src="/asset/images/contents/category_arr.svg"
@@ -129,7 +129,7 @@ export function CategoriesTree({
             <div
               className="grid transition-[grid-template-rows] duration-300 ease-in-out"
               style={{
-                gridTemplateRows: expandedIds.has(parent.id) ? "1fr" : "0fr",
+                gridTemplateRows: expandedIds[parent.id] ? "1fr" : "0fr",
               }}
             >
               <div className="overflow-hidden flex flex-col gap-[4px]">
@@ -139,7 +139,7 @@ export function CategoriesTree({
                     type="button"
                     onClick={() => onSelect(child.id)}
                     className={`flex items-center h-[58px] pl-[72px] pr-[16px] py-[12px] rounded-[6px] border w-full text-left transition-all duration-300 hover:bg-[#f5f8fc] ${
-                      expandedIds.has(parent.id) ? "opacity-100" : "opacity-0"
+                      expandedIds[parent.id] ? "opacity-100" : "opacity-0"
                     } ${
                       selectedId === child.id ? "border-[#101010]" : "border-[#e6eef6]"
                     }`}

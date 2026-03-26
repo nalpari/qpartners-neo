@@ -1,4 +1,3 @@
-import { ViewTransition } from "react";
 import { AdminTab } from "@/components/layout/admin-tab";
 
 export default function AdminLayout({
@@ -14,7 +13,7 @@ export default function AdminLayout({
       </div>
 
       {/* 콘텐츠 영역 */}
-      <ViewTransition>{children}</ViewTransition>
+      {children}
     </div>
   );
 }
