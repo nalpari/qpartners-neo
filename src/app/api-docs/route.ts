@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 const config = {
   spec: { url: "/api/openapi" },
   theme: "kepler" as const,
+  hiddenClients: true as const,
 };
 
 const handler = ApiReference(config);
