@@ -70,7 +70,14 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": validationErrorResponse,
+          "400": {
+            description: "Validation failed",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
           "502": errorResponse("외부 인증 서버 오류"),
         },
@@ -471,6 +478,23 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
         required: ["error", "issues"],
+      },
+      AuthValidationErrorResponse: {
+        type: "object",
+        properties: {
+          error: { type: "string", example: "Validation failed" },
+          fields: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                field: { type: "string", example: "loginId" },
+                message: { type: "string", example: "로그인 ID는 필수입니다" },
+              },
+            },
+          },
+        },
+        required: ["error", "fields"],
       },
       LoginRequest: {
         type: "object",
