@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     console.error("[POST /api/auth/signup] QSP 등록 실패:", msg);
 
     // 이메일 중복 판별: QSP 메시지에 "既に" (이미) 포함 시 409 Conflict
-    const isDuplicate = msg?.includes("既に") || msg?.includes("already");
+    const isDuplicate = msg?.includes("既に") || msg?.includes("すでに") || msg?.includes("already");
     // QSP 에러 메시지를 클라이언트에 직접 노출하지 않음 (내부 정보 유출 방지)
     return NextResponse.json(
       { error: isDuplicate ? "이미 사용중인 이메일입니다" : "회원가입에 실패했습니다" },
