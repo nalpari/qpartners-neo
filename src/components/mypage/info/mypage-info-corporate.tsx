@@ -126,7 +126,6 @@ interface EditField {
 }
 
 const EDIT_FIELDS: EditField[] = [
-  { label: "会員タイプ", key: "memberType", type: "readonly" },
   { label: "会社名", key: "companyName", required: true, type: "input" },
   { label: "会社名ひらがな", key: "companyNameKana", type: "input" },
   { label: "郵便番号", key: "zipCode", required: true, type: "zip" },

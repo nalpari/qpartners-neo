@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 import { ContentsDetailInfo } from "./contents-detail-info";
 import { ContentsDetailTarget } from "./contents-detail-target";
 import { ContentsDetailCategory } from "./contents-detail-category";
@@ -15,13 +16,20 @@ interface ContentsDetailProps {
 
 export function ContentsDetail({ contentId }: ContentsDetailProps) {
   const router = useRouter();
+  const { openAlert } = useAlertStore();
   // TODO: contentId로 실제 데이터 조회 (현재 더미)
   const data = DUMMY_DETAIL;
 
   const isAdmin = true; // TODO: 실제 권한 체크
 
   const handleDelete = () => {
-    alert("この機能は準備中です。");
+    openAlert({
+      type: "confirm",
+      message: "本当に削除しますか？",
+      onConfirm: () => {
+        // TODO: 실제 삭제 API 호출
+      },
+    });
   };
 
   const handleEdit = () => {

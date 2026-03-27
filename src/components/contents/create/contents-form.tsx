@@ -40,9 +40,6 @@ export function ContentsForm({ mode }: ContentsFormProps) {
   // 카테고리
   const [categories, setCategories] = useState<Record<string, string[]>>({});
 
-  // 자료유형
-  const [resourceType, setResourceType] = useState("contents");
-
   // 제목/내용
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -101,8 +98,6 @@ export function ContentsForm({ mode }: ContentsFormProps) {
       />
 
       <ContentsFormEditor
-        resourceType={resourceType}
-        onResourceTypeChange={setResourceType}
         title={title}
         onTitleChange={setTitle}
         content={content}

@@ -96,6 +96,7 @@ export function MemberDetailPopup() {
   const [loginNotify, setLoginNotify] = useState(member?.loginNotify ?? "有効");
   const [memberStatus, setMemberStatus] = useState(member?.memberStatus ?? "Active");
   const [attributeNotify, setAttributeNotify] = useState(member?.attributeNotify ?? "有効");
+  const [newsletter, setNewsletter] = useState(member?.newsletter ?? "許可");
 
   const handleClose = () => {
     setIsClosing(true);
@@ -271,9 +272,21 @@ export function MemberDetailPopup() {
               ),
             }}
           />
-          {/* 8행: 退会日時 (전체 너비) */}
+          {/* 8행: 退会日時 / ニュースレター受信 */}
           <DetailRow
             left={{ label: "退会日時", children: <TextValue value={member.withdrawnAt} /> }}
+            right={{
+              label: "ニュースレター",
+              children: (
+                <div className="flex items-center gap-3">
+                  <Radio name="newsletter" value="許可" checked={newsletter === "許可"} onChange={() => setNewsletter("許可")} label="許可" />
+                  <Radio name="newsletter" value="拒否" checked={newsletter === "拒否"} onChange={() => setNewsletter("拒否")} label="拒否" />
+                  <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#999] whitespace-nowrap">
+                    (許可日：{member.newsletterAllowedAt ?? "—"})
+                  </span>
+                </div>
+              ),
+            }}
           />
           {/* 9행: 退会理由 (전체 너비) */}
           <DetailRow

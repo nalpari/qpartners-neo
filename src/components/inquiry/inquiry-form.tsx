@@ -19,7 +19,7 @@ const DUMMY_USER = {
 };
 
 export function InquiryForm() {
-  const isLoggedIn = false;
+  const isLoggedIn = true;
 
   const [companyName, setCompanyName] = useState(
     isLoggedIn ? DUMMY_USER.companyName : ""
@@ -172,15 +172,23 @@ export function InquiryForm() {
                     メールアドレス
                   </span>
                 </div>
-                <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
-                  <InputBox
-                    value={email}
-                    onChange={setEmail}
-                    type="email"
-                    placeholder="メールアドレスを入力"
-                    className="border-[#ebebeb] h-[42px]"
-                  />
-                </div>
+                {isLoggedIn ? (
+                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
+                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
+                      {email}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
+                    <InputBox
+                      value={email}
+                      onChange={setEmail}
+                      type="email"
+                      placeholder="メールアドレスを入力"
+                      className="border-[#ebebeb] h-[42px]"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -312,12 +320,18 @@ export function InquiryForm() {
               <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
                 メールアドレス
               </p>
-              <InputBox
-                value={email}
-                onChange={setEmail}
-                type="email"
-                placeholder="メールアドレスを入力"
-              />
+              {isLoggedIn ? (
+                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+                  {email}
+                </p>
+              ) : (
+                <InputBox
+                  value={email}
+                  onChange={setEmail}
+                  type="email"
+                  placeholder="メールアドレスを入力"
+                />
+              )}
             </div>
 
             {/* 문의유형 */}

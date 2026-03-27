@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { InputBox } from "@/components/common";
+import { InputBox, Radio } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 
 interface ViewField {
@@ -14,9 +14,11 @@ const VIEW_FIELDS: ViewField[] = [
   { label: "氏名", value: "金志映" },
   { label: "氏名ひらがな", value: "キムジヨン" },
   { label: "メールアドレス(ID)", value: "kjy0501@interplug.co.kr" },
+  { label: "ID(社員コード)", value: "26030200" },
   { label: "パスワード", type: "password-button" },
   { label: "部署名", value: "SI" },
   { label: "役職", value: "Head Manager" },
+  { label: "ニュースレター受信", value: "許可 (許可日：2026.03.24)" },
   { label: "会員脱退", type: "withdraw-button" },
 ];
 
@@ -67,6 +69,7 @@ export function MypageInfoMember({ isEditing = false }: MypageInfoMemberProps) {
     firstNameKana: "志映",
     department: "SI",
     position: "Head Manager",
+    newsletter: "許可",
   });
 
   const updateField = (key: string) => (value: string) =>
@@ -149,8 +152,9 @@ interface EditField {
   label: string;
   key: string;
   required?: boolean;
-  type?: "single" | "double";
+  type?: "single" | "double" | "radio";
   keys?: [string, string];
+  options?: { value: string; label: string }[];
 }
 
 const EDIT_FIELDS: EditField[] = [
@@ -170,6 +174,15 @@ const EDIT_FIELDS: EditField[] = [
   },
   { label: "部署名", key: "department", type: "single" },
   { label: "役職", key: "position", type: "single" },
+  {
+    label: "ニュースレター受信",
+    key: "newsletter",
+    type: "radio",
+    options: [
+      { value: "許可", label: "許可" },
+      { value: "拒否", label: "拒否" },
+    ],
+  },
 ];
 
 function ThLabel({
@@ -224,6 +237,19 @@ function MemberEditMode({ data, updateField }: MemberEditModeProps) {
                     className="h-[42px] flex-1 "
                   />
                 </div>
+              ) : field.type === "radio" && field.options ? (
+                <div className="flex items-center gap-3 pl-[16px]">
+                  {field.options.map((opt) => (
+                    <Radio
+                      key={opt.value}
+                      name={field.key}
+                      value={opt.value}
+                      checked={data[field.key] === opt.value}
+                      onChange={() => updateField(field.key)(opt.value)}
+                      label={opt.label}
+                    />
+                  ))}
+                </div>
               ) : (
                 <InputBox
                   value={data[field.key]}
@@ -260,6 +286,19 @@ function MemberEditMode({ data, updateField }: MemberEditModeProps) {
                   onChange={updateField(field.keys[1])}
                   className="h-[42px]"
                 />
+              </div>
+            ) : field.type === "radio" && field.options ? (
+              <div className="flex items-center gap-3">
+                {field.options.map((opt) => (
+                  <Radio
+                    key={opt.value}
+                    name={`${field.key}-mo`}
+                    value={opt.value}
+                    checked={data[field.key] === opt.value}
+                    onChange={() => updateField(field.key)(opt.value)}
+                    label={opt.label}
+                  />
+                ))}
               </div>
             ) : (
               <InputBox

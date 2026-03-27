@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useAlertStore } from "@/lib/store";
 
 interface ContentsDetailInfoProps {
   viewCount: number;
@@ -31,12 +32,14 @@ export function ContentsDetailInfo({
     approver,
   };
 
+  const { openAlert } = useAlertStore();
+
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      alert("URLをコピーしました。");
+      openAlert({ type: "alert", message: "URLがコピーされました。" });
     } catch {
-      alert("URLのコピーに失敗しました。");
+      openAlert({ type: "alert", message: "URLのコピーに失敗しました。" });
     }
   };
 

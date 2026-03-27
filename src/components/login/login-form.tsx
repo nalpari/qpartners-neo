@@ -174,7 +174,7 @@ export function LoginForm({
                 checked={agreeTerms}
                 onChange={onAgreeTermsChange}
               />
-              <span className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#101010] leading-[1.5]">
+              <span className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5]">
                 利用規約に同意する必要があります
                 <button
                   type="button"
