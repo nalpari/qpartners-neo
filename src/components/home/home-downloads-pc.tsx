@@ -5,7 +5,7 @@ import { DUMMY_DOWNLOADS } from "./home-dummy-data";
 
 export function HomeDownloadsPc() {
   return (
-    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[32px] pb-[32px] overflow-hidden">
+    <div className="flex flex-col flex-1 gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[32px] pb-[32px] overflow-hidden">
       <div className="flex items-center gap-[12px]">
         <div className="flex items-center justify-center size-[40px] bg-[#f9e6c8] rounded-full shrink-0 overflow-hidden">
           <Image

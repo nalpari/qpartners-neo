@@ -11,7 +11,7 @@ export function HomeContents() {
   return (
     <>
       {/* === PC Layout === */}
-      <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[42px] pb-[42px] overflow-hidden">
+      <div className="hidden lg:flex h-full flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[42px] pb-[42px] overflow-hidden">
         <ContentsHeader />
         <div className="flex flex-col gap-[18px]">
           {DUMMY_CONTENTS.map((item) => (
