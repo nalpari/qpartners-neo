@@ -111,7 +111,7 @@ CREATE TABLE qp_general_users (
   last_name_kana      VARCHAR(100) DEFAULT NULL,         -- 화면: 성 히라가나 *
   first_name_kana     VARCHAR(100) DEFAULT NULL,         -- 화면: 이름 히라가나 *
   email               VARCHAR(255) NOT NULL,             -- 화면: 이메일 (ID) * (중복체크)
-  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (영문/숫자/기호 2종 8자 이상, bcrypt)
+  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (영문대문자+소문자+숫자 조합 8자 이상, bcrypt)
   department          VARCHAR(100) DEFAULT NULL,         -- 화면: 부서명
   job_title           VARCHAR(100) DEFAULT NULL,         -- 화면: 직책
 
@@ -541,22 +541,7 @@ CREATE TABLE mass_mails (
 
 ---
 
-### 3.12 mass_mail_recipients (대량메일 CC/BCC 수신자)
-
-```sql
-CREATE TABLE mass_mail_recipients (
-  id                  INT AUTO_INCREMENT PRIMARY KEY,
-  mass_mail_id        INT NOT NULL,
-  recipient_type      ENUM('cc','bcc') NOT NULL,
-  user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
-  user_id             VARCHAR(255) NOT NULL,
-  email               VARCHAR(255) NOT NULL,
-
-  INDEX idx_mass_mail_id (mass_mail_id),
-  UNIQUE INDEX idx_mail_recipient (mass_mail_id, recipient_type, email),
-  FOREIGN KEY (mass_mail_id) REFERENCES mass_mails(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
+> ~~### 3.12 mass_mail_recipients~~ — **삭제됨** (2026-03-26 CC/BCC 기능 삭제 협의)
 
 ---
 
@@ -765,7 +750,7 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
 | 9 | 인증 | two_factor_codes | 2차인증 코드 (6자리, 10분) |
 | 10 | 관리 | home_notices | 홈화면 공지 (최대 5개) |
 | 11 | 관리 | mass_mails | 대량메일 발송 |
-| 12 | 관리 | mass_mail_recipients | 대량메일 CC/BCC 수신자 |
+| ~~12~~ | ~~관리~~ | ~~mass_mail_recipients~~ | ~~삭제됨 (2026-03-26 CC/BCC 삭제 협의)~~ |
 | 13 | 관리 | mass_mail_attachments | 대량메일 첨부파일 |
 | 14 | 관리 | download_logs | 다운로드 기록 |
 | 15 | 관리 | inquiries | 문의등록 |
