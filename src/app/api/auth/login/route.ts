@@ -7,18 +7,10 @@ import {
 } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
+import { QSP_API } from "@/lib/config";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
-  // C3: 환경변수는 함수 내부에서 읽기 (Edge/서버리스 빌드타임 undefined 방지)
-  const QSP_LOGIN_API_URL = process.env.QSP_LOGIN_API_URL;
-  if (!QSP_LOGIN_API_URL) {
-    console.error("[POST /api/auth/login] QSP_LOGIN_API_URL 환경변수 미설정");
-    return NextResponse.json(
-      { error: "서버 설정 오류입니다" },
-      { status: 500 },
-    );
-  }
 
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
@@ -49,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_LOGIN_API_URL, {
+    qspResponse = await fetch(QSP_API.login, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // M4: 10초 타임아웃

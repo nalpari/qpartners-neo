@@ -1,14 +1,14 @@
 import nodemailer from "nodemailer";
 
+import { SMTP_DEFAULTS } from "@/lib/config";
+
 function getTransporter() {
-  const host = process.env.SMTP_HOST;
-  const portStr = process.env.SMTP_PORT;
+  const host = process.env.SMTP_HOST ?? SMTP_DEFAULTS.host;
+  const portStr = process.env.SMTP_PORT ?? String(SMTP_DEFAULTS.port);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
   const missing = [
-    !host && "SMTP_HOST",
-    !portStr && "SMTP_PORT",
     !user && "SMTP_USER",
     !pass && "SMTP_PASS",
   ].filter(Boolean);
@@ -39,11 +39,11 @@ interface SendMailOptions {
 
 /** 메일 발송 유틸리티 (password-reset, signup 등 공용) */
 export async function sendMail({ to, subject, html }: SendMailOptions): Promise<void> {
-  const from = process.env.SMTP_FROM ?? "q-partners@hqj.co.jp";
+  const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
   const transporter = getTransporter();
 
   await transporter.sendMail({
-    from: `Q.PARTNERS事務局 <${from}>`,
+    from: `${SMTP_DEFAULTS.fromName} <${from}>`,
     to,
     subject,
     html,

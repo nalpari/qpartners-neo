@@ -5,19 +5,12 @@ import {
   emailCheckSchema,
   qspEmailCheckResponseSchema,
 } from "@/lib/schemas/signup";
+import { QSP_API } from "@/lib/config";
 
 // POST /api/auth/email/check — 이메일 중복 체크
 export async function POST(request: NextRequest) {
   // TODO: QSP 이메일 중복체크 전용 I/F가 나오면 교체 예정 (현재 I/F 요청중)
   // 현재는 QSP 유저정보 조회 API를 활용하여 존재 여부 판단
-  const QSP_USER_INFO_API_URL = process.env.QSP_USER_INFO_API_URL;
-  if (!QSP_USER_INFO_API_URL) {
-    console.error("[POST /api/auth/email/check] QSP_USER_INFO_API_URL 환경변수 미설정");
-    return NextResponse.json(
-      { error: "서버 설정 오류입니다" },
-      { status: 500 },
-    );
-  }
 
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
@@ -49,7 +42,7 @@ export async function POST(request: NextRequest) {
   // 2. QSP 유저정보 조회 API로 이메일 존재 여부 확인
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_USER_INFO_API_URL, {
+    qspResponse = await fetch(QSP_API.userInfo, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // M4: 10초 타임아웃
