@@ -187,6 +187,17 @@ export function PasswordResetPopup() {
                     className={inputClass}
                   />
                 </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    氏名<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fullName}
+                    onChange={(e) => handleChange("fullName", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
               </>
             )}
           </div>

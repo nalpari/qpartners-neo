@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -77,90 +76,83 @@ export function MenusTables({
 
   // --- Column Defs ---
 
-  const level1Columns = useMemo<ColDef<MenuItem>[]>(
-    () => [
-      {
-        headerName: "Menu Name",
-        field: "menuName",
-        flex: 2,
-        cellRenderer: MenuNameRenderer,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "使用可否",
-        field: "isActive",
-        flex: 0.6,
-        cellRenderer: TextRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "モバイル",
-        field: "showInMobile",
-        flex: 0.6,
-        cellRenderer: TextRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "Top",
-        field: "showInTopNav",
-        flex: 0.6,
-        cellRenderer: TextRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "Sort",
-        field: "sortOrder",
-        flex: 0.6,
-        cellRenderer: SortCellRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-        suppressKeyboardEvent: () => true,
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  const level1Columns: ColDef<MenuItem>[] = [
+    {
+      headerName: "Menu Name",
+      field: "menuName",
+      flex: 2,
+      cellRenderer: MenuNameRenderer,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "使用可否",
+      field: "isActive",
+      flex: 0.6,
+      cellRenderer: TextRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "モバイル",
+      field: "showInMobile",
+      flex: 0.6,
+      cellRenderer: TextRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "Top",
+      field: "showInTopNav",
+      flex: 0.6,
+      cellRenderer: TextRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "Sort",
+      field: "sortOrder",
+      flex: 0.6,
+      cellRenderer: SortCellRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: () => true,
+    },
+  ];
 
-  const level2Columns = useMemo<ColDef<MenuItem>[]>(
-    () => [
-      {
-        headerName: "Menu Name",
-        field: "menuName",
-        flex: 2,
-        cellRenderer: TextRenderer,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "使用可否",
-        field: "isActive",
-        flex: 0.6,
-        cellRenderer: TextRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "モバイル",
-        field: "showInMobile",
-        flex: 0.6,
-        cellRenderer: TextRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "Sort",
-        field: "sortOrder",
-        flex: 0.6,
-        cellRenderer: SortCellRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-        suppressKeyboardEvent: () => true,
-      },
-    ],
-    []
-  );
+  const level2Columns: ColDef<MenuItem>[] = [
+    {
+      headerName: "Menu Name",
+      field: "menuName",
+      flex: 2,
+      cellRenderer: TextRenderer,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "使用可否",
+      field: "isActive",
+      flex: 0.6,
+      cellRenderer: TextRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "モバイル",
+      field: "showInMobile",
+      flex: 0.6,
+      cellRenderer: TextRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "Sort",
+      field: "sortOrder",
+      flex: 0.6,
+      cellRenderer: SortCellRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: () => true,
+    },
+  ];
 
   // --- Row Class (선택 하이라이트) ---
 

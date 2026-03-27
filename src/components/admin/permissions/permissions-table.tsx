@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef } from "react";
+import { useState, useRef } from "react";
 import Image from "next/image";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -198,53 +198,49 @@ export function PermissionsTable() {
     );
   }
 
-  const columnDefs = useMemo<ColDef<PermissionItem>[]>(
-    () => [
-      {
-        headerName: "権限コード",
-        field: "code",
-        flex: 1,
-        cellRenderer: CodeCellRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-        suppressKeyboardEvent: () => true,
-      },
-      {
-        headerName: "権限名",
-        field: "name",
-        flex: 1.5,
-        cellRenderer: NameCellRenderer,
-        headerClass: "ag-header-cell-center",
-        suppressKeyboardEvent: () => true,
-      },
-      {
-        headerName: "権限説明",
-        field: "description",
-        flex: 2,
-        cellRenderer: DescCellRenderer,
-        headerClass: "ag-header-cell-center",
-        suppressKeyboardEvent: () => true,
-      },
-      {
-        headerName: "使用可否",
-        field: "isActive",
-        flex: 0.8,
-        cellRenderer: ActiveCellRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "Available Menu Setting",
-        field: "isSaved",
-        flex: 1,
-        cellRenderer: MenuCellRenderer,
-        cellStyle: centerCellStyle,
-        headerClass: "ag-header-cell-center",
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  const columnDefs: ColDef<PermissionItem>[] = [
+    {
+      headerName: "権限コード",
+      field: "code",
+      flex: 1,
+      cellRenderer: CodeCellRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: () => true,
+    },
+    {
+      headerName: "権限名",
+      field: "name",
+      flex: 1.5,
+      cellRenderer: NameCellRenderer,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: () => true,
+    },
+    {
+      headerName: "権限説明",
+      field: "description",
+      flex: 2,
+      cellRenderer: DescCellRenderer,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: () => true,
+    },
+    {
+      headerName: "使用可否",
+      field: "isActive",
+      flex: 0.8,
+      cellRenderer: ActiveCellRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "Available Menu Setting",
+      field: "isSaved",
+      flex: 1,
+      cellRenderer: MenuCellRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+  ];
 
   const getRowClass = (params: RowClassParams<PermissionItem>) => {
     if (params.data?.isNew) return "ag-row-new";

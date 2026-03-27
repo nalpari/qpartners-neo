@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -126,22 +125,18 @@ export function CodesDetailTable({
     return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
   }
 
-  const columnDefs = useMemo<ColDef<CodeDetailItem>[]>(
-    () => [
-      { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-      { headerName: "Code", field: "code", flex: 0.8, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-      { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: DisplayCodeRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-      { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: CodeNameRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-      { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: CodeNameEtcRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-      { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-      { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-      { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-      { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-      { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  const columnDefs: ColDef<CodeDetailItem>[] = [
+    { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
+    { headerName: "Code", field: "code", flex: 0.8, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
+    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: DisplayCodeRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
+    { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: CodeNameRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
+    { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: CodeNameEtcRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
+    { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
+    { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
+    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
+    { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: RelFieldRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
+    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+  ];
 
   const getRowClass = (params: RowClassParams<CodeDetailItem>) => {
     if (params.data?.isNew) return "ag-row-new";

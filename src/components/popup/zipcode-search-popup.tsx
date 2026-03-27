@@ -21,7 +21,7 @@ const MOCK_ADDRESSES: ZipcodeAddress[] = [
 
 const CLOSE_ANIMATION_MS = 200;
 
-const COLUMN_HEADERS = ["技術施工", "金志映", "金志映"] as const;
+const COLUMN_HEADERS = ["都道府県", "市区町村", "町丁目以下"] as const;
 
 export function ZipcodeSearchPopup() {
   const { popupData, closePopup } = usePopupStore();
