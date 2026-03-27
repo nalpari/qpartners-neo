@@ -63,7 +63,7 @@ export function PasswordChangePopup() {
       onKeyDown={handleKeyDown}
     >
       <div
-        className="popup-container w-[339px] lg:w-[620px] px-[24px] pt-[24px] pb-[34px] lg:p-[42px]"
+        className="popup-container w-[339px] lg:w-[620px]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
