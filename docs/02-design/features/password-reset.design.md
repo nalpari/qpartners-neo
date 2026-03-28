@@ -51,9 +51,10 @@
 **Request Body:**
 ```json
 {
-  "userTp": "DEALER",
+  "userTp": "SEKO",
   "loginId": "T01",
-  "email": "user@example.com"
+  "email": "user@example.com",
+  "sekoId": "SEKO-001"
 }
 ```
 
@@ -62,24 +63,25 @@
 | userTp | string | Y | enum: ADMIN, DEALER, SEKO, GENERAL |
 | loginId | string | 조건부 | 판매점 필수, 일반은 이메일과 동일 |
 | email | string | Y | 이메일 형식 |
+| sekoId | string | 조건부 | 시공점 필수 (이메일 중복 시 시공ID로 특정) |
 
 **회원유형별 입력 항목 (화면설계서 v1.0_260326 p.11):**
 
 | 회원유형 | 입력 항목 | 특정 방식 |
 |---------|----------|----------|
 | 판매점 (DEALER) | ID + 이메일 | loginId + email로 1건 특정 |
-| 시공점 (SEKO) | 이메일 | email만으로 조회 |
-| 일반 (GENERAL) | ID(이메일) | loginId = email (동일 값) |
+| 시공점 (SEKO) | 시공ID + 이메일 | sekoId + email로 1건 특정 |
+| 일반 (GENERAL) | ID(이메일) | loginId = email (동일 값, QSP 마이그 후 중복 없음) |
 
-> **미해결**: 시공점은 login_id가 이메일이므로 ID 추가가 무의미.
-> as-is DB에서 동일 이메일 + group_kind=30 중복 5건 존재 (다른 사람).
-> 현업 확인 필요 — 시공점 중복 이메일 처리 방안.
+> **해결 (2026-03-27 현업 회신):**
+> - 일반유저: 이메일 중복 데이터는 최근 로그인 일시 기준 1row만 QSP에 마이그레이션 → 중복 해소
+> - 시공점: 이메일 중복인 경우 시공ID(seko_id)로 로그인 유도, 중복 건은 무시 (만료 계정 대다수)
 
 **서버 처리 흐름:**
 1. Zod 유효성 검증
-2. 이메일 존재 확인 I/F 호출 (`email` + `userTp` 조합으로 1건 특정)
-   - QSP: 판매점(DEALER) / 일반(GENERAL)
-   - as-is: 시공점(SEKO) — `login_id` + `group_kind`로 조회
+2. 이메일 존재 확인 I/F 호출
+   - QSP: 판매점(DEALER) — `loginId` + `email`로 조회 / 일반(GENERAL) — `email`로 조회 (마이그 후 중복 없음)
+   - as-is: 시공점(SEKO) — `email` + `sekoId`로 1건 특정
 3. 불일치 시 404 반환
 
 > **as-is 중복 데이터 대응**: 동일 `login_id`(이메일)로 `group_kind` 다른 복수 건 존재 (101건).

@@ -41,6 +41,7 @@ enum TargetType {
 
 enum MailStatus {
   draft
+  pending
   sent
 }
 
