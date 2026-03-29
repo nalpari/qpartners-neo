@@ -1,0 +1,136 @@
+// 팝업/모달 전용 스타일
+
+// 애니메이션 키프레임
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes popup-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes popup-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+}
+
+// 팝업 오버레이 (공통)
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  animation: overlay-fade-in 0.25s ease-out forwards;
+
+  &--closing {
+    animation: overlay-fade-out 0.2s ease-in forwards;
+  }
+}
+
+// 팝업 외부 래퍼 — border-radius 클리핑 전용
+.popup-container {
+  width: 100%;
+  max-height: 90vh;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.05);
+  margin: 18px;
+  animation: popup-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  .popup-overlay--closing & {
+    animation: popup-slide-out 0.2s ease-in forwards;
+  }
+
+  @media (min-width: 1024px) {
+    width: 620px;
+    margin: 0;
+  }
+}
+
+// 팝업 내부 스크롤 영역
+.popup-container__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 24px 24px 34px;
+
+  @media (min-width: 1024px) {
+    padding: 34px 42px;
+  }
+}
+
+// 하단 버튼 영역 (공통)
+.popup-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding-bottom: 4px;
+
+  button {
+    width: 100%;
+  }
+
+  @media (min-width: 1024px) {
+    flex-direction: row;
+    justify-content: center;
+
+    button {
+      width: auto;
+      min-width: 97px;
+
+      &:last-child {
+        min-width: 150px;
+      }
+    }
+  }
+}
+
+// 하단 버튼 영역 (PC/모바일 모두 가로 배치)
+.popup-buttons--inline {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+  justify-content: center;
+  padding: 0 42px 4px;
+
+  button {
+    width: auto;
+    min-width: 68px;
+
+    &:first-child {
+      min-width: 97px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    padding: 0 0 4px;
+  }
+}
