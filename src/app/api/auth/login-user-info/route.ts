@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 
-// GET /api/auth/me — 현재 로그인 사용자 정보
+// GET /api/auth/login-user-info — 현재 로그인 사용자 정보
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(COOKIE_NAME)?.value;
 
