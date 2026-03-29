@@ -26,8 +26,8 @@ export const QSP_API = {
   login: `${QSP_BASE_URL}/api/qpartners/user/login`,
   /** QSP 일반 회원가입 (newUserReq) */
   signup: `${QSP_BASE_URL}/api/qpartners/user/newUserReq`,
-  /** QSP 유저정보 조회 (이메일 중복체크용) */
-  userInfo: `${QSP_BASE_URL}/api/qpartners/user/userInfo`,
+  /** QSP 유저정보 조회 (이메일 중복체크 + 비밀번호 초기화 회원조회 공용) */
+  userDetail: `${QSP_BASE_URL}/api/qpartners/user/detail`,
 } as const;
 
 // ─── SMTP ───

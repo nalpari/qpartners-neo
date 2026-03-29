@@ -1,59 +1,57 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import {
-  emailCheckSchema,
-  qspEmailCheckResponseSchema,
-} from "@/lib/schemas/signup";
+import { z } from "zod";
 import { QSP_API } from "@/lib/config";
 
-// POST /api/auth/email/check — 이메일 중복 체크
-export async function POST(request: NextRequest) {
-  // TODO: QSP 이메일 중복체크 전용 I/F가 나오면 교체 예정 (현재 I/F 요청중)
-  // 현재는 QSP 유저정보 조회 API를 활용하여 존재 여부 판단
+// QSP /user/detail 응답 스키마
+const qspUserDetailResponseSchema = z.object({
+  data: z.unknown().nullable(),
+  result: z.object({
+    code: z.number(),
+    resultCode: z.string(),
+    message: z.string(),
+    resultMsg: z.string(),
+  }),
+});
 
-  // 1. Request body 파싱 + Zod 검증
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch (error) {
-    console.warn("[POST /api/auth/email/check] Request body 파싱 실패:", error);
+// GET /api/auth/email/check?email=... — 이메일 중복 체크 (QSP /user/detail 활용)
+export async function GET(request: NextRequest) {
+  // 1. query parameter에서 email 추출 + 검증
+  const email = request.nextUrl.searchParams.get("email");
+
+  if (!email) {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
+      { error: "email 파라미터는 필수입니다" },
       { status: 400 },
     );
   }
 
-  const result = emailCheckSchema.safeParse(body);
+  const emailSchema = z.string().email("유효한 이메일 주소를 입력해주세요");
+  const result = emailSchema.safeParse(email);
   if (!result.success) {
-    // M1: Zod 내부 구조 노출 방지 — 필드명+메시지만 반환
-    const fields = result.error.issues.map((i) => ({
-      field: i.path.join("."),
-      message: i.message,
-    }));
     return NextResponse.json(
-      { error: "Validation failed", fields },
+      { error: result.error.issues[0].message },
       { status: 400 },
     );
   }
 
-  const { email } = result.data;
+  // 2. QSP /user/detail GET 호출 (이메일로 유저 존재 여부 확인)
+  const params = new URLSearchParams({
+    accsSiteCd: "QPARTNERS",
+    email,
+    userTp: "GENERAL",
+  });
 
-  // 2. QSP 유저정보 조회 API로 이메일 존재 여부 확인
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_API.userInfo, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
+      method: "GET",
       // M4: 10초 타임아웃
       signal: AbortSignal.timeout(10_000),
-      body: JSON.stringify({
-        userId: email,
-        userTp: "GENERAL",
-      }),
     });
   } catch (error) {
-    console.error("[POST /api/auth/email/check] QSP API 호출 실패:", error);
+    console.error("[GET /api/auth/email/check] QSP API 호출 실패:", error);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },
@@ -62,7 +60,7 @@ export async function POST(request: NextRequest) {
 
   // I6: QSP HTTP 비정상 응답 처리
   if (!qspResponse.ok) {
-    console.error("[POST /api/auth/email/check] QSP 비정상 응답:", qspResponse.status);
+    console.error("[GET /api/auth/email/check] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
       { error: "외부 서버 오류가 발생했습니다" },
       { status: 502 },
@@ -74,16 +72,16 @@ export async function POST(request: NextRequest) {
   try {
     qspBody = await qspResponse.json();
   } catch (error) {
-    console.warn("[POST /api/auth/email/check] QSP 응답 JSON 파싱 실패:", error);
+    console.warn("[GET /api/auth/email/check] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
       { error: "외부 서버 응답을 처리할 수 없습니다" },
       { status: 502 },
     );
   }
 
-  const parsed = qspEmailCheckResponseSchema.safeParse(qspBody);
+  const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[POST /api/auth/email/check] QSP 응답 스키마 불일치:", parsed.error);
+    console.error("[GET /api/auth/email/check] QSP 응답 스키마 불일치:", parsed.error);
     return NextResponse.json(
       { error: "외부 서버 응답 형식이 올바르지 않습니다" },
       { status: 502 },
@@ -93,7 +91,7 @@ export async function POST(request: NextRequest) {
   const qsp = parsed.data;
 
   // 4. 존재 여부 판별
-  // QSP 유저정보 조회: resultCode === "S" + data 존재 → 이미 등록된 이메일
+  // resultCode === "S" + data 존재 → 이미 등록된 이메일
   const hasUser = qsp.result.resultCode === "S" && qsp.data != null;
 
   if (hasUser) {
@@ -103,8 +101,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // resultCode !== "S"이고 data가 null이면 미등록으로 판단
-  // QSP 에러(서버 장애 등)는 위 HTTP/스키마 검증에서 걸러짐
   return NextResponse.json({
     data: { available: true, message: "사용 가능한 이메일입니다" },
   });
