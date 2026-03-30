@@ -4,14 +4,28 @@ import { NextResponse } from "next/server";
 import { QSP_API } from "@/lib/config";
 import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
-// GET /api/auth/email/check?email=... — 이메일 중복 체크 (QSP /user/detail 활용)
-export async function GET(request: NextRequest) {
-  // 1. query parameter에서 email 추출 + 검증
-  const email = request.nextUrl.searchParams.get("email");
-
-  if (!email) {
+// POST /api/auth/email/check — 이메일 중복 체크 (QSP /user/detail 활용)
+// PII(이메일)가 URL query parameter에 노출되지 않도록 POST 사용
+export async function POST(request: NextRequest) {
+  // 1. Request body에서 email 추출 + 검증
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: "email 파라미터는 필수입니다" },
+      { error: "Invalid JSON body" },
+      { status: 400 },
+    );
+  }
+
+  const email =
+    typeof body === "object" && body !== null && "email" in body
+      ? (body as Record<string, unknown>).email
+      : undefined;
+
+  if (!email || typeof email !== "string") {
+    return NextResponse.json(
+      { error: "email은 필수입니다" },
       { status: 400 },
     );
   }

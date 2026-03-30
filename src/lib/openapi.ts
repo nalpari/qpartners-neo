@@ -181,19 +181,24 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
     "/auth/email/check": {
-      get: {
+      post: {
         tags: ["Auth"],
         summary: "이메일 중복 체크",
-        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인.",
-        parameters: [
-          {
-            name: "email",
-            in: "query",
-            required: true,
-            description: "중복 확인할 이메일 주소",
-            schema: { type: "string", format: "email", example: "user@example.com" },
+        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인. PII 보호를 위해 POST 사용.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: { type: "string", format: "email", example: "user@example.com" },
+                },
+              },
+            },
           },
-        ],
+        },
         responses: {
           "200": {
             description: "사용 가능",

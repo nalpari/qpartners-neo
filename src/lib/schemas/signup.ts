@@ -65,7 +65,3 @@ export const qspResponseSchema = z.object({
 
 export type QspResponse = z.infer<typeof qspResponseSchema>;
 
-/** @deprecated qspResponseSchema 사용 */
-export const qspSignupResponseSchema = qspResponseSchema;
-export type QspSignupResponse = QspResponse;
-
