@@ -7,6 +7,7 @@ import { DataGrid } from "@/components/ag-grid";
 import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { Pagination, SelectBox } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 
 /* ─── 타입 & 더미 데이터 ─── */
 
@@ -48,7 +49,7 @@ function DownloadCell() {
   return (
     <button
       type="button"
-      onClick={() => alert("ダウンロード機能は準備中です")}
+      onClick={() => useAlertStore.getState().openAlert({ type: "alert", message: "ダウンロード機能は準備中です" })}
       className="bg-[#f7f9fb] rounded-full size-[32px] flex items-center justify-center"
       aria-label="ダウンロード"
     >
@@ -107,7 +108,7 @@ const mobileFields: MobileCardField<DownloadRecord>[] = [
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            alert("ダウンロード機能は準備中です");
+            useAlertStore.getState().openAlert({ type: "alert", message: "ダウンロード機能は準備中です" });
           }}
           className="bg-[#f7f9fb] rounded-full size-[32px] flex items-center justify-center shrink-0"
           aria-label="ダウンロード"

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 import { ContentsFormManagement } from "./contents-form-management";
 import {
   ContentsFormPostTarget,
@@ -23,6 +24,7 @@ interface ContentsFormProps {
 
 export function ContentsForm({ mode }: ContentsFormProps) {
   const router = useRouter();
+  const { openAlert } = useAlertStore();
 
   // 관리정보 (더미 데이터)
   const distributor = "金志映";
@@ -54,23 +56,23 @@ export function ContentsForm({ mode }: ContentsFormProps) {
   const handleSave = () => {
     // 필수항목 검증
     if (!approver) {
-      alert("最終確認者は必須入力項目です。");
+      openAlert({ type: "alert", message: "最終確認者は必須入力項目です。" });
       return;
     }
     if (!title.trim()) {
-      alert("タイトルは必須入力項目です。");
+      openAlert({ type: "alert", message: "タイトルは必須入力項目です。" });
       return;
     }
     if (!content.trim()) {
-      alert("内容は必須入力項目です。");
+      openAlert({ type: "alert", message: "内容は必須入力項目です。" });
       return;
     }
     if (attachments.length === 0) {
-      alert("ファイル添付は必須入力項目です。");
+      openAlert({ type: "alert", message: "ファイル添付は必須入力項目です。" });
       return;
     }
 
-    alert("保存されました。");
+    openAlert({ type: "alert", message: "保存されました。" });
     // TODO: 상세화면으로 전환 (API 연동 시)
     router.push("/contents", { transitionTypes: ["fade"] });
   };

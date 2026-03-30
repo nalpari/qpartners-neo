@@ -29,7 +29,8 @@ function TitleCellRenderer(params: ICellRendererParams<BulkMailItem>) {
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
       onClick={() => {
-        window.location.href = `/admin/bulk-mail/${data.id}`;
+        const router = params.context?.router;
+        router?.push(`/admin/bulk-mail/${data.id}`, { transitionTypes: ["fade"] });
       }}
     >
       {data.title}
@@ -146,6 +147,7 @@ export function BulkMailTable() {
         <DataGrid<BulkMailItem>
           columnDefs={columnDefs}
           rowData={filteredData}
+          context={{ router }}
         />
         <Pagination
           currentPage={currentPage}

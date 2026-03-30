@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
 
 export function PasswordChangePopup() {
   const { closePopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -26,8 +27,14 @@ export function PasswordChangePopup() {
     }
     if (!newPassword) {
       newErrors.new = "新規パスワードを入力してください";
-    } else if (!/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{8,}$/.test(newPassword)) {
-      newErrors.new = "英大文字・英小文字・数字を組み合わせて8文字以上で入力してください";
+    } else {
+      let types = 0;
+      if (/[a-zA-Z]/.test(newPassword)) types++;
+      if (/[0-9]/.test(newPassword)) types++;
+      if (/[^a-zA-Z0-9]/.test(newPassword)) types++;
+      if (newPassword.length < 8 || types < 2) {
+        newErrors.new = "英語/数字/記号のうち2つ以上を組み合わせて8文字以上で入力してください";
+      }
     }
     if (!confirmPassword) {
       newErrors.confirm = "新規パスワードを再入力してください";
@@ -48,7 +55,7 @@ export function PasswordChangePopup() {
 
   const handleSubmit = () => {
     if (!validate()) return;
-    alert("パスワード変更機能は準備中です");
+    openAlert({ type: "alert", message: "パスワード変更機能は準備中です" });
     handleClose();
   };
 
@@ -137,7 +144,7 @@ export function PasswordChangePopup() {
                   <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">{errors.new}</p>
                 ) : (
                   <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060b4]">
-                    ※英大文字・英小文字・数字を組み合わせて8文字以上に設定
+                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
                   </p>
                 )}
               </div>

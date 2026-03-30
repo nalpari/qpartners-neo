@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 type TabType = "dealer" | "installer" | "general";
@@ -45,6 +45,7 @@ function isFormValid(tab: TabType, data: FormData): boolean {
 
 export function PasswordResetPopup() {
   const { popupData, closePopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
   const activeTab = (popupData.activeTab as TabType) ?? "dealer";
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
@@ -67,9 +68,10 @@ export function PasswordResetPopup() {
 
     // TODO: API 호출 (비밀번호 초기화)
     handleClose();
-    window.alert(
-      "초기화 비밀번호가 이메일로 발송되었습니다. 로그인 후 비밀번호를 변경해 주세요."
-    );
+    openAlert({
+      type: "alert",
+      message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
+    });
   };
 
   const inputClass =

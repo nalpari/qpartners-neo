@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -289,10 +289,10 @@ export function ContentsTable({ isAdmin = false }: ContentsTableProps) {
   return (
     <>
       {/* 데스크톱: 상단바 + 테이블 + 페이지네이션을 하나의 카드로 */}
-      <Activity mode={isMobile ? "hidden" : "visible"}>
+      {!isMobile && (
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
-          
+
           <div className="flex flex-col gap-6">
             <DataGrid<ContentItem>
               columnDefs={columnDefs}
@@ -306,10 +306,10 @@ export function ContentsTable({ isAdmin = false }: ContentsTableProps) {
             />
           </div>
         </div>
-      </Activity>
+      )}
 
       {/* 모바일: 상단바 별도 섹션 + 카드 리스트 */}
-      <Activity mode={isMobile ? "visible" : "hidden"}>
+      {isMobile && (
         <div className="flex lg:hidden flex-col w-full">
           {/* 모바일 상단바 */}
           <div className="bg-white p-6">
@@ -340,7 +340,7 @@ export function ContentsTable({ isAdmin = false }: ContentsTableProps) {
             />
           </button>
         </div>
-      </Activity>
+      )}
     </>
   );
 }

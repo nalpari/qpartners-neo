@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button, InputBox, SelectBox } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 
 const INQUIRY_TYPE_OPTIONS = [
   { label: "サービスに関するお問い合わせ", value: "service" },
@@ -19,6 +20,7 @@ const DUMMY_USER = {
 };
 
 export function InquiryForm() {
+  const { openAlert } = useAlertStore();
   const isLoggedIn = true;
 
   const [companyName, setCompanyName] = useState(
@@ -48,38 +50,39 @@ export function InquiryForm() {
   const handleSubmit = () => {
     if (!isLoggedIn) {
       if (!companyName.trim()) {
-        alert("会社名を入力してください。");
+        openAlert({ type: "alert", message: "会社名を入力してください。" });
         return;
       }
       if (!name.trim()) {
-        alert("氏名を入力してください。");
+        openAlert({ type: "alert", message: "氏名を入力してください。" });
         return;
       }
       if (!phone.trim()) {
-        alert("電話番号を入力してください。");
+        openAlert({ type: "alert", message: "電話番号を入力してください。" });
         return;
       }
     }
     if (!email.trim()) {
-      alert("メールアドレスを入力してください。");
+      openAlert({ type: "alert", message: "メールアドレスを入力してください。" });
       return;
     }
     if (!inquiryType) {
-      alert("お問い合わせタイプを選択してください。");
+      openAlert({ type: "alert", message: "お問い合わせタイプを選択してください。" });
       return;
     }
     if (!title.trim()) {
-      alert("タイトルを入力してください。");
+      openAlert({ type: "alert", message: "タイトルを入力してください。" });
       return;
     }
     if (!content.trim()) {
-      alert("内容を入力してください。");
+      openAlert({ type: "alert", message: "内容を入力してください。" });
       return;
     }
 
-    alert(
-      "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。"
-    );
+    openAlert({
+      type: "alert",
+      message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+    });
     handleCancel();
   };
 

@@ -45,7 +45,7 @@ export function SignupContents() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
   // 폼 필드 업데이트 헬퍼
-  const updateField = (field: string, value: string | boolean) => {
+  const updateField = (field: keyof typeof form, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (field === "email") setEmailCheckStatus("idle");
   };
@@ -270,7 +270,7 @@ export function SignupContents() {
                     onClick={handleEmailCheck}
                     className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer"
                   >
-                    冗長チェック
+                    重複チェック
                   </button>
                   {emailCheckStatus !== "idle" && (
                     <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0">

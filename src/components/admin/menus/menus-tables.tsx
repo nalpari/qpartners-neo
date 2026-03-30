@@ -14,6 +14,45 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+// --- Cell Renderers (컴포넌트 바깥 정의 — AG Grid 리렌더링 최적화) ---
+
+function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
+  const data = params.data;
+  if (!data) return null;
+  const onLevel1Click = params.context?.onLevel1Click as ((id: string) => void) | undefined;
+  return (
+    <button
+      type="button"
+      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
+      onClick={() => onLevel1Click?.(data.id)}
+    >
+      {data.menuName}
+    </button>
+  );
+}
+
+function TextRenderer(params: ICellRendererParams<MenuItem>) {
+  return (
+    <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">
+      {String(params.value ?? "")}
+    </span>
+  );
+}
+
+function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
+  const data = params.data;
+  if (!data) return null;
+  return (
+    <input
+      type="number"
+      min={1}
+      defaultValue={data.sortOrder}
+      onMouseDown={(e) => e.stopPropagation()}
+      className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
+    />
+  );
+}
+
 interface MenusTablesProps {
   level1Data: MenuItem[];
   level2Data: MenuItem[];
@@ -35,44 +74,6 @@ export function MenusTables({
   onLevel1Click,
   onSortSave,
 }: MenusTablesProps) {
-
-  // --- Cell Renderers ---
-
-  function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
-    const data = params.data;
-    if (!data) return null;
-    return (
-      <button
-        type="button"
-        className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
-        onClick={() => onLevel1Click(data.id)}
-      >
-        {data.menuName}
-      </button>
-    );
-  }
-
-  function TextRenderer(params: ICellRendererParams<MenuItem>) {
-    return (
-      <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">
-        {String(params.value ?? "")}
-      </span>
-    );
-  }
-
-  function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
-    const data = params.data;
-    if (!data) return null;
-    return (
-      <input
-        type="number"
-        min={1}
-        defaultValue={data.sortOrder}
-        onMouseDown={(e) => e.stopPropagation()}
-        className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
-      />
-    );
-  }
 
   // --- Column Defs ---
 
@@ -193,7 +194,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={0}
-            context={{ selectedLevel1Id }}
+            context={{ selectedLevel1Id, onLevel1Click }}
           />
         </div>
 

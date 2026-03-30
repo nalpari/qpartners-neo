@@ -7,6 +7,7 @@ import { DataGrid } from "@/components/ag-grid";
 import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { Button } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 
 const MOBILE_PAGE_SIZE = 5;
 
@@ -94,6 +95,7 @@ const mobileFields: MobileCardField<ConstructionId>[] = [
 ];
 
 export function MypageInfoConstruction() {
+  const { openAlert } = useAlertStore();
   const [mobileCount, setMobileCount] = useState(MOBILE_PAGE_SIZE);
   const mobileData = DUMMY_CONSTRUCTION_IDS.slice(0, mobileCount);
   const hasMore = mobileCount < DUMMY_CONSTRUCTION_IDS.length;
@@ -110,14 +112,14 @@ export function MypageInfoConstruction() {
             <Button
               variant="primary"
               className="flex-1 lg:flex-none lg:w-[113px]"
-              onClick={() => alert("WEB研修申請機能は準備中です")}
+              onClick={() => openAlert({ type: "alert", message: "WEB研修申請機能は準備中です" })}
             >
               WEB研修申請
             </Button>
             <Button
               variant="secondary"
               className="flex-1 lg:flex-none lg:w-[160px]"
-              onClick={() => alert("施工ID情報詳細確認機能は準備中です")}
+              onClick={() => openAlert({ type: "alert", message: "施工ID情報詳細確認機能は準備中です" })}
             >
               施工ID情報詳細確認
             </Button>

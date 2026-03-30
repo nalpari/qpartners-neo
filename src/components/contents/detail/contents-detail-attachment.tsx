@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useAlertStore } from "@/lib/store";
 import type { ContentDetailItem } from "../contents-dummy-data";
 
 interface ContentsDetailAttachmentProps {
@@ -15,14 +16,16 @@ function getFileIconSrc(type: string): string {
 export function ContentsDetailAttachment({
   attachments,
 }: ContentsDetailAttachmentProps) {
+  const { openAlert } = useAlertStore();
+
   if (attachments.length === 0) return null;
 
   const handleDownload = (name: string) => {
-    alert(`${name} のダウンロードは準備中です。`);
+    openAlert({ type: "alert", message: `${name} のダウンロードは準備中です。` });
   };
 
   const handleAllDownload = () => {
-    alert("一括ダウンロードは準備中です。");
+    openAlert({ type: "alert", message: "一括ダウンロードは準備中です。" });
   };
 
   return (

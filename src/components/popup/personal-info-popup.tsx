@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, InputBox } from "@/components/common";
 
 type EmailCheckResult = "ok" | "fail" | null;
@@ -13,6 +13,7 @@ const CLOSE_ANIMATION_MS = 200;
 export function PersonalInfoPopup() {
   const router = useRouter();
   const { popupData, closePopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
   const currentEmail = popupData.currentEmail as string | undefined;
   const hasExistingEmail = !!currentEmail;
 
@@ -76,7 +77,7 @@ export function PersonalInfoPopup() {
 
     // TODO: API 호출 (PUT /api/members/personal-info)
     handleClose();
-    window.alert("저장되었습니다.");
+    openAlert({ type: "alert", message: "保存されました。" });
   };
 
   const labelClass =
@@ -147,7 +148,7 @@ export function PersonalInfoPopup() {
                       onClick={handleEmailCheck}
                       className="w-full lg:w-[110px] shrink-0"
                     >
-                      冗長チェック
+                      重複チェック
                     </Button>
                   </div>
                   {emailCheckResult === "ok" && (

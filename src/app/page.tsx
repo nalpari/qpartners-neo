@@ -7,7 +7,7 @@ import { HomeSidebar } from "@/components/home/home-sidebar";
 import { HomeDownloads } from "@/components/home/home-downloads";
 
 // Plan SC: SC-04 — 로그인 상태에 따른 레이아웃 분기 (임시 상수, 향후 auth-store 연동)
-const IS_LOGGED_IN = true;
+const IS_LOGGED_IN = false; // TODO: auth-store 연동 후 실제 값으로 교체
 
 export default function Home() {
   return (

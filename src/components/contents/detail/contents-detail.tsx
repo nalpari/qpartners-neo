@@ -20,7 +20,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // TODO: contentId로 실제 데이터 조회 (현재 더미)
   const data = DUMMY_DETAIL;
 
-  const isAdmin = true; // TODO: 실제 권한 체크
+  const isAdmin = false; // TODO: 실제 권한 체크
 
   const handleDelete = () => {
     openAlert({

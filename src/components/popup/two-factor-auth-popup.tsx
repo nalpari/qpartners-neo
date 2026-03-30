@@ -27,12 +27,17 @@ export function TwoFactorAuthPopup() {
 
   // 10분 카운트다운 타이머
   useEffect(() => {
-    if (remainingSeconds <= 0) return;
     const timer = setInterval(() => {
-      setRemainingSeconds((prev) => (prev <= 0 ? 0 : prev - 1));
+      setRemainingSeconds((prev) => {
+        if (prev <= 0) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, [remainingSeconds]);
+  }, []);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;

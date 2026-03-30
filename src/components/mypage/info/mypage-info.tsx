@@ -3,15 +3,17 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 import { MypageInfoCorporate } from "./mypage-info-corporate";
 import { MypageInfoMember } from "./mypage-info-member";
 import { MypageInfoConstruction } from "./mypage-info-construction";
 
 export function MypageInfo() {
   const [isEditing, setIsEditing] = useState(false);
+  const { openAlert } = useAlertStore();
 
   const handleSave = () => {
-    alert("保存機能は準備中です");
+    openAlert({ type: "alert", message: "保存機能は準備中です" });
     setIsEditing(false);
   };
 

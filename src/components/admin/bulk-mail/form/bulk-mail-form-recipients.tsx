@@ -26,12 +26,16 @@ function RecipientSelect({
     o.label.toLowerCase().includes(search.toLowerCase())
   );
 
-  useEffect(() => {
-    if (isOpen && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    }
-  }, [isOpen]);
+  const handleToggle = () => {
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (next && btnRef.current) {
+        const rect = btnRef.current.getBoundingClientRect();
+        setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      }
+      return next;
+    });
+  };
 
   // 외부 클릭 시 닫기
   useEffect(() => {
@@ -62,7 +66,7 @@ function RecipientSelect({
       <button
         ref={btnRef}
         type="button"
-        onClick={() => setIsOpen((p) => !p)}
+        onClick={handleToggle}
         className="flex items-center w-full h-[36px] px-3 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] text-[#101010] text-left"
       >
         <span className="flex-1 truncate">{value || "選択"}</span>

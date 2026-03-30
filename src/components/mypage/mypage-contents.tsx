@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { MypageTab } from "@/components/layout/mypage-tab";
 import type { MypageTabKey } from "@/components/layout/mypage-tab";
@@ -46,16 +46,16 @@ export function MypageContents() {
       <MypageTab activeTab={activeTab} onTabChange={handleTabChange} />
 
       <main className="flex flex-col items-center w-full bg-[#f7f9fb] overflow-hidden">
-        <Activity mode={activeTab === "info" ? "visible" : "hidden"}>
+        {activeTab === "info" && (
           <div className="w-full flex flex-col items-center gap-[42px] lg:py-[24px] lg:pb-[48px] pb-[0px]">
             <MypageInfo />
           </div>
-        </Activity>
-        <Activity mode={activeTab === "downloads" ? "visible" : "hidden"}>
+        )}
+        {activeTab === "downloads" && (
           <div className="w-full flex flex-col items-center gap-[42px] lg:py-[24px] lg:pb-[48px] pb-[0px]">
             <DownloadHistory />
           </div>
-        </Activity>
+        )}
       </main>
     </>
   );

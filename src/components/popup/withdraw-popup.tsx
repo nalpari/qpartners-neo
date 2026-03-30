@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -15,6 +15,7 @@ const USER_INFO = [
 
 export function WithdrawPopup() {
   const { closePopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
 
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
@@ -33,7 +34,7 @@ export function WithdrawPopup() {
       setError("退会理由を入力してください");
       return;
     }
-    alert("会員退会が完了されました。ご利用ありがとうございます。");
+    openAlert({ type: "alert", message: "会員退会が完了されました。ご利用ありがとうございます。" });
     handleClose();
   };
 
