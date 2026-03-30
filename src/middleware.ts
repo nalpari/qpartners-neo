@@ -20,7 +20,6 @@ const PUBLIC_PATHS = [
 const TWO_FACTOR_PATHS = [
   "/api/auth/two-factor/send",
   "/api/auth/two-factor/verify",
-  "/api/auth/two-factor/resend",
   "/api/auth/logout",
 ];
 

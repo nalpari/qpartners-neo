@@ -434,46 +434,6 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/auth/two-factor/resend": {
-      post: {
-        tags: ["TwoFactor"],
-        summary: "2차 인증번호 재전송",
-        description: "기존 미사용 코드 무효화 후 새 인증번호 발송.",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/TwoFactorSendRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "재전송 성공",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        message: { type: "string", example: "인증번호가 재전송되었습니다." },
-                        expiresIn: { type: "integer", example: 600 },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          "400": errorResponse("이메일 정보가 없어 인증번호를 발송할 수 없습니다"),
-          "401": errorResponse("인증이 필요합니다"),
-          "500": errorResponse("서버 오류"),
-        },
-      },
-    },
-
     // ─── CodeHeader ───
     "/codes": {
       get: {
