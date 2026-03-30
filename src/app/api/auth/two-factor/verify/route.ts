@@ -91,20 +91,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 코드 일치 확인 (SHA-256 해시 비교) + brute-force 방어
+  // 5. 코드 일치 확인 (HMAC-SHA256 해시 비교) + brute-force 방어
   if (record.code !== hashOtp(code)) {
-    // 시도 횟수 증가
-    const updated = await prisma.twoFactorCode.update({
+    // 시도 횟수 증가 + 최대 초과 시 무효화를 트랜잭션으로 원자적 처리
+    const newAttempts = record.attempts + 1;
+    const shouldInvalidate = newAttempts >= MAX_VERIFY_ATTEMPTS;
+
+    await prisma.twoFactorCode.update({
       where: { id: record.id },
-      data: { attempts: { increment: 1 } },
+      data: {
+        attempts: { increment: 1 },
+        ...(shouldInvalidate && { verified: true }),
+      },
     });
 
-    // 최대 시도 횟수 초과 시 코드 무효화
-    if (updated.attempts >= MAX_VERIFY_ATTEMPTS) {
-      await prisma.twoFactorCode.update({
-        where: { id: record.id },
-        data: { verified: true },
-      });
+    if (shouldInvalidate) {
       return NextResponse.json(
         { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
         { status: 401 },

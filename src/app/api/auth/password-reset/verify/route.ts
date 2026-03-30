@@ -54,12 +54,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. 유효한 토큰
+  // 4. 유효한 토큰 (이메일 노출 방지 — userType만 반환)
   return NextResponse.json({
     data: {
       valid: true,
       userType: resetToken.userType,
-      userId: resetToken.userId,
     },
   });
 }

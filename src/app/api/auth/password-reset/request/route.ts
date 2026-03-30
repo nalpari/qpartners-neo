@@ -53,25 +53,25 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // 3. 기존 미사용 토큰 무효화 (W3)
-  await prisma.passwordResetToken.updateMany({
-    where: { userId: email, used: false },
-    data: { used: true },
-  });
-
-  // 4. PasswordResetToken 생성
+  // 3. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
   const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 
   try {
-    await prisma.passwordResetToken.create({
-      data: {
-        userType: userTp,
-        userId: email,
-        token,
-        expiresAt,
-      },
-    });
+    await prisma.$transaction([
+      prisma.passwordResetToken.updateMany({
+        where: { userId: email, used: false },
+        data: { used: true },
+      }),
+      prisma.passwordResetToken.create({
+        data: {
+          userType: userTp,
+          userId: email,
+          token,
+          expiresAt,
+        },
+      }),
+    ]);
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] 토큰 생성 실패:", error);
     return NextResponse.json(

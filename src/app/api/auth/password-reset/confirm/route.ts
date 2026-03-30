@@ -114,16 +114,26 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] QSP API 호출 실패:", error);
+    // QSP 실패 시 토큰 롤백 (사용자가 재시도 가능하도록)
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: true },
+      data: { used: false },
+    });
     return NextResponse.json(
-      { error: "외부 서버에 연결할 수 없습니다" },
+      { error: "외부 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요." },
       { status: 502 },
     );
   }
 
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비정상 응답:", qspResponse.status);
+    // QSP 실패 시 토큰 롤백
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: true },
+      data: { used: false },
+    });
     return NextResponse.json(
-      { error: "외부 서버 오류가 발생했습니다" },
+      { error: "외부 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." },
       { status: 502 },
     );
   }
@@ -132,8 +142,12 @@ export async function POST(request: NextRequest) {
   try {
     qspBody = await qspResponse.json();
   } catch {
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: true },
+      data: { used: false },
+    });
     return NextResponse.json(
-      { error: "외부 서버 응답을 처리할 수 없습니다" },
+      { error: "외부 서버 응답을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요." },
       { status: 502 },
     );
   }
@@ -141,14 +155,17 @@ export async function POST(request: NextRequest) {
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success || parsed.data.result.resultCode !== "S") {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비밀번호 변경 실패:", qspBody);
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: true },
+      data: { used: false },
+    });
     return NextResponse.json(
-      { error: "비밀번호 변경에 실패했습니다" },
+      { error: "비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요." },
       { status: 500 },
     );
   }
 
   // 5. 자동 로그인 — JWT 발행 + 쿠키 설정
-  //    W5: userDetail 응답이 있으면 JWT에 사용자 정보 채움
   const d = detailData as Record<string, string | null> | null;
   const user: LoginUser = {
     userId: loginId,
