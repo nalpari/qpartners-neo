@@ -39,7 +39,12 @@ export const createHomeNoticeSchema = z
 
 export const updateHomeNoticeSchema = z
   .object({
-    ...targetFields,
+    targetSuperAdmin: z.boolean().optional(),
+    targetAdmin: z.boolean().optional(),
+    targetFirstDealer: z.boolean().optional(),
+    targetSecondDealer: z.boolean().optional(),
+    targetConstructor: z.boolean().optional(),
+    targetGeneral: z.boolean().optional(),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
     content: z.string().min(1, "content는 필수입니다").optional(),
@@ -47,15 +52,20 @@ export const updateHomeNoticeSchema = z
   })
   .refine(
     (data) => {
-      // target 필드가 하나라도 명시적으로 전달된 경우에만 검증
-      const hasTarget =
-        data.targetSuperAdmin ||
-        data.targetAdmin ||
-        data.targetFirstDealer ||
-        data.targetSecondDealer ||
-        data.targetConstructor ||
-        data.targetGeneral;
-      return hasTarget;
+      // target 필드가 하나라도 명시적으로 전달된 경우에만 최소 1개 검증
+      const targetKeys = [
+        "targetSuperAdmin",
+        "targetAdmin",
+        "targetFirstDealer",
+        "targetSecondDealer",
+        "targetConstructor",
+        "targetGeneral",
+      ] as const;
+      const hasAnyTargetField = targetKeys.some(
+        (k) => data[k] !== undefined,
+      );
+      if (!hasAnyTargetField) return true; // target 미전송 시 검증 스킵
+      return targetKeys.some((k) => data[k] === true);
     },
     { message: "게시대상을 최소 1개 이상 선택하세요" },
   );

@@ -8,6 +8,7 @@ import {
   canModifyContent,
   getUserFromHeaders,
   isAdmin,
+  isInternalUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
@@ -34,6 +35,12 @@ export async function GET(request: NextRequest, { params }: Params) {
     });
 
     if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // 삭제된 콘텐츠는 사내 사용자만 조회 가능
+    const internal = user ? isInternalUser(user.role) : false;
+    if (existing.status === "deleted" && !internal) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -138,38 +145,46 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const { targets, categoryIds, ...contentData } = result.data;
 
-    // targets replace (전달 시)
+    // 트랜잭션으로 일괄 처리 (delete + update)
+    const ops = [];
+
     if (targets) {
-      await prisma.contentTarget.deleteMany({
-        where: { contentId: parsed.data },
-      });
+      ops.push(
+        prisma.contentTarget.deleteMany({
+          where: { contentId: parsed.data },
+        }),
+      );
     }
 
-    // categoryIds replace (전달 시)
     if (categoryIds) {
-      await prisma.contentCategory.deleteMany({
-        where: { contentId: parsed.data },
-      });
+      ops.push(
+        prisma.contentCategory.deleteMany({
+          where: { contentId: parsed.data },
+        }),
+      );
     }
 
-    const content = await prisma.content.update({
-      where: { id: parsed.data },
-      data: {
-        ...contentData,
-        updatedBy: user.userId,
-        targets: targets
-          ? { create: targets }
-          : undefined,
-        categories: categoryIds
-          ? {
-              create: categoryIds.map((categoryId) => ({
-                categoryId,
-                createdBy: user.userId,
-              })),
-            }
-          : undefined,
-      },
-    });
+    ops.push(
+      prisma.content.update({
+        where: { id: parsed.data },
+        data: {
+          ...contentData,
+          updatedBy: user.userId,
+          targets: targets ? { create: targets } : undefined,
+          categories: categoryIds
+            ? {
+                create: categoryIds.map((categoryId) => ({
+                  categoryId,
+                  createdBy: user.userId,
+                })),
+              }
+            : undefined,
+        },
+      }),
+    );
+
+    const results = await prisma.$transaction(ops);
+    const content = results[results.length - 1];
 
     return NextResponse.json({ data: content });
   } catch (error) {

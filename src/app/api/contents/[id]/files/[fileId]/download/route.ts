@@ -35,7 +35,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       include: { targets: { select: { targetType: true, startAt: true, endAt: true } } },
     });
 
-    if (content && !canAccessContent(user, content.targets)) {
+    if (!content || !canAccessContent(user, content.targets)) {
       return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
     }
 
