@@ -21,7 +21,7 @@ Category (qp_categories)
 ├── isInternalOnly: Boolean (default: false)
 ├── sortOrder: Int (default: 1)
 ├── isActive: Boolean (default: true)
-├── createdAt / updatedAt
+├── createdAt / createdBy / updatedAt / updatedBy
 ├── parent: Category? (self-relation)
 ├── children: Category[]
 └── contents: ContentCategory[]
@@ -156,3 +156,4 @@ src/lib/schemas/
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-03-22 | Initial draft | CK |
+| 0.2 | 2026-03-30 | Data Model에 createdBy/updatedBy 필드 추가 | CK |
