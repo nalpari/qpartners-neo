@@ -128,8 +128,9 @@ export async function POST(request: NextRequest) {
   });
 
   // 5. 자동 로그인 — JWT 발행 + 쿠키 설정
+  //    loginId: QSP에서 조회한 실제 userId 사용 (ADMIN/DEALER는 email과 다를 수 있음)
   const user: LoginUser = {
-    userId: resetToken.userId,
+    userId: loginId,
     userNm: null,
     userTp: resetToken.userType,
     compCd: null,

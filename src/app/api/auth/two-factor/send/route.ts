@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const { userTp, userId } = result.data;
 
-  // 2. JWT에서 사용자 이메일 추출
+  // 2. JWT에서 사용자 이메일 추출 + 본인 확인
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
     return NextResponse.json(
@@ -56,6 +56,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "토큰이 만료되었거나 유효하지 않습니다" },
       { status: 401 },
+    );
+  }
+
+  // JWT 사용자와 요청 사용자 일치 여부 검증
+  if (user.userId !== userId || user.userTp !== userTp) {
+    return NextResponse.json(
+      { error: "요청 사용자 정보가 일치하지 않습니다" },
+      { status: 403 },
     );
   }
 
