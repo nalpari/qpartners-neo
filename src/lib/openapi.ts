@@ -214,6 +214,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("유효한 이메일 주소를 입력해주세요"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "502": errorResponse("외부 서버 오류"),
         },

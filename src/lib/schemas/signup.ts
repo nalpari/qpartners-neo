@@ -56,8 +56,8 @@ export const emailSchema = z.string().email("유효한 이메일 주소를 입�
 export const qspResponseSchema = z.object({
   data: z.unknown().nullable(),
   result: z.object({
-    code: z.number(),
-    message: z.string(),
+    code: z.number().optional(),
+    message: z.string().optional(),
     resultCode: z.string(),
     resultMsg: z.string(),
   }),
