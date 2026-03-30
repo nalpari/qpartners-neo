@@ -79,10 +79,17 @@ export async function GET(request: NextRequest) {
   const qsp = parsed.data;
 
   // 4. 존재 여부 판별
-  // resultCode === "S" + data 존재 → 이미 등록된 이메일
-  const hasUser = qsp.result.resultCode === "S" && qsp.data != null;
+  if (qsp.result.resultCode !== "S") {
+    // QSP 비즈니스 에러 (resultCode !== "S") → 502 처리 (silent "available" 방지)
+    console.error("[GET /api/auth/email/check] QSP 비즈니스 에러:", qsp.result);
+    return NextResponse.json(
+      { error: "이메일 확인 중 오류가 발생했습니다" },
+      { status: 502 },
+    );
+  }
 
-  if (hasUser) {
+  // resultCode === "S" + data 존재 → 이미 등록된 이메일
+  if (qsp.data != null) {
     return NextResponse.json(
       { error: "이미 사용중인 이메일입니다" },
       { status: 409 },
