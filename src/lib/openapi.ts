@@ -251,7 +251,6 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         valid: { type: "boolean", example: true },
                         userType: { type: "string", example: "GENERAL" },
-                        userId: { type: "string", example: "user@example.com" },
                       },
                     },
                   },

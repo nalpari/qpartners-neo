@@ -5,8 +5,11 @@ export function generateTwoFactorCode(): string {
   return String(randomInt(100000, 1000000));
 }
 
-/** OTP 코드 HMAC-SHA256 해시 (DB 저장용, salt 없는 SHA-256 대비 레인보우 테이블 방어) */
+/** OTP 코드 HMAC-SHA256 해시 (DB 저장용, JWT와 별도 키 사용) */
 export function hashOtp(code: string): string {
-  const secret = process.env.JWT_SECRET ?? "qpartners-neo-otp-secret";
+  const secret = process.env.OTP_SECRET ?? process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("OTP_SECRET 또는 JWT_SECRET 환경변수가 필요합니다");
+  }
   return createHmac("sha256", secret).update(code).digest("hex");
 }
