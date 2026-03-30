@@ -1,19 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { z } from "zod";
 import { QSP_API } from "@/lib/config";
-
-// QSP /user/detail 응답 스키마
-const qspUserDetailResponseSchema = z.object({
-  data: z.unknown().nullable(),
-  result: z.object({
-    code: z.number(),
-    resultCode: z.string(),
-    message: z.string(),
-    resultMsg: z.string(),
-  }),
-});
+import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
 // GET /api/auth/email/check?email=... — 이메일 중복 체크 (QSP /user/detail 활용)
 export async function GET(request: NextRequest) {
@@ -27,7 +16,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const emailSchema = z.string().email("유효한 이메일 주소를 입력해주세요");
   const result = emailSchema.safeParse(email);
   if (!result.success) {
     return NextResponse.json(
@@ -79,7 +67,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
+  const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
     console.error("[GET /api/auth/email/check] QSP 응답 스키마 불일치:", parsed.error);
     return NextResponse.json(

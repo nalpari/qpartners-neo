@@ -46,9 +46,14 @@ export const signupRequestSchema = z
 
 export type SignupRequestInput = z.infer<typeof signupRequestSchema>;
 
-// ─── QSP newUserReq 응답 ───
+// ─── 이메일 검증 ───
 
-export const qspSignupResponseSchema = z.object({
+export const emailSchema = z.string().email("유효한 이메일 주소를 입력해주세요");
+
+// ─── QSP 공용 응답 스키마 ───
+
+/** QSP API 공통 응답 구조 (newUserReq, userDetail 등 공용) */
+export const qspResponseSchema = z.object({
   data: z.unknown().nullable(),
   result: z.object({
     code: z.number(),
@@ -58,5 +63,9 @@ export const qspSignupResponseSchema = z.object({
   }),
 });
 
-export type QspSignupResponse = z.infer<typeof qspSignupResponseSchema>;
+export type QspResponse = z.infer<typeof qspResponseSchema>;
+
+/** @deprecated qspResponseSchema 사용 */
+export const qspSignupResponseSchema = qspResponseSchema;
+export type QspSignupResponse = QspResponse;
 
