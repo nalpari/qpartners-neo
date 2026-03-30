@@ -47,7 +47,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. QSP 유저정보 조회 (이메일 → loginId 획득)
+  // 3. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
+  const updated = await prisma.passwordResetToken.updateMany({
+    where: { token, used: false },
+    data: { used: true },
+  });
+
+  if (updated.count === 0) {
+    return NextResponse.json(
+      { error: "이미 사용된 링크입니다." },
+      { status: 400 },
+    );
+  }
+
+  // 4. QSP 유저정보 조회 (이메일 → loginId 획득)
   const detailParams = new URLSearchParams({
     accsSiteCd: "QPARTNERS",
     email: resetToken.userId,
@@ -120,12 +133,6 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-
-  // 4. 토큰 사용 완료 처리
-  await prisma.passwordResetToken.update({
-    where: { token },
-    data: { used: true },
-  });
 
   // 5. 자동 로그인 — JWT 발행 + 쿠키 설정
   //    loginId: QSP에서 조회한 실제 userId 사용 (ADMIN/DEALER는 email과 다를 수 있음)

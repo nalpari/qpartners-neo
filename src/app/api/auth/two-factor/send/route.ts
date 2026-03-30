@@ -9,10 +9,11 @@ import {
   TWO_FACTOR_SUBJECT,
 } from "@/lib/mail-templates/two-factor";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { randomInt } from "crypto";
 
-/** 6자리 인증번호 생성 (100000~999999) */
+/** 6자리 인증번호 생성 (100000~999999, 암호학적 안전 난수) */
 function generateCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 // POST /api/auth/two-factor/send — 2차 인증번호 발송

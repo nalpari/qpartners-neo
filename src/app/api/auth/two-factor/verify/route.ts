@@ -50,6 +50,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // JWT 사용자와 요청 사용자 일치 여부 검증
+  if (user.userId !== userId || user.userTp !== userTp) {
+    return NextResponse.json(
+      { error: "요청 사용자 정보가 일치하지 않습니다" },
+      { status: 403 },
+    );
+  }
+
   // 3. DB에서 최신 미검증 코드 조회
   let record;
   try {
