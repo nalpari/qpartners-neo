@@ -21,7 +21,7 @@ const DUMMY_USER = {
 
 export function InquiryForm() {
   const { openAlert } = useAlertStore();
-  const isLoggedIn = true;
+  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
 
   const [companyName, setCompanyName] = useState(
     isLoggedIn ? DUMMY_USER.companyName : ""

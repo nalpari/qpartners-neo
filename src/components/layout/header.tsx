@@ -15,7 +15,7 @@ const RELATED_SITES = [
 const CURRENT_SITE = "qorder";
 
 export function Gnb() {
-  const isLoggedIn = true;
+  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSitesOpen, setIsMobileSitesOpen] = useState(false);

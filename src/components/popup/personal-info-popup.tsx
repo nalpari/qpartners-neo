@@ -30,7 +30,14 @@ export function PersonalInfoPopup() {
   const isFormValid =
     (hasExistingEmail ||
       (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
-    newPassword.length >= 6 &&
+    newPassword.length >= 8 &&
+    (() => {
+      let types = 0;
+      if (/[a-zA-Z]/.test(newPassword)) types++;
+      if (/[0-9]/.test(newPassword)) types++;
+      if (/[^a-zA-Z0-9]/.test(newPassword)) types++;
+      return types >= 2;
+    })() &&
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
 

@@ -27,14 +27,12 @@ function RecipientSelect({
   );
 
   const handleToggle = () => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      if (next && btnRef.current) {
-        const rect = btnRef.current.getBoundingClientRect();
-        setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-      }
-      return next;
-    });
+    const next = !isOpen;
+    if (next && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setIsOpen(next);
   };
 
   // 외부 클릭 시 닫기
