@@ -104,7 +104,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 클라이언트에 전달할 사용자 정보 추출
+  // 5. 2차 인증 필요 여부 판별
+  //    - secAuthYn === "Y" + 비밀번호 초기화 후 로그인이 아닌 경우 → 필요
+  //    - pwdInitYn === "Y" (비밀번호 초기화 직후) → 불필요 (p.14 스펙)
+  const requireTwoFactor =
+    qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y";
+
+  // 6. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
     userId: qsp.data.userId,
     userNm: qsp.data.userNm,
@@ -116,6 +122,8 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    // 2차 인증 필요 시 false, 불필요 시 생략 (undefined)
+    ...(requireTwoFactor && { twoFactorVerified: false }),
   };
 
   // C2: JWT 생성 실패 처리
@@ -130,8 +138,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 6. httpOnly 쿠키 설정
-  const response = NextResponse.json({ data: user });
+  // 7. httpOnly 쿠키 설정
+  const response = NextResponse.json({
+    data: { ...user, requireTwoFactor },
+  });
 
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,

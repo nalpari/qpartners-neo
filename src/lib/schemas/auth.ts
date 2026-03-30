@@ -51,17 +51,21 @@ export type QspLoginResponse = z.infer<typeof qspLoginResponseSchema>;
 
 // ─── 클라이언트에 전달할 로그인 사용자 정보 ───
 
-export const loginUserSchema = qspLoginUserSchema.pick({
-  userId: true,
-  userNm: true,
-  userTp: true,
-  compCd: true,
-  compNm: true,
-  email: true,
-  deptNm: true,
-  authCd: true,
-  storeLvl: true,
-  statCd: true,
-});
+export const loginUserSchema = qspLoginUserSchema
+  .pick({
+    userId: true,
+    userNm: true,
+    userTp: true,
+    compCd: true,
+    compNm: true,
+    email: true,
+    deptNm: true,
+    authCd: true,
+    storeLvl: true,
+    statCd: true,
+  })
+  .extend({
+    twoFactorVerified: z.boolean().optional(),
+  });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;
