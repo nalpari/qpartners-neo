@@ -23,7 +23,7 @@ export const openApiSpec: OpenAPIV3.Document = {
   info: {
     title: "Q.PARTNERS API",
     version: "1.0.0",
-    description: "Q.PARTNERS REST API — 인증, 공통코드 관리",
+    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지 관리",
   },
   servers: [{ url: "/api", description: "Local API" }],
 
@@ -31,6 +31,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "Auth", description: "인증 (로그인/로그아웃/사용자 정보)" },
     { name: "CodeHeader", description: "공통코드 헤더 관리" },
     { name: "CodeDetail", description: "공통코드 상세 관리" },
+    { name: "Category", description: "카테고리 관리 (2Depth 트리)" },
+    { name: "Menu", description: "메뉴 관리 (2레벨 트리)" },
+    { name: "Role", description: "역할(권한) 관리" },
+    { name: "Permission", description: "메뉴별 CRUD 권한 관리" },
+    { name: "HomeNotice", description: "홈화면 공지 관리" },
   ],
 
   paths: {
@@ -378,6 +383,492 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    // ─── Menu ───
+    "/menus": {
+      get: {
+        tags: ["Menu"],
+        summary: "메뉴 트리 목록 조회",
+        parameters: [
+          {
+            name: "activeOnly",
+            in: "query",
+            description: "활성만 조회 (기본 true)",
+            schema: { type: "string", default: "true" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공 (1-Level + children 트리)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/MenuTree" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["Menu"],
+        summary: "메뉴 등록",
+        description: "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateMenu" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Menu" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("상위 메뉴가 존재하지 않습니다"),
+          "409": errorResponse("이미 존재하는 menuCode"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/menus/{id}": {
+      put: {
+        tags: ["Menu"],
+        summary: "메뉴 수정 (menuCode 수정 불가)",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateMenu" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Menu" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/menus/sort": {
+      put: {
+        tags: ["Menu"],
+        summary: "정렬순서 일괄 저장",
+        description: "트랜잭션으로 여러 메뉴의 sortOrder를 일괄 업데이트.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SortMenu" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "일괄 저장 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        updated: { type: "integer", example: 3 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    // ─── Role & Permission ───
+    "/roles": {
+      get: {
+        tags: ["Role"],
+        summary: "역할 목록 조회",
+        parameters: [
+          {
+            name: "activeOnly",
+            in: "query",
+            description: "활성만 조회 (기본 true)",
+            schema: { type: "string", default: "true" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Role" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["Role"],
+        summary: "역할 추가",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateRole" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Role" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "409": errorResponse("이미 존재하는 roleCode"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/roles/{roleCode}": {
+      put: {
+        tags: ["Role"],
+        summary: "역할 수정 (roleCode 수정 불가)",
+        parameters: [
+          {
+            name: "roleCode",
+            in: "path",
+            required: true,
+            schema: { type: "string", maxLength: 50 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateRole" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Role" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/roles/{roleCode}/permissions": {
+      get: {
+        tags: ["Permission"],
+        summary: "메뉴별 권한 조회",
+        description: "전체 메뉴(2레벨) 목록 + 해당 roleCode의 CRUD 권한 매핑",
+        parameters: [
+          {
+            name: "roleCode",
+            in: "path",
+            required: true,
+            schema: { type: "string", maxLength: 50 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/RolePermissions" },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid roleCode"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      put: {
+        tags: ["Permission"],
+        summary: "메뉴별 권한 일괄 저장",
+        description: "기존 권한 전부 삭제 후 새로 생성 (replace). 트랜잭션 처리.",
+        parameters: [
+          {
+            name: "roleCode",
+            in: "path",
+            required: true,
+            schema: { type: "string", maxLength: 50 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdatePermissions" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "일괄 저장 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        roleCode: { type: "string", example: "ADMIN" },
+                        updated: { type: "integer", example: 5 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    // ─── HomeNotice ───
+    "/home-notices": {
+      get: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 목록 (관리자용)",
+        parameters: [
+          { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
+          { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
+          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_dealer/second_dealer/constructor/general)", schema: { type: "string" } },
+          { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
+          { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/HomeNoticeListItem" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 등록",
+        description: "게시대상 최소 1개 필수. 활성(예정 포함) 공지 5개 초과 시 등록 불가.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateHomeNotice" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/HomeNotice" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/home-notices/{id}": {
+      put: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 수정",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateHomeNotice" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/HomeNotice" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      delete: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 삭제 (물리 삭제)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { id: { type: "integer", example: 1 } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/home-notices/active": {
+      get: {
+        tags: ["HomeNotice"],
+        summary: "홈화면용 활성 공지 (비회원 접근 가능)",
+        description: "현재 시각 기준 활성 공지 중 사용자 역할에 해당하는 것만 반환. 비회원은 targetGeneral만.",
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ActiveHomeNotice" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
     // ─── CodeDetail ───
     "/codes/{id}/details": {
       get: {
@@ -457,6 +948,156 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": validationErrorResponse,
           "404": errorResponse("Header not found"),
           "409": errorResponse("Duplicate code in this header"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    // ─── Category ───
+    "/categories": {
+      get: {
+        tags: ["Category"],
+        summary: "카테고리 트리 목록 조회",
+        parameters: [
+          {
+            name: "internalOnly",
+            in: "query",
+            description: "사내전용만 조회 (기본 false)",
+            schema: { type: "string", default: "false" },
+          },
+          {
+            name: "activeOnly",
+            in: "query",
+            description: "활성만 조회 (기본 true)",
+            schema: { type: "string", default: "true" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공 (1Depth + children 트리)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/CategoryTree" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["Category"],
+        summary: "카테고리 등록",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateCategory" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Category" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("상위 카테고리가 존재하지 않습니다"),
+          "409": errorResponse("이미 존재하는 categoryCode"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/categories/{id}": {
+      put: {
+        tags: ["Category"],
+        summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateCategory" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/Category" },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      delete: {
+        tags: ["Category"],
+        summary: "카테고리 삭제 (물리 삭제)",
+        description: "하위 카테고리 또는 연결된 콘텐츠가 있으면 삭제 불가.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer", example: 1 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("하위 카테고리 또는 연결된 콘텐츠 존재"),
+          "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -775,6 +1416,301 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           sortOrder: { type: "integer", default: 0 },
           isActive: { type: "boolean", default: true },
+        },
+      },
+      Category: {
+        type: "object",
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          parentId: { type: "integer", nullable: true, example: null },
+          categoryCode: { type: "string", example: "PROD" },
+          name: { type: "string", example: "상품분류" },
+          isInternalOnly: { type: "boolean", example: false },
+          sortOrder: { type: "integer", example: 1 },
+          isActive: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      CategoryTree: {
+        allOf: [
+          { $ref: "#/components/schemas/Category" },
+          {
+            type: "object",
+            properties: {
+              children: {
+                type: "array",
+                items: { $ref: "#/components/schemas/Category" },
+              },
+            },
+          },
+        ],
+      },
+      CreateCategory: {
+        type: "object",
+        required: ["categoryCode", "name"],
+        properties: {
+          parentId: { type: "integer", nullable: true, default: null, description: "null=1Depth, 값=2Depth" },
+          categoryCode: { type: "string", maxLength: 50, example: "PROD" },
+          name: { type: "string", maxLength: 100, example: "상품분류" },
+          isInternalOnly: { type: "boolean", default: false },
+          sortOrder: { type: "integer", default: 1 },
+          isActive: { type: "boolean", default: true },
+        },
+      },
+      Menu: {
+        type: "object",
+        required: ["id", "menuCode", "menuName", "isActive", "showInTopNav", "showInMobile", "sortOrder", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          parentId: { type: "integer", nullable: true, example: null },
+          menuCode: { type: "string", example: "CONTENT" },
+          menuName: { type: "string", example: "콘텐츠" },
+          pageUrl: { type: "string", nullable: true, example: "/contents" },
+          isActive: { type: "boolean", example: true },
+          showInTopNav: { type: "boolean", example: true },
+          showInMobile: { type: "boolean", example: true },
+          sortOrder: { type: "integer", example: 1 },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      MenuTree: {
+        allOf: [
+          { $ref: "#/components/schemas/Menu" },
+          {
+            type: "object",
+            properties: {
+              children: {
+                type: "array",
+                items: { $ref: "#/components/schemas/Menu" },
+              },
+            },
+          },
+        ],
+      },
+      CreateMenu: {
+        type: "object",
+        required: ["menuCode", "menuName"],
+        properties: {
+          parentId: { type: "integer", nullable: true, default: null, description: "null=1-Level, 값=2-Level" },
+          menuCode: { type: "string", maxLength: 50, example: "CONTENT" },
+          menuName: { type: "string", maxLength: 100, example: "콘텐츠" },
+          pageUrl: { type: "string", maxLength: 500, nullable: true, example: "/contents" },
+          isActive: { type: "boolean", default: true },
+          showInTopNav: { type: "boolean", default: true },
+          showInMobile: { type: "boolean", default: true },
+          sortOrder: { type: "integer", default: 1 },
+        },
+      },
+      UpdateMenu: {
+        type: "object",
+        description: "변경할 필드만 전송 (menuCode 수정 불가)",
+        properties: {
+          menuName: { type: "string", maxLength: 100 },
+          pageUrl: { type: "string", maxLength: 500, nullable: true },
+          isActive: { type: "boolean" },
+          showInTopNav: { type: "boolean" },
+          showInMobile: { type: "boolean" },
+          sortOrder: { type: "integer" },
+        },
+      },
+      Role: {
+        type: "object",
+        required: ["id", "roleCode", "roleName", "isActive", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          roleCode: { type: "string", example: "ADMIN" },
+          roleName: { type: "string", example: "관리자" },
+          description: { type: "string", nullable: true, example: "사내직원, 전체 메뉴 CRUD 권한 부여" },
+          isActive: { type: "boolean", example: true },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      CreateRole: {
+        type: "object",
+        required: ["roleCode", "roleName"],
+        properties: {
+          roleCode: { type: "string", maxLength: 50, example: "Cus6" },
+          roleName: { type: "string", maxLength: 100, example: "특수회원" },
+          description: { type: "string", maxLength: 500, nullable: true, example: "특수 파트너사" },
+          isActive: { type: "boolean", default: true },
+        },
+      },
+      UpdateRole: {
+        type: "object",
+        description: "변경할 필드만 전송 (roleCode 수정 불가)",
+        properties: {
+          roleName: { type: "string", maxLength: 100 },
+          description: { type: "string", maxLength: 500, nullable: true },
+          isActive: { type: "boolean" },
+        },
+      },
+      MenuPermissionItem: {
+        type: "object",
+        properties: {
+          menuCode: { type: "string", example: "SEARCH" },
+          menuName: { type: "string", example: "통합검색" },
+          level: { type: "integer", example: 1 },
+          hasUrl: { type: "boolean", example: true },
+          canRead: { type: "boolean", example: true },
+          canCreate: { type: "boolean", example: true },
+          canUpdate: { type: "boolean", example: true },
+          canDelete: { type: "boolean", example: true },
+          children: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MenuPermissionItem" },
+          },
+        },
+      },
+      RolePermissions: {
+        type: "object",
+        properties: {
+          roleCode: { type: "string", example: "ADMIN" },
+          roleName: { type: "string", example: "관리자" },
+          menus: {
+            type: "array",
+            items: { $ref: "#/components/schemas/MenuPermissionItem" },
+          },
+        },
+      },
+      HomeNotice: {
+        type: "object",
+        required: ["id", "startAt", "endAt", "content", "userType", "userId", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          targetSuperAdmin: { type: "boolean" },
+          targetAdmin: { type: "boolean" },
+          targetFirstDealer: { type: "boolean" },
+          targetSecondDealer: { type: "boolean" },
+          targetConstructor: { type: "boolean" },
+          targetGeneral: { type: "boolean" },
+          startAt: { type: "string", format: "date-time" },
+          endAt: { type: "string", format: "date-time" },
+          content: { type: "string" },
+          url: { type: "string", nullable: true },
+          userType: { type: "string", enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"] },
+          userId: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      HomeNoticeListItem: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          targets: { type: "array", items: { type: "string" }, example: ["first_dealer", "constructor"] },
+          content: { type: "string" },
+          url: { type: "string", nullable: true },
+          startAt: { type: "string", format: "date-time" },
+          endAt: { type: "string", format: "date-time" },
+          status: { type: "string", enum: ["scheduled", "active", "ended"] },
+          userType: { type: "string" },
+          userId: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      ActiveHomeNotice: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          content: { type: "string" },
+          url: { type: "string", nullable: true },
+        },
+      },
+      CreateHomeNotice: {
+        type: "object",
+        required: ["startAt", "endAt", "content"],
+        description: "게시대상(target*) 중 최소 1개 true 필수",
+        properties: {
+          targetSuperAdmin: { type: "boolean", default: false },
+          targetAdmin: { type: "boolean", default: false },
+          targetFirstDealer: { type: "boolean", default: false },
+          targetSecondDealer: { type: "boolean", default: false },
+          targetConstructor: { type: "boolean", default: false },
+          targetGeneral: { type: "boolean", default: false },
+          startAt: { type: "string", format: "date-time", example: "2026-03-20T00:00:00Z" },
+          endAt: { type: "string", format: "date-time", example: "2026-03-30T23:59:59Z" },
+          content: { type: "string", example: "공지 내용 텍스트" },
+          url: { type: "string", maxLength: 500, nullable: true, example: "https://example.com" },
+        },
+      },
+      UpdateHomeNotice: {
+        type: "object",
+        description: "변경할 필드만 전송. 게시대상 최소 1개 true 필수.",
+        properties: {
+          targetSuperAdmin: { type: "boolean" },
+          targetAdmin: { type: "boolean" },
+          targetFirstDealer: { type: "boolean" },
+          targetSecondDealer: { type: "boolean" },
+          targetConstructor: { type: "boolean" },
+          targetGeneral: { type: "boolean" },
+          startAt: { type: "string", format: "date-time" },
+          endAt: { type: "string", format: "date-time" },
+          content: { type: "string" },
+          url: { type: "string", maxLength: 500, nullable: true },
+        },
+      },
+      UpdatePermissions: {
+        type: "object",
+        required: ["permissions"],
+        properties: {
+          permissions: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["menuCode"],
+              properties: {
+                menuCode: { type: "string", maxLength: 50, example: "SEARCH" },
+                canRead: { type: "boolean", default: false },
+                canCreate: { type: "boolean", default: false },
+                canUpdate: { type: "boolean", default: false },
+                canDelete: { type: "boolean", default: false },
+              },
+            },
+            minItems: 1,
+          },
+        },
+      },
+      SortMenu: {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "sortOrder"],
+              properties: {
+                id: { type: "integer", minimum: 1 },
+                sortOrder: { type: "integer", minimum: 1 },
+              },
+            },
+            minItems: 1,
+          },
+        },
+      },
+      UpdateCategory: {
+        type: "object",
+        description: "변경할 필드만 전송 (categoryCode, parentId 수정 불가)",
+        properties: {
+          name: { type: "string", maxLength: 100 },
+          isInternalOnly: { type: "boolean" },
+          sortOrder: { type: "integer" },
+          isActive: { type: "boolean" },
         },
       },
       UpdateCodeDetail: {
