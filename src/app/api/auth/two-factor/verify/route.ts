@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { twoFactorVerifySchema } from "@/lib/schemas/two-factor";
 import { verifyToken, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { hashOtp } from "@/lib/auth-utils";
+
+const MAX_VERIFY_ATTEMPTS = 5;
 
 // POST /api/auth/two-factor/verify — 2차 인증번호 검증
 export async function POST(request: NextRequest) {
@@ -88,8 +91,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 코드 일치 확인
-  if (record.code !== code) {
+  // 5. 코드 일치 확인 (SHA-256 해시 비교) + brute-force 방어
+  if (record.code !== hashOtp(code)) {
+    // 시도 횟수 증가
+    const updated = await prisma.twoFactorCode.update({
+      where: { id: record.id },
+      data: { attempts: { increment: 1 } },
+    });
+
+    // 최대 시도 횟수 초과 시 코드 무효화
+    if (updated.attempts >= MAX_VERIFY_ATTEMPTS) {
+      await prisma.twoFactorCode.update({
+        where: { id: record.id },
+        data: { verified: true },
+      });
+      return NextResponse.json(
+        { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json(
       { error: "인증번호가 일치하지 않습니다." },
       { status: 401 },

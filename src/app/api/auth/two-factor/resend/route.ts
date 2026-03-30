@@ -9,12 +9,7 @@ import {
   TWO_FACTOR_SUBJECT,
 } from "@/lib/mail-templates/two-factor";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
-import { randomInt } from "crypto";
-
-/** 6자리 인증번호 생성 (100000~999999, 암호학적 안전 난수) */
-function generateCode(): string {
-  return String(randomInt(100000, 1000000));
-}
+import { generateTwoFactorCode, hashOtp } from "@/lib/auth-utils";
 
 // POST /api/auth/two-factor/resend — 2차 인증번호 재전송
 export async function POST(request: NextRequest) {
@@ -76,7 +71,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 3. 기존 미사용 코드 무효화 + 새 코드 생성
-  const code = generateCode();
+  const code = generateTwoFactorCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
 
   try {
@@ -89,7 +84,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: userTp,
           userId,
-          code,
+          code: hashOtp(code),
           expiresAt,
           createdBy: userId,
         },

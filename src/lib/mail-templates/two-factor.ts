@@ -1,12 +1,4 @@
-/** HTML 특수문자 이스케이프 (XSS 방지) */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import { escapeHtml } from "@/lib/mail-templates/utils";
 
 interface TwoFactorMailParams {
   code: string;

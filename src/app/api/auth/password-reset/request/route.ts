@@ -37,7 +37,29 @@ export async function POST(request: NextRequest) {
 
   const { userTp, email } = result.data;
 
-  // 2. PasswordResetToken 생성
+  // 2. Rate limiting — 동일 이메일 시간당 3건 제한 (W2)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentCount = await prisma.passwordResetToken.count({
+    where: {
+      userId: email,
+      createdAt: { gte: oneHourAgo },
+    },
+  });
+
+  if (recentCount >= 3) {
+    // 이메일 존재 여부 노출 방지를 위해 동일 성공 응답 반환
+    return NextResponse.json({
+      data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+    });
+  }
+
+  // 3. 기존 미사용 토큰 무효화 (W3)
+  await prisma.passwordResetToken.updateMany({
+    where: { userId: email, used: false },
+    data: { used: true },
+  });
+
+  // 4. PasswordResetToken 생성
   const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 

@@ -60,14 +60,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. QSP 유저정보 조회 (이메일 → loginId 획득)
+  // 4. QSP 유저정보 조회 (이메일 → loginId + 사용자 정보 획득)
   const detailParams = new URLSearchParams({
     accsSiteCd: "QPARTNERS",
     email: resetToken.userId,
     userTp: resetToken.userType,
   });
 
-  let loginId = resetToken.userId; // 기본값: email
+  let loginId = resetToken.userId; // 기본값: email (GENERAL)
+  let detailData: Record<string, unknown> | null = null;
   try {
     const detailRes = await fetch(
       `${QSP_API.userDetail}?${detailParams.toString()}`,
@@ -77,10 +78,22 @@ export async function POST(request: NextRequest) {
       const detailBody = await detailRes.json();
       if (detailBody?.data?.userId) {
         loginId = detailBody.data.userId;
+        detailData = detailBody.data;
       }
     }
   } catch {
-    // 조회 실패 시 email을 loginId로 사용 (일반회원은 email=loginId인 경우)
+    // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
+  }
+
+  // W4: ADMIN/DEALER는 loginId≠email일 수 있으므로 조회 실패 시 에러
+  if (!detailData && resetToken.userType !== "GENERAL") {
+    console.error(
+      `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
+    );
+    return NextResponse.json(
+      { error: "사용자 정보를 확인할 수 없습니다" },
+      { status: 500 },
+    );
   }
 
   // 4. QSP 비밀번호 변경 API 호출 (chgType=I)
@@ -135,18 +148,19 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 자동 로그인 — JWT 발행 + 쿠키 설정
-  //    loginId: QSP에서 조회한 실제 userId 사용 (ADMIN/DEALER는 email과 다를 수 있음)
+  //    W5: userDetail 응답이 있으면 JWT에 사용자 정보 채움
+  const d = detailData as Record<string, string | null> | null;
   const user: LoginUser = {
     userId: loginId,
-    userNm: null,
+    userNm: d?.userNm ?? null,
     userTp: resetToken.userType,
-    compCd: null,
-    compNm: null,
+    compCd: d?.compCd ?? null,
+    compNm: d?.compNm ?? null,
     email: resetToken.userId,
-    deptNm: null,
-    authCd: null,
-    storeLvl: null,
-    statCd: null,
+    deptNm: d?.deptNm ?? null,
+    authCd: d?.authCd ?? null,
+    storeLvl: d?.storeLvl ?? null,
+    statCd: d?.statCd ?? null,
   };
 
   let jwtToken: string;
