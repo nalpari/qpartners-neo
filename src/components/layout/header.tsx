@@ -1,21 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
+import api from "@/lib/axios";
+import { performLogout } from "@/lib/auth-client";
+import { loginUserSchema } from "@/lib/schemas/auth";
+import type { LoginUser } from "@/lib/schemas/auth";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 
-const RELATED_SITES = [
+async function fetchAuthMe(): Promise<LoginUser | null> {
+  try {
+    const res = await api.get("/auth/login-user-info");
+    const parsed = loginUserSchema.safeParse(res.data?.data);
+    if (!parsed.success) {
+      console.error("[fetchAuthMe] 응답 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
+    return parsed.data;
+  } catch (err) {
+    // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
+    if (err instanceof AxiosError && err.response?.status === 401) {
+      localStorage.removeItem(AUTH_FLAG_KEY);
+      dispatchAuthChange();
+    } else {
+      console.error("[fetchAuthMe] 인증 확인 실패:", err);
+    }
+    return null;
+  }
+}
+
+const ALL_RELATED_SITES = [
+  { label: "QSP", value: "qsp", href: "https://jp-dev.qsalesplatform.com" },
   { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
   { label: "Q.ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
   { label: "Q.MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "Q.PARTNERS", value: "qpartners", href: "/" },
   { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp" },
 ] as const;
 
-const CURRENT_SITE = "qorder";
+// SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
+type SiteAccessKey = "ADMIN" | "DEALER_1" | "DEALER_2";
+type SiteValue = (typeof ALL_RELATED_SITES)[number]["value"];
+const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
+  ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
+  DEALER_1: ["qorder", "qwarranty", "hanasys"],
+  DEALER_2: ["qmusubi", "qwarranty", "hanasys"],
+};
+
+function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
+  if (user.userTp === "ADMIN") return "ADMIN";
+  if (user.userTp === "DEALER") {
+    if (user.storeLvl === "1") return "DEALER_1";
+    if (user.storeLvl === "2") return "DEALER_2";
+  }
+  return null;
+}
+
+function getRelatedSites(user: LoginUser) {
+  const key = getUserSiteKey(user);
+  if (!key) return [];
+  const allowed = SITE_ACCESS_MAP[key];
+  return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
+}
+
+function subscribeAuthFlag(callback: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === AUTH_FLAG_KEY) callback();
+  };
+  window.addEventListener(AUTH_CHANGE_EVENT, callback);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, callback);
+    window.removeEventListener("storage", onStorage);
+  };
+}
 
 export function Gnb() {
-  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
+  const hasAuthFlag = useSyncExternalStore(
+    subscribeAuthFlag,
+    () => localStorage.getItem(AUTH_FLAG_KEY) === "1",
+    () => false,
+  );
+
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: fetchAuthMe,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    placeholderData: null,
+    enabled: hasAuthFlag,
+  });
+  const queryClient = useQueryClient();
+  const router = useRouter();
+
+  const isLoggedIn = user != null;
+  const isAdmin = user?.userTp === "ADMIN";
+  const relatedSites = user ? getRelatedSites(user) : [];
+  const showRelatedSites = relatedSites.length > 0;
+  const isLoggingOut = useRef(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut.current) return;
+    isLoggingOut.current = true;
+    await performLogout(queryClient);
+    router.replace("/login");
+    isLoggingOut.current = false;
+  };
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSitesOpen, setIsMobileSitesOpen] = useState(false);
@@ -77,7 +171,7 @@ export function Gnb() {
                   お問い合わせ
                 </Link>
               </li>
-              {isLoggedIn && (
+              {showRelatedSites && (
                 <li className="relative">
                   <button
                     type="button"
@@ -146,15 +240,11 @@ export function Gnb() {
                       </button>
                     </div>
                     <ul className="flex flex-col gap-[13px]">
-                      {RELATED_SITES.map((site) => (
+                      {relatedSites.map((site) => (
                         <li key={site.value}>
                           <a
                             href={site.href}
-                            className={`font-['Noto_Sans_JP'] font-normal text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-200 ${
-                              site.value === CURRENT_SITE
-                                ? "text-[#e97923] font-medium"
-                                : "text-[#101010] hover:text-[#e97923]"
-                            }`}
+                            className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
                             onClick={() => setIsDropdownOpen(false)}
                           >
                             {site.label}
@@ -182,11 +272,11 @@ export function Gnb() {
                   />
                   <div className="flex items-center gap-2">
                     <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      会社名の露出
+                      {user?.compNm ?? "-"}
                     </span>
                     <span className="w-px h-3 bg-[rgba(255,255,255,0.4)]" />
                     <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      金志映
+                      {user?.userNm ?? ""}
                     </span>
                   </div>
                 </div>
@@ -204,6 +294,7 @@ export function Gnb() {
                   </Link>
                   <button
                     type="button"
+                    onClick={() => { void handleLogout(); }}
                     className="flex items-center justify-center gap-1.5 h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                   >
                     <Image
@@ -216,20 +307,22 @@ export function Gnb() {
                       ログアウト
                     </span>
                   </button>
-                  {/* 톱니바퀴 (管理者) — 맨 오른쪽 */}
-                  <Link
-                    href="/admin/members"
-                    transitionTypes={["fade"]}
-                    className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                    aria-label="管理者設定"
-                  >
-                    <Image
-                      src="/asset/images/layout/icon_admin.svg"
-                      alt=""
-                      width={21}
-                      height={22}
-                    />
-                  </Link>
+                  {/* 톱니바퀴 (管理者) — 관리자만 노출 */}
+                  {isAdmin && (
+                    <Link
+                      href="/admin/members"
+                      transitionTypes={["fade"]}
+                      className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
+                      aria-label="管理者設定"
+                    >
+                      <Image
+                        src="/asset/images/layout/icon_admin.svg"
+                        alt=""
+                        width={21}
+                        height={22}
+                      />
+                    </Link>
+                  )}
                 </div>
               </>
             ) : (
@@ -322,10 +415,10 @@ export function Gnb() {
                 </div>
                 <div className="flex flex-col">
                   <span className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-[1.5] text-white">
-                    社名の露出
+                    {user?.compNm ?? "-"}
                   </span>
                   <span className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-[1.5] text-[#e97923]">
-                    金志映
+                    {user?.userNm ?? ""}
                   </span>
                 </div>
               </div>
@@ -415,8 +508,9 @@ export function Gnb() {
               </svg>
             </Link>
 
-            {/* 関連サイト — 토글 */}
-            <div className="border-b border-[#1a1a1a]">
+            {/* 関連サイト — 토글 (회원유형별 노출) */}
+            {showRelatedSites && (
+              <div className="border-b border-[#1a1a1a]">
               <button
                 type="button"
                 className="flex items-center justify-between w-full px-3 py-[18px]"
@@ -452,15 +546,11 @@ export function Gnb() {
                 }`}
               >
                 <ul className="flex flex-col gap-3 pl-6 pr-3">
-                  {RELATED_SITES.map((site) => (
+                  {relatedSites.map((site) => (
                     <li key={site.value}>
                       <a
                         href={site.href}
-                        className={`font-['Noto_Sans_JP'] text-[13px] leading-[1.5] transition-colors duration-200 ${
-                          site.value === CURRENT_SITE
-                            ? "text-[#e97923] font-medium"
-                            : "text-[#999] font-normal"
-                        }`}
+                        className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         {site.label}
@@ -470,6 +560,7 @@ export function Gnb() {
                 </ul>
               </div>
             </div>
+            )}
           </nav>
 
           {/* 하단 바 */}
@@ -487,6 +578,7 @@ export function Gnb() {
                 <span className="w-px h-[10px] bg-[#5b5b5b]" />
                 <button
                   type="button"
+                  onClick={() => { void handleLogout(); }}
                   className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.4] text-white uppercase whitespace-nowrap"
                 >
                   ログアウト

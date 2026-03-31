@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Image from "next/image";
+import { TermsButton } from "@/components/layout/terms-button";
 
 export function Footer() {
   return (
@@ -41,12 +41,7 @@ export function Footer() {
               お問い合わせ受付時間 : 平日10:00-12:00 13:00-17:00
             </span>
             <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
-            <Link
-              href="/terms"
-              className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#e97923] underline whitespace-nowrap"
-            >
-              利用規約
-            </Link>
+            <TermsButton />
           </div>
 
           {/* 저작권 */}

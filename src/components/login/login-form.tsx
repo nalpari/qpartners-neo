@@ -4,8 +4,7 @@ import Image from "next/image";
 import { Checkbox } from "@/components/common/checkbox";
 import { Button } from "@/components/common/button";
 import { usePopupStore } from "@/lib/store";
-
-type TabType = "dealer" | "installer" | "general";
+import type { TabType } from "@/components/login/types";
 
 const TAB_CONFIG = {
   dealer: {
@@ -39,6 +38,7 @@ interface LoginFormProps {
   saveId: boolean;
   agreeTerms: boolean;
   error: string | null;
+  isSubmitting: boolean;
   onIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onTogglePassword: () => void;
@@ -56,6 +56,7 @@ export function LoginForm({
   saveId,
   agreeTerms,
   error,
+  isSubmitting,
   onIdChange,
   onPasswordChange,
   onTogglePassword,
@@ -67,8 +68,15 @@ export function LoginForm({
   const { openPopup } = usePopupStore();
   const config = TAB_CONFIG[activeTab];
 
+  const canSubmit = !!id.trim() && !!password.trim() && agreeTerms && !isSubmitting;
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (canSubmit) onSubmit();
+  };
+
   return (
-    <div className="flex flex-col gap-6 lg:gap-[30px] w-full">
+    <form onSubmit={handleFormSubmit} className="flex flex-col gap-6 lg:gap-[30px] w-full">
       {/* 타이틀 영역 */}
       <div className="flex flex-col gap-2 text-[#101010] leading-[1.5]">
         <h2 className="font-['Noto_Sans_JP'] text-[16px] lg:text-[18px] font-semibold">
@@ -100,6 +108,7 @@ export function LoginForm({
                   value={id}
                   onChange={(e) => onIdChange(e.target.value)}
                   placeholder={config.idPlaceholder}
+                  disabled={isSubmitting}
                   className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#101010] bg-transparent outline-none placeholder:text-[#CBBBB7]"
                 />
               </div>
@@ -136,6 +145,7 @@ export function LoginForm({
                   value={password}
                   onChange={(e) => onPasswordChange(e.target.value)}
                   placeholder={config.pwPlaceholder}
+                  disabled={isSubmitting}
                   className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#101010] bg-transparent outline-none placeholder:text-[#CBBBB7]"
                 />
               </div>
@@ -191,10 +201,11 @@ export function LoginForm({
 
         {/* 로그인 버튼 */}
         <Button
+          type="submit"
           variant="primary"
           size="lg"
           fullWidth
-          onClick={onSubmit}
+          disabled={!canSubmit}
           className="!h-[46px] !text-[14px] lg:!h-[56px] lg:!text-[15px]"
         >
           Login
@@ -216,6 +227,6 @@ export function LoginForm({
           </p>
         </div>
       )}
-    </div>
+    </form>
   );
 }

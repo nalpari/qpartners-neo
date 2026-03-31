@@ -139,7 +139,7 @@ fix: Resolve prisma client singleton leak in dev mode
 - 에이전트 팀을 활용할 경우 @docs/agent-teams-guild.md 문서를 참조한다.
 
 ## Frontend
-- @/docs/ref/publishing-gudie.mb 문서를 항상 참조한다.
+- docs/ref/frontend-guide.md 문서를 항상 참조한다.
 
 - **React 19.2** 버전을 사용해야 한다. 의존성 추가 및 코드 작성 시 React 19.2 호환성을 반드시 확인할 것.
 - commit시 커밋메세지에 일본어는 한국어로 번역하여 추가 한다.

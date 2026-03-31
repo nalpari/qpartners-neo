@@ -51,7 +51,7 @@ export function Button({
       className={`inline-flex items-center justify-center rounded-[4px] font-['Noto_Sans_JP'] font-medium leading-[1.5] text-center whitespace-nowrap transition-colors duration-150 ${
         sizeStyles[size]
       } ${variantStyles[variant][size]} ${
-        disabled ? "opacity-50 cursor-not-allowed" : ""
+        disabled ? "opacity-50 cursor-not-allowed pointer-events-none" : ""
       } ${fullWidth ? "w-full" : ""} ${className}`}
       {...rest}
     >

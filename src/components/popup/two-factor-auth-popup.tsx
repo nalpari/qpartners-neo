@@ -3,13 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePopupStore } from "@/lib/store";
+import { performLogout } from "@/lib/auth-client";
 import { Button } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
 
 export function TwoFactorAuthPopup() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { closePopup } = usePopupStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -60,9 +63,10 @@ export function TwoFactorAuthPopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleCancel = () => {
-    handleClose();
-    router.push("/login");
+  const handleCancel = async () => {
+    await performLogout(queryClient);
+    closePopup();
+    router.replace("/login");
   };
 
   const handleResend = () => {
@@ -75,10 +79,8 @@ export function TwoFactorAuthPopup() {
 
   const handleVerify = () => {
     if (!isCodeValid) return;
-    // TODO: POST /api/auth/two-factor/verify
-    // 성공: handleClose() → router.push("/")
-    // 실패: setError(...)
-    // 현재(API 미연동): 무조건 실패로 처리
+    // TODO: POST /api/auth/two-factor/verify 연동 시 성공 → handleClose() + AUTH_FLAG_KEY 설정 + router.replace("/")
+    // 현재(API 미연동): 무조건 실패 처리
     setError("認証番号が一致しません！");
   };
 
@@ -177,7 +179,7 @@ export function TwoFactorAuthPopup() {
 
             {/* 하단 버튼 */}
             <div className="popup-buttons--inline">
-              <Button variant="secondary" onClick={handleCancel}>
+              <Button variant="secondary" onClick={() => { void handleCancel(); }}>
                 キャンセル
               </Button>
               <Button
