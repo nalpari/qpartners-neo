@@ -4,10 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/axios";
 import { usePopupStore } from "@/lib/store";
+import { performLogout } from "@/lib/auth-client";
 import { Button } from "@/components/common";
-import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -65,17 +64,9 @@ export function TwoFactorAuthPopup() {
   };
 
   const handleCancel = async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch (error) {
-      console.warn("[2fa-cancel] ログアウトAPI失敗:", error);
-    } finally {
-      localStorage.removeItem(AUTH_FLAG_KEY);
-      dispatchAuthChange();
-      queryClient.clear();
-      closePopup();
-      router.replace("/login");
-    }
+    await performLogout(queryClient);
+    closePopup();
+    router.replace("/login");
   };
 
   const handleResend = () => {
@@ -90,7 +81,6 @@ export function TwoFactorAuthPopup() {
     if (!isCodeValid) return;
     // TODO: POST /api/auth/two-factor/verify 연동 시 성공 → handleClose() + AUTH_FLAG_KEY 설정 + router.replace("/")
     // 현재(API 미연동): 무조건 실패 처리
-    void handleClose; // lint: API 연동 시 사용 예정
     setError("認証番号が一致しません！");
   };
 

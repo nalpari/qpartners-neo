@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
+import { performLogout } from "@/lib/auth-client";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
@@ -15,12 +16,18 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
     const res = await api.get("/auth/login-user-info");
     const parsed = loginUserSchema.safeParse(res.data?.data);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) {
+      console.error("[fetchAuthMe] 응답 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
+    return parsed.data;
   } catch (err) {
     // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
     if (err instanceof AxiosError && err.response?.status === 401) {
       localStorage.removeItem(AUTH_FLAG_KEY);
       dispatchAuthChange();
+    } else {
+      console.error("[fetchAuthMe] 인증 확인 실패:", err);
     }
     return null;
   }
@@ -55,7 +62,7 @@ function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
 function getRelatedSites(user: LoginUser) {
   const key = getUserSiteKey(user);
   if (!key) return [];
-  const allowed = SITE_ACCESS_MAP[key] ?? [];
+  const allowed = SITE_ACCESS_MAP[key];
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
 }
 
@@ -98,16 +105,9 @@ export function Gnb() {
   const handleLogout = async () => {
     if (isLoggingOut.current) return;
     isLoggingOut.current = true;
-    try {
-      await api.post("/auth/logout");
-    } catch (error) {
-      console.warn("[logout] ログアウトAPI失敗:", error);
-    } finally {
-      localStorage.removeItem(AUTH_FLAG_KEY);
-      dispatchAuthChange();
-      queryClient.clear();
-      router.replace("/login");
-    }
+    await performLogout(queryClient);
+    router.replace("/login");
+    isLoggingOut.current = false;
   };
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);

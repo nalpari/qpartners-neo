@@ -15,7 +15,7 @@ export function LoginLoader() {
   );
 
   if (!isMounted) {
-    return <LoginContents initialSavedId="" initialSavedTab="dealer" />;
+    return <LoginContents />;
   }
 
   const savedId = localStorage.getItem(SAVED_ID_KEY) ?? "";

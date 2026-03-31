@@ -15,6 +15,12 @@ import { LoginLinks } from "@/components/login/login-links";
 import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
 
+const STATUS_ERROR_MAP: Record<number, string> = {
+  400: LOGIN_ERRORS.BAD_REQUEST,
+  401: LOGIN_ERRORS.INVALID_CREDENTIALS,
+  502: LOGIN_ERRORS.SERVER_UNAVAILABLE,
+};
+
 const TAB_TO_USERTP: Record<TabType, string> = {
   dealer: "DEALER",
   installer: "SEKO",
@@ -55,7 +61,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
         openPopup("two-factor-auth", { userId: userData.userId, email: userData.email });
       } else {
-        // 2FA 불필요: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
+        // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
         queryClient.setQueryData(["auth", "login-user-info"], userData);
         localStorage.setItem(AUTH_FLAG_KEY, "1");
         dispatchAuthChange();
@@ -64,16 +70,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
     },
     onError: (err) => {
       if (err instanceof AxiosError && err.response) {
-        const status = err.response.status;
-        if (status === 401) {
-          setError(LOGIN_ERRORS.INVALID_CREDENTIALS);
-        } else if (status === 502) {
-          setError(LOGIN_ERRORS.SERVER_UNAVAILABLE);
-        } else if (status === 400) {
-          setError(LOGIN_ERRORS.BAD_REQUEST);
-        } else {
-          setError(LOGIN_ERRORS.GENERIC);
-        }
+        setError(STATUS_ERROR_MAP[err.response.status] ?? LOGIN_ERRORS.GENERIC);
       } else {
         setError(LOGIN_ERRORS.SERVER_UNAVAILABLE);
       }
@@ -95,7 +92,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       setError("IDを入力してください");
       return;
     }
-    if (!password) {
+    if (!password.trim()) {
       setError("パスワードを入力してください");
       return;
     }
