@@ -25,7 +25,6 @@ const ALL_RELATED_SITES = [
   { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
   { label: "Q.ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
   { label: "Q.MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "Q.PARTNERS", value: "qpartners", href: "/" },
   { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp" },
 ] as const;
 
@@ -51,7 +50,6 @@ function getRelatedSites(user: LoginUser) {
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
 }
 
-const CURRENT_SITE = "qpartners";
 const noopSubscribe = () => () => {};
 
 export function Gnb() {
@@ -223,11 +221,7 @@ export function Gnb() {
                         <li key={site.value}>
                           <a
                             href={site.href}
-                            className={`font-['Noto_Sans_JP'] font-normal text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-200 ${
-                              site.value === CURRENT_SITE
-                                ? "text-[#e97923] font-medium"
-                                : "text-[#101010] hover:text-[#e97923]"
-                            }`}
+                            className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
                             onClick={() => setIsDropdownOpen(false)}
                           >
                             {site.label}
@@ -530,11 +524,7 @@ export function Gnb() {
                     <li key={site.value}>
                       <a
                         href={site.href}
-                        className={`font-['Noto_Sans_JP'] text-[13px] leading-[1.5] transition-colors duration-200 ${
-                          site.value === CURRENT_SITE
-                            ? "text-[#e97923] font-medium"
-                            : "text-[#999] font-normal"
-                        }`}
+                        className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         {site.label}
