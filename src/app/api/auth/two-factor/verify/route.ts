@@ -93,19 +93,19 @@ export async function POST(request: NextRequest) {
 
   // 5. 코드 일치 확인 (HMAC-SHA256 해시 비교) + brute-force 방어
   if (record.code !== hashOtp(code)) {
-    // 시도 횟수 증가 + 최대 초과 시 무효화를 트랜잭션으로 원자적 처리
-    const newAttempts = record.attempts + 1;
-    const shouldInvalidate = newAttempts >= MAX_VERIFY_ATTEMPTS;
-
-    await prisma.twoFactorCode.update({
+    // 시도 횟수 원자적 증가 후 DB에서 최신 값 재조회하여 판단 (동시성 안전)
+    const updated = await prisma.twoFactorCode.update({
       where: { id: record.id },
-      data: {
-        attempts: { increment: 1 },
-        ...(shouldInvalidate && { verified: true }),
-      },
+      data: { attempts: { increment: 1 } },
+      select: { attempts: true },
     });
 
-    if (shouldInvalidate) {
+    if (updated.attempts >= MAX_VERIFY_ATTEMPTS) {
+      // 최대 시도 초과 → 코드 무효화
+      await prisma.twoFactorCode.update({
+        where: { id: record.id },
+        data: { verified: true },
+      });
       return NextResponse.json(
         { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
         { status: 401 },

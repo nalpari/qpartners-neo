@@ -8,6 +8,18 @@ import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import type { LoginUser } from "@/lib/schemas/auth";
 
+/** 토큰 롤백 헬퍼 — QSP 실패 시 토큰을 재사용 가능하게 복원 */
+async function rollbackToken(token: string) {
+  try {
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: true },
+      data: { used: false },
+    });
+  } catch (err) {
+    console.error("[password-reset/confirm] 토큰 롤백 실패:", err);
+  }
+}
+
 // POST /api/auth/password-reset/confirm — 비밀번호 변경 + 자동 로그인
 export async function POST(request: NextRequest) {
   // 1. Request body 파싱 + Zod 검증
@@ -114,11 +126,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] QSP API 호출 실패:", error);
-    // QSP 실패 시 토큰 롤백 (사용자가 재시도 가능하도록)
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: true },
-      data: { used: false },
-    });
+    // QSP 네트워크 에러 — 비밀번호 변경 미도달 확실 → 토큰 롤백
+    await rollbackToken(token);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요." },
       { status: 502 },
@@ -127,11 +136,8 @@ export async function POST(request: NextRequest) {
 
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비정상 응답:", qspResponse.status);
-    // QSP 실패 시 토큰 롤백
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: true },
-      data: { used: false },
-    });
+    // HTTP 에러 — QSP가 처리하지 않았을 가능성 높음 → 토큰 롤백
+    await rollbackToken(token);
     return NextResponse.json(
       { error: "외부 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." },
       { status: 502 },
@@ -142,12 +148,10 @@ export async function POST(request: NextRequest) {
   try {
     qspBody = await qspResponse.json();
   } catch {
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: true },
-      data: { used: false },
-    });
+    // QSP가 처리했을 수 있으나 응답 파싱 실패 → 토큰 롤백 (QSP 비밀번호 변경은 멱등이므로 재시도 안전)
+    await rollbackToken(token);
     return NextResponse.json(
-      { error: "외부 서버 응답을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요." },
+      { error: "비밀번호가 변경되었을 수 있습니다. 새 비밀번호로 로그인을 시도하시거나, 잠시 후 다시 시도해 주세요." },
       { status: 502 },
     );
   }
@@ -155,10 +159,8 @@ export async function POST(request: NextRequest) {
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success || parsed.data.result.resultCode !== "S") {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비밀번호 변경 실패:", qspBody);
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: true },
-      data: { used: false },
-    });
+    // QSP가 명시적으로 실패 반환 → 토큰 롤백
+    await rollbackToken(token);
     return NextResponse.json(
       { error: "비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요." },
       { status: 500 },
