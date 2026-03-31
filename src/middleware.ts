@@ -7,14 +7,28 @@ import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
-  "/api/auth/me",
+  "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
   "/api/auth/signup",
   "/api/auth/email/check",
+  "/api/auth/password-reset/request",
+  "/api/auth/password-reset/verify",
+  "/api/auth/password-reset/confirm",
   "/api/openapi",
+];
+
+/** 2차 인증 미완료 상태에서 접근 가능한 경로 */
+const TWO_FACTOR_PATHS = [
+  "/api/auth/two-factor/send",
+  "/api/auth/two-factor/verify",
+  "/api/auth/logout",
 ];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.includes(pathname);
+}
+
+function isTwoFactorPath(pathname: string): boolean {
+  return TWO_FACTOR_PATHS.includes(pathname);
 }
 
 export async function middleware(request: NextRequest) {
@@ -39,6 +53,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json(
       { error: "토큰이 만료되었거나 유효하지 않습니다" },
       { status: 401 },
+    );
+  }
+
+  // 2차 인증 미완료 상태: 제한된 경로만 허용
+  // false: 2FA 필요하나 미완료 / true: 2FA 검증 완료 또는 2FA 불필요 (fail-closed 설계)
+  if (user.twoFactorVerified === false && !isTwoFactorPath(pathname)) {
+    return NextResponse.json(
+      { error: "2차 인증이 필요합니다" },
+      { status: 403 },
     );
   }
 
