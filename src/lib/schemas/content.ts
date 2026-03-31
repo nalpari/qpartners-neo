@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-// ─── Shared ───
-
-export const idParamSchema = z.coerce
-  .number()
-  .int("ID는 정수여야 합니다")
-  .positive("ID는 양수여야 합니다");
+export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
 

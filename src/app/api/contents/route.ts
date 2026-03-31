@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { getUserFromHeaders, isAdmin, isInternalUser } from "@/lib/auth";
+import { getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   createContentSchema,
@@ -53,24 +53,17 @@ export async function GET(request: NextRequest) {
         ],
       }),
       ...(department && { authorDepartment: department }),
-      ...(categoryIds && {
-        categories: {
-          some: {
-            categoryId: {
-              in: categoryIds.split(",").map(Number),
-            },
-          },
-        },
+      // 카테고리 필터: categoryIds 지정 + 비사내 사용자의 사내전용 제외를 AND로 조합
+      ...((categoryIds || (!internal && internalOnly === false)) && {
+        AND: [
+          ...(categoryIds
+            ? [{ categories: { some: { categoryId: { in: categoryIds.split(",").map(Number) } } } }]
+            : []),
+          ...(!internal && internalOnly === false
+            ? [{ categories: { none: { category: { isInternalOnly: true } } } }]
+            : []),
+        ],
       }),
-      // 사내전용 카테고리 필터: 비사내 사용자는 사내전용 카테고리 콘텐츠 제외
-      ...(!internal &&
-        internalOnly === false && {
-          categories: {
-            none: {
-              category: { isInternalOnly: true },
-            },
-          },
-        }),
       // 게시대상 필터: 비사내 사용자는 자기 targetType에 해당하는 것만
       ...(!internal && {
         targets: {
@@ -163,14 +156,9 @@ export async function GET(request: NextRequest) {
 // POST /api/contents — 콘텐츠 등록
 export async function POST(request: NextRequest) {
   try {
-    const user = getUserFromHeaders(request.headers);
-
-    if (!user || !isAdmin(user.role)) {
-      return NextResponse.json(
-        { error: "관리자만 등록할 수 있습니다" },
-        { status: 403 },
-      );
-    }
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+    const user = auth.user;
 
     let body: unknown;
     try {

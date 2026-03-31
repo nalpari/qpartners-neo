@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateMenuSchema } from "@/lib/schemas/menu";
 
@@ -11,6 +12,9 @@ type Params = { params: Promise<{ id: string }> };
 // PUT /api/menus/:id — 메뉴 수정 (menuCode 수정 불가)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {

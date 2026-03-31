@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -14,6 +15,9 @@ type Params = { params: Promise<{ id: string }> };
 // PUT /api/home-notices/:id — 공지 수정
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
@@ -39,11 +43,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const updatedBy = request.headers.get("X-User-Id") ?? undefined;
-
     const notice = await prisma.homeNotice.update({
       where: { id: parsed.data },
-      data: { ...result.data, ...(updatedBy && { updatedBy }) },
+      data: { ...result.data, updatedBy: auth.user.userId },
     });
 
     return NextResponse.json({ data: notice });
@@ -63,8 +65,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 }
 
 // DELETE /api/home-notices/:id — 공지 삭제 (물리 삭제)
-export async function DELETE(_request: NextRequest, { params }: Params) {
+export async function DELETE(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {

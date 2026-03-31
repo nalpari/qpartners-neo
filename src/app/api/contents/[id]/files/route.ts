@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { join, basename, resolve } from "path";
+import { randomUUID } from "crypto";
 
-import { getUserFromHeaders, isAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -12,14 +13,9 @@ type Params = { params: Promise<{ id: string }> };
 // POST /api/contents/:id/files — 첨부파일 업로드
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const user = getUserFromHeaders(request.headers);
-
-    if (!user || !isAdmin(user.role)) {
-      return NextResponse.json(
-        { error: "관리자만 업로드할 수 있습니다" },
-        { status: 403 },
-      );
-    }
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+    const user = auth.user;
 
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
@@ -38,7 +34,8 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
+    const rawFiles = formData.getAll("files");
+    const files = rawFiles.filter((f): f is File => f instanceof File);
 
     if (files.length === 0) {
       return NextResponse.json(
@@ -85,10 +82,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     const attachments = [];
 
     for (const file of files) {
-      const timestamp = Date.now();
-      const safeFileName = `${timestamp}_${file.name}`;
+      const ext = basename(file.name).split(".").pop() ?? "";
+      const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
       const filePath = `/uploads/contents/${parsed.data}/${safeFileName}`;
-      const absolutePath = join(uploadDir, safeFileName);
+      const absolutePath = resolve(uploadDir, safeFileName);
+
+      // path traversal 방어: 업로드 디렉토리 내부인지 검증
+      if (!absolutePath.startsWith(resolve(uploadDir))) {
+        return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
+      }
 
       const buffer = Buffer.from(await file.arrayBuffer());
       await writeFile(absolutePath, buffer);

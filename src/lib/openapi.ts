@@ -23,7 +23,7 @@ export const openApiSpec: OpenAPIV3.Document = {
   info: {
     title: "Q.PARTNERS API",
     version: "1.0.0",
-    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지 관리",
+    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지, 콘텐츠 관리",
   },
   servers: [{ url: "/api", description: "Local API" }],
 
@@ -37,6 +37,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "Role", description: "역할(권한) 관리" },
     { name: "Permission", description: "메뉴별 CRUD 권한 관리" },
     { name: "HomeNotice", description: "홈화면 공지 관리" },
+    { name: "Content", description: "콘텐츠 관리 (CRUD + 첨부파일)" },
+    { name: "DownloadLog", description: "다운로드 이력 조회" },
   ],
 
   paths: {
@@ -1076,6 +1078,212 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "array",
                       items: { $ref: "#/components/schemas/ActiveHomeNotice" },
                     },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    // ─── Content ───
+    "/contents": {
+      get: {
+        tags: ["Content"],
+        summary: "콘텐츠 목록 조회",
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", enum: [20, 50, 100], default: 20 } },
+          { name: "keyword", in: "query", schema: { type: "string" } },
+          { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
+          { name: "targetType", in: "query", schema: { type: "string" } },
+          { name: "department", in: "query", schema: { type: "string" } },
+          { name: "internalOnly", in: "query", schema: { type: "boolean", default: false } },
+          { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "oldest", "views", "updated"], default: "newest" } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { type: "array", items: { type: "object" } },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        totalPages: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["Content"],
+        summary: "콘텐츠 등록 (관리자)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["title"],
+                properties: {
+                  title: { type: "string", maxLength: 500 },
+                  body: { type: "string" },
+                  status: { type: "string", enum: ["draft", "published"], default: "draft" },
+                  publishedAt: { type: "string", format: "date-time" },
+                  authorDepartment: { type: "string", maxLength: 100 },
+                  approverLevel: { type: "integer", minimum: 0, maximum: 127 },
+                  targets: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      required: ["targetType"],
+                      properties: {
+                        targetType: { type: "string", enum: ["first_dealer", "second_dealer", "constructor", "general", "non_member"] },
+                        startAt: { type: "string", format: "date-time" },
+                        endAt: { type: "string", format: "date-time" },
+                      },
+                    },
+                  },
+                  categoryIds: { type: "array", items: { type: "integer" } },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "등록 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "400": validationErrorResponse,
+          "403": errorResponse("관리자 권한 필요"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/contents/{id}": {
+      get: {
+        tags: ["Content"],
+        summary: "콘텐츠 상세 조회 (조회수 자동 증가)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": { description: "조회 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "403": errorResponse("접근 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      put: {
+        tags: ["Content"],
+        summary: "콘텐츠 수정 (관리자, 권한 세분화)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } },
+        },
+        responses: {
+          "200": { description: "수정 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "400": validationErrorResponse,
+          "403": errorResponse("수정 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      delete: {
+        tags: ["Content"],
+        summary: "콘텐츠 삭제 (soft delete, 관리자)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": { description: "삭제 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "403": errorResponse("삭제 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/contents/{id}/files": {
+      post: {
+        tags: ["Content"],
+        summary: "첨부파일 업로드 (관리자, multipart/form-data)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  files: { type: "array", items: { type: "string", format: "binary" } },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "업로드 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "array", items: { type: "object" } } } } } } },
+          "400": errorResponse("파일 검증 실패"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/contents/{id}/files/{fileId}/download": {
+      get: {
+        tags: ["Content"],
+        summary: "첨부파일 다운로드 (게시대상 접근제어)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": { description: "파일 바이너리", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+          "403": errorResponse("접근 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/download-logs": {
+      get: {
+        tags: ["DownloadLog"],
+        summary: "다운로드 이력 조회 (관리자)",
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
+          { name: "keyword", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { type: "array", items: { type: "object" } },
+                    meta: { type: "object" },
                   },
                 },
               },

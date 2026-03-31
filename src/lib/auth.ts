@@ -1,5 +1,9 @@
 /** 임시 인증 헬퍼 — X-User-* 헤더 기반 사용자 식별 */
 
+import { NextResponse } from "next/server";
+
+const VALID_USER_TYPES = new Set(["ADMIN", "DEALER", "SEKO", "GENERAL"]);
+
 export type UserInfo = {
   userType: "ADMIN" | "DEALER" | "SEKO" | "GENERAL";
   userId: string;
@@ -14,6 +18,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   const role = headers.get("X-User-Role");
 
   if (!userType || !userId || !role) return null;
+  if (!VALID_USER_TYPES.has(userType)) return null;
 
   return {
     userType: userType as UserInfo["userType"],
@@ -23,14 +28,24 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   };
 }
 
-/** 사내 사용자 여부 (super_admin | admin) */
-export function isInternalUser(role: string): boolean {
+/** 관리자 여부 (super_admin | admin) — isInternalUser와 동일 */
+export function isAdmin(role: string): boolean {
   return role === "super_admin" || role === "admin";
 }
 
-/** 관리자 여부 (super_admin | admin) */
-export function isAdmin(role: string): boolean {
-  return role === "super_admin" || role === "admin";
+/** 사내 사용자 여부 — isAdmin의 alias */
+export const isInternalUser = isAdmin;
+
+/** 관리자 인증 가드. 실패 시 403 응답 반환, 성공 시 null. */
+export function requireAdmin(headers: Headers): { user: UserInfo } | NextResponse {
+  const user = getUserFromHeaders(headers);
+  if (!user || !isAdmin(user.role)) {
+    return NextResponse.json(
+      { error: "관리자 권한이 필요합니다" },
+      { status: 403 },
+    );
+  }
+  return { user };
 }
 
 /** 콘텐츠 접근 가능 여부 — 게시대상 + 기간 접근제어 */

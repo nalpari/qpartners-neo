@@ -1,12 +1,6 @@
 import { z } from "zod";
 
-// ─── Shared ───
-
-/** URL path parameter ID 검증 (code.ts에서 재사용 가능하지만 독립성 유지) */
-export const idParamSchema = z.coerce
-  .number()
-  .int("ID는 정수여야 합니다")
-  .positive("ID는 양수여야 합니다");
+export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Category ───
 

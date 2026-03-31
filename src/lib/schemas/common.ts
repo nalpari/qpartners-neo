@@ -4,3 +4,9 @@ import { z } from "zod";
 export const userTpValues = ["ADMIN", "DEALER", "SEKO", "GENERAL"] as const;
 
 export const userTpSchema = z.enum(userTpValues);
+
+/** URL path parameter ID 검증 — 공통 */
+export const idParamSchema = z.coerce
+  .number()
+  .int("ID는 정수여야 합니다")
+  .positive("ID는 양수여야 합니다");

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createHomeNoticeSchema } from "@/lib/schemas/home-notice";
 
@@ -56,9 +57,11 @@ export async function GET(request: NextRequest) {
       where: {
         ...(keyword && { content: { contains: keyword } }),
         ...(targetField && { [targetField]: true }),
-        ...(startDate && { createdAt: { gte: new Date(startDate) } }),
-        ...(endDate && {
-          createdAt: { lte: new Date(`${endDate}T23:59:59.999Z`) },
+        ...((startDate || endDate) && {
+          createdAt: {
+            ...(startDate && { gte: new Date(startDate) }),
+            ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
+          },
         }),
       },
       orderBy: { createdAt: "desc" },
@@ -100,6 +103,9 @@ export async function GET(request: NextRequest) {
 // POST /api/home-notices — 공지 등록
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     let body: unknown;
     try {
       body = await request.json();
@@ -132,16 +138,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 임시 인증: X-User-Type / X-User-Id 헤더에서 추출
-    const userType = request.headers.get("X-User-Type") ?? "ADMIN";
-    const userId = request.headers.get("X-User-Id") ?? "system";
-
     const notice = await prisma.homeNotice.create({
       data: {
         ...result.data,
-        userType: userType as "ADMIN" | "DEALER" | "SEKO" | "GENERAL",
-        userId,
-        createdBy: userId,
+        userType: auth.user.userType,
+        userId: auth.user.userId,
+        createdBy: auth.user.userId,
       },
     });
 

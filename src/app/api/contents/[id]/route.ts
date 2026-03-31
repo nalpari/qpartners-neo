@@ -7,8 +7,8 @@ import {
   canAccessContent,
   canModifyContent,
   getUserFromHeaders,
-  isAdmin,
   isInternalUser,
+  requireAdmin,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
@@ -92,14 +92,9 @@ export async function GET(request: NextRequest, { params }: Params) {
 // PUT /api/contents/:id — 콘텐츠 수정
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const user = getUserFromHeaders(request.headers);
-
-    if (!user || !isAdmin(user.role)) {
-      return NextResponse.json(
-        { error: "관리자만 수정할 수 있습니다" },
-        { status: 403 },
-      );
-    }
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+    const user = auth.user;
 
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
@@ -180,6 +175,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
               }
             : undefined,
         },
+        include: {
+          targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
+          categories: { include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } } },
+        },
       }),
     );
 
@@ -205,14 +204,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // DELETE /api/contents/:id — 콘텐츠 삭제 (soft delete)
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const user = getUserFromHeaders(request.headers);
-
-    if (!user || !isAdmin(user.role)) {
-      return NextResponse.json(
-        { error: "관리자만 삭제할 수 있습니다" },
-        { status: 403 },
-      );
-    }
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+    const user = auth.user;
 
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);

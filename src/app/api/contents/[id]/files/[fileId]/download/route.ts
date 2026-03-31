@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
 
 import { canAccessContent, getUserFromHeaders } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -51,8 +51,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       });
     }
 
-    // 파일 읽기 & 스트리밍
-    const absolutePath = join(process.cwd(), "public", attachment.filePath);
+    // 파일 읽기 & 스트리밍 (path traversal 방어)
+    const uploadsRoot = resolve(process.cwd(), "public", "uploads");
+    const absolutePath = resolve(join(process.cwd(), "public", attachment.filePath));
+
+    if (!absolutePath.startsWith(uploadsRoot)) {
+      return NextResponse.json({ error: "접근할 수 없는 경로입니다" }, { status: 403 });
+    }
+
     const fileBuffer = await readFile(absolutePath);
 
     return new NextResponse(fileBuffer, {

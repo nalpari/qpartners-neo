@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateCategorySchema } from "@/lib/schemas/category";
 
@@ -11,6 +12,9 @@ type Params = { params: Promise<{ id: string }> };
 // PUT /api/categories/:id — 카테고리 수정 (categoryCode, parentId 수정 불가)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
@@ -65,8 +69,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 }
 
 // DELETE /api/categories/:id — 카테고리 삭제 (물리 삭제)
-export async function DELETE(_request: NextRequest, { params }: Params) {
+export async function DELETE(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {

@@ -1,12 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sortMenuSchema } from "@/lib/schemas/menu";
 
 // PUT /api/menus/sort — 정렬순서 일괄 저장
 export async function PUT(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     let body: unknown;
     try {
       body = await request.json();

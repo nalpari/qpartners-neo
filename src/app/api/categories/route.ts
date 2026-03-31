@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/schemas/category";
 
@@ -44,6 +45,9 @@ export async function GET(request: NextRequest) {
 // POST /api/categories — 카테고리 등록
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     let body: unknown;
     try {
       body = await request.json();

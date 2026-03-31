@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   roleCodeParamSchema,
@@ -10,8 +11,11 @@ import {
 type Params = { params: Promise<{ roleCode: string }> };
 
 // GET /api/roles/:roleCode/permissions — 메뉴별 권한 조회
-export async function GET(_request: NextRequest, { params }: Params) {
+export async function GET(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { roleCode } = await params;
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
@@ -105,6 +109,9 @@ export async function GET(_request: NextRequest, { params }: Params) {
 // PUT /api/roles/:roleCode/permissions — 메뉴별 권한 일괄 저장
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { roleCode } = await params;
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {

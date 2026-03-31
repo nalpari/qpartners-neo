@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   roleCodeParamSchema,
@@ -14,6 +15,9 @@ type Params = { params: Promise<{ roleCode: string }> };
 // PUT /api/roles/:roleCode — 권한 수정 (roleCode 수정 불가)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { roleCode } = await params;
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
