@@ -95,7 +95,7 @@ CREATE TABLE qp_general_users (
 
   -- 법인정보 ──────────────────────────────────
   -- 화면: 회원가입 > 법인정보 (*필수) 섹션 (p.16)
-  company_name        VARCHAR(255) NOT NULL,             -- 화면: 회사명 *
+  company_name        VARCHAR(255) DEFAULT NULL,          -- 화면: 회사명 (AS-IS 마이그 시 NULL 가능)
   company_name_kana   VARCHAR(255) DEFAULT NULL,         -- 화면: 회사명 히라가나 *
   zipcode             VARCHAR(10) DEFAULT NULL,          -- 화면: 우편번호 * (주소검색 연동, 7자리)
   address1            VARCHAR(500) DEFAULT NULL,         -- 화면: 주소 * (도도부현 + 시구정촌)
@@ -106,12 +106,12 @@ CREATE TABLE qp_general_users (
 
   -- 회원정보 ──────────────────────────────────
   -- 화면: 회원가입 > 회원정보 섹션 (p.16)
-  last_name           VARCHAR(100) NOT NULL,             -- 화면: 성 *
-  first_name          VARCHAR(100) NOT NULL,             -- 화면: 이름 *
+  last_name           VARCHAR(100) DEFAULT NULL,          -- 화면: 성 * (AS-IS 마이그 시 NULL 가능)
+  first_name          VARCHAR(100) DEFAULT NULL,          -- 화면: 이름 * (AS-IS 마이그 시 NULL 가능)
   last_name_kana      VARCHAR(100) DEFAULT NULL,         -- 화면: 성 히라가나 *
   first_name_kana     VARCHAR(100) DEFAULT NULL,         -- 화면: 이름 히라가나 *
   email               VARCHAR(255) NOT NULL,             -- 화면: 이메일 (ID) * (중복체크)
-  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (영문대문자+소문자+숫자 조합 8자 이상, bcrypt)
+  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (bcrypt, AS-IS 마이그 시 초기화 비밀번호 일괄 기재)
   department          VARCHAR(100) DEFAULT NULL,         -- 화면: 부서명
   job_title           VARCHAR(100) DEFAULT NULL,         -- 화면: 직책
 
@@ -204,11 +204,6 @@ CREATE TABLE qp_info (
   -- 비밀번호 ─────────────────────────────────
   -- 화면: 비밀번호 변경 (p.40), 최초로그인 설정 (p.13)
   password_changed_at DATETIME DEFAULT NULL,
-
-  -- ID Save ──────────────────────────────────
-  -- 화면: 로그인 > ID Save 체크박스 (p.9 #3)
-  -- 로그인 성공 시 다음 접속 시 아이디 저장
-  id_save_enabled     BOOLEAN NOT NULL DEFAULT FALSE,
 
   -- 감사 ─────────────────────────────────────
   -- 화면: 회원관리 상세 > 등록일, 갱신일시(수정자) (p.47 #1)
@@ -794,8 +789,7 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
                                  │  last_login_at,           │
                                  │  terms_agreed_at,         │
                                  │  initial_setup_done,      │
-                                 │  password_changed_at,     │
-                                 │  id_save_enabled          │
+                                 │  password_changed_at      │
                                  └───────────────────────────┘
                                              │
                                              │ I/F (사용자 정보 + 권한)
@@ -870,3 +864,4 @@ user_id           VARCHAR(255) NOT NULL,
 |---------|------|---------|--------|
 | 0.1 (v1) | 2026-03-19 | 초안 (users 테이블 TO-BE 직접 저장 구조) | ck |
 | 0.2 (v2) | 2026-03-20 | 사용자 데이터 QSP 분리 — QSP 2테이블 + TO-BE 18테이블 | ck |
+| 0.3 | 2026-03-31 | qp_general_users: company_name/last_name/first_name NULL 허용, password_hash 마이그 시 초기화 비번 일괄 기재. qp_info: id_save_enabled 제거, status ENUM 유지(active/deleted), AS-IS 마이그 대상 user_type 모두 GENERAL | ck |
