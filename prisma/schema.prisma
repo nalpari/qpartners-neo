@@ -45,10 +45,6 @@ enum MailStatus {
   sent
 }
 
-enum RecipientType {
-  cc
-  bcc
-}
 
 // ─────────────────────────────────────────────
 // QSP 측 테이블 (TO-BE DB에 생성하지 않음)
@@ -328,6 +324,7 @@ model TwoFactorCode {
   code       String     @db.VarChar(6)
   expiresAt  DateTime   @map("expires_at")
   verified   Boolean    @default(false)
+  verifiedAt DateTime?  @map("verified_at")
   createdAt  DateTime   @default(now()) @map("created_at")
   createdBy  String?    @map("created_by") @db.VarChar(255)
 
@@ -386,7 +383,6 @@ model MassMail {
   updatedAt          DateTime   @updatedAt @map("updated_at")
   updatedBy          String?    @map("updated_by") @db.VarChar(255)
 
-  recipients  MassMailRecipient[]
   attachments MassMailAttachment[]
 
   @@index([status], map: "idx_status")
@@ -394,24 +390,6 @@ model MassMail {
   @@map("qp_mass_mails")
 }
 
-/// 대량메일 CC/BCC 수신자
-/// UK: [massMailId, recipientType, email] — 같은 메일에 동일 수신자 중복 방지
-model MassMailRecipient {
-  id            Int           @id @default(autoincrement())
-  massMailId    Int           @map("mass_mail_id")
-  recipientType RecipientType @map("recipient_type")
-  userType      UserType      @map("user_type")
-  userId        String        @map("user_id") @db.VarChar(255)
-  email         String        @db.VarChar(255)
-  createdAt     DateTime      @default(now()) @map("created_at")
-  createdBy     String?       @map("created_by") @db.VarChar(255)
-
-  massMail MassMail @relation(fields: [massMailId], references: [id], onDelete: Cascade)
-
-  @@unique([massMailId, recipientType, email], map: "idx_mail_recipient")
-  @@index([massMailId], map: "idx_mass_mail_id")
-  @@map("qp_mass_mail_recipients")
-}
 
 /// 대량메일 첨부파일
 model MassMailAttachment {

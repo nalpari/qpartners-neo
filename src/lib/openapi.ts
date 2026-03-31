@@ -110,7 +110,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/auth/me": {
+    "/auth/login-user-info": {
       get: {
         tags: ["Auth"],
         summary: "현재 로그인 사용자 정보",
@@ -130,6 +130,98 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증되지 않은 사용자입니다"),
+        },
+      },
+    },
+
+    "/auth/signup": {
+      post: {
+        tags: ["Auth"],
+        summary: "일반 회원가입 (QSP 프록시)",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SignupRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "가입 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userName: { type: "string", example: "山田太郎" },
+                        email: { type: "string", example: "user@example.com" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation failed",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
+          "409": errorResponse("이미 사용중인 이메일입니다"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+    "/auth/email/check": {
+      post: {
+        tags: ["Auth"],
+        summary: "이메일 중복 체크",
+        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인. PII 보호를 위해 POST 사용.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: { type: "string", format: "email", example: "user@example.com" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "사용 가능",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        available: { type: "boolean", example: true },
+                        message: { type: "string", example: "사용 가능한 이메일입니다" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("유효한 이메일 주소를 입력해주세요"),
+          "409": errorResponse("이미 사용중인 이메일입니다"),
+          "502": errorResponse("외부 서버 오류"),
         },
       },
     },
@@ -523,6 +615,34 @@ export const openApiSpec: OpenAPIV3.Document = {
           authCd: { type: "string", nullable: true, example: "NORMAL" },
           storeLvl: { type: "string", nullable: true, description: "판매점 레벨 (1=1차, 2=2차)" },
           statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
+        },
+      },
+      SignupRequest: {
+        type: "object",
+        required: [
+          "email", "pwd", "confirmPwd",
+          "user1stNm", "user2ndNm", "user1stNmKana", "user2ndNmKana",
+          "compNm", "compNmKana", "compPostCd", "compAddr", "compAddr2",
+          "compTelNo", "newsRcptYn",
+        ],
+        properties: {
+          email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "이메일 (= 로그인 ID)" },
+          pwd: { type: "string", minLength: 8, maxLength: 100, example: "1q2w3e4R!", description: "비밀번호 (Uppercase + Lowercase + Number, min 8 characters)" },
+          confirmPwd: { type: "string", example: "1q2w3e4R!", description: "비밀번호 확인" },
+          user1stNm: { type: "string", maxLength: 50, example: "太郎", description: "이름 (名)" },
+          user2ndNm: { type: "string", maxLength: 50, example: "山田", description: "성 (姓)" },
+          user1stNmKana: { type: "string", maxLength: 50, example: "タロウ", description: "이름 카나" },
+          user2ndNmKana: { type: "string", maxLength: 50, example: "ヤマダ", description: "성 카나" },
+          compNm: { type: "string", maxLength: 100, example: "テスト株式会社", description: "회사명" },
+          compNmKana: { type: "string", maxLength: 100, example: "テストカブシキガイシャ", description: "회사명 카나" },
+          compPostCd: { type: "string", maxLength: 10, example: "160-0022", description: "회사 우편번호" },
+          compAddr: { type: "string", maxLength: 255, example: "東京都新宿区新宿", description: "회사 주소 1" },
+          compAddr2: { type: "string", maxLength: 255, example: "1-1-1", description: "회사 주소 2" },
+          compTelNo: { type: "string", maxLength: 100, example: "03-1234-5678", description: "회사 전화번호" },
+          compFaxNo: { type: "string", maxLength: 100, example: "03-1234-5679", description: "회사 Fax번호 (선택)" },
+          deptNm: { type: "string", maxLength: 50, example: "営業部", description: "부서명 (선택)" },
+          pstnNm: { type: "string", maxLength: 50, example: "課長", description: "직책 (선택)" },
+          newsRcptYn: { type: "string", enum: ["Y", "N"], example: "Y", description: "뉴스레터 수신 여부" },
         },
       },
       CodeHeader: {

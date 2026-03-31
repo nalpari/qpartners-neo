@@ -46,17 +46,15 @@ export const signupRequestSchema = z
 
 export type SignupRequestInput = z.infer<typeof signupRequestSchema>;
 
-// ─── 이메일 중복 체크 ───
+// ─── 이메일 검증 ───
 
-export const emailCheckSchema = z.object({
-  email: z.string().email("유효한 이메일 주소를 입력해주세요"),
-});
+export const emailSchema = z.string().email("유효한 이메일 주소를 입력해주세요");
 
-export type EmailCheckInput = z.infer<typeof emailCheckSchema>;
+// ─── QSP 공용 응답 스키마 ───
 
-// ─── QSP newUserReq 응답 ───
-
-export const qspSignupResponseSchema = z.object({
+/** QSP API 공통 응답 구조 (newUserReq, userDetail 등 공용)
+ *  QSP I/F v1.0 기준: code(int, 필수), message(string, 필수), resultCode(string, 필수), resultMsg(string, 선택) */
+export const qspResponseSchema = z.object({
   data: z.unknown().nullable(),
   result: z.object({
     code: z.number(),
@@ -66,16 +64,5 @@ export const qspSignupResponseSchema = z.object({
   }),
 });
 
-export type QspSignupResponse = z.infer<typeof qspSignupResponseSchema>;
+export type QspResponse = z.infer<typeof qspResponseSchema>;
 
-// ─── QSP 유저정보 조회 응답 (이메일 중복체크용) ───
-
-export const qspEmailCheckResponseSchema = z.object({
-  data: z.unknown().nullable(),
-  result: z.object({
-    resultCode: z.string(),
-    resultMsg: z.string(),
-  }),
-});
-
-export type QspEmailCheckResponse = z.infer<typeof qspEmailCheckResponseSchema>;

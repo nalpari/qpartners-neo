@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import {
   signupRequestSchema,
-  qspSignupResponseSchema,
+  qspResponseSchema,
 } from "@/lib/schemas/signup";
 import { sendMail } from "@/lib/mailer";
 import {
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const parsed = qspSignupResponseSchema.safeParse(qspBody);
+  const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
     console.error("[POST /api/auth/signup] QSP 응답 스키마 불일치:", parsed.error);
     return NextResponse.json(
