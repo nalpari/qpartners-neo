@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-const userTpValues = ["ADMIN", "DEALER", "SEKO", "GENERAL"] as const;
+import { userTpSchema } from "@/lib/schemas/common";
 
 // ─── 2차 인증 발송/재전송 ───
 
 export const twoFactorSendSchema = z.object({
-  userTp: z.enum(userTpValues),
+  userTp: userTpSchema,
   userId: z.string().min(1, "사용자 ID는 필수입니다"),
 });
 
@@ -14,7 +14,7 @@ export type TwoFactorSendInput = z.infer<typeof twoFactorSendSchema>;
 // ─── 2차 인증 검증 ───
 
 export const twoFactorVerifySchema = z.object({
-  userTp: z.enum(userTpValues),
+  userTp: userTpSchema,
   userId: z.string().min(1, "사용자 ID는 필수입니다"),
   code: z
     .string()

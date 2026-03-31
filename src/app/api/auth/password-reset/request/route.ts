@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. 비밀번호 변경 링크 메일 발송 (비동기 — 메일 실패해도 성공 응답)
+  // 4. 비밀번호 변경 링크 메일 발송 (비동기 — 메일 실패해도 성공 응답)
   const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
   const resetUrl = `${siteUrl}/password-reset?token=${token}`;
 
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     );
   });
 
-  // 4. 항상 동일 응답 (이메일 존재 여부 노출 방지)
+  // 5. 항상 동일 응답 (이메일 존재 여부 노출 방지)
   return NextResponse.json({
     data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
   });

@@ -93,7 +93,10 @@ export async function POST(request: NextRequest) {
 
   try {
     await prisma.$transaction([
-      // 기존 미검증 코드 무효화 (verified=true 처리로 재사용 방지)
+      // 기존 미검증 코드 무효화 (verified=true로 설정하여 재사용 방지)
+      // NOTE: verified=true는 "검증 완료"와 "무효화" 두 의미를 공유함
+      //   - verifiedAt !== null → 실제 검증 완료
+      //   - verifiedAt === null && verified === true → 무효화 (재발송/시도초과)
       prisma.twoFactorCode.updateMany({
         where: { userType: userTp, userId, verified: false },
         data: { verified: true },

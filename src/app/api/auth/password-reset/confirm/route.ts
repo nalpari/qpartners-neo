@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. QSP 비밀번호 변경 API 호출 (chgType=I)
+  // 5. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
   try {
     qspResponse = await fetch(QSP_API.passwordChange, {
@@ -165,19 +165,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 자동 로그인 — JWT 발행 + 쿠키 설정
-  const d = detailData as Record<string, string | null> | null;
+  // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
   const user: LoginUser = {
     userId: loginId,
-    userNm: d?.userNm ?? null,
+    userNm: str(detailData?.userNm) ?? null,
     userTp: resetToken.userType,
-    compCd: d?.compCd ?? null,
-    compNm: d?.compNm ?? null,
+    compCd: str(detailData?.compCd) ?? null,
+    compNm: str(detailData?.compNm) ?? null,
     email: resetToken.userId,
-    deptNm: d?.deptNm ?? null,
-    authCd: d?.authCd ?? null,
-    storeLvl: d?.storeLvl ?? null,
-    statCd: d?.statCd ?? null,
+    deptNm: str(detailData?.deptNm) ?? null,
+    authCd: str(detailData?.authCd) ?? null,
+    storeLvl: str(detailData?.storeLvl) ?? null,
+    statCd: str(detailData?.statCd) ?? null,
   };
 
   let jwtToken: string;
