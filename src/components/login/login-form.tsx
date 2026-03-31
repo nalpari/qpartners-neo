@@ -68,7 +68,7 @@ export function LoginForm({
   const { openPopup } = usePopupStore();
   const config = TAB_CONFIG[activeTab];
 
-  const canSubmit = !!id.trim() && !!password && agreeTerms && !isSubmitting;
+  const canSubmit = !!id.trim() && !!password.trim() && agreeTerms && !isSubmitting;
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();

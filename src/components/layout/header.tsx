@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
@@ -16,6 +16,9 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
     const parsed = loginUserSchema.safeParse(res.data?.data);
     return parsed.success ? parsed.data : null;
   } catch {
+    // 401(세션 만료) 시 플래그 정리 — 반복 요청 방지
+    localStorage.removeItem(AUTH_FLAG_KEY);
+    dispatchAuthChange();
     return null;
   }
 }
@@ -29,13 +32,14 @@ const ALL_RELATED_SITES = [
 ] as const;
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
-const SITE_ACCESS_MAP: Record<string, string[]> = {
+type SiteAccessKey = "ADMIN" | "DEALER_1" | "DEALER_2";
+const SITE_ACCESS_MAP: Record<SiteAccessKey, string[]> = {
   ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
   DEALER_1: ["qorder", "qwarranty", "hanasys"],
   DEALER_2: ["qmusubi", "qwarranty", "hanasys"],
 };
 
-function getUserSiteKey(user: LoginUser): string | null {
+function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
   if (user.userTp === "ADMIN") return "ADMIN";
   if (user.userTp === "DEALER") {
     if (user.storeLvl === "1") return "DEALER_1";
@@ -52,16 +56,15 @@ function getRelatedSites(user: LoginUser) {
 }
 
 function subscribeAuthFlag(callback: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === AUTH_FLAG_KEY) callback();
+  };
   window.addEventListener(AUTH_CHANGE_EVENT, callback);
-  window.addEventListener("storage", callback);
+  window.addEventListener("storage", onStorage);
   return () => {
     window.removeEventListener(AUTH_CHANGE_EVENT, callback);
-    window.removeEventListener("storage", callback);
+    window.removeEventListener("storage", onStorage);
   };
-}
-
-function dispatchAuthChange() {
-  window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 }
 
 export function Gnb() {
@@ -96,7 +99,7 @@ export function Gnb() {
       localStorage.removeItem(AUTH_FLAG_KEY);
       dispatchAuthChange();
       queryClient.clear();
-      router.push("/login");
+      router.replace("/login");
     }
   };
 

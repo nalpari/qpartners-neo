@@ -12,7 +12,7 @@ import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
 
 const TAB_TO_USERTP: Record<TabType, string> = {
@@ -50,13 +50,15 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
         localStorage.removeItem(SAVED_ID_KEY);
       }
       localStorage.setItem(SAVED_TAB_KEY, activeTab);
-      localStorage.setItem(AUTH_FLAG_KEY, "1");
-      window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
-      queryClient.setQueryData(["auth", "login-user-info"], userData);
 
       if (!userData.twoFactorVerified) {
+        // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
         openPopup("two-factor-auth", { userId: userData.userId, email: userData.email });
       } else {
+        // 2FA 불필요: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
+        queryClient.setQueryData(["auth", "login-user-info"], userData);
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+        dispatchAuthChange();
         router.replace("/");
       }
     },
