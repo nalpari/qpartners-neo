@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { COOKIE_NAME } from "@/lib/jwt";
+import { COOKIE_NAME, verifyToken } from "@/lib/jwt";
 import { LoginLoader } from "@/components/login/login-loader";
 
 export const metadata: Metadata = {
@@ -10,8 +10,12 @@ export const metadata: Metadata = {
 
 export default async function LoginPage() {
   const cookieStore = await cookies();
-  if (cookieStore.get(COOKIE_NAME)) {
-    redirect("/");
+  const token = cookieStore.get(COOKIE_NAME)?.value;
+  if (token) {
+    const user = await verifyToken(token);
+    if (user?.twoFactorVerified) {
+      redirect("/");
+    }
   }
 
   return <LoginLoader />;

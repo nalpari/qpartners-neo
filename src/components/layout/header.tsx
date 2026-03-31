@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -15,10 +16,12 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
     const res = await api.get("/auth/login-user-info");
     const parsed = loginUserSchema.safeParse(res.data?.data);
     return parsed.success ? parsed.data : null;
-  } catch {
-    // 401(세션 만료) 시 플래그 정리 — 반복 요청 방지
-    localStorage.removeItem(AUTH_FLAG_KEY);
-    dispatchAuthChange();
+  } catch (err) {
+    // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
+    if (err instanceof AxiosError && err.response?.status === 401) {
+      localStorage.removeItem(AUTH_FLAG_KEY);
+      dispatchAuthChange();
+    }
     return null;
   }
 }
@@ -90,8 +93,11 @@ export function Gnb() {
   const isAdmin = user?.userTp === "ADMIN";
   const relatedSites = user ? getRelatedSites(user) : [];
   const showRelatedSites = relatedSites.length > 0;
+  const isLoggingOut = useRef(false);
 
   const handleLogout = async () => {
+    if (isLoggingOut.current) return;
+    isLoggingOut.current = true;
     try {
       await api.post("/auth/logout");
     } catch (error) {

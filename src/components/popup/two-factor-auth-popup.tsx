@@ -73,7 +73,7 @@ export function TwoFactorAuthPopup() {
       localStorage.removeItem(AUTH_FLAG_KEY);
       dispatchAuthChange();
       queryClient.clear();
-      handleClose();
+      closePopup();
       router.replace("/login");
     }
   };
@@ -88,10 +88,9 @@ export function TwoFactorAuthPopup() {
 
   const handleVerify = () => {
     if (!isCodeValid) return;
-    // TODO: POST /api/auth/two-factor/verify
-    // 성공: handleClose() → router.push("/")
-    // 실패: setError(...)
-    // 현재(API 미연동): 무조건 실패로 처리
+    // TODO: POST /api/auth/two-factor/verify 연동 시 성공 → handleClose() + AUTH_FLAG_KEY 설정 + router.replace("/")
+    // 현재(API 미연동): 무조건 실패 처리
+    void handleClose; // lint: API 연동 시 사용 예정
     setError("認証番号が一致しません！");
   };
 
