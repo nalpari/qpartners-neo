@@ -1,10 +1,7 @@
-"use client";
-
 import Image from "next/image";
-import { usePopupStore } from "@/lib/store";
+import { TermsButton } from "@/components/layout/terms-button";
 
 export function Footer() {
-  const openPopup = usePopupStore((s) => s.openPopup);
   return (
     <footer className="flex items-center justify-center w-full border-t border-[#f5f5f5] bg-white">
       {/* PC */}
@@ -44,13 +41,7 @@ export function Footer() {
               お問い合わせ受付時間 : 平日10:00-12:00 13:00-17:00
             </span>
             <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
-            <button
-              type="button"
-              onClick={() => openPopup("terms")}
-              className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#e97923] underline whitespace-nowrap cursor-pointer"
-            >
-              利用規約
-            </button>
+            <TermsButton />
           </div>
 
           {/* 저작권 */}

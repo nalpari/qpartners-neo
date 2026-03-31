@@ -28,6 +28,7 @@ const ALL_RELATED_SITES = [
   { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp" },
 ] as const;
 
+// SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
 const SITE_ACCESS_MAP: Record<string, string[]> = {
   ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
   DEALER_1: ["qorder", "qwarranty", "hanasys"],
@@ -283,7 +284,7 @@ export function Gnb() {
                   </Link>
                   <button
                     type="button"
-                    onClick={handleLogout}
+                    onClick={() => { void handleLogout(); }}
                     className="flex items-center justify-center gap-1.5 h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                   >
                     <Image
@@ -563,7 +564,7 @@ export function Gnb() {
                 <span className="w-px h-[10px] bg-[#5b5b5b]" />
                 <button
                   type="button"
-                  onClick={handleLogout}
+                  onClick={() => { void handleLogout(); }}
                   className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.4] text-white uppercase whitespace-nowrap"
                 >
                   ログアウト
