@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 
@@ -40,7 +40,15 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid multipart form data" },
+        { status: 400 },
+      );
+    }
     const rawFiles = formData.getAll("files");
     const files = rawFiles.filter((f): f is File => f instanceof File);
 
@@ -60,10 +68,10 @@ export async function POST(request: NextRequest, { params }: Params) {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ];
-    // 허용 확장자 (MIME 검증과 이중 체크)
+    // 허용 확장자 (MIME 검증과 이중 체크) — SVG 제외 (XSS 위험)
     const ALLOWED_EXTENSIONS = new Set([
       "pdf", "docx", "xlsx", "pptx",
-      "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp",
+      "jpg", "jpeg", "png", "gif", "webp", "bmp",
     ]);
 
     for (const file of files) {
@@ -89,21 +97,23 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
     }
 
+    // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
     const uploadDir = join(
       process.cwd(),
-      "public",
+      "storage",
       "uploads",
       "contents",
       String(parsed.data),
     );
     await mkdir(uploadDir, { recursive: true });
 
-    const attachments = [];
+    // 1단계: 모든 파일을 디스크에 기록
+    const writtenFiles: { absolutePath: string; file: File; filePath: string; safeFileName: string }[] = [];
 
     for (const file of files) {
       const ext = basename(file.name).split(".").pop() ?? "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
-      const filePath = `/uploads/contents/${parsed.data}/${safeFileName}`;
+      const filePath = `storage/uploads/contents/${parsed.data}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
       // path traversal 방어: 업로드 디렉토리 내부인지 검증
@@ -113,27 +123,46 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       const buffer = Buffer.from(await file.arrayBuffer());
       await writeFile(absolutePath, buffer);
-
-      const attachment = await prisma.contentAttachment.create({
-        data: {
-          contentId: parsed.data,
-          fileName: file.name,
-          filePath,
-          fileSize: BigInt(file.size),
-          mimeType: file.type || null,
-          createdBy: user.userId,
-        },
-      });
-
-      attachments.push({
-        id: attachment.id,
-        fileName: attachment.fileName,
-        fileSize: Number(attachment.fileSize),
-        mimeType: attachment.mimeType,
-      });
+      writtenFiles.push({ absolutePath, file, filePath, safeFileName });
     }
 
-    return NextResponse.json({ data: attachments }, { status: 201 });
+    // 2단계: 트랜잭션으로 모든 DB 레코드 일괄 생성 (전부 성공 or 전부 롤백)
+    try {
+      const attachments = await prisma.$transaction(
+        writtenFiles.map((w) =>
+          prisma.contentAttachment.create({
+            data: {
+              contentId: parsed.data,
+              fileName: w.file.name,
+              filePath: w.filePath,
+              fileSize: BigInt(w.file.size),
+              mimeType: w.file.type || null,
+              createdBy: user.userId,
+            },
+          }),
+        ),
+      );
+
+      return NextResponse.json({
+        data: attachments.map((a) => ({
+          id: a.id,
+          fileName: a.fileName,
+          fileSize: Number(a.fileSize),
+          mimeType: a.mimeType,
+        })),
+      }, { status: 201 });
+    } catch (dbError) {
+      // DB 트랜잭션 실패 시 디스크에 쓴 파일 전부 정리
+      for (const w of writtenFiles) {
+        await unlink(w.absolutePath).catch((unlinkErr) => {
+          console.error("[upload-cleanup] Failed to remove file after DB error", {
+            path: w.absolutePath,
+            error: unlinkErr,
+          });
+        });
+      }
+      throw dbError;
+    }
   } catch (error) {
     console.error("[POST /api/contents/:id/files]", error);
     return NextResponse.json(

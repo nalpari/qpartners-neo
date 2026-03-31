@@ -5,12 +5,11 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
   createContentSchema,
   listContentsQuerySchema,
 } from "@/lib/schemas/content";
-
-const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
 // GET /api/contents — 콘텐츠 목록 조회
 export async function GET(request: NextRequest) {

@@ -54,13 +54,32 @@ export async function GET(request: NextRequest) {
       constructor: "targetConstructor",
       general: "targetGeneral",
     };
+
+    if (targetType && !targetMap[targetType]) {
+      return NextResponse.json(
+        { error: `Invalid targetType: ${targetType}` },
+        { status: 400 },
+      );
+    }
     const targetField = targetType ? targetMap[targetType] : undefined;
 
     // status 필터 → DB where 조건으로 변환 (메모리 필터 대신 DB 레벨)
     const now = new Date();
+    const VALID_STATUSES = new Set(["scheduled", "active", "ended"]);
     const statusSet = statusFilter
       ? new Set(statusFilter.split(",").map((s) => s.trim()))
       : null;
+
+    if (statusSet) {
+      for (const s of statusSet) {
+        if (!VALID_STATUSES.has(s)) {
+          return NextResponse.json(
+            { error: `Invalid status value: ${s}` },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     const statusWhere = statusSet
       ? {
@@ -73,6 +92,14 @@ export async function GET(request: NextRequest) {
           ],
         }
       : undefined;
+
+    // 날짜 파라미터 검증
+    if (startDate && isNaN(new Date(startDate).getTime())) {
+      return NextResponse.json({ error: "Invalid startDate format" }, { status: 400 });
+    }
+    if (endDate && isNaN(new Date(endDate).getTime())) {
+      return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
+    }
 
     const notices = await prisma.homeNotice.findMany({
       where: {

@@ -4,52 +4,44 @@ export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
 
+const contentTargetSchema = z
+  .object({
+    targetType: z.enum([
+      "first_dealer",
+      "second_dealer",
+      "constructor",
+      "general",
+      "non_member",
+    ]),
+    startAt: z.coerce.date().optional(),
+    endAt: z.coerce.date().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      return true;
+    },
+    { message: "startAt은 endAt보다 이전이어야 합니다", path: ["startAt"] },
+  );
+
 export const createContentSchema = z.object({
   title: z.string().min(1, "title은 필수입니다").max(500),
-  body: z.string().optional(),
+  body: z.string().max(100000).optional(),
   status: z.enum(["draft", "published"]).default("draft"),
   publishedAt: z.coerce.date().optional(),
   authorDepartment: z.string().max(100).optional(),
   approverLevel: z.number().int().min(0).max(127).optional(),
-  targets: z
-    .array(
-      z.object({
-        targetType: z.enum([
-          "first_dealer",
-          "second_dealer",
-          "constructor",
-          "general",
-          "non_member",
-        ]),
-        startAt: z.coerce.date().optional(),
-        endAt: z.coerce.date().optional(),
-      }),
-    )
-    .optional(),
+  targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateContentSchema = z.object({
   title: z.string().min(1, "title은 필수입니다").max(500).optional(),
-  body: z.string().optional(),
+  body: z.string().max(100000).optional(),
   status: z.enum(["draft", "published"]).optional(),
   authorDepartment: z.string().max(100).optional(),
   approverLevel: z.number().int().min(0).max(127).optional(),
-  targets: z
-    .array(
-      z.object({
-        targetType: z.enum([
-          "first_dealer",
-          "second_dealer",
-          "constructor",
-          "general",
-          "non_member",
-        ]),
-        startAt: z.coerce.date().optional(),
-        endAt: z.coerce.date().optional(),
-      }),
-    )
-    .optional(),
+  targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
 });
 

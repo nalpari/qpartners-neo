@@ -38,7 +38,11 @@ export const createHomeNoticeSchema = z
       data.targetConstructor ||
       data.targetGeneral,
     { message: "게시대상을 최소 1개 이상 선택하세요" },
-  );
+  )
+  .refine((data) => data.startAt < data.endAt, {
+    message: "시작일은 종료일보다 이전이어야 합니다",
+    path: ["startAt"],
+  });
 
 export const updateHomeNoticeSchema = z
   .object({
@@ -79,6 +83,13 @@ export const updateHomeNoticeSchema = z
       return targetKeys.some((k) => data[k] === true);
     },
     { message: "게시대상을 최소 1개 이상 선택하세요" },
+  )
+  .refine(
+    (data) => {
+      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      return true;
+    },
+    { message: "시작일은 종료일보다 이전이어야 합니다", path: ["startAt"] },
   );
 
 // ─── Types ───

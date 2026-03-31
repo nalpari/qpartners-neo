@@ -7,9 +7,12 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createRoleSchema } from "@/lib/schemas/permission";
 
-// GET /api/roles — 권한 목록
+// GET /api/roles — 권한 목록 (관리자 전용)
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { searchParams } = request.nextUrl;
     const activeOnly = searchParams.get("activeOnly") !== "false";
 

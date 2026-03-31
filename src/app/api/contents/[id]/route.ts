@@ -11,11 +11,10 @@ import {
   requireAdmin,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
 
 type Params = { params: Promise<{ id: string }> };
-
-const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
 // GET /api/contents/:id — 콘텐츠 상세 조회
 export async function GET(request: NextRequest, { params }: Params) {
@@ -140,27 +139,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const { targets, categoryIds, ...contentData } = result.data;
 
-    // 트랜잭션으로 일괄 처리 (delete + update)
-    const ops = [];
-
-    if (targets) {
-      ops.push(
-        prisma.contentTarget.deleteMany({
+    // interactive transaction으로 원자적 처리
+    const content = await prisma.$transaction(async (tx) => {
+      if (targets) {
+        await tx.contentTarget.deleteMany({
           where: { contentId: parsed.data },
-        }),
-      );
-    }
+        });
+      }
 
-    if (categoryIds) {
-      ops.push(
-        prisma.contentCategory.deleteMany({
+      if (categoryIds) {
+        await tx.contentCategory.deleteMany({
           where: { contentId: parsed.data },
-        }),
-      );
-    }
+        });
+      }
 
-    ops.push(
-      prisma.content.update({
+      return tx.content.update({
         where: { id: parsed.data },
         data: {
           ...contentData,
@@ -179,11 +172,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
           targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
           categories: { include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } } },
         },
-      }),
-    );
-
-    const results = await prisma.$transaction(ops);
-    const content = results[results.length - 1];
+      });
+    });
 
     return NextResponse.json({ data: content });
   } catch (error) {

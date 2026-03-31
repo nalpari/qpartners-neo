@@ -22,19 +22,35 @@ export const updateRoleSchema = z.object({
 
 // ─── Permission ───
 
-export const updatePermissionsSchema = z.object({
-  permissions: z
-    .array(
-      z.object({
-        menuCode: z.string().min(1, "menuCode는 필수입니다").max(50),
-        canRead: z.boolean().default(false),
-        canCreate: z.boolean().default(false),
-        canUpdate: z.boolean().default(false),
-        canDelete: z.boolean().default(false),
-      }),
-    )
-    .min(1, "permissions는 1개 이상이어야 합니다"),
-});
+export const updatePermissionsSchema = z
+  .object({
+    permissions: z
+      .array(
+        z
+          .object({
+            menuCode: z.string().min(1, "menuCode는 필수입니다").max(50),
+            canRead: z.boolean().default(false),
+            canCreate: z.boolean().default(false),
+            canUpdate: z.boolean().default(false),
+            canDelete: z.boolean().default(false),
+          })
+          .refine(
+            (data) => {
+              if (data.canCreate || data.canUpdate || data.canDelete) return data.canRead;
+              return true;
+            },
+            { message: "CUD 권한이 있으면 읽기 권한(canRead)도 필요합니다" },
+          ),
+      )
+      .min(1, "permissions는 1개 이상이어야 합니다"),
+  })
+  .refine(
+    (data) => {
+      const codes = data.permissions.map((p) => p.menuCode);
+      return new Set(codes).size === codes.length;
+    },
+    { message: "중복된 menuCode가 존재합니다", path: ["permissions"] },
+  );
 
 // ─── Types ───
 

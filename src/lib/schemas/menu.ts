@@ -24,16 +24,24 @@ export const updateMenuSchema = z.object({
   sortOrder: z.number().int().positive().optional(),
 });
 
-export const sortMenuSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        id: z.number().int().positive(),
-        sortOrder: z.number().int().positive(),
-      }),
-    )
-    .min(1, "items는 1개 이상이어야 합니다"),
-});
+export const sortMenuSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          id: z.number().int().positive(),
+          sortOrder: z.number().int().positive(),
+        }),
+      )
+      .min(1, "items는 1개 이상이어야 합니다"),
+  })
+  .refine(
+    (data) => {
+      const ids = data.items.map((i) => i.id);
+      return new Set(ids).size === ids.length;
+    },
+    { message: "중복된 id가 존재합니다", path: ["items"] },
+  );
 
 // ─── Types ───
 

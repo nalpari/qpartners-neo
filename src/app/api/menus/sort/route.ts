@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sortMenuSchema } from "@/lib/schemas/menu";
@@ -42,6 +44,15 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ data: { updated: result.data.items.length } });
   } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json(
+        { error: "존재하지 않는 메뉴가 포함되어 있습니다" },
+        { status: 404 },
+      );
+    }
     console.error("[PUT /api/menus/sort]", error);
     return NextResponse.json(
       { error: "Failed to update sort order" },

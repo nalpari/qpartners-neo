@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { getUserFromHeaders } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/home-notices/active — 홈화면용 활성 공지
@@ -9,8 +10,9 @@ export async function GET(request: NextRequest) {
     const now = new Date();
 
     // 사용자 역할 확인 (비회원이면 general만)
-    const userType = request.headers.get("X-User-Type");
-    const userRole = request.headers.get("X-User-Role");
+    const user = getUserFromHeaders(request.headers);
+    const userType = user?.userType ?? null;
+    const userRole = user?.role ?? null;
 
     // 역할별 target 필터 조건
     const targetFilter = (() => {

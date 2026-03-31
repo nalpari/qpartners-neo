@@ -43,6 +43,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // startAt 또는 endAt 한쪽만 보낸 경우, 기존 레코드와 cross-validation
+    if (result.data.startAt || result.data.endAt) {
+      const existing = await prisma.homeNotice.findUnique({
+        where: { id: parsed.data },
+        select: { startAt: true, endAt: true },
+      });
+
+      if (!existing) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+
+      const finalStartAt = result.data.startAt ?? existing.startAt;
+      const finalEndAt = result.data.endAt ?? existing.endAt;
+
+      if (finalStartAt >= finalEndAt) {
+        return NextResponse.json(
+          { error: "시작일은 종료일보다 이전이어야 합니다" },
+          { status: 400 },
+        );
+      }
+    }
+
     const notice = await prisma.homeNotice.update({
       where: { id: parsed.data },
       data: { ...result.data, updatedBy: auth.user.userId },

@@ -36,10 +36,16 @@ export function isAdmin(role: string): boolean {
 /** 사내 사용자 여부 — isAdmin의 alias */
 export const isInternalUser = isAdmin;
 
-/** 관리자 인증 가드. 실패 시 403 응답 반환, 성공 시 null. */
+/** 관리자 인증 가드. 미인증 시 401, 권한 부족 시 403. */
 export function requireAdmin(headers: Headers): { user: UserInfo } | NextResponse {
   const user = getUserFromHeaders(headers);
-  if (!user || !isAdmin(user.role)) {
+  if (!user) {
+    return NextResponse.json(
+      { error: "인증이 필요합니다" },
+      { status: 401 },
+    );
+  }
+  if (!isAdmin(user.role)) {
     return NextResponse.json(
       { error: "관리자 권한이 필요합니다" },
       { status: 403 },
