@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { usePopupStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
@@ -35,6 +36,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const openPopup = usePopupStore((s) => s.openPopup);
 
   const loginMutation = useMutation({
     mutationFn: async (params: { loginId: string; pwd: string; userTp: string }) => {
@@ -51,7 +53,12 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       localStorage.setItem(AUTH_FLAG_KEY, "1");
       window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
       queryClient.setQueryData(["auth", "login-user-info"], userData);
-      router.replace("/");
+
+      if (!userData.twoFactorVerified) {
+        openPopup("two-factor-auth", { userId: userData.userId, email: userData.email });
+      } else {
+        router.replace("/");
+      }
     },
     onError: (err) => {
       if (err instanceof AxiosError && err.response) {
