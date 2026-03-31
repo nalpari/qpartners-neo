@@ -73,7 +73,8 @@ export function canModifyContent(
   content: { userId: string; authorDepartment: string | null },
 ): boolean {
   if (user.role === "super_admin") {
-    return user.department === content.authorDepartment;
+    // undefined/null 모두 "부문 미지정"으로 동일 취급
+    return (user.department ?? null) === (content.authorDepartment ?? null);
   }
   if (user.role === "admin") {
     return user.userId === content.userId;

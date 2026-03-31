@@ -53,11 +53,23 @@ export async function POST(request: NextRequest, { params }: Params) {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ];
+    // 허용 확장자 (MIME 검증과 이중 체크)
+    const ALLOWED_EXTENSIONS = new Set([
+      "pdf", "docx", "xlsx", "pptx",
+      "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp",
+    ]);
 
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json(
           { error: `파일 크기가 50MB를 초과합니다: ${file.name}` },
+          { status: 400 },
+        );
+      }
+      const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+      if (!ALLOWED_EXTENSIONS.has(ext)) {
+        return NextResponse.json(
+          { error: `허용되지 않는 파일 확장자입니다: ${file.name}` },
           { status: 400 },
         );
       }

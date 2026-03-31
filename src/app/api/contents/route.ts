@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
             : []),
         ],
       }),
-      // 게시대상 필터: 비사내 사용자는 자기 targetType에 해당하는 것만
+      // 게시대상 필터: 비사내 사용자는 자기 targetType에 해당 + 기간 내만
       ...(!internal && {
         targets: {
           some: {
@@ -76,11 +76,18 @@ export async function GET(request: NextRequest) {
               | "constructor"
               | "general"
               | "non_member",
-            OR: [
-              { startAt: null },
+            AND: [
               {
-                startAt: { lte: new Date() },
-                endAt: { gte: new Date() },
+                OR: [
+                  { startAt: null },
+                  { startAt: { lte: new Date() } },
+                ],
+              },
+              {
+                OR: [
+                  { endAt: null },
+                  { endAt: { gte: new Date() } },
+                ],
               },
             ],
           },

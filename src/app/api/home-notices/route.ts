@@ -35,6 +35,9 @@ function toTargetArray(row: {
 // GET /api/home-notices — 공지 목록 (관리자용)
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { searchParams } = request.nextUrl;
     const keyword = searchParams.get("keyword") ?? undefined;
     const statusFilter = searchParams.get("status") ?? undefined;
@@ -53,6 +56,24 @@ export async function GET(request: NextRequest) {
     };
     const targetField = targetType ? targetMap[targetType] : undefined;
 
+    // status 필터 → DB where 조건으로 변환 (메모리 필터 대신 DB 레벨)
+    const now = new Date();
+    const statusSet = statusFilter
+      ? new Set(statusFilter.split(",").map((s) => s.trim()))
+      : null;
+
+    const statusWhere = statusSet
+      ? {
+          OR: [
+            ...(statusSet.has("scheduled") ? [{ startAt: { gt: now } }] : []),
+            ...(statusSet.has("active")
+              ? [{ startAt: { lte: now }, endAt: { gte: now } }]
+              : []),
+            ...(statusSet.has("ended") ? [{ endAt: { lt: now } }] : []),
+          ],
+        }
+      : undefined;
+
     const notices = await prisma.homeNotice.findMany({
       where: {
         ...(keyword && { content: { contains: keyword } }),
@@ -63,32 +84,26 @@ export async function GET(request: NextRequest) {
             ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
           },
         }),
+        ...statusWhere,
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // status 동적 산출 + 필터
-    const statusSet = statusFilter
-      ? new Set(statusFilter.split(",").map((s) => s.trim()))
-      : null;
-
-    const data = notices
-      .map((n) => ({
-        id: n.id,
-        targets: toTargetArray(n),
-        content: n.content,
-        url: n.url,
-        startAt: n.startAt,
-        endAt: n.endAt,
-        status: computeStatus(n.startAt, n.endAt),
-        userType: n.userType,
-        userId: n.userId,
-        createdAt: n.createdAt,
-        createdBy: n.createdBy,
-        updatedAt: n.updatedAt,
-        updatedBy: n.updatedBy,
-      }))
-      .filter((n) => (statusSet ? statusSet.has(n.status) : true));
+    const data = notices.map((n) => ({
+      id: n.id,
+      targets: toTargetArray(n),
+      content: n.content,
+      url: n.url,
+      startAt: n.startAt,
+      endAt: n.endAt,
+      status: computeStatus(n.startAt, n.endAt),
+      userType: n.userType,
+      userId: n.userId,
+      createdAt: n.createdAt,
+      createdBy: n.createdBy,
+      updatedAt: n.updatedAt,
+      updatedBy: n.updatedBy,
+    }));
 
     return NextResponse.json({ data });
   } catch (error) {
