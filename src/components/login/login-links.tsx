@@ -3,8 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePopupStore } from "@/lib/store";
-
-type TabType = "dealer" | "installer" | "general";
+import type { TabType } from "@/components/login/types";
 
 const REGISTRATION_URLS: Record<TabType, string> = {
   dealer: "https://www.hanasys.jp/join",

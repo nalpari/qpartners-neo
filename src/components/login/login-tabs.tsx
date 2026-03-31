@@ -1,6 +1,6 @@
 "use client";
 
-type TabType = "dealer" | "installer" | "general";
+import type { TabType } from "@/components/login/types";
 
 const TABS: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },

@@ -4,8 +4,7 @@ import Image from "next/image";
 import { Checkbox } from "@/components/common/checkbox";
 import { Button } from "@/components/common/button";
 import { usePopupStore } from "@/lib/store";
-
-type TabType = "dealer" | "installer" | "general";
+import type { TabType } from "@/components/login/types";
 
 const TAB_CONFIG = {
   dealer: {

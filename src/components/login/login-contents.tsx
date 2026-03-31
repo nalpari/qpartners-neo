@@ -3,14 +3,16 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-
-type TabType = "dealer" | "installer" | "general";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY } from "@/components/login/types";
+import type { TabType } from "@/components/login/types";
 
 const TAB_TO_USERTP: Record<TabType, string> = {
   dealer: "DEALER",
@@ -18,65 +20,39 @@ const TAB_TO_USERTP: Record<TabType, string> = {
   general: "GENERAL",
 };
 
-const SAVED_ID_KEY = "savedLoginId";
+interface LoginContentsProps {
+  initialSavedId?: string;
+  initialSavedTab?: TabType;
+}
 
-export function LoginContents() {
-  const [activeTab, setActiveTab] = useState<TabType>("dealer");
-  const [id, setId] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem(SAVED_ID_KEY) ?? "";
-  });
+export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
+  const [activeTab, setActiveTab] = useState<TabType>(initialSavedTab);
+  const [id, setId] = useState(initialSavedId);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [saveId, setSaveId] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(SAVED_ID_KEY) !== null;
-  });
+  const [saveId, setSaveId] = useState(initialSavedId !== "");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
-  const handleTabChange = (tab: TabType) => {
-    setActiveTab(tab);
-    setId("");
-    setPassword("");
-    setShowPassword(false);
-    setError(null);
-  };
-
-  const handleSubmit = async () => {
-    if (!id.trim()) {
-      setError("IDを入力してください");
-      return;
-    }
-    if (!password) {
-      setError("パスワードを入力してください");
-      return;
-    }
-    if (!agreeTerms) {
-      setError("利用規約に同意してください");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      await api.post("/auth/login", {
-        loginId: id,
-        pwd: password,
-        userTp: TAB_TO_USERTP[activeTab],
-      });
-
+  const loginMutation = useMutation({
+    mutationFn: async (params: { loginId: string; pwd: string; userTp: string }) => {
+      const res = await api.post<{ data: LoginUser }>("/auth/login", params);
+      return res.data.data;
+    },
+    onSuccess: (userData) => {
       if (saveId) {
         localStorage.setItem(SAVED_ID_KEY, id);
       } else {
         localStorage.removeItem(SAVED_ID_KEY);
       }
-
-      router.push("/");
-    } catch (err) {
+      localStorage.setItem(SAVED_TAB_KEY, activeTab);
+      localStorage.setItem(AUTH_FLAG_KEY, "1");
+      queryClient.setQueryData(["auth", "me"], userData);
+      router.replace("/");
+    },
+    onError: (err) => {
       if (err instanceof AxiosError && err.response) {
         const status = err.response.status;
         if (status === 401) {
@@ -91,9 +67,39 @@ export function LoginContents() {
       } else {
         setError("サーバーに接続できません。しばらくしてからお試しください");
       }
-    } finally {
-      setIsSubmitting(false);
+    },
+  });
+
+  const isSubmitting = loginMutation.isPending;
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setId("");
+    setPassword("");
+    setShowPassword(false);
+    setError(null);
+  };
+
+  const handleSubmit = () => {
+    if (!id.trim()) {
+      setError("IDを入力してください");
+      return;
     }
+    if (!password) {
+      setError("パスワードを入力してください");
+      return;
+    }
+    if (!agreeTerms) {
+      setError("利用規約に同意してください");
+      return;
+    }
+
+    setError(null);
+    loginMutation.mutate({
+      loginId: id,
+      pwd: password,
+      userTp: TAB_TO_USERTP[activeTab],
+    });
   };
 
   return (
