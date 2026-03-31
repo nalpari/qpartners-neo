@@ -6,14 +6,18 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
+import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY } from "@/components/login/types";
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
-  const res = await fetch("/api/auth/me");
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json.data as LoginUser;
+  try {
+    const res = await api.get("/auth/me");
+    const parsed = loginUserSchema.safeParse(res.data?.data);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 const ALL_RELATED_SITES = [
@@ -76,11 +80,11 @@ export function Gnb() {
   const handleLogout = async () => {
     try {
       await api.post("/auth/logout");
-    } catch {
-      // 네트워크 오류 시에도 로컬 상태는 정리
+    } catch (error) {
+      console.warn("[logout] ログアウトAPI失敗:", error);
     } finally {
       localStorage.removeItem(AUTH_FLAG_KEY);
-      queryClient.setQueryData(["auth", "me"], null);
+      queryClient.clear();
       router.push("/login");
     }
   };

@@ -41,9 +41,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       const res = await api.post<{ data: LoginUser }>("/auth/login", params);
       return res.data.data;
     },
-    onSuccess: (userData) => {
+    onSuccess: (userData, variables) => {
       if (saveId) {
-        localStorage.setItem(SAVED_ID_KEY, id);
+        localStorage.setItem(SAVED_ID_KEY, variables.loginId);
       } else {
         localStorage.removeItem(SAVED_ID_KEY);
       }
