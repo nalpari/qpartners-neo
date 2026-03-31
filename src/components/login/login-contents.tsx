@@ -11,7 +11,7 @@ import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY } from "@/components/login/types";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
 
 const TAB_TO_USERTP: Record<TabType, string> = {
@@ -49,6 +49,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       }
       localStorage.setItem(SAVED_TAB_KEY, activeTab);
       localStorage.setItem(AUTH_FLAG_KEY, "1");
+      window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
       queryClient.setQueryData(["auth", "me"], userData);
       router.replace("/");
     },

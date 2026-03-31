@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { AUTH_FLAG_KEY } from "@/components/login/types";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
@@ -50,11 +50,22 @@ function getRelatedSites(user: LoginUser) {
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
 }
 
-const noopSubscribe = () => () => {};
+function subscribeAuthFlag(callback: () => void) {
+  window.addEventListener(AUTH_CHANGE_EVENT, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function dispatchAuthChange() {
+  window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+}
 
 export function Gnb() {
   const hasAuthFlag = useSyncExternalStore(
-    noopSubscribe,
+    subscribeAuthFlag,
     () => localStorage.getItem(AUTH_FLAG_KEY) === "1",
     () => false,
   );
@@ -82,6 +93,7 @@ export function Gnb() {
       console.warn("[logout] ログアウトAPI失敗:", error);
     } finally {
       localStorage.removeItem(AUTH_FLAG_KEY);
+      dispatchAuthChange();
       queryClient.clear();
       router.push("/login");
     }
