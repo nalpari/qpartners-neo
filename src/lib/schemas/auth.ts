@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-// ─── QSP 로그인 요청 ───
+import { userTpValues } from "@/lib/schemas/common";
 
-const userTpValues = ["ADMIN", "DEALER", "SEKO", "GENERAL"] as const;
+// ─── QSP 로그인 요청 ───
 
 export const loginRequestSchema = z.object({
   loginId: z.string().min(1, "로그인 ID는 필수입니다"),
@@ -51,17 +51,21 @@ export type QspLoginResponse = z.infer<typeof qspLoginResponseSchema>;
 
 // ─── 클라이언트에 전달할 로그인 사용자 정보 ───
 
-export const loginUserSchema = qspLoginUserSchema.pick({
-  userId: true,
-  userNm: true,
-  userTp: true,
-  compCd: true,
-  compNm: true,
-  email: true,
-  deptNm: true,
-  authCd: true,
-  storeLvl: true,
-  statCd: true,
-});
+export const loginUserSchema = qspLoginUserSchema
+  .pick({
+    userId: true,
+    userNm: true,
+    userTp: true,
+    compCd: true,
+    compNm: true,
+    email: true,
+    deptNm: true,
+    authCd: true,
+    storeLvl: true,
+    statCd: true,
+  })
+  .extend({
+    twoFactorVerified: z.boolean(),
+  });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;
