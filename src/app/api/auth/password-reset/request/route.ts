@@ -37,14 +37,23 @@ export async function POST(request: NextRequest) {
 
   const { userTp, email } = result.data;
 
-  // 2. Rate limiting — 동일 이메일 시간당 3건 제한 (W2)
+  // 2. Rate limiting — 동일 이메일 시간당 3건 제한
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const recentCount = await prisma.passwordResetToken.count({
-    where: {
-      userId: email,
-      createdAt: { gte: oneHourAgo },
-    },
-  });
+  let recentCount: number;
+  try {
+    recentCount = await prisma.passwordResetToken.count({
+      where: {
+        userId: email,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/request] rate limit 조회 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 
   if (recentCount >= 3) {
     // 이메일 존재 여부 노출 방지를 위해 동일 성공 응답 반환

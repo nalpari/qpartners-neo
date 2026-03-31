@@ -97,19 +97,32 @@ export async function POST(request: NextRequest) {
   const expected = Buffer.from(record.code, "hex");
   const actual = Buffer.from(hashOtp(code), "hex");
   if (!timingSafeEqual(expected, actual)) {
-    // 시도 횟수 원자적 증가 후 DB에서 최신 값 재조회하여 판단 (동시성 안전)
-    const updated = await prisma.twoFactorCode.update({
-      where: { id: record.id },
-      data: { attempts: { increment: 1 } },
-      select: { attempts: true },
-    });
+    // 시도 횟수 원자적 증가 + 갱신된 값으로 판단 (동시성 안전)
+    let updated;
+    try {
+      updated = await prisma.twoFactorCode.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } },
+        select: { attempts: true },
+      });
+    } catch (error) {
+      console.error("[POST /api/auth/two-factor/verify] attempts 증가 실패:", error);
+      return NextResponse.json(
+        { error: "서버 오류가 발생했습니다" },
+        { status: 500 },
+      );
+    }
 
     if (updated.attempts >= MAX_VERIFY_ATTEMPTS) {
       // 최대 시도 초과 → 코드 무효화
-      await prisma.twoFactorCode.update({
-        where: { id: record.id },
-        data: { verified: true },
-      });
+      try {
+        await prisma.twoFactorCode.update({
+          where: { id: record.id },
+          data: { verified: true },
+        });
+      } catch (error) {
+        console.error("[POST /api/auth/two-factor/verify] 코드 무효화 실패 (보안 주의):", error);
+      }
       return NextResponse.json(
         { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
         { status: 401 },
@@ -146,12 +159,21 @@ export async function POST(request: NextRequest) {
       loginId: userId,
       accsSiteCd: "QPARTNERS",
     }),
-  }).catch((error) => {
-    console.error(
-      "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt 실패:",
-      error instanceof Error ? { message: error.message } : error,
-    );
-  });
+  })
+    .then((res) => {
+      if (!res.ok) {
+        console.error(
+          "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt HTTP 오류:",
+          res.status,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt 네트워크 실패:",
+        error instanceof Error ? { message: error.message } : error,
+      );
+    });
 
   // 8. JWT 재발행 (twoFactorVerified: true)
   let newToken: string;

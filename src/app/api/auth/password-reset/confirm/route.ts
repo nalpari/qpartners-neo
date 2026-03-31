@@ -1,12 +1,28 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { z } from "zod";
+
 import { prisma } from "@/lib/prisma";
 import { passwordResetConfirmSchema } from "@/lib/schemas/password-reset";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import type { LoginUser } from "@/lib/schemas/auth";
+
+/** QSP userDetail 응답에서 사용하는 필드만 검증 */
+const qspUserDetailSchema = z.object({
+  data: z.object({
+    userId: z.string(),
+    userNm: z.string().nullable().optional(),
+    compCd: z.string().nullable().optional(),
+    compNm: z.string().nullable().optional(),
+    deptNm: z.string().nullable().optional(),
+    authCd: z.string().nullable().optional(),
+    storeLvl: z.string().nullable().optional(),
+    statCd: z.string().nullable().optional(),
+  }).nullable(),
+});
 
 /** 토큰 롤백 헬퍼 — QSP 실패 시 토큰을 재사용 가능하게 복원 */
 async function rollbackToken(token: string) {
@@ -48,9 +64,18 @@ export async function POST(request: NextRequest) {
   const { token, newPassword } = result.data;
 
   // 2. 토큰 재검증
-  const resetToken = await prisma.passwordResetToken.findUnique({
-    where: { token },
-  });
+  let resetToken;
+  try {
+    resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/confirm] DB 조회 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 
   if (!resetToken || resetToken.used || resetToken.expiresAt < new Date()) {
     return NextResponse.json(
@@ -60,10 +85,19 @@ export async function POST(request: NextRequest) {
   }
 
   // 3. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
-  const updated = await prisma.passwordResetToken.updateMany({
-    where: { token, used: false },
-    data: { used: true },
-  });
+  let updated;
+  try {
+    updated = await prisma.passwordResetToken.updateMany({
+      where: { token, used: false },
+      data: { used: true },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/confirm] 토큰 사용 처리 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 
   if (updated.count === 0) {
     return NextResponse.json(
@@ -80,20 +114,25 @@ export async function POST(request: NextRequest) {
   });
 
   let loginId = resetToken.userId; // 기본값: email (GENERAL)
-  let detailData: Record<string, unknown> | null = null;
+  let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
   try {
     const detailRes = await fetch(
       `${QSP_API.userDetail}?${detailParams.toString()}`,
       { method: "GET", signal: AbortSignal.timeout(10_000) },
     );
     if (detailRes.ok) {
-      const detailBody = await detailRes.json();
-      if (detailBody?.data?.userId) {
-        loginId = detailBody.data.userId;
-        detailData = detailBody.data;
+      const detailBody: unknown = await detailRes.json();
+      const parsed = qspUserDetailSchema.safeParse(detailBody);
+      if (parsed.success && parsed.data.data?.userId) {
+        loginId = parsed.data.data.userId;
+        detailData = parsed.data.data;
       }
     }
-  } catch {
+  } catch (error) {
+    console.error(
+      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (GENERAL fallback 진행):",
+      error instanceof Error ? { message: error.message } : error,
+    );
     // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
   }
 
@@ -148,7 +187,8 @@ export async function POST(request: NextRequest) {
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
-  } catch {
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/confirm] QSP 응답 JSON 파싱 실패:", error);
     // QSP가 처리했을 수 있으나 응답 파싱 실패 → 토큰 롤백 (QSP 비밀번호 변경은 멱등이므로 재시도 안전)
     await rollbackToken(token);
     return NextResponse.json(
@@ -169,18 +209,17 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
-  const str = (v: unknown) => (typeof v === "string" ? v : null);
   const user: LoginUser = {
     userId: loginId,
-    userNm: str(detailData?.userNm) ?? null,
+    userNm: detailData?.userNm ?? null,
     userTp: resetToken.userType,
-    compCd: str(detailData?.compCd) ?? null,
-    compNm: str(detailData?.compNm) ?? null,
+    compCd: detailData?.compCd ?? null,
+    compNm: detailData?.compNm ?? null,
     email: resetToken.userId,
-    deptNm: str(detailData?.deptNm) ?? null,
-    authCd: str(detailData?.authCd) ?? null,
-    storeLvl: str(detailData?.storeLvl) ?? null,
-    statCd: str(detailData?.statCd) ?? null,
+    deptNm: detailData?.deptNm ?? null,
+    authCd: detailData?.authCd ?? null,
+    storeLvl: detailData?.storeLvl ?? null,
+    statCd: detailData?.statCd ?? null,
     twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
   };
 

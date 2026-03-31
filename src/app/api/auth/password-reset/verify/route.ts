@@ -28,9 +28,18 @@ export async function POST(request: NextRequest) {
   const { token } = result.data;
 
   // 2. DB에서 토큰 조회
-  const resetToken = await prisma.passwordResetToken.findUnique({
-    where: { token },
-  });
+  let resetToken;
+  try {
+    resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/verify] DB 조회 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 
   // 3. 유효성 검증
   if (!resetToken) {

@@ -72,13 +72,22 @@ export async function POST(request: NextRequest) {
 
   // 2-1. Rate limiting — 동일 사용자 10분 내 3건 제한
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-  const recentCount = await prisma.twoFactorCode.count({
-    where: {
-      userType: userTp,
-      userId,
-      createdAt: { gte: tenMinutesAgo },
-    },
-  });
+  let recentCount: number;
+  try {
+    recentCount = await prisma.twoFactorCode.count({
+      where: {
+        userType: userTp,
+        userId,
+        createdAt: { gte: tenMinutesAgo },
+      },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/two-factor/send] rate limit 조회 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 
   if (recentCount >= 3) {
     return NextResponse.json(
@@ -132,6 +141,13 @@ export async function POST(request: NextRequest) {
       `[POST /api/auth/two-factor/send] 메일 발송 실패`,
       error instanceof Error ? { message: error.message } : error,
     );
+    // 메일 미발송 코드 무효화 (rate limit 소모 방지)
+    await prisma.twoFactorCode.updateMany({
+      where: { userType: userTp, userId, verified: false },
+      data: { verified: true },
+    }).catch((dbError) => {
+      console.error("[POST /api/auth/two-factor/send] 코드 무효화 실패:", dbError);
+    });
     return NextResponse.json(
       { error: "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해 주세요." },
       { status: 500 },

@@ -65,7 +65,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { $ref: "#/components/schemas/LoginUser" },
+                    data: {
+                      allOf: [
+                        { $ref: "#/components/schemas/LoginUser" },
+                        { type: "object", properties: { requireTwoFactor: { type: "boolean", description: "2차 인증 필요 여부" } } },
+                      ],
+                    },
                   },
                 },
               },
@@ -849,7 +854,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           authCd: { type: "string", nullable: true, example: "NORMAL" },
           storeLvl: { type: "string", nullable: true, description: "판매점 레벨 (1=1차, 2=2차)" },
           statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
-          requireTwoFactor: { type: "boolean", description: "2차 인증 필요 여부 (로그인 응답에만 포함)" },
+          twoFactorVerified: { type: "boolean", description: "2FA 검증 상태 (true=완료/불필요, false=미완료)" },
         },
       },
       SignupRequest: {
