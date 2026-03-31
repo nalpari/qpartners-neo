@@ -80,20 +80,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. 비밀번호 변경 링크 메일 발송 (비동기 — 메일 실패해도 성공 응답)
+  // 4. 비밀번호 변경 링크 메일 발송 (await하여 에러 로깅 보장, 이메일 존재 여부 노출 방지를 위해 동일 응답 유지)
   const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
   const resetUrl = `${siteUrl}/password-reset?token=${token}`;
 
-  sendMail({
-    to: email,
-    subject: PASSWORD_RESET_SUBJECT,
-    html: passwordResetMailHtml({ resetUrl }),
-  }).catch((error) => {
+  try {
+    await sendMail({
+      to: email,
+      subject: PASSWORD_RESET_SUBJECT,
+      html: passwordResetMailHtml({ resetUrl }),
+    });
+  } catch (error) {
     console.error(
       `[POST /api/auth/password-reset/request] 메일 발송 실패 — to=${email}`,
       error instanceof Error ? { message: error.message } : error,
     );
-  });
+  }
 
   // 5. 항상 동일 응답 (이메일 존재 여부 노출 방지)
   return NextResponse.json({

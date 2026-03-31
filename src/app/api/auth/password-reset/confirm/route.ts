@@ -97,11 +97,12 @@ export async function POST(request: NextRequest) {
     // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
   }
 
-  // W4: ADMIN/DEALER는 loginId≠email일 수 있으므로 조회 실패 시 에러
+  // ADMIN/DEALER/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
   if (!detailData && resetToken.userType !== "GENERAL") {
     console.error(
       `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
     );
+    await rollbackToken(token);
     return NextResponse.json(
       { error: "사용자 정보를 확인할 수 없습니다" },
       { status: 500 },
@@ -180,6 +181,7 @@ export async function POST(request: NextRequest) {
     authCd: str(detailData?.authCd) ?? null,
     storeLvl: str(detailData?.storeLvl) ?? null,
     statCd: str(detailData?.statCd) ?? null,
+    twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
   };
 
   let jwtToken: string;

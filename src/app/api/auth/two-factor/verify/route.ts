@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { twoFactorVerifySchema } from "@/lib/schemas/two-factor";
 import { verifyToken, signToken, COOKIE_NAME } from "@/lib/jwt";
+import { timingSafeEqual } from "crypto";
+
 import { QSP_API } from "@/lib/config";
 import { hashOtp } from "@/lib/auth-utils";
 
@@ -91,8 +93,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 코드 일치 확인 (HMAC-SHA256 해시 비교) + brute-force 방어
-  if (record.code !== hashOtp(code)) {
+  // 5. 코드 일치 확인 (HMAC-SHA256 해시 비교, constant-time) + brute-force 방어
+  const expected = Buffer.from(record.code, "hex");
+  const actual = Buffer.from(hashOtp(code), "hex");
+  if (!timingSafeEqual(expected, actual)) {
     // 시도 횟수 원자적 증가 후 DB에서 최신 값 재조회하여 판단 (동시성 안전)
     const updated = await prisma.twoFactorCode.update({
       where: { id: record.id },

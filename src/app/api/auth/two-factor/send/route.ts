@@ -120,17 +120,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. 메일 발송 (비동기 — 메일 실패해도 성공 응답)
-  sendMail({
-    to: user.email,
-    subject: TWO_FACTOR_SUBJECT,
-    html: twoFactorMailHtml({ code }),
-  }).catch((error) => {
+  // 4. 메일 발송
+  try {
+    await sendMail({
+      to: user.email,
+      subject: TWO_FACTOR_SUBJECT,
+      html: twoFactorMailHtml({ code }),
+    });
+  } catch (error) {
     console.error(
-      `[POST /api/auth/two-factor/send] 메일 발송 실패 — to=${user.email}`,
+      `[POST /api/auth/two-factor/send] 메일 발송 실패`,
       error instanceof Error ? { message: error.message } : error,
     );
-  });
+    return NextResponse.json(
+      { error: "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({
     data: {

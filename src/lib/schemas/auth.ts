@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-// ─── QSP 로그인 요청 ───
+import { userTpValues } from "@/lib/schemas/common";
 
-const userTpValues = ["ADMIN", "DEALER", "SEKO", "GENERAL"] as const;
+// ─── QSP 로그인 요청 ───
 
 export const loginRequestSchema = z.object({
   loginId: z.string().min(1, "로그인 ID는 필수입니다"),
@@ -65,7 +65,7 @@ export const loginUserSchema = qspLoginUserSchema
     statCd: true,
   })
   .extend({
-    twoFactorVerified: z.boolean().optional(),
+    twoFactorVerified: z.boolean(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

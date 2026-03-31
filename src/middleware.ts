@@ -57,8 +57,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2차 인증 미완료 상태: 제한된 경로만 허용
-  // === false: 2FA 미완료 (로그인 시 twoFactorVerified=false로 설정됨)
-  // undefined: 2FA 불필요 (2FA 대상이 아닌 사용자)
+  // false: 2FA 필요하나 미완료 / true: 2FA 검증 완료 또는 2FA 불필요 (fail-closed 설계)
   if (user.twoFactorVerified === false && !isTwoFactorPath(pathname)) {
     return NextResponse.json(
       { error: "2차 인증이 필요합니다" },
