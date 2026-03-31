@@ -3,13 +3,17 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { usePopupStore } from "@/lib/store";
 import { Button } from "@/components/common";
+import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 
 const CLOSE_ANIMATION_MS = 200;
 
 export function TwoFactorAuthPopup() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { closePopup } = usePopupStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -60,9 +64,18 @@ export function TwoFactorAuthPopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleCancel = () => {
-    handleClose();
-    router.push("/login");
+  const handleCancel = async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // 네트워크 오류 시에도 로컬 상태 정리
+    } finally {
+      localStorage.removeItem(AUTH_FLAG_KEY);
+      dispatchAuthChange();
+      queryClient.clear();
+      handleClose();
+      router.replace("/login");
+    }
   };
 
   const handleResend = () => {
@@ -177,7 +190,7 @@ export function TwoFactorAuthPopup() {
 
             {/* 하단 버튼 */}
             <div className="popup-buttons--inline">
-              <Button variant="secondary" onClick={handleCancel}>
+              <Button variant="secondary" onClick={() => { void handleCancel(); }}>
                 キャンセル
               </Button>
               <Button
