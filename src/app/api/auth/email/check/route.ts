@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(10_000),
     });
   } catch (error) {
-    console.error("[GET /api/auth/email/check] QSP API 호출 실패:", error);
+    console.error("[POST /api/auth/email/check] QSP API 호출 실패:", error);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
   // I6: QSP HTTP 비정상 응답 처리
   if (!qspResponse.ok) {
-    console.error("[GET /api/auth/email/check] QSP 비정상 응답:", qspResponse.status);
+    console.error("[POST /api/auth/email/check] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
       { error: "외부 서버 오류가 발생했습니다" },
       { status: 502 },
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
   try {
     qspBody = await qspResponse.json();
   } catch (error) {
-    console.warn("[GET /api/auth/email/check] QSP 응답 JSON 파싱 실패:", error);
+    console.warn("[POST /api/auth/email/check] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
       { error: "외부 서버 응답을 처리할 수 없습니다" },
       { status: 502 },
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[GET /api/auth/email/check] QSP 응답 스키마 불일치:", parsed.error);
+    console.error("[POST /api/auth/email/check] QSP 응답 스키마 불일치:", parsed.error);
     return NextResponse.json(
       { error: "외부 서버 응답 형식이 올바르지 않습니다" },
       { status: 502 },
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
   // 4. 존재 여부 판별
   if (qsp.result.resultCode !== "S") {
     // QSP 비즈니스 에러 → 502 처리 (silent "available" 방지)
-    console.error("[GET /api/auth/email/check] QSP 비즈니스 에러:", qsp.result);
+    console.error("[POST /api/auth/email/check] QSP 비즈니스 에러:", qsp.result);
     return NextResponse.json(
       { error: "이메일 확인 중 오류가 발생했습니다" },
       { status: 502 },
