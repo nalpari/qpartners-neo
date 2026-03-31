@@ -12,7 +12,7 @@ import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
-    const res = await api.get("/auth/me");
+    const res = await api.get("/auth/login-user-info");
     const parsed = loginUserSchema.safeParse(res.data?.data);
     return parsed.success ? parsed.data : null;
   } catch {
@@ -72,7 +72,7 @@ export function Gnb() {
   );
 
   const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "me"],
+    queryKey: ["auth", "login-user-info"],
     queryFn: fetchAuthMe,
     staleTime: 5 * 60 * 1000,
     retry: false,

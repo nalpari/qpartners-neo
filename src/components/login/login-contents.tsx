@@ -50,7 +50,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       localStorage.setItem(SAVED_TAB_KEY, activeTab);
       localStorage.setItem(AUTH_FLAG_KEY, "1");
       window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
-      queryClient.setQueryData(["auth", "me"], userData);
+      queryClient.setQueryData(["auth", "login-user-info"], userData);
       router.replace("/");
     },
     onError: (err) => {
