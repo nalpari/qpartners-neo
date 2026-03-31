@@ -12,7 +12,7 @@ import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
 
 const TAB_TO_USERTP: Record<TabType, string> = {
@@ -66,16 +66,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       if (err instanceof AxiosError && err.response) {
         const status = err.response.status;
         if (status === 401) {
-          setError("IDとパスワードが正しくありません！");
+          setError(LOGIN_ERRORS.INVALID_CREDENTIALS);
         } else if (status === 502) {
-          setError("サーバーに接続できません。しばらくしてからお試しください");
+          setError(LOGIN_ERRORS.SERVER_UNAVAILABLE);
         } else if (status === 400) {
-          setError("入力内容を確認してください");
+          setError(LOGIN_ERRORS.BAD_REQUEST);
         } else {
-          setError("ログインに失敗しました");
+          setError(LOGIN_ERRORS.GENERIC);
         }
       } else {
-        setError("サーバーに接続できません。しばらくしてからお試しください");
+        setError(LOGIN_ERRORS.SERVER_UNAVAILABLE);
       }
     },
   });

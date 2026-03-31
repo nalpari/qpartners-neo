@@ -67,8 +67,8 @@ export function TwoFactorAuthPopup() {
   const handleCancel = async () => {
     try {
       await api.post("/auth/logout");
-    } catch {
-      // 네트워크 오류 시에도 로컬 상태 정리
+    } catch (error) {
+      console.warn("[2fa-cancel] ログアウトAPI失敗:", error);
     } finally {
       localStorage.removeItem(AUTH_FLAG_KEY);
       dispatchAuthChange();

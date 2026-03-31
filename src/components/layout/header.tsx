@@ -33,7 +33,8 @@ const ALL_RELATED_SITES = [
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
 type SiteAccessKey = "ADMIN" | "DEALER_1" | "DEALER_2";
-const SITE_ACCESS_MAP: Record<SiteAccessKey, string[]> = {
+type SiteValue = (typeof ALL_RELATED_SITES)[number]["value"];
+const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
   ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
   DEALER_1: ["qorder", "qwarranty", "hanasys"],
   DEALER_2: ["qmusubi", "qwarranty", "hanasys"],
@@ -301,19 +302,21 @@ export function Gnb() {
                     </span>
                   </button>
                   {/* 톱니바퀴 (管理者) — 관리자만 노출 */}
-                  {isAdmin && <Link
-                    href="/admin/members"
-                    transitionTypes={["fade"]}
-                    className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                    aria-label="管理者設定"
-                  >
-                    <Image
-                      src="/asset/images/layout/icon_admin.svg"
-                      alt=""
-                      width={21}
-                      height={22}
-                    />
-                  </Link>}
+                  {isAdmin && (
+                    <Link
+                      href="/admin/members"
+                      transitionTypes={["fade"]}
+                      className="flex items-center justify-center size-[36px] bg-[#252525] border border-[#313131] rounded-[4px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
+                      aria-label="管理者設定"
+                    >
+                      <Image
+                        src="/asset/images/layout/icon_admin.svg"
+                        alt=""
+                        width={21}
+                        height={22}
+                      />
+                    </Link>
+                  )}
                 </div>
               </>
             ) : (
@@ -500,7 +503,8 @@ export function Gnb() {
             </Link>
 
             {/* 関連サイト — 토글 (회원유형별 노출) */}
-            {showRelatedSites && <div className="border-b border-[#1a1a1a]">
+            {showRelatedSites && (
+              <div className="border-b border-[#1a1a1a]">
               <button
                 type="button"
                 className="flex items-center justify-between w-full px-3 py-[18px]"
@@ -549,7 +553,8 @@ export function Gnb() {
                   ))}
                 </ul>
               </div>
-            </div>}
+            </div>
+            )}
           </nav>
 
           {/* 하단 바 */}
