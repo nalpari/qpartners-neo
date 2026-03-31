@@ -32,10 +32,17 @@ export async function GET(request: NextRequest, { params }: Params) {
     const user = getUserFromHeaders(request.headers);
     const content = await prisma.content.findUnique({
       where: { id: parsedId.data },
-      include: { targets: { select: { targetType: true, startAt: true, endAt: true } } },
+      select: {
+        status: true,
+        targets: { select: { targetType: true, startAt: true, endAt: true } },
+      },
     });
 
-    if (!content || !canAccessContent(user, content.targets)) {
+    if (!content || content.status === "deleted") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!canAccessContent(user, content.targets)) {
       return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
     }
 

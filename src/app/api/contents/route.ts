@@ -40,9 +40,8 @@ export async function GET(request: NextRequest) {
 
     const internal = user ? isInternalUser(user.role) : false;
 
-    // 비회원/일반회원은 published만
-    const effectiveStatus =
-      !internal && status !== "published" ? "published" : status;
+    // 비사내 사용자는 published만 조회 가능
+    const effectiveStatus = internal ? status : "published";
 
     const where: Prisma.ContentWhereInput = {
       status: effectiveStatus as "draft" | "published" | "deleted",

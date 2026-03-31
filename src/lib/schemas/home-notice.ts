@@ -19,7 +19,15 @@ export const createHomeNoticeSchema = z
     startAt: z.coerce.date(),
     endAt: z.coerce.date(),
     content: z.string().min(1, "content는 필수입니다"),
-    url: z.string().url().max(500).nullable().default(null),
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
+        message: "HTTP(S) URL만 허용됩니다",
+      })
+      .nullable()
+      .default(null),
   })
   .refine(
     (data) =>
@@ -43,7 +51,15 @@ export const updateHomeNoticeSchema = z
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
     content: z.string().min(1, "content는 필수입니다").optional(),
-    url: z.string().url().max(500).nullable().optional(),
+    url: z
+      .string()
+      .url()
+      .max(500)
+      .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
+        message: "HTTP(S) URL만 허용됩니다",
+      })
+      .nullable()
+      .optional(),
   })
   .refine(
     (data) => {

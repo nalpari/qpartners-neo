@@ -140,30 +140,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 활성(scheduled + active) 공지 5개 초과 체크
-    const now = new Date();
-    const activeCount = await prisma.homeNotice.count({
-      where: { endAt: { gte: now } },
+    // 활성(scheduled + active) 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
+    const notice = await prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const activeCount = await tx.homeNotice.count({
+        where: { endAt: { gte: now } },
+      });
+
+      if (activeCount >= 5) {
+        throw new Error("LIMIT_EXCEEDED");
+      }
+
+      return tx.homeNotice.create({
+        data: {
+          ...result.data,
+          userType: auth.user.userType,
+          userId: auth.user.userId,
+          createdBy: auth.user.userId,
+        },
+      });
     });
 
-    if (activeCount >= 5) {
+    return NextResponse.json({ data: notice }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
       return NextResponse.json(
         { error: "활성(예정 포함) 공지가 5개를 초과할 수 없습니다" },
         { status: 400 },
       );
     }
-
-    const notice = await prisma.homeNotice.create({
-      data: {
-        ...result.data,
-        userType: auth.user.userType,
-        userId: auth.user.userId,
-        createdBy: auth.user.userId,
-      },
-    });
-
-    return NextResponse.json({ data: notice }, { status: 201 });
-  } catch (error) {
     console.error("[POST /api/home-notices]", error);
     return NextResponse.json(
       { error: "Failed to create home notice" },

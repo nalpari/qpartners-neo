@@ -4,7 +4,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 
-import { requireAdmin } from "@/lib/auth";
+import { canModifyContent, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -23,14 +23,21 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 콘텐츠 존재 확인
+    // 콘텐츠 존재 + 수정 권한 확인
     const content = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { id: true },
+      select: { id: true, status: true, userId: true, authorDepartment: true },
     });
 
-    if (!content) {
+    if (!content || content.status === "deleted") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!canModifyContent(user, content)) {
+      return NextResponse.json(
+        { error: "파일 업로드 권한이 없습니다" },
+        { status: 403 },
+      );
     }
 
     const formData = await request.formData();

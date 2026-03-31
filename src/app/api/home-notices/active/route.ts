@@ -10,12 +10,17 @@ export async function GET(request: NextRequest) {
 
     // 사용자 역할 확인 (비회원이면 general만)
     const userType = request.headers.get("X-User-Type");
+    const userRole = request.headers.get("X-User-Role");
 
     // 역할별 target 필터 조건
     const targetFilter = (() => {
       switch (userType) {
         case "ADMIN":
-          return [{ targetSuperAdmin: true }, { targetAdmin: true }];
+          // super_admin은 양쪽 모두, admin은 targetAdmin만
+          if (userRole === "super_admin") {
+            return [{ targetSuperAdmin: true }, { targetAdmin: true }];
+          }
+          return [{ targetAdmin: true }];
         case "DEALER":
           return [{ targetFirstDealer: true }, { targetSecondDealer: true }];
         case "SEKO":
