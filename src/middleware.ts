@@ -7,7 +7,7 @@ import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
-  "/api/auth/login-user-info",
+  "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
   "/api/auth/signup",
   "/api/auth/email/check",
   "/api/openapi",
