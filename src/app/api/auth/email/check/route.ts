@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2. QSP /user/detail GET 호출 (이메일로 유저 존재 여부 확인)
+  // 2. QSP /user/detail GET 호출 (서버→QSP는 GET 유지)
   const params = new URLSearchParams({
     accsSiteCd: "QPARTNERS",
     email,
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
   try {
     qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
       method: "GET",
-      // M4: 10초 타임아웃
       signal: AbortSignal.timeout(10_000),
     });
   } catch (error) {
@@ -60,7 +59,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // I6: QSP HTTP 비정상 응답 처리
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/email/check] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
