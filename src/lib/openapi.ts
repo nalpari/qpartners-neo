@@ -29,6 +29,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 
   tags: [
     { name: "Auth", description: "인증 (로그인/로그아웃/사용자 정보)" },
+    { name: "TwoFactor", description: "2차 인증 (이메일 인증번호)" },
     { name: "CodeHeader", description: "공통코드 헤더 관리" },
     { name: "CodeDetail", description: "공통코드 상세 관리" },
     { name: "Category", description: "카테고리 관리 (2Depth 트리)" },
@@ -69,7 +70,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { $ref: "#/components/schemas/LoginUser" },
+                    data: {
+                      allOf: [
+                        { $ref: "#/components/schemas/LoginUser" },
+                        { type: "object", properties: { requireTwoFactor: { type: "boolean", description: "2차 인증 필요 여부" } } },
+                      ],
+                    },
                   },
                 },
               },
@@ -185,20 +191,154 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/auth/password-reset/request": {
+      post: {
+        tags: ["Auth"],
+        summary: "비밀번호 초기화 요청 (메일 발송)",
+        description: "이메일로 비밀번호 변경 링크를 발송. 이메일 존재 여부와 관계없이 동일한 응답을 반환 (보안).",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PasswordResetRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "요청 접수 (이메일 발송)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation failed",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
+          "500": errorResponse("서버 오류"),
+        },
+      },
+    },
+    "/auth/password-reset/verify": {
+      post: {
+        tags: ["Auth"],
+        summary: "비밀번호 초기화 토큰 검증",
+        description: "메일 링크의 토큰이 유효한지 확인. 만료(1시간) 또는 사용 완료된 토큰은 거부.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PasswordResetVerify" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "토큰 유효",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        valid: { type: "boolean", example: true },
+                        userType: { type: "string", example: "GENERAL" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("유효하지 않거나 만료된 링크입니다."),
+        },
+      },
+    },
+    "/auth/password-reset/confirm": {
+      post: {
+        tags: ["Auth"],
+        summary: "비밀번호 변경 확정 + 자동 로그인",
+        description: "토큰 검증 후 QSP 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PasswordResetConfirm" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 성공 + 자동 로그인",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "저장되었습니다." },
+                        user: { $ref: "#/components/schemas/LoginUser" },
+                        requireTwoFactor: { type: "boolean", example: false, description: "비밀번호 초기화 후 로그인은 2차 인증 불필요" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation failed 또는 토큰 만료/사용완료",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
+          "500": errorResponse("비밀번호 변경 실패"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+
     "/auth/email/check": {
-      get: {
+      post: {
         tags: ["Auth"],
         summary: "이메일 중복 체크",
-        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인.",
-        parameters: [
-          {
-            name: "email",
-            in: "query",
-            required: true,
-            description: "중복 확인할 이메일 주소",
-            schema: { type: "string", format: "email", example: "user@example.com" },
+        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인. PII 보호를 위해 POST 사용.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: { type: "string", format: "email", example: "user@example.com" },
+                },
+              },
+            },
           },
-        ],
+        },
         responses: {
           "200": {
             description: "사용 가능",
@@ -226,6 +366,83 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    // ─── TwoFactor ───
+    "/auth/two-factor/send": {
+      post: {
+        tags: ["TwoFactor"],
+        summary: "2차 인증번호 발송",
+        description: "로그인 후 2차 인증이 필요한 경우 이메일로 6자리 인증번호 발송. JWT 쿠키 필요.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/TwoFactorSendRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "발송 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "인증번호가 발송되었습니다." },
+                        expiresIn: { type: "integer", example: 600, description: "만료시간 (초)" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("이메일 정보가 없어 인증번호를 발송할 수 없습니다"),
+          "401": errorResponse("인증이 필요합니다"),
+          "500": errorResponse("서버 오류"),
+        },
+      },
+    },
+    "/auth/two-factor/verify": {
+      post: {
+        tags: ["TwoFactor"],
+        summary: "2차 인증번호 검증",
+        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + QSP 2차인증 일시 갱신.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/TwoFactorVerifyRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "검증 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        verified: { type: "boolean", example: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증번호가 일치하지 않습니다 / 입력시간 초과"),
+          "500": errorResponse("서버 오류"),
+        },
+      },
+    },
     // ─── CodeHeader ───
     "/codes": {
       get: {
@@ -1224,6 +1441,33 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
         required: ["error", "fields"],
       },
+      TwoFactorSendRequest: {
+        type: "object",
+        required: ["userTp", "userId"],
+        properties: {
+          userTp: {
+            type: "string",
+            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            example: "GENERAL",
+            description: "사용자 유형",
+          },
+          userId: { type: "string", example: "test1", description: "로그인 ID" },
+        },
+      },
+      TwoFactorVerifyRequest: {
+        type: "object",
+        required: ["userTp", "userId", "code"],
+        properties: {
+          userTp: {
+            type: "string",
+            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            example: "GENERAL",
+            description: "사용자 유형",
+          },
+          userId: { type: "string", example: "test1", description: "로그인 ID" },
+          code: { type: "string", minLength: 6, maxLength: 6, example: "123456", description: "6자리 인증번호" },
+        },
+      },
       LoginRequest: {
         type: "object",
         required: ["loginId", "pwd"],
@@ -1251,6 +1495,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           authCd: { type: "string", nullable: true, example: "NORMAL" },
           storeLvl: { type: "string", nullable: true, description: "판매점 레벨 (1=1차, 2=2차)" },
           statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
+          twoFactorVerified: { type: "boolean", description: "2FA 검증 상태 (true=완료/불필요, false=미완료)" },
         },
       },
       SignupRequest: {
@@ -1279,6 +1524,37 @@ export const openApiSpec: OpenAPIV3.Document = {
           deptNm: { type: "string", maxLength: 50, example: "営業部", description: "부서명 (선택)" },
           pstnNm: { type: "string", maxLength: 50, example: "課長", description: "직책 (선택)" },
           newsRcptYn: { type: "string", enum: ["Y", "N"], example: "Y", description: "뉴스레터 수신 여부" },
+        },
+      },
+      PasswordResetRequest: {
+        type: "object",
+        required: ["userTp", "email"],
+        properties: {
+          userTp: {
+            type: "string",
+            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            example: "GENERAL",
+            description: "사용자 유형",
+          },
+          loginId: { type: "string", description: "로그인 ID (선택)" },
+          email: { type: "string", format: "email", example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
+          sekoId: { type: "string", description: "시공점 ID (선택)" },
+        },
+      },
+      PasswordResetVerify: {
+        type: "object",
+        required: ["token"],
+        properties: {
+          token: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000", description: "메일로 발송된 초기화 토큰 (UUID)" },
+        },
+      },
+      PasswordResetConfirm: {
+        type: "object",
+        required: ["token", "newPassword", "confirmPassword"],
+        properties: {
+          token: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000", description: "초기화 토큰" },
+          newPassword: { type: "string", minLength: 8, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
+          confirmPassword: { type: "string", example: "1q2w3e4R!", description: "새 비밀번호 확인" },
         },
       },
       CodeHeader: {

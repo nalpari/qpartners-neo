@@ -25,7 +25,6 @@ export async function POST(request: NextRequest) {
 
   const result = loginRequestSchema.safeParse(body);
   if (!result.success) {
-    // M1: Zod 내부 구조 노출 방지 — 필드명+메시지만 반환
     const fields = result.error.issues.map((i) => ({
       field: i.path.join("."),
       message: i.message,
@@ -44,14 +43,13 @@ export async function POST(request: NextRequest) {
     qspResponse = await fetch(QSP_API.login, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // M4: 10초 타임아웃
       signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
         loginId,
         pwd,
         userTp,
         accsSiteCd: "QPARTNERS",
-        // I5: QSP API 규격상 로그인 요청 시 actLog="LOGOUT" 전송 (QSP 인터페이스 사양서 참조)
+        // QSP API 규격상 로그인 요청 시 actLog="LOGOUT" 전송 (QSP 인터페이스 사양서 참조)
         actLog: "LOGOUT",
         requestId: crypto.randomUUID(),
       }),
@@ -64,7 +62,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // I6: QSP HTTP 비정상 응답 처리
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/login] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
@@ -104,7 +101,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 클라이언트에 전달할 사용자 정보 추출
+  // 5. 2차 인증 필요 여부 판별
+  //    - secAuthYn === "Y" + 비밀번호 초기화 후 로그인이 아닌 경우 → 필요
+  //    - pwdInitYn === "Y" (비밀번호 초기화 직후) → 불필요 (p.14 스펙)
+  const requireTwoFactor =
+    qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y";
+
+  // 6. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
     userId: qsp.data.userId,
     userNm: qsp.data.userNm,
@@ -116,9 +119,10 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
+    twoFactorVerified: !requireTwoFactor,
   };
 
-  // C2: JWT 생성 실패 처리
   let token: string;
   try {
     token = await signToken(user);
@@ -130,8 +134,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 6. httpOnly 쿠키 설정
-  const response = NextResponse.json({ data: user });
+  // 7. httpOnly 쿠키 설정
+  const response = NextResponse.json({
+    data: { ...user, requireTwoFactor },
+  });
 
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,

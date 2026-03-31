@@ -28,6 +28,10 @@ export const QSP_API = {
   signup: `${QSP_BASE_URL}/api/qpartners/user/newUserReq`,
   /** QSP 유저정보 조회 (이메일 중복체크 + 비밀번호 초기화 회원조회 공용) */
   userDetail: `${QSP_BASE_URL}/api/qpartners/user/detail`,
+  /** QSP 비밀번호 변경/초기화 (chgType: C=변경, I=초기화) */
+  passwordChange: `${QSP_BASE_URL}/api/qpartners/user/userPwdChg`,
+  /** QSP 2차인증 일시 갱신 */
+  updateSecAuthDt: `${QSP_BASE_URL}/api/qpartners/user/updateSecAuthDt`,
 } as const;
 
 // ─── SMTP ───
