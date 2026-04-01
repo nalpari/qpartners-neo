@@ -53,12 +53,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       return res.data.data;
     },
     onSuccess: (userData, variables) => {
-      if (saveId) {
-        localStorage.setItem(SAVED_ID_KEY, variables.loginId);
-      } else {
-        localStorage.removeItem(SAVED_ID_KEY);
+      try {
+        if (saveId) {
+          localStorage.setItem(SAVED_ID_KEY, variables.loginId);
+        } else {
+          localStorage.removeItem(SAVED_ID_KEY);
+        }
+        localStorage.setItem(SAVED_TAB_KEY, activeTab);
+      } catch (storageErr) {
+        console.error("[LoginContents] localStorage 쓰기 실패:", storageErr);
       }
-      localStorage.setItem(SAVED_TAB_KEY, activeTab);
 
       if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
