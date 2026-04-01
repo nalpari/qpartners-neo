@@ -53,8 +53,8 @@ export const openApiSpec: OpenAPIV3.Document = {
 | 유형 | ID | PW | userTp |
 |------|-----|------|--------|
 | 관리자 | 1301011 | 1234 | ADMIN |
-| 1차 판매점 | T01 | 1234 | DEALER |
-| 2차 판매점 | 201T01 | 1234 | DEALER |
+| 1차 판매점 | T01 | 1234 | STORE |
+| 2차 판매점 | 201T01 | 1234 | STORE |
 | 일반 | test1 | 1234 | GENERAL |`,
         requestBody: {
           required: true,
@@ -1760,7 +1760,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             example: "GENERAL",
             description: "사용자 유형",
           },
-          loginId: { type: "string", description: "로그인 ID (DEALER 필수, 그 외 선택)" },
+          loginId: { type: "string", description: "로그인 ID (STORE 필수, 그 외 선택)" },
           email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
           sekoId: { type: "string", description: "시공점 ID (SEKO 필수 예정, 현재 선택)" },
         },

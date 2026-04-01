@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
   }
 
-  // ADMIN/DEALER/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
+  // ADMIN/STORE/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
   if (!detailData && resetToken.userType !== "GENERAL") {
     console.error(
       `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
