@@ -44,7 +44,7 @@ erDiagram
     qp_code_headers {
         int id PK
         varchar header_code UK
-        varchar header_id
+        varchar header_alias
         varchar header_name
         varchar rel_code1
         varchar rel_code2
@@ -104,6 +104,8 @@ erDiagram
         datetime end_at
         datetime created_at
         varchar created_by
+        datetime updated_at
+        varchar updated_by
     }
 
     qp_categories {
@@ -123,6 +125,8 @@ erDiagram
     qp_content_categories {
         int content_id PK_FK
         int category_id PK_FK
+        datetime created_at
+        varchar created_by
     }
 
     qp_content_attachments {
@@ -135,6 +139,8 @@ erDiagram
         int sort_order
         datetime created_at
         varchar created_by
+        datetime updated_at
+        varchar updated_by
     }
 
     %% ━━━ 인증 관련 ━━━
@@ -146,6 +152,7 @@ erDiagram
         datetime expires_at
         boolean used
         datetime created_at
+        varchar created_by
     }
 
     qp_two_factor_codes {
@@ -155,7 +162,9 @@ erDiagram
         varchar code
         datetime expires_at
         boolean verified
+        datetime verified_at
         datetime created_at
+        varchar created_by
     }
 
     %% ━━━ 서비스 운영 ━━━
@@ -201,15 +210,6 @@ erDiagram
         varchar updated_by
     }
 
-    qp_mass_mail_recipients {
-        int id PK
-        int mass_mail_id FK
-        enum recipient_type
-        enum user_type
-        varchar user_id
-        varchar email
-    }
-
     qp_mass_mail_attachments {
         int id PK
         int mass_mail_id FK
@@ -218,6 +218,8 @@ erDiagram
         bigint file_size
         datetime created_at
         varchar created_by
+        datetime updated_at
+        varchar updated_by
     }
 
     qp_download_logs {
@@ -241,6 +243,7 @@ erDiagram
         varchar title
         text content
         datetime created_at
+        varchar created_by
     }
 
     %% ━━━ 관계 ━━━
@@ -255,5 +258,4 @@ erDiagram
     qp_content_attachments ||--o{ qp_download_logs : "has"
     qp_categories ||--o{ qp_content_categories : "has"
     qp_categories ||--o{ qp_categories : "parent"
-    qp_mass_mails ||--o{ qp_mass_mail_recipients : "has"
     qp_mass_mails ||--o{ qp_mass_mail_attachments : "has"

@@ -61,7 +61,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | last_name_kana | VARCHAR(100) | 성 히라가나 (필수) | 회원가입 > 회원정보 (p.16) |
 | first_name_kana | VARCHAR(100) | 이름 히라가나 (필수) | 회원가입 > 회원정보 (p.16) |
 | email | VARCHAR(255) | 이메일 = 로그인 ID (필수, 유니크) | 회원가입 > 이메일(ID), 중복체크 필수 (p.16) |
-| password_hash | VARCHAR(255) | 비밀번호 해시 (bcrypt) | 회원가입 > 비밀번호, 영문/숫자/기호 2종 조합 8자 이상 (p.16) |
+| password_hash | VARCHAR(255) | 비밀번호 해시 (bcrypt) | 회원가입 > 비밀번호, 영문대문자+소문자+숫자 조합 8자 이상 (p.16) |
 | department | VARCHAR(100) | 부서명 (선택) | 회원가입 > 부서명 (p.16), 시공점은 미노출 (260324 변경) |
 | job_title | VARCHAR(100) | 직책 (선택) | 회원가입 > 직책 (p.16), 시공점은 미노출 (260324 변경) |
 | created_at | DATETIME | 등록일시 | - |
@@ -399,25 +399,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 
 ---
 
-### 15. qp_mass_mail_recipients (대량메일 CC/BCC 수신자)
-
-| 항목 | 내용 |
-|------|------|
-| **테이블이 필요한 이유** | 대량메일의 참조(CC)/숨은참조(BCC) 수신자를 별도 관리. 한화 사내직원만 참조/승인조로 추가 가능. 메인 수신자는 target_* 체크박스로 결정되므로 이 테이블에는 CC/BCC만 저장 |
-| **화면 근거** | 대량메일발송 > CC/BCC 수신자 (p.49-50) |
-| **비즈니스 규칙** | 참조/BCC는 전체 1번만 발송, 수신자에게는 해당 수신자 본인 정보만 표시 |
-
-| 컬럼 | 타입 | 설명 | 근거 |
-|------|------|------|------|
-| id | INT PK | 자동증가 PK | - |
-| mass_mail_id | INT FK | 대량메일 ID → qp_mass_mails.id | 어떤 메일의 수신자인지 |
-| recipient_type | ENUM('cc','bcc') | 수신 유형 | cc=참조, bcc=숨은참조 (p.49-50) |
-| user_type | ENUM(UserType) | 수신자 사용자 유형 | 한화 사내직원만 추가 가능 |
-| user_id | VARCHAR(255) | 수신자 식별자 | 유형별 사용자 ID |
-| email | VARCHAR(255) | 수신자 이메일 | 실제 발송에 사용할 이메일 주소 |
-
-**FK**: mass_mail_id → qp_mass_mails.id (CASCADE DELETE)
-**UK**: `(mass_mail_id, recipient_type, email)` — 동일 메일+수신유형+이메일 조합은 하나만 존재
+> ~~### 15. qp_mass_mail_recipients~~ — **삭제됨** (2026-03-26 CC/BCC 기능 삭제 협의)
 
 ---
 
@@ -556,7 +538,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | ContentStatus | draft, published, deleted | 콘텐츠 상태 | contents |
 | TargetType | first_dealer, second_dealer, constructor, general, non_member | 게시대상 유형 | content_targets |
 | MailStatus | draft, sent | 메일 상태 | mass_mails |
-| RecipientType | cc, bcc | 수신 유형 | mass_mail_recipients |
+| ~~RecipientType~~ | ~~cc, bcc~~ | ~~수신 유형~~ | ~~삭제됨 (2026-03-26)~~ |
 
 ---
 
@@ -578,7 +560,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 12 | 인증 | TwoFactorCode | qp_two_factor_codes | p.14-15 | 2차인증 6자리 코드 |
 | 13 | 관리 | HomeNotice | qp_home_notices | p.51-52 | 홈화면 공지 (권한별/기간별) |
 | 14 | 관리 | MassMail | qp_mass_mails | p.48-50 | 대량메일 발송 |
-| 15 | 관리 | MassMailRecipient | qp_mass_mail_recipients | p.49-50 | 대량메일 CC/BCC 수신자 |
+| ~~15~~ | ~~관리~~ | ~~MassMailRecipient~~ | ~~qp_mass_mail_recipients~~ | ~~p.49-50~~ | ~~삭제됨 (2026-03-26 CC/BCC 삭제 협의)~~ |
 | 16 | 관리 | MassMailAttachment | qp_mass_mail_attachments | p.49 | 대량메일 첨부파일 |
 | 17 | 관리 | DownloadLog | qp_download_logs | p.42 | 사용자별 다운로드 이력 |
 | 18 | 관리 | Inquiry | qp_inquiries | p.43-44 | 문의등록 (비로그인도 가능) |

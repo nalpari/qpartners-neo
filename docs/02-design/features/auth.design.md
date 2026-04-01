@@ -264,13 +264,18 @@ interface AuthState {
 ```
 src/app/api/auth/
 ├── login/
-│   └── route.ts              # POST — QSP 로그인 프록시
-└── logout/
-    └── route.ts              # POST — 로그아웃
+│   └── route.ts              # POST — QSP 로그인 프록시 + JWT 쿠키 설정
+├── logout/
+│   └── route.ts              # POST — 로그아웃 (쿠키 삭제)
+└── me/
+    └── route.ts              # GET — 현재 로그인 사용자 정보
 src/lib/
 ├── schemas/
-│   └── auth.ts               # 로그인 Zod 스키마
+│   └── auth.ts               # 로그인 Zod 스키마 + QSP 응답 스키마
+├── jwt.ts                    # JWT 토큰 발행/검증 (jose)
 └── auth-store.ts             # 인증 상태 Zustand 스토어
+src/
+└── middleware.ts              # API 인증 보호 미들웨어
 ```
 
 ---
@@ -292,7 +297,7 @@ src/lib/
 
 - QSP API URL은 서버사이드에서만 사용 (클라이언트 노출 차단)
 - 비밀번호는 서버 메모리에 보관하지 않음 (QSP로 전달만)
-- 향후 httpOnly 쿠키 기반 세션 관리 고려
+- httpOnly 쿠키 기반 JWT 세션 관리 구현 완료 (secure, sameSite=lax, 8시간 만료)
 - CORS: Next.js API Route이므로 same-origin, 별도 CORS 설정 불필요
 
 ---
@@ -303,3 +308,4 @@ src/lib/
 |---------|------|---------|--------|
 | 0.1 | 2026-03-25 | Initial draft | CK |
 | 0.2 | 2026-03-25 | QSP 실제 응답 구조 반영 (4개 계정 테스트 완료) | CK |
+| 0.3 | 2026-03-25 | 구현 완료 반영 — JWT/미들웨어/me 엔드포인트 추가, 파일 구조 업데이트 | CK |
