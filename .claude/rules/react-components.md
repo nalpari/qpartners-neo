@@ -25,3 +25,4 @@ globs:
 - `"use client"` 경계를 최대한 아래(leaf)로 내려서 서버 컴포넌트 영역 유지
 - 페이지/레이아웃: `export default function` 사용
 - 재사용 컴포넌트: named export 사용
+- docs/ref/frontend-guide.md 문서가 존재하면 항상 참조한다.
