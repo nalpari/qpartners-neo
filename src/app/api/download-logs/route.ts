@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       prisma.downloadLog.findMany({
         where,
         include: {
-          content: { select: { title: true, status: true, targets: { select: { endAt: true } } } },
+          content: { select: { title: true, status: true, targets: { select: { startAt: true, endAt: true } } } },
           attachment: { select: { fileName: true } },
         },
         orderBy: { downloadedAt: "desc" },
@@ -56,10 +56,14 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
     const data = logs.map((log) => {
+      const targets = log.content.targets;
       const isExpired =
-        log.content.status === "deleted" ||
-        log.content.targets.every(
-          (t) => t.endAt !== null && t.endAt < now,
+        log.content.status !== "published" ||
+        targets.length === 0 ||
+        targets.every(
+          (t) =>
+            (t.endAt !== null && t.endAt < now) ||
+            (t.startAt !== null && t.startAt > now),
         );
 
       return {

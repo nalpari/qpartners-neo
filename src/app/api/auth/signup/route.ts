@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
         authCd: "NORMAL",
       }),
     });
-  } catch (error) {
-    console.error("[POST /api/auth/signup] QSP API 호출 실패:", error);
+  } catch {
+    console.error("[POST /api/auth/signup] QSP API 호출 실패");
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[POST /api/auth/signup] QSP 응답 스키마 불일치:", parsed.error);
+    console.error("[POST /api/auth/signup] QSP 응답 스키마 불일치");
     return NextResponse.json(
       { error: "외부 서버 응답 형식이 올바르지 않습니다" },
       { status: 502 },
@@ -156,8 +156,8 @@ export async function POST(request: NextRequest) {
     }),
   }).catch((error) => {
     console.error(
-      `[POST /api/auth/signup] 승인완료 메일 발송 실패 — to=${email}, smtp_host=${process.env.SMTP_HOST ?? "UNSET"}`,
-      error instanceof Error ? { message: error.message, stack: error.stack } : error,
+      "[POST /api/auth/signup] 승인완료 메일 발송 실패",
+      error instanceof Error ? { message: error.message } : String(error),
     );
   });
 

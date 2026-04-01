@@ -38,33 +38,12 @@ export async function GET(request: NextRequest, { params }: Params) {
       },
     });
 
-    if (!content || content.status === "deleted") {
+    if (!content || content.status !== "published") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     if (!canAccessContent(user, content.targets)) {
       return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
-    }
-
-    // 다운로드 로그 기록 (실패해도 다운로드는 진행)
-    if (user) {
-      try {
-        await prisma.downloadLog.create({
-          data: {
-            userType: user.userType,
-            userId: user.userId,
-            contentId: parsedId.data,
-            attachmentId: parsedFileId.data,
-          },
-        });
-      } catch (logError) {
-        console.error("[download-log] Failed to record download log", {
-          contentId: parsedId.data,
-          attachmentId: parsedFileId.data,
-          userId: user.userId,
-          error: logError,
-        });
-      }
     }
 
     // 파일 읽기 (storage/ 디렉토리 기준, path traversal 방어)
@@ -93,6 +72,25 @@ export async function GET(request: NextRequest, { params }: Params) {
         }
       }
       throw fsError;
+    }
+
+    // 다운로드 로그 기록 — 파일 읽기 성공 후에만 기록 (실패해도 다운로드는 진행)
+    if (user) {
+      try {
+        await prisma.downloadLog.create({
+          data: {
+            userType: user.userType,
+            userId: user.userId,
+            contentId: parsedId.data,
+            attachmentId: parsedFileId.data,
+          },
+        });
+      } catch {
+        console.error("[download-log] Failed to record download log", {
+          contentId: parsedId.data,
+          attachmentId: parsedFileId.data,
+        });
+      }
     }
 
     return new NextResponse(fileBuffer as unknown as BodyInit, {

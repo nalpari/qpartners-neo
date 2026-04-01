@@ -32,6 +32,22 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // ID 존재 여부 사전 검증
+    const ids = result.data.items.map((item) => item.id);
+    const existing = await prisma.menu.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+    const existingSet = new Set(existing.map((m) => m.id));
+    const missingIds = ids.filter((id) => !existingSet.has(id));
+
+    if (missingIds.length > 0) {
+      return NextResponse.json(
+        { error: "존재하지 않는 메뉴가 포함되어 있습니다", missingIds },
+        { status: 400 },
+      );
+    }
+
     // 트랜잭션으로 일괄 업데이트
     await prisma.$transaction(
       result.data.items.map((item) =>

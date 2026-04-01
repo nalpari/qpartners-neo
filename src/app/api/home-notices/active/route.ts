@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         url: true,
       },
       orderBy: { createdAt: "desc" },
+      take: 5,
     });
 
     return NextResponse.json({ data: notices });

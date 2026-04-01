@@ -8,17 +8,17 @@
 // ─── QSP External API ───
 // NOTE: Node.js runtime 전용 — Edge Runtime에서는 함수 내부에서 env를 읽어야 함
 
-const QSP_BASE_URL =
-  process.env.QSP_BASE_URL?.trim() || "https://jp-dev.qsalesplatform.com";
+const rawQspBaseUrl = process.env.QSP_BASE_URL?.trim();
+const isProduction = process.env.NODE_ENV === "production";
 
-// 프로덕션 환경: QSP_BASE_URL 필수 + HTTPS 강제
-if (process.env.NODE_ENV === "production") {
-  if (!process.env.QSP_BASE_URL) {
-    throw new Error("QSP_BASE_URL is required in production");
-  }
-  if (!QSP_BASE_URL.startsWith("https://")) {
-    throw new Error("QSP_BASE_URL must use HTTPS in production");
-  }
+if (isProduction && !rawQspBaseUrl) {
+  throw new Error("QSP_BASE_URL is required in production");
+}
+
+const QSP_BASE_URL = rawQspBaseUrl || "https://jp-dev.qsalesplatform.com";
+
+if (isProduction && !QSP_BASE_URL.startsWith("https://")) {
+  throw new Error("QSP_BASE_URL must use HTTPS in production");
 }
 
 export const QSP_API = {
