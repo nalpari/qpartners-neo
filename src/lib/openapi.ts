@@ -197,7 +197,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 이메일 존재 여부와 관계없이 동일한 응답을 반환 (보안).",
+        description: "이메일로 비밀번호 변경 링크를 발송. QSP 회원 조회 후 불일치 시 404 반환.",
         requestBody: {
           required: true,
           content: {
@@ -233,7 +233,9 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "404": errorResponse("일치하는 회원 정보 없음"),
           "500": errorResponse("서버 오류"),
+          "502": errorResponse("외부 서버 연결 실패"),
         },
       },
     },
