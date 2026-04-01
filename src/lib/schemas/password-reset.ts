@@ -18,6 +18,13 @@ export const passwordResetRequestSchema = z.object({
       path: ["loginId"],
     });
   }
+  if (data.userTp === "SEKO" && (!data.sekoId || data.sekoId.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "시공점 회원은 시공점 ID 입력이 필수입니다",
+      path: ["sekoId"],
+    });
+  }
 });
 
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
@@ -35,7 +42,7 @@ export type PasswordResetVerifyInput = z.infer<typeof passwordResetVerifySchema>
 export const passwordResetConfirmSchema = z
   .object({
     token: z.string().min(1, "토큰은 필수입니다"),
-    newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다"),
+    newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다").max(100),
     confirmPassword: z.string().min(1, "비밀번호 확인은 필수입니다"),
   })
   .refine((data) => validatePasswordPolicy(data.newPassword), {

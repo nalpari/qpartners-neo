@@ -3,8 +3,7 @@
 import { useState, useCallback } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
-
-type TabType = "dealer" | "installer" | "general";
+import type { TabType } from "@/components/login/types";
 
 const TAB_TO_USER_TP: Record<TabType, string> = {
   dealer: "DEALER",

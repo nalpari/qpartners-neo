@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
-type Status = "loading" | "invalid" | "ready" | "submitting" | "done";
+type SubmitStatus = "idle" | "submitting" | "done";
 
 export function PasswordResetClient() {
   const router = useRouter();
@@ -16,52 +16,60 @@ export function PasswordResetClient() {
   const queryClient = useQueryClient();
   const token = searchParams.get("token") ?? "";
 
-  const [status, setStatus] = useState<Status>(() => token ? "loading" : "invalid");
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>("idle");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // 1. 토큰 검증
-  useEffect(() => {
-    if (!token) return;
+  // 1. 토큰 검증 (TanStack Query — useEffect 내 setState 제거)
+  const { data: verifyData, error: verifyError, isLoading } = useQuery({
+    queryKey: ["password-reset", "verify", token],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/password-reset/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+        signal: AbortSignal.timeout(15_000),
+      });
 
-    let cancelled = false;
+      if (!res.ok) {
+        let errorMsg: string | null = null;
+        try {
+          const errJson = await res.json() as Record<string, unknown>;
+          if (typeof errJson.error === "string") errorMsg = errJson.error;
+        } catch { /* ignore parse failure */ }
 
-    (async () => {
-      try {
-        const res = await fetch("/api/auth/password-reset/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-          signal: AbortSignal.timeout(15_000),
-        });
-
-        if (cancelled) return;
-
-        if (!res.ok) {
-          if (res.status >= 500) {
-            console.error("[PasswordResetClient] 토큰 검증 서버 오류:", res.status);
-            setError("サーバーエラーが発生しました。しばらくしてからもう一度お試しください。");
-          }
-          setStatus("invalid");
-          return;
+        if (res.status >= 500) {
+          console.error("[PasswordResetClient] 토큰 검증 서버 오류:", res.status);
         }
-
-        const json: unknown = await res.json();
-        if (!json || typeof json !== "object" || !("data" in json)) {
-          setStatus("invalid");
-          return;
-        }
-
-        setStatus("ready");
-      } catch (err) {
-        console.error("[PasswordResetClient] 토큰 검증 중 오류:", err);
-        if (!cancelled) setStatus("invalid");
+        throw new Error(errorMsg ?? "無効または期限切れのリンクです。");
       }
-    })();
 
-    return () => { cancelled = true; };
-  }, [token]);
+      const json: unknown = await res.json();
+      if (!json || typeof json !== "object" || !("data" in json)) {
+        throw new Error("無効または期限切れのリンクです。");
+      }
+      return json;
+    },
+    enabled: !!token,
+    retry: false,
+  });
+
+  // 파생 상태로 status 결정
+  const status: string = !token
+    ? "invalid"
+    : submitStatus !== "idle"
+      ? submitStatus
+      : isLoading
+        ? "loading"
+        : verifyError
+          ? "invalid"
+          : verifyData
+            ? "ready"
+            : "loading";
+
+  // invalid 상태의 에러 메시지 (verify 에러 또는 폼 에러)
+  const invalidError = verifyError instanceof Error ? verifyError.message : null;
 
   // 2. 비밀번호 변경 제출
   const handleSubmit = useCallback(async () => {
@@ -77,7 +85,7 @@ export function PasswordResetClient() {
       return;
     }
 
-    setStatus("submitting");
+    setSubmitStatus("submitting");
 
     try {
       const res = await fetch("/api/auth/password-reset/confirm", {
@@ -99,7 +107,7 @@ export function PasswordResetClient() {
           ? json.error
           : "エラーが発生しました。";
         setError(errMsg);
-        setStatus("ready");
+        setSubmitStatus("idle");
         return;
       }
 
@@ -119,18 +127,20 @@ export function PasswordResetClient() {
           console.error("[PasswordResetClient] localStorage 쓰기 실패:", storageErr);
         }
         dispatchAuthChange();
+      } else {
+        console.warn("[PasswordResetClient] 자동 로그인 데이터 누락 — ログインページへリダイレクト");
       }
 
-      setStatus("done");
+      setSubmitStatus("done");
 
       // 1500ms — 유저가 "保存されました" 메시지를 읽을 시간 확보 후 리다이렉트
       setTimeout(() => {
-        router.replace("/");
+        router.replace(userData ? "/" : "/login");
       }, 1500);
     } catch (err) {
       console.error("[PasswordResetClient] 비밀번호 변경 제출 중 오류:", err);
       setError("サーバーに接続できません。しばらくしてからもう一度お試しください。");
-      setStatus("ready");
+      setSubmitStatus("idle");
     }
   }, [token, newPassword, confirmPassword, queryClient, router]);
 
@@ -152,7 +162,7 @@ export function PasswordResetClient() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="font-['Noto_Sans_JP'] text-sm text-[#FF1A1A]">
-            {error ?? "無効または期限切れのリンクです。"}
+            {invalidError ?? "無効または期限切れのリンクです。"}
           </p>
           <Button variant="primary" onClick={() => router.replace("/login")}>
             ログインへ戻る
@@ -187,6 +197,7 @@ export function PasswordResetClient() {
           </label>
           <input
             type="password"
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             className={inputClass}
@@ -202,6 +213,7 @@ export function PasswordResetClient() {
           </label>
           <input
             type="password"
+            autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             className={inputClass}

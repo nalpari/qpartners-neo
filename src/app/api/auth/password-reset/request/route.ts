@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     await prisma.passwordResetToken.updateMany({
       where: { token, used: false },
       data: { used: true },
-    }).catch((dbError) => {
+    }).catch((dbError: unknown) => {
       console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패:", dbError);
     });
     return NextResponse.json(
