@@ -50,6 +50,8 @@ export function PasswordResetPopup() {
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleChange = (key: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
@@ -63,8 +65,6 @@ export function PasswordResetPopup() {
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
   }, [closePopup]);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = useCallback(async () => {
     if (!isFormValid(activeTab, formData) || isSubmitting) return;

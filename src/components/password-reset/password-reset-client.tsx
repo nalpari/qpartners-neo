@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import type { LoginUser } from "@/lib/schemas/auth";
+import { loginUserSchema } from "@/lib/schemas/auth";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
@@ -100,12 +100,12 @@ export function PasswordResetClient() {
       }
 
       // 자동 로그인: JWT 쿠키는 API가 설정, 프론트에서 user 캐시 + 플래그 설정
-      const data = json && typeof json === "object" && "data" in json
-        ? json.data as Record<string, unknown> | null
+      const rawUser = json && typeof json === "object" && "data" in json
+        && json.data && typeof json.data === "object" && "user" in json.data
+        ? json.data.user
         : null;
-      const userData = data && typeof data === "object" && "user" in data
-        ? data.user as LoginUser
-        : null;
+      const parsed = rawUser ? loginUserSchema.safeParse(rawUser) : null;
+      const userData = parsed?.success ? parsed.data : null;
 
       if (userData) {
         queryClient.setQueryData(["auth", "login-user-info"], userData);
