@@ -50,11 +50,17 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(10_000),
     });
 
-    if (qspResponse.ok) {
-      const qspBody = await qspResponse.json();
-      const parsed = qspResponseSchema.safeParse(qspBody);
-      userExists = parsed.success && parsed.data.result.resultCode === "S" && parsed.data.data != null;
+    if (!qspResponse.ok) {
+      console.error("[POST /api/auth/password-reset/request] QSP 비정상 응답:", qspResponse.status);
+      return NextResponse.json(
+        { error: "외부 서버 오류가 발생했습니다" },
+        { status: 502 },
+      );
     }
+
+    const qspBody = await qspResponse.json();
+    const parsed = qspResponseSchema.safeParse(qspBody);
+    userExists = parsed.success && parsed.data.result.resultCode === "S" && parsed.data.data != null;
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] QSP 회원조회 실패:", error);
     return NextResponse.json(

@@ -21,19 +21,13 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
 interface FormData {
   id: string;
   email: string;
-  lastName: string;
-  firstName: string;
   idEmail: string;
-  fullName: string;
 }
 
 const INITIAL_FORM: FormData = {
   id: "",
   email: "",
-  lastName: "",
-  firstName: "",
   idEmail: "",
-  fullName: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
