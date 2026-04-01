@@ -19,73 +19,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Framework**: Next.js 16.2, App Router (`src/app/`), React 19, React Compiler enabled
 - **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss`; theme tokens in `src/app/globals.css` using `@theme inline`
 - **Path alias**: `@/*` maps to `./src/*`
-
-### Data Layer
-
-- **Database**: MariaDB 11 (Docker), accessed via Prisma 7 with `@prisma/adapter-mariadb`
-- **Schema**: `prisma/schema.prisma` — Prisma CLI uses `DATABASE_URL` from `.env` via `prisma.config.ts`
-- **Client**: `src/lib/prisma.ts` — Singleton PrismaClient with MariaDB adapter, uses `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` env vars at runtime
-- **Generated code**: `src/generated/prisma/` (gitignored) — import from `@/generated/prisma/client`
-
-### State Management
-
-- **Server data**: Prefer Server Component direct DB queries for read-only data; use TanStack Query + Route Handlers (`/api/*`) for client-side interactivity
-- **Client state**: Zustand stores in `src/lib/store.ts`
-- **Query provider**: `src/lib/query-provider.tsx` wraps app in `layout.tsx` (staleTime: 60s default)
-
-### HTTP Client
-
-- **Axios**: `src/lib/axios.ts` — `baseURL: "/api"` 설정된 공용 인스턴스, 클라이언트 컴포넌트에서 API 호출 시 사용
-
-### Validation
-
-- **Zod**: `src/lib/schemas/`에 입력 검증 스키마 정의, API Route Handler에서 `safeParse`로 검증
-
-### Docker
-
-- Multi-stage Dockerfile (`base` → `deps` → `builder` → `runner`) with `output: "standalone"`
-- `docker-compose.yml`: `app` (Next.js) + `db` (MariaDB), app waits for db healthcheck
-- Local dev: run `db` service only, app via `pnpm dev`
+- **Database**: MariaDB 11 (Docker), Prisma 7
+- **State**: Zustand (client UI) + TanStack Query (server data)
+- **Validation**: Zod schemas in `src/lib/schemas/`
 
 ## Key Conventions
 
 - ESLint flat config (`eslint.config.mjs`) with `next/core-web-vitals` and `next/typescript`
 - Tailwind v4 CSS-based config (no `tailwind.config.js`); dark mode via `prefers-color-scheme`
-- Fonts: Geist Sans + Geist Mono via `next/font/google` as CSS variables
-
-## Development Guidelines
-
-### 새 기능 추가 순서
-1. `prisma/schema.prisma`에 모델 정의 → `pnpm prisma migrate dev --name <name>`
-2. `src/lib/schemas/`에 Zod 스키마 작성
-3. `src/app/api/`에 Route Handler 추가
-4. 페이지 컴포넌트 생성 (`src/app/` 하위)
-
-### TanStack Query
-- `QueryProvider`가 root layout에서 앱 전체를 감싸고 있음 (`src/lib/query-provider.tsx`)
-- 기본 staleTime: 60초
-- query key는 배열 형태로 도메인별 네임스페이스 사용: `["tests"]`, `["tests", id]`
-
-### Code Quality
+- TypeScript strict mode, `any` 타입 사용 금지
 - 커밋 전 `pnpm lint` 실행
-- TypeScript strict mode 준수
-- `any` 타입 사용 금지
-
-### React Compiler 규칙 (중요)
-이 프로젝트는 `next.config.ts`에서 `reactCompiler: true`로 React Compiler를 활성화하고 있다.
-`eslint-plugin-react-hooks` v7.0.0 이상에서 추가된 React Compiler 전용 린트 규칙을 반드시 준수해야 한다.
-
-**`react-hooks/set-state-in-effect` — useEffect 안에서 setState 호출 금지**
-- React Compiler의 자동 메모이제이션과 충돌하여 의도치 않은 동작 발생 가능
-- `eslint-disable`로 무시하지 말 것
-- 대안:
-  - 읽기 전용 데이터: state 대신 파생 값으로 직접 계산 (`const value = queryData ?? default`)
-  - 폼 편집 등 로컬 state 필요 시: 부모에서 `key` prop으로 리마운트 제어
-
-**`react-hooks/set-state-in-render` — 렌더링 중 setState 호출 금지**
-
-**기타 Compiler 규칙**: `purity`, `immutability`, `refs`, `globals`, `use-memo`, `static-components` 등
-- `pnpm lint`로 검출되며, `eslint-disable` 처리 대신 규칙에 맞게 코드를 수정할 것
 
 ## Git Commit Message
 
@@ -138,8 +81,3 @@ fix: Resolve prisma client singleton leak in dev mode
 - task 완료시 CLAUDE.md 및 README.md 문서에 업데이트가 필요하면 진행한다.
 - 에이전트 팀을 활용할 경우 @docs/agent-teams-guild.md 문서를 참조한다.
 
-## Frontend
-
-- **React 19.2** 버전을 사용해야 한다. 의존성 추가 및 코드 작성 시 React 19.2 호환성을 반드시 확인할 것.
-
-## Backend
