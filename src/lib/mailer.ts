@@ -4,17 +4,23 @@ import { SMTP_DEFAULTS } from "@/lib/config";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// Ethereal transporter 캐싱 (dev 전용, 매 호출마다 계정 생성 방지)
+let cachedEtherealTransporter: nodemailer.Transporter | null = null;
+
 async function getTransporter() {
   // 개발환경: Ethereal 테스트 SMTP (실제 메일 미발송, 브라우저에서 확인)
   if (isDev && !process.env.SMTP_PASS) {
-    const testAccount = await nodemailer.createTestAccount();
-    console.log("[SMTP] Ethereal test account: " + testAccount.user);
-    return nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-    });
+    if (!cachedEtherealTransporter) {
+      const testAccount = await nodemailer.createTestAccount();
+      console.log("[SMTP] Ethereal test account: " + testAccount.user);
+      cachedEtherealTransporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      });
+    }
+    return cachedEtherealTransporter;
   }
 
   const host = process.env.SMTP_HOST ?? SMTP_DEFAULTS.host;
@@ -40,7 +46,7 @@ async function getTransporter() {
     host: host!,
     port,
     secure: port === 465,
-    requireTLS: port !== 465,
+    requireTLS: port !== 465, // 587 사용 시 STARTTLS 강제
     auth: { user: user!, pass: pass! },
   });
 }
@@ -63,10 +69,17 @@ export async function sendMail({ to, subject, html }: SendMailOptions): Promise<
     html,
   });
 
-  // 개발환경: Ethereal 미리보기 URL 출력
-  const previewUrl = nodemailer.getTestMessageUrl(info);
-  if (previewUrl) {
-    console.log("[sendMail] Preview URL: " + previewUrl);
+  if (isDev) {
+    // 개발환경: Ethereal 미리보기 URL + 상세 결과 출력
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log("[sendMail] Preview URL: " + previewUrl);
+    }
+    console.log("[sendMail] result: " + JSON.stringify({
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected,
+    }));
   }
-  console.log("[sendMail] result: " + JSON.stringify({ messageId: info.messageId, response: info.response, accepted: info.accepted, rejected: info.rejected }));
 }
