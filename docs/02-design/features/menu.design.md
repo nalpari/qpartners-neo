@@ -23,7 +23,7 @@ Menu (qp_menus)
 ├── showInTopNav: Boolean (default: true)
 ├── showInMobile: Boolean (default: true)
 ├── sortOrder: Int (default: 1)
-├── createdAt / updatedAt
+├── createdAt / createdBy / updatedAt / updatedBy
 ├── parent: Menu? (self-relation)
 ├── children: Menu[]
 └── permissions: QpRoleMenuPermission[]
@@ -158,3 +158,4 @@ src/lib/schemas/
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-03-22 | Initial draft | CK |
+| 0.2 | 2026-03-30 | Data Model에 createdBy/updatedBy 필드 추가 | CK |

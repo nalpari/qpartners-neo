@@ -48,7 +48,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 컬럼 | 타입 | 설명 | 근거 |
 |------|------|------|------|
 | id | INT PK | 자동증가 PK | - |
-| company_name | VARCHAR(255) | 회사명 (필수) | 회원가입 > 법인정보 (p.16) |
+| company_name | VARCHAR(255)? | 회사명 (AS-IS 마이그 시 NULL 가능) | 회원가입 > 법인정보 (p.16) |
 | company_name_kana | VARCHAR(255) | 회사명 히라가나 (필수) | 회원가입 > 법인정보 (p.16) |
 | zipcode | VARCHAR(10) | 우편번호, 7자리 (필수) | 회원가입 > 우편번호찾기 연동 (p.16) |
 | address1 | VARCHAR(500) | 주소 (도도부현+시구정촌) (필수) | 회원가입 > 주소 (p.16) |
@@ -56,12 +56,12 @@ TO-BE Q.Partners-neo (서비스 운영)
 | tel | VARCHAR(20) | 전화번호, 000-0000-0000 (필수) | 회원가입 > 전화번호 (p.16) |
 | fax | VARCHAR(20) | FAX번호 | 회원가입 > FAX번호 (p.16), 판매점은 필수/일반은 선택 |
 | corporate_number | VARCHAR(20) | 법인번호 | 내정보수정 (p.39 #2), 일반회원은 숨김, 판매점/관리자만 표시 |
-| last_name | VARCHAR(100) | 성 (필수) | 회원가입 > 회원정보 (p.16) |
-| first_name | VARCHAR(100) | 이름 (필수) | 회원가입 > 회원정보 (p.16) |
+| last_name | VARCHAR(100)? | 성 (AS-IS 마이그 시 NULL 가능) | 회원가입 > 회원정보 (p.16) |
+| first_name | VARCHAR(100)? | 이름 (AS-IS 마이그 시 NULL 가능) | 회원가입 > 회원정보 (p.16) |
 | last_name_kana | VARCHAR(100) | 성 히라가나 (필수) | 회원가입 > 회원정보 (p.16) |
 | first_name_kana | VARCHAR(100) | 이름 히라가나 (필수) | 회원가입 > 회원정보 (p.16) |
 | email | VARCHAR(255) | 이메일 = 로그인 ID (필수, 유니크) | 회원가입 > 이메일(ID), 중복체크 필수 (p.16) |
-| password_hash | VARCHAR(255) | 비밀번호 해시 (bcrypt) | 회원가입 > 비밀번호, 영문대문자+소문자+숫자 조합 8자 이상 (p.16) |
+| password_hash | VARCHAR(255) | 비밀번호 해시 (bcrypt, AS-IS 마이그 시 초기화 비번 일괄 기재) | 회원가입 > 비밀번호 (p.16) |
 | department | VARCHAR(100) | 부서명 (선택) | 회원가입 > 부서명 (p.16), 시공점은 미노출 (260324 변경) |
 | job_title | VARCHAR(100) | 직책 (선택) | 회원가입 > 직책 (p.16), 시공점은 미노출 (260324 변경) |
 | created_at | DATETIME | 등록일시 | - |
@@ -95,7 +95,6 @@ TO-BE Q.Partners-neo (서비스 운영)
 | terms_agreed_at | DATETIME? | 이용약관 동의 일시 | 로그인 > "이용약관 동의 필수 (보기)" (p.9) |
 | initial_setup_done | BOOLEAN | 최초로그인 설정 완료 여부 | 최초로그인 후 개인정보 설정 팝업 (p.13) |
 | password_changed_at | DATETIME? | 비밀번호 변경 일시 | 비밀번호 변경 (p.40), 최초로그인 설정 (p.13) |
-| id_save_enabled | BOOLEAN | ID Save 기능 활성화 | 로그인 > ID Save 체크박스 (p.9 #3) |
 | created_at | DATETIME | 등록일 | 회원관리 상세 (p.47 #1) |
 | updated_at | DATETIME | 수정일시 | 회원관리 상세 (p.47 #1) |
 | updated_by | VARCHAR(255)? | 수정자 | 회원관리 상세 (p.47 #1) |

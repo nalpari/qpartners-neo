@@ -95,7 +95,7 @@ CREATE TABLE qp_general_users (
 
   -- 법인정보 ──────────────────────────────────
   -- 화면: 회원가입 > 법인정보 (*필수) 섹션 (p.16)
-  company_name        VARCHAR(255) NOT NULL,             -- 화면: 회사명 *
+  company_name        VARCHAR(255) DEFAULT NULL,          -- 화면: 회사명 (AS-IS 마이그 시 NULL 가능)
   company_name_kana   VARCHAR(255) DEFAULT NULL,         -- 화면: 회사명 히라가나 *
   zipcode             VARCHAR(10) DEFAULT NULL,          -- 화면: 우편번호 * (주소검색 연동, 7자리)
   address1            VARCHAR(500) DEFAULT NULL,         -- 화면: 주소 * (도도부현 + 시구정촌)
@@ -106,12 +106,12 @@ CREATE TABLE qp_general_users (
 
   -- 회원정보 ──────────────────────────────────
   -- 화면: 회원가입 > 회원정보 섹션 (p.16)
-  last_name           VARCHAR(100) NOT NULL,             -- 화면: 성 *
-  first_name          VARCHAR(100) NOT NULL,             -- 화면: 이름 *
+  last_name           VARCHAR(100) DEFAULT NULL,          -- 화면: 성 * (AS-IS 마이그 시 NULL 가능)
+  first_name          VARCHAR(100) DEFAULT NULL,          -- 화면: 이름 * (AS-IS 마이그 시 NULL 가능)
   last_name_kana      VARCHAR(100) DEFAULT NULL,         -- 화면: 성 히라가나 *
   first_name_kana     VARCHAR(100) DEFAULT NULL,         -- 화면: 이름 히라가나 *
   email               VARCHAR(255) NOT NULL,             -- 화면: 이메일 (ID) * (중복체크)
-  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (영문대문자+소문자+숫자 조합 8자 이상, bcrypt)
+  password_hash       VARCHAR(255) NOT NULL,             -- 화면: 비밀번호 * (bcrypt, AS-IS 마이그 시 초기화 비밀번호 일괄 기재)
   department          VARCHAR(100) DEFAULT NULL,         -- 화면: 부서명
   job_title           VARCHAR(100) DEFAULT NULL,         -- 화면: 직책
 
@@ -205,11 +205,6 @@ CREATE TABLE qp_info (
   -- 화면: 비밀번호 변경 (p.40), 최초로그인 설정 (p.13)
   password_changed_at DATETIME DEFAULT NULL,
 
-  -- ID Save ──────────────────────────────────
-  -- 화면: 로그인 > ID Save 체크박스 (p.9 #3)
-  -- 로그인 성공 시 다음 접속 시 아이디 저장
-  id_save_enabled     BOOLEAN NOT NULL DEFAULT FALSE,
-
   -- 감사 ─────────────────────────────────────
   -- 화면: 회원관리 상세 > 등록일, 갱신일시(수정자) (p.47 #1)
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -270,7 +265,7 @@ INSERT INTO qp_roles (role_code, role_name, description) VALUES
 ```sql
 CREATE TABLE qp_role_menu_permissions (
   role_code           VARCHAR(50) NOT NULL,              -- qp_roles.role_code 참조
-  menu_code           VARCHAR(50) NOT NULL,              -- menus.menu_code 참조
+  menu_code           VARCHAR(50) NOT NULL,              -- qp_menus.menu_code 참조
 
   -- CRUD 권한 ────────────────────────────────
   -- 화면: Menu Setting 팝업 (p.55) — Read/Create/Update/Delete 체크박스
@@ -282,7 +277,9 @@ CREATE TABLE qp_role_menu_permissions (
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  PRIMARY KEY (role_code, menu_code)
+  PRIMARY KEY (role_code, menu_code),
+  FOREIGN KEY (role_code) REFERENCES qp_roles(role_code) ON DELETE CASCADE,
+  FOREIGN KEY (menu_code) REFERENCES qp_menus(menu_code) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -312,7 +309,7 @@ CREATE TABLE qp_role_menu_permissions (
 **AS-IS**: M_NEWS + M_DOCUMENT + M_MOVIE + M_PRODUCT → 통합
 
 ```sql
-CREATE TABLE contents (
+CREATE TABLE qp_contents (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
 
   -- 관리정보 ──────────────────────────────────
@@ -360,7 +357,7 @@ CREATE TABLE contents (
 **화면 근거**: 콘텐츠 등록 > 게시대상 체크박스 + 기간설정 (p.25 #7, #8)
 
 ```sql
-CREATE TABLE content_targets (
+CREATE TABLE qp_content_targets (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   content_id          INT NOT NULL,
   target_type         ENUM('first_dealer','second_dealer','constructor','general','non_member') NOT NULL,
@@ -382,7 +379,7 @@ CREATE TABLE content_targets (
 **화면 근거**: 카테고리 관리 (p.53), 콘텐츠 검색조건 (p.24), 콘텐츠 등록 (p.25-26)
 
 ```sql
-CREATE TABLE categories (
+CREATE TABLE qp_categories (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   parent_id           INT DEFAULT NULL,                  -- 상위 카테고리 (Depth-2까지, p.53 #8)
   category_code       VARCHAR(50) NOT NULL,              -- 화면: 카테고리코드 * (p.53 #10)
@@ -405,7 +402,7 @@ CREATE TABLE categories (
 ### 3.6 content_categories (콘텐츠-카테고리 연결)
 
 ```sql
-CREATE TABLE content_categories (
+CREATE TABLE qp_content_categories (
   content_id          INT NOT NULL,
   category_id         INT NOT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -423,7 +420,7 @@ CREATE TABLE content_categories (
 **화면 근거**: 콘텐츠 등록 > 파일첨부 (p.27 #13), 상세 (p.29 #11, #12)
 
 ```sql
-CREATE TABLE content_attachments (
+CREATE TABLE qp_content_attachments (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   content_id          INT NOT NULL,
   file_name           VARCHAR(255) NOT NULL,
@@ -445,7 +442,7 @@ CREATE TABLE content_attachments (
 **화면 근거**: 비밀번호 초기화 팝업 (p.11), 변경 링크 메일 (p.12)
 
 ```sql
-CREATE TABLE password_reset_tokens (
+CREATE TABLE qp_password_reset_tokens (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
   user_id             VARCHAR(255) NOT NULL,
@@ -466,7 +463,7 @@ CREATE TABLE password_reset_tokens (
 **화면 근거**: 2차인증 팝업 (p.14), 2단계 인증 알림메일 (p.15)
 
 ```sql
-CREATE TABLE two_factor_codes (
+CREATE TABLE qp_two_factor_codes (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
   user_id             VARCHAR(255) NOT NULL,
@@ -486,7 +483,7 @@ CREATE TABLE two_factor_codes (
 **화면 근거**: 홈화면 공지관리 (p.51-52)
 
 ```sql
-CREATE TABLE home_notices (
+CREATE TABLE qp_home_notices (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   target_super_admin  BOOLEAN NOT NULL DEFAULT FALSE,
   target_admin        BOOLEAN NOT NULL DEFAULT FALSE,
@@ -516,7 +513,7 @@ CREATE TABLE home_notices (
 **화면 근거**: 대량메일발송 (p.48-50)
 
 ```sql
-CREATE TABLE mass_mails (
+CREATE TABLE qp_mass_mails (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   sender_name         VARCHAR(255) NOT NULL,
   user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
@@ -548,7 +545,7 @@ CREATE TABLE mass_mails (
 ### 3.13 mass_mail_attachments (대량메일 첨부파일)
 
 ```sql
-CREATE TABLE mass_mail_attachments (
+CREATE TABLE qp_mass_mail_attachments (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   mass_mail_id        INT NOT NULL,
   file_name           VARCHAR(255) NOT NULL,
@@ -568,7 +565,7 @@ CREATE TABLE mass_mail_attachments (
 **화면 근거**: 마이페이지 > 다운로드 기록 (p.42)
 
 ```sql
-CREATE TABLE download_logs (
+CREATE TABLE qp_download_logs (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') NOT NULL,
   user_id             VARCHAR(255) NOT NULL,
@@ -590,7 +587,7 @@ CREATE TABLE download_logs (
 **화면 근거**: 마이페이지 > 문의등록 (p.43-44)
 
 ```sql
-CREATE TABLE inquiries (
+CREATE TABLE qp_inquiries (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   user_type           ENUM('ADMIN','DEALER','SEKO','GENERAL') DEFAULT NULL,
   user_id             VARCHAR(255) DEFAULT NULL,
@@ -615,7 +612,7 @@ CREATE TABLE inquiries (
 **화면 근거**: 관리자 > 메뉴관리 (p.56)
 
 ```sql
-CREATE TABLE menus (
+CREATE TABLE qp_menus (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   parent_id           INT DEFAULT NULL,
   menu_code           VARCHAR(50) NOT NULL,
@@ -668,7 +665,7 @@ INSERT INTO menus (parent_id, menu_code, menu_name, show_in_mobile, sort_order) 
 **화면 근거**: 관리자 > 코드 관리 (p.57)
 
 ```sql
-CREATE TABLE code_headers (
+CREATE TABLE qp_code_headers (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   header_code         VARCHAR(20) NOT NULL,
   header_id           VARCHAR(50) NOT NULL,
@@ -692,7 +689,7 @@ CREATE TABLE code_headers (
 ### 3.18 code_details (코드관리 디테일)
 
 ```sql
-CREATE TABLE code_details (
+CREATE TABLE qp_code_details (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   header_id           INT NOT NULL,
   code                VARCHAR(20) NOT NULL,
@@ -794,8 +791,7 @@ INSERT INTO code_headers (header_code, header_id, header_name) VALUES
                                  │  last_login_at,           │
                                  │  terms_agreed_at,         │
                                  │  initial_setup_done,      │
-                                 │  password_changed_at,     │
-                                 │  id_save_enabled          │
+                                 │  password_changed_at      │
                                  └───────────────────────────┘
                                              │
                                              │ I/F (사용자 정보 + 권한)
@@ -870,3 +866,4 @@ user_id           VARCHAR(255) NOT NULL,
 |---------|------|---------|--------|
 | 0.1 (v1) | 2026-03-19 | 초안 (users 테이블 TO-BE 직접 저장 구조) | ck |
 | 0.2 (v2) | 2026-03-20 | 사용자 데이터 QSP 분리 — QSP 2테이블 + TO-BE 18테이블 | ck |
+| 0.3 | 2026-03-31 | qp_general_users: company_name/last_name/first_name NULL 허용, password_hash 마이그 시 초기화 비번 일괄 기재. qp_info: id_save_enabled 제거, status ENUM 유지(active/deleted), AS-IS 마이그 대상 user_type 모두 GENERAL | ck |

@@ -194,3 +194,4 @@ src/lib/schemas/
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-03-22 | Initial draft | CK |
+| 0.2 | 2026-03-30 | Data Model에 createdBy/updatedBy 이미 포함 확인 | CK |

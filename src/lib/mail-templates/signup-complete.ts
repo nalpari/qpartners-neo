@@ -20,14 +20,21 @@ export function signupCompleteMailHtml({
   email,
   siteUrl,
 }: SignupCompleteMailParams): string {
-  if (!/^https?:\/\//.test(siteUrl)) {
-    throw new Error(`Invalid siteUrl: ${siteUrl}`);
+  let origin: string;
+  try {
+    const parsed = new URL(siteUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Invalid siteUrl protocol");
+    }
+    origin = parsed.origin;
+  } catch {
+    throw new Error("Invalid siteUrl");
   }
 
   const safeUserNm = escapeHtml(userNm);
   const safeEmail = escapeHtml(email);
-  const loginUrl = `${siteUrl}/login`;
-  const mypageUrl = `${siteUrl}/mypage`;
+  const loginUrl = new URL("/login", origin).toString();
+  const mypageUrl = new URL("/mypage", origin).toString();
 
   return `<!DOCTYPE html>
 <html lang="ja">
