@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { twoFactorSendSchema } from "@/lib/schemas/two-factor";
 import { sendMail } from "@/lib/mailer";
+import type { SendMailResult } from "@/lib/mailer";
 import {
   twoFactorMailHtml,
   TWO_FACTOR_SUBJECT,
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. 메일 발송
-  let mailResult;
+  let mailResult: SendMailResult;
   try {
     mailResult = await sendMail({
       to: user.email,
