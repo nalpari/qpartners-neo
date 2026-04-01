@@ -39,6 +39,10 @@ export function PasswordResetClient() {
         if (cancelled) return;
 
         if (!res.ok) {
+          if (res.status >= 500) {
+            console.error("[PasswordResetClient] 토큰 검증 서버 오류:", res.status);
+            setError("サーバーエラーが発生しました。しばらくしてからもう一度お試しください。");
+          }
           setStatus("invalid");
           return;
         }
@@ -86,8 +90,8 @@ export function PasswordResetClient() {
       let json: Record<string, unknown> | null = null;
       try {
         json = await res.json() as Record<string, unknown>;
-      } catch {
-        // non-JSON 응답 (HTML 에러 페이지 등)
+      } catch (parseErr) {
+        console.error("[PasswordResetClient] 응답 JSON 파싱 실패:", parseErr);
       }
 
       if (!res.ok) {
@@ -148,7 +152,7 @@ export function PasswordResetClient() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="font-['Noto_Sans_JP'] text-sm text-[#FF1A1A]">
-            無効または期限切れのリンクです。
+            {error ?? "無効または期限切れのリンクです。"}
           </p>
           <Button variant="primary" onClick={() => router.replace("/login")}>
             ログインへ戻る

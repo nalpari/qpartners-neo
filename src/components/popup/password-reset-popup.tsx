@@ -97,8 +97,8 @@ export function PasswordResetPopup() {
       let json: Record<string, unknown> | null = null;
       try {
         json = await res.json() as Record<string, unknown>;
-      } catch {
-        // non-JSON 응답
+      } catch (parseErr) {
+        console.error("[PasswordResetPopup] 응답 JSON 파싱 실패:", parseErr);
       }
 
       if (!res.ok) {

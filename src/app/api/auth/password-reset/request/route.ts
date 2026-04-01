@@ -58,7 +58,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const qspBody = await qspResponse.json();
+    const qspBody = await qspResponse.json().catch((parseError: unknown) => {
+      console.error("[POST /api/auth/password-reset/request] QSP 응답 JSON 파싱 실패:", parseError);
+      return null;
+    });
+    if (qspBody === null) {
+      return NextResponse.json(
+        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { status: 502 },
+      );
+    }
     const parsed = qspResponseSchema.safeParse(qspBody);
     if (!parsed.success) {
       console.error("[POST /api/auth/password-reset/request] QSP 응답 스키마 불일치:", parsed.error.issues);
