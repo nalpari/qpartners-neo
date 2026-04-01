@@ -1,8 +1,24 @@
-/** 임시 인증 헬퍼 — X-User-* 헤더 기반 사용자 식별 */
+/**
+ * 인증 헬퍼 — X-User-* 헤더 기반 사용자 식별
+ *
+ * [보안 전제] API Gateway(리버스 프록시)가 JWT/세션을 검증한 뒤
+ * X-User-* 헤더를 주입하고, 클라이언트가 직접 보낸 동명 헤더는 제거한다.
+ * 따라서 이 함수는 헤더 값을 신뢰한다.
+ * Gateway 없이 직접 노출할 경우 반드시 JWT 검증 로직을 추가해야 한다.
+ */
 
 import { NextResponse } from "next/server";
 
 const VALID_USER_TYPES = new Set(["ADMIN", "DEALER", "SEKO", "GENERAL"]);
+const VALID_ROLES = new Set([
+  "super_admin",
+  "admin",
+  "first_dealer",
+  "second_dealer",
+  "constructor",
+  "general",
+  "non_member",
+]);
 
 export type UserInfo = {
   userType: "ADMIN" | "DEALER" | "SEKO" | "GENERAL";
@@ -19,6 +35,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
 
   if (!userType || !userId || !role) return null;
   if (!VALID_USER_TYPES.has(userType)) return null;
+  if (!VALID_ROLES.has(role)) return null;
 
   return {
     userType: userType as UserInfo["userType"],
@@ -79,8 +96,9 @@ export function canModifyContent(
   content: { userId: string; authorDepartment: string | null },
 ): boolean {
   if (user.role === "super_admin") {
-    // undefined/null 모두 "부문 미지정"으로 동일 취급
-    return (user.department ?? null) === (content.authorDepartment ?? null);
+    // 부문이 양쪽 다 미지정이면 매칭하지 않음 (명시적 부문 필요)
+    if (!user.department || !content.authorDepartment) return false;
+    return user.department === content.authorDepartment;
   }
   if (user.role === "admin") {
     return user.userId === content.userId;

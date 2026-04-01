@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
         "Content-Type": attachment.mimeType ?? "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(attachment.fileName)}"`,
+        "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
         "Content-Length": String(fileBuffer.length),
       },
     });

@@ -944,6 +944,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_dealer/second_dealer/constructor/general)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
+          { name: "page", in: "query", description: "페이지 번호 (1부터)", schema: { type: "integer", default: 1, minimum: 1 } },
+          { name: "pageSize", in: "query", description: "페이지 크기 (최대 100)", schema: { type: "integer", default: 20, minimum: 1, maximum: 100 } },
         ],
         responses: {
           "200": {
@@ -957,6 +959,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "array",
                       items: { $ref: "#/components/schemas/HomeNoticeListItem" },
                     },
+                    meta: { $ref: "#/components/schemas/PaginationMeta" },
                   },
                 },
               },
@@ -1607,6 +1610,16 @@ export const openApiSpec: OpenAPIV3.Document = {
 
   components: {
     schemas: {
+      PaginationMeta: {
+        type: "object",
+        properties: {
+          total: { type: "integer" },
+          page: { type: "integer" },
+          pageSize: { type: "integer" },
+          totalPages: { type: "integer" },
+        },
+        required: ["total", "page", "pageSize", "totalPages"],
+      },
       ErrorResponse: {
         type: "object",
         properties: {

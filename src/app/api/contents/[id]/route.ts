@@ -48,9 +48,13 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
     }
 
+    // viewCount 증가: published 상태이고 사내 사용자가 아닌 경우만 (봇/프리패치 방어)
+    const shouldIncrement =
+      existing.status === "published" && !internal;
+
     const content = await prisma.content.update({
       where: { id: parsed.data },
-      data: { viewCount: { increment: 1 } },
+      data: shouldIncrement ? { viewCount: { increment: 1 } } : {},
       include: {
         targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
         categories: {

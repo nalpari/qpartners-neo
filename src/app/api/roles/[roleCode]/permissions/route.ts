@@ -35,33 +35,22 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // 전체 메뉴(1-Level + children) + 해당 roleCode의 권한 매핑
+    // 전체 메뉴(1-Level + children) + 해당 roleCode의 권한 매핑 (nested include로 1-query)
     const menus = await prisma.menu.findMany({
       where: { parentId: null },
       include: {
-        children: { orderBy: { sortOrder: "asc" } },
+        children: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            permissions: { where: { roleCode: parsedCode.data } },
+          },
+        },
         permissions: {
           where: { roleCode: parsedCode.data },
         },
       },
       orderBy: { sortOrder: "asc" },
     });
-
-    // children에도 permissions를 로드하기 위해 별도 쿼리
-    const childMenuCodes = menus.flatMap((m) =>
-      m.children.map((c) => c.menuCode),
-    );
-
-    const childPermissions = await prisma.qpRoleMenuPermission.findMany({
-      where: {
-        roleCode: parsedCode.data,
-        menuCode: { in: childMenuCodes },
-      },
-    });
-
-    const childPermMap = new Map(
-      childPermissions.map((p) => [p.menuCode, p]),
-    );
 
     const menuData = menus.map((menu) => {
       const perm = menu.permissions[0];
@@ -75,7 +64,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         canUpdate: perm?.canUpdate ?? false,
         canDelete: perm?.canDelete ?? false,
         children: menu.children.map((child) => {
-          const cPerm = childPermMap.get(child.menuCode);
+          const cPerm = child.permissions[0];
           return {
             menuCode: child.menuCode,
             menuName: child.menuName,

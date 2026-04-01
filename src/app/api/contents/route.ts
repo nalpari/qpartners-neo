@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       ...((categoryIds || (!internal && internalOnly === false)) && {
         AND: [
           ...(categoryIds
-            ? [{ categories: { some: { categoryId: { in: categoryIds.split(",").map(Number) } } } }]
+            ? [{ categories: { some: { categoryId: { in: categoryIds.split(",").map(Number).filter((n) => !isNaN(n)) } } } }]
             : []),
           ...(!internal && internalOnly === false
             ? [{ categories: { none: { category: { isInternalOnly: true } } } }]

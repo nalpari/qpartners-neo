@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
     const targetType = searchParams.get("targetType") ?? undefined;
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
+    const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? "20") || 20));
 
     // targetType → 해당 boolean 필드 필터
     const targetMap: Record<string, string> = {
@@ -101,20 +103,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
     }
 
-    const notices = await prisma.homeNotice.findMany({
-      where: {
-        ...(keyword && { content: { contains: keyword } }),
-        ...(targetField && { [targetField]: true }),
-        ...((startDate || endDate) && {
-          createdAt: {
-            ...(startDate && { gte: new Date(startDate) }),
-            ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
-          },
-        }),
-        ...statusWhere,
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const where = {
+      ...(keyword && { content: { contains: keyword } }),
+      ...(targetField && { [targetField]: true }),
+      ...((startDate || endDate) && {
+        createdAt: {
+          ...(startDate && { gte: new Date(startDate) }),
+          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
+        },
+      }),
+      ...statusWhere,
+    };
+
+    const [notices, total] = await Promise.all([
+      prisma.homeNotice.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.homeNotice.count({ where }),
+    ]);
 
     const data = notices.map((n) => ({
       id: n.id,
@@ -132,7 +141,10 @@ export async function GET(request: NextRequest) {
       updatedBy: n.updatedBy,
     }));
 
-    return NextResponse.json({ data });
+    return NextResponse.json({
+      data,
+      meta: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+    });
   } catch (error) {
     console.error("[GET /api/home-notices]", error);
     return NextResponse.json(
@@ -168,25 +180,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 활성(scheduled + active) 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
-    const notice = await prisma.$transaction(async (tx) => {
-      const now = new Date();
-      const activeCount = await tx.homeNotice.count({
-        where: { endAt: { gte: now } },
-      });
+    const notice = await prisma.$transaction(
+      async (tx) => {
+        const now = new Date();
+        const activeCount = await tx.homeNotice.count({
+          where: { endAt: { gte: now } },
+        });
 
-      if (activeCount >= 5) {
-        throw new Error("LIMIT_EXCEEDED");
-      }
+        if (activeCount >= 5) {
+          throw new Error("LIMIT_EXCEEDED");
+        }
 
-      return tx.homeNotice.create({
-        data: {
-          ...result.data,
-          userType: auth.user.userType,
-          userId: auth.user.userId,
-          createdBy: auth.user.userId,
-        },
-      });
-    });
+        return tx.homeNotice.create({
+          data: {
+            ...result.data,
+            userType: auth.user.userType,
+            userId: auth.user.userId,
+            createdBy: auth.user.userId,
+          },
+        });
+      },
+      { isolationLevel: "Serializable" },
+    );
 
     return NextResponse.json({ data: notice }, { status: 201 });
   } catch (error) {

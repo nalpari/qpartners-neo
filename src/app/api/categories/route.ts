@@ -14,6 +14,12 @@ export async function GET(request: NextRequest) {
     const internalOnly = searchParams.get("internalOnly") === "true";
     const activeOnly = searchParams.get("activeOnly") !== "false";
 
+    // 비활성 항목 포함 조회 시 관리자 인증 필요
+    if (!activeOnly) {
+      const auth = requireAdmin(request.headers);
+      if (auth instanceof NextResponse) return auth;
+    }
+
     const categories = await prisma.category.findMany({
       where: {
         parentId: null,
