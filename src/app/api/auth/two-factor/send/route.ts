@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error(
       `[POST /api/auth/two-factor/send] 메일 발송 실패`,
-      error instanceof Error ? error.message : error,
+      error instanceof Error ? { message: error.message } : error,
     );
     // 메일 미발송 코드 무효화 (rate limit 소모 방지)
     await prisma.twoFactorCode.updateMany({
