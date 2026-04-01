@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 
 import { SMTP_DEFAULTS } from "@/lib/config";
 
-const isDev = process.env.NODE_ENV !== "production";
+const isDev = process.env.NODE_ENV === "development";
 
 // Ethereal transporter 캐싱 (비프로덕션 + SMTP_PASS 미설정 시, 프로세스 수명 동안 유지)
 let etherealPromise: Promise<nodemailer.Transporter> | null = null;
@@ -68,29 +68,53 @@ interface SendMailOptions {
   html: string;
 }
 
+export interface SendMailResult {
+  /** Ethereal 테스트 SMTP 사용 여부 (true이면 실제 메일 미발송) */
+  ethereal: boolean;
+  /** Ethereal 사용 시 미리보기 URL */
+  previewUrl?: string;
+}
+
 /** 공용 메일 발송 유틸리티 */
-export async function sendMail({ to, subject, html }: SendMailOptions): Promise<void> {
+export async function sendMail({ to, subject, html }: SendMailOptions): Promise<SendMailResult> {
   const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
-  const transporter = await getTransporter();
+  const useEthereal = isDev && !process.env.SMTP_PASS;
 
-  const info = await transporter.sendMail({
-    from: `${SMTP_DEFAULTS.fromName} <${from}>`,
-    to,
-    subject,
-    html,
-  });
+  let transporter: nodemailer.Transporter;
+  try {
+    transporter = await getTransporter();
+  } catch (error) {
+    if (useEthereal) etherealPromise = null;
+    throw error;
+  }
 
-  // 비프로덕션 + Ethereal 사용 시: 미리보기 URL + 상세 결과 출력
-  if (isDev && !process.env.SMTP_PASS) {
-    const previewUrl = nodemailer.getTestMessageUrl(info);
+  let info: nodemailer.SentMessageInfo;
+  try {
+    info = await transporter.sendMail({
+      from: `${SMTP_DEFAULTS.fromName} <${from}>`,
+      to,
+      subject,
+      html,
+    });
+  } catch (error) {
+    // Ethereal transporter send 실패 시 캐시 무효화 (세션 만료 등)
+    if (useEthereal) etherealPromise = null;
+    throw error;
+  }
+
+  if (useEthereal) {
+    const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;
     if (previewUrl) {
       console.log("[sendMail] Preview URL: " + previewUrl);
     }
     console.log("[sendMail] result: " + JSON.stringify({
       messageId: info.messageId,
       response: info.response,
-      accepted: info.accepted,
-      rejected: info.rejected,
+      acceptedCount: info.accepted?.length ?? 0,
+      rejectedCount: info.rejected?.length ?? 0,
     }));
+    return { ethereal: true, previewUrl };
   }
+
+  return { ethereal: false };
 }
