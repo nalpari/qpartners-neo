@@ -70,6 +70,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 2-1. Rate limiting — 동일 사용자 10분 내 3건 제한
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  let recentCount: number;
+  try {
+    recentCount = await prisma.twoFactorCode.count({
+      where: {
+        userType: userTp,
+        userId,
+        createdAt: { gte: tenMinutesAgo },
+      },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/two-factor/send] rate limit 조회 실패:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
+
+  if (recentCount >= 3) {
+    return NextResponse.json(
+      { error: "인증번호 발송 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 429 },
+    );
+  }
+
   // 3. 기존 미사용 코드 무효화 + 새 코드 생성
   const code = generateTwoFactorCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
