@@ -9,7 +9,7 @@ import { userTpValues } from "@/lib/schemas/common";
 type UserTp = (typeof userTpValues)[number];
 
 const TAB_TO_USER_TP: Record<TabType, UserTp> = {
-  dealer: "DEALER",
+  dealer: "STORE",
   installer: "SEKO",
   general: "GENERAL",
 };

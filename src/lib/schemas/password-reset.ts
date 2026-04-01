@@ -11,7 +11,7 @@ export const passwordResetRequestSchema = z.object({
   email: z.string().email("유효한 이메일 주소를 입력해주세요").max(100),
   sekoId: z.string().optional(),
 }).superRefine((data, ctx) => {
-  if (data.userTp === "DEALER" && (!data.loginId || data.loginId.trim() === "")) {
+  if (data.userTp === "STORE" && (!data.loginId || data.loginId.trim() === "")) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "판매점 회원은 ID 입력이 필수입니다",

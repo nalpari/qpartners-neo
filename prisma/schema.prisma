@@ -20,7 +20,7 @@ datasource db {
 /// 사용자 유형 (관리자/판매점/시공점/일반회원)
 enum UserType {
   ADMIN
-  DEALER
+  STORE
   SEKO
   GENERAL
 }

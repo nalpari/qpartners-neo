@@ -1671,7 +1671,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1684,7 +1684,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1700,7 +1700,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           pwd: { type: "string", example: "1234", description: "비밀번호" },
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
             default: "GENERAL",
             description: "사용자 유형",
           },
@@ -1756,7 +1756,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -2097,7 +2097,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           endAt: { type: "string", format: "date-time" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
-          userType: { type: "string", enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"] },
+          userType: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] },
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },

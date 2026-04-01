@@ -52,7 +52,7 @@ const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
 
 function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
   if (user.userTp === "ADMIN") return "ADMIN";
-  if (user.userTp === "DEALER") {
+  if (user.userTp === "STORE") {
     if (user.storeLvl === "1") return "DEALER_1";
     if (user.storeLvl === "2") return "DEALER_2";
   }

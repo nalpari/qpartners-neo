@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
             return [{ targetSuperAdmin: true }, { targetAdmin: true }];
           }
           return [{ targetAdmin: true }];
-        case "DEALER":
+        case "STORE":
           return [{ targetFirstDealer: true }, { targetSecondDealer: true }];
         case "SEKO":
           return [{ targetConstructor: true }];

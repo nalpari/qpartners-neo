@@ -9,7 +9,7 @@
 
 import { NextResponse } from "next/server";
 
-const VALID_USER_TYPES = new Set(["ADMIN", "DEALER", "SEKO", "GENERAL"]);
+const VALID_USER_TYPES = new Set(["ADMIN", "STORE", "SEKO", "GENERAL"]);
 const VALID_ROLES = new Set([
   "super_admin",
   "admin",
@@ -21,7 +21,7 @@ const VALID_ROLES = new Set([
 ]);
 
 export type UserInfo = {
-  userType: "ADMIN" | "DEALER" | "SEKO" | "GENERAL";
+  userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
   userId: string;
   role: string;
   department?: string;

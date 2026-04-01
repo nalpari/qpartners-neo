@@ -22,7 +22,7 @@ const STATUS_ERROR_MAP: Record<number, string> = {
 };
 
 const TAB_TO_USERTP: Record<TabType, string> = {
-  dealer: "DEALER",
+  dealer: "STORE",
   installer: "SEKO",
   general: "GENERAL",
 };
