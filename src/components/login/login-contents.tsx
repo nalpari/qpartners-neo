@@ -59,7 +59,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
 
       if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
-        openPopup("two-factor-auth", { userId: userData.userId, email: userData.email });
+        openPopup("two-factor-auth", { userId: userData.userId, email: userData.email, userTp: TAB_TO_USERTP[activeTab] });
       } else {
         // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
         queryClient.setQueryData(["auth", "login-user-info"], userData);

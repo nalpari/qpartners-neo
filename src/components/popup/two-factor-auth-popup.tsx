@@ -4,29 +4,43 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
+import api from "@/lib/axios";
 import { usePopupStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
+import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
-
-const CLOSE_ANIMATION_MS = 200;
 
 export function TwoFactorAuthPopup() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { closePopup } = usePopupStore();
+  const { popupData, closePopup } = usePopupStore();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const userId = popupData.userId as string;
+  const userTp = popupData.userTp as string;
 
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isClosing, setIsClosing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(600);
 
   const isCodeValid = code.length === 6;
 
-  // 팝업 열리면 자동 포커스
+  // 팝업 열리면 자동 포커스 + 인증번호 발송 (StrictMode 중복 방지)
+  const sendCalledRef = useRef(false);
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    if (sendCalledRef.current) return;
+    sendCalledRef.current = true;
+    api.post("/auth/two-factor/send", { userTp, userId }).catch((err) => {
+      if (err instanceof AxiosError && err.response?.status === 429) {
+        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+      } else {
+        setError("メール送信に失敗しました。再送信をお試しください。");
+      }
+    });
+  }, [userTp, userId]);
 
   // 10분 카운트다운 타이머
   useEffect(() => {
@@ -53,40 +67,65 @@ export function TwoFactorAuthPopup() {
     setError(null);
   };
 
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      closePopup();
-      setCode("");
-      setError(null);
-      setIsClosing(false);
-    }, CLOSE_ANIMATION_MS);
-  };
-
   const handleCancel = async () => {
     await performLogout(queryClient);
     closePopup();
     router.replace("/login");
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     setCode("");
     setError(null);
     setRemainingSeconds(600);
     inputRef.current?.focus();
-    // TODO: POST /api/auth/two-factor/resend
+    try {
+      await api.post("/auth/two-factor/send", { userTp, userId });
+    } catch (err) {
+      if (err instanceof AxiosError && err.response?.status === 429) {
+        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+      } else {
+        setError("メール送信に失敗しました。再送信をお試しください。");
+      }
+    }
   };
 
-  const handleVerify = () => {
-    if (!isCodeValid) return;
-    // TODO: POST /api/auth/two-factor/verify 연동 시 성공 → handleClose() + AUTH_FLAG_KEY 설정 + router.replace("/")
-    // 현재(API 미연동): 무조건 실패 처리
-    setError("認証番号が一致しません！");
+  const handleVerify = async () => {
+    if (!isCodeValid || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await api.post("/auth/two-factor/verify", { userTp, userId, code });
+
+      // 성공: 홈화면 블러 해제 (성공 메시지 없음)
+      localStorage.setItem(AUTH_FLAG_KEY, "1");
+      dispatchAuthChange();
+      closePopup();
+      router.replace("/");
+    } catch (err) {
+      if (err instanceof AxiosError && err.response) {
+        const serverError: string = err.response.data?.error ?? "";
+        if (serverError.includes("일치")) {
+          setError("認証番号が一致しません！");
+        } else if (serverError.includes("초과되었습니다")) {
+          setError("入力時間を超過しました。再送信後、もう一度入力してください。");
+        } else if (serverError.includes("시도 횟수")) {
+          setError("認証の試行回数を超過しました。認証番号を再送信してください。");
+        } else {
+          setError("サーバーに接続できません。しばらくしてからお試しください");
+        }
+      } else {
+        setError("サーバーに接続できません。しばらくしてからお試しください");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div
-      className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
+      className="popup-overlay"
     >
       <div
         className="popup-container gap-[26px] lg:gap-8"
@@ -153,7 +192,7 @@ export function TwoFactorAuthPopup() {
                 />
                 <button
                   type="button"
-                  onClick={handleResend}
+                  onClick={() => { void handleResend(); }}
                   className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0"
                 >
                   再送信
@@ -184,10 +223,10 @@ export function TwoFactorAuthPopup() {
               </Button>
               <Button
                 variant="primary"
-                onClick={handleVerify}
-                disabled={!isCodeValid}
+                onClick={() => { void handleVerify(); }}
+                disabled={!isCodeValid || isSubmitting}
               >
-                確認
+                {isSubmitting ? "確認中..." : "確認"}
               </Button>
             </div>
           </div>

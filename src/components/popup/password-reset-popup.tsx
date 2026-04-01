@@ -39,7 +39,7 @@ function isFormValid(tab: TabType, data: FormData): boolean {
     case "installer":
       return data.email.trim() !== "";
     case "general":
-      return data.idEmail.trim() !== "" && data.fullName.trim() !== "";
+      return data.idEmail.trim() !== "";
   }
 }
 
@@ -177,30 +177,17 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "general" && (
-              <>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    E-Mail<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.idEmail}
-                    onChange={(e) => handleChange("idEmail", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    氏名<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => handleChange("fullName", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </>
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>
+                  ID(E-Mail)<span className="text-[#FF1A1A]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={formData.idEmail}
+                  onChange={(e) => handleChange("idEmail", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
             )}
           </div>
 
