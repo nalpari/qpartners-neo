@@ -59,6 +59,7 @@ export function PasswordResetPopup() {
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
+      setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
   }, [closePopup]);
@@ -90,15 +91,19 @@ export function PasswordResetPopup() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
       });
 
-      const json = await res.json();
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = await res.json() as Record<string, unknown>;
+      } catch {
+        // non-JSON 응답
+      }
 
       if (!res.ok) {
-        openAlert({
-          type: "alert",
-          message: json.error ?? "サーバーエラーが発生しました。",
-        });
+        const errMsg = json && typeof json.error === "string" ? json.error : "サーバーエラーが発生しました。";
+        openAlert({ type: "alert", message: errMsg });
         return;
       }
 
@@ -107,7 +112,8 @@ export function PasswordResetPopup() {
         type: "alert",
         message: "パスワード変更リンクがメールで送信されました。",
       });
-    } catch {
+    } catch (err) {
+      console.error("[PasswordResetPopup] 비밀번호 초기화 요청 실패:", err);
       openAlert({
         type: "alert",
         message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",

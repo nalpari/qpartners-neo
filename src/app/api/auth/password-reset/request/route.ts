@@ -60,7 +60,14 @@ export async function POST(request: NextRequest) {
 
     const qspBody = await qspResponse.json();
     const parsed = qspResponseSchema.safeParse(qspBody);
-    userExists = parsed.success && parsed.data.result.resultCode === "S" && parsed.data.data != null;
+    if (!parsed.success) {
+      console.error("[POST /api/auth/password-reset/request] QSP 응답 스키마 불일치:", parsed.error.issues);
+      return NextResponse.json(
+        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { status: 502 },
+      );
+    }
+    userExists = parsed.data.result.resultCode === "S" && parsed.data.data != null;
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] QSP 회원조회 실패:", error);
     return NextResponse.json(
@@ -78,7 +85,7 @@ export async function POST(request: NextRequest) {
 
   // 3. Rate limiting — 동일 이메일 시간당 3건 제한
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  let recentCount: number;
+  let recentCount = 0;
   try {
     recentCount = await prisma.passwordResetToken.count({
       where: {
@@ -95,9 +102,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (recentCount >= 3) {
-    return NextResponse.json({
-      data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
-    });
+    // 회원 존재는 이미 확인된 상태 — 솔직하게 429 반환
+    return NextResponse.json(
+      { error: "しばらく経ってから再度お試しください。（1時間以内の送信回数上限）" },
+      { status: 429 },
+    );
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
@@ -127,7 +136,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. 비밀번호 변경 링크 메일 발송 (await하여 에러 로깅 보장, 이메일 존재 여부 노출 방지를 위해 동일 응답 유지)
+  // 5. 비밀번호 변경 링크 메일 발송
   const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
   const resetUrl = `${siteUrl}/password-reset?token=${token}`;
 
@@ -141,6 +150,17 @@ export async function POST(request: NextRequest) {
     console.error(
       `[POST /api/auth/password-reset/request] 메일 발송 실패 — to=${email}`,
       error instanceof Error ? { message: error.message } : error,
+    );
+    // 토큰 무효화 (rate limit 소모 방지 + 유령 토큰 제거)
+    await prisma.passwordResetToken.updateMany({
+      where: { token, used: false },
+      data: { used: true },
+    }).catch((dbError) => {
+      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패:", dbError);
+    });
+    return NextResponse.json(
+      { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },
+      { status: 500 },
     );
   }
 
