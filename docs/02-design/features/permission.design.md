@@ -19,7 +19,7 @@ QpRole (qp_roles)
 ├── roleName: String (100)
 ├── description: String? (500)
 ├── isActive: Boolean (default: true)
-├── createdAt / updatedAt
+├── createdAt / createdBy / updatedAt / updatedBy
 └── permissions: QpRoleMenuPermission[]
 
 QpRoleMenuPermission (qp_role_menu_permissions)
@@ -30,8 +30,8 @@ QpRoleMenuPermission (qp_role_menu_permissions)
 ├── canCreate: Boolean (default: false)
 ├── canUpdate: Boolean (default: false)
 ├── canDelete: Boolean (default: false)
-├── createdAt / updatedAt
-└── @@unique([roleCode, menuCode])
+├── createdAt / createdBy / updatedAt / updatedBy
+└── @@id([roleCode, menuCode])  — 복합 PK
 ```
 
 ---
@@ -185,3 +185,4 @@ src/lib/schemas/
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-03-22 | Initial draft | CK |
+| 0.2 | 2026-03-30 | Data Model createdBy/updatedBy 추가, QpRoleMenuPermission PK 수정 (@@id 복합키) | CK |
