@@ -3,9 +3,12 @@
 import { useState, useCallback } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
-import type { TabType } from "@/components/login/types";
+import { type TabType, VALID_TABS } from "@/components/login/types";
+import { userTpValues } from "@/lib/schemas/common";
 
-const TAB_TO_USER_TP: Record<TabType, string> = {
+type UserTp = (typeof userTpValues)[number];
+
+const TAB_TO_USER_TP: Record<TabType, UserTp> = {
   dealer: "DEALER",
   installer: "SEKO",
   general: "GENERAL",
@@ -45,7 +48,8 @@ function isFormValid(tab: TabType, data: FormData): boolean {
 export function PasswordResetPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const activeTab = (popupData.activeTab as TabType) ?? "dealer";
+  const rawTab = popupData.activeTab;
+  const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
 

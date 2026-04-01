@@ -8,7 +8,7 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 export const passwordResetRequestSchema = z.object({
   userTp: userTpSchema,
   loginId: z.string().optional(),
-  email: z.string().email("유효한 이메일 주소를 입력해주세요"),
+  email: z.string().email("유효한 이메일 주소를 입력해주세요").max(100),
   sekoId: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.userTp === "DEALER" && (!data.loginId || data.loginId.trim() === "")) {
@@ -18,13 +18,8 @@ export const passwordResetRequestSchema = z.object({
       path: ["loginId"],
     });
   }
-  if (data.userTp === "SEKO" && (!data.sekoId || data.sekoId.trim() === "")) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "시공점 회원은 시공점 ID 입력이 필수입니다",
-      path: ["sekoId"],
-    });
-  }
+  // SEKO sekoId: 현업 확인 후 조건부 필수 추가 예정 (팝업 UI 동기화 필요)
+  // GENERAL: email만 필수
 });
 
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;

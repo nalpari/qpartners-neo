@@ -9,6 +9,7 @@ import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
 type SubmitStatus = "idle" | "submitting" | "done";
+type PageStatus = "loading" | "invalid" | "ready" | SubmitStatus;
 
 export function PasswordResetClient() {
   const router = useRouter();
@@ -21,7 +22,7 @@ export function PasswordResetClient() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // 1. 토큰 검증 (TanStack Query — useEffect 내 setState 제거)
+  // 1. 토큰 검증 (TanStack Query)
   const { data: verifyData, error: verifyError, isLoading } = useQuery({
     queryKey: ["password-reset", "verify", token],
     queryFn: async () => {
@@ -37,7 +38,9 @@ export function PasswordResetClient() {
         try {
           const errJson = await res.json() as Record<string, unknown>;
           if (typeof errJson.error === "string") errorMsg = errJson.error;
-        } catch { /* ignore parse failure */ }
+        } catch (parseErr) {
+          console.error("[PasswordResetClient] エラー応答 JSON parse 失敗:", res.status, parseErr);
+        }
 
         if (res.status >= 500) {
           console.error("[PasswordResetClient] 토큰 검증 서버 오류:", res.status);
@@ -56,7 +59,7 @@ export function PasswordResetClient() {
   });
 
   // 파생 상태로 status 결정
-  const status: string = !token
+  const status: PageStatus = !token
     ? "invalid"
     : submitStatus !== "idle"
       ? submitStatus
@@ -68,7 +71,7 @@ export function PasswordResetClient() {
             ? "ready"
             : "loading";
 
-  // invalid 상태의 에러 메시지 (verify 에러 또는 폼 에러)
+  // invalid 상태의 에러 메시지 (토큰 검증 실패 시)
   const invalidError = verifyError instanceof Error ? verifyError.message : null;
 
   // 2. 비밀번호 변경 제출

@@ -38,7 +38,32 @@ export async function POST(request: NextRequest) {
 
   const { userTp, email, loginId, sekoId } = result.data;
 
-  // 2. QSP /user/detail 회원 존재 확인 (화면설계서 p.10)
+  // 2. Rate limiting — 동일 이메일 시간당 3건 제한 (QSP 조회 전에 실행하여 열거 공격 방어 + 외부 API 부하 감소)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  let recentCount: number;
+  try {
+    recentCount = await prisma.passwordResetToken.count({
+      where: {
+        userId: email,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/request] rate limit 조회 실패:", error);
+    return NextResponse.json(
+      { error: "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。" },
+      { status: 500 },
+    );
+  }
+
+  if (recentCount >= 3) {
+    return NextResponse.json(
+      { error: "しばらく経ってから再度お試しください。（1時間以内の送信回数上限）" },
+      { status: 429 },
+    );
+  }
+
+  // 3. QSP /user/detail 회원 존재 확인 (password-reset.design.md p.10)
   const params = new URLSearchParams({ accsSiteCd: "QPARTNERS", email, userTp });
   if (loginId) params.set("loginId", loginId);
   if (sekoId) params.set("sekoId", sekoId);
@@ -53,7 +78,7 @@ export async function POST(request: NextRequest) {
     if (!qspResponse.ok) {
       console.error("[POST /api/auth/password-reset/request] QSP 비정상 응답:", qspResponse.status);
       return NextResponse.json(
-        { error: "외부 서버 오류가 발생했습니다" },
+        { error: "外部サーバーエラーが発生しました。" },
         { status: 502 },
       );
     }
@@ -64,7 +89,7 @@ export async function POST(request: NextRequest) {
     });
     if (qspBody === null) {
       return NextResponse.json(
-        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { error: "外部サーバーの応答を処理できません。" },
         { status: 502 },
       );
     }
@@ -72,7 +97,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       console.error("[POST /api/auth/password-reset/request] QSP 응답 스키마 불일치:", parsed.error.issues);
       return NextResponse.json(
-        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { error: "外部サーバーの応答を処理できません。" },
         { status: 502 },
       );
     }
@@ -80,41 +105,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] QSP 회원조회 실패:", error);
     return NextResponse.json(
-      { error: "외부 서버에 연결할 수 없습니다" },
+      { error: "外部サーバーに接続できません。" },
       { status: 502 },
     );
   }
 
   if (!userExists) {
     return NextResponse.json(
-      { error: "일치하는 회원 정보가 없습니다. 입력하신 정보를 다시 확인해 주세요." },
+      { error: "一致する会員情報がありません。入力内容をもう一度ご確認ください。" },
       { status: 404 },
-    );
-  }
-
-  // 3. Rate limiting — 동일 이메일 시간당 3건 제한
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  let recentCount = 0;
-  try {
-    recentCount = await prisma.passwordResetToken.count({
-      where: {
-        userId: email,
-        createdAt: { gte: oneHourAgo },
-      },
-    });
-  } catch (error) {
-    console.error("[POST /api/auth/password-reset/request] rate limit 조회 실패:", error);
-    return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
-      { status: 500 },
-    );
-  }
-
-  if (recentCount >= 3) {
-    // 회원 존재는 이미 확인된 상태 — 솔직하게 429 반환
-    return NextResponse.json(
-      { error: "しばらく経ってから再度お試しください。（1時間以内の送信回数上限）" },
-      { status: 429 },
     );
   }
 
@@ -140,7 +139,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] 토큰 생성 실패:", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
+      { error: "サーバーエラーが発生しました。" },
       { status: 500 },
     );
   }

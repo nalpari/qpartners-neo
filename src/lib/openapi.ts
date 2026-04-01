@@ -197,7 +197,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. QSP 회원 조회 후 불일치 시 404 반환.",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429, QSP 회원 불일치 시 404 반환.",
         requestBody: {
           required: true,
           content: {
@@ -1760,9 +1760,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             example: "GENERAL",
             description: "사용자 유형",
           },
-          loginId: { type: "string", description: "로그인 ID (선택)" },
-          email: { type: "string", format: "email", example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
-          sekoId: { type: "string", description: "시공점 ID (선택)" },
+          loginId: { type: "string", description: "로그인 ID (DEALER 필수, 그 외 선택)" },
+          email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
+          sekoId: { type: "string", description: "시공점 ID (SEKO 필수 예정, 현재 선택)" },
         },
       },
       PasswordResetVerify: {
@@ -1777,7 +1777,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         required: ["token", "newPassword", "confirmPassword"],
         properties: {
           token: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000", description: "초기화 토큰" },
-          newPassword: { type: "string", minLength: 8, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
+          newPassword: { type: "string", minLength: 8, maxLength: 100, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
           confirmPassword: { type: "string", example: "1q2w3e4R!", description: "새 비밀번호 확인" },
         },
       },
