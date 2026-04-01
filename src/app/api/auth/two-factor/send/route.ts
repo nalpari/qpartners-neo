@@ -130,8 +130,9 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. 메일 발송
+  let mailResult;
   try {
-    await sendMail({
+    mailResult = await sendMail({
       to: user.email,
       subject: TWO_FACTOR_SUBJECT,
       html: twoFactorMailHtml({ code }),
@@ -158,6 +159,9 @@ export async function POST(request: NextRequest) {
     data: {
       message: "인증번호가 발송되었습니다.",
       expiresIn: 600,
+      ...(mailResult.ethereal && mailResult.previewUrl
+        ? { _dev_previewUrl: mailResult.previewUrl }
+        : {}),
     },
   });
 }

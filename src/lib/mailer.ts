@@ -23,10 +23,11 @@ async function getTransporter() {
             auth: { user: testAccount.user, pass: testAccount.pass },
           });
         } catch (error) {
+          console.error("[SMTP] Ethereal 계정 생성 실패:", error);
           etherealPromise = null;
           throw new Error(
-            "Ethereal 테스트 계정 생성 실패 — SMTP_PASS를 설정하여 실제 SMTP를 사용하세요. " +
-            (error instanceof Error ? error.message : String(error)),
+            "Ethereal 테스트 계정 생성 실패 — SMTP_PASS를 설정하여 실제 SMTP를 사용하세요.",
+            { cause: error },
           );
         }
       })();
@@ -88,9 +89,9 @@ export async function sendMail({ to, subject, html }: SendMailOptions): Promise<
     throw error;
   }
 
-  let info: nodemailer.SentMessageInfo;
+  let rawInfo: nodemailer.SentMessageInfo;
   try {
-    info = await transporter.sendMail({
+    rawInfo = await transporter.sendMail({
       from: `${SMTP_DEFAULTS.fromName} <${from}>`,
       to,
       subject,
@@ -98,20 +99,25 @@ export async function sendMail({ to, subject, html }: SendMailOptions): Promise<
     });
   } catch (error) {
     // Ethereal transporter send 실패 시 캐시 무효화 (세션 만료 등)
+    // NOTE: Ethereal 장애 시 매 요청마다 createTestAccount 재시도됨 (dev-only이므로 허용)
     if (useEthereal) etherealPromise = null;
     throw error;
   }
 
   if (useEthereal) {
-    const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;
+    const previewUrl = nodemailer.getTestMessageUrl(rawInfo) || undefined;
+    const messageId = String(rawInfo?.messageId ?? "");
+    const response = String(rawInfo?.response ?? "");
+    const acceptedCount = Array.isArray(rawInfo?.accepted) ? rawInfo.accepted.length : 0;
+    const rejectedCount = Array.isArray(rawInfo?.rejected) ? rawInfo.rejected.length : 0;
     if (previewUrl) {
       console.log("[sendMail] Preview URL: " + previewUrl);
     }
     console.log("[sendMail] result: " + JSON.stringify({
-      messageId: info.messageId,
-      response: info.response,
-      acceptedCount: info.accepted?.length ?? 0,
-      rejectedCount: info.rejected?.length ?? 0,
+      messageId,
+      response,
+      acceptedCount,
+      rejectedCount,
     }));
     return { ethereal: true, previewUrl };
   }
