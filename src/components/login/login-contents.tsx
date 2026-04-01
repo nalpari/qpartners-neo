@@ -70,7 +70,11 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       } else {
         // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
         queryClient.setQueryData(["auth", "login-user-info"], userData);
-        localStorage.setItem(AUTH_FLAG_KEY, "1");
+        try {
+          localStorage.setItem(AUTH_FLAG_KEY, "1");
+        } catch (storageErr) {
+          console.error("[LoginContents] AUTH_FLAG 쓰기 실패:", storageErr);
+        }
         dispatchAuthChange();
         router.replace("/");
       }
