@@ -144,6 +144,7 @@ export function SignupContents() {
       const { userName, email } = res.data.data;
       openPopup("signup-complete", { userName, userId: email });
     } catch (error) {
+      console.error("[Signup] 会員登録失敗:", error);
       if (isAxiosError(error) && error.response) {
         const body: unknown = error.response.data;
         const msg =
