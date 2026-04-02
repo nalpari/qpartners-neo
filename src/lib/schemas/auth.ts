@@ -18,7 +18,11 @@ export const qspLoginUserSchema = z.object({
   userId: z.string(),
   userNm: z.string().nullable(),
   userNmKana: z.string().nullable(),
-  userTp: z.string(),
+  // QSP 외부 시스템이므로 미지의 userTp 대비 — 알 수 없는 값은 GENERAL로 폴백하되 경고 로깅
+  userTp: z.enum(userTpValues).catch((ctx) => {
+    console.warn("[qspLoginUserSchema] unknown userTp, falling back to GENERAL:", ctx.input);
+    return "GENERAL" as const;
+  }),
   compCd: z.string().nullable(),
   compNm: z.string().nullable(),
   compNmKana: z.string().nullable(),

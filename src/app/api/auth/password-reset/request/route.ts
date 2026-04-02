@@ -10,6 +10,7 @@ import {
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
 import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/password-reset/request — 비밀번호 초기화 요청 (메일 발송)
 export async function POST(request: NextRequest) {
@@ -38,7 +39,21 @@ export async function POST(request: NextRequest) {
 
   const { userTp, email, loginId, sekoId } = result.data;
 
-  // 2. Rate limiting — 동일 이메일 시간당 3건 제한 (QSP 조회 전에 실행하여 열거 공격 방어 + 외부 API 부하 감소)
+  // 2-a. IP 기반 rate limiting — 열거 공격 방어 (토큰 미생성 이메일도 제한)
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+  if (ip) {
+    if (!checkRateLimit(`pw-reset:${ip}`, 10, 60 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+        { status: 429 },
+      );
+    }
+  } else {
+    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — IP rate limit 건너뜀");
+  }
+
+  // 2-b. Rate limiting — 동일 이메일 시간당 3건 제한 (토큰 생성 기준)
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   let recentCount: number;
   try {

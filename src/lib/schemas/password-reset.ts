@@ -18,8 +18,13 @@ export const passwordResetRequestSchema = z.object({
       path: ["loginId"],
     });
   }
-  // SEKO sekoId: 현업 확인 후 조건부 필수 추가 예정 (팝업 UI 동기화 필요)
-  // GENERAL: email만 필수
+  if (data.userTp === "SEKO" && (!data.sekoId || data.sekoId.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "시공점 회원은 시공점 ID 입력이 필수입니다",
+      path: ["sekoId"],
+    });
+  }
 });
 
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;

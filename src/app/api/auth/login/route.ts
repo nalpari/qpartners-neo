@@ -136,13 +136,15 @@ export async function POST(request: NextRequest) {
       // 유효기간 조회 실패 또는 값 이상 → fail-closed
       requireTwoFactor = true;
     } else {
-      // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss" → ISO 8601) 후 유효기간 비교
+      // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss" → ISO 8601 + KST 오프셋) 후 유효기간 비교
+      /** QSP secAuthDt는 KST(UTC+09:00) 기준 반환 */
+      const QSP_TIMEZONE_OFFSET = "+09:00";
       const secAuthDt = qsp.data.secAuthDt;
       if (!secAuthDt) {
         // secAuthDt 없음 → 2FA 미인증 상태 → 필요
         requireTwoFactor = true;
       } else {
-        const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T");
+        const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
         const authDate = new Date(isoStr);
         if (Number.isNaN(authDate.getTime())) {
           console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);

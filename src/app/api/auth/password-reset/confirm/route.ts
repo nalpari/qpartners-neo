@@ -24,16 +24,36 @@ const qspUserDetailSchema = z.object({
   }).nullable(),
 });
 
-/** 토큰 롤백 헬퍼 — QSP 실패 시 토큰을 재사용 가능하게 복원 */
-async function rollbackToken(token: string) {
+/**
+ * 토큰 롤백 헬퍼 — QSP 실패 시 토큰을 재사용 가능하게 복원.
+ * 멱등 — 이미 미사용 상태면 0건 업데이트 후 true 반환.
+ * @returns true면 롤백 성공 (재시도 가능), false면 롤백 실패 (새 링크 필요)
+ */
+async function rollbackToken(token: string): Promise<boolean> {
   try {
     await prisma.passwordResetToken.updateMany({
       where: { token, used: true },
       data: { used: false },
     });
+    return true;
   } catch (err) {
     console.error("[password-reset/confirm] 토큰 롤백 실패:", err);
+    return false;
   }
+}
+
+/** 토큰 롤백 + 에러 응답 생성 헬퍼 — 롤백 성공 시 재시도 안내, 실패 시 새 링크 안내 */
+async function rollbackAndRespond(
+  token: string,
+  retryMsg: string,
+  newLinkMsg: string,
+  status: number,
+): Promise<NextResponse> {
+  const rolled = await rollbackToken(token);
+  return NextResponse.json(
+    { error: rolled ? retryMsg : newLinkMsg },
+    { status },
+  );
 }
 
 // POST /api/auth/password-reset/confirm — 비밀번호 변경 + 자동 로그인
@@ -127,10 +147,14 @@ export async function POST(request: NextRequest) {
         loginId = parsed.data.data.userId;
         detailData = parsed.data.data;
       }
+    } else {
+      console.warn(
+        `[POST /api/auth/password-reset/confirm] userDetail 비정상 응답 — status=${detailRes.status}, userTp=${resetToken.userType}, email=${resetToken.userId}`,
+      );
     }
   } catch (error) {
     console.error(
-      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (GENERAL fallback 진행):",
+      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (non-GENERAL은 이후 에러 반환):",
       error instanceof Error ? { message: error.message } : error,
     );
     // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
@@ -141,10 +165,10 @@ export async function POST(request: NextRequest) {
     console.error(
       `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
     );
-    await rollbackToken(token);
-    return NextResponse.json(
-      { error: "사용자 정보를 확인할 수 없습니다" },
-      { status: 500 },
+    return rollbackAndRespond(token,
+      "사용자 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+      "사용자 정보를 확인할 수 없습니다. 새 비밀번호 초기화 링크를 요청해 주세요.",
+      500,
     );
   }
 
@@ -167,20 +191,20 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] QSP API 호출 실패:", error);
     // QSP 네트워크 에러 — 비밀번호 변경 미도달 확실 → 토큰 롤백
-    await rollbackToken(token);
-    return NextResponse.json(
-      { error: "외부 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요." },
-      { status: 502 },
+    return rollbackAndRespond(token,
+      "외부 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+      "외부 서버에 연결할 수 없습니다. 새 비밀번호 초기화 링크를 요청해 주세요.",
+      502,
     );
   }
 
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비정상 응답:", qspResponse.status);
     // HTTP 에러 — QSP가 처리하지 않았을 가능성 높음 → 토큰 롤백
-    await rollbackToken(token);
-    return NextResponse.json(
-      { error: "외부 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." },
-      { status: 502 },
+    return rollbackAndRespond(token,
+      "외부 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      "외부 서버 오류가 발생했습니다. 새 비밀번호 초기화 링크를 요청해 주세요.",
+      502,
     );
   }
 
@@ -190,10 +214,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] QSP 응답 JSON 파싱 실패:", error);
     // QSP가 처리했을 수 있으나 응답 파싱 실패 → 토큰 롤백 (QSP 비밀번호 변경은 멱등이므로 재시도 안전)
-    await rollbackToken(token);
-    return NextResponse.json(
-      { error: "비밀번호가 변경되었을 수 있습니다. 새 비밀번호로 로그인을 시도하시거나, 잠시 후 다시 시도해 주세요." },
-      { status: 502 },
+    return rollbackAndRespond(token,
+      "비밀번호가 변경되었을 수 있습니다. 새 비밀번호로 로그인을 시도하시거나, 잠시 후 다시 시도해 주세요.",
+      "비밀번호가 변경되었을 수 있습니다. 새 비밀번호로 로그인을 시도하시거나, 새 초기화 링크를 요청해 주세요.",
+      502,
     );
   }
 
@@ -201,10 +225,10 @@ export async function POST(request: NextRequest) {
   if (!parsed.success || parsed.data.result.resultCode !== "S") {
     console.error("[POST /api/auth/password-reset/confirm] QSP 비밀번호 변경 실패:", qspBody);
     // QSP가 명시적으로 실패 반환 → 토큰 롤백
-    await rollbackToken(token);
-    return NextResponse.json(
-      { error: "비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요." },
-      { status: 500 },
+    return rollbackAndRespond(token,
+      "비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      "비밀번호 변경에 실패했습니다. 새 비밀번호 초기화 링크를 요청해 주세요.",
+      500,
     );
   }
 

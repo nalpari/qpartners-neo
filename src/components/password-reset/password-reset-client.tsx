@@ -21,6 +21,7 @@ export function PasswordResetClient() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [autoLoginOk, setAutoLoginOk] = useState(false);
 
   // 1. 토큰 검증 (TanStack Query)
   const { data: verifyData, error: verifyError, isLoading } = useQuery({
@@ -130,6 +131,7 @@ export function PasswordResetClient() {
           console.error("[PasswordResetClient] localStorage 쓰기 실패:", storageErr);
         }
         dispatchAuthChange();
+        setAutoLoginOk(true);
       } else {
         console.warn("[PasswordResetClient] 자동 로그인 데이터 누락 — ログインページへリダイレクト");
       }
@@ -179,7 +181,9 @@ export function PasswordResetClient() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <p className="font-['Noto_Sans_JP'] text-sm text-[#101010]">
-          保存されました。ホームに移動します...
+          {autoLoginOk
+            ? "保存されました。ホームに移動します..."
+            : "パスワードが変更されました。ログインページに移動します..."}
         </p>
       </div>
     );

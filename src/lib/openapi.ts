@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from "openapi-types";
+import { userTpValues } from "@/lib/schemas/common";
 
 const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   description,
@@ -1671,7 +1672,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1684,7 +1685,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1700,7 +1701,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           pwd: { type: "string", example: "1234", description: "비밀번호" },
           userTp: {
             type: "string",
-            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             default: "GENERAL",
             description: "사용자 유형",
           },
@@ -1756,7 +1757,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "STORE", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -2097,7 +2098,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           endAt: { type: "string", format: "date-time" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
-          userType: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] },
+          userType: { type: "string", enum: [...userTpValues] },
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
