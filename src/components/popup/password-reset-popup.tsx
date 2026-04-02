@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
-
-type TabType = "dealer" | "installer" | "general";
+import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
 
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
@@ -12,67 +11,114 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "general", label: "一般会員" },
 ];
 
-interface FormData {
+interface ResetFormData {
   id: string;
   email: string;
-  lastName: string;
-  firstName: string;
+  sekoId: string;
   idEmail: string;
-  fullName: string;
 }
 
-const INITIAL_FORM: FormData = {
+const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
-  lastName: "",
-  firstName: "",
+  sekoId: "",
   idEmail: "",
-  fullName: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: FormData): boolean {
+function isFormValid(tab: TabType, data: ResetFormData): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
     case "installer":
       return data.email.trim() !== "";
     case "general":
-      return data.idEmail.trim() !== "" && data.fullName.trim() !== "";
+      return data.idEmail.trim() !== "";
   }
 }
 
 export function PasswordResetPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const activeTab = (popupData.activeTab as TabType) ?? "dealer";
+  const rawTab = popupData.activeTab;
+  const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
-  const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
+  const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
 
-  const handleChange = (key: keyof FormData, value: string) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleChange = (key: keyof ResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
+      setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  };
+  }, [closePopup]);
 
-  const handleSubmit = () => {
-    if (!isFormValid(activeTab, formData)) return;
+  const handleSubmit = useCallback(async () => {
+    if (!isFormValid(activeTab, formData) || isSubmitting) return;
 
-    // TODO: API 호출 (비밀번호 초기화)
-    handleClose();
-    openAlert({
-      type: "alert",
-      message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
-    });
-  };
+    const userTp = TAB_TO_USERTP[activeTab];
+    const payload: Record<string, string> = { userTp, email: "" };
+
+    switch (activeTab) {
+      case "dealer":
+        payload.loginId = formData.id;
+        payload.email = formData.email;
+        break;
+      case "installer":
+        payload.email = formData.email;
+        if (formData.sekoId.trim()) payload.sekoId = formData.sekoId;
+        break;
+      case "general":
+        payload.email = formData.idEmail;
+        break;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = await res.json() as Record<string, unknown>;
+      } catch (parseErr) {
+        console.error("[PasswordResetPopup] 응답 JSON 파싱 실패:", parseErr);
+      }
+
+      if (!res.ok) {
+        const errMsg = json && typeof json.error === "string" ? json.error : "サーバーエラーが発生しました。";
+        openAlert({ type: "alert", message: errMsg });
+        return;
+      }
+
+      handleClose();
+      openAlert({
+        type: "alert",
+        message: "パスワード変更リンクがメールで送信されました。",
+      });
+    } catch (err) {
+      console.error("[PasswordResetPopup] 비밀번호 초기화 요청 실패:", err);
+      openAlert({
+        type: "alert",
+        message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [activeTab, formData, isSubmitting, handleClose, openAlert]);
 
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
@@ -163,44 +209,44 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "installer" && (
-              <div className="flex flex-col gap-2 w-full">
-                <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-            )}
-
-            {activeTab === "general" && (
               <>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    施工店ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.sekoId}
+                    onChange={(e) => handleChange("sekoId", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
                 <div className="flex flex-col gap-2 w-full">
                   <label className={labelClass}>
                     E-Mail<span className="text-[#FF1A1A]">*</span>
                   </label>
                   <input
                     type="email"
-                    value={formData.idEmail}
-                    onChange={(e) => handleChange("idEmail", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    氏名<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => handleChange("fullName", e.target.value)}
+                    value={formData.email}
+                    onChange={(e) => handleChange("email", e.target.value)}
                     className={inputClass}
                   />
                 </div>
               </>
+            )}
+
+            {activeTab === "general" && (
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>
+                  ID(E-Mail)<span className="text-[#FF1A1A]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={formData.idEmail}
+                  onChange={(e) => handleChange("idEmail", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
             )}
           </div>
 
@@ -209,7 +255,7 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSubmit}>
+            <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
               パスワードの初期化
             </Button>
           </div>

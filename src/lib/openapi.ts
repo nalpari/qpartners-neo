@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from "openapi-types";
+import { userTpValues } from "@/lib/schemas/common";
 
 const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   description,
@@ -53,8 +54,8 @@ export const openApiSpec: OpenAPIV3.Document = {
 | 유형 | ID | PW | userTp |
 |------|-----|------|--------|
 | 관리자 | 1301011 | 1234 | ADMIN |
-| 1차 판매점 | T01 | 1234 | DEALER |
-| 2차 판매점 | 201T01 | 1234 | DEALER |
+| 1차 판매점 | T01 | 1234 | STORE |
+| 2차 판매점 | 201T01 | 1234 | STORE |
 | 일반 | test1 | 1234 | GENERAL |`,
         requestBody: {
           required: true,
@@ -197,7 +198,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 이메일 존재 여부와 관계없이 동일한 응답을 반환 (보안).",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429, QSP 회원 불일치 시 404 반환.",
         requestBody: {
           required: true,
           content: {
@@ -233,7 +234,10 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "500": errorResponse("서버 오류"),
+          "404": errorResponse("일치하는 회원 정보 없음"),
+          "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
+          "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
+          "502": errorResponse("외부 서버 연결 실패"),
         },
       },
     },
@@ -1668,7 +1672,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1681,7 +1685,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1697,7 +1701,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           pwd: { type: "string", example: "1234", description: "비밀번호" },
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             default: "GENERAL",
             description: "사용자 유형",
           },
@@ -1753,13 +1757,13 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
-          loginId: { type: "string", description: "로그인 ID (선택)" },
-          email: { type: "string", format: "email", example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
-          sekoId: { type: "string", description: "시공점 ID (선택)" },
+          loginId: { type: "string", description: "로그인 ID (STORE 필수, 그 외 선택)" },
+          email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
+          sekoId: { type: "string", description: "시공점 ID (SEKO 필수)" },
         },
       },
       PasswordResetVerify: {
@@ -1774,7 +1778,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         required: ["token", "newPassword", "confirmPassword"],
         properties: {
           token: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000", description: "초기화 토큰" },
-          newPassword: { type: "string", minLength: 8, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
+          newPassword: { type: "string", minLength: 8, maxLength: 100, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
           confirmPassword: { type: "string", example: "1q2w3e4R!", description: "새 비밀번호 확인" },
         },
       },
@@ -2094,7 +2098,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           endAt: { type: "string", format: "date-time" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
-          userType: { type: "string", enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"] },
+          userType: { type: "string", enum: [...userTpValues] },
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },

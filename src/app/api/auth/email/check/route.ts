@@ -11,7 +11,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/email/check] JSON parse 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -51,8 +52,8 @@ export async function POST(request: NextRequest) {
       method: "GET",
       signal: AbortSignal.timeout(10_000),
     });
-  } catch {
-    console.error("[POST /api/auth/email/check] QSP API 호출 실패");
+  } catch (error) {
+    console.error("[POST /api/auth/email/check] QSP API 호출 실패:", error);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },
@@ -91,8 +92,15 @@ export async function POST(request: NextRequest) {
   const qsp = parsed.data;
 
   // 4. 존재 여부 판별
+  if (qsp.result.resultCode === "F_NOT_USER") {
+    // 유저 없음 → 사용 가능
+    return NextResponse.json({
+      data: { available: true, message: "사용 가능한 이메일입니다" },
+    });
+  }
+
   if (qsp.result.resultCode !== "S") {
-    // QSP 비즈니스 에러 → 502 처리 (silent "available" 방지)
+    // 그 외 비즈니스 에러 → 502
     console.error("[POST /api/auth/email/check] QSP 비즈니스 에러:", qsp.result.resultCode);
     return NextResponse.json(
       { error: "이메일 확인 중 오류가 발생했습니다" },
