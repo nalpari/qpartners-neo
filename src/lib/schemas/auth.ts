@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { userTpValues } from "@/lib/schemas/common";
+import { userTpValues, authRoleValues } from "@/lib/schemas/common";
 
 // ─── QSP 로그인 요청 ───
 
@@ -74,6 +74,7 @@ export const loginUserSchema = qspLoginUserSchema
     statCd: true,
   })
   .extend({
+    authRole: z.enum(authRoleValues),
     twoFactorVerified: z.boolean(),
   });
 

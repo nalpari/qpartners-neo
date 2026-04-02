@@ -233,6 +233,39 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
+  // authRole 판별 (login/route.ts와 동일 로직)
+  type AuthRole = "SUPER_ADMIN" | "ADMIN" | "1ST_STORE" | "2ND_STORE" | "SEKO" | "GENERAL";
+  let authRole: AuthRole;
+
+  switch (resetToken.userType) {
+    case "ADMIN": {
+      let isSuperAdmin = false;
+      try {
+        const superAdminEntry = await prisma.codeDetail.findFirst({
+          where: {
+            header: { headerCode: "ADMIN_ROLE" },
+            code: loginId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        isSuperAdmin = superAdminEntry !== null;
+      } catch (error) {
+        console.error("[POST /api/auth/password-reset/confirm] ADMIN_ROLE 조회 실패:", error);
+      }
+      authRole = isSuperAdmin ? "SUPER_ADMIN" : "ADMIN";
+      break;
+    }
+    case "STORE":
+      authRole = detailData?.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
+      break;
+    case "SEKO":
+      authRole = "SEKO";
+      break;
+    default:
+      authRole = "GENERAL";
+  }
+
   const user: LoginUser = {
     userId: loginId,
     userNm: detailData?.userNm ?? null,
@@ -244,6 +277,7 @@ export async function POST(request: NextRequest) {
     authCd: detailData?.authCd ?? null,
     storeLvl: detailData?.storeLvl ?? null,
     statCd: detailData?.statCd ?? null,
+    authRole,
     twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
   };
 

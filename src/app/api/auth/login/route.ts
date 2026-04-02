@@ -165,7 +165,41 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 6. 클라이언트에 전달할 사용자 정보 추출
+  // 6. 세부 권한코드(authRole) 판별
+  type AuthRole = "SUPER_ADMIN" | "ADMIN" | "1ST_STORE" | "2ND_STORE" | "SEKO" | "GENERAL";
+  let authRole: AuthRole;
+
+  switch (qsp.data.userTp) {
+    case "ADMIN": {
+      // ADMIN_ROLE 공통코드에서 loginId 대조 → SUPER_ADMIN 여부 판별
+      let isSuperAdmin = false;
+      try {
+        const superAdminEntry = await prisma.codeDetail.findFirst({
+          where: {
+            header: { headerCode: "ADMIN_ROLE" },
+            code: qsp.data.userId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        isSuperAdmin = superAdminEntry !== null;
+      } catch (error) {
+        console.error("[POST /api/auth/login] ADMIN_ROLE 조회 실패 — ADMIN으로 처리:", error);
+      }
+      authRole = isSuperAdmin ? "SUPER_ADMIN" : "ADMIN";
+      break;
+    }
+    case "STORE":
+      authRole = qsp.data.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
+      break;
+    case "SEKO":
+      authRole = "SEKO";
+      break;
+    default:
+      authRole = "GENERAL";
+  }
+
+  // 7. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
     userId: qsp.data.userId,
     userNm: qsp.data.userNm,
@@ -177,6 +211,7 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    authRole,
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
   };
@@ -192,7 +227,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 7. httpOnly 쿠키 설정
+  // 8. httpOnly 쿠키 설정
   const response = NextResponse.json({
     data: { ...user, requireTwoFactor },
   });
