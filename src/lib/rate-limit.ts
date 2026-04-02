@@ -34,7 +34,10 @@ function cleanup(force = false) {
  */
 export function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
   cleanup();
-  if (store.size > MAX_STORE_SIZE) cleanup(true);
+  if (store.size > MAX_STORE_SIZE) {
+    console.warn(`[rate-limit] store size exceeded ${MAX_STORE_SIZE}, forcing cleanup`);
+    cleanup(true);
+  }
 
   const now = Date.now();
   const entry = store.get(key);

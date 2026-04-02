@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
-  } catch {
-    console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패");
+  } catch (error) {
+    console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
       { error: "외부 인증 서버 응답을 처리할 수 없습니다" },
       { status: 502 },

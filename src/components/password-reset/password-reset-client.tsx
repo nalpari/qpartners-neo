@@ -144,7 +144,10 @@ export function PasswordResetClient() {
       }, 1500);
     } catch (err) {
       console.error("[PasswordResetClient] 비밀번호 변경 제출 중 오류:", err);
-      setError("サーバーに接続できません。しばらくしてからもう一度お試しください。");
+      const message = err instanceof DOMException && err.name === "TimeoutError"
+        ? "サーバーからの応答がありません。しばらくしてからもう一度お試しください。"
+        : "サーバーに接続できません。しばらくしてからもう一度お試しください。";
+      setError(message);
       setSubmitStatus("idle");
     }
   }, [token, newPassword, confirmPassword, queryClient, router]);

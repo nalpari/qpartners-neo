@@ -42,15 +42,15 @@ export async function POST(request: NextRequest) {
   // 2-a. IP 기반 rate limiting — 열거 공격 방어 (토큰 미생성 이메일도 제한)
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-  if (ip) {
-    if (!checkRateLimit(`pw-reset:${ip}`, 10, 60 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
-        { status: 429 },
-      );
-    }
-  } else {
-    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — IP rate limit 건너뜀");
+  const ipKey = ip ?? "unknown-ip";
+  if (!checkRateLimit(`pw-reset:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+      { status: 429 },
+    );
+  }
+  if (!ip) {
+    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — 공유 rate limit 적용");
   }
 
   // 2-b. Rate limiting — 동일 이메일 시간당 3건 제한 (토큰 생성 기준)

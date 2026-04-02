@@ -7,9 +7,9 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 export const passwordResetRequestSchema = z.object({
   userTp: userTpSchema,
-  loginId: z.string().optional(),
+  loginId: z.string().trim().optional(),
   email: z.string().email("유효한 이메일 주소를 입력해주세요").max(100),
-  sekoId: z.string().optional(),
+  sekoId: z.string().trim().optional(),
 }).superRefine((data, ctx) => {
   if (data.userTp === "STORE" && (!data.loginId || data.loginId.trim() === "")) {
     ctx.addIssue({
