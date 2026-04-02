@@ -16,6 +16,13 @@ const PUBLIC_PATHS = [
   "/api/openapi",
 ];
 
+/** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
+const PUBLIC_GET_PATTERNS = [
+  /^\/api\/contents(\/\d+)?$/, // GET /api/contents, GET /api/contents/[id]
+  /^\/api\/categories(\/\d+)?$/, // GET /api/categories, GET /api/categories/[id]
+  /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
+];
+
 /** 2차 인증 미완료 상태에서 접근 가능한 경로 */
 const TWO_FACTOR_PATHS = [
   "/api/auth/two-factor/send",
@@ -27,6 +34,11 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.includes(pathname);
 }
 
+function isPublicGetPath(pathname: string, method: string): boolean {
+  if (method !== "GET") return false;
+  return PUBLIC_GET_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
 function isTwoFactorPath(pathname: string): boolean {
   return TWO_FACTOR_PATHS.includes(pathname);
 }
@@ -34,7 +46,7 @@ function isTwoFactorPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isPublicPath(pathname)) {
+  if (isPublicPath(pathname) || isPublicGetPath(pathname, request.method)) {
     return NextResponse.next();
   }
 
@@ -58,7 +70,9 @@ export async function middleware(request: NextRequest) {
 
   // 2차 인증 미완료 상태: 제한된 경로만 허용
   // false: 2FA 필요하나 미완료 / true: 2FA 검증 완료 또는 2FA 불필요 (fail-closed 설계)
-  if (user.twoFactorVerified === false && !isTwoFactorPath(pathname)) {
+  if (user.twoFactorVerified === false
+    && !isTwoFactorPath(pathname)
+    && !isPublicGetPath(pathname, request.method)) {
     return NextResponse.json(
       { error: "2차 인증이 필요합니다" },
       { status: 403 },
