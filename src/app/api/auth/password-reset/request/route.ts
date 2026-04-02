@@ -128,11 +128,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 유저 미존재 시에도 동일 성공 응답 반환 — 이메일 열거 공격 방지
   if (!userExists) {
-    return NextResponse.json(
-      { error: "一致する会員情報がありません。入力内容をもう一度ご確認ください。" },
-      { status: 404 },
-    );
+    console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — email: ${email}, userTp: ${userTp}`);
+    return NextResponse.json({
+      data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+    });
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)

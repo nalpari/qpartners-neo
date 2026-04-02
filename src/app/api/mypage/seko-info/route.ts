@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     // TODO: AS-IS Seko User Info API 프록시 구현
     // 현재는 엔드포인트 미확인 상태 — 확인 후 구현
     return NextResponse.json(
-      { error: "시공점 정보 조회 API가 아직 연동되지 않았습니다" },
+      { error: "施工店情報照会APIはまだ連動されていません" },
       { status: 501 },
     );
   } catch (error) {

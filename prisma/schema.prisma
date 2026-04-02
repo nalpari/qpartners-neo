@@ -62,7 +62,7 @@ model Menu {
   createdBy    String?                @map("created_by") @db.VarChar(255)
   updatedAt    DateTime               @updatedAt @map("updated_at")
   updatedBy    String?                @map("updated_by") @db.VarChar(255)
-  parent       Menu?                  @relation("MenuTree", fields: [parentId], references: [id])
+  parent       Menu?                  @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Menu[]                 @relation("MenuTree")
   permissions  QpRoleMenuPermission[]
 
@@ -360,7 +360,7 @@ model DownloadLog {
 /// 화면 근거: 문의등록 (p.38-39) — 로그인 전에도 접근 가능
 model Inquiry {
   id          Int                    @id @default(autoincrement())
-  userType    qp_inquiries_user_type @map("user_type")
+  userType    qp_inquiries_user_type? @map("user_type")
   userId      String?                @map("user_id") @db.VarChar(255)
   companyName String                 @map("company_name") @db.VarChar(255)
   userName    String                 @map("user_name") @db.VarChar(200)

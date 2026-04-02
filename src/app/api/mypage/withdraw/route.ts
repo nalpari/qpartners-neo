@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     // TODO: QSP 탈퇴 API 호출 (saveResignReq) + qp_info 테이블 갱신
     // QSP 연동 완료 전까지 501 반환
     return NextResponse.json(
-      { error: "회원탈퇴 API가 아직 연동되지 않았습니다" },
+      { error: "会員退会APIはまだ連動されていません" },
       { status: 501 },
     );
   } catch (error) {

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("[POST /api/mypage/change-password] QSP API 호출 실패:", error);
       return NextResponse.json(
-        { error: "외부 서버에 연결할 수 없습니다" },
+        { error: "外部サーバーに接続できません" },
         { status: 502 },
       );
     }
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     if (!qspResponse.ok) {
       console.error("[POST /api/mypage/change-password] QSP 비정상 응답:", qspResponse.status);
       return NextResponse.json(
-        { error: "외부 서버 오류가 발생했습니다" },
+        { error: "外部サーバーエラーが発生しました" },
         { status: 502 },
       );
     }
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("[POST /api/mypage/change-password] QSP 응답 JSON 파싱 실패:", error);
       return NextResponse.json(
-        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { error: "外部サーバーの応答を処理できません" },
         { status: 502 },
       );
     }
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       console.error("[POST /api/mypage/change-password] QSP 응답 스키마 불일치:", parsed.error);
       return NextResponse.json(
-        { error: "외부 서버 응답 형식이 올바르지 않습니다" },
+        { error: "外部サーバーの応答形式が正しくありません" },
         { status: 502 },
       );
     }
@@ -111,12 +111,12 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      data: { message: "비밀번호가 변경되었습니다" },
+      data: { message: "パスワードが変更されました" },
     });
   } catch (error) {
     console.error("[POST /api/mypage/change-password]", error);
     return NextResponse.json(
-      { error: "비밀번호 변경 중 오류가 발생했습니다" },
+      { error: "パスワード変更中にエラーが発生しました" },
       { status: 500 },
     );
   }

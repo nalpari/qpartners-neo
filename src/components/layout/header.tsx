@@ -81,7 +81,7 @@ function subscribeAuthFlag(callback: () => void) {
 export function Gnb() {
   const hasAuthFlag = useSyncExternalStore(
     subscribeAuthFlag,
-    () => { try { return localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch (e) { console.warn("[Gnb] localStorage.getItem 실패:", e); return false; } },
+    () => { try { return localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch (e) { console.warn("[Gnb] localStorage.getItem 실패:", e); return true; } },
     () => false,
   );
 

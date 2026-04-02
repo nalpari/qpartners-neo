@@ -13,7 +13,7 @@ import { resolveAuthRole } from "@/lib/auth";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
-
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
@@ -211,4 +211,11 @@ export async function POST(request: NextRequest) {
   });
 
   return response;
+ } catch (error) {
+    console.error("[POST /api/auth/login]", error);
+    return NextResponse.json(
+      { error: "로그인 처리 중 서버 오류가 발생했습니다" },
+      { status: 500 },
+    );
+  }
 }

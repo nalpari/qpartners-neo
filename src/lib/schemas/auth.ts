@@ -36,10 +36,10 @@ export const qspLoginUserSchema = z.object({
   authCd: z.string().nullable(),
   storeLvl: z.string().nullable(),
   statCd: z.string().nullable(),
-  secAuthYn: z.string().nullable(),
+  secAuthYn: z.enum(["Y", "N"]).nullable(),
   secAuthDt: z.string().nullable(),
   loginFailCnt: z.number().nullable(),
-  pwdInitYn: z.string().nullable(),
+  pwdInitYn: z.enum(["Y", "N"]).nullable(),
 });
 
 export type QspLoginUser = z.infer<typeof qspLoginUserSchema>;
@@ -74,7 +74,8 @@ export const loginUserSchema = qspLoginUserSchema
     statCd: true,
   })
   .extend({
-    authRole: z.enum(authRoleValues),
+    // optional + default: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
+    authRole: z.enum(authRoleValues).optional().default("GENERAL"),
     twoFactorVerified: z.boolean(),
   });
 

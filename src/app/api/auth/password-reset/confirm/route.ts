@@ -147,10 +147,12 @@ export async function POST(request: NextRequest) {
       if (parsed.success && parsed.data.data?.userId) {
         loginId = parsed.data.data.userId;
         detailData = parsed.data.data;
+      } else if (!parsed.success) {
+        console.error("[POST /api/auth/password-reset/confirm] userDetail 응답 스키마 불일치:", parsed.error.issues);
       }
     } else {
       console.warn(
-        `[POST /api/auth/password-reset/confirm] userDetail 비정상 응답 — status=${detailRes.status}, userTp=${resetToken.userType}, email=${resetToken.userId}`,
+        `[POST /api/auth/password-reset/confirm] userDetail 비정상 응답 — status=${detailRes.status}, userTp=${resetToken.userType}`,
       );
     }
   } catch (error) {

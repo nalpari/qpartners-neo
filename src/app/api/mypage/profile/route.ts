@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     // 시공점은 별도 API (seko-info)
     if (user.userTp === "SEKO") {
       return NextResponse.json(
-        { error: "시공점 회원은 /api/mypage/seko-info를 사용해주세요" },
+        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
         { status: 400 },
       );
     }
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     // QSP userDetail API 호출
     if (!user.email) {
       return NextResponse.json(
-        { error: "이메일 정보가 없어 프로필을 조회할 수 없습니다" },
+        { error: "メール情報がないためプロフィールを照会できません" },
         { status: 400 },
       );
     }
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
       console.error("[GET /api/mypage/profile] QSP API 호출 실패:", error);
       return NextResponse.json(
-        { error: "외부 서버에 연결할 수 없습니다" },
+        { error: "外部サーバーに接続できません" },
         { status: 502 },
       );
     }
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     if (!qspResponse.ok) {
       console.error("[GET /api/mypage/profile] QSP 비정상 응답:", qspResponse.status);
       return NextResponse.json(
-        { error: "외부 서버 오류가 발생했습니다" },
+        { error: "外部サーバーエラーが発生しました" },
         { status: 502 },
       );
     }
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
       console.error("[GET /api/mypage/profile] QSP 응답 JSON 파싱 실패:", error);
       return NextResponse.json(
-        { error: "외부 서버 응답을 처리할 수 없습니다" },
+        { error: "外部サーバーの応答を処理できません" },
         { status: 502 },
       );
     }
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     if (!parsed.success) {
       console.error("[GET /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error);
       return NextResponse.json(
-        { error: "외부 서버 응답 형식이 올바르지 않습니다" },
+        { error: "外部サーバーの応答形式が正しくありません" },
         { status: 502 },
       );
     }
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     if (qsp.result.resultCode !== "S" || !qsp.data) {
       return NextResponse.json(
-        { error: "사용자 정보를 조회할 수 없습니다" },
+        { error: "ユーザー情報を照会できません" },
         { status: 404 },
       );
     }
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/mypage/profile]", error);
     return NextResponse.json(
-      { error: "프로필 조회 중 오류가 발생했습니다" },
+      { error: "プロフィール照会中にエラーが発生しました" },
       { status: 500 },
     );
   }
@@ -140,7 +140,7 @@ export async function PUT(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -174,7 +174,7 @@ export async function PUT(request: NextRequest) {
     // 판매점은 fax 필수
     if (user.userTp === "STORE" && !result.data.fax) {
       return NextResponse.json(
-        { error: "판매점은 FAX가 필수입니다" },
+        { error: "販売店はFAXが必須です" },
         { status: 400 },
       );
     }
@@ -215,7 +215,7 @@ export async function PUT(request: NextRequest) {
       } catch (error) {
         console.error("[PUT /api/mypage/profile] QSP API 호출 실패:", error);
         return NextResponse.json(
-          { error: "외부 서버에 연결할 수 없습니다" },
+          { error: "外部サーバーに接続できません" },
           { status: 502 },
         );
       }
@@ -223,7 +223,7 @@ export async function PUT(request: NextRequest) {
       if (!qspResponse.ok) {
         console.error("[PUT /api/mypage/profile] QSP 비정상 응답:", qspResponse.status);
         return NextResponse.json(
-          { error: "외부 서버 오류가 발생했습니다" },
+          { error: "外部サーバーエラーが発生しました" },
           { status: 502 },
         );
       }
@@ -234,7 +234,7 @@ export async function PUT(request: NextRequest) {
       } catch (error) {
         console.error("[PUT /api/mypage/profile] QSP 응답 JSON 파싱 실패:", error);
         return NextResponse.json(
-          { error: "외부 서버 응답을 처리할 수 없습니다" },
+          { error: "外部サーバーの応答を処理できません" },
           { status: 502 },
         );
       }
@@ -250,19 +250,19 @@ export async function PUT(request: NextRequest) {
       if (parsed.data.result.resultCode !== "S") {
         console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", parsed.data.result.resultCode);
         return NextResponse.json(
-          { error: "프로필 수정에 실패했습니다" },
+          { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
         );
       }
     }
 
     return NextResponse.json({
-      data: { message: "저장되었습니다" },
+      data: { message: "保存されました" },
     });
   } catch (error) {
     console.error("[PUT /api/mypage/profile]", error);
     return NextResponse.json(
-      { error: "프로필 수정 중 오류가 발생했습니다" },
+      { error: "プロフィール修正中にエラーが発生しました" },
       { status: 500 },
     );
   }

@@ -33,6 +33,9 @@ function cleanup(force = false) {
  * @returns true면 허용, false면 제한 초과
  */
 export function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  if (limit < 1 || windowMs < 1) {
+    throw new Error(`[rate-limit] invalid params: limit=${limit}, windowMs=${windowMs}`);
+  }
   cleanup();
   if (store.size > MAX_STORE_SIZE) {
     console.warn(`[rate-limit] store size exceeded ${MAX_STORE_SIZE} (${store.size}), forcing cleanup`);

@@ -95,7 +95,9 @@ export async function resolveAuthRole(
       return entry ? "SUPER_ADMIN" : "ADMIN";
     }
     case "STORE":
-      if (storeLvl !== "1" && storeLvl !== "2" && storeLvl !== null) {
+      if (storeLvl === null) {
+        console.warn(`[resolveAuthRole] STORE user with null storeLvl (userId: ${userId}) — defaulting to 1ST_STORE`);
+      } else if (storeLvl !== "1" && storeLvl !== "2") {
         console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" (userId: ${userId}) — 1ST_STORE로 처리`);
       }
       return storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";

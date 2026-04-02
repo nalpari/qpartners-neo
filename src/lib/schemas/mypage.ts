@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { userTpValues } from "@/lib/schemas/common";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 // ─── 프로필 수정 요청 ───
@@ -38,6 +39,10 @@ export const changePasswordSchema = z
     message: "パスワードが一致しません",
     path: ["confirmPwd"],
   })
+  .refine((data) => data.newPwd !== data.currentPwd, {
+    message: "現在のパスワードと同じパスワードには変更できません",
+    path: ["newPwd"],
+  })
   .refine((data) => validatePasswordPolicy(data.newPwd), {
     message:
       "パスワードは英大文字・英小文字・数字を組み合わせて8文字以上にしてください",
@@ -73,13 +78,27 @@ export const qspUserDetailSchema = z.object({
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
   corporateNo: z.string().nullable(),
-  newsRcptYn: z.string().nullable(),
+  newsRcptYn: z.enum(["Y", "N"]).nullable(),
   newsRcptDate: z.string().nullable(),
-  userTp: z.string().nullable(),
+  // QSP 과도기: DEALER → STORE 호환 매핑 (qspLoginUserSchema와 동일 로직)
+  userTp: z.string().nullable().transform((val) => {
+    if (val === "DEALER") return "STORE" as const;
+    return val;
+  }).pipe(z.enum(userTpValues).nullable()),
   storeLvl: z.string().nullable(),
 });
 
 export type QspUserDetail = z.infer<typeof qspUserDetailSchema>;
+
+// ─── 시공점 파일 다운로드 쿼리 ───
+
+export const sekoFileTypes = ["RECEIPT", "CERT1", "CERT2"] as const;
+
+export const sekoFileQuerySchema = z.object({
+  fileType: z.enum(sekoFileTypes, {
+    message: "fileTypeはRECEIPT, CERT1, CERT2のいずれかです",
+  }),
+});
 
 export const qspUserDetailResponseSchema = z.object({
   data: qspUserDetailSchema.nullable(),
