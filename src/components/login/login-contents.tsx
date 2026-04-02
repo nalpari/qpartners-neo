@@ -8,6 +8,7 @@ import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { usePopupStore } from "@/lib/store";
+import { useAppStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
@@ -33,8 +34,19 @@ interface LoginContentsProps {
 }
 
 export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
-  const [activeTab, setActiveTab] = useState<TabType>(initialSavedTab);
-  const [id, setId] = useState(initialSavedId);
+  // Design Ref: §5.4 — 가입완료 후 ID 자동입력 (React Compiler 호환: 초기값으로 직접 반영)
+  const prefillEmail = useAppStore((s) => s.prefillEmail);
+  const clearPrefillEmail = useAppStore((s) => s.clearPrefillEmail);
+
+  const [activeTab, setActiveTab] = useState<TabType>(
+    prefillEmail ? "general" : initialSavedTab
+  );
+  const [id, setId] = useState(prefillEmail || initialSavedId);
+
+  // prefillEmail 소비 후 클리어 (1회성)
+  if (prefillEmail) {
+    clearPrefillEmail();
+  }
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");

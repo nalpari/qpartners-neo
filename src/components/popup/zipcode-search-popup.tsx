@@ -12,13 +12,6 @@ interface ZipcodeAddress {
   town: string;
 }
 
-// Mock 데이터 (API 연동 시 교체 예정)
-const MOCK_ADDRESSES: ZipcodeAddress[] = [
-  { zipcode: "1050013", prefecture: "東京都", city: "港区", town: "浜松町" },
-  { zipcode: "1050013", prefecture: "東京都", city: "港区", town: "浜松町2丁目" },
-  { zipcode: "1000001", prefecture: "東京都", city: "千代田区", town: "千代田" },
-];
-
 const CLOSE_ANIMATION_MS = 200;
 
 const COLUMN_HEADERS = ["都道府県", "市区町村", "町丁目以下"] as const;
@@ -32,10 +25,12 @@ export function ZipcodeSearchPopup() {
   const [error, setError] = useState("");
   const [isClosing, setIsClosing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const canApply = selectedIndex !== null;
 
-  const handleSearch = () => {
+  // Design Ref: §5.5 — Mock → zipcloud API 실제 호출
+  const handleSearch = async () => {
     setError("");
     setResults([]);
     setSelectedIndex(null);
@@ -48,14 +43,35 @@ export function ZipcodeSearchPopup() {
       return;
     }
 
-    const matched = MOCK_ADDRESSES.filter((a) => a.zipcode === zipcode);
-    if (matched.length === 0) {
-      setError(
-        "登録された郵便番号に住所が見つかりません. もう一度入力してください."
+    setIsSearching(true);
+    try {
+      const res = await fetch(
+        `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`
       );
-      return;
+      const data: {
+        results: { zipcode: string; address1: string; address2: string; address3: string }[] | null;
+      } = await res.json();
+
+      if (!data.results || data.results.length === 0) {
+        setError(
+          "登録された郵便番号に住所が見つかりません. もう一度入力してください."
+        );
+        return;
+      }
+
+      setResults(
+        data.results.map((r) => ({
+          zipcode: r.zipcode,
+          prefecture: r.address1,
+          city: r.address2,
+          town: r.address3,
+        }))
+      );
+    } catch {
+      setError("住所検索中にエラーが発生しました。");
+    } finally {
+      setIsSearching(false);
     }
-    setResults(matched);
   };
 
   const handleClose = () => {
@@ -140,7 +156,8 @@ export function ZipcodeSearchPopup() {
                   <button
                     type="button"
                     onClick={handleSearch}
-                    className="shrink-0 cursor-pointer"
+                    disabled={isSearching}
+                    className="shrink-0 cursor-pointer disabled:opacity-50"
                     aria-label="検索"
                   >
                     <Image
@@ -199,7 +216,14 @@ export function ZipcodeSearchPopup() {
                   ))}
                 </div>
 
-                {results.length === 0 ? (
+                {isSearching ? (
+                  /* 검색 중 로딩 표시 */
+                  <div className="flex items-center justify-center border-t border-[#101010] border-b border-b-[#E6EEF6] px-[18px] py-[14px]">
+                    <p className="font-['Noto_Sans_JP'] text-[#999] text-center text-[12px]">
+                      検索中...
+                    </p>
+                  </div>
+                ) : results.length === 0 ? (
                   /* 빈 결과: 검색결과 없음 메시지 */
                   <div className="flex items-center justify-center border-t border-[#101010] border-b border-b-[#E6EEF6] px-[18px] py-[14px]">
                     <p className="font-['Noto_Sans_JP'] text-[#999] text-center text-[12px]">

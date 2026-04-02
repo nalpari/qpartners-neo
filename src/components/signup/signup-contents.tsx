@@ -3,13 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { InputBox, Button, Checkbox, Radio } from "@/components/common";
-import { usePopupStore } from "@/lib/store";
+import { Spinner } from "@/components/common/spinner";
+import { usePopupStore, useAlertStore } from "@/lib/store";
+import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 const EMAIL_CHECK_MESSAGES: Record<string, string> = {
   ok: "利用可能な電子メールです",
   duplicate: "既に使用中の電子メールです",
   invalid: "正しくない電子メールアドレスです",
+  error: "メールチェック中にエラーが発生しました",
 };
 
 export function SignupContents() {
@@ -39,10 +44,12 @@ export function SignupContents() {
 
   // UI 상태
   const [emailCheckStatus, setEmailCheckStatus] = useState<
-    "idle" | "ok" | "duplicate" | "invalid"
+    "idle" | "ok" | "duplicate" | "invalid" | "error"
   >("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // 폼 필드 업데이트 헬퍼
   const updateField = (field: keyof typeof form, value: string | boolean) => {
@@ -50,16 +57,8 @@ export function SignupContents() {
     if (field === "email") setEmailCheckStatus("idle");
   };
 
-  // 비밀번호 유효성 (파생 값 — React Compiler 호환)
-  const isPasswordValid = (() => {
-    const p = form.password;
-    if (p.length < 8) return false;
-    let types = 0;
-    if (/[a-zA-Z]/.test(p)) types++;
-    if (/[0-9]/.test(p)) types++;
-    if (/[^a-zA-Z0-9]/.test(p)) types++;
-    return types >= 2;
-  })();
+  // Design Ref: §5.1.7 — Zod 스키마의 validatePasswordPolicy 함수로 통일
+  const isPasswordValid = validatePasswordPolicy(form.password);
 
   // 필수필드 입력 완료 여부 (파생 값)
   const isFormValid =
@@ -78,25 +77,81 @@ export function SignupContents() {
     form.password === form.passwordConfirm &&
     form.agreeTerms;
 
-  // 이메일 중복체크
-  const handleEmailCheck = () => {
+  // Design Ref: §5.1.5 — 이메일 중복체크 API 연동
+  const handleEmailCheck = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.email)) {
       setEmailCheckStatus("invalid");
       return;
     }
-    // TODO: API 연동 — 현재는 형식 검증 통과 시 OK로 목업 처리
-    setEmailCheckStatus("ok");
+
+    setIsLoading(true);
+    try {
+      await api.post("/auth/email/check", { email: form.email });
+      setEmailCheckStatus("ok");
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 409) {
+        setEmailCheckStatus("duplicate");
+      } else {
+        setEmailCheckStatus("error");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 회원등록 제출
+  // Design Ref: §5.1.6 — 컨펌 다이얼로그 + 회원가입 API 연동
   const handleSubmit = () => {
     if (!isFormValid) return;
-    // TODO: API 연동 (추후 구현) — 현재는 바로 완료 팝업 표시
-    openPopup("signup-complete", {
-      userName: `${form.lastName} ${form.firstName}`,
-      userId: form.email,
+
+    openAlert({
+      type: "confirm",
+      message: "Q.PARTNERSの一般会員として登録しますか？",
+      confirmLabel: "確認",
+      cancelLabel: "キャンセル",
+      onConfirm: submitSignup,
     });
+  };
+
+  const submitSignup = async () => {
+    setIsLoading(true);
+    setSubmitError(null);
+    try {
+      const res = await api.post<{ data: { userName: string; email: string } }>(
+        "/auth/signup",
+        {
+          email: form.email,
+          pwd: form.password,
+          confirmPwd: form.passwordConfirm,
+          user1stNm: form.firstName,
+          user2ndNm: form.lastName,
+          user1stNmKana: form.firstNameKana,
+          user2ndNmKana: form.lastNameKana,
+          compNm: form.companyName,
+          compNmKana: form.companyNameKana,
+          compPostCd: form.postalCode,
+          compAddr: form.address1,
+          compAddr2: form.address2,
+          compTelNo: form.phone,
+          compFaxNo: form.fax,
+          deptNm: form.department,
+          pstnNm: form.position,
+          newsRcptYn: form.newsletter ? "Y" : "N",
+        }
+      );
+
+      const { userName, email } = res.data.data;
+      openPopup("signup-complete", { userName, userId: email });
+    } catch (error) {
+      if (isAxiosError(error) && error.response) {
+        const msg = error.response.data?.error as string | undefined;
+        setSubmitError(msg ?? "会員登録に失敗しました");
+      } else {
+        setSubmitError("サーバーに接続できません");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 취소
@@ -105,6 +160,7 @@ export function SignupContents() {
   };
 
   const { openPopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
 
   // 주소검색
   const handleAddressSearch = () => {
@@ -117,6 +173,13 @@ export function SignupContents() {
   };
 
   return (
+    <>
+    {/* 로딩 오버레이 — Design Ref: §5.1.8, 로그인과 동일 패턴 */}
+    {isLoading && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <Spinner size={48} className="text-white" />
+      </div>
+    )}
     <div className="flex flex-col gap-[10px] lg:gap-6 items-center w-full pb-6 lg:pb-12 mt-[10px] lg:mt-0">
       <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[1440px]">
         {/* 상단 안내 카드 */}
@@ -273,7 +336,7 @@ export function SignupContents() {
                     重複チェック
                   </button>
                   {emailCheckStatus !== "idle" && (
-                    <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0">
+                    <p className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0 ${emailCheckStatus === "ok" ? "text-[#1060B4]" : "text-[#FF1A1A]"}`}>
                       {EMAIL_CHECK_MESSAGES[emailCheckStatus]}
                     </p>
                   )}
@@ -346,6 +409,13 @@ export function SignupContents() {
               </FormRow>
             </div>
 
+            {/* 에러 메시지 — Design Ref: §5.1.9 */}
+            {submitError && (
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] text-center pt-4">
+                {submitError}
+              </p>
+            )}
+
             {/* MO 하단: 이용약관 + 버튼 (회원정보 카드 내부) */}
             <div className="flex flex-col gap-[18px] items-center w-full pt-6 lg:hidden">
               <div className="flex items-center justify-center gap-2 w-full">
@@ -410,6 +480,7 @@ export function SignupContents() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
