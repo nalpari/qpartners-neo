@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
     await prisma.twoFactorCode.updateMany({
       where: { userType: userTp, userId, verified: false },
       data: { verified: true },
-    }).catch((dbError) => {
+    }).catch((dbError: unknown) => {
       console.error("[POST /api/auth/two-factor/send] 코드 무효화 실패:", dbError);
     });
     return NextResponse.json(
