@@ -3,18 +3,20 @@ import nodemailer from "nodemailer";
 import { SMTP_DEFAULTS } from "@/lib/config";
 
 const isDev = process.env.NODE_ENV === "development";
+/** Ethereal 사용 조건: 개발환경 + 명시적 opt-in (SMTP_USE_ETHEREAL=true) */
+const useEtherealFlag = isDev && process.env.SMTP_USE_ETHEREAL === "true";
 
-// Ethereal transporter 캐싱 (비프로덕션 + SMTP_PASS 미설정 시, 프로세스 수명 동안 유지)
+// Ethereal transporter 캐싱 (SMTP_USE_ETHEREAL=true 시, 프로세스 수명 동안 유지)
 let etherealPromise: Promise<nodemailer.Transporter> | null = null;
 
 async function getTransporter() {
-  // 비프로덕션 + SMTP_PASS 미설정 시: Ethereal 테스트 SMTP 사용 (실제 메일 미발송, 브라우저에서 확인)
-  if (isDev && !process.env.SMTP_PASS) {
+  // 명시적 opt-in: SMTP_USE_ETHEREAL=true 시 Ethereal 테스트 SMTP 사용 (실제 메일 미발송, 서버 로그에서 확인)
+  if (useEtherealFlag) {
     if (!etherealPromise) {
       etherealPromise = (async () => {
         try {
           const testAccount = await nodemailer.createTestAccount();
-          console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_PASS를 설정하면 실제 SMTP로 전환됩니다.");
+          console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_USE_ETHEREAL=true를 제거하면 실제 SMTP로 전환됩니다.");
           console.warn("[SMTP] Ethereal account: " + testAccount.user);
           return nodemailer.createTransport({
             host: "smtp.ethereal.email",
@@ -79,7 +81,7 @@ export interface SendMailResult {
 /** 공용 메일 발송 유틸리티 */
 export async function sendMail({ to, subject, html }: SendMailOptions): Promise<SendMailResult> {
   const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
-  const useEthereal = isDev && !process.env.SMTP_PASS;
+  const useEthereal = useEtherealFlag;
 
   let transporter: nodemailer.Transporter;
   try {

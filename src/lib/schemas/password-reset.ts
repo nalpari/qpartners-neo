@@ -7,9 +7,18 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 export const passwordResetRequestSchema = z.object({
   userTp: userTpSchema,
-  loginId: z.string().optional(),
-  email: z.string().email("유효한 이메일 주소를 입력해주세요"),
-  sekoId: z.string().optional(),
+  loginId: z.string().trim().optional(),
+  email: z.string().email("유효한 이메일 주소를 입력해주세요").max(100),
+  sekoId: z.string().trim().optional(),
+}).superRefine((data, ctx) => {
+  if (data.userTp === "STORE" && (!data.loginId || data.loginId.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "판매점 회원은 ID 입력이 필수입니다",
+      path: ["loginId"],
+    });
+  }
+  // SEKO sekoId는 선택 — QSP는 이메일만으로도 시공점 조회 가능
 });
 
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;
@@ -27,7 +36,7 @@ export type PasswordResetVerifyInput = z.infer<typeof passwordResetVerifySchema>
 export const passwordResetConfirmSchema = z
   .object({
     token: z.string().min(1, "토큰은 필수입니다"),
-    newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다"),
+    newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다").max(100),
     confirmPassword: z.string().min(1, "비밀번호 확인은 필수입니다"),
   })
   .refine((data) => validatePasswordPolicy(data.newPassword), {

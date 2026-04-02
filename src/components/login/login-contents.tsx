@@ -12,19 +12,13 @@ import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS } from "@/components/login/types";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS, TAB_TO_USERTP } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
 
 const STATUS_ERROR_MAP: Record<number, string> = {
   400: LOGIN_ERRORS.BAD_REQUEST,
   401: LOGIN_ERRORS.INVALID_CREDENTIALS,
   502: LOGIN_ERRORS.SERVER_UNAVAILABLE,
-};
-
-const TAB_TO_USERTP: Record<TabType, string> = {
-  dealer: "DEALER",
-  installer: "SEKO",
-  general: "GENERAL",
 };
 
 interface LoginContentsProps {
@@ -50,12 +44,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       return res.data.data;
     },
     onSuccess: (userData, variables) => {
-      if (saveId) {
-        localStorage.setItem(SAVED_ID_KEY, variables.loginId);
-      } else {
-        localStorage.removeItem(SAVED_ID_KEY);
+      try {
+        if (saveId) {
+          localStorage.setItem(SAVED_ID_KEY, variables.loginId);
+        } else {
+          localStorage.removeItem(SAVED_ID_KEY);
+        }
+        localStorage.setItem(SAVED_TAB_KEY, activeTab);
+      } catch (storageErr) {
+        console.error("[LoginContents] localStorage 쓰기 실패:", storageErr);
       }
-      localStorage.setItem(SAVED_TAB_KEY, activeTab);
 
       if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
@@ -63,7 +61,11 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       } else {
         // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
         queryClient.setQueryData(["auth", "login-user-info"], userData);
-        localStorage.setItem(AUTH_FLAG_KEY, "1");
+        try {
+          localStorage.setItem(AUTH_FLAG_KEY, "1");
+        } catch (storageErr) {
+          console.error("[LoginContents] AUTH_FLAG 쓰기 실패:", storageErr);
+        }
         dispatchAuthChange();
         router.replace("/");
       }

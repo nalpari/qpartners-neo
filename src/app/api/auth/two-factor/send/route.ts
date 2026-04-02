@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { twoFactorSendSchema } from "@/lib/schemas/two-factor";
 import { sendMail } from "@/lib/mailer";
-import type { SendMailResult } from "@/lib/mailer";
 import {
   twoFactorMailHtml,
   TWO_FACTOR_SUBJECT,
@@ -131,9 +130,8 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. 메일 발송
-  let mailResult: SendMailResult;
   try {
-    mailResult = await sendMail({
+    await sendMail({
       to: user.email,
       subject: TWO_FACTOR_SUBJECT,
       html: twoFactorMailHtml({ code }),
@@ -147,7 +145,7 @@ export async function POST(request: NextRequest) {
     await prisma.twoFactorCode.updateMany({
       where: { userType: userTp, userId, verified: false },
       data: { verified: true },
-    }).catch((dbError) => {
+    }).catch((dbError: unknown) => {
       console.error("[POST /api/auth/two-factor/send] 코드 무효화 실패:", dbError);
     });
     return NextResponse.json(
@@ -160,9 +158,6 @@ export async function POST(request: NextRequest) {
     data: {
       message: "인증번호가 발송되었습니다.",
       expiresIn: 600,
-      ...(mailResult.ethereal && mailResult.previewUrl
-        ? { _dev_previewUrl: mailResult.previewUrl }
-        : {}),
     },
   });
 }

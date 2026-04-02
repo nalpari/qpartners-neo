@@ -9,7 +9,9 @@
 
 import { NextResponse } from "next/server";
 
-const VALID_USER_TYPES = new Set(["ADMIN", "DEALER", "SEKO", "GENERAL"]);
+import { userTpValues } from "@/lib/schemas/common";
+
+const VALID_USER_TYPES = new Set<string>(userTpValues);
 const VALID_ROLES = new Set([
   "super_admin",
   "admin",
@@ -21,7 +23,7 @@ const VALID_ROLES = new Set([
 ]);
 
 export type UserInfo = {
-  userType: "ADMIN" | "DEALER" | "SEKO" | "GENERAL";
+  userType: (typeof userTpValues)[number];
   userId: string;
   role: string;
   department?: string;

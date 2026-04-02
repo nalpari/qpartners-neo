@@ -8,6 +8,7 @@ import {
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { prisma } from "@/lib/prisma";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -74,8 +75,8 @@ export async function POST(request: NextRequest) {
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
-  } catch {
-    console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패");
+  } catch (error) {
+    console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
       { error: "외부 인증 서버 응답을 처리할 수 없습니다" },
       { status: 502 },
@@ -102,10 +103,67 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    - secAuthYn === "Y" + 비밀번호 초기화 후 로그인이 아닌 경우 → 필요
+  //    - secAuthYn !== "Y" → 불필요
   //    - pwdInitYn === "Y" (비밀번호 초기화 직후) → 불필요 (p.14 스펙)
-  const requireTwoFactor =
-    qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y";
+  //    - secAuthDt + 공통코드 유효기간(SEC_AUTH_VALIDITY) ≤ 현재일시 → 필요
+  let requireTwoFactor = false;
+
+  if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
+    // 공통코드에서 2차인증 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요)
+    let validityDays: number | null = null;
+    try {
+      const activeCode = await prisma.codeDetail.findFirst({
+        where: {
+          header: { headerCode: "SEC_AUTH_VALIDITY" },
+          isActive: true,
+        },
+        orderBy: { id: "desc" },
+        select: { code: true },
+      });
+      if (activeCode) {
+        const days = Number(activeCode.code);
+        if (Number.isFinite(days) && days > 0) {
+          validityDays = days;
+        } else {
+          console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
+        }
+      } else {
+        console.warn("[POST /api/auth/login] SEC_AUTH_VALIDITY 공통코드 미등록 — 2FA 필수 처리");
+      }
+    } catch (error) {
+      console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 — 2FA 필요로 처리:", error);
+    }
+
+    if (validityDays === null) {
+      // 유효기간 조회 실패 또는 값 이상 → fail-closed
+      requireTwoFactor = true;
+    } else {
+      // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss" → ISO 8601 + KST 오프셋) 후 유효기간 비교
+      /** QSP secAuthDt는 KST(UTC+09:00) 기준 반환 */
+      const QSP_TIMEZONE_OFFSET = "+09:00";
+      const secAuthDt = qsp.data.secAuthDt;
+      if (!secAuthDt) {
+        // secAuthDt 없음 → 2FA 미인증 상태 → 필요
+        requireTwoFactor = true;
+      } else {
+        const secAuthDtFormat = /^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}$/;
+        if (!secAuthDtFormat.test(secAuthDt)) {
+          console.error("[POST /api/auth/login] secAuthDt 형식 불일치:", secAuthDt);
+          requireTwoFactor = true;
+        } else {
+          const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
+          const authDate = new Date(isoStr);
+          if (Number.isNaN(authDate.getTime())) {
+            console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+            requireTwoFactor = true;
+          } else {
+            const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+            requireTwoFactor = new Date() >= expiresAt;
+          }
+        }
+      }
+    }
+  }
 
   // 6. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
