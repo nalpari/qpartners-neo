@@ -16,7 +16,7 @@ async function getTransporter() {
       etherealPromise = (async () => {
         try {
           const testAccount = await nodemailer.createTestAccount();
-          console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_PASS를 설정하면 실제 SMTP로 전환됩니다.");
+          console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_USE_ETHEREAL=true를 제거하면 실제 SMTP로 전환됩니다.");
           console.warn("[SMTP] Ethereal account: " + testAccount.user);
           return nodemailer.createTransport({
             host: "smtp.ethereal.email",
