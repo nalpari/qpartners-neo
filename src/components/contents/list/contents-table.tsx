@@ -15,9 +15,9 @@ import {
 import type { MobileCardField } from "@/components/common";
 import { Spinner } from "@/components/common/spinner";
 import { useIsMobile } from "@/hooks/use-media-query";
-import type { ContentListItem, CodeDetail } from "./contents-contents";
+import type { ContentListItem } from "./contents-contents";
 
-const DEFAULT_PAGE_SIZE_OPTIONS = [
+const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
   { value: "100", label: "100" },
@@ -117,7 +117,6 @@ interface ContentsTableProps {
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
-  pageSizeOptions?: CodeDetail[];
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
 }
@@ -127,7 +126,6 @@ export function ContentsTable({
   data,
   meta,
   isLoading,
-  pageSizeOptions = [],
   onPageChange,
   onPageSizeChange,
 }: ContentsTableProps) {
@@ -280,11 +278,7 @@ export function ContentsTable({
           </Link>
         )}
         <SelectBox
-          options={
-            pageSizeOptions.length > 0
-              ? pageSizeOptions.map((o) => ({ value: o.code, label: o.name }))
-              : DEFAULT_PAGE_SIZE_OPTIONS
-          }
+          options={PER_PAGE_OPTIONS}
           value={perPage}
           onChange={handlePerPageChange}
           className="w-[80px]"

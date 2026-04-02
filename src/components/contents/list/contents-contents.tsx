@@ -30,21 +30,7 @@ interface CategoryNode {
   children: CategoryNode[];
 }
 
-interface CodeDetail {
-  id: number;
-  code: string;
-  name: string;
-  sortOrder: number;
-  isActive: boolean;
-}
-
-interface CodeHeader {
-  id: number;
-  headerCode: string;
-  headerName: string;
-}
-
-export type { CategoryNode, SearchFilters, CodeDetail };
+export type { CategoryNode, SearchFilters };
 
 export function ContentsContents() {
   // TODO: 실제 권한 체크로 교체
@@ -68,26 +54,6 @@ export function ContentsContents() {
       return res.data.data;
     },
     staleTime: 5 * 60 * 1000,
-  });
-
-  // 게시글 수 공통코드 조회 (PAGE_SIZE)
-  const { data: pageSizeOptions = [] } = useQuery({
-    queryKey: ["codes", "PAGE_SIZE"],
-    queryFn: async () => {
-      // headerCode로 검색하여 header ID 확보
-      const headersRes = await api.get<{ data: CodeHeader[] }>("/codes", {
-        params: { keyword: "PAGE_SIZE", activeOnly: true },
-      });
-      const header = headersRes.data.data.find((h) => h.headerCode === "PAGE_SIZE");
-      if (!header) return [];
-
-      const detailsRes = await api.get<{ data: CodeDetail[] }>(
-        `/codes/${header.id}/details`,
-        { params: { activeOnly: true } },
-      );
-      return detailsRes.data.data;
-    },
-    staleTime: 10 * 60 * 1000,
   });
 
   // 컨텐츠 목록 조회
@@ -136,7 +102,6 @@ export function ContentsContents() {
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}
         isLoading={isLoading}
-        pageSizeOptions={pageSizeOptions}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
       />
