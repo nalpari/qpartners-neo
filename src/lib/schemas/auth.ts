@@ -29,6 +29,7 @@ export const qspLoginUserSchema = z.object({
   storeLvl: z.string().nullable(),
   statCd: z.string().nullable(),
   secAuthYn: z.string().nullable(),
+  secAuthDt: z.string().nullable(),
   loginFailCnt: z.number().nullable(),
   pwdInitYn: z.string().nullable(),
 });

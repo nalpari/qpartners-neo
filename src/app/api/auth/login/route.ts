@@ -8,6 +8,7 @@ import {
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { prisma } from "@/lib/prisma";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -102,10 +103,45 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    - secAuthYn === "Y" + 비밀번호 초기화 후 로그인이 아닌 경우 → 필요
+  //    - secAuthYn !== "Y" → 불필요
   //    - pwdInitYn === "Y" (비밀번호 초기화 직후) → 불필요 (p.14 스펙)
-  const requireTwoFactor =
-    qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y";
+  //    - secAuthDt + 공통코드 유효기간(SEC_AUTH_VALIDITY) ≤ 현재일시 → 필요
+  let requireTwoFactor = false;
+
+  if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
+    // 공통코드에서 2차인증 유효기간(일수) 조회
+    let validityDays = 30; // 디폴트 30일
+    try {
+      const activeCode = await prisma.codeDetail.findFirst({
+        where: {
+          header: { headerCode: "SEC_AUTH_VALIDITY" },
+          isActive: true,
+        },
+        select: { code: true },
+      });
+      if (activeCode) {
+        validityDays = Number(activeCode.code);
+      }
+    } catch (error) {
+      console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 (디폴트 30일 적용):", error);
+    }
+
+    // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss") 후 유효기간 비교
+    const secAuthDt = qsp.data.secAuthDt;
+    if (!secAuthDt) {
+      // secAuthDt 없음 → 2FA 미인증 상태 → 필요
+      requireTwoFactor = true;
+    } else {
+      const parsed = new Date(secAuthDt.replace(/\./g, "-"));
+      if (Number.isNaN(parsed.getTime())) {
+        console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+        requireTwoFactor = true;
+      } else {
+        const expiresAt = new Date(parsed.getTime() + validityDays * 24 * 60 * 60 * 1000);
+        requireTwoFactor = new Date() >= expiresAt;
+      }
+    }
+  }
 
   // 6. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
