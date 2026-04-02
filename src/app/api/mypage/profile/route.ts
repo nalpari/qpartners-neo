@@ -66,7 +66,8 @@ export async function GET(request: NextRequest) {
     let qspBody: unknown;
     try {
       qspBody = await qspResponse.json();
-    } catch {
+    } catch (error) {
+      console.error("[GET /api/mypage/profile] QSP 응답 JSON 파싱 실패:", error);
       return NextResponse.json(
         { error: "외부 서버 응답을 처리할 수 없습니다" },
         { status: 502 },
@@ -144,6 +145,14 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // 시공점은 별도 API (seko-info)
+    if (user.userTp === "SEKO") {
+      return NextResponse.json(
+        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
+        { status: 400 },
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -172,7 +181,7 @@ export async function PUT(request: NextRequest) {
 
     const d = result.data;
 
-    // QSP 수정 API 호출 (판매점/일반/시공점)
+    // QSP 수정 API 호출 (판매점/일반)
     // 관리자는 QSP 업데이트하지 않음 (Q.ORDER T01만 — 향후 구현)
     if (user.userTp !== "ADMIN") {
       const qspPayload = {
@@ -222,7 +231,8 @@ export async function PUT(request: NextRequest) {
       let qspBody: unknown;
       try {
         qspBody = await qspResponse.json();
-      } catch {
+      } catch (error) {
+        console.error("[PUT /api/mypage/profile] QSP 응답 JSON 파싱 실패:", error);
         return NextResponse.json(
           { error: "외부 서버 응답을 처리할 수 없습니다" },
           { status: 502 },
@@ -230,7 +240,14 @@ export async function PUT(request: NextRequest) {
       }
 
       const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
-      if (parsed.success && parsed.data.result.resultCode !== "S") {
+      if (!parsed.success) {
+        console.error("[PUT /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error);
+        return NextResponse.json(
+          { error: "外部サーバーの応答形式が正しくありません" },
+          { status: 502 },
+        );
+      }
+      if (parsed.data.result.resultCode !== "S") {
         console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", parsed.data.result.resultCode);
         return NextResponse.json(
           { error: "프로필 수정에 실패했습니다" },

@@ -5,6 +5,7 @@ import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { changePasswordSchema } from "@/lib/schemas/mypage";
 import { qspResponseSchema } from "@/lib/schemas/signup";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // POST /api/mypage/change-password — 비밀번호 변경
 export async function POST(request: NextRequest) {
@@ -14,6 +15,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "인증이 필요합니다" },
         { status: 401 },
+      );
+    }
+
+    // 유저당 5분간 5회 제한 (비밀번호 brute-force 방지)
+    if (!checkRateLimit(`chg-pwd:${user.userId}`, 5, 5 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+        { status: 429 },
       );
     }
 
@@ -72,7 +81,8 @@ export async function POST(request: NextRequest) {
     let qspBody: unknown;
     try {
       qspBody = await qspResponse.json();
-    } catch {
+    } catch (error) {
+      console.error("[POST /api/mypage/change-password] QSP 응답 JSON 파싱 실패:", error);
       return NextResponse.json(
         { error: "외부 서버 응답을 처리할 수 없습니다" },
         { status: 502 },
@@ -89,8 +99,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (parsed.data.result.resultCode !== "S") {
+      console.error(
+        "[POST /api/mypage/change-password] QSP 실패:",
+        parsed.data.result.resultCode,
+        parsed.data.result.resultMsg,
+      );
       return NextResponse.json(
-        { error: "현재 비밀번호가 올바르지 않습니다" },
+        { error: parsed.data.result.resultMsg || "パスワード変更に失敗しました" },
         { status: 400 },
       );
     }

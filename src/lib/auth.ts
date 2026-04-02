@@ -1,10 +1,9 @@
 /**
- * 인증 헬퍼 — X-User-* 헤더 기반 사용자 식별
+ * 인증 헬퍼 — 두 가지 인증 경로 지원
  *
- * [보안 전제] API Gateway(리버스 프록시)가 JWT/세션을 검증한 뒤
- * X-User-* 헤더를 주입하고, 클라이언트가 직접 보낸 동명 헤더는 제거한다.
- * 따라서 이 함수는 헤더 값을 신뢰한다.
- * Gateway 없이 직접 노출할 경우 반드시 JWT 검증 로직을 추가해야 한다.
+ * 1) X-User-* 헤더 기반 (getUserFromHeaders) — API Gateway가 JWT를 검증 후 헤더 주입.
+ *    Gateway 없이 직접 노출할 경우 반드시 JWT 검증 로직을 추가해야 한다.
+ * 2) QSP 기반 권한코드 판별 (resolveAuthRole) — 로그인 시점에 QSP 응답에서 세부 권한 판별.
  */
 
 import { NextResponse } from "next/server";
@@ -13,6 +12,7 @@ import { userTpValues, authRoleValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
 
 export type AuthRole = (typeof authRoleValues)[number];
+type UserTp = (typeof userTpValues)[number];
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
 const VALID_ROLES = new Set([
@@ -76,30 +76,28 @@ export function requireAdmin(headers: Headers): { user: UserInfo } | NextRespons
   return { user };
 }
 
-/** QSP 응답 기반 세부 권한코드 판별 — 로그인/자동로그인 공용 */
+/** QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용 */
 export async function resolveAuthRole(
-  userTp: string,
+  userTp: UserTp,
   userId: string,
   storeLvl: string | null,
 ): Promise<AuthRole> {
   switch (userTp) {
     case "ADMIN": {
-      try {
-        const entry = await prisma.codeDetail.findFirst({
-          where: {
-            header: { headerCode: "ADMIN_ROLE" },
-            code: userId,
-            isActive: true,
-          },
-          select: { id: true },
-        });
-        return entry ? "SUPER_ADMIN" : "ADMIN";
-      } catch (error) {
-        console.error("[resolveAuthRole] ADMIN_ROLE 조회 실패 — ADMIN으로 처리:", error);
-        return "ADMIN";
-      }
+      const entry = await prisma.codeDetail.findFirst({
+        where: {
+          header: { headerCode: "ADMIN_ROLE" },
+          code: userId,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      return entry ? "SUPER_ADMIN" : "ADMIN";
     }
     case "STORE":
+      if (storeLvl !== "1" && storeLvl !== "2" && storeLvl !== null) {
+        console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" (userId: ${userId}) — 1ST_STORE로 처리`);
+      }
       return storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
     case "SEKO":
       return "SEKO";

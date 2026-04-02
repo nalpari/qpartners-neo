@@ -24,7 +24,7 @@ export const openApiSpec: OpenAPIV3.Document = {
   info: {
     title: "Q.PARTNERS API",
     version: "1.0.0",
-    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지, 콘텐츠 관리",
+    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지, 콘텐츠, 마이페이지 관리",
   },
   servers: [{ url: "/api", description: "Local API" }],
 

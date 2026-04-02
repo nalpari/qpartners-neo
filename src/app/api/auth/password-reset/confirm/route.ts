@@ -9,7 +9,7 @@ import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { resolveAuthRole } from "@/lib/auth";
+import { resolveAuthRole, type AuthRole } from "@/lib/auth";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
 const qspUserDetailSchema = z.object({
@@ -234,7 +234,17 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
-  const authRole = await resolveAuthRole(resetToken.userType, loginId, detailData?.storeLvl ?? null);
+  // 비밀번호 변경은 이미 완료됨 — resolveAuthRole 실패로 전체 응답을 실패시키면 안 됨
+  let authRole: AuthRole;
+  try {
+    authRole = await resolveAuthRole(resetToken.userType as Parameters<typeof resolveAuthRole>[0], loginId, detailData?.storeLvl ?? null);
+  } catch (error) {
+    console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
+    authRole = resetToken.userType === "ADMIN" ? "ADMIN"
+      : resetToken.userType === "STORE" ? "1ST_STORE"
+      : resetToken.userType === "SEKO" ? "SEKO"
+      : "GENERAL";
+  }
 
   const user: LoginUser = {
     userId: loginId,
