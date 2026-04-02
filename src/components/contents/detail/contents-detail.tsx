@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import api from "@/lib/axios";
 import { Button } from "@/components/common";
+import { Spinner } from "@/components/common/spinner";
 import { useAlertStore } from "@/lib/store";
 import { ContentsDetailInfo } from "./contents-detail-info";
 import { ContentsDetailTarget } from "./contents-detail-target";
@@ -21,13 +24,24 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   const data = DUMMY_DETAIL;
 
   const isAdmin = true; // TODO: 실제 권한 체크
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = () => {
     openAlert({
       type: "confirm",
       message: "本当に削除しますか？",
-      onConfirm: () => {
-        // TODO: 실제 삭제 API 호출
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await api.delete(`/contents/${contentId}`);
+          openAlert({ type: "alert", message: "削除されました。" });
+          router.push("/contents", { transitionTypes: ["fade"] });
+        } catch (err) {
+          console.error("[Contents] 削除失敗:", err);
+          openAlert({ type: "alert", message: "削除に失敗しました。" });
+        } finally {
+          setIsDeleting(false);
+        }
       },
     });
   };
@@ -41,6 +55,12 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   };
 
   return (
+    <>
+    {isDeleting && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <Spinner size={48} className="text-white" />
+      </div>
+    )}
     <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full lg:pb-[120px]">
       <ContentsDetailInfo
         viewCount={data.viewCount}
@@ -92,5 +112,6 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         </Button>
       </div>
     </main>
+    </>
   );
 }

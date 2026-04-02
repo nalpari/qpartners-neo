@@ -2,11 +2,13 @@
 
 import { SelectBox } from "@/components/common";
 
+// 최종승인자 옵션 (추후 공통코드)
 const APPROVER_OPTIONS = [
   { value: "", label: "選択" },
-  { value: "tanaka", label: "田中" },
-  { value: "suzuki", label: "鈴木" },
-  { value: "yamada", label: "山田" },
+  { value: "1", label: "実務担当者" },
+  { value: "2", label: "所属長" },
+  { value: "3", label: "事業部長" },
+  { value: "4", label: "社長" },
 ];
 
 interface ContentsFormManagementProps {
