@@ -1,24 +1,17 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
 
-/** JWT에서 현재 사용자 추출 (미들웨어 통과 후이므로 토큰 존재 보장) */
-async function getUser(request: NextRequest) {
-  const token = request.cookies.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  return verifyToken(token);
-}
-
 // GET /api/mypage/profile — 내정보/회사정보 조회
 export async function GET(request: NextRequest) {
   try {
-    const user = await getUser(request);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
         { error: "인증이 필요합니다" },
@@ -35,9 +28,16 @@ export async function GET(request: NextRequest) {
     }
 
     // QSP userDetail API 호출
+    if (!user.email) {
+      return NextResponse.json(
+        { error: "이메일 정보가 없어 프로필을 조회할 수 없습니다" },
+        { status: 400 },
+      );
+    }
+
     const params = new URLSearchParams({
       accsSiteCd: "QPARTNERS",
-      email: user.email ?? "",
+      email: user.email,
       userTp: user.userTp,
     });
 
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
 // PUT /api/mypage/profile — 내정보/회사정보 수정
 export async function PUT(request: NextRequest) {
   try {
-    const user = await getUser(request);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
         { error: "인증이 필요합니다" },
@@ -215,6 +215,25 @@ export async function PUT(request: NextRequest) {
         console.error("[PUT /api/mypage/profile] QSP 비정상 응답:", qspResponse.status);
         return NextResponse.json(
           { error: "외부 서버 오류가 발생했습니다" },
+          { status: 502 },
+        );
+      }
+
+      let qspBody: unknown;
+      try {
+        qspBody = await qspResponse.json();
+      } catch {
+        return NextResponse.json(
+          { error: "외부 서버 응답을 처리할 수 없습니다" },
+          { status: 502 },
+        );
+      }
+
+      const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
+      if (parsed.success && parsed.data.result.resultCode !== "S") {
+        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", parsed.data.result.resultCode);
+        return NextResponse.json(
+          { error: "프로필 수정에 실패했습니다" },
           { status: 502 },
         );
       }

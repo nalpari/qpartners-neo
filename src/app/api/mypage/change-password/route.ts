@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { changePasswordSchema } from "@/lib/schemas/mypage";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -9,18 +9,10 @@ import { qspResponseSchema } from "@/lib/schemas/signup";
 // POST /api/mypage/change-password — 비밀번호 변경
 export async function POST(request: NextRequest) {
   try {
-    const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token) {
-      return NextResponse.json(
-        { error: "인증이 필요합니다" },
-        { status: 401 },
-      );
-    }
-
-    const user = await verifyToken(token);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "토큰이 만료되었거나 유효하지 않습니다" },
+        { error: "인증이 필요합니다" },
         { status: 401 },
       );
     }
@@ -98,13 +90,13 @@ export async function POST(request: NextRequest) {
 
     if (parsed.data.result.resultCode !== "S") {
       return NextResponse.json(
-        { error: "現在のパスワードが正しくありません" },
+        { error: "현재 비밀번호가 올바르지 않습니다" },
         { status: 400 },
       );
     }
 
     return NextResponse.json({
-      data: { message: "パスワードが変更されました" },
+      data: { message: "비밀번호가 변경되었습니다" },
     });
   } catch (error) {
     console.error("[POST /api/mypage/change-password]", error);

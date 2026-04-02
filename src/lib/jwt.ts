@@ -35,4 +35,11 @@ export async function verifyToken(token: string): Promise<LoginUser | null> {
   }
 }
 
+/** 요청 쿠키에서 JWT 검증 + 사용자 반환. 미인증 시 null. */
+export async function getUserFromRequest(request: { cookies: { get(name: string): { value: string } | undefined } }): Promise<LoginUser | null> {
+  const token = request.cookies.get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}
+
 export { COOKIE_NAME };

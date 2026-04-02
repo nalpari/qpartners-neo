@@ -1,25 +1,17 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest } from "@/lib/jwt";
 
 const VALID_FILE_TYPES = new Set(["RECEIPT", "CERT1", "CERT2"]);
 
 // GET /api/mypage/seko-file — 시공점 첨부파일 다운로드
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token) {
-      return NextResponse.json(
-        { error: "인증이 필요합니다" },
-        { status: 401 },
-      );
-    }
-
-    const user = await verifyToken(token);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "토큰이 만료되었거나 유효하지 않습니다" },
+        { error: "인증이 필요합니다" },
         { status: 401 },
       );
     }

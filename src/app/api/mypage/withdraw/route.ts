@@ -1,24 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest } from "@/lib/jwt";
 import { withdrawSchema } from "@/lib/schemas/mypage";
 
 // POST /api/mypage/withdraw — 회원탈퇴 (일반회원만)
 export async function POST(request: NextRequest) {
   try {
-    const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token) {
-      return NextResponse.json(
-        { error: "인증이 필요합니다" },
-        { status: 401 },
-      );
-    }
-
-    const user = await verifyToken(token);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "토큰이 만료되었거나 유효하지 않습니다" },
+        { error: "인증이 필요합니다" },
         { status: 401 },
       );
     }
@@ -49,23 +41,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: QSP 탈퇴 API 호출 (엔드포인트 확인 후 구현)
-    // TODO: qp_info 테이블 withdrawn=true, withdrawn_at, withdrawn_reason 저장
-
-    // JWT 쿠키 삭제 (로그아웃)
-    const response = NextResponse.json({
-      data: { message: "退会が完了しました。ご利用ありがとうございました。" },
-    });
-
-    response.cookies.set(COOKIE_NAME, "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 0,
-    });
-
-    return response;
+    // TODO: QSP 탈퇴 API 호출 (saveResignReq) + qp_info 테이블 갱신
+    // QSP 연동 완료 전까지 501 반환
+    return NextResponse.json(
+      { error: "회원탈퇴 API가 아직 연동되지 않았습니다" },
+      { status: 501 },
+    );
   } catch (error) {
     console.error("[POST /api/mypage/withdraw]", error);
     return NextResponse.json(

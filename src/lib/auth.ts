@@ -9,7 +9,10 @@
 
 import { NextResponse } from "next/server";
 
-import { userTpValues } from "@/lib/schemas/common";
+import { userTpValues, authRoleValues } from "@/lib/schemas/common";
+import { prisma } from "@/lib/prisma";
+
+export type AuthRole = (typeof authRoleValues)[number];
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
 const VALID_ROLES = new Set([
@@ -71,6 +74,38 @@ export function requireAdmin(headers: Headers): { user: UserInfo } | NextRespons
     );
   }
   return { user };
+}
+
+/** QSP 응답 기반 세부 권한코드 판별 — 로그인/자동로그인 공용 */
+export async function resolveAuthRole(
+  userTp: string,
+  userId: string,
+  storeLvl: string | null,
+): Promise<AuthRole> {
+  switch (userTp) {
+    case "ADMIN": {
+      try {
+        const entry = await prisma.codeDetail.findFirst({
+          where: {
+            header: { headerCode: "ADMIN_ROLE" },
+            code: userId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        return entry ? "SUPER_ADMIN" : "ADMIN";
+      } catch (error) {
+        console.error("[resolveAuthRole] ADMIN_ROLE 조회 실패 — ADMIN으로 처리:", error);
+        return "ADMIN";
+      }
+    }
+    case "STORE":
+      return storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
+    case "SEKO":
+      return "SEKO";
+    default:
+      return "GENERAL";
+  }
 }
 
 /** 콘텐츠 접근 가능 여부 — 게시대상 + 기간 접근제어 */

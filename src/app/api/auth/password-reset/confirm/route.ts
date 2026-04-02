@@ -9,6 +9,7 @@ import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { resolveAuthRole } from "@/lib/auth";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
 const qspUserDetailSchema = z.object({
@@ -233,38 +234,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
-  // authRole 판별 (login/route.ts와 동일 로직)
-  type AuthRole = "SUPER_ADMIN" | "ADMIN" | "1ST_STORE" | "2ND_STORE" | "SEKO" | "GENERAL";
-  let authRole: AuthRole;
-
-  switch (resetToken.userType) {
-    case "ADMIN": {
-      let isSuperAdmin = false;
-      try {
-        const superAdminEntry = await prisma.codeDetail.findFirst({
-          where: {
-            header: { headerCode: "ADMIN_ROLE" },
-            code: loginId,
-            isActive: true,
-          },
-          select: { id: true },
-        });
-        isSuperAdmin = superAdminEntry !== null;
-      } catch (error) {
-        console.error("[POST /api/auth/password-reset/confirm] ADMIN_ROLE 조회 실패:", error);
-      }
-      authRole = isSuperAdmin ? "SUPER_ADMIN" : "ADMIN";
-      break;
-    }
-    case "STORE":
-      authRole = detailData?.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
-      break;
-    case "SEKO":
-      authRole = "SEKO";
-      break;
-    default:
-      authRole = "GENERAL";
-  }
+  const authRole = await resolveAuthRole(resetToken.userType, loginId, detailData?.storeLvl ?? null);
 
   const user: LoginUser = {
     userId: loginId,

@@ -9,6 +9,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
+import { resolveAuthRole } from "@/lib/auth";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -166,38 +167,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 세부 권한코드(authRole) 판별
-  type AuthRole = "SUPER_ADMIN" | "ADMIN" | "1ST_STORE" | "2ND_STORE" | "SEKO" | "GENERAL";
-  let authRole: AuthRole;
-
-  switch (qsp.data.userTp) {
-    case "ADMIN": {
-      // ADMIN_ROLE 공통코드에서 loginId 대조 → SUPER_ADMIN 여부 판별
-      let isSuperAdmin = false;
-      try {
-        const superAdminEntry = await prisma.codeDetail.findFirst({
-          where: {
-            header: { headerCode: "ADMIN_ROLE" },
-            code: qsp.data.userId,
-            isActive: true,
-          },
-          select: { id: true },
-        });
-        isSuperAdmin = superAdminEntry !== null;
-      } catch (error) {
-        console.error("[POST /api/auth/login] ADMIN_ROLE 조회 실패 — ADMIN으로 처리:", error);
-      }
-      authRole = isSuperAdmin ? "SUPER_ADMIN" : "ADMIN";
-      break;
-    }
-    case "STORE":
-      authRole = qsp.data.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
-      break;
-    case "SEKO":
-      authRole = "SEKO";
-      break;
-    default:
-      authRole = "GENERAL";
-  }
+  const authRole = await resolveAuthRole(qsp.data.userTp, qsp.data.userId, qsp.data.storeLvl);
 
   // 7. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {

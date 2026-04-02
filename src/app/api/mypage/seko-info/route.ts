@@ -1,23 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest } from "@/lib/jwt";
 
 // GET /api/mypage/seko-info — 시공점 시공ID 정보 조회
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token) {
-      return NextResponse.json(
-        { error: "인증이 필요합니다" },
-        { status: 401 },
-      );
-    }
-
-    const user = await verifyToken(token);
+    const user = await getUserFromRequest(request);
     if (!user) {
       return NextResponse.json(
-        { error: "토큰이 만료되었거나 유효하지 않습니다" },
+        { error: "인증이 필요합니다" },
         { status: 401 },
       );
     }
