@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
   const { userTp, email, loginId, sekoId } = result.data;
 
   // 2-a. IP 기반 rate limiting — 열거 공격 방어 (토큰 미생성 이메일도 제한)
+  // [전제] 배포 환경의 리버스 프록시(Nginx/ALB)가 클라이언트 x-forwarded-for를 덮어씀.
+  //        프록시 없이 직접 노출 시 클라이언트가 헤더를 스푸핑할 수 있으므로
+  //        이메일 기반 rate limit(2-b)이 최종 방어선 역할을 함.
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
   const ipKey = ip ?? "unknown-ip";
@@ -179,7 +182,8 @@ export async function POST(request: NextRequest) {
       where: { token, used: false },
       data: { used: true },
     }).catch((dbError: unknown) => {
-      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패:", dbError);
+      // 토큰 무효화 실패 → orphan 토큰 잔류 (rate limit 카운트 소모됨)
+      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패 — orphan 토큰 잔류, token:", token, dbError);
     });
     return NextResponse.json(
       { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },

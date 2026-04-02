@@ -144,6 +144,11 @@ export async function POST(request: NextRequest) {
         // secAuthDt 없음 → 2FA 미인증 상태 → 필요
         requireTwoFactor = true;
       } else {
+        const secAuthDtFormat = /^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}$/;
+        if (!secAuthDtFormat.test(secAuthDt)) {
+          console.error("[POST /api/auth/login] secAuthDt 형식 불일치:", secAuthDt);
+          requireTwoFactor = true;
+        } else {
         const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
         const authDate = new Date(isoStr);
         if (Number.isNaN(authDate.getTime())) {
@@ -152,6 +157,7 @@ export async function POST(request: NextRequest) {
         } else {
           const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
           requireTwoFactor = new Date() >= expiresAt;
+        }
         }
       }
     }

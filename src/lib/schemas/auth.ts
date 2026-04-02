@@ -18,11 +18,15 @@ export const qspLoginUserSchema = z.object({
   userId: z.string(),
   userNm: z.string().nullable(),
   userNmKana: z.string().nullable(),
-  // QSP 외부 시스템이므로 미지의 userTp 대비 — 알 수 없는 값은 GENERAL로 폴백하되 경고 로깅
-  userTp: z.enum(userTpValues).catch((ctx) => {
-    console.warn("[qspLoginUserSchema] unknown userTp, falling back to GENERAL:", ctx.input);
+  // QSP 외부 시스템이므로 미지의 userTp 대비 — DEALER→STORE 과도기 호환 + 미지 값은 GENERAL 폴백
+  userTp: z.string().transform((val) => {
+    // QSP 과도기: DEALER → STORE 호환 매핑
+    if (val === "DEALER") return "STORE" as const;
+    const parsed = z.enum(userTpValues).safeParse(val);
+    if (parsed.success) return parsed.data;
+    console.error("[qspLoginUserSchema] unknown userTp, falling back to GENERAL:", val);
     return "GENERAL" as const;
-  }),
+  }).pipe(z.enum(userTpValues)),
   compCd: z.string().nullable(),
   compNm: z.string().nullable(),
   compNmKana: z.string().nullable(),

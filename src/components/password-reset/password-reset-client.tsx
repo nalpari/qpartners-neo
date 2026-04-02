@@ -115,11 +115,17 @@ export function PasswordResetClient() {
         return;
       }
 
+      // res.ok이지만 JSON 파싱 실패 — 변경 결과 불확실
+      if (!json) {
+        console.error("[PasswordResetClient] 성공 응답이지만 JSON 파싱 실패 — 결과 불확실");
+        setError("パスワードが変更された可能性があります。新しいパスワードでログインをお試しください。");
+        setSubmitStatus("idle");
+        return;
+      }
+
       // 자동 로그인: JWT 쿠키는 API가 설정, 프론트에서 user 캐시 + 플래그 설정
-      const rawUser = json && typeof json === "object" && "data" in json
-        && json.data && typeof json.data === "object" && "user" in json.data
-        ? json.data.user
-        : null;
+      const dataObj = json.data && typeof json.data === "object" ? json.data as Record<string, unknown> : null;
+      const rawUser = dataObj && "user" in dataObj ? dataObj.user : null;
       const parsed = rawUser ? loginUserSchema.safeParse(rawUser) : null;
       const userData = parsed?.success ? parsed.data : null;
 

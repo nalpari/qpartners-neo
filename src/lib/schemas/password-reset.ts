@@ -18,13 +18,7 @@ export const passwordResetRequestSchema = z.object({
       path: ["loginId"],
     });
   }
-  if (data.userTp === "SEKO" && (!data.sekoId || data.sekoId.trim() === "")) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "시공점 회원은 시공점 ID 입력이 필수입니다",
-      path: ["sekoId"],
-    });
-  }
+  // SEKO sekoId는 선택 — QSP는 이메일만으로도 시공점 조회 가능
 });
 
 export type PasswordResetRequestInput = z.infer<typeof passwordResetRequestSchema>;

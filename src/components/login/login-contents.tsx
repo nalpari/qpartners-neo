@@ -12,22 +12,13 @@ import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
 import { LoginLinks } from "@/components/login/login-links";
-import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS } from "@/components/login/types";
+import { SAVED_ID_KEY, SAVED_TAB_KEY, AUTH_FLAG_KEY, dispatchAuthChange, LOGIN_ERRORS, TAB_TO_USERTP } from "@/components/login/types";
 import type { TabType } from "@/components/login/types";
-import { userTpValues } from "@/lib/schemas/common";
-
-type UserTp = (typeof userTpValues)[number];
 
 const STATUS_ERROR_MAP: Record<number, string> = {
   400: LOGIN_ERRORS.BAD_REQUEST,
   401: LOGIN_ERRORS.INVALID_CREDENTIALS,
   502: LOGIN_ERRORS.SERVER_UNAVAILABLE,
-};
-
-const TAB_TO_USERTP: Record<TabType, UserTp> = {
-  dealer: "STORE",
-  installer: "SEKO",
-  general: "GENERAL",
 };
 
 interface LoginContentsProps {

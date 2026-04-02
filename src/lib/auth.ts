@@ -23,7 +23,7 @@ const VALID_ROLES = new Set([
 ]);
 
 export type UserInfo = {
-  userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
+  userType: (typeof userTpValues)[number];
   userId: string;
   role: string;
   department?: string;

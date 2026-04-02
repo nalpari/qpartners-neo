@@ -3,16 +3,7 @@
 import { useState, useCallback } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
-import { type TabType, VALID_TABS } from "@/components/login/types";
-import { userTpValues } from "@/lib/schemas/common";
-
-type UserTp = (typeof userTpValues)[number];
-
-const TAB_TO_USER_TP: Record<TabType, UserTp> = {
-  dealer: "STORE",
-  installer: "SEKO",
-  general: "GENERAL",
-};
+import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
 
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
@@ -20,21 +11,23 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "general", label: "一般会員" },
 ];
 
-interface FormData {
+interface ResetFormData {
   id: string;
   email: string;
+  sekoId: string;
   idEmail: string;
 }
 
-const INITIAL_FORM: FormData = {
+const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
+  sekoId: "",
   idEmail: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: FormData): boolean {
+function isFormValid(tab: TabType, data: ResetFormData): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
@@ -51,11 +44,11 @@ export function PasswordResetPopup() {
   const rawTab = popupData.activeTab;
   const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
-  const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
+  const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (key: keyof FormData, value: string) => {
+  const handleChange = (key: keyof ResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -72,7 +65,7 @@ export function PasswordResetPopup() {
   const handleSubmit = useCallback(async () => {
     if (!isFormValid(activeTab, formData) || isSubmitting) return;
 
-    const userTp = TAB_TO_USER_TP[activeTab];
+    const userTp = TAB_TO_USERTP[activeTab];
     const payload: Record<string, string> = { userTp, email: "" };
 
     switch (activeTab) {
@@ -82,6 +75,7 @@ export function PasswordResetPopup() {
         break;
       case "installer":
         payload.email = formData.email;
+        if (formData.sekoId.trim()) payload.sekoId = formData.sekoId;
         break;
       case "general":
         payload.email = formData.idEmail;
@@ -215,17 +209,30 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "installer" && (
-              <div className="flex flex-col gap-2 w-full">
-                <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
+              <>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    施工店ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.sekoId}
+                    onChange={(e) => handleChange("sekoId", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    E-Mail<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleChange("email", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </>
             )}
 
             {activeTab === "general" && (
