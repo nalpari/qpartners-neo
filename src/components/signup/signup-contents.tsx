@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { InputBox, Button, Checkbox, Radio } from "@/components/common";
 import { Spinner } from "@/components/common/spinner";
 import { usePopupStore, useAlertStore } from "@/lib/store";
@@ -150,8 +151,11 @@ export function SignupContents() {
         setSubmitError("既に使用中のメールアドレスです");
       } else if (isAxiosError(error) && error.response?.status === 400) {
         setSubmitError("入力内容を確認してください");
+      } else if (isAxiosError(error) && error.response) {
+        const serverMsg = extractApiError(error);
+        setSubmitError(serverMsg ?? "サーバーエラーが発生しました。しばらくしてからお試しください。");
       } else {
-        setSubmitError("サーバーに接続できません");
+        setSubmitError("サーバーに接続できません。ネットワーク状態を確認してください。");
       }
     } finally {
       setIsSubmitting(false);

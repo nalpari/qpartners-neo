@@ -2,8 +2,20 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { z } from "zod";
 import { usePopupStore } from "@/lib/store";
 import { Button, Radio } from "@/components/common";
+
+const zipcloudResponseSchema = z.object({
+  status: z.number(),
+  message: z.string().nullable(),
+  results: z.array(z.object({
+    zipcode: z.string(),
+    address1: z.string(),
+    address2: z.string(),
+    address3: z.string(),
+  })).nullable(),
+});
 
 interface ZipcodeAddress {
   zipcode: string;
@@ -53,11 +65,14 @@ export function ZipcodeSearchPopup() {
         setError("住所検索中にエラーが発生しました。");
         return;
       }
-      const data: {
-        status: number;
-        message: string | null;
-        results: { zipcode: string; address1: string; address2: string; address3: string }[] | null;
-      } = await res.json();
+      const raw: unknown = await res.json();
+      const parsed = zipcloudResponseSchema.safeParse(raw);
+      if (!parsed.success) {
+        console.error("[ZipcodeSearch] 応答スキーマ不一致:", parsed.error);
+        setError("住所検索中にエラーが発生しました。");
+        return;
+      }
+      const data = parsed.data;
 
       // zipcloud API 자체 에러 (HTTP 200이지만 status !== 200)
       if (data.status !== 200) {

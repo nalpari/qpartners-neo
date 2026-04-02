@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
@@ -25,7 +25,7 @@ function mapServerError(serverMsg: string): string {
   if (!match) {
     console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
   }
-  return match?.message ?? "サーバーに接続できません。しばらくしてからお試しください";
+  return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください";
 }
 
 
@@ -43,9 +43,40 @@ export function TwoFactorAuthPopup() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(600);
-  const [sendCount, setSendCount] = useState(0);
 
   const isCodeValid = code.length === 6;
+
+  // 인증번호 발송 — useMutation으로 관리 (useEffect 내 setState 회피)
+  const sendMutation = useMutation({
+    mutationFn: () => api.post("/auth/two-factor/send", { userTp, userId }),
+    onSuccess: () => {
+      startTimer();
+    },
+    onError: (err) => {
+      console.error("[2FA] 送信失敗:", err);
+      if (err instanceof AxiosError && err.response?.status === 429) {
+        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+      } else {
+        setError("メール送信に失敗しました。再送信をお試しください。");
+      }
+    },
+  });
+
+  // useRef 기반 타이머 (useEffect 내 setState 회피)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setRemainingSeconds(600);
+    timerRef.current = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   // 팝업 열리면 자동 포커스 + 1회 발송 (StrictMode 중복 방지)
   const sendCalledRef = useRef(false);
@@ -60,37 +91,13 @@ export function TwoFactorAuthPopup() {
       return;
     }
 
-    const send = async () => {
-      try {
-        await api.post("/auth/two-factor/send", { userTp, userId });
-        setSendCount((c) => c + 1);
-      } catch (err) {
-        console.error("[2FA] 初期送信失敗:", err);
-        if (err instanceof AxiosError && err.response?.status === 429) {
-          setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
-        } else {
-          setError("メール送信に失敗しました。再送信をお試しください。");
-        }
-      }
-    };
-    void send();
-  }, [userId, userTp]);
+    sendMutation.mutate();
 
-  // 10분 카운트다운 타이머 — 발송 성공 시 시작, 재전송 시 리셋
-  useEffect(() => {
-    if (sendCount === 0) return;
-    setRemainingSeconds(600);
-    const timer = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev <= 0) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [sendCount]);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 시 1회만 실행, sendMutation은 안정적
+  }, []);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;
@@ -114,21 +121,11 @@ export function TwoFactorAuthPopup() {
     router.replace("/login");
   };
 
-  const handleResend = async () => {
+  const handleResend = () => {
     setCode("");
     setError(null);
     inputRef.current?.focus();
-    try {
-      await api.post("/auth/two-factor/send", { userTp, userId });
-      setSendCount((c) => c + 1);
-    } catch (err) {
-      console.error("[2FA] 再送信失敗:", err);
-      if (err instanceof AxiosError && err.response?.status === 429) {
-        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
-      } else {
-        setError("メール送信に失敗しました。再送信をお試しください。");
-      }
-    }
+    sendMutation.mutate();
   };
 
   const handleVerify = async () => {
@@ -141,7 +138,11 @@ export function TwoFactorAuthPopup() {
       await api.post("/auth/two-factor/verify", { userTp, userId, code });
 
       // 성공: 홈화면 블러 해제 (성공 메시지 없음)
-      localStorage.setItem(AUTH_FLAG_KEY, "1");
+      try {
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+      } catch (storageErr) {
+        console.error("[2FA] localStorage 쓰기 失敗:", storageErr);
+      }
       dispatchAuthChange();
       closePopup();
       router.replace("/");
@@ -232,7 +233,7 @@ export function TwoFactorAuthPopup() {
                 />
                 <button
                   type="button"
-                  onClick={() => { void handleResend(); }}
+                  onClick={handleResend}
                   className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0"
                 >
                   再送信
