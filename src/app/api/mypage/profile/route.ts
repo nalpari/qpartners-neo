@@ -181,9 +181,16 @@ export async function PUT(request: NextRequest) {
 
     const d = result.data;
 
+    // 관리자 프로필 수정은 미구현 (Q.ORDER T01만 — 향후 구현)
+    if (user.userTp === "ADMIN") {
+      return NextResponse.json(
+        { error: "管理者のプロフィール修正はまだ対応されていません" },
+        { status: 501 },
+      );
+    }
+
     // QSP 수정 API 호출 (판매점/일반)
-    // 관리자는 QSP 업데이트하지 않음 (Q.ORDER T01만 — 향후 구현)
-    if (user.userTp !== "ADMIN") {
+    {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
         email: user.email,

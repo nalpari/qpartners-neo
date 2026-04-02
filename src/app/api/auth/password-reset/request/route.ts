@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
 
   // 유저 미존재 시에도 동일 성공 응답 반환 — 이메일 열거 공격 방지
   if (!userExists) {
-    console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — email: ${email}, userTp: ${userTp}`);
+    console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — userTp: ${userTp}`);
     return NextResponse.json({
       data: { message: "パスワード変更リンクをメールで送信しました。" },
     });
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
       data: { used: true },
     }).catch((dbError: unknown) => {
       // 토큰 무효화 실패 → orphan 토큰 잔류 (rate limit 카운트 소모됨)
-      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패 — orphan 토큰 잔류, token:", token, dbError);
+      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
     });
     return NextResponse.json(
       { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },

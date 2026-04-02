@@ -199,7 +199,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429, QSP 회원 불일치 시 404 반환.",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시에도 동일 200 응답 (이메일 열거 공격 방지).",
         requestBody: {
           required: true,
           content: {
@@ -235,7 +235,6 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "404": errorResponse("일치하는 회원 정보 없음"),
           "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
           "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
           "502": errorResponse("외부 서버 연결 실패"),

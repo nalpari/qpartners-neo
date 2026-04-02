@@ -3,10 +3,17 @@ import { SignJWT, jwtVerify } from "jose";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 
+class ConfigError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "ConfigError";
+  }
+}
+
 const getSecret = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error("JWT_SECRET 환경변수가 설정되지 않았습니다");
+    throw new ConfigError("JWT_SECRET 환경변수가 설정되지 않았습니다");
   }
   return new TextEncoder().encode(secret);
 };
@@ -32,7 +39,7 @@ export async function verifyToken(token: string): Promise<LoginUser | null> {
     return parsed.data;
   } catch (error) {
     // 환경변수 설정 에러는 반드시 전파 — 무음 실패 방지
-    if (error instanceof Error && error.message.includes("환경변수")) {
+    if (error instanceof ConfigError) {
       console.error("[verifyToken] CRITICAL 설정 에러:", error);
       throw error;
     }

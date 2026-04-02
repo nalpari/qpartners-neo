@@ -96,11 +96,14 @@ export async function resolveAuthRole(
     }
     case "STORE":
       if (storeLvl === null) {
-        console.warn(`[resolveAuthRole] STORE user with null storeLvl (userId: ${userId}) — defaulting to 1ST_STORE`);
-      } else if (storeLvl !== "1" && storeLvl !== "2") {
-        console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" (userId: ${userId}) — 1ST_STORE로 처리`);
+        console.warn(`[resolveAuthRole] STORE user with null storeLvl (userId: ${userId}) — defaulting to 2ND_STORE (최소 권한)`);
+        return "2ND_STORE";
       }
-      return storeLvl === "2" ? "2ND_STORE" : "1ST_STORE";
+      if (storeLvl !== "1" && storeLvl !== "2") {
+        console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" (userId: ${userId}) — 2ND_STORE로 처리 (최소 권한)`);
+        return "2ND_STORE";
+      }
+      return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";
     case "SEKO":
       return "SEKO";
     default:
