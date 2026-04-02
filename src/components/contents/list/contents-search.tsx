@@ -32,13 +32,13 @@ const DEPARTMENT_OPTIONS = [
 ];
 
 interface ContentsSearchProps {
-  isAdmin?: boolean;
+  isInternal?: boolean;
   categories: CategoryNode[];
   onSearch: (filters: SearchFilters) => void;
 }
 
 export function ContentsSearch({
-  isAdmin = false,
+  isInternal = false,
   categories,
   onSearch,
 }: ContentsSearchProps) {
@@ -146,7 +146,7 @@ export function ContentsSearch({
                 </div>
                 <div className="flex-1 flex flex-wrap items-center gap-x-[18px] gap-y-[8px] bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
                   {parent.children.map((child) => {
-                    if (child.isInternalOnly && !isAdmin) return null;
+                    if (child.isInternalOnly && !isInternal) return null;
                     return (
                       <Checkbox
                         key={child.id}
@@ -161,7 +161,7 @@ export function ContentsSearch({
               </div>
             ))}
 
-            {isAdmin && (
+            {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
@@ -188,7 +188,7 @@ export function ContentsSearch({
               </div>
             )}
 
-            {isAdmin && (
+            {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
@@ -232,7 +232,7 @@ export function ContentsSearch({
                 </p>
                 <div className="flex flex-col gap-4">
                   {parent.children.map((child) => {
-                    if (child.isInternalOnly && !isAdmin) return null;
+                    if (child.isInternalOnly && !isInternal) return null;
                     return (
                       <Checkbox
                         key={child.id}
@@ -247,7 +247,7 @@ export function ContentsSearch({
               </div>
             ))}
 
-            {isAdmin && (
+            {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
                 <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
                   掲示対象
@@ -268,7 +268,7 @@ export function ContentsSearch({
               </div>
             )}
 
-            {isAdmin && (
+            {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
                 <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
                   担当部門

@@ -34,7 +34,8 @@ export type { CategoryNode, SearchFilters };
 
 export function ContentsContents() {
   // TODO: 실제 권한 체크로 교체
-  const isAdmin = true;
+  // 사내회원 = 슈퍼관리자 + 관리자 (게시대상/담당부문/관리자컬럼 노출 대상)
+  const isInternal = true;
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
     page: 1,
@@ -93,12 +94,12 @@ export function ContentsContents() {
   return (
     <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full pb-[10px] lg:pb-[48px]">
       <ContentsSearch
-        isAdmin={isAdmin}
+        isInternal={isInternal}
         categories={categories}
         onSearch={handleSearch}
       />
       <ContentsTable
-        isAdmin={isAdmin}
+        isInternal={isInternal}
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}
         isLoading={isLoading}

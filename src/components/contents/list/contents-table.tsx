@@ -113,7 +113,7 @@ function renderAttachmentAction(item: ContentListItem) {
 }
 
 interface ContentsTableProps {
-  isAdmin?: boolean;
+  isInternal?: boolean;
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
@@ -122,7 +122,7 @@ interface ContentsTableProps {
 }
 
 export function ContentsTable({
-  isAdmin = false,
+  isInternal = false,
   data,
   meta,
   isLoading,
@@ -191,7 +191,7 @@ export function ContentsTable({
       },
     ];
 
-    if (isAdmin) {
+    if (isInternal) {
       baseCols.push(
         {
           headerName: "掲示対象",
@@ -211,7 +211,7 @@ export function ContentsTable({
     }
 
     return baseCols;
-  }, [isAdmin]);
+  }, [isInternal]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
     const base: MobileCardField<ContentListItem>[] = [
@@ -238,7 +238,7 @@ export function ContentsTable({
       },
     ];
 
-    if (isAdmin) {
+    if (isInternal) {
       base.push(
         {
           label: "掲示対象",
@@ -254,7 +254,7 @@ export function ContentsTable({
     }
 
     return base;
-  }, [isAdmin]);
+  }, [isInternal]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
@@ -270,7 +270,7 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isAdmin && (
+        {isInternal && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
             <Button variant="primary" className="w-[110px]">
               新規登録
