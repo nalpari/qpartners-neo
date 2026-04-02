@@ -334,7 +334,7 @@ export function SignupContents() {
                   />
                   <button
                     type="button"
-                    onClick={handleEmailCheck}
+                    onClick={() => { void handleEmailCheck(); }}
                     disabled={isEmailChecking}
                     className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer disabled:opacity-50"
                   >

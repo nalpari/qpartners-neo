@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { usePopupStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
@@ -27,14 +28,6 @@ function mapServerError(serverMsg: string): string {
   return match?.message ?? "サーバーに接続できません。しばらくしてからお試しください";
 }
 
-/** unknown → string 안전 추출 */
-function extractErrorString(data: unknown): string {
-  if (typeof data === "object" && data !== null && "error" in data) {
-    const msg = (data as Record<string, unknown>).error;
-    if (typeof msg === "string") return msg;
-  }
-  return "";
-}
 
 export function TwoFactorAuthPopup() {
   const router = useRouter();
@@ -110,6 +103,7 @@ export function TwoFactorAuthPopup() {
     setError(null);
   };
 
+  // Best-effort logout: 실패해도 로그인 화면으로 이동 (서버 세션은 TTL로 만료)
   const handleCancel = async () => {
     try {
       await performLogout(queryClient);
@@ -154,7 +148,7 @@ export function TwoFactorAuthPopup() {
     } catch (err) {
       console.error("[2FA] 認証失敗:", err);
       if (err instanceof AxiosError && err.response) {
-        const serverError = extractErrorString(err.response.data);
+        const serverError = extractApiError(err);
         if (serverError) {
           setError(mapServerError(serverError));
         } else {
