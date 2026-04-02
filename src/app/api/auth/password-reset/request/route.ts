@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
   if (!userExists) {
     console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — email: ${email}, userTp: ${userTp}`);
     return NextResponse.json({
-      data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+      data: { message: "パスワード変更リンクをメールで送信しました。" },
     });
   }
 
@@ -194,6 +194,6 @@ export async function POST(request: NextRequest) {
 
   // 6. 성공 응답
   return NextResponse.json({
-    data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+    data: { message: "パスワード変更リンクをメールで送信しました。" },
   });
 }

@@ -185,7 +185,7 @@ model Category {
   createdBy      String?           @map("created_by") @db.VarChar(255)
   updatedAt      DateTime          @updatedAt @map("updated_at")
   updatedBy      String?           @map("updated_by") @db.VarChar(255)
-  parent         Category?         @relation("CategoryTree", fields: [parentId], references: [id])
+  parent         Category?         @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children       Category[]        @relation("CategoryTree")
   contents       ContentCategory[]
 

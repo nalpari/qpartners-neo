@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/mypage/seko-info]", error);
     return NextResponse.json(
-      { error: "시공점 정보 조회 중 오류가 발생했습니다" },
+      { error: "施工店情報の照会中にエラーが発生しました" },
       { status: 500 },
     );
   }

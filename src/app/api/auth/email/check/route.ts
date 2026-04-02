@@ -7,6 +7,7 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 // POST /api/auth/email/check — 이메일 중복 체크 (QSP /user/detail 활용)
 // PII(이메일)가 URL query parameter에 노출되지 않도록 POST 사용
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body에서 email 추출 + 검증
   let body: unknown;
   try {
@@ -72,8 +73,8 @@ export async function POST(request: NextRequest) {
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
-  } catch {
-    console.warn("[POST /api/auth/email/check] QSP 응답 JSON 파싱 실패");
+  } catch (parseError) {
+    console.warn("[POST /api/auth/email/check] QSP 응답 JSON 파싱 실패:", parseError);
     return NextResponse.json(
       { error: "외부 서버 응답을 처리할 수 없습니다" },
       { status: 502 },
@@ -119,4 +120,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     data: { available: true, message: "사용 가능한 이메일입니다" },
   });
+ } catch (error) {
+    console.error("[POST /api/auth/email/check]", error);
+    return NextResponse.json(
+      { error: "メール確認中にエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }

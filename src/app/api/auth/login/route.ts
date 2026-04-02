@@ -167,7 +167,16 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 세부 권한코드(authRole) 판별
-  const authRole = await resolveAuthRole(qsp.data.userTp, qsp.data.userId, qsp.data.storeLvl);
+  let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
+  try {
+    authRole = await resolveAuthRole(qsp.data.userTp, qsp.data.userId, qsp.data.storeLvl);
+  } catch (error) {
+    console.error("[POST /api/auth/login] authRole 판별 실패, 기본값 사용:", error);
+    authRole = qsp.data.userTp === "ADMIN" ? "ADMIN"
+      : qsp.data.userTp === "STORE" ? (qsp.data.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE")
+      : qsp.data.userTp === "SEKO" ? "SEKO"
+      : "GENERAL";
+  }
 
   // 7. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {

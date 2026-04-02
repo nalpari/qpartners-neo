@@ -31,11 +31,15 @@ export async function verifyToken(token: string): Promise<LoginUser | null> {
     if (!parsed.success) return null;
     return parsed.data;
   } catch (error) {
+    // 환경변수 설정 에러는 반드시 전파 — 무음 실패 방지
+    if (error instanceof Error && error.message.includes("환경변수")) {
+      console.error("[verifyToken] CRITICAL 설정 에러:", error);
+      throw error;
+    }
     // JWT 검증 실패(만료, 서명 불일치 등)는 정상 흐름 — 로깅 불필요
-    // 설정 에러 등 예상치 못한 에러만 로깅
     const msg = error instanceof Error ? error.message : "";
     const isExpectedJwtError =
-      msg.includes("JWT") || msg.includes("JWS") || msg.includes("signature") || msg.includes("exp");
+      msg.includes("JWS") || msg.includes("signature") || msg.includes("exp");
     if (!isExpectedJwtError) {
       console.error("[verifyToken] unexpected error:", error);
     }

@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/mypage/withdraw]", error);
     return NextResponse.json(
-      { error: "회원탈퇴 처리 중 오류가 발생했습니다" },
+      { error: "退会処理中にエラーが発生しました" },
       { status: 500 },
     );
   }
