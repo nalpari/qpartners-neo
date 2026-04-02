@@ -127,6 +127,8 @@ export async function POST(request: NextRequest) {
         } else {
           console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
         }
+      } else {
+        console.warn("[POST /api/auth/login] SEC_AUTH_VALIDITY 공통코드 미등록 — 2FA 필수 처리");
       }
     } catch (error) {
       console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 — 2FA 필요로 처리:", error);
@@ -149,15 +151,15 @@ export async function POST(request: NextRequest) {
           console.error("[POST /api/auth/login] secAuthDt 형식 불일치:", secAuthDt);
           requireTwoFactor = true;
         } else {
-        const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
-        const authDate = new Date(isoStr);
-        if (Number.isNaN(authDate.getTime())) {
-          console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
-          requireTwoFactor = true;
-        } else {
-          const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
-          requireTwoFactor = new Date() >= expiresAt;
-        }
+          const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
+          const authDate = new Date(isoStr);
+          if (Number.isNaN(authDate.getTime())) {
+            console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+            requireTwoFactor = true;
+          } else {
+            const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+            requireTwoFactor = new Date() >= expiresAt;
+          }
         }
       }
     }

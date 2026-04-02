@@ -62,6 +62,7 @@ export async function middleware(request: NextRequest) {
   const user = await verifyToken(token);
 
   if (!user) {
+    console.warn("[middleware] 토큰 검증 실패 — 만료 또는 서명 불일치");
     return NextResponse.json(
       { error: "토큰이 만료되었거나 유효하지 않습니다" },
       { status: 401 },
