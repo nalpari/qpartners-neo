@@ -48,6 +48,10 @@ export function ZipcodeSearchPopup() {
       const res = await fetch(
         `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`
       );
+      if (!res.ok) {
+        setError("住所検索中にエラーが発生しました。");
+        return;
+      }
       const data: {
         results: { zipcode: string; address1: string; address2: string; address3: string }[] | null;
       } = await res.json();

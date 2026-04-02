@@ -144,7 +144,11 @@ export function SignupContents() {
       openPopup("signup-complete", { userName, userId: email });
     } catch (error) {
       if (isAxiosError(error) && error.response) {
-        const msg = error.response.data?.error as string | undefined;
+        const body: unknown = error.response.data;
+        const msg =
+          typeof body === "object" && body !== null && "error" in body && typeof (body as Record<string, unknown>).error === "string"
+            ? ((body as Record<string, unknown>).error as string)
+            : undefined;
         setSubmitError(msg ?? "会員登録に失敗しました");
       } else {
         setSubmitError("サーバーに接続できません");
