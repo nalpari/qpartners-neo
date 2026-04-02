@@ -109,36 +109,48 @@ export async function POST(request: NextRequest) {
   let requireTwoFactor = false;
 
   if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
-    // 공통코드에서 2차인증 유효기간(일수) 조회
-    let validityDays = 30; // 디폴트 30일
+    // 공통코드에서 2차인증 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요)
+    let validityDays: number | null = null;
     try {
       const activeCode = await prisma.codeDetail.findFirst({
         where: {
           header: { headerCode: "SEC_AUTH_VALIDITY" },
           isActive: true,
         },
+        orderBy: { id: "desc" },
         select: { code: true },
       });
       if (activeCode) {
-        validityDays = Number(activeCode.code);
+        const days = Number(activeCode.code);
+        if (Number.isFinite(days) && days > 0) {
+          validityDays = days;
+        } else {
+          console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
+        }
       }
     } catch (error) {
-      console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 (디폴트 30일 적용):", error);
+      console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 — 2FA 필요로 처리:", error);
     }
 
-    // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss") 후 유효기간 비교
-    const secAuthDt = qsp.data.secAuthDt;
-    if (!secAuthDt) {
-      // secAuthDt 없음 → 2FA 미인증 상태 → 필요
+    if (validityDays === null) {
+      // 유효기간 조회 실패 또는 값 이상 → fail-closed
       requireTwoFactor = true;
     } else {
-      const parsed = new Date(secAuthDt.replace(/\./g, "-"));
-      if (Number.isNaN(parsed.getTime())) {
-        console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+      // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss" → ISO 8601) 후 유효기간 비교
+      const secAuthDt = qsp.data.secAuthDt;
+      if (!secAuthDt) {
+        // secAuthDt 없음 → 2FA 미인증 상태 → 필요
         requireTwoFactor = true;
       } else {
-        const expiresAt = new Date(parsed.getTime() + validityDays * 24 * 60 * 60 * 1000);
-        requireTwoFactor = new Date() >= expiresAt;
+        const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T");
+        const authDate = new Date(isoStr);
+        if (Number.isNaN(authDate.getTime())) {
+          console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+          requireTwoFactor = true;
+        } else {
+          const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+          requireTwoFactor = new Date() >= expiresAt;
+        }
       }
     }
   }
