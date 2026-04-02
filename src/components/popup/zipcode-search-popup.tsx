@@ -34,7 +34,6 @@ export function ZipcodeSearchPopup() {
     setError("");
     setResults([]);
     setSelectedIndex(null);
-    setHasSearched(true);
 
     if (!/^\d{7}$/.test(zipcode)) {
       setError(
@@ -43,6 +42,7 @@ export function ZipcodeSearchPopup() {
       return;
     }
 
+    setHasSearched(true);
     setIsSearching(true);
     try {
       const res = await fetch(

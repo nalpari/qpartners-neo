@@ -108,15 +108,13 @@ export async function POST(request: NextRequest) {
     qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y";
 
   // 6. 클라이언트에 전달할 사용자 정보 추출
-  // TODO: 테스트용 — QSP에 이메일 없는 더미 계정에 강제 이메일 설정 (배포 전 제거)
-  const testEmail = qsp.data.email || "chang9811@gmail.com";
   const user: LoginUser = {
     userId: qsp.data.userId,
     userNm: qsp.data.userNm,
     userTp: qsp.data.userTp,
     compCd: qsp.data.compCd,
     compNm: qsp.data.compNm,
-    email: testEmail,
+    email: qsp.data.email,
     deptNm: qsp.data.deptNm,
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,

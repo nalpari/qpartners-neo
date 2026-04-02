@@ -1,10 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { AxiosError } from "axios";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 type TabType = "dealer" | "installer" | "general";
+
+const TAB_TO_USERTP: Record<TabType, string> = {
+  dealer: "DEALER",
+  installer: "SEKO",
+  general: "GENERAL",
+};
 
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
@@ -43,12 +51,25 @@ function isFormValid(tab: TabType, data: FormData): boolean {
   }
 }
 
+function buildRequestBody(tab: TabType, data: FormData) {
+  const base = { userTp: TAB_TO_USERTP[tab] };
+  switch (tab) {
+    case "dealer":
+      return { ...base, loginId: data.id, email: data.email };
+    case "installer":
+      return { ...base, email: data.email };
+    case "general":
+      return { ...base, email: data.idEmail };
+  }
+}
+
 export function PasswordResetPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
   const activeTab = (popupData.activeTab as TabType) ?? "dealer";
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (key: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -63,15 +84,34 @@ export function PasswordResetPopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!isFormValid(activeTab, formData)) return;
 
-    // TODO: API 호출 (비밀번호 초기화)
-    handleClose();
-    openAlert({
-      type: "alert",
-      message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
-    });
+    setIsSubmitting(true);
+    try {
+      const body = buildRequestBody(activeTab, formData);
+      await api.post("/auth/password-reset/request", body);
+
+      handleClose();
+      openAlert({
+        type: "alert",
+        message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
+      });
+    } catch (err) {
+      if (err instanceof AxiosError && err.response?.status === 400 && err.response.data?.error) {
+        openAlert({
+          type: "alert",
+          message: "一致する会員情報がありません。入力した情報を再度ご確認ください。",
+        });
+      } else {
+        openAlert({
+          type: "alert",
+          message: "サーバーに接続できません。しばらくしてからお試しください",
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const inputClass =
@@ -145,6 +185,7 @@ export function PasswordResetPopup() {
                     type="text"
                     value={formData.id}
                     onChange={(e) => handleChange("id", e.target.value)}
+                    disabled={isSubmitting}
                     className={inputClass}
                   />
                 </div>
@@ -156,6 +197,7 @@ export function PasswordResetPopup() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleChange("email", e.target.value)}
+                    disabled={isSubmitting}
                     className={inputClass}
                   />
                 </div>
@@ -185,6 +227,7 @@ export function PasswordResetPopup() {
                   type="email"
                   value={formData.idEmail}
                   onChange={(e) => handleChange("idEmail", e.target.value)}
+                  disabled={isSubmitting}
                   className={inputClass}
                 />
               </div>
@@ -196,8 +239,12 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSubmit}>
-              パスワードの初期化
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+              disabled={isSubmitting || !isFormValid(activeTab, formData)}
+            >
+              {isSubmitting ? "処理中..." : "パスワードの初期化"}
             </Button>
           </div>
         </div>

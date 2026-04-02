@@ -27,20 +27,28 @@ export function TwoFactorAuthPopup() {
 
   const isCodeValid = code.length === 6;
 
-  // 팝업 열리면 자동 포커스 + 인증번호 발송 (StrictMode 중복 방지)
-  const sendCalledRef = useRef(false);
-  useEffect(() => {
-    inputRef.current?.focus();
-    if (sendCalledRef.current) return;
-    sendCalledRef.current = true;
-    api.post("/auth/two-factor/send", { userTp, userId }).catch((err) => {
+  // 인증번호 발송 (이벤트 핸들러 패턴 — React Compiler purity 준수)
+  const sendInitial = async () => {
+    try {
+      await api.post("/auth/two-factor/send", { userTp, userId });
+    } catch (err) {
       if (err instanceof AxiosError && err.response?.status === 429) {
         setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
       } else {
         setError("メール送信に失敗しました。再送信をお試しください。");
       }
-    });
-  }, [userTp, userId]);
+    }
+  };
+
+  // 팝업 열리면 자동 포커스 + 1회 발송 (StrictMode 중복 방지)
+  const sendCalledRef = useRef(false);
+  useEffect(() => {
+    inputRef.current?.focus();
+    if (sendCalledRef.current) return;
+    sendCalledRef.current = true;
+    void sendInitial();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 시 1회만 실행
+  }, []);
 
   // 10분 카운트다운 타이머
   useEffect(() => {
