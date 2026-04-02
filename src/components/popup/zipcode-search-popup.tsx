@@ -71,7 +71,8 @@ export function ZipcodeSearchPopup() {
           town: r.address3,
         }))
       );
-    } catch {
+    } catch (err) {
+      console.error("[ZipcodeSearch] 住所検索 API 呼び出し失敗:", err);
       setError("住所検索中にエラーが発生しました。");
     } finally {
       setIsSearching(false);

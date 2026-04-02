@@ -11,27 +11,56 @@ import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
+/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 */
+const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
+  { pattern: "일치하지 않습니다", message: "認証番号が一致しません！" },
+  { pattern: "입력시간이 초과", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
+  { pattern: "시도 횟수를 초과", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
+  { pattern: "먼저 발송", message: "認証番号を先に送信してください。再送信をお試しください。" },
+];
+
+function mapServerError(serverMsg: string): string {
+  const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
+  if (!match) {
+    console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
+  }
+  return match?.message ?? "サーバーに接続できません。しばらくしてからお試しください";
+}
+
+/** unknown → string 안전 추출 */
+function extractErrorString(data: unknown): string {
+  if (typeof data === "object" && data !== null && "error" in data) {
+    const msg = (data as Record<string, unknown>).error;
+    if (typeof msg === "string") return msg;
+  }
+  return "";
+}
+
 export function TwoFactorAuthPopup() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { popupData, closePopup } = usePopupStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const userId = popupData.userId as string;
-  const userTp = popupData.userTp as string;
+  // popupData 타입 가드 — undefined 방어
+  const userId = typeof popupData.userId === "string" ? popupData.userId : "";
+  const userTp = typeof popupData.userTp === "string" ? popupData.userTp : "";
 
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(600);
+  const [isSendSuccess, setIsSendSuccess] = useState(false);
 
   const isCodeValid = code.length === 6;
 
-  // 인증번호 발송 (이벤트 핸들러 패턴 — React Compiler purity 준수)
+  // 인증번호 발송 (async 분리 — React Compiler purity 준수)
   const sendInitial = async () => {
     try {
       await api.post("/auth/two-factor/send", { userTp, userId });
+      setIsSendSuccess(true);
     } catch (err) {
+      console.error("[2FA] 初期送信失敗:", err);
       if (err instanceof AxiosError && err.response?.status === 429) {
         setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
       } else {
@@ -50,8 +79,9 @@ export function TwoFactorAuthPopup() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 시 1회만 실행
   }, []);
 
-  // 10분 카운트다운 타이머
+  // 10분 카운트다운 타이머 — 발송 성공 시에만 시작
   useEffect(() => {
+    if (!isSendSuccess) return;
     const timer = setInterval(() => {
       setRemainingSeconds((prev) => {
         if (prev <= 0) {
@@ -62,7 +92,7 @@ export function TwoFactorAuthPopup() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isSendSuccess]);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;
@@ -76,7 +106,11 @@ export function TwoFactorAuthPopup() {
   };
 
   const handleCancel = async () => {
-    await performLogout(queryClient);
+    try {
+      await performLogout(queryClient);
+    } catch (err) {
+      console.error("[2FA] ログアウト失敗:", err);
+    }
     closePopup();
     router.replace("/login");
   };
@@ -84,11 +118,13 @@ export function TwoFactorAuthPopup() {
   const handleResend = async () => {
     setCode("");
     setError(null);
-    setRemainingSeconds(600);
     inputRef.current?.focus();
     try {
       await api.post("/auth/two-factor/send", { userTp, userId });
+      setRemainingSeconds(600);
+      setIsSendSuccess(true);
     } catch (err) {
+      console.error("[2FA] 再送信失敗:", err);
       if (err instanceof AxiosError && err.response?.status === 429) {
         setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
       } else {
@@ -112,17 +148,10 @@ export function TwoFactorAuthPopup() {
       closePopup();
       router.replace("/");
     } catch (err) {
+      console.error("[2FA] 認証失敗:", err);
       if (err instanceof AxiosError && err.response) {
-        const serverError: string = err.response.data?.error ?? "";
-        if (serverError.includes("일치")) {
-          setError("認証番号が一致しません！");
-        } else if (serverError.includes("초과되었습니다")) {
-          setError("入力時間を超過しました。再送信後、もう一度入力してください。");
-        } else if (serverError.includes("시도 횟수")) {
-          setError("認証の試行回数を超過しました。認証番号を再送信してください。");
-        } else {
-          setError("サーバーに接続できません。しばらくしてからお試しください");
-        }
+        const serverError = extractErrorString(err.response.data);
+        setError(mapServerError(serverError));
       } else {
         setError("サーバーに接続できません。しばらくしてからお試しください");
       }

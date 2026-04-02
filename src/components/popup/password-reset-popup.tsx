@@ -20,27 +20,21 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "general", label: "一般会員" },
 ];
 
-interface FormData {
+interface PasswordResetFormData {
   id: string;
   email: string;
-  lastName: string;
-  firstName: string;
   idEmail: string;
-  fullName: string;
 }
 
-const INITIAL_FORM: FormData = {
+const INITIAL_FORM: PasswordResetFormData = {
   id: "",
   email: "",
-  lastName: "",
-  firstName: "",
   idEmail: "",
-  fullName: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: FormData): boolean {
+function isFormValid(tab: TabType, data: PasswordResetFormData): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
@@ -51,7 +45,7 @@ function isFormValid(tab: TabType, data: FormData): boolean {
   }
 }
 
-function buildRequestBody(tab: TabType, data: FormData) {
+function buildRequestBody(tab: TabType, data: PasswordResetFormData) {
   const base = { userTp: TAB_TO_USERTP[tab] };
   switch (tab) {
     case "dealer":
@@ -68,10 +62,10 @@ export function PasswordResetPopup() {
   const { openAlert } = useAlertStore();
   const activeTab = (popupData.activeTab as TabType) ?? "dealer";
   const [isClosing, setIsClosing] = useState(false);
-  const [formData, setFormData] = useState<FormData>({ ...INITIAL_FORM });
+  const [formData, setFormData] = useState<PasswordResetFormData>({ ...INITIAL_FORM });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (key: keyof FormData, value: string) => {
+  const handleChange = (key: keyof PasswordResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
