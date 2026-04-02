@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
       method: "GET",
       signal: AbortSignal.timeout(10_000),
     });
-  } catch {
-    console.error("[POST /api/auth/email/check] QSP API 호출 실패");
+  } catch (error) {
+    console.error("[POST /api/auth/email/check] QSP API 호출 실패:", error);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },

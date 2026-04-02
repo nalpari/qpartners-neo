@@ -4,11 +4,11 @@ import { SMTP_DEFAULTS } from "@/lib/config";
 
 const isDev = process.env.NODE_ENV === "development";
 
-// Ethereal transporter 캐싱 (비프로덕션 + SMTP_PASS 미설정 시, 프로세스 수명 동안 유지)
+// Ethereal transporter 캐싱 (개발환경 + SMTP_PASS 미설정 시, 프로세스 수명 동안 유지)
 let etherealPromise: Promise<nodemailer.Transporter> | null = null;
 
 async function getTransporter() {
-  // 비프로덕션 + SMTP_PASS 미설정 시: Ethereal 테스트 SMTP 사용 (실제 메일 미발송, 브라우저에서 확인)
+  // 개발환경 + SMTP_PASS 미설정 시: Ethereal 테스트 SMTP 사용 (실제 메일 미발송, 브라우저에서 확인)
   if (isDev && !process.env.SMTP_PASS) {
     if (!etherealPromise) {
       etherealPromise = (async () => {

@@ -24,7 +24,7 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
   } catch (err) {
     // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
     if (err instanceof AxiosError && err.response?.status === 401) {
-      localStorage.removeItem(AUTH_FLAG_KEY);
+      try { localStorage.removeItem(AUTH_FLAG_KEY); } catch { /* localStorage 사용 불가 */ }
       dispatchAuthChange();
     } else {
       console.error("[fetchAuthMe] 인증 확인 실패:", err);
@@ -81,7 +81,7 @@ function subscribeAuthFlag(callback: () => void) {
 export function Gnb() {
   const hasAuthFlag = useSyncExternalStore(
     subscribeAuthFlag,
-    () => localStorage.getItem(AUTH_FLAG_KEY) === "1",
+    () => { try { return localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch { return false; } },
     () => false,
   );
 

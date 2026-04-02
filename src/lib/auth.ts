@@ -9,7 +9,9 @@
 
 import { NextResponse } from "next/server";
 
-const VALID_USER_TYPES = new Set(["ADMIN", "STORE", "SEKO", "GENERAL"]);
+import { userTpValues } from "@/lib/schemas/common";
+
+const VALID_USER_TYPES = new Set<string>(userTpValues);
 const VALID_ROLES = new Set([
   "super_admin",
   "admin",

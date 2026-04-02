@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] JWT 생성 실패:", error);
     return NextResponse.json(
-      { error: "인증 처리 중 서버 오류가 발생했습니다" },
+      { error: "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。" },
       { status: 500 },
     );
   }

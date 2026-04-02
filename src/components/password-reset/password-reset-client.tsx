@@ -138,7 +138,7 @@ export function PasswordResetClient() {
 
       setSubmitStatus("done");
 
-      // 1500ms — 유저가 "保存されました" 메시지를 읽을 시간 확보 후 리다이렉트
+      // 1500ms — 유저가 완료 메시지를 읽을 시간 확보 후 리다이렉트
       setTimeout(() => {
         router.replace(userData ? "/" : "/login");
       }, 1500);
