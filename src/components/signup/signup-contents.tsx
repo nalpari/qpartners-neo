@@ -90,6 +90,7 @@ export function SignupContents() {
       await api.post("/auth/email/check", { email: form.email });
       setEmailCheckStatus("ok");
     } catch (error) {
+      console.error("[Signup] メール重複チェック失敗:", error);
       if (isAxiosError(error) && error.response?.status === 409) {
         setEmailCheckStatus("duplicate");
       } else {

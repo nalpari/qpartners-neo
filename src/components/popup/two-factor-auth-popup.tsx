@@ -56,6 +56,11 @@ export function TwoFactorAuthPopup() {
 
   // 인증번호 발송 (async 분리 — React Compiler purity 준수)
   const sendInitial = async () => {
+    if (!userId || !userTp) {
+      console.error("[2FA] popupData に userId または userTp がありません", { userId, userTp });
+      setError("認証情報が不足しています。ログインからやり直してください。");
+      return;
+    }
     try {
       await api.post("/auth/two-factor/send", { userTp, userId });
       setIsSendSuccess(true);

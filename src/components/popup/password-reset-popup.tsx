@@ -92,11 +92,21 @@ export function PasswordResetPopup() {
         message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
       });
     } catch (err) {
-      if (err instanceof AxiosError && err.response?.status === 400 && err.response.data?.error) {
-        openAlert({
-          type: "alert",
-          message: "一致する会員情報がありません。入力した情報を再度ご確認ください。",
-        });
+      console.error("[PasswordReset] 비밀번호 초기화 요청 실패:", err);
+      if (err instanceof AxiosError && err.response?.status === 400) {
+        const body: unknown = err.response.data;
+        const hasError = typeof body === "object" && body !== null && "error" in body;
+        if (hasError) {
+          openAlert({
+            type: "alert",
+            message: "一致する会員情報がありません。入力した情報を再度ご確認ください。",
+          });
+        } else {
+          openAlert({
+            type: "alert",
+            message: "入力内容を確認してください",
+          });
+        }
       } else {
         openAlert({
           type: "alert",
@@ -235,7 +245,7 @@ export function PasswordResetPopup() {
             </Button>
             <Button
               variant="primary"
-              onClick={handleSubmit}
+              onClick={() => { void handleSubmit(); }}
               disabled={isSubmitting || !isFormValid(activeTab, formData)}
             >
               {isSubmitting ? "処理中..." : "パスワードの初期化"}
