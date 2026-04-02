@@ -1,18 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { AxiosError } from "axios";
-import api from "@/lib/axios";
+import { useState, useCallback } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
-
-type TabType = "dealer" | "installer" | "general";
-
-const TAB_TO_USERTP: Record<TabType, string> = {
-  dealer: "DEALER",
-  installer: "SEKO",
-  general: "GENERAL",
-};
+import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
 
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
@@ -20,21 +11,23 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "general", label: "一般会員" },
 ];
 
-interface PasswordResetFormData {
+interface ResetFormData {
   id: string;
   email: string;
+  sekoId: string;
   idEmail: string;
 }
 
-const INITIAL_FORM: PasswordResetFormData = {
+const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
+  sekoId: "",
   idEmail: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: PasswordResetFormData): boolean {
+function isFormValid(tab: TabType, data: ResetFormData): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
@@ -45,78 +38,87 @@ function isFormValid(tab: TabType, data: PasswordResetFormData): boolean {
   }
 }
 
-function buildRequestBody(tab: TabType, data: PasswordResetFormData) {
-  const base = { userTp: TAB_TO_USERTP[tab] };
-  switch (tab) {
-    case "dealer":
-      return { ...base, loginId: data.id, email: data.email };
-    case "installer":
-      return { ...base, email: data.email };
-    case "general":
-      return { ...base, email: data.idEmail };
-  }
-}
-
 export function PasswordResetPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const activeTab = (popupData.activeTab as TabType) ?? "dealer";
+  const rawTab = popupData.activeTab;
+  const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
-  const [formData, setFormData] = useState<PasswordResetFormData>({ ...INITIAL_FORM });
+  const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (key: keyof PasswordResetFormData, value: string) => {
+  const handleChange = (key: keyof ResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
+      setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  };
+  }, [closePopup]);
 
-  const handleSubmit = async () => {
-    if (!isFormValid(activeTab, formData)) return;
+  const handleSubmit = useCallback(async () => {
+    if (!isFormValid(activeTab, formData) || isSubmitting) return;
+
+    const userTp = TAB_TO_USERTP[activeTab];
+    const payload: Record<string, string> = { userTp, email: "" };
+
+    switch (activeTab) {
+      case "dealer":
+        payload.loginId = formData.id;
+        payload.email = formData.email;
+        break;
+      case "installer":
+        payload.email = formData.email;
+        if (formData.sekoId.trim()) payload.sekoId = formData.sekoId;
+        break;
+      case "general":
+        payload.email = formData.idEmail;
+        break;
+    }
 
     setIsSubmitting(true);
     try {
-      const body = buildRequestBody(activeTab, formData);
-      await api.post("/auth/password-reset/request", body);
+      const res = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = await res.json() as Record<string, unknown>;
+      } catch (parseErr) {
+        console.error("[PasswordResetPopup] 응답 JSON 파싱 실패:", parseErr);
+      }
+
+      if (!res.ok) {
+        const errMsg = json && typeof json.error === "string" ? json.error : "サーバーエラーが発生しました。";
+        openAlert({ type: "alert", message: errMsg });
+        return;
+      }
 
       handleClose();
       openAlert({
         type: "alert",
-        message: "初期化パスワードがメールで送信されました。ログイン後、パスワードを変更してください。",
+        message: "パスワード変更リンクがメールで送信されました。",
       });
     } catch (err) {
-      console.error("[PasswordReset] 비밀번호 초기화 요청 실패:", err);
-      if (err instanceof AxiosError && err.response?.status === 400) {
-        const body: unknown = err.response.data;
-        const hasError = typeof body === "object" && body !== null && "error" in body;
-        if (hasError) {
-          openAlert({
-            type: "alert",
-            message: "一致する会員情報がありません。入力した情報を再度ご確認ください。",
-          });
-        } else {
-          openAlert({
-            type: "alert",
-            message: "入力内容を確認してください",
-          });
-        }
-      } else {
-        openAlert({
-          type: "alert",
-          message: "サーバーに接続できません。しばらくしてからお試しください",
-        });
-      }
+      console.error("[PasswordResetPopup] 비밀번호 초기화 요청 실패:", err);
+      openAlert({
+        type: "alert",
+        message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
+      });
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [activeTab, formData, isSubmitting, handleClose, openAlert]);
 
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
@@ -189,7 +191,6 @@ export function PasswordResetPopup() {
                     type="text"
                     value={formData.id}
                     onChange={(e) => handleChange("id", e.target.value)}
-                    disabled={isSubmitting}
                     className={inputClass}
                   />
                 </div>
@@ -201,7 +202,6 @@ export function PasswordResetPopup() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleChange("email", e.target.value)}
-                    disabled={isSubmitting}
                     className={inputClass}
                   />
                 </div>
@@ -209,18 +209,30 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "installer" && (
-              <div className="flex flex-col gap-2 w-full">
-                <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  disabled={isSubmitting}
-                  className={inputClass}
-                />
-              </div>
+              <>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    施工店ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.sekoId}
+                    onChange={(e) => handleChange("sekoId", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    E-Mail<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleChange("email", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </>
             )}
 
             {activeTab === "general" && (
@@ -232,7 +244,6 @@ export function PasswordResetPopup() {
                   type="email"
                   value={formData.idEmail}
                   onChange={(e) => handleChange("idEmail", e.target.value)}
-                  disabled={isSubmitting}
                   className={inputClass}
                 />
               </div>
@@ -244,12 +255,8 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => { void handleSubmit(); }}
-              disabled={isSubmitting || !isFormValid(activeTab, formData)}
-            >
-              {isSubmitting ? "処理中..." : "パスワードの初期化"}
+            <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
+              パスワードの初期化
             </Button>
           </div>
         </div>

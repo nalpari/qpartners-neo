@@ -24,7 +24,7 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
   } catch (err) {
     // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
     if (err instanceof AxiosError && err.response?.status === 401) {
-      localStorage.removeItem(AUTH_FLAG_KEY);
+      try { localStorage.removeItem(AUTH_FLAG_KEY); } catch (e) { console.warn("[fetchAuthMe] localStorage.removeItem 실패:", e); }
       dispatchAuthChange();
     } else {
       console.error("[fetchAuthMe] 인증 확인 실패:", err);
@@ -42,19 +42,19 @@ const ALL_RELATED_SITES = [
 ] as const;
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
-type SiteAccessKey = "ADMIN" | "DEALER_1" | "DEALER_2";
+type SiteAccessKey = "ADMIN" | "1ST_STORE" | "2ND_STORE";
 type SiteValue = (typeof ALL_RELATED_SITES)[number]["value"];
 const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
   ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
-  DEALER_1: ["qorder", "qwarranty", "hanasys"],
-  DEALER_2: ["qmusubi", "qwarranty", "hanasys"],
+  "1ST_STORE": ["qorder", "qwarranty", "hanasys"],
+  "2ND_STORE": ["qmusubi", "qwarranty", "hanasys"],
 };
 
 function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
   if (user.userTp === "ADMIN") return "ADMIN";
-  if (user.userTp === "DEALER") {
-    if (user.storeLvl === "1") return "DEALER_1";
-    if (user.storeLvl === "2") return "DEALER_2";
+  if (user.userTp === "STORE") {
+    if (user.storeLvl === "1") return "1ST_STORE";
+    if (user.storeLvl === "2") return "2ND_STORE";
   }
   return null;
 }
@@ -81,7 +81,7 @@ function subscribeAuthFlag(callback: () => void) {
 export function Gnb() {
   const hasAuthFlag = useSyncExternalStore(
     subscribeAuthFlag,
-    () => localStorage.getItem(AUTH_FLAG_KEY) === "1",
+    () => { try { return localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch (e) { console.warn("[Gnb] localStorage.getItem 실패:", e); return false; } },
     () => false,
   );
 
