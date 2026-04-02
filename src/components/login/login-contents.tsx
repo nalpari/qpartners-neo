@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,16 +33,20 @@ interface LoginContentsProps {
 }
 
 export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
-  // Design Ref: §5.4 — 가입완료 후 ID 자동입력 (useRef로 1회 소비 보장, React Compiler purity 준수)
+  // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
   const prefillRef = useRef(useAppStore.getState().prefillEmail);
-  if (prefillRef.current) {
-    useAppStore.getState().clearPrefillEmail();
-  }
 
   const [activeTab, setActiveTab] = useState<TabType>(
     prefillRef.current ? "general" : initialSavedTab
   );
   const [id, setId] = useState(prefillRef.current || initialSavedId);
+
+  useEffect(() => {
+    if (prefillRef.current) {
+      useAppStore.getState().clearPrefillEmail();
+      prefillRef.current = "";
+    }
+  }, []);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");

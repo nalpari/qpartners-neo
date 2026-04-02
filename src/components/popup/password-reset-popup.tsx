@@ -217,6 +217,7 @@ export function PasswordResetPopup() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleChange("email", e.target.value)}
+                  disabled={isSubmitting}
                   className={inputClass}
                 />
               </div>

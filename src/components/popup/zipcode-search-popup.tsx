@@ -49,12 +49,22 @@ export function ZipcodeSearchPopup() {
         `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`
       );
       if (!res.ok) {
+        console.error("[ZipcodeSearch] HTTP エラー:", res.status, res.statusText);
         setError("住所検索中にエラーが発生しました。");
         return;
       }
       const data: {
+        status: number;
+        message: string | null;
         results: { zipcode: string; address1: string; address2: string; address3: string }[] | null;
       } = await res.json();
+
+      // zipcloud API 자체 에러 (HTTP 200이지만 status !== 200)
+      if (data.status !== 200) {
+        console.error("[ZipcodeSearch] zipcloud API エラー:", data.status, data.message);
+        setError("住所検索中にエラーが発生しました。");
+        return;
+      }
 
       if (!data.results || data.results.length === 0) {
         setError(

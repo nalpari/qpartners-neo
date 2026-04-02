@@ -48,7 +48,8 @@ export function SignupContents() {
   >("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isEmailChecking, setIsEmailChecking] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // 폼 필드 업데이트 헬퍼
@@ -85,7 +86,7 @@ export function SignupContents() {
       return;
     }
 
-    setIsLoading(true);
+    setIsEmailChecking(true);
     try {
       await api.post("/auth/email/check", { email: form.email });
       setEmailCheckStatus("ok");
@@ -97,7 +98,7 @@ export function SignupContents() {
         setEmailCheckStatus("error");
       }
     } finally {
-      setIsLoading(false);
+      setIsEmailChecking(false);
     }
   };
 
@@ -115,7 +116,7 @@ export function SignupContents() {
   };
 
   const submitSignup = async () => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     setSubmitError(null);
     try {
       const res = await api.post<{ data: { userName: string; email: string } }>(
@@ -145,18 +146,15 @@ export function SignupContents() {
       openPopup("signup-complete", { userName, userId: email });
     } catch (error) {
       console.error("[Signup] 会員登録失敗:", error);
-      if (isAxiosError(error) && error.response) {
-        const body: unknown = error.response.data;
-        const msg =
-          typeof body === "object" && body !== null && "error" in body && typeof (body as Record<string, unknown>).error === "string"
-            ? ((body as Record<string, unknown>).error as string)
-            : undefined;
-        setSubmitError(msg ?? "会員登録に失敗しました");
+      if (isAxiosError(error) && error.response?.status === 409) {
+        setSubmitError("既に使用中のメールアドレスです");
+      } else if (isAxiosError(error) && error.response?.status === 400) {
+        setSubmitError("入力内容を確認してください");
       } else {
         setSubmitError("サーバーに接続できません");
       }
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -181,7 +179,7 @@ export function SignupContents() {
   return (
     <>
     {/* 로딩 오버레이 — Design Ref: §5.1.8, 로그인과 동일 패턴 */}
-    {isLoading && (
+    {isSubmitting && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
         <Spinner size={48} className="text-white" />
       </div>
@@ -337,9 +335,10 @@ export function SignupContents() {
                   <button
                     type="button"
                     onClick={handleEmailCheck}
-                    className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer"
+                    disabled={isEmailChecking}
+                    className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer disabled:opacity-50"
                   >
-                    重複チェック
+                    {isEmailChecking ? "確認中..." : "重複チェック"}
                   </button>
                   {emailCheckStatus !== "idle" && (
                     <p className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0 ${emailCheckStatus === "ok" ? "text-[#1060B4]" : "text-[#FF1A1A]"}`}>

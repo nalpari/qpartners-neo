@@ -50,29 +50,9 @@ export function TwoFactorAuthPopup() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(600);
-  const [isSendSuccess, setIsSendSuccess] = useState(false);
+  const [sendCount, setSendCount] = useState(0);
 
   const isCodeValid = code.length === 6;
-
-  // 인증번호 발송 (async 분리 — React Compiler purity 준수)
-  const sendInitial = async () => {
-    if (!userId || !userTp) {
-      console.error("[2FA] popupData に userId または userTp がありません", { userId, userTp });
-      setError("認証情報が不足しています。ログインからやり直してください。");
-      return;
-    }
-    try {
-      await api.post("/auth/two-factor/send", { userTp, userId });
-      setIsSendSuccess(true);
-    } catch (err) {
-      console.error("[2FA] 初期送信失敗:", err);
-      if (err instanceof AxiosError && err.response?.status === 429) {
-        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
-      } else {
-        setError("メール送信に失敗しました。再送信をお試しください。");
-      }
-    }
-  };
 
   // 팝업 열리면 자동 포커스 + 1회 발송 (StrictMode 중복 방지)
   const sendCalledRef = useRef(false);
@@ -80,13 +60,33 @@ export function TwoFactorAuthPopup() {
     inputRef.current?.focus();
     if (sendCalledRef.current) return;
     sendCalledRef.current = true;
-    void sendInitial();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 시 1회만 실행
-  }, []);
 
-  // 10분 카운트다운 타이머 — 발송 성공 시에만 시작
+    if (!userId || !userTp) {
+      console.error("[2FA] popupData に userId または userTp がありません", { userId, userTp });
+      setError("認証情報が不足しています。ログインからやり直してください。");
+      return;
+    }
+
+    const send = async () => {
+      try {
+        await api.post("/auth/two-factor/send", { userTp, userId });
+        setSendCount((c) => c + 1);
+      } catch (err) {
+        console.error("[2FA] 初期送信失敗:", err);
+        if (err instanceof AxiosError && err.response?.status === 429) {
+          setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+        } else {
+          setError("メール送信に失敗しました。再送信をお試しください。");
+        }
+      }
+    };
+    void send();
+  }, [userId, userTp]);
+
+  // 10분 카운트다운 타이머 — 발송 성공 시 시작, 재전송 시 리셋
   useEffect(() => {
-    if (!isSendSuccess) return;
+    if (sendCount === 0) return;
+    setRemainingSeconds(600);
     const timer = setInterval(() => {
       setRemainingSeconds((prev) => {
         if (prev <= 0) {
@@ -97,7 +97,7 @@ export function TwoFactorAuthPopup() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [isSendSuccess]);
+  }, [sendCount]);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;
@@ -126,8 +126,7 @@ export function TwoFactorAuthPopup() {
     inputRef.current?.focus();
     try {
       await api.post("/auth/two-factor/send", { userTp, userId });
-      setRemainingSeconds(600);
-      setIsSendSuccess(true);
+      setSendCount((c) => c + 1);
     } catch (err) {
       console.error("[2FA] 再送信失敗:", err);
       if (err instanceof AxiosError && err.response?.status === 429) {
@@ -156,7 +155,12 @@ export function TwoFactorAuthPopup() {
       console.error("[2FA] 認証失敗:", err);
       if (err instanceof AxiosError && err.response) {
         const serverError = extractErrorString(err.response.data);
-        setError(mapServerError(serverError));
+        if (serverError) {
+          setError(mapServerError(serverError));
+        } else {
+          console.warn("[2FA] 予期しないエラーレスポンス形式:", err.response.data);
+          setError("認証処理中にエラーが発生しました。しばらくしてからお試しください");
+        }
       } else {
         setError("サーバーに接続できません。しばらくしてからお試しください");
       }

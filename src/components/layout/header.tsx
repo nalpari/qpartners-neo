@@ -42,19 +42,19 @@ const ALL_RELATED_SITES = [
 ] as const;
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
-type SiteAccessKey = "ADMIN" | "STORE_1" | "STORE_2";
+type SiteAccessKey = "ADMIN" | "DEALER_1" | "DEALER_2";
 type SiteValue = (typeof ALL_RELATED_SITES)[number]["value"];
 const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
   ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
-  STORE_1: ["qorder", "qwarranty", "hanasys"],
-  STORE_2: ["qmusubi", "qwarranty", "hanasys"],
+  DEALER_1: ["qorder", "qwarranty", "hanasys"],
+  DEALER_2: ["qmusubi", "qwarranty", "hanasys"],
 };
 
 function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
   if (user.userTp === "ADMIN") return "ADMIN";
-  if (user.userTp === "STORE") {
-    if (user.storeLvl === "1") return "STORE_1";
-    if (user.storeLvl === "2") return "STORE_2";
+  if (user.userTp === "DEALER") {
+    if (user.storeLvl === "1") return "DEALER_1";
+    if (user.storeLvl === "2") return "DEALER_2";
   }
   return null;
 }
