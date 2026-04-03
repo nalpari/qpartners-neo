@@ -246,7 +246,7 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
+            <Button variant="primary" onClick={() => { void handleSubmit(); }} disabled={isSubmitting}>
               パスワードの初期化
             </Button>
           </div>

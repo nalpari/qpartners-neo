@@ -98,6 +98,8 @@ export function PersonalInfoPopup() {
       const userData = loginUserSchema.safeParse(res.data.data?.user);
       if (userData.success) {
         queryClient.setQueryData(["auth", "login-user-info"], userData.data);
+      } else {
+        console.warn("[PersonalInfo] ユーザーデータのパース失敗 — キャッシュ未設定:", userData.error);
       }
       try {
         localStorage.setItem(AUTH_FLAG_KEY, "1");
@@ -111,7 +113,11 @@ export function PersonalInfoPopup() {
     } catch (err) {
       console.error("[PersonalInfo] 保存失敗:", err);
       if (isAxiosError(err) && err.response) {
-        setError("保存に失敗しました。しばらくしてからお試しください。");
+        const data = err.response.data as Record<string, unknown> | undefined;
+        const serverMsg = typeof data?.error === "string"
+          ? data.error
+          : "保存に失敗しました。しばらくしてからお試しください。";
+        setError(serverMsg);
       } else {
         setError("サーバーに接続できません。");
       }

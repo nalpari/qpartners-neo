@@ -33,11 +33,7 @@ export function PasswordResetClient() {
       return res.data;
     },
     enabled: !!token,
-    retry: (_, err) => {
-      // 400/404 등 토큰 무효는 재시도 무의미
-      if (isAxiosError(err) && err.response && err.response.status < 500) return false;
-      return false;
-    },
+    retry: false,
   });
 
   // 파생 상태로 status 결정
@@ -213,7 +209,7 @@ export function PasswordResetClient() {
           </Button>
           <Button
             variant="primary"
-            onClick={handleSubmit}
+            onClick={() => { void handleSubmit(); }}
             disabled={status === "submitting"}
           >
             保存
