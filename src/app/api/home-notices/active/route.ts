@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       switch (userType) {
         case "ADMIN":
           // super_admin은 양쪽 모두, admin은 targetAdmin만
-          if (userRole === "super_admin") {
+          if (userRole === "SUPER_ADMIN") {
             return [{ targetSuperAdmin: true }, { targetAdmin: true }];
           }
           return [{ targetAdmin: true }];

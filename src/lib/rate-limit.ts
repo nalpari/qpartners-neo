@@ -33,20 +33,17 @@ function cleanup(force = false) {
  * @returns true면 허용, false면 제한 초과
  */
 export function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  if (limit < 1 || windowMs < 1) {
+    throw new Error(`[rate-limit] invalid params: limit=${limit}, windowMs=${windowMs}`);
+  }
   cleanup();
   if (store.size > MAX_STORE_SIZE) {
     console.warn(`[rate-limit] store size exceeded ${MAX_STORE_SIZE} (${store.size}), forcing cleanup`);
     cleanup(true);
-    // cleanup 후에도 초과 시 가장 오래된 엔트리부터 제거
+    // cleanup 후에도 초과 시 fail-closed — rate-limit 상태가 신뢰할 수 없으므로 요청 거부
     if (store.size > MAX_STORE_SIZE) {
-      const excess = store.size - MAX_STORE_SIZE;
-      let removed = 0;
-      for (const k of store.keys()) {
-        if (removed >= excess) break;
-        store.delete(k);
-        removed++;
-      }
-      console.warn(`[rate-limit] evicted ${removed} oldest entries after cleanup`);
+      console.warn(`[rate-limit] store overflow after cleanup (${store.size}) — fail-closed deny for key: ${key}`);
+      return false;
     }
   }
 
