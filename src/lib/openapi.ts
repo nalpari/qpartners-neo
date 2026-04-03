@@ -326,6 +326,63 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    "/auth/password-change": {
+      post: {
+        tags: ["Auth"],
+        summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
+        description: "JWT 인증 상태에서 비밀번호 변경. pwdInitYn=Y인 판매점 최초 로그인 시 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (pwdInitYn=N, twoFactorVerified=true).",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["newPassword", "confirmPassword"],
+                properties: {
+                  newPassword: { type: "string", minLength: 8, maxLength: 100, description: "신규 비밀번호 (영대문자+영소문자+숫자 조합 8자 이상)" },
+                  confirmPassword: { type: "string", description: "신규 비밀번호 재입력" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 성공 + JWT 재발급",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "保存されました。" },
+                        user: { $ref: "#/components/schemas/LoginUser" },
+                        requireTwoFactor: { type: "boolean", example: false },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation failed (비밀번호 정책 미충족 또는 불일치)",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "429": errorResponse("요청 횟수 초과"),
+          "500": errorResponse("비밀번호 변경 실패"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+
     "/auth/email/check": {
       post: {
         tags: ["Auth"],
