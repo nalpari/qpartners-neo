@@ -86,7 +86,7 @@ export function PersonalInfoPopup() {
             newPassword,
             confirmPassword,
           })
-        : await api.post("/auth/password-change", {
+        : await api.post("/auth/password-init", {
             newPassword,
             confirmPassword,
             ...(email && !hasExistingEmail && { email }),
