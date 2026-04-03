@@ -414,10 +414,10 @@ export function Gnb() {
                   />
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-[1.5] text-white">
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-white">
                     {user?.compNm ?? "-"}
                   </span>
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-[1.5] text-[#e97923]">
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#e97923]">
                     {user?.userNm ?? ""}
                   </span>
                 </div>
