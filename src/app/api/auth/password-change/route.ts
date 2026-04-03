@@ -65,7 +65,8 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/auth/password-change] Request body 파싱 실패:", error);
       return NextResponse.json(
         { error: "Invalid JSON body" },
         { status: 400 },
@@ -138,6 +139,9 @@ export async function POST(request: NextRequest) {
         { error: "ユーザー情報を確認できません。しばらくしてから再度お試しください。" },
         { status: 500 },
       );
+    }
+    if (!detailData && user.userTp === "GENERAL") {
+      console.warn("[POST /api/auth/password-change] GENERAL userDetail 조회 실패 — JWT 기존 세션 데이터로 진행");
     }
 
     // 5. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)

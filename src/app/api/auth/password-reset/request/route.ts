@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { z } from "zod";
+
 import { prisma } from "@/lib/prisma";
 import { passwordResetRequestSchema } from "@/lib/schemas/password-reset";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -19,7 +21,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/password-reset/request] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -126,9 +129,9 @@ export async function POST(request: NextRequest) {
 
     // ADMIN/STORE: loginId≠email일 수 있으므로 userDetail 응답에서 userId(=loginId) 추출하여 토큰에 저장
     if (userExists && !resolvedLoginId) {
-      const data = parsed.data.data as Record<string, unknown> | null;
-      if (data && typeof data.userId === "string") {
-        resolvedLoginId = data.userId;
+      const userIdResult = z.object({ userId: z.string() }).safeParse(parsed.data.data);
+      if (userIdResult.success) {
+        resolvedLoginId = userIdResult.data.userId;
       }
     }
   } catch (error) {
