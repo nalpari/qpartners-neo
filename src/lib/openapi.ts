@@ -1385,6 +1385,45 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    // ─── Inquiry (문의) ───
+    "/inquiry": {
+      post: {
+        tags: ["Inquiry"],
+        summary: "문의 등록 (비로그인 가능)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateInquiry" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["id"],
+                      properties: {
+                        id: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("入力内容に不備があります"),
+          "500": errorResponse("お問い合わせの登録に失敗しました"),
+        },
+      },
+    },
+
     // ─── CodeDetail ───
     "/codes/{id}/details": {
       get: {
@@ -2547,6 +2586,19 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
+        },
+      },
+      CreateInquiry: {
+        type: "object",
+        required: ["companyName", "userName", "email", "title", "content"],
+        properties: {
+          companyName: { type: "string", maxLength: 255, example: "株式会社テスト" },
+          userName: { type: "string", maxLength: 200, example: "田中太郎" },
+          tel: { type: "string", maxLength: 20, nullable: true, example: "03-1234-5678" },
+          email: { type: "string", format: "email", maxLength: 255, example: "test@example.com" },
+          inquiryType: { type: "string", maxLength: 100, nullable: true, example: "service" },
+          title: { type: "string", maxLength: 500, example: "サービスについて" },
+          content: { type: "string", example: "お問い合わせ内容" },
         },
       },
     },

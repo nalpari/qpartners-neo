@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
 import { Button, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useAuthStore } from "@/lib/auth-store";
+import api from "@/lib/axios";
 
 const INQUIRY_TYPE_OPTIONS = [
   { label: "サービスに関するお問い合わせ", value: "service" },
@@ -11,31 +14,50 @@ const INQUIRY_TYPE_OPTIONS = [
   { label: "その他", value: "other" },
 ];
 
-// 더미 사용자 데이터 (추후 인증 연동)
-const DUMMY_USER = {
-  companyName: "INTERPLUG TEST",
-  name: "金志映",
-  phone: "03-5441-5943",
-  email: "kjy0501@interplug.co.kr",
-};
-
 export function InquiryForm() {
   const { openAlert } = useAlertStore();
-  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
+  const user = useAuthStore((s) => s.user);
+  const isLoggedIn = !!user;
 
-  const [companyName, setCompanyName] = useState(
-    isLoggedIn ? DUMMY_USER.companyName : ""
-  );
-  const [name, setName] = useState(isLoggedIn ? DUMMY_USER.name : "");
-  const [phone, setPhone] = useState(isLoggedIn ? DUMMY_USER.phone : "");
-  const [email, setEmail] = useState(isLoggedIn ? DUMMY_USER.email : "");
+  const [companyName, setCompanyName] = useState(user?.compNm ?? "");
+  const [name, setName] = useState(user?.userNm ?? "");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
+  const submitMutation = useMutation({
+    mutationFn: async (data: {
+      companyName: string;
+      userName: string;
+      tel?: string;
+      email: string;
+      inquiryType?: string;
+      title: string;
+      content: string;
+    }) => {
+      const res = await api.post<{ data: { id: number } }>("/inquiry", data);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      openAlert({
+        type: "alert",
+        message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+      });
+      handleCancel();
+    },
+    onError: () => {
+      openAlert({
+        type: "alert",
+        message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。",
+      });
+    },
+  });
+
   const handleCancel = () => {
     if (isLoggedIn) {
-      setEmail(DUMMY_USER.email);
+      setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
       setName("");
@@ -79,11 +101,17 @@ export function InquiryForm() {
       return;
     }
 
-    openAlert({
-      type: "alert",
-      message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+    if (submitMutation.isPending) return;
+
+    submitMutation.mutate({
+      companyName: companyName.trim(),
+      userName: name.trim(),
+      tel: phone.trim() || undefined,
+      email: email.trim(),
+      inquiryType: inquiryType || undefined,
+      title: title.trim(),
+      content: content.trim(),
     });
-    handleCancel();
   };
 
   return (
