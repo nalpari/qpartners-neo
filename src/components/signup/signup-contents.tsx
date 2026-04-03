@@ -20,6 +20,8 @@ const EMAIL_CHECK_MESSAGES: Record<string, string> = {
 
 export function SignupContents() {
   const router = useRouter();
+  const { openPopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
 
   // 폼 상태
   const [form, setForm] = useState({
@@ -147,13 +149,18 @@ export function SignupContents() {
       openPopup("signup-complete", { userName, userId: email });
     } catch (error) {
       console.error("[Signup] 会員登録失敗:", error);
-      if (isAxiosError(error) && error.response?.status === 409) {
-        setSubmitError("既に使用中のメールアドレスです");
-      } else if (isAxiosError(error) && error.response?.status === 400) {
-        setSubmitError("入力内容を確認してください");
-      } else if (isAxiosError(error) && error.response) {
+      if (isAxiosError(error) && error.response) {
         const serverMsg = extractApiError(error);
-        setSubmitError(serverMsg ?? "サーバーエラーが発生しました。しばらくしてからお試しください。");
+        const status = error.response.status;
+        if (serverMsg) {
+          setSubmitError(serverMsg);
+        } else if (status === 409) {
+          setSubmitError("既に使用中のメールアドレスです");
+        } else if (status === 400) {
+          setSubmitError("入力内容を確認してください");
+        } else {
+          setSubmitError("サーバーエラーが発生しました。しばらくしてからお試しください。");
+        }
       } else {
         setSubmitError("サーバーに接続できません。ネットワーク状態を確認してください。");
       }
@@ -166,9 +173,6 @@ export function SignupContents() {
   const handleCancel = () => {
     router.push("/login");
   };
-
-  const { openPopup } = usePopupStore();
-  const { openAlert } = useAlertStore();
 
   // 주소검색
   const handleAddressSearch = () => {

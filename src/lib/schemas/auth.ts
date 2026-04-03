@@ -19,11 +19,15 @@ export const qspLoginUserSchema = z.object({
   userNm: z.string().nullable(),
   userNmKana: z.string().nullable(),
   // QSP 외부 시스템 — DEALER→STORE 과도기 호환 매핑만 허용, 미지 값은 파싱 실패
-  userTp: z.string().transform((val) => {
+  userTp: z.string().transform((val, ctx) => {
     if (val === "DEALER") return "STORE" as const;
     const parsed = z.enum(userTpValues).safeParse(val);
     if (parsed.success) return parsed.data;
-    throw new Error(`Unknown userTp from QSP: ${val}`);
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Unknown userTp from QSP: ${val}`,
+    });
+    return z.NEVER;
   }).pipe(z.enum(userTpValues)),
   compCd: z.string().nullable(),
   compNm: z.string().nullable(),

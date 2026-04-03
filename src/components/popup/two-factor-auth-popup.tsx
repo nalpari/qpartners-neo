@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { AxiosError } from "axios";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
 import { usePopupStore } from "@/lib/store";
@@ -46,6 +46,12 @@ export function TwoFactorAuthPopup() {
 
   const isCodeValid = code.length === 6;
 
+  // 파생 값으로 에러 처리 — useEffect 밖에서 선언
+  const missingAuthData = !userId || !userTp;
+  const derivedError = missingAuthData
+    ? "認証情報が不足しています。ログインからやり直してください。"
+    : null;
+
   // 인증번호 발송 — useMutation으로 관리 (useEffect 내 setState 회피)
   const sendMutation = useMutation({
     mutationFn: () => api.post("/auth/two-factor/send", { userTp, userId }),
@@ -54,7 +60,7 @@ export function TwoFactorAuthPopup() {
     },
     onError: (err) => {
       console.error("[2FA] 送信失敗:", err);
-      if (err instanceof AxiosError && err.response?.status === 429) {
+      if (isAxiosError(err) && err.response?.status === 429) {
         setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
       } else {
         setError("メール送信に失敗しました。再送信をお試しください。");
@@ -64,7 +70,11 @@ export function TwoFactorAuthPopup() {
 
   // useRef 기반 타이머 (useEffect 내 setState 회피)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimer = useCallback(() => {
+  // ref로 sendMutation.mutate 안정화 → eslint-disable 제거
+  const sendMutateRef = useRef(sendMutation.mutate);
+  sendMutateRef.current = sendMutation.mutate;
+
+  const startTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setRemainingSeconds(600);
     timerRef.current = setInterval(() => {
@@ -76,28 +86,20 @@ export function TwoFactorAuthPopup() {
         return prev - 1;
       });
     }, 1000);
-  }, []);
+  };
 
   // 팝업 열리면 자동 포커스 + 1회 발송 (StrictMode 중복 방지)
   const sendCalledRef = useRef(false);
   useEffect(() => {
     inputRef.current?.focus();
-    if (sendCalledRef.current) return;
+    if (sendCalledRef.current || missingAuthData) return;
     sendCalledRef.current = true;
-
-    if (!userId || !userTp) {
-      console.error("[2FA] popupData に userId または userTp がありません", { userId, userTp });
-      setError("認証情報が不足しています。ログインからやり直してください。");
-      return;
-    }
-
-    sendMutation.mutate();
+    sendMutateRef.current();
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 시 1회만 실행, sendMutation은 안정적
-  }, []);
+  }, [missingAuthData]);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;
@@ -142,13 +144,15 @@ export function TwoFactorAuthPopup() {
         localStorage.setItem(AUTH_FLAG_KEY, "1");
       } catch (storageErr) {
         console.error("[2FA] localStorage 쓰기 失敗:", storageErr);
+        setError("ブラウザのストレージに問題があります。シークレットモードでは正常に動作しない場合があります。");
+        return;
       }
       dispatchAuthChange();
       closePopup();
       router.replace("/");
     } catch (err) {
       console.error("[2FA] 認証失敗:", err);
-      if (err instanceof AxiosError && err.response) {
+      if (isAxiosError(err) && err.response) {
         const serverError = extractApiError(err);
         if (serverError) {
           setError(mapServerError(serverError));
@@ -241,7 +245,7 @@ export function TwoFactorAuthPopup() {
               </div>
 
               {/* 오류 메시지 */}
-              {error && (
+              {(derivedError || error) && (
                 <div className="flex items-center justify-center gap-1 w-full">
                   <Image
                     src="/asset/images/contents/warning_icon.svg"
@@ -250,7 +254,7 @@ export function TwoFactorAuthPopup() {
                     height={13}
                   />
                   <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a] text-center">
-                    {error}
+                    {derivedError || error}
                   </p>
                 </div>
               )}
