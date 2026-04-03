@@ -1425,6 +1425,47 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    // ─── Code Lookup (공개) ───
+    "/codes/lookup": {
+      get: {
+        tags: ["Code"],
+        summary: "공통코드 공개 조회 (headerCode 기반)",
+        parameters: [
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "코드 상세 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          code: { type: "string" },
+                          displayCode: { type: "string" },
+                          codeName: { type: "string" },
+                          codeNameEtc: { type: "string", nullable: true },
+                          sortOrder: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("headerCode 파라미터 필수"),
+          "404": errorResponse("해당 코드 없음"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
     // ─── CodeDetail ───
     "/codes/{id}/details": {
       get: {

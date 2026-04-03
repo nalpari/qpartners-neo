@@ -2,22 +2,38 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
 import api from "@/lib/axios";
 
-const INQUIRY_TYPE_OPTIONS = [
-  { label: "サービスに関するお問い合わせ", value: "service" },
-  { label: "技術的なお問い合わせ", value: "technical" },
-  { label: "その他", value: "other" },
-];
+interface CodeDetail {
+  code: string;
+  displayCode: string;
+  codeName: string;
+  codeNameEtc: string | null;
+  sortOrder: number;
+}
 
 export function InquiryForm() {
   const { openAlert } = useAlertStore();
   const user = useAuthStore((s) => s.user);
   const isLoggedIn = !!user;
+
+  const { data: inquiryTypeOptions = [] } = useQuery({
+    queryKey: ["codes", "INQUIRY_TYPE"],
+    queryFn: async () => {
+      const res = await api.get<{ data: CodeDetail[] }>("/codes/lookup", {
+        params: { headerCode: "INQUIRY_TYPE" },
+      });
+      return res.data.data.map((d) => ({
+        label: d.codeName,
+        value: d.code,
+      }));
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const [companyName, setCompanyName] = useState(user?.compNm ?? "");
   const [name, setName] = useState(user?.userNm ?? "");
@@ -246,7 +262,7 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
                 placeholder="お問い合わせタイプを選択"
@@ -385,7 +401,7 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
                 placeholder="お問い合わせタイプを選択"
