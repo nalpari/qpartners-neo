@@ -1,0 +1,332 @@
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+import { requireAdmin } from "@/lib/auth";
+import { QSP_API } from "@/lib/config";
+import {
+  memberIdParamSchema,
+  memberUpdateSchema,
+  qspMemberDetailResponseSchema,
+  qspUpdateResponseSchema,
+} from "@/lib/schemas/member";
+
+type Params = { params: Promise<{ id: string }> };
+
+/** QSP statCd → TO-BE status 매핑 */
+const STATUS_MAP: Record<string, string> = {
+  Y: "active",
+  N: "deleted",
+  W: "withdrawn",
+};
+
+/** TO-BE status → QSP statCd 매핑 */
+const STATUS_REVERSE_MAP: Record<string, string> = {
+  active: "Y",
+  deleted: "N",
+};
+
+// GET /api/admin/members/:id — 회원 상세정보
+export async function GET(request: NextRequest, { params }: Params) {
+  try {
+    // 1. 관리자 권한 확인
+    const authResult = requireAdmin(request.headers);
+    if (authResult instanceof NextResponse) return authResult;
+
+    // 2. ID 파라미터 검증
+    const { id: rawId } = await params;
+    const idResult = memberIdParamSchema.safeParse(rawId);
+    if (!idResult.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    // 3. QSP 회원 상세 API 호출
+    const qspParams = new URLSearchParams({
+      accsSiteCd: "QPARTNERS",
+      userId: rawId,
+    });
+
+    let qspResponse: Response;
+    try {
+      qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error: unknown) {
+      console.error("[GET /api/admin/members/:id] QSP 회원 상세 API 호출 실패:", error);
+      return NextResponse.json(
+        { error: "外部サーバーに接続できません" },
+        { status: 502 },
+      );
+    }
+
+    if (!qspResponse.ok) {
+      console.error("[GET /api/admin/members/:id] QSP 비정상 응답:", qspResponse.status);
+      return NextResponse.json(
+        { error: "外部サーバーエラーが発生しました" },
+        { status: 502 },
+      );
+    }
+
+    // 4. QSP 응답 파싱
+    let qspBody: unknown;
+    try {
+      qspBody = await qspResponse.json();
+    } catch (error: unknown) {
+      console.error("[GET /api/admin/members/:id] QSP 응답 JSON 파싱 실패:", error);
+      return NextResponse.json(
+        { error: "外部サーバーの応答を処理できません" },
+        { status: 502 },
+      );
+    }
+
+    const parsed = qspMemberDetailResponseSchema.safeParse(qspBody);
+    if (!parsed.success) {
+      console.error("[GET /api/admin/members/:id] QSP 응답 스키마 불일치:", parsed.error.issues);
+      return NextResponse.json(
+        { error: "外部サーバーの応答形式が正しくありません" },
+        { status: 502 },
+      );
+    }
+
+    if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
+      return NextResponse.json(
+        { error: "会員情報が見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    // 5. 응답 매핑 (QSP → TO-BE)
+    const d = parsed.data.data;
+    const mapped = {
+      id: idResult.data,
+      userId: d.userId,
+      loginId: d.loginId ?? d.userId,
+      userName: d.userNm ?? "",
+      userNameKana: d.userNmKana ?? "",
+      email: d.email ?? "",
+      userType: d.userTp ?? "",
+      userRole: d.authCd ?? "",
+      companyName: d.compNm ?? "",
+      companyNameKana: d.compNmKana ?? "",
+      zipcode: d.compPostCd ?? "",
+      address: d.compAddr ?? "",
+      telNo: d.compTelNo ?? "",
+      faxNo: d.compFaxNo ?? "",
+      corporateNo: d.corpNo ?? "",
+      department: d.deptNm ?? "",
+      jobTitle: d.pstnNm ?? "",
+      twoFactorEnabled: d.secAuthYn === "Y",
+      loginNotification: d.loginNotiYn === "Y",
+      attributeChangeNotification: d.attrChgNotiYn === "Y",
+      status: STATUS_MAP[d.statCd ?? ""] ?? d.statCd ?? "",
+      newsRcptYn: d.newsRcptYn ?? "N",
+      newsRcptDate: d.newsRcptDt ?? null,
+      lastLoginAt: d.lastLoginDt ?? null,
+      withdrawnAt: d.wdrawDt ?? null,
+      withdrawnReason: d.wdrawRsn ?? null,
+      createdAt: d.regDt ?? null,
+      updatedAt: d.updDt ?? null,
+      updatedBy: d.updBy ?? null,
+    };
+
+    console.log(`[GET /api/admin/members/:id] 회원 상세 조회 완료 — userId: ${d.userId}`);
+
+    return NextResponse.json({ data: mapped });
+  } catch (error: unknown) {
+    console.error("[GET /api/admin/members/:id] 회원 상세 조회 실패:", error);
+    return NextResponse.json(
+      { error: "会員情報の取得に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
+
+// PUT /api/admin/members/:id — 회원 상세정보 수정
+export async function PUT(request: NextRequest, { params }: Params) {
+  try {
+    // 1. 관리자 권한 확인
+    const authResult = requireAdmin(request.headers);
+    if (authResult instanceof NextResponse) return authResult;
+    const { user } = authResult;
+
+    // 2. ID 파라미터 검증
+    const { id: rawId } = await params;
+    const idResult = memberIdParamSchema.safeParse(rawId);
+    if (!idResult.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    // 3. Request body 파싱
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch (error: unknown) {
+      console.warn("[PUT /api/admin/members/:id] Request body 파싱 실패:", error);
+      return NextResponse.json(
+        { error: "無効なリクエストです" },
+        { status: 400 },
+      );
+    }
+
+    const result = memberUpdateSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          error: "入力内容に不備があります",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+          })),
+        },
+        { status: 400 },
+      );
+    }
+
+    if (Object.keys(result.data).length === 0) {
+      return NextResponse.json(
+        { error: "更新する項目がありません" },
+        { status: 400 },
+      );
+    }
+
+    // 4. userRole 변경 시 대상 회원 유형 검증 (일반회원만 가능)
+    if (result.data.userRole !== undefined) {
+      // 대상 회원 정보를 먼저 조회
+      const checkParams = new URLSearchParams({
+        accsSiteCd: "QPARTNERS",
+        userId: rawId,
+      });
+
+      let checkResponse: Response;
+      try {
+        checkResponse = await fetch(`${QSP_API.memberDetail}?${checkParams.toString()}`, {
+          method: "GET",
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch (error: unknown) {
+        console.error("[PUT /api/admin/members/:id] QSP 회원 조회 실패:", error);
+        return NextResponse.json(
+          { error: "外部サーバーに接続できません" },
+          { status: 502 },
+        );
+      }
+
+      if (!checkResponse.ok) {
+        return NextResponse.json(
+          { error: "外部サーバーエラーが発生しました" },
+          { status: 502 },
+        );
+      }
+
+      let checkBody: unknown;
+      try {
+        checkBody = await checkResponse.json();
+      } catch (error: unknown) {
+        console.error("[PUT /api/admin/members/:id] QSP 응답 파싱 실패:", error);
+        return NextResponse.json(
+          { error: "外部サーバーの応答を処理できません" },
+          { status: 502 },
+        );
+      }
+
+      const checkParsed = qspMemberDetailResponseSchema.safeParse(checkBody);
+      if (!checkParsed.success || !checkParsed.data.data) {
+        return NextResponse.json(
+          { error: "会員情報が見つかりません" },
+          { status: 404 },
+        );
+      }
+
+      if (checkParsed.data.data.userTp !== "GENERAL") {
+        return NextResponse.json(
+          { error: "ユーザー権限の変更は一般会員のみ可能です" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // 5. QSP 회원정보 수정 API 호출
+    const updatePayload: Record<string, unknown> = {
+      accsSiteCd: "QPARTNERS",
+      userId: rawId,
+      updBy: user.userId,
+    };
+
+    if (result.data.userRole !== undefined) updatePayload.authCd = result.data.userRole;
+    if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
+    if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
+    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgNotiYn = result.data.attributeChangeNotification ? "Y" : "N";
+    if (result.data.status !== undefined) updatePayload.statCd = STATUS_REVERSE_MAP[result.data.status] ?? result.data.status;
+    if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
+
+    let qspResponse: Response;
+    try {
+      qspResponse = await fetch(QSP_API.updateUser, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify(updatePayload),
+      });
+    } catch (error: unknown) {
+      console.error("[PUT /api/admin/members/:id] QSP 회원 수정 API 호출 실패:", error);
+      return NextResponse.json(
+        { error: "外部サーバーに接続できません" },
+        { status: 502 },
+      );
+    }
+
+    if (!qspResponse.ok) {
+      console.error("[PUT /api/admin/members/:id] QSP 비정상 응답:", qspResponse.status);
+      return NextResponse.json(
+        { error: "外部サーバーエラーが発生しました" },
+        { status: 502 },
+      );
+    }
+
+    let qspBody: unknown;
+    try {
+      qspBody = await qspResponse.json();
+    } catch (error: unknown) {
+      console.error("[PUT /api/admin/members/:id] QSP 응답 파싱 실패:", error);
+      return NextResponse.json(
+        { error: "外部サーバーの応答を処理できません" },
+        { status: 502 },
+      );
+    }
+
+    const parsed = qspUpdateResponseSchema.safeParse(qspBody);
+    if (!parsed.success) {
+      console.error("[PUT /api/admin/members/:id] QSP 응답 스키마 불일치:", parsed.error.issues);
+      return NextResponse.json(
+        { error: "外部サーバーの応答形式が正しくありません" },
+        { status: 502 },
+      );
+    }
+
+    if (parsed.data.result.resultCode !== "S") {
+      console.warn("[PUT /api/admin/members/:id] QSP 수정 실패:", parsed.data.result.message);
+      return NextResponse.json(
+        { error: "会員情報の更新に失敗しました" },
+        { status: 500 },
+      );
+    }
+
+    console.log(`[PUT /api/admin/members/:id] 회원 정보 수정 완료 — userId: ${rawId}, updBy: ${user.userId}`);
+
+    return NextResponse.json({
+      data: { message: "会員情報を更新しました" },
+    });
+  } catch (error: unknown) {
+    console.error("[PUT /api/admin/members/:id] 회원 정보 수정 실패:", error);
+    return NextResponse.json(
+      { error: "会員情報の更新に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
