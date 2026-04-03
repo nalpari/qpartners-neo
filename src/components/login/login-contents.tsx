@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AxiosError } from "axios";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { usePopupStore, useAppStore } from "@/lib/store";
@@ -94,8 +94,11 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       }
     },
     onError: (err) => {
-      if (err instanceof AxiosError && err.response) {
-        setError(STATUS_ERROR_MAP[err.response.status] ?? LOGIN_ERRORS.GENERIC);
+      console.error("[LoginContents] ログイン失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        const data = err.response.data as Record<string, unknown> | undefined;
+        const serverMsg = typeof data?.error === "string" ? data.error : null;
+        setError(serverMsg ?? STATUS_ERROR_MAP[err.response.status] ?? LOGIN_ERRORS.GENERIC);
       } else {
         setError(LOGIN_ERRORS.SERVER_UNAVAILABLE);
       }
