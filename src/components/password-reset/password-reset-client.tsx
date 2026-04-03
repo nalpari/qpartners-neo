@@ -54,11 +54,13 @@ export function PasswordResetClient() {
             : "loading";
 
   // invalid 상태의 에러 메시지 (토큰 검증 실패 시)
-  const invalidError = isAxiosError(verifyError) && verifyError.response
-    ? (verifyError.response.data as Record<string, unknown>)?.error as string ?? "無効または期限切れのリンクです。"
-    : verifyError instanceof Error
-      ? verifyError.message
-      : null;
+  const invalidError = (() => {
+    if (isAxiosError(verifyError) && verifyError.response) {
+      const data = verifyError.response.data as Record<string, unknown> | undefined;
+      return typeof data?.error === "string" ? data.error : "無効または期限切れのリンクです。";
+    }
+    return verifyError instanceof Error ? verifyError.message : null;
+  })();
 
   // 2. 비밀번호 변경 제출
   const handleSubmit = async () => {

@@ -84,6 +84,7 @@ export function PersonalInfoPopup() {
         res = await api.post("/auth/password-reset/confirm", {
           token,
           newPassword,
+          confirmPassword,
         });
       } else {
         // 최초 로그인 → 세션(JWT) 기반
@@ -250,7 +251,7 @@ export function PersonalInfoPopup() {
                 </button>
               </div>
               <p className="font-['Noto_Sans_JP'] font-normal text-[13px] lg:text-[14px] leading-[1.5] text-[#1060b4]">
-                ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                ※英大文字、英小文字、数字を組み合わせて8文字以上に設定
               </p>
             </div>
 
