@@ -1431,7 +1431,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Code"],
         summary: "공통코드 공개 조회 (headerCode 기반)",
         parameters: [
-          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string" } },
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
         ],
         responses: {
           "200": {
@@ -1459,7 +1459,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("headerCode 파라미터 필수"),
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
           "404": errorResponse("해당 코드 없음"),
           "500": errorResponse("서버 에러"),
         },
