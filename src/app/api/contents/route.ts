@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
             targetType: (targetType ??
               user?.role ??
               "non_member") as
-              | "first_dealer"
-              | "second_dealer"
-              | "constructor"
+              | "1st_store"
+              | "2nd_store"
+              | "seko"
               | "general"
               | "non_member",
             AND: [

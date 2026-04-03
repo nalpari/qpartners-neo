@@ -7,9 +7,9 @@ export { idParamSchema } from "@/lib/schemas/common";
 const contentTargetSchema = z
   .object({
     targetType: z.enum([
-      "first_dealer",
-      "second_dealer",
-      "constructor",
+      "1st_store",
+      "2nd_store",
+      "seko",
       "general",
       "non_member",
     ]),
