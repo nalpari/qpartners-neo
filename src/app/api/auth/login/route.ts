@@ -202,6 +202,7 @@ export async function POST(request: NextRequest) {
     authRole,
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
+    pwdInitYn: qsp.data.pwdInitYn,
   };
 
   let token: string;

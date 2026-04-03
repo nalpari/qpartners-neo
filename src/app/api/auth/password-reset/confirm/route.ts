@@ -270,6 +270,7 @@ export async function POST(request: NextRequest) {
     statCd: detailData?.statCd ?? null,
     authRole,
     twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
+    pwdInitYn: "N", // 비밀번호 재설정 완료 → 초기화 상태 해소
   };
 
   let jwtToken: string;

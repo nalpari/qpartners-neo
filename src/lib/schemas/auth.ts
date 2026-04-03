@@ -79,6 +79,7 @@ export const loginUserSchema = qspLoginUserSchema
     // TODO: 과도기 제거 — 전체 사용자 재로그인 후 optional 제거하고 required로 전환
     authRole: z.enum(authRoleValues).optional(),
     twoFactorVerified: z.boolean(),
+    pwdInitYn: z.enum(["Y", "N"]).nullable().optional(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;
