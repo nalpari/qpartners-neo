@@ -2,40 +2,98 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { isAxiosError } from "axios";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useAuthStore } from "@/lib/auth-store";
+import api from "@/lib/axios";
 
-const INQUIRY_TYPE_OPTIONS = [
-  { label: "サービスに関するお問い合わせ", value: "service" },
-  { label: "技術的なお問い合わせ", value: "technical" },
-  { label: "その他", value: "other" },
-];
-
-// 더미 사용자 데이터 (추후 인증 연동)
-const DUMMY_USER = {
-  companyName: "INTERPLUG TEST",
-  name: "金志映",
-  phone: "03-5441-5943",
-  email: "kjy0501@interplug.co.kr",
-};
+interface CodeDetail {
+  code: string;
+  displayCode: string;
+  codeName: string;
+  codeNameEtc: string | null;
+  sortOrder: number;
+}
 
 export function InquiryForm() {
   const { openAlert } = useAlertStore();
-  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
+  const user = useAuthStore((s) => s.user);
+  const isLoggedIn = !!user;
 
-  const [companyName, setCompanyName] = useState(
-    isLoggedIn ? DUMMY_USER.companyName : ""
-  );
-  const [name, setName] = useState(isLoggedIn ? DUMMY_USER.name : "");
-  const [phone, setPhone] = useState(isLoggedIn ? DUMMY_USER.phone : "");
-  const [email, setEmail] = useState(isLoggedIn ? DUMMY_USER.email : "");
+  const {
+    data: inquiryTypeOptions = [],
+    isPending: isCodeLoading,
+    isError: isCodeLoadError,
+  } = useQuery({
+    queryKey: ["codes", "INQUIRY_TYPE"],
+    queryFn: async () => {
+      const res = await api.get<{ data: CodeDetail[] }>("/codes/lookup", {
+        params: { headerCode: "INQUIRY_TYPE" },
+      });
+      const details = res.data?.data;
+      if (!Array.isArray(details)) {
+        throw new Error("Unexpected response shape from /codes/lookup");
+      }
+      return details.map((d) => ({
+        label: d.codeName,
+        value: d.code,
+      }));
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 2,
+  });
+
+  const [companyName, setCompanyName] = useState(user?.compNm ?? "");
+  const [name, setName] = useState(user?.userNm ?? "");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
+  const submitMutation = useMutation({
+    mutationFn: async (data: {
+      companyName: string;
+      userName: string;
+      tel?: string;
+      email: string;
+      inquiryType?: string;
+      title: string;
+      content: string;
+    }) => {
+      const res = await api.post<{ data: { id: number } }>("/inquiry", data);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      openAlert({
+        type: "alert",
+        message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+      });
+      handleCancel();
+    },
+    onError: (error: unknown) => {
+      console.error("[InquiryForm] 문의 등록 실패:", error);
+
+      if (isAxiosError<{ error?: string }>(error) && error.response) {
+        const { status, data } = error.response;
+        if (status === 400) {
+          openAlert({ type: "alert", message: data?.error ?? "入力内容に不備があります。内容をご確認ください。" });
+        } else if (status === 429) {
+          openAlert({ type: "alert", message: data?.error ?? "リクエストが多すぎます。しばらく経ってから再度お試しください。" });
+        } else {
+          openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+        }
+      } else {
+        openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+      }
+    },
+  });
+
   const handleCancel = () => {
     if (isLoggedIn) {
-      setEmail(DUMMY_USER.email);
+      setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
       setName("");
@@ -66,6 +124,10 @@ export function InquiryForm() {
       openAlert({ type: "alert", message: "メールアドレスを入力してください。" });
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      openAlert({ type: "alert", message: "有効なメールアドレスを入力してください。" });
+      return;
+    }
     if (!inquiryType) {
       openAlert({ type: "alert", message: "お問い合わせタイプを選択してください。" });
       return;
@@ -79,11 +141,17 @@ export function InquiryForm() {
       return;
     }
 
-    openAlert({
-      type: "alert",
-      message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+    if (submitMutation.isPending) return;
+
+    submitMutation.mutate({
+      companyName: companyName.trim(),
+      userName: name.trim(),
+      tel: phone.trim() || undefined,
+      email: email.trim(),
+      inquiryType: inquiryType || undefined,
+      title: title.trim(),
+      content: content.trim(),
     });
-    handleCancel();
   };
 
   return (
@@ -205,11 +273,17 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}
@@ -344,11 +418,17 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}

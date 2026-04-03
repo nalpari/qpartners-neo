@@ -1385,6 +1385,87 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    // ─── Inquiry (문의) ───
+    "/inquiry": {
+      post: {
+        tags: ["Inquiry"],
+        summary: "문의 등록 (비로그인 가능)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateInquiry" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["id"],
+                      properties: {
+                        id: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("入力内容に不備があります / 無効なリクエスト"),
+          "429": errorResponse("リクエストが多すぎます"),
+          "500": errorResponse("お問い合わせの登録に失敗しました"),
+        },
+      },
+    },
+
+    // ─── Code Lookup (공개) ───
+    "/codes/lookup": {
+      get: {
+        tags: ["Code"],
+        summary: "공통코드 공개 조회 (headerCode 기반)",
+        parameters: [
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+        ],
+        responses: {
+          "200": {
+            description: "코드 상세 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          code: { type: "string" },
+                          displayCode: { type: "string" },
+                          codeName: { type: "string" },
+                          codeNameEtc: { type: "string", nullable: true },
+                          sortOrder: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
+          "404": errorResponse("해당 코드 없음"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
     // ─── CodeDetail ───
     "/codes/{id}/details": {
       get: {
@@ -2547,6 +2628,19 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
+        },
+      },
+      CreateInquiry: {
+        type: "object",
+        required: ["companyName", "userName", "email", "inquiryType", "title", "content"],
+        properties: {
+          companyName: { type: "string", maxLength: 255, example: "株式会社テスト" },
+          userName: { type: "string", maxLength: 200, example: "田中太郎" },
+          tel: { type: "string", maxLength: 20, nullable: true, example: "03-1234-5678" },
+          email: { type: "string", format: "email", maxLength: 255, example: "test@example.com" },
+          inquiryType: { type: "string", maxLength: 100, example: "service" },
+          title: { type: "string", maxLength: 500, example: "サービスについて" },
+          content: { type: "string", maxLength: 10000, example: "お問い合わせ内容" },
         },
       },
     },
