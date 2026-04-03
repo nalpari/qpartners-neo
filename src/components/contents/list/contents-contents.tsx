@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -33,9 +34,10 @@ interface CategoryNode {
 export type { CategoryNode, SearchFilters };
 
 export function ContentsContents() {
-  // TODO: 실제 권한 체크로 교체
-  // 사내회원 = 슈퍼관리자 + 관리자 (게시대상/담당부문/관리자컬럼 노출 대상)
-  const isInternal = true;
+  const queryClient = useQueryClient();
+  const user = queryClient.getQueryData<LoginUser | null>(["auth", "login-user-info"]);
+  // 사내회원 = ADMIN (슈퍼관리자 + 관리자) → 게시대상/담당부문/관리자컬럼/등록버튼 노출
+  const isInternal = user?.userTp === "ADMIN";
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
     page: 1,
