@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAppStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
@@ -27,8 +27,20 @@ interface LoginContentsProps {
 }
 
 export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
-  const [activeTab, setActiveTab] = useState<TabType>(initialSavedTab);
-  const [id, setId] = useState(initialSavedId);
+  // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
+  const prefillRef = useRef(useAppStore.getState().prefillEmail);
+
+  const [activeTab, setActiveTab] = useState<TabType>(
+    prefillRef.current ? "general" : initialSavedTab
+  );
+  const [id, setId] = useState(prefillRef.current || initialSavedId);
+
+  useEffect(() => {
+    if (prefillRef.current) {
+      useAppStore.getState().clearPrefillEmail();
+      prefillRef.current = "";
+    }
+  }, []);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
@@ -57,7 +69,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
 
       if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
-        openPopup("two-factor-auth", { userId: userData.userId, email: userData.email });
+        openPopup("two-factor-auth", { userId: userData.userId, email: userData.email, userTp: TAB_TO_USERTP[activeTab] });
       } else {
         // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
         queryClient.setQueryData(["auth", "login-user-info"], userData);
