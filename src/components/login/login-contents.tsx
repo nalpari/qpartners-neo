@@ -94,7 +94,10 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
       }
     },
     onError: (err) => {
-      console.error("[LoginContents] ログイン失敗:", err);
+      console.error("[LoginContents] ログイン失敗:", {
+        status: isAxiosError(err) ? err.response?.status : undefined,
+        code: isAxiosError(err) ? err.code : undefined,
+      });
       if (isAxiosError(err) && err.response) {
         const data = err.response.data as Record<string, unknown> | undefined;
         const serverMsg = typeof data?.error === "string" ? data.error : null;
