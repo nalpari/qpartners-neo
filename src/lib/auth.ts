@@ -104,7 +104,7 @@ export async function resolveAuthRole(
 }
 
 /** authRole(대문자) → ContentTarget.targetType(소문자) 매핑 */
-const AUTH_ROLE_TO_TARGET: Record<string, string> = {
+export const AUTH_ROLE_TO_TARGET: Record<string, string> = {
   "1ST_STORE": "first_store",
   "2ND_STORE": "second_store",
   "SEKO": "seko",

@@ -3,8 +3,8 @@ module.exports = {
         {
             name: "qpartners-neo-dev",
             script: "node_modules/next/dist/bin/next",
-            args: "dev -p 5010",
-            cwd: "/home/development/apps/qpartners-neo",
+            args: "dev --webpack -p 5010",
+            cwd: process.env.APP_ROOT_DEVELOPMENT || process.cwd(),
             env: {
                 NODE_ENV: "development",
             },
@@ -13,7 +13,7 @@ module.exports = {
             name: "qpartners-neo-prod-1",
             script: "node_modules/next/dist/bin/next",
             args: "start -p 5000",
-            cwd: "/home/production/apps/qpartners-neo",
+            cwd: process.env.APP_ROOT_PRODUCTION || process.cwd(),
             env: {
                 NODE_ENV: "production",
             },
@@ -22,7 +22,7 @@ module.exports = {
             name: "qpartners-neo-prod-2",
             script: "node_modules/next/dist/bin/next",
             args: "start -p 5001",
-            cwd: "/home/production/apps/qpartners-neo",
+            cwd: process.env.APP_ROOT_PRODUCTION || process.cwd(),
             env: {
                 NODE_ENV: "production",
             },

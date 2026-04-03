@@ -176,7 +176,7 @@ export function ZipcodeSearchPopup() {
                       setZipcode(e.target.value.replace(/\D/g, "").slice(0, 7))
                     }
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleSearch();
+                      if (e.key === "Enter" && !isSearching) void handleSearch();
                     }}
                     placeholder="郵便番号の7桁を入力してください"
                     inputMode="numeric"

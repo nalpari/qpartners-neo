@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         targets: {
           some: {
             targetType: (targetType ??
-              user?.role ??
+              (user ? AUTH_ROLE_TO_TARGET[user.role] : undefined) ??
               "non_member") as
               | "first_store"
               | "second_store"
