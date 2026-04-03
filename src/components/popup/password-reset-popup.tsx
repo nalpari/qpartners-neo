@@ -96,8 +96,9 @@ export function PasswordResetPopup() {
     } catch (err) {
       console.error("[PasswordResetPopup] パスワード初期化リクエスト失敗:", err);
       if (isAxiosError(err) && err.response) {
-        const errMsg = typeof err.response.data?.error === "string"
-          ? err.response.data.error
+        const data = err.response.data as Record<string, unknown> | undefined;
+        const errMsg = typeof data?.error === "string"
+          ? data.error
           : "サーバーエラーが発生しました。";
         openAlert({ type: "alert", message: errMsg });
       } else {

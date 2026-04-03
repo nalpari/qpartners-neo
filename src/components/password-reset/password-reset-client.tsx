@@ -55,6 +55,9 @@ export function PasswordResetClient() {
       const data = verifyError.response.data as Record<string, unknown> | undefined;
       return typeof data?.error === "string" ? data.error : "無効または期限切れのリンクです。";
     }
+    if (isAxiosError(verifyError) && !verifyError.response) {
+      return "サーバーに接続できません。しばらくしてからもう一度お試しください。";
+    }
     return verifyError instanceof Error ? verifyError.message : null;
   })();
 
@@ -108,10 +111,13 @@ export function PasswordResetClient() {
     } catch (err) {
       console.error("[PasswordResetClient] パスワード変更失敗:", err);
       if (isAxiosError(err) && err.response) {
-        const serverMsg = typeof err.response.data?.error === "string"
-          ? err.response.data.error
+        const data = err.response.data as Record<string, unknown> | undefined;
+        const serverMsg = typeof data?.error === "string"
+          ? data.error
           : "エラーが発生しました。";
         setError(serverMsg);
+      } else if (isAxiosError(err) && err.code === "ECONNABORTED") {
+        setError("サーバーからの応答がありません。しばらくしてからもう一度お試しください。");
       } else {
         setError("サーバーに接続できません。しばらくしてからもう一度お試しください。");
       }
