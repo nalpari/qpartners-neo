@@ -8,9 +8,9 @@ export async function GET(request: NextRequest) {
   try {
     const headerCode = request.nextUrl.searchParams.get("headerCode");
 
-    if (!headerCode) {
+    if (!headerCode || !/^[A-Z0-9_]{1,50}$/.test(headerCode)) {
       return NextResponse.json(
-        { error: "headerCodeパラメータは必須です" },
+        { error: "headerCodeパラメータが不正です" },
         { status: 400 },
       );
     }

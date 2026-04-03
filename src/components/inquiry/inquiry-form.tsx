@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { isAxiosError } from "axios";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -21,18 +22,27 @@ export function InquiryForm() {
   const user = useAuthStore((s) => s.user);
   const isLoggedIn = !!user;
 
-  const { data: inquiryTypeOptions = [] } = useQuery({
+  const {
+    data: inquiryTypeOptions = [],
+    isPending: isCodeLoading,
+    isError: isCodeLoadError,
+  } = useQuery({
     queryKey: ["codes", "INQUIRY_TYPE"],
     queryFn: async () => {
       const res = await api.get<{ data: CodeDetail[] }>("/codes/lookup", {
         params: { headerCode: "INQUIRY_TYPE" },
       });
-      return res.data.data.map((d) => ({
+      const details = res.data?.data;
+      if (!Array.isArray(details)) {
+        throw new Error("Unexpected response shape from /codes/lookup");
+      }
+      return details.map((d) => ({
         label: d.codeName,
         value: d.code,
       }));
     },
     staleTime: 5 * 60 * 1000,
+    retry: 2,
   });
 
   const [companyName, setCompanyName] = useState(user?.compNm ?? "");
@@ -66,14 +76,15 @@ export function InquiryForm() {
     onError: (error: unknown) => {
       console.error("[InquiryForm] 문의 등록 실패:", error);
 
-      const axiosErr = error as { response?: { status?: number; data?: { error?: string } } };
-      const status = axiosErr?.response?.status;
-      const serverMsg = axiosErr?.response?.data?.error;
-
-      if (status === 400) {
-        openAlert({ type: "alert", message: serverMsg ?? "入力内容に不備があります。内容をご確認ください。" });
-      } else if (status === 429) {
-        openAlert({ type: "alert", message: serverMsg ?? "リクエストが多すぎます。しばらく経ってから再度お試しください。" });
+      if (isAxiosError<{ error?: string }>(error) && error.response) {
+        const { status, data } = error.response;
+        if (status === 400) {
+          openAlert({ type: "alert", message: data?.error ?? "入力内容に不備があります。内容をご確認ください。" });
+        } else if (status === 429) {
+          openAlert({ type: "alert", message: data?.error ?? "リクエストが多すぎます。しばらく経ってから再度お試しください。" });
+        } else {
+          openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+        }
       } else {
         openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
       }
@@ -265,8 +276,14 @@ export function InquiryForm() {
                 options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}
@@ -404,8 +421,14 @@ export function InquiryForm() {
                 options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}
