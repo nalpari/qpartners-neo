@@ -47,11 +47,20 @@ export function InquiryForm() {
       });
       handleCancel();
     },
-    onError: () => {
-      openAlert({
-        type: "alert",
-        message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。",
-      });
+    onError: (error: unknown) => {
+      console.error("[InquiryForm] 문의 등록 실패:", error);
+
+      const axiosErr = error as { response?: { status?: number; data?: { error?: string } } };
+      const status = axiosErr?.response?.status;
+      const serverMsg = axiosErr?.response?.data?.error;
+
+      if (status === 400) {
+        openAlert({ type: "alert", message: serverMsg ?? "入力内容に不備があります。内容をご確認ください。" });
+      } else if (status === 429) {
+        openAlert({ type: "alert", message: serverMsg ?? "リクエストが多すぎます。しばらく経ってから再度お試しください。" });
+      } else {
+        openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+      }
     },
   });
 
@@ -86,6 +95,10 @@ export function InquiryForm() {
     }
     if (!email.trim()) {
       openAlert({ type: "alert", message: "メールアドレスを入力してください。" });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      openAlert({ type: "alert", message: "有効なメールアドレスを入力してください。" });
       return;
     }
     if (!inquiryType) {

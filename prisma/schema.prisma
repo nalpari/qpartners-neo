@@ -367,7 +367,7 @@ model Inquiry {
   userName    String                 @map("user_name") @db.VarChar(200)
   tel         String?                @db.VarChar(20)
   email       String                 @db.VarChar(255)
-  inquiryType String?                @map("inquiry_type") @db.VarChar(100)
+  inquiryType String                 @map("inquiry_type") @db.VarChar(100)
   title       String                 @db.VarChar(500)
   content     String                 @db.Text
   createdAt   DateTime               @default(now()) @map("created_at")
