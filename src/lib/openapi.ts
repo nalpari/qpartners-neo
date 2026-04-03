@@ -326,7 +326,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
-    "/auth/password-change": {
+    "/auth/password-init": {
       post: {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
@@ -1774,7 +1774,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/mypage/change-password": {
+    "/mypage/password-change": {
       post: {
         tags: ["MyPage"],
         summary: "비밀번호 변경",

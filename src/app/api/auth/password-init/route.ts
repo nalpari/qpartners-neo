@@ -41,7 +41,7 @@ const qspUserDetailSchema = z.object({
   }).nullable(),
 });
 
-// POST /api/auth/password-change — 세션 기반 비밀번호 변경 (판매점 최초 로그인용, p.12)
+// POST /api/auth/password-init — 세션 기반 비밀번호 변경 (판매점 최초 로그인용, p.12)
 export async function POST(request: NextRequest) {
   try {
     // 1. JWT 인증 확인
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json();
     } catch (error) {
-      console.warn("[POST /api/auth/password-change] Request body 파싱 실패:", error);
+      console.warn("[POST /api/auth/password-init] Request body 파싱 실패:", error);
       return NextResponse.json(
         { error: "Invalid JSON body" },
         { status: 400 },
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         try {
           detailBody = await detailRes.json();
         } catch (parseError) {
-          console.error("[POST /api/auth/password-change] userDetail JSON 파싱 실패:", parseError);
+          console.error("[POST /api/auth/password-init] userDetail JSON 파싱 실패:", parseError);
           detailBody = null;
         }
         const parsed = detailBody != null ? qspUserDetailSchema.safeParse(detailBody) : null;
@@ -118,30 +118,30 @@ export async function POST(request: NextRequest) {
           loginId = parsed.data.data.userId;
           detailData = parsed.data.data;
         } else if (parsed && !parsed.success) {
-          console.error("[POST /api/auth/password-change] userDetail 응답 스키마 불일치:", parsed.error.issues);
+          console.error("[POST /api/auth/password-init] userDetail 응답 스키마 불일치:", parsed.error.issues);
         }
       } else {
         console.warn(
-          `[POST /api/auth/password-change] userDetail 비정상 응답 — status=${detailRes.status}, userTp=${user.userTp}`,
+          `[POST /api/auth/password-init] userDetail 비정상 응답 — status=${detailRes.status}, userTp=${user.userTp}`,
         );
       }
     } catch (error) {
       console.error(
-        "[POST /api/auth/password-change] userDetail 조회 실패:",
+        "[POST /api/auth/password-init] userDetail 조회 실패:",
         error instanceof Error ? { message: error.message } : error,
       );
     }
 
     // ADMIN/STORE/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
     if (!detailData && user.userTp !== "GENERAL") {
-      console.error(`[POST /api/auth/password-change] userDetail 조회 실패 — userTp=${user.userTp}`);
+      console.error(`[POST /api/auth/password-init] userDetail 조회 실패 — userTp=${user.userTp}`);
       return NextResponse.json(
         { error: "ユーザー情報を確認できません。しばらくしてから再度お試しください。" },
         { status: 500 },
       );
     }
     if (!detailData && user.userTp === "GENERAL") {
-      console.warn("[POST /api/auth/password-change] GENERAL userDetail 조회 실패 — JWT 기존 세션 데이터로 진행");
+      console.warn("[POST /api/auth/password-init] GENERAL userDetail 조회 실패 — JWT 기존 세션 데이터로 진행");
     }
 
     // 5. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
         }),
       });
     } catch (error) {
-      console.error("[POST /api/auth/password-change] QSP API 호출 실패:", error);
+      console.error("[POST /api/auth/password-init] QSP API 호출 실패:", error);
       return NextResponse.json(
         { error: "外部サーバーに接続できません。しばらくしてから再度お試しください。" },
         { status: 502 },
@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!qspResponse.ok) {
-      console.error("[POST /api/auth/password-change] QSP 비정상 응답:", qspResponse.status);
+      console.error("[POST /api/auth/password-init] QSP 비정상 응답:", qspResponse.status);
       return NextResponse.json(
         { error: "外部サーバーエラーが発生しました。しばらくしてから再度お試しください。" },
         { status: 502 },
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
     try {
       qspBody = await qspResponse.json();
     } catch (error) {
-      console.error("[POST /api/auth/password-change] QSP 응답 JSON 파싱 실패:", error);
+      console.error("[POST /api/auth/password-init] QSP 응답 JSON 파싱 실패:", error);
       return NextResponse.json(
         { error: "外部サーバーの応答を処理できません" },
         { status: 502 },
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const parsed = qspResponseSchema.safeParse(qspBody);
     if (!parsed.success || parsed.data.result.resultCode !== "S") {
-      console.error("[POST /api/auth/password-change] QSP 비밀번호 변경 실패:", qspBody);
+      console.error("[POST /api/auth/password-init] QSP 비밀번호 변경 실패:", qspBody);
       return NextResponse.json(
         { error: "パスワード変更に失敗しました。しばらくしてから再度お試しください。" },
         { status: 500 },
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
     try {
       authRole = await resolveAuthRole(user.userTp, loginId, detailData?.storeLvl ?? user.storeLvl ?? null);
     } catch (error) {
-      console.error("[POST /api/auth/password-change] authRole 판별 실패, 기본값 사용:", error);
+      console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
       authRole = user.userTp === "ADMIN" ? "ADMIN"
         : user.userTp === "STORE" ? (detailData?.storeLvl === "1" || user.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
         : user.userTp === "SEKO" ? "SEKO"
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
     try {
       jwtToken = await signToken(updatedUser);
     } catch (error) {
-      console.error("[POST /api/auth/password-change] JWT 생성 실패:", error);
+      console.error("[POST /api/auth/password-init] JWT 생성 실패:", error);
       return NextResponse.json(
         { error: "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。" },
         { status: 500 },
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[POST /api/auth/password-change]", error);
+    console.error("[POST /api/auth/password-init]", error);
     return NextResponse.json(
       { error: "パスワード変更処理中にサーバーエラーが発生しました" },
       { status: 500 },
