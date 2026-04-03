@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
@@ -27,36 +29,15 @@ export function PasswordResetClient() {
   const { data: verifyData, error: verifyError, isLoading } = useQuery({
     queryKey: ["password-reset", "verify", token],
     queryFn: async () => {
-      const res = await fetch("/api/auth/password-reset/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!res.ok) {
-        let errorMsg: string | null = null;
-        try {
-          const errJson = await res.json() as Record<string, unknown>;
-          if (typeof errJson.error === "string") errorMsg = errJson.error;
-        } catch (parseErr) {
-          console.error("[PasswordResetClient] エラー応答 JSON parse 失敗:", res.status, parseErr);
-        }
-
-        if (res.status >= 500) {
-          console.error("[PasswordResetClient] 토큰 검증 서버 오류:", res.status);
-        }
-        throw new Error(errorMsg ?? "無効または期限切れのリンクです。");
-      }
-
-      const json: unknown = await res.json();
-      if (!json || typeof json !== "object" || !("data" in json)) {
-        throw new Error("無効または期限切れのリンクです。");
-      }
-      return json;
+      const res = await api.post("/auth/password-reset/verify", { token });
+      return res.data;
     },
     enabled: !!token,
-    retry: false,
+    retry: (_, err) => {
+      // 400/404 등 토큰 무효는 재시도 무의미
+      if (isAxiosError(err) && err.response && err.response.status < 500) return false;
+      return false;
+    },
   });
 
   // 파생 상태로 status 결정
@@ -73,10 +54,14 @@ export function PasswordResetClient() {
             : "loading";
 
   // invalid 상태의 에러 메시지 (토큰 검증 실패 시)
-  const invalidError = verifyError instanceof Error ? verifyError.message : null;
+  const invalidError = isAxiosError(verifyError) && verifyError.response
+    ? (verifyError.response.data as Record<string, unknown>)?.error as string ?? "無効または期限切れのリンクです。"
+    : verifyError instanceof Error
+      ? verifyError.message
+      : null;
 
   // 2. 비밀번호 변경 제출
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = async () => {
     setError(null);
 
     if (!validatePasswordPolicy(newPassword)) {
@@ -92,40 +77,14 @@ export function PasswordResetClient() {
     setSubmitStatus("submitting");
 
     try {
-      const res = await fetch("/api/auth/password-reset/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword, confirmPassword }),
-        signal: AbortSignal.timeout(15_000),
+      const res = await api.post("/auth/password-reset/confirm", {
+        token,
+        newPassword,
+        confirmPassword,
       });
 
-      let json: Record<string, unknown> | null = null;
-      try {
-        json = await res.json() as Record<string, unknown>;
-      } catch (parseErr) {
-        console.error("[PasswordResetClient] 응답 JSON 파싱 실패:", parseErr);
-      }
-
-      if (!res.ok) {
-        const errMsg = json && typeof json === "object" && "error" in json && typeof json.error === "string"
-          ? json.error
-          : "エラーが発生しました。";
-        setError(errMsg);
-        setSubmitStatus("idle");
-        return;
-      }
-
-      // res.ok이지만 JSON 파싱 실패 — 변경 결과 불확실
-      if (!json) {
-        console.error("[PasswordResetClient] 성공 응답이지만 JSON 파싱 실패 — 결과 불확실");
-        setError("パスワードが変更された可能性があります。新しいパスワードでログインをお試しください。");
-        setSubmitStatus("idle");
-        return;
-      }
-
       // 자동 로그인: JWT 쿠키는 API가 설정, 프론트에서 user 캐시 + 플래그 설정
-      const dataObj = json.data && typeof json.data === "object" ? json.data as Record<string, unknown> : null;
-      const rawUser = dataObj && "user" in dataObj ? dataObj.user : null;
+      const rawUser = res.data?.data?.user;
       const parsed = rawUser ? loginUserSchema.safeParse(rawUser) : null;
       const userData = parsed?.success ? parsed.data : null;
 
@@ -139,7 +98,7 @@ export function PasswordResetClient() {
         dispatchAuthChange();
         setAutoLoginOk(true);
       } else {
-        console.warn("[PasswordResetClient] 자동 로그인 데이터 누락 — ログインページへリダイレクト");
+        console.warn("[PasswordResetClient] 自動ログインデータ欠落 — ログインページへリダイレクト");
       }
 
       setSubmitStatus("done");
@@ -149,14 +108,18 @@ export function PasswordResetClient() {
         router.replace(userData ? "/" : "/login");
       }, 1500);
     } catch (err) {
-      console.error("[PasswordResetClient] 비밀번호 변경 제출 중 오류:", err);
-      const message = err instanceof DOMException && err.name === "TimeoutError"
-        ? "サーバーからの応答がありません。しばらくしてからもう一度お試しください。"
-        : "サーバーに接続できません。しばらくしてからもう一度お試しください。";
-      setError(message);
+      console.error("[PasswordResetClient] パスワード変更失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        const serverMsg = typeof err.response.data?.error === "string"
+          ? err.response.data.error
+          : "エラーが発生しました。";
+        setError(serverMsg);
+      } else {
+        setError("サーバーに接続できません。しばらくしてからもう一度お試しください。");
+      }
       setSubmitStatus("idle");
     }
-  }, [token, newPassword, confirmPassword, queryClient, router]);
+  };
 
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
@@ -52,7 +54,7 @@ export function PasswordResetPopup() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       closePopup();
@@ -60,9 +62,9 @@ export function PasswordResetPopup() {
       setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
-  }, [closePopup]);
+  };
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = async () => {
     if (!isFormValid(activeTab, formData) || isSubmitting) return;
 
     const userTp = TAB_TO_USERTP[activeTab];
@@ -84,25 +86,7 @@ export function PasswordResetPopup() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/auth/password-reset/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      let json: Record<string, unknown> | null = null;
-      try {
-        json = await res.json() as Record<string, unknown>;
-      } catch (parseErr) {
-        console.error("[PasswordResetPopup] 응답 JSON 파싱 실패:", parseErr);
-      }
-
-      if (!res.ok) {
-        const errMsg = json && typeof json.error === "string" ? json.error : "サーバーエラーが発生しました。";
-        openAlert({ type: "alert", message: errMsg });
-        return;
-      }
+      await api.post("/auth/password-reset/request", payload);
 
       handleClose();
       openAlert({
@@ -110,15 +94,22 @@ export function PasswordResetPopup() {
         message: "パスワード変更リンクがメールで送信されました。",
       });
     } catch (err) {
-      console.error("[PasswordResetPopup] 비밀번호 초기화 요청 실패:", err);
-      openAlert({
-        type: "alert",
-        message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
-      });
+      console.error("[PasswordResetPopup] パスワード初期化リクエスト失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        const errMsg = typeof err.response.data?.error === "string"
+          ? err.response.data.error
+          : "サーバーエラーが発生しました。";
+        openAlert({ type: "alert", message: errMsg });
+      } else {
+        openAlert({
+          type: "alert",
+          message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeTab, formData, isSubmitting, handleClose, openAlert]);
+  };
 
   const inputClass =
     "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
