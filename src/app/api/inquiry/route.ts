@@ -1,11 +1,18 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import type { qp_inquiries_user_type } from "@/generated/prisma/client";
+import { qp_inquiries_user_type } from "@/generated/prisma/client";
 
 import { getUserFromRequest } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { createInquirySchema } from "@/lib/schemas/inquiry";
+
+const USER_TP_MAP: Record<string, qp_inquiries_user_type> = {
+  ADMIN: qp_inquiries_user_type.ADMIN,
+  STORE: qp_inquiries_user_type.STORE,
+  SEKO: qp_inquiries_user_type.SEKO,
+  GENERAL: qp_inquiries_user_type.GENERAL,
+};
 
 // POST /api/inquiry — 문의 등록 (비로그인도 가능)
 export async function POST(request: NextRequest) {
@@ -36,7 +43,7 @@ export async function POST(request: NextRequest) {
     const inquiry = await prisma.inquiry.create({
       data: {
         ...result.data,
-        userType: (user?.userTp as qp_inquiries_user_type) ?? null,
+        userType: user ? (USER_TP_MAP[user.userTp] ?? null) : null,
         userId: user?.userId ?? null,
         createdBy: user?.userId ?? null,
       },
