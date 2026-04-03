@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { z } from "zod";
+
 import { prisma } from "@/lib/prisma";
 import { passwordResetRequestSchema } from "@/lib/schemas/password-reset";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -14,11 +16,13 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/password-reset/request — 비밀번호 초기화 요청 (메일 발송)
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/password-reset/request] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -45,7 +49,8 @@ export async function POST(request: NextRequest) {
   //        이메일 기반 rate limit(2-b)이 최종 방어선 역할을 함.
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-  const ipKey = ip ?? "unknown-ip";
+  // IP 없으면 email 기반 fallback key 사용 — 공용 버킷으로 전체 차단되는 문제 방지
+  const ipKey = ip ?? `account:${email}`;
   if (!checkRateLimit(`pw-reset:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
     return NextResponse.json(
       { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
@@ -53,7 +58,7 @@ export async function POST(request: NextRequest) {
     );
   }
   if (!ip) {
-    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — 공유 rate limit 적용");
+    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — email 기반 rate limit 적용");
   }
 
   // 2-b. Rate limiting — 동일 이메일 시간당 3건 제한 (토큰 생성 기준)
@@ -87,6 +92,7 @@ export async function POST(request: NextRequest) {
   if (sekoId) params.set("sekoId", sekoId);
 
   let userExists = false;
+  let resolvedLoginId: string | null = loginId ?? null;
   try {
     const qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
       method: "GET",
@@ -120,6 +126,14 @@ export async function POST(request: NextRequest) {
       );
     }
     userExists = parsed.data.result.resultCode === "S" && parsed.data.data != null;
+
+    // ADMIN/STORE: loginId≠email일 수 있으므로 userDetail 응답에서 userId(=loginId) 추출하여 토큰에 저장
+    if (userExists && !resolvedLoginId) {
+      const userIdResult = z.object({ userId: z.string() }).safeParse(parsed.data.data);
+      if (userIdResult.success) {
+        resolvedLoginId = userIdResult.data.userId;
+      }
+    }
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] QSP 회원조회 실패:", error);
     return NextResponse.json(
@@ -128,11 +142,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 유저 미존재 시에도 동일 성공 응답 반환 — 이메일 열거 공격 방지
   if (!userExists) {
-    return NextResponse.json(
-      { error: "一致する会員情報がありません。入力内容をもう一度ご確認ください。" },
-      { status: 404 },
-    );
+    console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — userTp: ${userTp}`);
+    return NextResponse.json({
+      data: { message: "パスワード変更リンクをメールで送信しました。" },
+    });
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
@@ -149,6 +164,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: userTp,
           userId: email,
+          loginId: resolvedLoginId,
           token,
           expiresAt,
         },
@@ -174,16 +190,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error(
-      `[POST /api/auth/password-reset/request] 메일 발송 실패 — to=${email}`,
+      "[POST /api/auth/password-reset/request] 메일 발송 실패",
       error instanceof Error ? { message: error.message } : error,
     );
-    // 토큰 무효화 (rate limit 소모 방지 + 유령 토큰 제거)
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: false },
-      data: { used: true },
+    // 토큰 삭제 (rate limit 미소모 — count 쿼리에서 제외)
+    await prisma.passwordResetToken.deleteMany({
+      where: { token },
     }).catch((dbError: unknown) => {
-      // 토큰 무효화 실패 → orphan 토큰 잔류 (rate limit 카운트 소모됨)
-      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패 — orphan 토큰 잔류, token:", token, dbError);
+      console.error("[POST /api/auth/password-reset/request] 토큰 롤백 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
     });
     return NextResponse.json(
       { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },
@@ -193,6 +207,13 @@ export async function POST(request: NextRequest) {
 
   // 6. 성공 응답
   return NextResponse.json({
-    data: { message: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+    data: { message: "パスワード変更リンクをメールで送信しました。" },
   });
+ } catch (error) {
+    console.error("[POST /api/auth/password-reset/request]", error);
+    return NextResponse.json(
+      { error: "パスワード初期化処理中にエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }

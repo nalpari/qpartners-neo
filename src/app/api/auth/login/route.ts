@@ -9,15 +9,17 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
+import { resolveAuthRole } from "@/lib/auth";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
-
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/login] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] QSP API 호출 실패:", error);
     return NextResponse.json(
-      { error: "외부 인증 서버에 연결할 수 없습니다" },
+      { error: "外部認証サーバーに接続できません" },
       { status: 502 },
     );
   }
@@ -66,7 +68,7 @@ export async function POST(request: NextRequest) {
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/login] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
-      { error: "외부 인증 서버 오류가 발생했습니다" },
+      { error: "外部認証サーバーエラーが発生しました" },
       { status: 502 },
     );
   }
@@ -78,16 +80,20 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
-      { error: "외부 인증 서버 응답을 처리할 수 없습니다" },
+      { error: "外部認証サーバーの応答を処理できません" },
       { status: 502 },
     );
   }
 
   const parsed = qspLoginResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[POST /api/auth/login] QSP 응답 스키마 불일치:", parsed.error);
+    // PII 마스킹: email, pwd 등 민감 필드 제거 후 원본 로깅
+    const safeBody = typeof qspBody === "object" && qspBody !== null
+      ? JSON.stringify(qspBody, (k, v) => ["email", "pwd", "password"].includes(k) ? "[MASKED]" : v as unknown)
+      : String(qspBody);
+    console.error("[POST /api/auth/login] QSP 응답 스키마 불일치:", parsed.error, "원본:", safeBody);
     return NextResponse.json(
-      { error: "외부 인증 서버 응답 형식이 올바르지 않습니다" },
+      { error: "外部認証サーバーの応答形式が正しくありません" },
       { status: 502 },
     );
   }
@@ -97,7 +103,7 @@ export async function POST(request: NextRequest) {
   // 4. 성공/실패 판별
   if (qsp.result.resultCode !== "S" || !qsp.data) {
     return NextResponse.json(
-      { error: "아이디 또는 비밀번호가 올바르지 않습니다" },
+      { error: "IDまたはパスワードが正しくありません" },
       { status: 401 },
     );
   }
@@ -122,7 +128,7 @@ export async function POST(request: NextRequest) {
       });
       if (activeCode) {
         const days = Number(activeCode.code);
-        if (Number.isFinite(days) && days > 0) {
+        if (Number.isSafeInteger(days) && days > 0) {
           validityDays = days;
         } else {
           console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
@@ -158,14 +164,31 @@ export async function POST(request: NextRequest) {
             requireTwoFactor = true;
           } else {
             const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
-            requireTwoFactor = new Date() >= expiresAt;
+            if (Number.isNaN(expiresAt.getTime())) {
+              console.error("[POST /api/auth/login] 2FA 만료시각 계산 실패:", { secAuthDt, validityDays });
+              requireTwoFactor = true;
+            } else {
+              requireTwoFactor = Date.now() >= expiresAt.getTime();
+            }
           }
         }
       }
     }
   }
 
-  // 6. 클라이언트에 전달할 사용자 정보 추출
+  // 6. 세부 권한코드(authRole) 판별
+  let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
+  try {
+    authRole = await resolveAuthRole(qsp.data.userTp, qsp.data.userId, qsp.data.storeLvl);
+  } catch (error) {
+    console.error("[POST /api/auth/login] authRole 판별 실패, 기본값 사용:", error);
+    authRole = qsp.data.userTp === "ADMIN" ? "ADMIN"
+      : qsp.data.userTp === "STORE" ? (qsp.data.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
+      : qsp.data.userTp === "SEKO" ? "SEKO"
+      : "GENERAL";
+  }
+
+  // 7. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
     userId: qsp.data.userId,
     userNm: qsp.data.userNm,
@@ -177,8 +200,10 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    authRole,
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
+    pwdInitYn: qsp.data.pwdInitYn,
   };
 
   let token: string;
@@ -187,12 +212,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] JWT 생성 실패:", error);
     return NextResponse.json(
-      { error: "인증 처리 중 서버 오류가 발생했습니다" },
+      { error: "認証処理中にサーバーエラーが発生しました" },
       { status: 500 },
     );
   }
 
-  // 7. httpOnly 쿠키 설정
+  // 8. httpOnly 쿠키 설정
   const response = NextResponse.json({
     data: { ...user, requireTwoFactor },
   });
@@ -206,4 +231,11 @@ export async function POST(request: NextRequest) {
   });
 
   return response;
+ } catch (error) {
+    console.error("[POST /api/auth/login]", error);
+    return NextResponse.json(
+      { error: "ログイン処理中にサーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }

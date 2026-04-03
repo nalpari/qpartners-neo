@@ -13,11 +13,13 @@ import { generateTwoFactorCode, hashOtp } from "@/lib/auth-utils";
 
 // POST /api/auth/two-factor/send — 2차 인증번호 발송
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/two-factor/send] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
     return NextResponse.json(
-      { error: "인증이 필요합니다" },
+      { error: "認証が必要です" },
       { status: 401 },
     );
   }
@@ -50,7 +52,7 @@ export async function POST(request: NextRequest) {
   const user = await verifyToken(token);
   if (!user) {
     return NextResponse.json(
-      { error: "토큰이 만료되었거나 유효하지 않습니다" },
+      { error: "トークンが期限切れか無効です" },
       { status: 401 },
     );
   }
@@ -58,14 +60,14 @@ export async function POST(request: NextRequest) {
   // JWT 사용자와 요청 사용자 일치 여부 검증
   if (user.userId !== userId || user.userTp !== userTp) {
     return NextResponse.json(
-      { error: "요청 사용자 정보가 일치하지 않습니다" },
+      { error: "リクエストユーザー情報が一致しません" },
       { status: 403 },
     );
   }
 
   if (!user.email) {
     return NextResponse.json(
-      { error: "이메일 정보가 없어 인증번호를 발송할 수 없습니다" },
+      { error: "メール情報がないため認証番号を送信できません" },
       { status: 400 },
     );
   }
@@ -84,14 +86,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/two-factor/send] rate limit 조회 실패:", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
+      { error: "サーバーエラーが発生しました" },
       { status: 500 },
     );
   }
 
   if (recentCount >= 3) {
     return NextResponse.json(
-      { error: "인증번호 발송 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요." },
+      { error: "認証番号の送信回数を超えました。しばらくしてから再度お試しください。" },
       { status: 429 },
     );
   }
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/two-factor/send] DB 처리 실패:", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
+      { error: "サーバーエラーが発生しました" },
       { status: 500 },
     );
   }
@@ -149,15 +151,22 @@ export async function POST(request: NextRequest) {
       console.error("[POST /api/auth/two-factor/send] 코드 무효화 실패:", dbError);
     });
     return NextResponse.json(
-      { error: "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해 주세요." },
+      { error: "認証番号の送信に失敗しました。しばらくしてから再度お試しください。" },
       { status: 500 },
     );
   }
 
   return NextResponse.json({
     data: {
-      message: "인증번호가 발송되었습니다.",
+      message: "認証番号が送信されました。",
       expiresIn: 600,
     },
   });
+ } catch (error) {
+    console.error("[POST /api/auth/two-factor/send]", error);
+    return NextResponse.json(
+      { error: "認証番号送信中にサーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }
