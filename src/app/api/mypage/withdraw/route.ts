@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch {
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "無効なリクエストです" },
         { status: 400 },
       );
     }
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const result = withdrawSchema.safeParse(body);
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }

@@ -30,7 +30,7 @@
 | 2 | 시공점 sekoId 입력 필드 | High | 팝업 installer 탭에 sekoId 필드 없음 |
 | 3 | 일반회원 폼 불일치 | High | 설계: ID(이메일) 1필드, 구현: E-Mail+氏名 2필드 |
 | 4 | email/check API | High | POST /api/auth/email/check 미구현 |
-| 5 | Zod 조건부 필수 검증 | Medium | loginId(DEALER), sekoId(SEKO) 조건부 필수 미적용 |
+| 5 | Zod 조건부 필수 검증 | Medium | loginId(STORE), sekoId(SEKO) 조건부 필수 미적용 |
 | 6 | verify 응답 userId | Low | 설계: userId 포함, 구현: 미포함 (보안상 합리적) |
 
 ---

@@ -40,6 +40,9 @@ export async function GET(request: NextRequest) {
       email: user.email,
       userTp: user.userTp,
     });
+    if (user.userTp === "STORE") {
+      params.set("loginId", user.userId);
+    }
 
     let qspResponse: Response;
     try {

@@ -219,7 +219,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        message: { type: "string", example: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+                        message: { type: "string", example: "パスワード変更リンクをメールで送信しました。" },
                       },
                     },
                   },
@@ -1994,7 +1994,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           loginId: { type: "string", description: "로그인 ID (STORE 필수, 그 외 선택)" },
           email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
-          sekoId: { type: "string", description: "시공점 ID (SEKO 선택)" },
+          sekoId: { type: "string", description: "시공점 ID (SEKO 선택 — QSP는 이메일만으로도 시공점 조회 가능)" },
         },
       },
       PasswordResetVerify: {
