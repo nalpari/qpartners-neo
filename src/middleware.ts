@@ -59,7 +59,16 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  const user = await verifyToken(token);
+  let user;
+  try {
+    user = await verifyToken(token);
+  } catch (error) {
+    console.error("[middleware] CRITICAL 설정 에러:", error);
+    return NextResponse.json(
+      { error: "サーバー設定エラーが発生しました" },
+      { status: 500 },
+    );
+  }
 
   if (!user) {
     console.warn("[middleware] 토큰 검증 실패 — 만료 또는 서명 불일치");

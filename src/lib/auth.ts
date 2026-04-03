@@ -63,13 +63,13 @@ export function requireAdmin(headers: Headers): { user: UserInfo } | NextRespons
   const user = getUserFromHeaders(headers);
   if (!user) {
     return NextResponse.json(
-      { error: "인증이 필요합니다" },
+      { error: "認証が必要です" },
       { status: 401 },
     );
   }
   if (!isAdmin(user.role)) {
     return NextResponse.json(
-      { error: "관리자 권한이 필요합니다" },
+      { error: "管理者権限が必要です" },
       { status: 403 },
     );
   }

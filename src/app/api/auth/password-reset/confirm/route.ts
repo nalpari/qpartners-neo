@@ -142,12 +142,18 @@ export async function POST(request: NextRequest) {
       { method: "GET", signal: AbortSignal.timeout(10_000) },
     );
     if (detailRes.ok) {
-      const detailBody: unknown = await detailRes.json();
-      const parsed = qspUserDetailSchema.safeParse(detailBody);
-      if (parsed.success && parsed.data.data?.userId) {
+      let detailBody: unknown;
+      try {
+        detailBody = await detailRes.json();
+      } catch (parseError) {
+        console.error("[POST /api/auth/password-reset/confirm] userDetail JSON 파싱 실패:", parseError);
+        detailBody = null;
+      }
+      const parsed = detailBody != null ? qspUserDetailSchema.safeParse(detailBody) : null;
+      if (parsed?.success && parsed.data.data?.userId) {
         loginId = parsed.data.data.userId;
         detailData = parsed.data.data;
-      } else if (!parsed.success) {
+      } else if (parsed && !parsed.success) {
         console.error("[POST /api/auth/password-reset/confirm] userDetail 응답 스키마 불일치:", parsed.error.issues);
       }
     } else {
@@ -243,7 +249,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
     authRole = resetToken.userType === "ADMIN" ? "ADMIN"
-      : resetToken.userType === "STORE" ? "1ST_STORE"
+      : resetToken.userType === "STORE" ? (detailData?.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE")
       : resetToken.userType === "SEKO" ? "SEKO"
       : "GENERAL";
   }

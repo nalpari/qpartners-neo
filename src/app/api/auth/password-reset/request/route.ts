@@ -14,6 +14,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/password-reset/request — 비밀번호 초기화 요청 (메일 발송)
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
@@ -175,7 +176,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error(
-      `[POST /api/auth/password-reset/request] 메일 발송 실패 — to=${email}`,
+      "[POST /api/auth/password-reset/request] 메일 발송 실패",
       error instanceof Error ? { message: error.message } : error,
     );
     // 토큰 무효화 (rate limit 소모 방지 + 유령 토큰 제거)
@@ -196,4 +197,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     data: { message: "パスワード変更リンクをメールで送信しました。" },
   });
+ } catch (error) {
+    console.error("[POST /api/auth/password-reset/request]", error);
+    return NextResponse.json(
+      { error: "パスワード初期化処理中にエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }
