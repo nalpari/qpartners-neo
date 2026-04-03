@@ -8,22 +8,12 @@ import {
   memberUpdateSchema,
   qspMemberDetailResponseSchema,
   qspUpdateResponseSchema,
+  STAT_CD_TO_STATUS,
+  STATUS_TO_STAT_CD,
+  USER_TYPE_LABEL,
 } from "@/lib/schemas/member";
 
 type Params = { params: Promise<{ id: string }> };
-
-/** QSP statCd → TO-BE status 매핑 */
-const STATUS_MAP: Record<string, string> = {
-  Y: "active",
-  N: "deleted",
-  W: "withdrawn",
-};
-
-/** TO-BE status → QSP statCd 매핑 */
-const STATUS_REVERSE_MAP: Record<string, string> = {
-  active: "Y",
-  deleted: "N",
-};
 
 // GET /api/admin/members/:id — 회원 상세정보
 export async function GET(request: NextRequest, { params }: Params) {
@@ -107,7 +97,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       userName: d.userNm ?? "",
       userNameKana: d.userNmKana ?? "",
       email: d.email ?? "",
-      userType: d.userTp ?? "",
+      userType: USER_TYPE_LABEL[d.userTp ?? ""] ?? d.userTp ?? "",
       userRole: d.authCd ?? "",
       companyName: d.compNm ?? "",
       companyNameKana: d.compNmKana ?? "",
@@ -121,7 +111,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       twoFactorEnabled: d.secAuthYn === "Y",
       loginNotification: d.loginNotiYn === "Y",
       attributeChangeNotification: d.attrChgNotiYn === "Y",
-      status: STATUS_MAP[d.statCd ?? ""] ?? d.statCd ?? "",
+      status: STAT_CD_TO_STATUS[d.statCd ?? ""] ?? d.statCd ?? "",
       newsRcptYn: d.newsRcptYn ?? "N",
       newsRcptDate: d.newsRcptDt ?? null,
       lastLoginAt: d.lastLoginDt ?? null,
@@ -262,7 +252,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
     if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
     if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgNotiYn = result.data.attributeChangeNotification ? "Y" : "N";
-    if (result.data.status !== undefined) updatePayload.statCd = STATUS_REVERSE_MAP[result.data.status] ?? result.data.status;
+    if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status] ?? result.data.status;
     if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
 
     let qspResponse: Response;

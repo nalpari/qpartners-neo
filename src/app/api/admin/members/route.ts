@@ -6,21 +6,9 @@ import { QSP_API } from "@/lib/config";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
+  STAT_CD_TO_STATUS,
+  USER_TYPE_LABEL,
 } from "@/lib/schemas/member";
-
-/** userTp → 화면표시 회원유형 매핑 */
-const USER_TYPE_LABEL: Record<string, string> = {
-  ADMIN: "管理者",
-  STORE: "販売店",
-  GENERAL: "一般",
-};
-
-/** statCd → 화면표시 상태 매핑 */
-const STATUS_LABEL: Record<string, string> = {
-  Y: "active",
-  N: "deleted",
-  W: "withdrawn",
-};
 
 // GET /api/admin/members — 회원 목록 (시공점 제외)
 export async function GET(request: NextRequest) {
@@ -118,7 +106,7 @@ export async function GET(request: NextRequest) {
       email: item.email ?? "",
       userType: USER_TYPE_LABEL[item.userTp ?? ""] ?? item.userTp ?? "",
       companyName: item.compNm ?? "",
-      status: STATUS_LABEL[item.statCd ?? ""] ?? item.statCd ?? "",
+      status: STAT_CD_TO_STATUS[item.statCd ?? ""] ?? item.statCd ?? "",
       lastLoginAt: item.lastLoginDt ?? null,
       createdAt: item.regDt ?? null,
     }));

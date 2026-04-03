@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+// ─── QSP statCd ↔ TO-BE status 매핑 (공용) ───
+
+/** QSP statCd → TO-BE status */
+export const STAT_CD_TO_STATUS: Record<string, string> = {
+  Y: "active",
+  N: "deleted",
+  W: "withdrawn",
+};
+
+/** TO-BE status → QSP statCd */
+export const STATUS_TO_STAT_CD: Record<string, string> = {
+  active: "Y",
+  deleted: "N",
+};
+
+/** QSP userTp → 화면표시 회원유형 레이블 */
+export const USER_TYPE_LABEL: Record<string, string> = {
+  ADMIN: "管理者",
+  STORE: "販売店",
+  GENERAL: "一般",
+};
+
 // ─── 회원 목록 쿼리 파라미터 ───
 
 export const memberListQuerySchema = z.object({
@@ -14,8 +36,11 @@ export type MemberListQuery = z.infer<typeof memberListQuerySchema>;
 
 // ─── 회원 수정 요청 ───
 
+/** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3) */
+const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"] as const;
+
 export const memberUpdateSchema = z.object({
-  userRole: z.string().optional(),
+  userRole: z.enum(assignableRoleValues).optional(),
   twoFactorEnabled: z.boolean().optional(),
   loginNotification: z.boolean().optional(),
   attributeChangeNotification: z.boolean().optional(),

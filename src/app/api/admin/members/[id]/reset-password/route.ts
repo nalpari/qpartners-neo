@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { sendMail } from "@/lib/mailer";
 import {
   passwordResetMailHtml,
@@ -24,6 +25,17 @@ export async function POST(request: NextRequest, { params }: Params) {
     const authResult = requireAdmin(request.headers);
     if (authResult instanceof NextResponse) return authResult;
     const { user: admin } = authResult;
+
+    // 1-a. Rate limit: 관리자 계정 탈취 시 남용 방어 (시간당 20건)
+    const forwarded = request.headers.get("x-forwarded-for");
+    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+    const rateLimitKey = ip ?? `admin:${admin.userId}`;
+    if (!checkRateLimit(`admin-pw-reset:${rateLimitKey}`, 20, 60 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+        { status: 429 },
+      );
+    }
 
     // 2. ID 파라미터 검증
     const { id: rawId } = await params;
@@ -117,7 +129,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     try {
       await prisma.$transaction([
         prisma.passwordResetToken.updateMany({
-          where: { userId: memberEmail, used: false },
+          where: { userType: validatedUserTp, userId: memberEmail, used: false },
           data: { used: true },
         }),
         prisma.passwordResetToken.create({
@@ -158,7 +170,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       await prisma.passwordResetToken.deleteMany({
         where: { token },
       }).catch((dbError: unknown) => {
-        console.error("[POST /api/admin/members/:id/reset-password] 토큰 롤백 실패:", dbError);
+        console.error("[POST /api/admin/members/:id/reset-password] 토큰 롤백 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
       });
       return NextResponse.json(
         { error: "メールの送信に失敗しました" },
