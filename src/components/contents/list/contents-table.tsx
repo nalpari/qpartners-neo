@@ -235,6 +235,13 @@ export function ContentsTable({
     const baseCols: ColDef<ContentListItem>[] = [
       ...categoryColumns,
       {
+        headerName: "정보유형",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
         headerName: "タイトル",
         field: "title",
         flex: categoryColumns.length > 0 ? 2 : 3,
@@ -245,7 +252,7 @@ export function ContentsTable({
       {
         headerName: "添付",
         field: "attachmentCount",
-        width: 60,
+        width: 90,
         cellRenderer: AttachmentCellRenderer,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
@@ -410,11 +417,14 @@ export function ContentsTable({
           {topBar}
 
           <div className="flex flex-col gap-6">
-            <DataGrid<ContentListItem>
-              columnDefs={columnDefs}
-              rowData={data}
-              className="contents-grid"
-            />
+            <div style={{ maxHeight: 800, overflow: "auto" }}>
+              <DataGrid<ContentListItem>
+                columnDefs={columnDefs}
+                rowData={data}
+                className="contents-grid"
+                maxHeight={0}
+              />
+            </div>
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
