@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] QSP API 호출 실패:", error);
     return NextResponse.json(
-      { error: "외부 인증 서버에 연결할 수 없습니다" },
+      { error: "外部認証サーバーに接続できません" },
       { status: 502 },
     );
   }
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/login] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
-      { error: "외부 인증 서버 오류가 발생했습니다" },
+      { error: "外部認証サーバーエラーが発生しました" },
       { status: 502 },
     );
   }
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
-      { error: "외부 인증 서버 응답을 처리할 수 없습니다" },
+      { error: "外部認証サーバーの応答を処理できません" },
       { status: 502 },
     );
   }
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     console.error("[POST /api/auth/login] QSP 응답 스키마 불일치:", parsed.error);
     return NextResponse.json(
-      { error: "외부 인증 서버 응답 형식이 올바르지 않습니다" },
+      { error: "外部認証サーバーの応答形式が正しくありません" },
       { status: 502 },
     );
   }
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
   // 4. 성공/실패 판별
   if (qsp.result.resultCode !== "S" || !qsp.data) {
     return NextResponse.json(
-      { error: "아이디 또는 비밀번호가 올바르지 않습니다" },
+      { error: "IDまたはパスワードが正しくありません" },
       { status: 401 },
     );
   }
@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] JWT 생성 실패:", error);
     return NextResponse.json(
-      { error: "인증 처리 중 서버 오류가 발생했습니다" },
+      { error: "認証処理中にサーバーエラーが発生しました" },
       { status: 500 },
     );
   }
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
  } catch (error) {
     console.error("[POST /api/auth/login]", error);
     return NextResponse.json(
-      { error: "로그인 처리 중 서버 오류가 발생했습니다" },
+      { error: "ログイン処理中にサーバーエラーが発生しました" },
       { status: 500 },
     );
   }

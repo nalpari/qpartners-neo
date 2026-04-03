@@ -5,8 +5,8 @@ import { userTpValues, authRoleValues } from "@/lib/schemas/common";
 // ─── QSP 로그인 요청 ───
 
 export const loginRequestSchema = z.object({
-  loginId: z.string().min(1, "로그인 ID는 필수입니다"),
-  pwd: z.string().min(1, "비밀번호는 필수입니다"),
+  loginId: z.string().min(1, "ログインIDは必須です"),
+  pwd: z.string().min(1, "パスワードは必須です"),
   userTp: z.enum(userTpValues).default("GENERAL"),
 });
 

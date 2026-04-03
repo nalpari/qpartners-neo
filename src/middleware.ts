@@ -54,7 +54,7 @@ export async function middleware(request: NextRequest) {
 
   if (!token) {
     return NextResponse.json(
-      { error: "인증이 필요합니다" },
+      { error: "認証が必要です" },
       { status: 401 },
     );
   }
@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     console.warn("[middleware] 토큰 검증 실패 — 만료 또는 서명 불일치");
     return NextResponse.json(
-      { error: "토큰이 만료되었거나 유효하지 않습니다" },
+      { error: "トークンが期限切れまたは無効です" },
       { status: 401 },
     );
   }
@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
     && !isTwoFactorPath(pathname)
     && !isPublicGetPath(pathname, request.method)) {
     return NextResponse.json(
-      { error: "2차 인증이 필요합니다" },
+      { error: "2段階認証が必要です" },
       { status: 403 },
     );
   }
