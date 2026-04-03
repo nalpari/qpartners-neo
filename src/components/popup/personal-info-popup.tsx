@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { z } from "zod";
 import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
@@ -19,7 +20,7 @@ export function PersonalInfoPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
 
-  const currentEmail = popupData.currentEmail as string | undefined;
+  const currentEmail = typeof popupData.currentEmail === "string" ? popupData.currentEmail : undefined;
   const hasExistingEmail = !!currentEmail;
 
   const [email, setEmail] = useState("");
@@ -51,8 +52,9 @@ export function PersonalInfoPopup() {
   // Design Ref: §4.2.1 — POST /api/auth/email/check 연동
   const handleEmailCheck = async () => {
     if (email.trim() === "") return;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    // 서버 Zod 스키마(z.string().email())와 동일한 검증 기준 적용
+    const emailValidation = z.string().email().safeParse(email);
+    if (!emailValidation.success) {
       setEmailCheckResult("invalid");
       return;
     }
@@ -76,31 +78,40 @@ export function PersonalInfoPopup() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const token = popupData.token as string | undefined;
-      let res;
+      const token = typeof popupData.token === "string" ? popupData.token : undefined;
 
-      if (token) {
-        // 비밀번호 리셋 링크 경유 → 토큰 기반
-        res = await api.post("/auth/password-reset/confirm", {
-          token,
-          newPassword,
-          confirmPassword,
-        });
-      } else {
-        // 최초 로그인 → 세션(JWT) 기반
-        res = await api.post("/auth/password-change", {
-          newPassword,
-          ...(email && !hasExistingEmail && { email }),
-        });
-      }
+      const res = token
+        ? await api.post("/auth/password-reset/confirm", {
+            token,
+            newPassword,
+            confirmPassword,
+          })
+        : await api.post("/auth/password-change", {
+            newPassword,
+            confirmPassword,
+            ...(email && !hasExistingEmail && { email }),
+          });
 
       // JWT 쿠키는 서버에서 자동 설정됨
       const userData = loginUserSchema.safeParse(res.data.data?.user);
       if (userData.success) {
         queryClient.setQueryData(["auth", "login-user-info"], userData.data);
+
+        // Design Ref: §4.1 — 저장 성공 후 2FA 필요 여부 확인
+        if (!userData.data.twoFactorVerified) {
+          closePopup();
+          const openPopup = usePopupStore.getState().openPopup;
+          openPopup("two-factor-auth", {
+            userId: userData.data.userId,
+            email: userData.data.email,
+            userTp: userData.data.userTp,
+          });
+          return;
+        }
       } else {
         console.warn("[PersonalInfo] ユーザーデータのパース失敗 — キャッシュ未設定:", userData.error);
       }
+
       try {
         localStorage.setItem(AUTH_FLAG_KEY, "1");
       } catch (storageErr) {
@@ -237,6 +248,7 @@ export function PersonalInfoPopup() {
               <div className="relative w-full">
                 <input
                   type={showNewPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="8文字以上入力してください"
@@ -270,6 +282,7 @@ export function PersonalInfoPopup() {
               <div className="relative w-full">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[6px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]"
