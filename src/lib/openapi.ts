@@ -2590,13 +2590,13 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       CreateInquiry: {
         type: "object",
-        required: ["companyName", "userName", "email", "title", "content"],
+        required: ["companyName", "userName", "email", "inquiryType", "title", "content"],
         properties: {
           companyName: { type: "string", maxLength: 255, example: "株式会社テスト" },
           userName: { type: "string", maxLength: 200, example: "田中太郎" },
           tel: { type: "string", maxLength: 20, nullable: true, example: "03-1234-5678" },
           email: { type: "string", format: "email", maxLength: 255, example: "test@example.com" },
-          inquiryType: { type: "string", maxLength: 100, nullable: true, example: "service" },
+          inquiryType: { type: "string", maxLength: 100, example: "service" },
           title: { type: "string", maxLength: 500, example: "サービスについて" },
           content: { type: "string", example: "お問い合わせ内容" },
         },
