@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
     // 6. JWT 재발급 — pwdInitYn 해소 + 최신 사용자 정보 반영
     let authRole: AuthRole;
     try {
-      authRole = await resolveAuthRole(user.userTp as Parameters<typeof resolveAuthRole>[0], loginId, detailData?.storeLvl ?? user.storeLvl ?? null);
+      authRole = await resolveAuthRole(user.userTp, loginId, detailData?.storeLvl ?? user.storeLvl ?? null);
     } catch (error) {
       console.error("[POST /api/auth/password-change] authRole 판별 실패, 기본값 사용:", error);
       authRole = user.userTp === "ADMIN" ? "ADMIN"
