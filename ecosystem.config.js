@@ -4,7 +4,7 @@ module.exports = {
             name: "qpartners-neo-dev",
             script: "node_modules/.bin/next",
             args: "dev -p 5010",
-            cwd: "/path/to/qpartners-neo",
+            cwd: "/home/development/apps/qpartners-neo",
             env: {
                 NODE_ENV: "development",
             },
@@ -13,7 +13,7 @@ module.exports = {
             name: "qpartners-neo-prod-1",
             script: "node_modules/.bin/next",
             args: "start -p 5000",
-            cwd: "/path/to/qpartners-neo",
+            cwd: "/home/production/apps/qpartners-neo",
             env: {
                 NODE_ENV: "production",
             },
@@ -22,7 +22,7 @@ module.exports = {
             name: "qpartners-neo-prod-2",
             script: "node_modules/.bin/next",
             args: "start -p 5001",
-            cwd: "/path/to/qpartners-neo",
+            cwd: "/home/production/apps/qpartners-neo",
             env: {
                 NODE_ENV: "production",
             },
