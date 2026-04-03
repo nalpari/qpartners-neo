@@ -25,7 +25,7 @@ function mapServerError(serverMsg: string): string {
   if (!match) {
     console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
   }
-  return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください";
+  return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
 }
 
 

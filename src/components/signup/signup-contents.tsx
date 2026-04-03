@@ -151,10 +151,9 @@ export function SignupContents() {
       console.error("[Signup] 会員登録失敗:", error);
       if (isAxiosError(error) && error.response) {
         const serverMsg = extractApiError(error);
+        if (serverMsg) console.warn("[Signup] サーバーメッセージ:", serverMsg);
         const status = error.response.status;
-        if (serverMsg) {
-          setSubmitError(serverMsg);
-        } else if (status === 409) {
+        if (status === 409) {
           setSubmitError("既に使用中のメールアドレスです");
         } else if (status === 400) {
           setSubmitError("入力内容を確認してください");
