@@ -86,7 +86,11 @@ export async function POST(request: NextRequest) {
 
   const parsed = qspLoginResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[POST /api/auth/login] QSP 응답 스키마 불일치:", parsed.error);
+    // PII 마스킹: email, pwd 등 민감 필드 제거 후 원본 로깅
+    const safeBody = typeof qspBody === "object" && qspBody !== null
+      ? JSON.stringify(qspBody, (k, v) => ["email", "pwd", "password"].includes(k) ? "[MASKED]" : v as unknown)
+      : String(qspBody);
+    console.error("[POST /api/auth/login] QSP 응답 스키마 불일치:", parsed.error, "원본:", safeBody);
     return NextResponse.json(
       { error: "外部認証サーバーの応答形式が正しくありません" },
       { status: 502 },
@@ -178,7 +182,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/login] authRole 판별 실패, 기본값 사용:", error);
     authRole = qsp.data.userTp === "ADMIN" ? "ADMIN"
-      : qsp.data.userTp === "STORE" ? (qsp.data.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE")
+      : qsp.data.userTp === "STORE" ? (qsp.data.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
       : qsp.data.userTp === "SEKO" ? "SEKO"
       : "GENERAL";
   }

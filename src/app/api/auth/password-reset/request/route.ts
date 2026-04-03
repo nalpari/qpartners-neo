@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
   if (sekoId) params.set("sekoId", sekoId);
 
   let userExists = false;
+  let resolvedLoginId: string | null = loginId ?? null;
   try {
     const qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
       method: "GET",
@@ -122,6 +123,14 @@ export async function POST(request: NextRequest) {
       );
     }
     userExists = parsed.data.result.resultCode === "S" && parsed.data.data != null;
+
+    // ADMIN/STORE: loginId≠email일 수 있으므로 userDetail 응답에서 userId(=loginId) 추출하여 토큰에 저장
+    if (userExists && !resolvedLoginId) {
+      const data = parsed.data.data as Record<string, unknown> | null;
+      if (data && typeof data.userId === "string") {
+        resolvedLoginId = data.userId;
+      }
+    }
   } catch (error) {
     console.error("[POST /api/auth/password-reset/request] QSP 회원조회 실패:", error);
     return NextResponse.json(
@@ -152,7 +161,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: userTp,
           userId: email,
-          loginId: loginId ?? null,
+          loginId: resolvedLoginId,
           token,
           expiresAt,
         },

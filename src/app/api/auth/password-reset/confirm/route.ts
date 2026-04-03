@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
     authRole = resetToken.userType === "ADMIN" ? "ADMIN"
-      : resetToken.userType === "STORE" ? (detailData?.storeLvl === "2" ? "2ND_STORE" : "1ST_STORE")
+      : resetToken.userType === "STORE" ? (detailData?.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
       : resetToken.userType === "SEKO" ? "SEKO"
       : "GENERAL";
   }

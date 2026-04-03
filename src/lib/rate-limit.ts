@@ -40,16 +40,17 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   if (store.size > MAX_STORE_SIZE) {
     console.warn(`[rate-limit] store size exceeded ${MAX_STORE_SIZE} (${store.size}), forcing cleanup`);
     cleanup(true);
-    // cleanup 후에도 초과 시 가장 오래된 엔트리부터 제거
+    // cleanup 후에도 초과 시 만료시간이 가장 빠른 엔트리부터 제거 (활성 엔트리 보호)
     if (store.size > MAX_STORE_SIZE) {
       const excess = store.size - MAX_STORE_SIZE;
+      const sorted = [...store.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
       let removed = 0;
-      for (const k of store.keys()) {
+      for (const [k] of sorted) {
         if (removed >= excess) break;
         store.delete(k);
         removed++;
       }
-      console.warn(`[rate-limit] evicted ${removed} oldest entries after cleanup`);
+      console.warn(`[rate-limit] evicted ${removed} entries (earliest-expiry first) — potential rate-limit bypass attempt`);
     }
   }
 
