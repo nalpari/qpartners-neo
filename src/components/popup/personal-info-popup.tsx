@@ -86,10 +86,9 @@ export function PersonalInfoPopup() {
             newPassword,
             confirmPassword,
           })
-        : await api.post("/auth/password-change", {
+        : await api.post("/auth/password-init", {
             newPassword,
             confirmPassword,
-            ...(email && !hasExistingEmail && { email }),
           });
 
       // JWT 쿠키는 서버에서 자동 설정됨
