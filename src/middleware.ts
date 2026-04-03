@@ -103,7 +103,7 @@ export async function middleware(request: NextRequest) {
     : "GENERAL";
   requestHeaders.set("X-User-Role", user.authRole ?? fallbackRole);
   if (user.deptNm) {
-    requestHeaders.set("X-User-Department", user.deptNm);
+    requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }
 
   return NextResponse.next({

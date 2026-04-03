@@ -38,7 +38,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
     userType: userType as UserInfo["userType"],
     userId,
     role: role as AuthRole,
-    department: headers.get("X-User-Department") ?? undefined,
+    department: headers.get("X-User-Department") ? decodeURIComponent(headers.get("X-User-Department")!) : undefined,
   };
 }
 
