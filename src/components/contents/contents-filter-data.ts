@@ -129,9 +129,9 @@ export const DEPARTMENT_OPTIONS = [
 // 관리자용 게시대상 옵션
 export const POST_TARGET_OPTIONS = [
   { value: "", label: "掲示対象" },
-  { value: "first_dealer", label: "1次販売店" },
-  { value: "second_dealer", label: "2次以降の販売店" },
-  { value: "installer", label: "施工店" },
+  { value: "first_store", label: "1次販売店" },
+  { value: "second_store", label: "2次以降の販売店" },
+  { value: "seko", label: "施工店" },
   { value: "general", label: "一般" },
   { value: "non_member", label: "非会員" },
 ];

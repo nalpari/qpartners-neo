@@ -7,9 +7,9 @@ export { idParamSchema } from "@/lib/schemas/common";
 const contentTargetSchema = z
   .object({
     targetType: z.enum([
-      "first_dealer",
-      "second_dealer",
-      "constructor",
+      "first_store",
+      "second_store",
+      "seko",
       "general",
       "non_member",
     ]),
@@ -54,7 +54,7 @@ export const listContentsQuerySchema = z.object({
       message: "pageSize must be 20, 50, or 100",
     })
     .default(20),
-  keyword: z.string().optional(),
+  keyword: z.string().max(100).optional(),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),
   targetType: z.string().optional(),
@@ -66,7 +66,7 @@ export const listContentsQuerySchema = z.object({
 export const downloadLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  keyword: z.string().optional(),
+  keyword: z.string().max(100).optional(),
 });
 
 // ─── Types ───
