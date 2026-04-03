@@ -1,6 +1,6 @@
 const prodRoot = process.env.APP_ROOT_PRODUCTION;
-if (!prodRoot && process.env.NODE_ENV === "production") {
-    console.error("[ecosystem] APP_ROOT_PRODUCTION 환경변수가 설정되지 않았습니다.");
+if (!prodRoot) {
+    console.warn("[ecosystem] APP_ROOT_PRODUCTION 환경변수 미설정 — __dirname 폴백 사용");
 }
 
 module.exports = {
