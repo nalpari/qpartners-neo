@@ -15,15 +15,7 @@ export type AuthRole = (typeof authRoleValues)[number];
 type UserTp = (typeof userTpValues)[number];
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
-const VALID_ROLES = new Set([
-  "super_admin",
-  "admin",
-  "first_dealer",
-  "second_dealer",
-  "constructor",
-  "general",
-  "non_member",
-]);
+const VALID_ROLES = new Set<string>(authRoleValues);
 
 export type UserInfo = {
   userType: (typeof userTpValues)[number];
@@ -52,7 +44,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
 
 /** 관리자 여부 (super_admin | admin) — isInternalUser와 동일 */
 export function isAdmin(role: string): boolean {
-  return role === "super_admin" || role === "admin";
+  return role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
 /** 사내 사용자 여부 — isAdmin의 alias */
@@ -86,7 +78,7 @@ export async function resolveAuthRole(
     case "ADMIN": {
       const entry = await prisma.codeDetail.findFirst({
         where: {
-          header: { headerCode: "ADMIN_ROLE" },
+          header: { headerCode: "ADMIN_ROLE", isActive: true },
           code: userId,
           isActive: true,
         },
@@ -111,6 +103,14 @@ export async function resolveAuthRole(
   }
 }
 
+/** authRole(대문자) → ContentTarget.targetType(소문자) 매핑 */
+const AUTH_ROLE_TO_TARGET: Record<string, string> = {
+  "1ST_STORE": "first_dealer",
+  "2ND_STORE": "second_dealer",
+  "SEKO": "constructor",
+  "GENERAL": "general",
+};
+
 /** 콘텐츠 접근 가능 여부 — 게시대상 + 기간 접근제어 */
 export function canAccessContent(
   user: UserInfo | null,
@@ -119,11 +119,11 @@ export function canAccessContent(
   // 사내 사용자는 모든 콘텐츠 접근 가능
   if (user && isInternalUser(user.role)) return true;
 
-  const role = user?.role ?? "non_member";
+  const targetType = user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member";
   const now = new Date();
 
   return targets.some((t) => {
-    if (t.targetType !== role) return false;
+    if (t.targetType !== targetType) return false;
     if (t.startAt && now < t.startAt) return false;
     if (t.endAt && now > t.endAt) return false;
     return true;
@@ -135,12 +135,12 @@ export function canModifyContent(
   user: UserInfo,
   content: { userId: string; authorDepartment: string | null },
 ): boolean {
-  if (user.role === "super_admin") {
+  if (user.role === "SUPER_ADMIN") {
     // 부문이 양쪽 다 미지정이면 매칭하지 않음 (명시적 부문 필요)
     if (!user.department || !content.authorDepartment) return false;
     return user.department === content.authorDepartment;
   }
-  if (user.role === "admin") {
+  if (user.role === "ADMIN") {
     return user.userId === content.userId;
   }
   return false;

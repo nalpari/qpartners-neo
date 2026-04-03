@@ -89,7 +89,18 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  return NextResponse.next();
+  // JWT 검증된 사용자 정보를 X-User-* 헤더로 주입 — route handler에서 getUserFromHeaders로 참조
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("X-User-Type", user.userTp);
+  requestHeaders.set("X-User-Id", user.userId);
+  requestHeaders.set("X-User-Role", user.authRole ?? "GENERAL");
+  if (user.deptNm) {
+    requestHeaders.set("X-User-Department", user.deptNm);
+  }
+
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
 /**
