@@ -92,7 +92,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const memberEmail = parsed.data.data.email;
     const memberUserTp = parsed.data.data.userTp;
     if (!memberEmail) {
-      console.warn("[POST /api/admin/members/:id/reset-password] 회원 이메일 없음 — userId:", rawId);
+      console.warn("[POST /api/admin/members/:id/reset-password] 회원 이메일 없음");
       return NextResponse.json(
         { error: "会員のメールアドレスが登録されていません" },
         { status: 400 },
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    console.log(`[POST /api/admin/members/:id/reset-password] 비밀번호 초기화 메일 발송 완료 — userId: ${rawId}, adminId: ${admin.userId}`);
+    console.log("[POST /api/admin/members/:id/reset-password] 비밀번호 초기화 메일 발송 완료");
 
     return NextResponse.json({
       data: { message: "パスワード変更リンクをメールで送信しました。" },

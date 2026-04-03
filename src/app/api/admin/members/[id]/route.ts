@@ -132,7 +132,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       updatedBy: d.updBy ?? null,
     };
 
-    console.log(`[GET /api/admin/members/:id] 회원 상세 조회 완료 — userId: ${d.userId}`);
+    console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
 
     return NextResponse.json({ data: mapped });
   } catch (error: unknown) {
@@ -317,7 +317,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    console.log(`[PUT /api/admin/members/:id] 회원 정보 수정 완료 — userId: ${rawId}, updBy: ${user.userId}`);
+    console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료");
 
     return NextResponse.json({
       data: { message: "会員情報を更新しました" },
