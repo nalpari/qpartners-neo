@@ -25,8 +25,8 @@ function toTargetArray(row: {
   const targets: string[] = [];
   if (row.targetSuperAdmin) targets.push("super_admin");
   if (row.targetAdmin) targets.push("admin");
-  if (row.targetFirstDealer) targets.push("1st_store");
-  if (row.targetSecondDealer) targets.push("2nd_store");
+  if (row.targetFirstDealer) targets.push("first_store");
+  if (row.targetSecondDealer) targets.push("second_store");
   if (row.targetConstructor) targets.push("seko");
   if (row.targetGeneral) targets.push("general");
   return targets;
@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
     const targetMap: Record<string, string> = {
       super_admin: "targetSuperAdmin",
       admin: "targetAdmin",
-      "1st_store": "targetFirstDealer",
-      "2nd_store": "targetSecondDealer",
+      first_store: "targetFirstDealer",
+      second_store: "targetSecondDealer",
       seko: "targetConstructor",
       general: "targetGeneral",
     };
