@@ -67,7 +67,18 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
         console.error("[LoginContents] localStorage 쓰기 실패:", storageErr);
       }
 
-      if (!userData.twoFactorVerified) {
+      // Design Ref: §4.1 — requirePersonalInfo → 2FA → 홈 이동 순서
+      // NOTE: loginUserSchema에 requirePersonalInfo 미정의 — 서버 응답 raw 객체에서 직접 참조
+      const requirePersonalInfo = "requirePersonalInfo" in userData && userData.requirePersonalInfo === true;
+
+      if (requirePersonalInfo) {
+        // 회원정보 설정 필요: pwdInitYn === "Y" 또는 STORE + email 없음
+        openPopup("personal-info", {
+          currentEmail: userData.email,
+          userId: userData.userId,
+          userTp: userData.userTp,
+        });
+      } else if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지
         openPopup("two-factor-auth", { userId: userData.userId, email: userData.email, userTp: TAB_TO_USERTP[activeTab] });
       } else {
