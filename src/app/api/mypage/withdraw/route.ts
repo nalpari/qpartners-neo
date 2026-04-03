@@ -14,6 +14,12 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       );
     }
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
+      );
+    }
 
     // 일반회원만 탈퇴 가능
     if (user.userTp !== "GENERAL") {

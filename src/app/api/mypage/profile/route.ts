@@ -18,6 +18,12 @@ export async function GET(request: NextRequest) {
         { status: 401 },
       );
     }
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
+      );
+    }
 
     // 시공점은 별도 API (seko-info)
     if (user.userTp === "SEKO") {
@@ -145,6 +151,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         { error: "認証が必要です" },
         { status: 401 },
+      );
+    }
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
       );
     }
 

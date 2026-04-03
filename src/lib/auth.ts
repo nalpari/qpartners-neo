@@ -20,7 +20,7 @@ const VALID_ROLES = new Set<string>(authRoleValues);
 export type UserInfo = {
   userType: (typeof userTpValues)[number];
   userId: string;
-  role: string;
+  role: AuthRole;
   department?: string;
 };
 
@@ -37,7 +37,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   return {
     userType: userType as UserInfo["userType"],
     userId,
-    role,
+    role: role as AuthRole,
     department: headers.get("X-User-Department") ?? undefined,
   };
 }
@@ -88,11 +88,11 @@ export async function resolveAuthRole(
     }
     case "STORE":
       if (storeLvl === null) {
-        console.warn(`[resolveAuthRole] STORE user with null storeLvl (userId: ${userId}) — defaulting to 2ND_STORE (최소 권한)`);
+        console.warn("[resolveAuthRole] STORE user with null storeLvl — defaulting to 2ND_STORE (최소 권한)");
         return "2ND_STORE";
       }
       if (storeLvl !== "1" && storeLvl !== "2") {
-        console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" (userId: ${userId}) — 2ND_STORE로 처리 (최소 권한)`);
+        console.error(`[resolveAuthRole] 예상하지 못한 storeLvl: "${storeLvl}" — 2ND_STORE로 처리 (최소 권한)`);
         return "2ND_STORE";
       }
       return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";

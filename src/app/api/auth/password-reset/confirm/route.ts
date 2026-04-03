@@ -134,8 +134,11 @@ export async function POST(request: NextRequest) {
     userTp: resetToken.userType,
   });
 
-  let loginId = resetToken.userId; // 기본값: email (GENERAL)
+  let loginId = resetToken.loginId ?? resetToken.userId; // 토큰에 loginId 있으면 우선, 없으면 email 폴백
   let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
+  if (resetToken.loginId && resetToken.userType === "STORE") {
+    detailParams.set("loginId", resetToken.loginId);
+  }
   try {
     const detailRes = await fetch(
       `${QSP_API.userDetail}?${detailParams.toString()}`,

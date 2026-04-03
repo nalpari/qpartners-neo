@@ -74,8 +74,9 @@ export const loginUserSchema = qspLoginUserSchema
     statCd: true,
   })
   .extend({
-    // optional + default: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
-    authRole: z.enum(authRoleValues).optional().default("GENERAL"),
+    // optional: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
+    // TODO: 과도기 제거 — 전체 사용자 재로그인 후 optional 제거하고 required로 전환
+    authRole: z.enum(authRoleValues).optional(),
     twoFactorVerified: z.boolean(),
   });
 

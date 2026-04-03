@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
       });
       if (activeCode) {
         const days = Number(activeCode.code);
-        if (Number.isFinite(days) && days > 0) {
+        if (Number.isSafeInteger(days) && days > 0) {
           validityDays = days;
         } else {
           console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
@@ -159,7 +159,12 @@ export async function POST(request: NextRequest) {
             requireTwoFactor = true;
           } else {
             const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
-            requireTwoFactor = new Date() >= expiresAt;
+            if (Number.isNaN(expiresAt.getTime())) {
+              console.error("[POST /api/auth/login] 2FA 만료시각 계산 실패:", { secAuthDt, validityDays });
+              requireTwoFactor = true;
+            } else {
+              requireTwoFactor = Date.now() >= expiresAt.getTime();
+            }
           }
         }
       }

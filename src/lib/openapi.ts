@@ -1646,7 +1646,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                         corporateNo: { type: "string", nullable: true },
                         newsRcptYn: { type: "string", enum: ["Y", "N"] },
                         newsRcptDate: { type: "string", nullable: true },
-                        withdrawAvailable: { type: "boolean", description: "GENERAL 사용자에게만 포함" },
+                        withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
                       },
                     },
                   },

@@ -14,6 +14,12 @@ export async function GET(request: NextRequest) {
         { status: 401 },
       );
     }
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
+      );
+    }
 
     // 시공점 회원 전용
     if (user.userTp !== "SEKO") {

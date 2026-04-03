@@ -236,6 +236,7 @@ model PasswordResetToken {
   id        Int                                @id @default(autoincrement())
   userType  qp_password_reset_tokens_user_type @map("user_type")
   userId    String                             @map("user_id") @db.VarChar(255)
+  loginId   String?                            @map("login_id") @db.VarChar(255)
   token     String                             @unique @db.VarChar(255)
   expiresAt DateTime                           @map("expires_at")
   used      Boolean                            @default(false)

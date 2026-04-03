@@ -17,6 +17,12 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       );
     }
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
+      );
+    }
 
     // 유저당 5분간 5회 제한 (비밀번호 brute-force 방지)
     if (!checkRateLimit(`chg-pwd:${user.userId}`, 5, 5 * 60 * 1000)) {
@@ -105,7 +111,7 @@ export async function POST(request: NextRequest) {
         parsed.data.result.resultMsg,
       );
       return NextResponse.json(
-        { error: parsed.data.result.resultMsg || "パスワード変更に失敗しました" },
+        { error: "パスワード変更に失敗しました" },
         { status: 400 },
       );
     }

@@ -1,4 +1,4 @@
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, jwtVerify, errors as joseErrors } from "jose";
 
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -44,9 +44,11 @@ export async function verifyToken(token: string): Promise<LoginUser | null> {
       throw error;
     }
     // JWT 검증 실패(만료, 서명 불일치 등)는 정상 흐름 — 로깅 불필요
-    const msg = error instanceof Error ? error.message : "";
     const isExpectedJwtError =
-      msg.includes("JWS") || msg.includes("signature") || msg.includes("exp");
+      error instanceof joseErrors.JWTExpired ||
+      error instanceof joseErrors.JWSSignatureVerificationFailed ||
+      error instanceof joseErrors.JWSInvalid ||
+      error instanceof joseErrors.JWTClaimValidationFailed;
     if (!isExpectedJwtError) {
       console.error("[verifyToken] unexpected error:", error);
     }

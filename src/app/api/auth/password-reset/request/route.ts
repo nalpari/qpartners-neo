@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
   //        이메일 기반 rate limit(2-b)이 최종 방어선 역할을 함.
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-  const ipKey = ip ?? "unknown-ip";
+  // IP 없으면 email 기반 fallback key 사용 — 공용 버킷으로 전체 차단되는 문제 방지
+  const ipKey = ip ?? `account:${email}`;
   if (!checkRateLimit(`pw-reset:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
     return NextResponse.json(
       { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     );
   }
   if (!ip) {
-    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — 공유 rate limit 적용");
+    console.warn("[POST /api/auth/password-reset/request] IP 헤더 없음 — email 기반 rate limit 적용");
   }
 
   // 2-b. Rate limiting — 동일 이메일 시간당 3건 제한 (토큰 생성 기준)
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: userTp,
           userId: email,
+          loginId: loginId ?? null,
           token,
           expiresAt,
         },
@@ -179,13 +181,11 @@ export async function POST(request: NextRequest) {
       "[POST /api/auth/password-reset/request] 메일 발송 실패",
       error instanceof Error ? { message: error.message } : error,
     );
-    // 토큰 무효화 (rate limit 소모 방지 + 유령 토큰 제거)
-    await prisma.passwordResetToken.updateMany({
-      where: { token, used: false },
-      data: { used: true },
+    // 토큰 삭제 (rate limit 미소모 — count 쿼리에서 제외)
+    await prisma.passwordResetToken.deleteMany({
+      where: { token },
     }).catch((dbError: unknown) => {
-      // 토큰 무효화 실패 → orphan 토큰 잔류 (rate limit 카운트 소모됨)
-      console.error("[POST /api/auth/password-reset/request] 토큰 무효화 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
+      console.error("[POST /api/auth/password-reset/request] 토큰 롤백 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
     });
     return NextResponse.json(
       { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },
