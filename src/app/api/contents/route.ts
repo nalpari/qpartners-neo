@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
@@ -62,18 +62,15 @@ export async function GET(request: NextRequest) {
             : []),
         ],
       }),
-      // 게시대상 필터: 비사내 사용자는 자기 targetType에 해당 + 기간 내만
+      // 사내 사용자: targetType 쿼리 파라미터로 선택 필터링 (관리 목적)
+      ...(internal && targetType && {
+        targets: { some: { targetType } },
+      }),
+      // 비사내 사용자: 서버 측에서 역할 기반으로 targetType 강제 결정 (쿼리 파라미터 무시)
       ...(!internal && {
         targets: {
           some: {
-            targetType: (targetType ??
-              user?.role ??
-              "non_member") as
-              | "first_store"
-              | "second_store"
-              | "seko"
-              | "general"
-              | "non_member",
+            targetType: user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member",
             AND: [
               {
                 OR: [

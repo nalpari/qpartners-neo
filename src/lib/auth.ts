@@ -8,10 +8,11 @@
 
 import { NextResponse } from "next/server";
 
-import { userTpValues, authRoleValues } from "@/lib/schemas/common";
+import { userTpValues, authRoleValues, targetTypeValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
 
 export type AuthRole = (typeof authRoleValues)[number];
+export type TargetType = (typeof targetTypeValues)[number];
 type UserTp = (typeof userTpValues)[number];
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
@@ -104,7 +105,7 @@ export async function resolveAuthRole(
 }
 
 /** authRole(대문자) → ContentTarget.targetType(소문자) 매핑 */
-const AUTH_ROLE_TO_TARGET: Record<string, string> = {
+export const AUTH_ROLE_TO_TARGET: Partial<Record<AuthRole, TargetType>> = {
   "1ST_STORE": "first_store",
   "2ND_STORE": "second_store",
   "SEKO": "seko",
