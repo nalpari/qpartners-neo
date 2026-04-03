@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     if (!query.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: query.error.issues },
+        { error: "入力内容に不備があります", issues: query.error.issues },
         { status: 400 },
       );
     }

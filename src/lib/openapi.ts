@@ -1376,6 +1376,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
+          "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("서버 에러"),
         },
       },
