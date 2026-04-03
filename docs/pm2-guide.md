@@ -15,13 +15,18 @@ npm install -g pm2
 프로젝트 루트의 `ecosystem.config.js` 파일에서 dev/prod 환경을 분리하여 관리한다.
 
 ```js
+const prodRoot = process.env.APP_ROOT_PRODUCTION;
+if (!prodRoot && process.env.NODE_ENV === "production") {
+  console.error("[ecosystem] APP_ROOT_PRODUCTION 환경변수가 설정되지 않았습니다.");
+}
+
 module.exports = {
   apps: [
     {
       name: "qpartners-neo-dev",
       script: "node_modules/next/dist/bin/next",
       args: "dev --webpack -p 5010",
-      cwd: process.env.APP_ROOT || process.cwd(),
+      cwd: process.env.APP_ROOT_DEVELOPMENT || __dirname,
       env: {
         NODE_ENV: "development",
       },
@@ -30,7 +35,7 @@ module.exports = {
       name: "qpartners-neo-prod-1",
       script: "node_modules/next/dist/bin/next",
       args: "start -p 5000",
-      cwd: process.env.APP_ROOT || process.cwd(),
+      cwd: prodRoot || __dirname,
       env: {
         NODE_ENV: "production",
       },
@@ -39,7 +44,7 @@ module.exports = {
       name: "qpartners-neo-prod-2",
       script: "node_modules/next/dist/bin/next",
       args: "start -p 5001",
-      cwd: process.env.APP_ROOT || process.cwd(),
+      cwd: prodRoot || __dirname,
       env: {
         NODE_ENV: "production",
       },
@@ -48,7 +53,7 @@ module.exports = {
 };
 ```
 
-> **참고**: `APP_ROOT` 환경변수를 설정하면 배포 경로를 지정할 수 있다. 미설정 시 `process.cwd()`가 사용된다.
+> **참고**: 환경별로 `APP_ROOT_DEVELOPMENT` / `APP_ROOT_PRODUCTION` 환경변수를 설정하여 배포 경로를 지정한다. 미설정 시 `__dirname` (ecosystem.config.js 파일 위치)이 사용된다. 프로덕션 환경에서 `APP_ROOT_PRODUCTION` 미설정 시 경고 로그가 출력된다.
 
 ## 기동 방법
 

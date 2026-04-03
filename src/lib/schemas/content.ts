@@ -1,18 +1,13 @@
 import { z } from "zod";
 
 export { idParamSchema } from "@/lib/schemas/common";
+import { targetTypeValues } from "@/lib/schemas/common";
 
 // ─── Content ───
 
 const contentTargetSchema = z
   .object({
-    targetType: z.enum([
-      "first_store",
-      "second_store",
-      "seko",
-      "general",
-      "non_member",
-    ]),
+    targetType: z.enum(targetTypeValues),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
   })
@@ -57,7 +52,7 @@ export const listContentsQuerySchema = z.object({
   keyword: z.string().max(100).optional(),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),
-  targetType: z.string().optional(),
+  targetType: z.enum(targetTypeValues).optional(),
   department: z.string().optional(),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
