@@ -1,19 +1,26 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { getUserFromHeaders } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { downloadLogsQuerySchema } from "@/lib/schemas/content";
 
 // GET /api/mypage/download-logs — 다운로드 기록 목록 조회
 export async function GET(request: NextRequest) {
   try {
-    const user = getUserFromHeaders(request.headers);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json(
-        { error: "인증이 필요합니다" },
+        { error: "認証が必要です" },
         { status: 401 },
+      );
+    }
+
+    if (!user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "2段階認証が必要です" },
+        { status: 403 },
       );
     }
 
@@ -30,7 +37,7 @@ export async function GET(request: NextRequest) {
     const { page, pageSize, keyword } = query.data;
 
     const where = {
-      userType: user.userType,
+      userType: user.userTp,
       userId: user.userId,
       ...(keyword && {
         OR: [
@@ -89,7 +96,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/mypage/download-logs] 다운로드 기록 목록 조회 실패", error);
     return NextResponse.json(
-      { error: "Failed to fetch download logs" },
+      { error: "ダウンロード履歴の取得に失敗しました" },
       { status: 500 },
     );
   }
