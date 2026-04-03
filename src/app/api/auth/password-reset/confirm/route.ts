@@ -59,6 +59,7 @@ async function rollbackAndRespond(
 
 // POST /api/auth/password-reset/confirm — 비밀번호 변경 + 자동 로그인
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
@@ -301,4 +302,11 @@ export async function POST(request: NextRequest) {
   });
 
   return response;
+ } catch (error) {
+    console.error("[POST /api/auth/password-reset/confirm]", error);
+    return NextResponse.json(
+      { error: "パスワード変更処理中にサーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }
