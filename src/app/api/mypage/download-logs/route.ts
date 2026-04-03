@@ -28,8 +28,9 @@ export async function GET(request: NextRequest) {
     const query = downloadLogsQuerySchema.safeParse(params);
 
     if (!query.success) {
+      console.warn("[GET /api/mypage/download-logs] 입력값 검증 실패", query.error.issues);
       return NextResponse.json(
-        { error: "入力内容に不備があります", issues: query.error.issues },
+        { error: "入力内容に不備があります" },
         { status: 400 },
       );
     }

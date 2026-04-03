@@ -1348,6 +1348,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                   properties: {
                     data: {
                       type: "object",
+                      required: ["totalCount", "page", "pageSize", "keyword", "list"],
                       properties: {
                         totalCount: { type: "integer" },
                         page: { type: "integer" },
@@ -1357,6 +1358,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "array",
                           items: {
                             type: "object",
+                            required: ["id", "downloadedAt", "contentId", "contentTitle", "attachmentId", "fileName", "isExpired"],
                             properties: {
                               id: { type: "integer" },
                               downloadedAt: { type: "string", format: "date-time" },
@@ -1375,6 +1377,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("入力内容に不備があります"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("서버 에러"),
