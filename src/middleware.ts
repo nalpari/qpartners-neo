@@ -95,7 +95,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set("X-User-Id", user.userId);
   // TODO: 과도기 제거 — authRole 없는 토큰이 0건이 되면 optional 제거
   if (!user.authRole) {
-    console.warn("[middleware] 과도기 JWT — authRole 없음, GENERAL 폴백 적용 (userId:", user.userId, ")");
+    console.warn("[middleware] 과도기 JWT — authRole 없음, GENERAL 폴백 적용 (userTp:", user.userTp, ")");
   }
   requestHeaders.set("X-User-Role", user.authRole ?? "GENERAL");
   if (user.deptNm) {

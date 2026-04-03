@@ -42,6 +42,21 @@ globs:
 - 회원 존재 여부를 응답으로 구분 불가하게 설계 (동일 200 반환)
 - rate limit은 토큰 생성이 아닌 **요청 자체 기준**으로 적용 (IP 기반 + 이메일 기반)
 
+#### Rate Limit IP 누락 대응
+- IP 헤더(`x-forwarded-for`, `x-real-ip`)가 없을 때 `"unknown-ip"` 공용 버킷 사용 금지
+- email 등 계정 기반 fallback key 사용: `ip ?? \`account:\${email}\``
+- IP 없는 경우 rate limit 한도를 더 엄격하게 설정
+
+#### DB 쿼리 복합 조건 누락 방지
+- 동일 이메일이 여러 userType에 존재 가능 → `where`에 `userType` 조건 필수 포함
+- `count`, `updateMany`, `deleteMany` 등 범위 쿼리 시 특히 주의
+```typescript
+// ❌ email만으로 조회 — 다른 userType 토큰도 영향
+await prisma.passwordResetToken.count({ where: { userId: email } });
+// ✅ userType 포함
+await prisma.passwordResetToken.count({ where: { userId: email, userType: userTp } });
+```
+
 #### QSP 에러 메시지 직접 노출 금지
 - QSP 내부 에러(SQL 에러 등)가 클라이언트에 전달될 수 있음
 - 일반화된 에러 메시지로 변환, 원본은 `console.error`에만 기록
@@ -52,13 +67,16 @@ globs:
 #### 최소 권한 원칙
 - 권한 판별 시 null/예외값은 **더 낮은 권한**으로 폴백 (fail-closed)
 - 미지의 userTp 값은 GENERAL 폴백 금지 → 파싱 실패로 처리
+- authRole 폴백 분기에서도 동일 원칙 적용: STORE + storeLvl 불명 → `2ND_STORE`(하위), `1ST_STORE`(상위) 아님
+- resolveAuthRole 본체와 catch 폴백의 권한 매핑이 반드시 일치해야 함
 
 ---
 
 ### Zod 검증 패턴
 
-#### 외부 API 응답 검증 필수
+#### 외부 API 응답 및 DB 값 검증 필수
 - QSP 등 외부 API 응답에 `as` 타입 단언 금지
+- DB에서 가져온 enum 문자열에도 `as` 캐스팅 금지 → Zod `safeParse`로 검증
 - 반드시 Zod `safeParse`로 검증 → 실패 시 502 반환
 ```typescript
 const parsed = schema.safeParse(qspBody);
@@ -125,6 +143,20 @@ try { body = await request.json(); } catch (error) {
 - 문자열 매칭(`error.message.includes("...")`) 금지 — `instanceof` 사용
 - 어떤 환경변수가 누락됐는지 에러 메시지에 명시
 
+#### Route Handler 최상위 try-catch 필수
+- 모든 route handler의 export 함수에 최상위 try-catch 래핑 필수
+- 누락 시 예외 발생 시 스택 트레이스가 클라이언트에 유출됨
+```typescript
+export async function POST(request: NextRequest) {
+  try {
+    // ... 비즈니스 로직 ...
+  } catch (error) {
+    console.error("[POST /api/path]", error);
+    return NextResponse.json({ error: "サーバーエラーが発生しました" }, { status: 500 });
+  }
+}
+```
+
 #### 미구현 기능
 - 아무것도 저장하지 않으면서 200 성공 반환 금지
 - 미구현 기능은 501 응답 + 명확한 메시지
@@ -158,6 +190,9 @@ new Date("2026-04-01T10:30:00+09:00")
 ### 로그 규칙
 
 - API 로그 메시지는 **한국어**, 유저 대면 메시지는 **일본어**
+- **Zod 스키마 에러 메시지도 유저 대면 메시지** — 반드시 일본어로 작성
+  - `z.string().min(1, "ログインIDは必須です")` ✅
+  - `z.string().min(1, "로그인 ID는 필수입니다")` ❌
 - 로그 prefix: `[METHOD /api/path]` 형식
 - 에러 로그에 디버깅 컨텍스트 포함 (status, userTp 등) — 단, PII 제외
 - 환경변수 미설정 시 `console.warn`으로 경고 (silent fallback 금지)
