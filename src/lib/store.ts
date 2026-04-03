@@ -4,12 +4,18 @@ interface AppState {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  prefillEmail: string;
+  setPrefillEmail: (email: string) => void;
+  clearPrefillEmail: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: false,
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  prefillEmail: "",
+  setPrefillEmail: (email) => set({ prefillEmail: email }),
+  clearPrefillEmail: () => set({ prefillEmail: "" }),
 }));
 
 type PopupType = "password-reset" | "personal-info" | "two-factor-auth" | "zipcode-search" | "signup-complete" | "password-change" | "withdraw" | "member-detail" | "notice-form" | "permission-menu" | "terms" | null;

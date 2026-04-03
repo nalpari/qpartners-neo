@@ -3,67 +3,45 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import { z } from "zod";
+import api from "@/lib/axios";
+import { loginUserSchema } from "@/lib/schemas/auth";
+import { validatePasswordPolicy } from "@/lib/schemas/signup";
+import { performLogout } from "@/lib/auth-client";
+import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, InputBox } from "@/components/common";
 
-type EmailCheckResult = "ok" | "fail" | null;
-
-const CLOSE_ANIMATION_MS = 200;
-
 export function PersonalInfoPopup() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const currentEmail = popupData.currentEmail as string | undefined;
+
+  const currentEmail = typeof popupData.currentEmail === "string" ? popupData.currentEmail : undefined;
   const hasExistingEmail = !!currentEmail;
 
-  const [isClosing, setIsClosing] = useState(false);
   const [email, setEmail] = useState("");
   const [emailChecked, setEmailChecked] = useState(false);
-  const [emailCheckResult, setEmailCheckResult] =
-    useState<EmailCheckResult>(null);
+  const [emailCheckResult, setEmailCheckResult] = useState<"ok" | "fail" | "invalid" | "error" | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Design Ref: §4.2.4 — validatePasswordPolicy 재사용
+  const isPasswordValid = validatePasswordPolicy(newPassword);
+
+  // Design Ref: §3.5 — 저장 버튼 활성화 조건
   const isFormValid =
-    (hasExistingEmail ||
-      (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
-    newPassword.length >= 8 &&
-    (() => {
-      let types = 0;
-      if (/[a-zA-Z]/.test(newPassword)) types++;
-      if (/[0-9]/.test(newPassword)) types++;
-      if (/[^a-zA-Z0-9]/.test(newPassword)) types++;
-      return types >= 2;
-    })() &&
+    (hasExistingEmail || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
+    isPasswordValid &&
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
-
-  const resetForm = () => {
-    setEmail("");
-    setEmailChecked(false);
-    setEmailCheckResult(null);
-    setNewPassword("");
-    setConfirmPassword("");
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
-  };
-
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      closePopup();
-      resetForm();
-      setIsClosing(false);
-    }, CLOSE_ANIMATION_MS);
-  };
-
-  const handleCancel = () => {
-    handleClose();
-    router.push("/login");
-  };
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
@@ -71,29 +49,110 @@ export function PersonalInfoPopup() {
     setEmailCheckResult(null);
   };
 
-  const handleEmailCheck = () => {
+  // Design Ref: §4.2.1 — POST /api/auth/email/check 연동
+  const handleEmailCheck = async () => {
     if (email.trim() === "") return;
-
-    // TODO: API 호출 (POST /api/members/check-email)
-    setEmailChecked(true);
-    setEmailCheckResult("ok");
+    // 서버 Zod 스키마(z.string().email())와 동일한 검증 기준 적용
+    const emailValidation = z.string().email().safeParse(email);
+    if (!emailValidation.success) {
+      setEmailCheckResult("invalid");
+      return;
+    }
+    try {
+      await api.post("/auth/email/check", { email });
+      setEmailChecked(true);
+      setEmailCheckResult("ok");
+    } catch (err) {
+      console.error("[PersonalInfo] メール重複チェック失敗:", err);
+      if (isAxiosError(err) && err.response?.status === 409) {
+        setEmailCheckResult("fail");
+      } else {
+        setEmailCheckResult("error");
+      }
+    }
   };
 
-  const handleSave = () => {
-    if (!isFormValid) return;
+  // Design Ref: §4.2.2 — 호출 경로에 따라 API 분기
+  const handleSave = async () => {
+    if (!isFormValid || isSubmitting) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const token = typeof popupData.token === "string" ? popupData.token : undefined;
 
-    // TODO: API 호출 (PUT /api/members/personal-info)
-    handleClose();
-    openAlert({ type: "alert", message: "保存されました。" });
+      const res = token
+        ? await api.post("/auth/password-reset/confirm", {
+            token,
+            newPassword,
+            confirmPassword,
+          })
+        : await api.post("/auth/password-change", {
+            newPassword,
+            confirmPassword,
+            ...(email && !hasExistingEmail && { email }),
+          });
+
+      // JWT 쿠키는 서버에서 자동 설정됨
+      const userData = loginUserSchema.safeParse(res.data.data?.user);
+      if (userData.success) {
+        queryClient.setQueryData(["auth", "login-user-info"], userData.data);
+
+        // Design Ref: §4.1 — 저장 성공 후 2FA 필요 여부 확인
+        if (!userData.data.twoFactorVerified) {
+          closePopup();
+          const openPopup = usePopupStore.getState().openPopup;
+          openPopup("two-factor-auth", {
+            userId: userData.data.userId,
+            email: userData.data.email,
+            userTp: userData.data.userTp,
+          });
+          return;
+        }
+      } else {
+        console.warn("[PersonalInfo] ユーザーデータのパース失敗 — キャッシュ未設定:", userData.error);
+      }
+
+      try {
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+      } catch (storageErr) {
+        console.error("[PersonalInfo] localStorage 쓰기 失敗:", storageErr);
+      }
+      dispatchAuthChange();
+      closePopup();
+      openAlert({ type: "alert", message: "保存されました。" });
+      router.replace("/");
+    } catch (err) {
+      console.error("[PersonalInfo] 保存失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        const data = err.response.data as Record<string, unknown> | undefined;
+        const serverMsg = typeof data?.error === "string"
+          ? data.error
+          : "保存に失敗しました。しばらくしてからお試しください。";
+        setError(serverMsg);
+      } else {
+        setError("サーバーに接続できません。");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Design Ref: §4.2.3 — 취소 시 로그아웃 + 로그인 이동
+  const handleCancel = async () => {
+    try {
+      await performLogout(queryClient);
+    } catch (err) {
+      console.error("[PersonalInfo] ログアウト失敗:", err);
+    }
+    closePopup();
+    router.replace("/login");
   };
 
   const labelClass =
     "font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]";
 
   return (
-    <div
-      className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
-    >
+    <div className="popup-overlay">
       <div
         className="popup-container"
         role="dialog"
@@ -109,7 +168,7 @@ export function PersonalInfoPopup() {
           </h2>
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={() => { void handleCancel(); }}
             className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-[#E97923] cursor-pointer"
             aria-label="閉じる"
           >
@@ -134,14 +193,12 @@ export function PersonalInfoPopup() {
                 <span className="text-[#FF1A1A]">*</span>
               </label>
               {hasExistingEmail ? (
-                /* 이메일 있는 경우: read-only 표시, 중복체크 버튼 숨김 */
                 <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
                   <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
                     {currentEmail}
                   </span>
                 </div>
               ) : (
-                /* 이메일 없는 경우: 입력 + 중복체크 */
                 <div className="flex flex-col gap-2 w-full">
                   <div className="flex flex-col lg:flex-row gap-2 items-start w-full">
                     <InputBox
@@ -152,7 +209,7 @@ export function PersonalInfoPopup() {
                     />
                     <Button
                       variant="outline"
-                      onClick={handleEmailCheck}
+                      onClick={() => { void handleEmailCheck(); }}
                       className="w-full lg:w-[110px] shrink-0"
                     >
                       重複チェック
@@ -163,9 +220,19 @@ export function PersonalInfoPopup() {
                       使用可能なメールアドレスです。
                     </p>
                   )}
+                  {emailCheckResult === "invalid" && (
+                    <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a]">
+                      正しくないメールアドレスです。
+                    </p>
+                  )}
                   {emailCheckResult === "fail" && (
                     <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a]">
                       既に使用中のメールです.
+                    </p>
+                  )}
+                  {emailCheckResult === "error" && (
+                    <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a]">
+                      メールチェック中にエラーが発生しました。
                     </p>
                   )}
                 </div>
@@ -181,20 +248,17 @@ export function PersonalInfoPopup() {
               <div className="relative w-full">
                 <input
                   type={showNewPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="6桁以上入力してください"
+                  placeholder="8文字以上入力してください"
                   className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[6px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#999]"
                 />
                 <button
                   type="button"
                   onClick={() => setShowNewPassword((prev) => !prev)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
-                  aria-label={
-                    showNewPassword
-                      ? "パスワードを非表示"
-                      : "パスワードを表示"
-                  }
+                  aria-label={showNewPassword ? "パスワードを非表示" : "パスワードを表示"}
                 >
                   <Image
                     src={showNewPassword ? "/asset/images/contents/default_eye_show.svg" : "/asset/images/contents/default_eye_hide.svg"}
@@ -205,7 +269,7 @@ export function PersonalInfoPopup() {
                 </button>
               </div>
               <p className="font-['Noto_Sans_JP'] font-normal text-[13px] lg:text-[14px] leading-[1.5] text-[#1060b4]">
-                ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                ※英大文字、英小文字、数字を組み合わせて8文字以上に設定
               </p>
             </div>
 
@@ -218,6 +282,7 @@ export function PersonalInfoPopup() {
               <div className="relative w-full">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full h-[42px] px-4 pr-12 bg-white border border-[#EBEBEB] rounded-[6px] font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]"
@@ -226,11 +291,7 @@ export function PersonalInfoPopup() {
                   type="button"
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
-                  aria-label={
-                    showConfirmPassword
-                      ? "パスワードを非表示"
-                      : "パスワードを表示"
-                  }
+                  aria-label={showConfirmPassword ? "パスワードを非表示" : "パスワードを表示"}
                 >
                   <Image
                     src={showConfirmPassword ? "/asset/images/contents/default_eye_show.svg" : "/asset/images/contents/default_eye_hide.svg"}
@@ -243,17 +304,24 @@ export function PersonalInfoPopup() {
             </div>
           </div>
 
+          {/* 에러 메시지 */}
+          {error && (
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] text-center">
+              {error}
+            </p>
+          )}
+
           {/* 하단 버튼 */}
           <div className="popup-buttons--inline">
-            <Button variant="secondary" onClick={handleCancel}>
+            <Button variant="secondary" onClick={() => { void handleCancel(); }}>
               キャンセル
             </Button>
             <Button
               variant="primary"
-              onClick={handleSave}
-              disabled={!isFormValid}
+              onClick={() => { void handleSave(); }}
+              disabled={!isFormValid || isSubmitting}
             >
-              保存
+              {isSubmitting ? "保存中..." : "保存"}
             </Button>
           </div>
         </div>
