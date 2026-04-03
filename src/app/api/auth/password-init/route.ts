@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
       authRole = user.userTp === "ADMIN" ? "ADMIN"
-        : user.userTp === "STORE" ? (detailData?.storeLvl === "1" || user.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
+        : user.userTp === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
         : user.userTp === "SEKO" ? "SEKO"
         : "GENERAL";
     }
