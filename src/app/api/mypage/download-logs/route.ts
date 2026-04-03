@@ -5,7 +5,7 @@ import { getUserFromHeaders } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { downloadLogsQuerySchema } from "@/lib/schemas/content";
 
-// GET /api/download-logs — 다운로드 기록 조회
+// GET /api/mypage/download-logs — 다운로드 기록 목록 조회
 export async function GET(request: NextRequest) {
   try {
     const user = getUserFromHeaders(request.headers);
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       }),
     };
 
-    const [logs, total] = await Promise.all([
+    const [logs, totalCount] = await Promise.all([
       prisma.downloadLog.findMany({
         where,
         include: {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const now = new Date();
-    const data = logs.map((log) => {
+    const list = logs.map((log) => {
       const targets = log.content.targets;
       const isExpired =
         log.content.status !== "published" ||
@@ -68,26 +68,26 @@ export async function GET(request: NextRequest) {
 
       return {
         id: log.id,
+        downloadedAt: log.downloadedAt,
         contentId: log.contentId,
         contentTitle: log.content.title,
-        contentStatus: log.content.status,
+        attachmentId: log.attachmentId,
         fileName: log.attachment.fileName,
-        downloadedAt: log.downloadedAt,
         isExpired,
       };
     });
 
     return NextResponse.json({
-      data,
-      meta: {
-        total,
+      data: {
+        totalCount,
         page,
         pageSize,
-        totalPages: Math.ceil(total / pageSize),
+        keyword: keyword ?? null,
+        list,
       },
     });
   } catch (error) {
-    console.error("[GET /api/download-logs]", error);
+    console.error("[GET /api/mypage/download-logs] 다운로드 기록 목록 조회 실패", error);
     return NextResponse.json(
       { error: "Failed to fetch download logs" },
       { status: 500 },

@@ -1329,10 +1329,10 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/download-logs": {
+    "/mypage/download-logs": {
       get: {
         tags: ["DownloadLog"],
-        summary: "다운로드 이력 조회 (관리자)",
+        summary: "다운로드 기록 목록 조회",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
@@ -1346,13 +1346,36 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { type: "array", items: { type: "object" } },
-                    meta: { type: "object" },
+                    data: {
+                      type: "object",
+                      properties: {
+                        totalCount: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        keyword: { type: "string", nullable: true },
+                        list: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              id: { type: "integer" },
+                              downloadedAt: { type: "string", format: "date-time" },
+                              contentId: { type: "integer" },
+                              contentTitle: { type: "string" },
+                              attachmentId: { type: "integer" },
+                              fileName: { type: "string" },
+                              isExpired: { type: "boolean" },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
             },
           },
+          "401": errorResponse("인증 필요"),
           "500": errorResponse("서버 에러"),
         },
       },
