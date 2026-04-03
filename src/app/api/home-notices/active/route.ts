@@ -19,11 +19,11 @@ export async function GET(request: NextRequest) {
       switch (userType) {
         case "ADMIN":
           // super_admin은 양쪽 모두, admin은 targetAdmin만
-          if (userRole === "super_admin") {
+          if (userRole === "SUPER_ADMIN") {
             return [{ targetSuperAdmin: true }, { targetAdmin: true }];
           }
           return [{ targetAdmin: true }];
-        case "DEALER":
+        case "STORE":
           return [{ targetFirstDealer: true }, { targetSecondDealer: true }];
         case "SEKO":
           return [{ targetConstructor: true }];
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/home-notices/active]", error);
     return NextResponse.json(
-      { error: "Failed to fetch active notices" },
+      { error: "お知らせの取得に失敗しました。" },
       { status: 500 },
     );
   }

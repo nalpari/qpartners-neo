@@ -1,5 +1,15 @@
+import { userTpValues } from "@/lib/schemas/common";
+
 export const VALID_TABS = ["dealer", "installer", "general"] as const;
 export type TabType = (typeof VALID_TABS)[number];
+
+export type UserTp = (typeof userTpValues)[number];
+
+export const TAB_TO_USERTP: Record<TabType, UserTp> = {
+  dealer: "STORE",
+  installer: "SEKO",
+  general: "GENERAL",
+};
 
 export const SAVED_ID_KEY = "savedLoginId";
 export const SAVED_TAB_KEY = "savedLoginTab";

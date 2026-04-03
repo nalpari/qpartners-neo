@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from "openapi-types";
+import { userTpValues } from "@/lib/schemas/common";
 
 const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   description,
@@ -23,7 +24,7 @@ export const openApiSpec: OpenAPIV3.Document = {
   info: {
     title: "Q.PARTNERS API",
     version: "1.0.0",
-    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지, 콘텐츠 관리",
+    description: "Q.PARTNERS REST API — 인증, 공통코드, 카테고리, 메뉴, 권한, 홈화면공지, 콘텐츠, 마이페이지 관리",
   },
   servers: [{ url: "/api", description: "Local API" }],
 
@@ -39,6 +40,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "HomeNotice", description: "홈화면 공지 관리" },
     { name: "Content", description: "콘텐츠 관리 (CRUD + 첨부파일)" },
     { name: "DownloadLog", description: "다운로드 이력 조회" },
+    { name: "MyPage", description: "마이페이지 (프로필/비밀번호/탈퇴/시공점)" },
   ],
 
   paths: {
@@ -53,8 +55,8 @@ export const openApiSpec: OpenAPIV3.Document = {
 | 유형 | ID | PW | userTp |
 |------|-----|------|--------|
 | 관리자 | 1301011 | 1234 | ADMIN |
-| 1차 판매점 | T01 | 1234 | DEALER |
-| 2차 판매점 | 201T01 | 1234 | DEALER |
+| 1차 판매점 | T01 | 1234 | STORE |
+| 2차 판매점 | 201T01 | 1234 | STORE |
 | 일반 | test1 | 1234 | GENERAL |`,
         requestBody: {
           required: true,
@@ -197,7 +199,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 이메일 존재 여부와 관계없이 동일한 응답을 반환 (보안).",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시에도 동일 200 응답 (이메일 열거 공격 방지).",
         requestBody: {
           required: true,
           content: {
@@ -217,7 +219,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        message: { type: "string", example: "비밀번호 변경 링크가 이메일로 발송되었습니다." },
+                        message: { type: "string", example: "パスワード変更リンクをメールで送信しました。" },
                       },
                     },
                   },
@@ -233,7 +235,9 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "500": errorResponse("서버 오류"),
+          "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
+          "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
+          "502": errorResponse("외부 서버 연결 실패"),
         },
       },
     },
@@ -1606,6 +1610,236 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+
+    // ─── MyPage ───
+    "/mypage/profile": {
+      get: {
+        tags: ["MyPage"],
+        summary: "프로필 조회",
+        description: "JWT에서 사용자 정보 추출 후 회원유형별 QSP API 조회",
+        responses: {
+          "200": {
+            description: "프로필 정보",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userType: { type: "string", enum: [...userTpValues] },
+                        sei: { type: "string" },
+                        mei: { type: "string" },
+                        seiKana: { type: "string" },
+                        meiKana: { type: "string" },
+                        email: { type: "string" },
+                        compNm: { type: "string" },
+                        compNmKana: { type: "string" },
+                        zipcode: { type: "string" },
+                        address1: { type: "string" },
+                        address2: { type: "string" },
+                        telNo: { type: "string" },
+                        fax: { type: "string" },
+                        department: { type: "string", nullable: true },
+                        jobTitle: { type: "string", nullable: true },
+                        corporateNo: { type: "string", nullable: true },
+                        newsRcptYn: { type: "string", enum: ["Y", "N"] },
+                        newsRcptDate: { type: "string", nullable: true },
+                        withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("施工店会員は別途API使用 / メール情報なし"),
+          "401": errorResponse("인증 필요"),
+          "404": errorResponse("ユーザー情報なし"),
+          "500": errorResponse("内部エラー"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+      put: {
+        tags: ["MyPage"],
+        summary: "프로필 수정",
+        description: "회원유형별 필수/수정 가능 항목 차별화, QSP API 호출",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sei", "mei", "seiKana", "meiKana", "compNm", "zipcode", "address1", "telNo", "newsRcptYn"],
+                properties: {
+                  sei: { type: "string", maxLength: 50 },
+                  mei: { type: "string", maxLength: 50 },
+                  seiKana: { type: "string", maxLength: 50 },
+                  meiKana: { type: "string", maxLength: 50 },
+                  compNm: { type: "string", maxLength: 100 },
+                  compNmKana: { type: "string", maxLength: 100 },
+                  zipcode: { type: "string", maxLength: 10 },
+                  address1: { type: "string", maxLength: 255 },
+                  address2: { type: "string", maxLength: 255 },
+                  telNo: { type: "string", maxLength: 100 },
+                  fax: { type: "string", maxLength: 100 },
+                  department: { type: "string", maxLength: 50 },
+                  jobTitle: { type: "string", maxLength: 50 },
+                  corporateNo: { type: "string", maxLength: 50 },
+                  newsRcptYn: { type: "string", enum: ["Y", "N"] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "401": errorResponse("인증 필요"),
+          "500": errorResponse("内部エラー"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+    "/mypage/change-password": {
+      post: {
+        tags: ["MyPage"],
+        summary: "비밀번호 변경",
+        description: "QSP userPwdChg API 호출 (chgType=C)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["currentPwd", "newPwd", "confirmPwd"],
+                properties: {
+                  currentPwd: { type: "string" },
+                  newPwd: { type: "string", minLength: 8 },
+                  confirmPwd: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "변경 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("현재 비밀번호 불일치 또는 정책 위반"),
+          "401": errorResponse("인증 필요"),
+          "429": errorResponse("요청 횟수 초과 (5분간 5회 제한)"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+    "/mypage/withdraw": {
+      post: {
+        tags: ["MyPage"],
+        summary: "회원탈퇴 (일반회원만)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["reason"],
+                properties: {
+                  reason: { type: "string", maxLength: 1000 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "탈퇴 완료 (JWT 쿠키 삭제)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("일반회원만 탈퇴 가능"),
+        },
+      },
+    },
+    "/mypage/seko-info": {
+      get: {
+        tags: ["MyPage"],
+        summary: "시공점 시공ID 정보 조회",
+        description: "AS-IS Seko User Info API 프록시. 시공점 전용.",
+        responses: {
+          "200": {
+            description: "시공점 정보",
+            content: { "application/json": { schema: { type: "object" } } },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("시공점 회원 전용"),
+          "501": errorResponse("미구현"),
+        },
+      },
+    },
+    "/mypage/seko-file": {
+      get: {
+        tags: ["MyPage"],
+        summary: "시공점 첨부파일 다운로드",
+        description: "AS-IS Seko File Download API 프록시.",
+        parameters: [
+          {
+            name: "fileType",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["RECEIPT", "CERT1", "CERT2"] },
+          },
+        ],
+        responses: {
+          "200": { description: "파일 다운로드" },
+          "400": errorResponse("잘못된 fileType"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("시공점 회원 전용"),
+          "501": errorResponse("미구현"),
+        },
+      },
+    },
   },
 
   components: {
@@ -1668,7 +1902,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1681,7 +1915,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
@@ -1697,7 +1931,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           pwd: { type: "string", example: "1234", description: "비밀번호" },
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             default: "GENERAL",
             description: "사용자 유형",
           },
@@ -1716,7 +1950,9 @@ export const openApiSpec: OpenAPIV3.Document = {
           authCd: { type: "string", nullable: true, example: "NORMAL" },
           storeLvl: { type: "string", nullable: true, description: "판매점 레벨 (1=1차, 2=2차)" },
           statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
+          authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"], description: "세부 권한코드 — 프론트 접근 제어 기준" },
           twoFactorVerified: { type: "boolean", description: "2FA 검증 상태 (true=완료/불필요, false=미완료)" },
+          pwdInitYn: { type: "string", enum: ["Y", "N"], nullable: true, description: "비밀번호 초기화 여부 — Y면 회원정보 설정 팝업 표시 (p.12)" },
         },
       },
       SignupRequest: {
@@ -1753,13 +1989,13 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           userTp: {
             type: "string",
-            enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"],
+            enum: [...userTpValues],
             example: "GENERAL",
             description: "사용자 유형",
           },
-          loginId: { type: "string", description: "로그인 ID (선택)" },
-          email: { type: "string", format: "email", example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
-          sekoId: { type: "string", description: "시공점 ID (선택)" },
+          loginId: { type: "string", description: "로그인 ID (STORE 필수, 그 외 선택)" },
+          email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
+          sekoId: { type: "string", description: "시공점 ID (SEKO 선택 — QSP는 이메일만으로도 시공점 조회 가능)" },
         },
       },
       PasswordResetVerify: {
@@ -1774,7 +2010,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         required: ["token", "newPassword", "confirmPassword"],
         properties: {
           token: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000", description: "초기화 토큰" },
-          newPassword: { type: "string", minLength: 8, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
+          newPassword: { type: "string", minLength: 8, maxLength: 100, example: "1q2w3e4R!", description: "새 비밀번호 (Uppercase + Lowercase + Number, min 8)" },
           confirmPassword: { type: "string", example: "1q2w3e4R!", description: "새 비밀번호 확인" },
         },
       },
@@ -2094,7 +2330,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           endAt: { type: "string", format: "date-time" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
-          userType: { type: "string", enum: ["ADMIN", "DEALER", "SEKO", "GENERAL"] },
+          userType: { type: "string", enum: [...userTpValues] },
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },

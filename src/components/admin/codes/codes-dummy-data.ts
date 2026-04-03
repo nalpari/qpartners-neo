@@ -41,7 +41,7 @@ export const DUMMY_HEADERS: CodeHeaderItem[] = [
 
 export const DUMMY_DETAILS: CodeDetailItem[] = [
   // MEMBER_TYPE
-  { id: "101", headerId: "1", headerCode: "MEMBER_TYPE", code: "DEALER", displayCode: "01", codeName: "販売店会員", codeNameEtc: "BtoB", relCode1: "", relCode2: "", relNum1: "", sortOrder: 1, isActive: "Y" },
+  { id: "101", headerId: "1", headerCode: "MEMBER_TYPE", code: "STORE", displayCode: "01", codeName: "販売店会員", codeNameEtc: "BtoB", relCode1: "", relCode2: "", relNum1: "", sortOrder: 1, isActive: "Y" },
   { id: "102", headerId: "1", headerCode: "MEMBER_TYPE", code: "INSTALLER", displayCode: "02", codeName: "施工店会員", codeNameEtc: "BtoB", relCode1: "", relCode2: "", relNum1: "", sortOrder: 2, isActive: "Y" },
   { id: "103", headerId: "1", headerCode: "MEMBER_TYPE", code: "GENERAL", displayCode: "03", codeName: "一般会員", codeNameEtc: "BtoC", relCode1: "", relCode2: "", relNum1: "", sortOrder: 3, isActive: "Y" },
 
