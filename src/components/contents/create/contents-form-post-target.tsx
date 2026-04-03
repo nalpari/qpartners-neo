@@ -5,12 +5,12 @@ import { Checkbox, DatePicker } from "@/components/common";
 /** Figma 기준 행/열 배치 순서 */
 const POST_TARGET_ROWS = [
   [
-    { key: "firstDealer", label: "一次点" },
-    { key: "installer", label: "施工店" },
-    { key: "nonMember", label: "非会員" },
+    { key: "first_dealer", label: "一次点" },
+    { key: "constructor", label: "施工店" },
+    { key: "non_member", label: "非会員" },
   ],
   [
-    { key: "secondDealer", label: "2次点以下" },
+    { key: "second_dealer", label: "2次点以下" },
     { key: "general", label: "一般会員" },
     null, // 빈 셀
   ],

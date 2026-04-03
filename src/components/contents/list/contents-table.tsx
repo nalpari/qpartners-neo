@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
@@ -15,7 +16,7 @@ import {
 import type { MobileCardField } from "@/components/common";
 import { Spinner } from "@/components/common/spinner";
 import { useIsMobile } from "@/hooks/use-media-query";
-import type { ContentListItem } from "./contents-contents";
+import type { ContentListItem, CategoryNode } from "./contents-contents";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -54,14 +55,48 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
+/** 컨텐츠의 모든 첨부파일을 순차 다운로드 */
+async function downloadAllAttachments(contentId: number) {
+  try {
+    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
+    const attachments = res.data.data.attachments;
+    if (!attachments || attachments.length === 0) return;
+
+    for (const file of attachments) {
+      const link = document.createElement("a");
+      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      // 브라우저 다운로드 큐 충돌 방지
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } catch (err) {
+    console.error("[Contents] 添付ファイルダウンロード失敗:", err);
+  }
+}
+
+let _pcDownloading = false;
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
   if (!params.data || params.data.attachmentCount === 0) return null;
+  const contentId = params.data.id;
+
+  const handleClick = () => {
+    if (_pcDownloading) return;
+    _pcDownloading = true;
+    void downloadAllAttachments(contentId).finally(() => {
+      _pcDownloading = false;
+    });
+  };
+
   return (
     <div className="flex items-center justify-center w-full">
       <button
         type="button"
         aria-label="添付ファイルダウンロード"
         className="cursor-pointer"
+        onClick={handleClick}
       >
         <Image
           src="/asset/images/layout/download_icon.svg"
@@ -97,10 +132,26 @@ function renderMobileTitle(item: ContentListItem) {
   );
 }
 
-function renderAttachmentAction(item: ContentListItem) {
+let _moDownloading = false;
+function MobileAttachmentButton({ item }: { item: ContentListItem }) {
   if (item.attachmentCount === 0) return null;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (_moDownloading) return;
+    _moDownloading = true;
+    void downloadAllAttachments(item.id).finally(() => {
+      _moDownloading = false;
+    });
+  };
+
   return (
-    <div className="flex items-center px-1 py-[3px] shrink-0">
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex items-center px-1 py-[3px] shrink-0 cursor-pointer"
+      aria-label="添付ファイルダウンロード"
+    >
       <Image
         src="/asset/images/layout/download_icon.svg"
         alt="添付ファイル"
@@ -108,12 +159,22 @@ function renderAttachmentAction(item: ContentListItem) {
         height={18}
         unoptimized
       />
-    </div>
+    </button>
   );
 }
 
+/** 게시대상 targetType → 표시명 매핑 */
+const TARGET_TYPE_LABELS: Record<string, string> = {
+  first_dealer: "1次販売店",
+  second_dealer: "2次以降の販売店",
+  constructor: "施工店",
+  general: "一般",
+  non_member: "非会員",
+};
+
 interface ContentsTableProps {
   isInternal?: boolean;
+  categories?: CategoryNode[];
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
@@ -123,6 +184,7 @@ interface ContentsTableProps {
 
 export function ContentsTable({
   isInternal = false,
+  categories = [],
   data,
   meta,
   isLoading,
@@ -142,33 +204,48 @@ export function ContentsTable({
     onPageSizeChange(Number(value));
   };
 
-  // 카테고리를 콤마 구분 텍스트로 표시
-  const getCategoryText = (item: ContentListItem) =>
-    item.categories.map((c) => c.name).join(", ");
-
-  // 게시대상 텍스트
-  const getTargetText = (item: ContentListItem) =>
-    item.targets.map((t) => t.targetType).join(", ");
+  // 자식 카테고리 ID → 부모 그룹 코드 매핑 (카테고리 트리에서 빌드)
+  const categoryGroupMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const parent of categories) {
+      for (const child of parent.children) {
+        map.set(child.id, parent.categoryCode);
+      }
+    }
+    return map;
+  }, [categories]);
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
+    // 8개 카테고리 그룹 컬럼 생성 (카테고리가 있을 때만)
+    const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
+      headerName: parent.name,
+      valueGetter: (params: { data?: ContentListItem }) =>
+        params.data
+          ? params.data.categories
+              .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
+              .map((c) => c.name)
+              .join(", ")
+          : "",
+      flex: 1,
+      minWidth: 90,
+      headerClass: "ag-header-cell-center",
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+    }));
+
     const baseCols: ColDef<ContentListItem>[] = [
-      {
-        headerName: "カテゴリ",
-        valueGetter: (params) => getCategoryText(params.data!),
-        flex: 1.5,
-        headerClass: "ag-header-cell-center",
-      },
+      ...categoryColumns,
       {
         headerName: "タイトル",
         field: "title",
-        width: 498,
+        flex: categoryColumns.length > 0 ? 2 : 3,
+        minWidth: 200,
         cellRenderer: TitleCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "添付",
         field: "attachmentCount",
-        flex: 0.5,
+        width: 60,
         cellRenderer: AttachmentCellRenderer,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
@@ -177,6 +254,7 @@ export function ContentsTable({
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
+        minWidth: 90,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         valueFormatter: (params) => formatDate(params.value),
@@ -185,6 +263,7 @@ export function ContentsTable({
         headerName: "更新日",
         field: "updatedAt",
         flex: 1,
+        minWidth: 90,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         valueFormatter: (params) => params.value ? formatDate(params.value) : "",
@@ -195,8 +274,12 @@ export function ContentsTable({
       baseCols.push(
         {
           headerName: "掲示対象",
-          valueGetter: (params) => getTargetText(params.data!),
-          width: 136,
+          valueGetter: (params) =>
+            params.data
+              ? params.data.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", ")
+              : "",
+          flex: 1,
+          minWidth: 100,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         },
@@ -204,23 +287,42 @@ export function ContentsTable({
           headerName: "担当部門",
           field: "authorDepartment",
           flex: 1,
+          minWidth: 90,
           headerClass: "ag-header-cell-center",
+          cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
           valueFormatter: (params) => params.value ?? "",
+        },
+        {
+          headerName: "最終確認者",
+          field: "approverLevel" as keyof ContentListItem,
+          flex: 1,
+          minWidth: 90,
+          headerClass: "ag-header-cell-center",
+          cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+          valueFormatter: () => "",
+          // TODO: 공통코드 매핑 필요 — 백엔드에서 approverLevel 목록 API 응답에 추가 후 구현
         },
       );
     }
 
     return baseCols;
-  }, [isInternal]);
+  }, [isInternal, categories, categoryGroupMap]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
+    // 카테고리 그룹별 필드
+    const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
+      label: parent.name,
+      key: "categories" as keyof ContentListItem,
+      render: (item: ContentListItem) =>
+        item.categories
+          .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
+          .map((c) => c.name)
+          .join(", "),
+      ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
+    }));
+
     const base: MobileCardField<ContentListItem>[] = [
-      {
-        label: "カテゴリ",
-        key: "categories" as keyof ContentListItem,
-        render: (item) => getCategoryText(item),
-        action: renderAttachmentAction,
-      },
+      ...categoryFields,
       {
         label: "タイトル",
         key: "title",
@@ -243,18 +345,23 @@ export function ContentsTable({
         {
           label: "掲示対象",
           key: "targets" as keyof ContentListItem,
-          render: (item) => getTargetText(item),
+          render: (item) => item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", "),
         },
         {
           label: "担当部門",
           key: "authorDepartment",
           render: (item) => item.authorDepartment ?? "",
         },
+        {
+          label: "最終確認者",
+          key: "id" as keyof ContentListItem,
+          render: () => "", // TODO: 공통코드 매핑
+        },
       );
     }
 
     return base;
-  }, [isInternal]);
+  }, [isInternal, categories, categoryGroupMap]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });

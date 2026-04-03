@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
@@ -34,8 +34,13 @@ interface CategoryNode {
 export type { CategoryNode, SearchFilters };
 
 export function ContentsContents() {
-  const queryClient = useQueryClient();
-  const user = queryClient.getQueryData<LoginUser | null>(["auth", "login-user-info"]);
+  // 헤더와 동일한 queryKey로 캐시된 사용자 정보를 리액티브하게 구독
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null, // 헤더에서 이미 fetch — 캐시만 구독
+    staleTime: Infinity,
+    enabled: false, // 직접 fetch하지 않음, 캐시만 읽기
+  });
   // 사내회원 = ADMIN (슈퍼관리자 + 관리자) → 게시대상/담당부문/관리자컬럼/등록버튼 노출
   const isInternal = user?.userTp === "ADMIN";
 
@@ -102,6 +107,7 @@ export function ContentsContents() {
       />
       <ContentsTable
         isInternal={isInternal}
+        categories={categories}
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}
         isLoading={isLoading}

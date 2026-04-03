@@ -162,8 +162,8 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
       .filter((t) => t.checked)
       .map((t) => ({
         targetType: t.key,
-        startAt: t.startDate?.toISOString() ?? null,
-        endAt: t.endDate?.toISOString() ?? null,
+        ...(t.startDate && { startAt: t.startDate.toISOString() }),
+        ...(t.endDate && { endAt: t.endDate.toISOString() }),
       }));
 
     const requestBody = {
@@ -211,6 +211,12 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
       router.push(`/contents/${savedId}`, { transitionTypes: ["fade"] });
     } catch (error) {
       console.error("[Contents] 保存失敗:", error);
+      // TODO: 디버깅용 — 추후 제거
+      if (error && typeof error === "object" && "response" in error) {
+        const axiosErr = error as { response?: { data?: unknown } };
+        console.error("[Contents] サーバー応答:", JSON.stringify(axiosErr.response?.data, null, 2));
+      }
+      console.error("[Contents] リクエストボディ:", JSON.stringify(requestBody, null, 2));
       openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
     } finally {
       setIsSubmitting(false);
