@@ -27,6 +27,7 @@ const PUBLIC_GET_PATTERNS = [
 const TWO_FACTOR_PATHS = [
   "/api/auth/two-factor/send",
   "/api/auth/two-factor/verify",
+  "/api/auth/password-init",    // 최초 로그인 비밀번호 변경
   "/api/auth/logout",
 ];
 

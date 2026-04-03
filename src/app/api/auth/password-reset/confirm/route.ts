@@ -190,7 +190,19 @@ export async function POST(request: NextRequest) {
     console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
   }
 
-  // 5. QSP 비밀번호 변경 API 호출 (chgType=I)
+  // 5. userType 검증 — QSP 호출 전에 수행 (실패 시 비밀번호 변경 방지)
+  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
+  if (!userTpParsed.success) {
+    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
+    return rollbackAndRespond(token,
+      "サーバーエラーが発生しました",
+      "サーバーエラーが発生しました",
+      500,
+    );
+  }
+  const validUserTp = userTpParsed.data;
+
+  // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
   try {
     qspResponse = await fetch(QSP_API.passwordChange, {
@@ -250,18 +262,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
+  // 7. 자동 로그인 — JWT 발행 + 쿠키 설정
   // 비밀번호 변경은 이미 완료됨 — resolveAuthRole 실패로 전체 응답을 실패시키면 안 됨
-  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
-  if (!userTpParsed.success) {
-    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
-    return NextResponse.json(
-      { error: "サーバーエラーが発生しました" },
-      { status: 500 },
-    );
-  }
-  const validUserTp = userTpParsed.data;
-
   let authRole: AuthRole;
   try {
     authRole = await resolveAuthRole(validUserTp, loginId, detailData?.storeLvl ?? null);

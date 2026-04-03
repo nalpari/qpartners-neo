@@ -53,7 +53,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. rate limit — 유저당 5분간 5회
+    // 2. pwdInitYn 가드 — 최초 로그인 비밀번호 설정 전용 엔드포인트
+    if (user.pwdInitYn !== "Y") {
+      return NextResponse.json(
+        { error: "パスワード初期化が必要な状態ではありません" },
+        { status: 403 },
+      );
+    }
+
+    // 3. rate limit — 유저당 5분간 5회
     if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
@@ -61,7 +69,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Request body 파싱 + Zod 검증
+    // 4. Request body 파싱 + Zod 검증
     let body: unknown;
     try {
       body = await request.json();
@@ -87,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     const { newPassword } = result.data;
 
-    // 4. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
+    // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
     const detailParams = new URLSearchParams({
       accsSiteCd: "QPARTNERS",
       email: user.email ?? "",
@@ -144,7 +152,7 @@ export async function POST(request: NextRequest) {
       console.warn("[POST /api/auth/password-init] GENERAL userDetail 조회 실패 — JWT 기존 세션 데이터로 진행");
     }
 
-    // 5. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
+    // 6. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
     let qspResponse: Response;
     try {
       qspResponse = await fetch(QSP_API.passwordChange, {
@@ -196,7 +204,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. JWT 재발급 — pwdInitYn 해소 + 최신 사용자 정보 반영
+    // 7. JWT 재발급 — pwdInitYn 해소 + 최신 사용자 정보 반영
     let authRole: AuthRole;
     try {
       authRole = await resolveAuthRole(user.userTp, loginId, detailData?.storeLvl ?? user.storeLvl ?? null);

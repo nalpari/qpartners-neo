@@ -47,7 +47,8 @@ export const changePasswordSchema = z
     message:
       "パスワードは英大文字・英小文字・数字を組み合わせて8文字以上にしてください",
     path: ["newPwd"],
-  });
+  })
+  .transform((data) => ({ currentPwd: data.currentPwd, newPwd: data.newPwd }));
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 

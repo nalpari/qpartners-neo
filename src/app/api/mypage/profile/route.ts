@@ -211,6 +211,7 @@ export async function PUT(request: NextRequest) {
         accsSiteCd: "QPARTNERS",
         email: user.email,
         userTp: user.userTp,
+        ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
         user1stNmKana: d.meiKana,
