@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const headerCode = request.nextUrl.searchParams.get("headerCode");
 
     if (!headerCode || !/^[A-Z0-9_]{1,50}$/.test(headerCode)) {
+      console.warn("[GET /api/codes/lookup] headerCode 파라미터 누락 또는 형식 불일치:", headerCode);
       return NextResponse.json(
         { error: "headerCodeパラメータが不正です" },
         { status: 400 },
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!header) {
+      console.warn("[GET /api/codes/lookup] 해당 코드 없음:", headerCode);
       return NextResponse.json(
         { error: "該当するコードが見つかりません" },
         { status: 404 },

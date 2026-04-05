@@ -18,7 +18,7 @@ const USER_TP_MAP: Record<string, qp_inquiries_user_type> = {
 // POST /api/inquiry — 문의 등록 (비로그인도 가능)
 export async function POST(request: NextRequest) {
   try {
-    // Rate limit: IP 기반, 시간당 10건
+    // Rate limit: IP 기반 시간당 10건, IP 미확인 시 5건 (global key 폴백)
     const forwarded = request.headers.get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
     const rateLimitKey = ip ?? "global";
