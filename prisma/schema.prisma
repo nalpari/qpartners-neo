@@ -393,9 +393,9 @@ enum ContentStatus {
 }
 
 enum TargetType {
-  first_dealer
-  second_dealer
-  constructor
+  first_store  @map("1st_store")
+  second_store @map("2nd_store")
+  seko
   general
   non_member
 }

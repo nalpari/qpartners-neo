@@ -1002,7 +1002,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
-          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_dealer/second_dealer/constructor/general)", schema: { type: "string" } },
+          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "page", in: "query", description: "페이지 번호 (1부터)", schema: { type: "integer", default: 1, minimum: 1 } },
@@ -1218,7 +1218,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       required: ["targetType"],
                       properties: {
-                        targetType: { type: "string", enum: ["first_dealer", "second_dealer", "constructor", "general", "non_member"] },
+                        targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
                         startAt: { type: "string", format: "date-time" },
                         endAt: { type: "string", format: "date-time" },
                       },
@@ -1329,10 +1329,10 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/download-logs": {
+    "/mypage/download-logs": {
       get: {
         tags: ["DownloadLog"],
-        summary: "다운로드 이력 조회 (관리자)",
+        summary: "다운로드 기록 목록 조회",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
@@ -1346,13 +1346,40 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { type: "array", items: { type: "object" } },
-                    meta: { type: "object" },
+                    data: {
+                      type: "object",
+                      required: ["totalCount", "page", "pageSize", "keyword", "list"],
+                      properties: {
+                        totalCount: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        keyword: { type: "string", nullable: true },
+                        list: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            required: ["id", "downloadedAt", "contentId", "contentTitle", "attachmentId", "fileName", "isExpired"],
+                            properties: {
+                              id: { type: "integer" },
+                              downloadedAt: { type: "string", format: "date-time" },
+                              contentId: { type: "integer" },
+                              contentTitle: { type: "string" },
+                              attachmentId: { type: "integer" },
+                              fileName: { type: "string" },
+                              isExpired: { type: "boolean" },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
             },
           },
+          "400": errorResponse("入力内容に不備があります"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -2399,7 +2426,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          targets: { type: "array", items: { type: "string" }, example: ["first_dealer", "constructor"] },
+          targets: { type: "array", items: { type: "string" }, example: ["first_store", "seko"] },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },

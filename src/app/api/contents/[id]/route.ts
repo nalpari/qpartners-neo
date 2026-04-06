@@ -75,6 +75,10 @@ export async function GET(request: NextRequest, { params }: Params) {
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: content.categories.map((cc) => cc.category),
+        attachments: content.attachments.map((a) => ({
+          ...a,
+          fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
+        })),
       },
     });
   } catch (error) {

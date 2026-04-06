@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { z } from "zod";
 import { usePopupStore } from "@/lib/store";
@@ -38,11 +38,13 @@ export function ZipcodeSearchPopup() {
   const [isClosing, setIsClosing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const isSearchingRef = useRef(false);
 
   const canApply = selectedIndex !== null;
 
   // Design Ref: §5.5 — Mock → zipcloud API 실제 호출
   const handleSearch = async () => {
+    if (isSearchingRef.current) return;
     setError("");
     setResults([]);
     setSelectedIndex(null);
@@ -56,9 +58,13 @@ export function ZipcodeSearchPopup() {
 
     setHasSearched(true);
     setIsSearching(true);
+    isSearchingRef.current = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
     try {
       const res = await fetch(
-        `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`
+        `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`,
+        { signal: controller.signal }
       );
       if (!res.ok) {
         console.error("[ZipcodeSearch] HTTP エラー:", res.status, res.statusText);
@@ -97,9 +103,16 @@ export function ZipcodeSearchPopup() {
         }))
       );
     } catch (err) {
-      console.error("[ZipcodeSearch] 住所検索 API 呼び出し失敗:", err);
-      setError("住所検索中にエラーが発生しました。");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        console.warn("[ZipcodeSearch] API タイムアウト (10秒)");
+        setError("住所検索がタイムアウトしました。もう一度お試しください。");
+      } else {
+        console.error("[ZipcodeSearch] 住所検索 API 呼び出し失敗:", err);
+        setError("住所検索中にエラーが発生しました。");
+      }
     } finally {
+      clearTimeout(timer);
+      isSearchingRef.current = false;
       setIsSearching(false);
     }
   };
@@ -176,7 +189,7 @@ export function ZipcodeSearchPopup() {
                       setZipcode(e.target.value.replace(/\D/g, "").slice(0, 7))
                     }
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleSearch();
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleSearch();
                     }}
                     placeholder="郵便番号の7桁を入力してください"
                     inputMode="numeric"
