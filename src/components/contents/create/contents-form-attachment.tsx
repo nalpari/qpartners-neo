@@ -105,11 +105,10 @@ export function ContentsFormAttachment({
   const handleDownloadSaved = async (fileId: number, fileName: string) => {
     if (!contentId) return;
     try {
-      const res = await api.get(`/contents/${contentId}/files/${fileId}/download`, {
+      const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
         responseType: "blob",
       });
-      const blob = res.data as Blob;
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
       a.download = fileName;

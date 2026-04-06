@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { Button, Spinner } from "@/components/common";
@@ -232,9 +233,8 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     } catch (error) {
       console.error("[Contents] 저장 실패:", error);
       // TODO: 디버깅용 — 추후 제거
-      if (error && typeof error === "object" && "response" in error) {
-        const axiosErr = error as { response?: { data?: unknown } };
-        console.error("[Contents] 서버 응답:", JSON.stringify(axiosErr.response?.data, null, 2));
+      if (isAxiosError(error) && error.response) {
+        console.error("[Contents] 서버 응답:", JSON.stringify(error.response.data, null, 2));
       }
       console.error("[Contents] 요청 바디:", JSON.stringify(requestBody, null, 2));
       openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });

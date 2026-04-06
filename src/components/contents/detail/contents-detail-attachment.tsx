@@ -42,10 +42,10 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
   useEffect(() => {
     let cancelled = false;
     api
-      .get(`/contents/${contentId}/files/${fileId}/download`, { responseType: "blob" })
+      .get<Blob>(`/contents/${contentId}/files/${fileId}/download`, { responseType: "blob" })
       .then((res) => {
         if (cancelled) return;
-        const url = URL.createObjectURL(res.data as Blob);
+        const url = URL.createObjectURL(res.data);
         blobUrlRef.current = url;
         setBlobUrl(url);
         setStatus("loaded");
@@ -87,27 +87,31 @@ export function ContentsDetailAttachment({
   if (attachments.length === 0) return null;
 
   const handleDownload = async (fileId: number, fileName: string) => {
-    try {
-      const res = await api.get(`/contents/${contentId}/files/${fileId}/download`, {
-        responseType: "blob",
-      });
-      const blob = res.data as Blob;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("[Contents] 다운로드 실패:", err);
-    }
+    const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleAllDownload = async () => {
     setDownloadingAll(true);
+    let failCount = 0;
     try {
       for (const file of attachments) {
-        await handleDownload(file.id, file.fileName);
+        try {
+          await handleDownload(file.id, file.fileName);
+        } catch (err) {
+          failCount++;
+          console.error("[Contents] 다운로드 실패:", err);
+        }
+      }
+      if (failCount > 0) {
+        console.warn(`[Contents] 일괄 다운로드 ${failCount}/${attachments.length}건 실패`);
       }
     } finally {
       setDownloadingAll(false);
@@ -123,7 +127,7 @@ export function ContentsDetailAttachment({
         </h2>
         <button
           type="button"
-          onClick={handleAllDownload}
+          onClick={() => { void handleAllDownload(); }}
           disabled={downloadingAll}
           className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5] disabled:opacity-50"
         >
@@ -165,14 +169,14 @@ export function ContentsDetailAttachment({
             <div className="flex items-center gap-4 w-full">
               <button
                 type="button"
-                onClick={() => handleDownload(file.id, file.fileName)}
+                onClick={() => { void handleDownload(file.id, file.fileName); }}
                 className="flex-1 text-left font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010] cursor-pointer hover:underline truncate"
               >
                 {file.fileName}
               </button>
               <button
                 type="button"
-                onClick={() => handleDownload(file.id, file.fileName)}
+                onClick={() => { void handleDownload(file.id, file.fileName); }}
                 className="shrink-0 flex items-center justify-center size-8 bg-[#F7F9FB] rounded-full cursor-pointer transition-colors hover:bg-[#EAF0F6]"
               >
                 <Image
@@ -198,14 +202,14 @@ export function ContentsDetailAttachment({
           >
             <button
               type="button"
-              onClick={() => handleDownload(file.id, file.fileName)}
+              onClick={() => { void handleDownload(file.id, file.fileName); }}
               className="flex-1 text-left font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010] cursor-pointer hover:underline"
             >
               {file.fileName}
             </button>
             <button
               type="button"
-              onClick={() => handleDownload(file.id, file.fileName)}
+              onClick={() => { void handleDownload(file.id, file.fileName); }}
               className="shrink-0 flex items-center justify-center size-8 bg-[#F7F9FB] rounded-full cursor-pointer transition-colors hover:bg-[#EAF0F6]"
             >
               <Image

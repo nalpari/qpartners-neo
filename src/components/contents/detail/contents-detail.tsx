@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -141,8 +142,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   }
 
   if (error || !data) {
-    const isAxiosError = error && typeof error === "object" && "response" in error;
-    const status = isAxiosError ? (error as { response?: { status?: number } }).response?.status : null;
+    const status = isAxiosError(error) ? error.response?.status : null;
     const message =
       status === 404
         ? "コンテンツが見つかりません。"
