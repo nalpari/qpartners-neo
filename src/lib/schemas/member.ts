@@ -3,31 +3,48 @@ import { z } from "zod";
 // ─── QSP statCd ↔ TO-BE status 매핑 (공용) ───
 
 /** QSP statCd → TO-BE status */
-export const STAT_CD_TO_STATUS: Record<string, string> = {
+export const STAT_CD_TO_STATUS = {
   Y: "active",
   N: "deleted",
   W: "withdrawn",
-};
+} as const;
 
-/** TO-BE status → QSP statCd */
-export const STATUS_TO_STAT_CD: Record<string, string> = {
+export type QspStatCd = keyof typeof STAT_CD_TO_STATUS;
+export type MemberStatus = (typeof STAT_CD_TO_STATUS)[QspStatCd];
+
+/** TO-BE status → QSP statCd (withdrawn は読み取り専用のため除外) */
+export const STATUS_TO_STAT_CD: Partial<Record<MemberStatus, QspStatCd>> = {
   active: "Y",
   deleted: "N",
 };
 
 /** QSP userTp → 화면표시 회원유형 레이블 */
-export const USER_TYPE_LABEL: Record<string, string> = {
+export const USER_TYPE_LABEL = {
   ADMIN: "管理者",
   STORE: "販売店",
   GENERAL: "一般",
-};
+} as const;
+
+/** as const 객체의 안전한 lookup (키가 존재하면 값 반환, 아니면 undefined) */
+export function lookupStatCd(key: string | null): string | undefined {
+  return STAT_CD_TO_STATUS[key as QspStatCd];
+}
+
+export function lookupUserTypeLabel(key: string | null): string | undefined {
+  return USER_TYPE_LABEL[key as keyof typeof USER_TYPE_LABEL];
+}
 
 // ─── 회원 목록 쿼리 파라미터 ───
 
+/** 회원 목록 필터용 상태값 */
+const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
+/** 회원 목록 필터용 유형값 (시공점 제외) */
+const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
+
 export const memberListQuerySchema = z.object({
   keyword: z.string().optional(),
-  userType: z.string().optional(),
-  status: z.string().optional(),
+  userType: z.enum(memberTypeValues).optional(),
+  status: z.enum(memberStatusValues).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });

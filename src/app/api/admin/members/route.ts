@@ -6,8 +6,9 @@ import { QSP_API } from "@/lib/config";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
-  STAT_CD_TO_STATUS,
-  USER_TYPE_LABEL,
+  STATUS_TO_STAT_CD,
+  lookupStatCd,
+  lookupUserTypeLabel,
 } from "@/lib/schemas/member";
 
 // GET /api/admin/members — 회원 목록 (시공점 제외)
@@ -44,7 +45,10 @@ export async function GET(request: NextRequest) {
     });
     if (keyword) params.set("keyword", keyword);
     if (userType) params.set("userTp", userType);
-    if (status) params.set("statCd", status);
+    if (status) {
+      const statCd = STATUS_TO_STAT_CD[status];
+      if (statCd) params.set("statCd", statCd);
+    }
 
     let qspResponse: Response;
     try {
@@ -89,8 +93,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
-      console.warn("[GET /api/admin/members] QSP 조회 실패:", parsed.data.result.message);
+    if (parsed.data.result.resultCode !== "S") {
+      console.error("[GET /api/admin/members] QSP 조회 실패:", parsed.data.result.message);
+      return NextResponse.json(
+        { error: "会員一覧の取得に失敗しました" },
+        { status: 502 },
+      );
+    }
+
+    // QSP 정상 응답이지만 결과 없음
+    if (!parsed.data.data) {
       return NextResponse.json(
         { data: { totalCount: 0, page, pageSize, list: [] } },
       );
@@ -98,15 +110,15 @@ export async function GET(request: NextRequest) {
 
     // 5. 응답 매핑 (QSP → TO-BE)
     const { list, totalCount } = parsed.data.data;
-    const mappedList = list.map((item, index) => ({
-      id: index + 1 + (page - 1) * pageSize,
+    const mappedList = list.map((item) => ({
+      id: item.userId,
       userId: item.userId,
       userName: item.userNm ?? "",
       userNameKana: item.userNmKana ?? "",
       email: item.email ?? "",
-      userType: USER_TYPE_LABEL[item.userTp ?? ""] ?? item.userTp ?? "",
+      userType: lookupUserTypeLabel(item.userTp) ?? item.userTp ?? "",
       companyName: item.compNm ?? "",
-      status: STAT_CD_TO_STATUS[item.statCd ?? ""] ?? item.statCd ?? "",
+      status: lookupStatCd(item.statCd) ?? item.statCd ?? "",
       lastLoginAt: item.lastLoginDt ?? null,
       createdAt: item.regDt ?? null,
     }));

@@ -8,9 +8,9 @@ import {
   memberUpdateSchema,
   qspMemberDetailResponseSchema,
   qspUpdateResponseSchema,
-  STAT_CD_TO_STATUS,
   STATUS_TO_STAT_CD,
-  USER_TYPE_LABEL,
+  lookupStatCd,
+  lookupUserTypeLabel,
 } from "@/lib/schemas/member";
 
 type Params = { params: Promise<{ id: string }> };
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       userName: d.userNm ?? "",
       userNameKana: d.userNmKana ?? "",
       email: d.email ?? "",
-      userType: USER_TYPE_LABEL[d.userTp ?? ""] ?? d.userTp ?? "",
+      userType: lookupUserTypeLabel(d.userTp) ?? d.userTp ?? "",
       userRole: d.authCd ?? "",
       companyName: d.compNm ?? "",
       companyNameKana: d.compNmKana ?? "",
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       twoFactorEnabled: d.secAuthYn === "Y",
       loginNotification: d.loginNotiYn === "Y",
       attributeChangeNotification: d.attrChgNotiYn === "Y",
-      status: STAT_CD_TO_STATUS[d.statCd ?? ""] ?? d.statCd ?? "",
+      status: lookupStatCd(d.statCd) ?? d.statCd ?? "",
       newsRcptYn: d.newsRcptYn ?? "N",
       newsRcptDate: d.newsRcptDt ?? null,
       lastLoginAt: d.lastLoginDt ?? null,
@@ -208,6 +208,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
 
       if (!checkResponse.ok) {
+        console.error("[PUT /api/admin/members/:id] QSP userRole 검증 조회 비정상 응답:", checkResponse.status);
         return NextResponse.json(
           { error: "外部サーバーエラーが発生しました" },
           { status: 502 },

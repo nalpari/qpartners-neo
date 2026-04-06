@@ -2797,7 +2797,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       MemberListItem: {
         type: "object",
         properties: {
-          id: { type: "integer" },
+          id: { type: "string", description: "userId" },
           userId: { type: "string" },
           userName: { type: "string" },
           userNameKana: { type: "string" },

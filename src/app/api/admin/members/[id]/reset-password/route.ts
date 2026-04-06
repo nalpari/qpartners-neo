@@ -87,14 +87,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const parsed = qspMemberDetailResponseSchema.safeParse(qspBody);
-    if (!parsed.success || !parsed.data.data) {
+    if (!parsed.success) {
+      console.error("[POST /api/admin/members/:id/reset-password] QSP 응답 스키마 불일치:", parsed.error.issues);
       return NextResponse.json(
-        { error: "会員情報が見つかりません" },
-        { status: 404 },
+        { error: "外部サーバーの応答形式が正しくありません" },
+        { status: 502 },
       );
     }
 
-    if (parsed.data.result.resultCode !== "S") {
+    if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
       return NextResponse.json(
         { error: "会員情報が見つかりません" },
         { status: 404 },
