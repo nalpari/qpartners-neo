@@ -148,6 +148,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const [content, setContent] = useState(existingData?.body ?? "");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [savedFiles, setSavedFiles] = useState<SavedAttachment[]>(existingData?.attachments ?? []);
+  const initialFileIds = existingData?.attachments?.map((a) => a.id) ?? [];
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleList = () => {
@@ -182,6 +183,10 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
         ...(t.endDate && { endAt: t.endDate.toISOString() }),
       }));
 
+    // 삭제된 첨부파일 ID 산출
+    const currentFileIds = new Set(savedFiles.map((f) => f.id));
+    const deleteAttachmentIds = initialFileIds.filter((id) => !currentFileIds.has(id));
+
     const requestBody = {
       title,
       body: content,
@@ -190,6 +195,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       authorDepartment: department,
       targets,
       categoryIds: selectedCategoryIds,
+      ...(deleteAttachmentIds.length > 0 && { deleteAttachmentIds }),
     };
 
     setIsSubmitting(true);
@@ -232,11 +238,9 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       });
     } catch (error) {
       console.error("[Contents] 저장 실패:", error);
-      // TODO: 디버깅용 — 추후 제거
       if (isAxiosError(error) && error.response) {
-        console.error("[Contents] 서버 응답:", JSON.stringify(error.response.data, null, 2));
+        console.error("[Contents] 서버 응답:", error.response.status, error.response.data);
       }
-      console.error("[Contents] 요청 바디:", JSON.stringify(requestBody, null, 2));
       openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
     } finally {
       setIsSubmitting(false);

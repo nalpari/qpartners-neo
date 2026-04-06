@@ -123,13 +123,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
     router.push(`/contents/${contentId}/edit`);
   };
 
-  // 목록에서 진입한 경우 back()으로 검색 상태 유지, 직접 접근 시 push 폴백
   const handleList = () => {
-    if (window.history.length > 1) {
-      router.back();
-    } else {
-      router.push("/contents");
-    }
+    router.push("/contents");
   };
 
   // Design Ref: §6 — 로딩/에러 상태 처리

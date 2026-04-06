@@ -64,18 +64,12 @@ export function ContentsDetailBody({
         </div>
       </div>
 
-      {/* 본문 */}
+      {/* 본문 — 항상 DOMPurify 적용, HTML/plain 모두 안전하게 렌더링 */}
       {body && (
-        body.includes("<") ? (
-          <div
-            className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
-          />
-        ) : (
-          <div className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] whitespace-pre-wrap">
-            {body}
-          </div>
-        )
+        <div
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
+        />
       )}
     </div>
   );

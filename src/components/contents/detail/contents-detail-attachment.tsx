@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { Spinner } from "@/components/common";
+import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
 
@@ -82,20 +83,27 @@ export function ContentsDetailAttachment({
   contentId,
   attachments,
 }: ContentsDetailAttachmentProps) {
+  const { openAlert } = useAlertStore();
   const [downloadingAll, setDownloadingAll] = useState(false);
 
   if (attachments.length === 0) return null;
 
   const handleDownload = async (fileId: number, fileName: string) => {
-    const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(res.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[Contents] 다운로드 실패:", err);
+      openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
+      throw err;
+    }
   };
 
   const handleAllDownload = async () => {
@@ -105,13 +113,12 @@ export function ContentsDetailAttachment({
       for (const file of attachments) {
         try {
           await handleDownload(file.id, file.fileName);
-        } catch (err) {
+        } catch {
           failCount++;
-          console.error("[Contents] 다운로드 실패:", err);
         }
       }
       if (failCount > 0) {
-        console.warn(`[Contents] 일괄 다운로드 ${failCount}/${attachments.length}건 실패`);
+        openAlert({ type: "alert", message: `${failCount}件のファイルのダウンロードに失敗しました。` });
       }
     } finally {
       setDownloadingAll(false);
