@@ -404,7 +404,7 @@ export function SignupContents() {
                   />
                   {/* 비밀번호 행과 너비 맞춤용 빈 영역 */}
                   <span className="hidden lg:flex lg:items-center lg:pl-2 lg:pr-[18px] lg:shrink-0 lg:invisible font-['Noto_Sans_JP'] text-sm leading-[1.5]">
-                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                    ※英大文字・英小文字・数字を組み合わせて8文字以上に設定
                   </span>
                 </div>
               </FormRow>
