@@ -14,7 +14,7 @@ import {
   MobileCardList,
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
-import { Spinner } from "@/components/common/spinner";
+import { Spinner } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
@@ -165,9 +165,9 @@ function MobileAttachmentButton({ item }: { item: ContentListItem }) {
 
 /** 게시대상 targetType → 표시명 매핑 */
 const TARGET_TYPE_LABELS: Record<string, string> = {
-  first_dealer: "1次販売店",
-  second_dealer: "2次以降の販売店",
-  constructor: "施工店",
+  first_store: "1次販売店",
+  second_store: "2次以降の販売店",
+  seko: "施工店",
   general: "一般",
   non_member: "非会員",
 };
@@ -236,6 +236,55 @@ export function ContentsTable({
       ...categoryColumns,
       {
         headerName: "정보유형",
+        field: "id", //정보유형 카테고리 값
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "업무분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "제품분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "제품상태",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "용도",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "내용분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "자료분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "대상",
         field: "id",
         width: 90,
         headerClass: "ag-header-cell-center",
@@ -245,7 +294,7 @@ export function ContentsTable({
         headerName: "タイトル",
         field: "title",
         flex: categoryColumns.length > 0 ? 2 : 3,
-        minWidth: 200,
+        minWidth: 400,
         cellRenderer: TitleCellRenderer,
         headerClass: "ag-header-cell-center",
       },
@@ -261,7 +310,7 @@ export function ContentsTable({
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
-        minWidth: 90,
+        minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         valueFormatter: (params) => formatDate(params.value),
@@ -270,7 +319,7 @@ export function ContentsTable({
         headerName: "更新日",
         field: "updatedAt",
         flex: 1,
-        minWidth: 90,
+        minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         valueFormatter: (params) => params.value ? formatDate(params.value) : "",
@@ -281,20 +330,26 @@ export function ContentsTable({
       baseCols.push(
         {
           headerName: "掲示対象",
-          valueGetter: (params) =>
-            params.data
-              ? params.data.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", ")
-              : "",
+          cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+            return (
+              <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
+                {params.data?.targets.map((t, i) => (
+                  <span key={i} className="text-xs">{TARGET_TYPE_LABELS[t.targetType] ?? t.targetType}</span>
+                ))}
+              </div>
+            );
+          },
           flex: 1,
-          minWidth: 100,
+          minWidth: 120,
           headerClass: "ag-header-cell-center",
+          autoHeight: true,
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         },
         {
           headerName: "担当部門",
           field: "authorDepartment",
           flex: 1,
-          minWidth: 90,
+          minWidth: 110,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
           valueFormatter: (params) => params.value ?? "",
@@ -303,7 +358,7 @@ export function ContentsTable({
           headerName: "最終確認者",
           field: "approverLevel" as keyof ContentListItem,
           flex: 1,
-          minWidth: 90,
+          minWidth: 110,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
           valueFormatter: () => "",
@@ -330,6 +385,14 @@ export function ContentsTable({
 
     const base: MobileCardField<ContentListItem>[] = [
       ...categoryFields,
+      { label: "정보유형", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "업무분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "제품분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "제품상태", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "용도", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "내용분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "자료분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "대상", key: "id" as keyof ContentListItem, render: () => "" },
       {
         label: "タイトル",
         key: "title",

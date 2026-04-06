@@ -1,10 +1,16 @@
 "use client";
 
+// Design Ref: §4.5 — ISO 날짜 포맷 + HTML body 렌더링
+
 interface ContentsDetailBodyProps {
   title: string;
   createdAt: string;
   updatedAt: string;
-  body: string;
+  body: string | null;
+}
+
+function formatDate(iso: string): string {
+  return iso.slice(0, 10).replace(/-/g, ".");
 }
 
 function DateBadge({ label, date }: { label: string; date: string }) {
@@ -26,6 +32,9 @@ export function ContentsDetailBody({
   updatedAt,
   body,
 }: ContentsDetailBodyProps) {
+  const formattedCreated = formatDate(createdAt);
+  const formattedUpdated = formatDate(updatedAt);
+
   return (
     <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[18px] px-6 py-[34px] lg:py-[48px] w-full lg:w-[1440px]">
       {/* 헤더: 제목 + 날짜 */}
@@ -36,16 +45,16 @@ export function ContentsDetailBody({
             {title}
           </h1>
           <div className="flex items-center gap-3 shrink-0">
-            <DateBadge label="登録日" date={createdAt} />
-            <DateBadge label="更新日" date={updatedAt} />
+            <DateBadge label="登録日" date={formattedCreated} />
+            <DateBadge label="更新日" date={formattedUpdated} />
           </div>
         </div>
 
         {/* MO: 세로 (날짜 상 / 제목 하) */}
         <div className="flex lg:hidden flex-col gap-[18px]">
           <div className="flex items-center gap-3">
-            <DateBadge label="登録日" date={createdAt} />
-            <DateBadge label="更新日" date={updatedAt} />
+            <DateBadge label="登録日" date={formattedCreated} />
+            <DateBadge label="更新日" date={formattedUpdated} />
           </div>
           <h1 className="font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
             {title}
@@ -54,9 +63,18 @@ export function ContentsDetailBody({
       </div>
 
       {/* 본문 */}
-      <div className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] whitespace-pre-wrap">
-        {body}
-      </div>
+      {body && (
+        body.includes("<") ? (
+          <div
+            className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: body }}
+          />
+        ) : (
+          <div className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] whitespace-pre-wrap">
+            {body}
+          </div>
+        )
+      )}
     </div>
   );
 }

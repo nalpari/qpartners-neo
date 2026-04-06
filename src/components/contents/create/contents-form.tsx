@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { Button } from "@/components/common";
-import { Spinner } from "@/components/common/spinner";
+import { Button, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -21,7 +20,7 @@ import { ContentsFormEditor } from "./contents-form-editor";
 import {
   ContentsFormAttachment,
 } from "./contents-form-attachment";
-import type { AttachmentFile } from "./contents-form-attachment";
+import type { AttachmentFile, SavedAttachment } from "./contents-form-attachment";
 
 // API 응답 타입 (GET /api/contents/{id})
 interface ContentDetailResponse {
@@ -98,6 +97,7 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [savedFiles, setSavedFiles] = useState<SavedAttachment[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 수정 모드: 기존 데이터 → 폼에 세팅
@@ -131,6 +131,11 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
         return item;
       });
       setPostTargets({ ...initial, targets: updatedTargets });
+    }
+
+    // 기존 첨부파일
+    if (existingData.attachments) {
+      setSavedFiles(existingData.attachments);
     }
   }, [mode, existingData]);
 
@@ -198,17 +203,22 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
           });
         } catch (uploadError) {
           console.error("[Contents] ファイルアップロード失敗:", uploadError);
+          setIsSubmitting(false);
           openAlert({
             type: "alert",
             message: "コンテンツは保存されましたが、ファイルのアップロードに失敗しました。詳細画面から再度お試しください。",
+            onConfirm: () => router.push(`/contents/${savedId}`),
           });
-          router.push(`/contents/${savedId}`, { transitionTypes: ["fade"] });
           return;
         }
       }
 
-      openAlert({ type: "alert", message: "保存されました。" });
-      router.push(`/contents/${savedId}`, { transitionTypes: ["fade"] });
+      setIsSubmitting(false);
+      openAlert({
+        type: "alert",
+        message: "保存されました。",
+        onConfirm: () => router.push(`/contents/${savedId}`),
+      });
     } catch (error) {
       console.error("[Contents] 保存失敗:", error);
       // TODO: 디버깅용 — 추후 제거
@@ -271,6 +281,9 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
         <ContentsFormAttachment
           attachments={attachments}
           onAttachmentsChange={setAttachments}
+          savedFiles={savedFiles}
+          onSavedFilesChange={setSavedFiles}
+          contentId={contentId}
         />
 
         {/* 하단 버튼 */}

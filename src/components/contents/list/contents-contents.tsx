@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -33,28 +34,59 @@ interface CategoryNode {
 
 export type { CategoryNode, SearchFilters };
 
+/** URL 쿼리 → SearchParams 파싱 */
+function parseSearchParams(urlParams: URLSearchParams): SearchParams {
+  const categoryIdsStr = urlParams.get("categoryIds") ?? "";
+  return {
+    page: Number(urlParams.get("page")) || 1,
+    pageSize: Number(urlParams.get("pageSize")) || 20,
+    keyword: urlParams.get("keyword") ?? "",
+    categoryIds: categoryIdsStr ? categoryIdsStr.split(",").map(Number).filter((n) => !isNaN(n)) : [],
+    targetType: urlParams.get("targetType") ?? "",
+    department: urlParams.get("department") ?? "",
+    internalOnly: urlParams.get("internalOnly") === "true",
+  };
+}
+
+/** SearchParams → URL 쿼리 문자열 (빈 값 제외) */
+function buildQueryString(params: SearchParams): string {
+  const qs = new URLSearchParams();
+  if (params.page > 1) qs.set("page", String(params.page));
+  if (params.pageSize !== 20) qs.set("pageSize", String(params.pageSize));
+  if (params.keyword) qs.set("keyword", params.keyword);
+  if (params.categoryIds.length > 0) qs.set("categoryIds", params.categoryIds.join(","));
+  if (params.targetType) qs.set("targetType", params.targetType);
+  if (params.department) qs.set("department", params.department);
+  if (params.internalOnly) qs.set("internalOnly", "true");
+  const str = qs.toString();
+  return str ? `?${str}` : "";
+}
+
 export function ContentsContents() {
+  const router = useRouter();
+  const urlParams = useSearchParams();
+
+  // URL 쿼리에서 검색 상태 파싱
+  const searchParams = parseSearchParams(urlParams);
+
+  // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음)
+  const updateParams = useCallback(
+    (next: SearchParams) => {
+      router.replace(`/contents${buildQueryString(next)}`);
+    },
+    [router],
+  );
+
   // 헤더와 동일한 queryKey로 캐시된 사용자 정보를 리액티브하게 구독
   const { data: user } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
-    queryFn: () => null, // 헤더에서 이미 fetch — 캐시만 구독
+    queryFn: () => null,
     staleTime: Infinity,
-    enabled: false, // 직접 fetch하지 않음, 캐시만 읽기
+    enabled: false,
   });
-  // 사내회원 = ADMIN (슈퍼관리자 + 관리자) → 게시대상/담당부문/관리자컬럼/등록버튼 노출
   const isInternal = user?.userTp === "ADMIN";
 
-  const [searchParams, setSearchParams] = useState<SearchParams>({
-    page: 1,
-    pageSize: 20,
-    keyword: "",
-    categoryIds: [],
-    targetType: "",
-    department: "",
-    internalOnly: false,
-  });
-
-  // 카테고리 트리 조회 (staleTime 5분)
+  // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
@@ -87,15 +119,15 @@ export function ContentsContents() {
   });
 
   const handleSearch = (filters: SearchFilters) => {
-    setSearchParams((prev) => ({ ...prev, ...filters, page: 1 }));
+    updateParams({ ...searchParams, ...filters, page: 1 });
   };
 
   const handlePageChange = (page: number) => {
-    setSearchParams((prev) => ({ ...prev, page }));
+    updateParams({ ...searchParams, page });
   };
 
   const handlePageSizeChange = (pageSize: number) => {
-    setSearchParams((prev) => ({ ...prev, pageSize, page: 1 }));
+    updateParams({ ...searchParams, pageSize, page: 1 });
   };
 
   return (
@@ -104,6 +136,7 @@ export function ContentsContents() {
         isInternal={isInternal}
         categories={categories}
         onSearch={handleSearch}
+        initialFilters={searchParams}
       />
       <ContentsTable
         isInternal={isInternal}

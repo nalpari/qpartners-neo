@@ -8,9 +8,9 @@ import type { CategoryNode, SearchFilters } from "./contents-contents";
 // 관리자용 게시대상 옵션
 const POST_TARGET_OPTIONS = [
   { value: "", label: "掲示対象" },
-  { value: "first_dealer", label: "1次販売店" },
-  { value: "second_dealer", label: "2次以降の販売店" },
-  { value: "installer", label: "施工店" },
+  { value: "first_store", label: "1次販売店" },
+  { value: "second_store", label: "2次以降の販売店" },
+  { value: "seko", label: "施工店" },
   { value: "general", label: "一般" },
   { value: "non_member", label: "非会員" },
 ];
@@ -35,19 +35,21 @@ interface ContentsSearchProps {
   isInternal?: boolean;
   categories: CategoryNode[];
   onSearch: (filters: SearchFilters) => void;
+  initialFilters?: SearchFilters;
 }
 
 export function ContentsSearch({
   isInternal = false,
   categories,
   onSearch,
+  initialFilters,
 }: ContentsSearchProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(true);
-  const [keyword, setKeyword] = useState("");
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
-  const [postTarget, setPostTarget] = useState("");
-  const [department, setDepartment] = useState("");
-  const [internalOnly, setInternalOnly] = useState(false);
+  const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
+  const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
+  const [department, setDepartment] = useState(initialFilters?.department ?? "");
+  const [internalOnly, setInternalOnly] = useState(initialFilters?.internalOnly ?? false);
 
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
