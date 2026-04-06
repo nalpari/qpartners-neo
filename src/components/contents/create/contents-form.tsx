@@ -230,7 +230,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
         onConfirm: () => router.push(`/contents/${savedId}`),
       });
     } catch (error) {
-      console.error("[Contents] 保存失敗:", error);
+      console.error("[Contents] 저장 실패:", error);
       // TODO: 디버깅용 — 추후 제거
       if (error && typeof error === "object" && "response" in error) {
         const axiosErr = error as { response?: { data?: unknown } };

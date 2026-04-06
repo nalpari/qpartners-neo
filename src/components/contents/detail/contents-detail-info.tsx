@@ -31,7 +31,8 @@ export function ContentsDetailInfo({
     try {
       await navigator.clipboard.writeText(window.location.href);
       openAlert({ type: "alert", message: "URLがコピーされました。" });
-    } catch {
+    } catch (error: unknown) {
+      console.error("[Contents] URL 복사 실패:", error);
       openAlert({ type: "alert", message: "URLのコピーに失敗しました。" });
     }
   };

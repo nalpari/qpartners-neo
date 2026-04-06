@@ -110,7 +110,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
             onConfirm: () => router.push("/contents"),
           });
         } catch (err) {
-          console.error("[Contents] 削除失敗:", err);
+          console.error("[Contents] 삭제 실패:", err);
           setIsDeleting(false);
           openAlert({ type: "alert", message: "削除に失敗しました。" });
         }

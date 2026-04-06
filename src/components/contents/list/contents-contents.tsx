@@ -110,11 +110,11 @@ export function ContentsContents() {
       if (searchParams.department) params.department = searchParams.department;
       if (searchParams.internalOnly) params.internalOnly = true;
 
-      const res = await api.get("/contents", { params });
-      return res.data as {
+      const res = await api.get<{
         data: ContentListItem[];
         meta: { total: number; page: number; pageSize: number; totalPages: number };
-      };
+      }>("/contents", { params });
+      return res.data;
     },
   });
 

@@ -117,7 +117,7 @@ export function SignupContents() {
       await api.post("/auth/email/check", { email: form.email });
       setEmailCheckStatus("ok");
     } catch (error) {
-      console.error("[Signup] メール重複チェック失敗:", error);
+      console.error("[Signup] 이메일 중복체크 실패:", error);
       if (isAxiosError(error) && error.response?.status === 409) {
         setEmailCheckStatus("duplicate");
       } else {
@@ -171,10 +171,10 @@ export function SignupContents() {
       const { userName, email } = res.data.data;
       openPopup("signup-complete", { userName, userId: email });
     } catch (error) {
-      console.error("[Signup] 会員登録失敗:", error);
+      console.error("[Signup] 회원가입 실패:", error);
       if (isAxiosError(error) && error.response) {
         const serverMsg = extractApiError(error);
-        if (serverMsg) console.warn("[Signup] サーバーメッセージ:", serverMsg);
+        if (serverMsg) console.warn("[Signup] 서버 메시지:", serverMsg);
         const status = error.response.status;
         if (status === 409) {
           setSubmitError("既に使用中のメールアドレスです");
