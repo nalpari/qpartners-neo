@@ -1,0 +1,52 @@
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/prisma";
+
+// GET /api/codes/lookup?headerCode=INQUIRY_TYPE — 공통코드 공개 조회 (headerCode 기반)
+export async function GET(request: NextRequest) {
+  try {
+    const headerCode = request.nextUrl.searchParams.get("headerCode");
+
+    if (!headerCode || !/^[A-Z0-9_]{1,50}$/.test(headerCode)) {
+      console.warn("[GET /api/codes/lookup] headerCode 파라미터 누락 또는 형식 불일치:", headerCode);
+      return NextResponse.json(
+        { error: "headerCodeパラメータが不正です" },
+        { status: 400 },
+      );
+    }
+
+    const header = await prisma.codeHeader.findFirst({
+      where: { headerCode, isActive: true },
+      select: { id: true, headerCode: true, headerName: true },
+    });
+
+    if (!header) {
+      console.warn("[GET /api/codes/lookup] 해당 코드 없음:", headerCode);
+      return NextResponse.json(
+        { error: "該当するコードが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    const details = await prisma.codeDetail.findMany({
+      where: { headerId: header.id, isActive: true },
+      select: {
+        code: true,
+        displayCode: true,
+        codeName: true,
+        codeNameEtc: true,
+        sortOrder: true,
+      },
+      orderBy: { sortOrder: "asc" },
+    });
+
+    return NextResponse.json({ data: details });
+  } catch (error) {
+    console.error("[GET /api/codes/lookup] 공통코드 조회 실패", error);
+    return NextResponse.json(
+      { error: "コードの取得に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
