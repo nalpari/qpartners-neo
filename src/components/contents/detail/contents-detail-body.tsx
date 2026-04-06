@@ -1,5 +1,7 @@
 "use client";
 
+import DOMPurify from "dompurify";
+
 // Design Ref: §4.5 — ISO 날짜 포맷 + HTML body 렌더링
 
 interface ContentsDetailBodyProps {
@@ -67,7 +69,7 @@ export function ContentsDetailBody({
         body.includes("<") ? (
           <div
             className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: body }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
           />
         ) : (
           <div className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] whitespace-pre-wrap">

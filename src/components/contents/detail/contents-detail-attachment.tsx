@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { Spinner } from "@/components/common";
@@ -34,31 +34,34 @@ function getFileIconSrc(mimeType: string | null): string {
 }
 
 /** 이미지 파일을 Blob URL로 로드하여 미리보기 표시 */
-/** 이미지 파일을 Blob URL로 로드하여 미리보기 표시 */
 function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fileId: number; fileName: string }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let revoked = false;
+    let cancelled = false;
     api
       .get(`/contents/${contentId}/files/${fileId}/download`, { responseType: "blob" })
       .then((res) => {
-        if (!revoked) {
-          const url = URL.createObjectURL(res.data as Blob);
-          setBlobUrl(url);
-          setStatus("loaded");
-        }
+        if (cancelled) return;
+        const url = URL.createObjectURL(res.data as Blob);
+        blobUrlRef.current = url;
+        setBlobUrl(url);
+        setStatus("loaded");
       })
-      .catch(() => {
-        if (!revoked) setStatus("error");
+      .catch((error: unknown) => {
+        console.error("[Contents] 이미지 썸네일 로드 실패:", error);
+        if (!cancelled) setStatus("error");
       });
 
     return () => {
-      revoked = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      cancelled = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentId, fileId]);
 
   if (status === "loading") return <Spinner size={24} />;
@@ -96,7 +99,7 @@ export function ContentsDetailAttachment({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("[Contents] ダウンロード失敗:", err);
+      console.error("[Contents] 다운로드 실패:", err);
     }
   };
 

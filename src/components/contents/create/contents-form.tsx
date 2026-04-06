@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
@@ -22,7 +22,8 @@ import {
 } from "./contents-form-attachment";
 import type { AttachmentFile, SavedAttachment } from "./contents-form-attachment";
 
-// API 응답 타입 (GET /api/contents/{id})
+// 수정 폼 전용 API 응답 타입 — PUT 응답의 categories 구조가 상세 조회와 다름
+// 상세 조회 타입: ContentDetailData (contents-detail.tsx)
 interface ContentDetailResponse {
   id: number;
   title: string;
@@ -46,6 +47,42 @@ interface ContentsFormProps {
 }
 
 export function ContentsForm({ mode, contentId }: ContentsFormProps) {
+  // 수정 모드: 기존 데이터 로딩 → 로딩 완료 후 key로 내부 폼 리마운트
+  const { data: existingData, isLoading: isLoadingContent } = useQuery<ContentDetailResponse>({
+    queryKey: ["contents", contentId],
+    queryFn: async () => {
+      const res = await api.get<{ data: ContentDetailResponse }>(`/contents/${contentId}`);
+      return res.data.data;
+    },
+    enabled: mode === "edit" && !!contentId,
+  });
+
+  if (mode === "edit" && isLoadingContent) {
+    return (
+      <div className="flex items-center justify-center w-full py-20">
+        <Spinner size={48} />
+      </div>
+    );
+  }
+
+  // existingData가 준비된 후 key로 내부 폼을 리마운트하여 초기값 보장
+  return (
+    <ContentsFormInner
+      key={mode === "edit" ? `edit-${contentId}-${existingData?.updatedAt}` : "create"}
+      mode={mode}
+      contentId={contentId}
+      existingData={existingData ?? undefined}
+    />
+  );
+}
+
+interface ContentsFormInnerProps {
+  mode: "create" | "edit";
+  contentId?: string;
+  existingData?: ContentDetailResponse;
+}
+
+function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerProps) {
   const router = useRouter();
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
@@ -61,16 +98,6 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
       return res.data.data;
     },
     staleTime: 5 * 60 * 1000,
-  });
-
-  // 수정 모드: 기존 데이터 로딩
-  const { data: existingData, isLoading: isLoadingContent } = useQuery<ContentDetailResponse>({
-    queryKey: ["contents", contentId],
-    queryFn: async () => {
-      const res = await api.get<{ data: ContentDetailResponse }>(`/contents/${contentId}`);
-      return res.data.data;
-    },
-    enabled: mode === "edit" && !!contentId,
   });
 
   // 관리정보
@@ -90,35 +117,13 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
     ? (existingData.authorDepartment ?? "")
     : (loginUser?.deptNm ?? "");
 
-  // 폼 상태
-  const [approver, setApprover] = useState("");
-  const [postTargets, setPostTargets] = useState<PostTargetState>(getInitialPostTargets());
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
-  const [savedFiles, setSavedFiles] = useState<SavedAttachment[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // 수정 모드: 기존 데이터 → 폼에 세팅
-  useEffect(() => {
-    if (mode !== "edit" || !existingData) return;
-
-    setTitle(existingData.title ?? "");
-    setContent(existingData.body ?? "");
-    setApprover(String(existingData.approverLevel ?? ""));
-
-    // 카테고리 ID
-    if (existingData.categories) {
-      setSelectedCategoryIds(
-        existingData.categories.map((c) => c.categoryId)
-      );
-    }
-
-    // 게시대상 — 기존 targets로 PostTargetState 구성
-    if (existingData.targets) {
-      const initial = getInitialPostTargets();
-      const updatedTargets = initial.targets.map((item) => {
+  // 폼 상태 — existingData에서 직접 초기값 도출 (useEffect setState 대신 key 리마운트 방식)
+  const initialPostTargets = (() => {
+    if (!existingData?.targets) return getInitialPostTargets();
+    const base = getInitialPostTargets();
+    return {
+      ...base,
+      targets: base.targets.map((item) => {
         const existing = existingData.targets.find((t) => t.targetType === item.key);
         if (existing) {
           return {
@@ -129,15 +134,20 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
           };
         }
         return item;
-      });
-      setPostTargets({ ...initial, targets: updatedTargets });
-    }
+      }),
+    };
+  })();
 
-    // 기존 첨부파일
-    if (existingData.attachments) {
-      setSavedFiles(existingData.attachments);
-    }
-  }, [mode, existingData]);
+  const [approver, setApprover] = useState(existingData ? String(existingData.approverLevel ?? "") : "");
+  const [postTargets, setPostTargets] = useState<PostTargetState>(initialPostTargets);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(
+    existingData?.categories?.map((c) => c.categoryId) ?? [],
+  );
+  const [title, setTitle] = useState(existingData?.title ?? "");
+  const [content, setContent] = useState(existingData?.body ?? "");
+  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [savedFiles, setSavedFiles] = useState<SavedAttachment[]>(existingData?.attachments ?? []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleList = () => {
     router.push("/contents", { transitionTypes: ["fade"] });
@@ -202,7 +212,7 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
             headers: { "Content-Type": "multipart/form-data" },
           });
         } catch (uploadError) {
-          console.error("[Contents] ファイルアップロード失敗:", uploadError);
+          console.error("[Contents] 파일 업로드 실패:", uploadError);
           setIsSubmitting(false);
           openAlert({
             type: "alert",
@@ -224,9 +234,9 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
       // TODO: 디버깅용 — 추후 제거
       if (error && typeof error === "object" && "response" in error) {
         const axiosErr = error as { response?: { data?: unknown } };
-        console.error("[Contents] サーバー応答:", JSON.stringify(axiosErr.response?.data, null, 2));
+        console.error("[Contents] 서버 응답:", JSON.stringify(axiosErr.response?.data, null, 2));
       }
-      console.error("[Contents] リクエストボディ:", JSON.stringify(requestBody, null, 2));
+      console.error("[Contents] 요청 바디:", JSON.stringify(requestBody, null, 2));
       openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
     } finally {
       setIsSubmitting(false);
@@ -234,14 +244,6 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
   };
 
   // 수정 모드 로딩 중
-  if (mode === "edit" && isLoadingContent) {
-    return (
-      <div className="flex items-center justify-center w-full py-20">
-        <Spinner size={48} />
-      </div>
-    );
-  }
-
   return (
     <>
       {isSubmitting && (

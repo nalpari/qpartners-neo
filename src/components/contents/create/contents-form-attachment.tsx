@@ -116,7 +116,7 @@ export function ContentsFormAttachment({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("[Contents] ダウンロード失敗:", err);
+      console.error("[Contents] 다운로드 실패:", err);
     }
   };
 

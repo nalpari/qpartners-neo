@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -73,20 +73,20 @@ async function downloadAllAttachments(contentId: number) {
       await new Promise((r) => setTimeout(r, 300));
     }
   } catch (err) {
-    console.error("[Contents] 添付ファイルダウンロード失敗:", err);
+    console.error("[Contents] 첨부파일 다운로드 실패:", err);
   }
 }
 
-let _pcDownloading = false;
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
+  const downloadingRef = useRef(false);
   if (!params.data || params.data.attachmentCount === 0) return null;
   const contentId = params.data.id;
 
   const handleClick = () => {
-    if (_pcDownloading) return;
-    _pcDownloading = true;
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
     void downloadAllAttachments(contentId).finally(() => {
-      _pcDownloading = false;
+      downloadingRef.current = false;
     });
   };
 
@@ -132,16 +132,16 @@ function renderMobileTitle(item: ContentListItem) {
   );
 }
 
-let _moDownloading = false;
 function MobileAttachmentButton({ item }: { item: ContentListItem }) {
+  const downloadingRef = useRef(false);
   if (item.attachmentCount === 0) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (_moDownloading) return;
-    _moDownloading = true;
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
     void downloadAllAttachments(item.id).finally(() => {
-      _moDownloading = false;
+      downloadingRef.current = false;
     });
   };
 
