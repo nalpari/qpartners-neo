@@ -50,7 +50,7 @@ export function MobileCardList<T>({
 
               return (
                 <div
-                  key={String(field.key)}
+                  key={field.label ?? idx}
                   className={
                     idx > 0
                       ? "border-t border-[#EFF4F8] pt-[18px] flex flex-col gap-2"

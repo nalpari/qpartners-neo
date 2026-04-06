@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
@@ -13,9 +14,9 @@ import {
   MobileCardList,
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
+import { Spinner } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
-import { DUMMY_CONTENTS, isNew, isUpdated } from "../contents-dummy-data";
-import type { ContentItem } from "../contents-dummy-data";
+import type { ContentListItem, CategoryNode } from "./contents-contents";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -23,11 +24,13 @@ const PER_PAGE_OPTIONS = [
   { value: "100", label: "100" },
 ];
 
-function TitleCellRenderer(params: ICellRendererParams<ContentItem>) {
+function formatDate(dateStr: string): string {
+  return dateStr.slice(0, 10);
+}
+
+function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const data = params.data;
   if (!data) return null;
-  const showNew = isNew(data.createdAt);
-  const showUpdate = isUpdated(data.updatedAt);
 
   return (
     <div className="flex items-center gap-2">
@@ -38,12 +41,12 @@ function TitleCellRenderer(params: ICellRendererParams<ContentItem>) {
       >
         {data.title}
       </Link>
-      {showNew && (
+      {data.isNew && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2] whitespace-nowrap">
           NEW
         </span>
       )}
-      {showUpdate && (
+      {data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
         </span>
@@ -52,14 +55,48 @@ function TitleCellRenderer(params: ICellRendererParams<ContentItem>) {
   );
 }
 
-function AttachmentCellRenderer(params: ICellRendererParams<ContentItem>) {
-  if (!params.data?.hasAttachment) return null;
+/** 컨텐츠의 모든 첨부파일을 순차 다운로드 */
+async function downloadAllAttachments(contentId: number) {
+  try {
+    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
+    const attachments = res.data.data.attachments;
+    if (!attachments || attachments.length === 0) return;
+
+    for (const file of attachments) {
+      const link = document.createElement("a");
+      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      // 브라우저 다운로드 큐 충돌 방지
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } catch (err) {
+    console.error("[Contents] 첨부파일 다운로드 실패:", err);
+  }
+}
+
+function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
+  const downloadingRef = useRef(false);
+  if (!params.data || params.data.attachmentCount === 0) return null;
+  const contentId = params.data.id;
+
+  const handleClick = () => {
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
+    void downloadAllAttachments(contentId).finally(() => {
+      downloadingRef.current = false;
+    });
+  };
+
   return (
     <div className="flex items-center justify-center w-full">
       <button
         type="button"
         aria-label="添付ファイルダウンロード"
         className="cursor-pointer"
+        onClick={handleClick}
       >
         <Image
           src="/asset/images/layout/download_icon.svg"
@@ -73,21 +110,17 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentItem>) {
   );
 }
 
-/** 모바일 카드에서 타이틀 + 배지 렌더링 */
-function renderMobileTitle(item: ContentItem) {
-  const showNew = isNew(item.createdAt);
-  const showUpdate = isUpdated(item.updatedAt);
-
+function renderMobileTitle(item: ContentListItem) {
   return (
     <div className="flex flex-col gap-2">
-      {(showNew || showUpdate) && (
+      {(item.isNew || item.isUpdated) && (
         <div className="flex items-center gap-1">
-          {showNew && (
+          {item.isNew && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2]">
               NEW
             </span>
           )}
-          {showUpdate && (
+          {item.isUpdated && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D]">
               UPDATE
             </span>
@@ -99,11 +132,26 @@ function renderMobileTitle(item: ContentItem) {
   );
 }
 
-/** 모바일 카드에서 첨부파일 아이콘 */
-function renderAttachmentAction(item: ContentItem) {
-  if (!item.hasAttachment) return null;
+function MobileAttachmentButton({ item }: { item: ContentListItem }) {
+  const downloadingRef = useRef(false);
+  if (item.attachmentCount === 0) return null;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
+    void downloadAllAttachments(item.id).finally(() => {
+      downloadingRef.current = false;
+    });
+  };
+
   return (
-    <div className="flex items-center px-1 py-[3px] shrink-0">
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex items-center px-1 py-[3px] shrink-0 cursor-pointer"
+      aria-label="添付ファイルダウンロード"
+    >
       <Image
         src="/asset/images/layout/download_icon.svg"
         alt="添付ファイル"
@@ -111,151 +159,281 @@ function renderAttachmentAction(item: ContentItem) {
         height={18}
         unoptimized
       />
-    </div>
+    </button>
   );
 }
 
+/** 게시대상 targetType → 표시명 매핑 */
+const TARGET_TYPE_LABELS: Record<string, string> = {
+  first_store: "1次販売店",
+  second_store: "2次以降の販売店",
+  seko: "施工店",
+  general: "一般",
+  non_member: "非会員",
+};
+
 interface ContentsTableProps {
-  isAdmin?: boolean;
+  isInternal?: boolean;
+  categories?: CategoryNode[];
+  data: ContentListItem[];
+  meta?: { total: number; page: number; pageSize: number; totalPages: number };
+  isLoading: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
 }
 
-export function ContentsTable({ isAdmin = false }: ContentsTableProps) {
+export function ContentsTable({
+  isInternal = false,
+  categories = [],
+  data,
+  meta,
+  isLoading,
+  onPageChange,
+  onPageSizeChange,
+}: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState("100");
+  const [perPage, setPerPage] = useState("20");
 
-  const totalCount = DUMMY_CONTENTS.length;
-  const totalPages = Math.ceil(totalCount / Number(perPage));
+  const totalCount = meta?.total ?? 0;
+  const currentPage = meta?.page ?? 1;
+  const totalPages = meta?.totalPages ?? 1;
 
-  const columnDefs = useMemo<ColDef<ContentItem>[]>(() => {
-    const baseCols: ColDef<ContentItem>[] = [
+  const handlePerPageChange = (value: string) => {
+    setPerPage(value);
+    onPageSizeChange(Number(value));
+  };
+
+  // 자식 카테고리 ID → 부모 그룹 코드 매핑 (카테고리 트리에서 빌드)
+  const categoryGroupMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const parent of categories) {
+      for (const child of parent.children) {
+        map.set(child.id, parent.categoryCode);
+      }
+    }
+    return map;
+  }, [categories]);
+
+  const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
+    // 8개 카테고리 그룹 컬럼 생성 (카테고리가 있을 때만)
+    const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
+      headerName: parent.name,
+      valueGetter: (params: { data?: ContentListItem }) =>
+        params.data
+          ? params.data.categories
+              .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
+              .map((c) => c.name)
+              .join(", ")
+          : "",
+      flex: 1,
+      minWidth: 90,
+      headerClass: "ag-header-cell-center",
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+    }));
+
+    const baseCols: ColDef<ContentListItem>[] = [
+      ...categoryColumns,
       {
-        headerName: "情報タイプ",
-        field: "infoType",
-        flex: 1,
+        headerName: "정보유형",
+        field: "id", //정보유형 카테고리 값
+        width: 90,
         headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
       },
       {
-        headerName: "対象",
-        field: "target",
-        flex: 1,
+        headerName: "업무분류",
+        field: "id",
+        width: 90,
         headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "제품분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "제품상태",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "용도",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "내용분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "자료분류",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      },
+      {
+        headerName: "대상",
+        field: "id",
+        width: 90,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
       },
       {
         headerName: "タイトル",
         field: "title",
-        width: 498,
+        flex: categoryColumns.length > 0 ? 2 : 3,
+        minWidth: 400,
         cellRenderer: TitleCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
-        headerName: "添付ファイル",
-        field: "hasAttachment",
-        flex: 1,
+        headerName: "添付",
+        field: "attachmentCount",
+        width: 90,
         cellRenderer: AttachmentCellRenderer,
-        cellStyle: {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        },
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
+        minWidth: 110,
         headerClass: "ag-header-cell-center",
-        cellStyle: {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        },
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        valueFormatter: (params) => formatDate(params.value),
       },
       {
         headerName: "更新日",
         field: "updatedAt",
         flex: 1,
+        minWidth: 110,
         headerClass: "ag-header-cell-center",
-        cellStyle: {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        valueFormatter: (params) => params.value ?? "",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        valueFormatter: (params) => params.value ? formatDate(params.value) : "",
       },
     ];
 
-    if (isAdmin) {
+    if (isInternal) {
       baseCols.push(
         {
-          headerName: "投稿対象",
-          field: "postTarget",
-          width: 136,
-          headerClass: "ag-header-cell-center",
-          cellStyle: {
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+          headerName: "掲示対象",
+          cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+            return (
+              <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
+                {params.data?.targets.map((t, i) => (
+                  <span key={i} className="text-xs">{TARGET_TYPE_LABELS[t.targetType] ?? t.targetType}</span>
+                ))}
+              </div>
+            );
           },
+          flex: 1,
+          minWidth: 120,
+          headerClass: "ag-header-cell-center",
+          autoHeight: true,
+          cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         },
         {
           headerName: "担当部門",
-          field: "department",
+          field: "authorDepartment",
           flex: 1,
+          minWidth: 110,
           headerClass: "ag-header-cell-center",
+          cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+          valueFormatter: (params) => params.value ?? "",
         },
         {
           headerName: "最終確認者",
-          field: "approver",
+          field: "approverLevel" as keyof ContentListItem,
           flex: 1,
+          minWidth: 110,
           headerClass: "ag-header-cell-center",
-          cellStyle: {
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          },
-        }
+          cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+          valueFormatter: () => "",
+          // TODO: 공통코드 매핑 필요 — 백엔드에서 approverLevel 목록 API 응답에 추가 후 구현
+        },
       );
     }
 
     return baseCols;
-  }, [isAdmin]);
+  }, [isInternal, categories, categoryGroupMap]);
 
-  /** 모바일 카드 필드 정의 */
-  const mobileFields = useMemo<MobileCardField<ContentItem>[]>(() => {
-    const base: MobileCardField<ContentItem>[] = [
-      {
-        label: "情報タイプ",
-        key: "infoType",
-        action: renderAttachmentAction,
-      },
-      { label: "対象", key: "target" },
+  const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
+    // 카테고리 그룹별 필드
+    const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
+      label: parent.name,
+      key: "categories" as keyof ContentListItem,
+      render: (item: ContentListItem) =>
+        item.categories
+          .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
+          .map((c) => c.name)
+          .join(", "),
+      ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
+    }));
+
+    const base: MobileCardField<ContentListItem>[] = [
+      ...categoryFields,
+      { label: "정보유형", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "업무분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "제품분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "제품상태", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "용도", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "내용분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "자료분류", key: "id" as keyof ContentListItem, render: () => "" },
+      { label: "대상", key: "id" as keyof ContentListItem, render: () => "" },
       {
         label: "タイトル",
         key: "title",
         render: renderMobileTitle,
       },
-      { label: "登録日", key: "createdAt" },
+      {
+        label: "登録日",
+        key: "createdAt",
+        render: (item) => formatDate(item.createdAt),
+      },
       {
         label: "更新日",
         key: "updatedAt",
-        render: (item) => item.updatedAt ?? "",
+        render: (item) => item.updatedAt ? formatDate(item.updatedAt) : "",
       },
     ];
 
-    if (isAdmin) {
+    if (isInternal) {
       base.push(
-        { label: "投稿対象", key: "postTarget" },
-        { label: "担当部門", key: "department" },
-        { label: "最終確認者", key: "approver" }
+        {
+          label: "掲示対象",
+          key: "targets" as keyof ContentListItem,
+          render: (item) => item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", "),
+        },
+        {
+          label: "担当部門",
+          key: "authorDepartment",
+          render: (item) => item.authorDepartment ?? "",
+        },
+        {
+          label: "最終確認者",
+          key: "id" as keyof ContentListItem,
+          render: () => "", // TODO: 공통코드 매핑
+        },
       );
     }
 
     return base;
-  }, [isAdmin]);
+  }, [isInternal, categories, categoryGroupMap]);
 
-  const handleMobileItemClick = (item: ContentItem) => {
+  const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
   };
 
@@ -269,76 +447,87 @@ export function ContentsTable({ isAdmin = false }: ContentsTableProps) {
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isAdmin && (
+        {isInternal && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
-            <Button variant="primary" className="w-[110px]">
-              お知らせ登録
+            <Button variant="primary" className="w-[90px]">
+              新規登録
             </Button>
           </Link>
         )}
         <SelectBox
           options={PER_PAGE_OPTIONS}
           value={perPage}
-          onChange={setPerPage}
+          onChange={handlePerPageChange}
           className="w-[80px]"
         />
       </div>
     </div>
   );
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-full py-20">
+        <Spinner size={48} />
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* 데스크톱: 상단바 + 테이블 + 페이지네이션을 하나의 카드로 */}
+      {/* 데스크톱 */}
       {!isMobile && (
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
           <div className="flex flex-col gap-6">
-            <DataGrid<ContentItem>
-              columnDefs={columnDefs}
-              rowData={DUMMY_CONTENTS}
-              className="contents-grid"
-            />
+            <div style={{ maxHeight: 800, overflow: "auto" }}>
+              <DataGrid<ContentListItem>
+                columnDefs={columnDefs}
+                rowData={data}
+                className="contents-grid"
+                maxHeight={0}
+              />
+            </div>
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              onPageChange={setCurrentPage}
+              onPageChange={onPageChange}
             />
           </div>
         </div>
       )}
 
-      {/* 모바일: 상단바 별도 섹션 + 카드 리스트 */}
+      {/* 모바일 */}
       {isMobile && (
         <div className="flex lg:hidden flex-col w-full">
-          {/* 모바일 상단바 */}
           <div className="bg-white p-6">
             {topBar}
           </div>
-          <div className="block lg:hidden h-[10px] bg-[#F5F5F5]"></div>
-          {/* 카드 리스트 */}
-          <MobileCardList<ContentItem>
-            data={DUMMY_CONTENTS}
+          <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
+          <MobileCardList<ContentListItem>
+            data={data}
             fields={mobileFields}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => String(item.id)}
             onItemClick={handleMobileItemClick}
           />
 
-          {/* 더보기 버튼 */}
-          <button
-            type="button"
-            className="flex items-center justify-center gap-2 w-full bg-[#45576F] px-6 py-[18px] cursor-pointer transition-colors duration-150 hover:bg-[#3a4a5d]"
-          >
-            <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-white">
-              もっと見る
-            </span>
-            <Image
-              src="/asset/images/contents/more_icon.svg"
-              alt=""
-              width={24}
-              height={24}
-            />
-          </button>
+          {currentPage < totalPages && (
+            <button
+              type="button"
+              onClick={() => onPageChange(currentPage + 1)}
+              className="flex items-center justify-center gap-2 w-full bg-[#45576F] px-6 py-[18px] cursor-pointer transition-colors duration-150 hover:bg-[#3a4a5d]"
+            >
+              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-white">
+                もっと見る
+              </span>
+              <Image
+                src="/asset/images/contents/more_icon.svg"
+                alt=""
+                width={24}
+                height={24}
+              />
+            </button>
+          )}
         </div>
       )}
     </>

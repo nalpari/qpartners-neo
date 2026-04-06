@@ -6,6 +6,7 @@ import {
   ClientSideRowModelModule,
   DragAndDropModule,
   ModuleRegistry,
+  RowAutoHeightModule,
   RowStyleModule,
   themeQuartz,
   type ColDef,
@@ -13,7 +14,7 @@ import {
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
-ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowStyleModule, DragAndDropModule]);
+ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowAutoHeightModule, RowStyleModule, DragAndDropModule]);
 
 const customTheme = themeQuartz.withParams({
   backgroundColor: "transparent",

@@ -43,6 +43,14 @@
   border: none !important;
 }
 
+/* autoHeight 모드: AG Grid 내부 min-height 제거 */
+.ag-layout-auto-height .ag-body-viewport {
+  min-height: auto !important;
+}
+.ag-center-cols-container, .ag-center-cols-viewport{
+  min-height: auto !important;
+}
+
 /* 마지막 행 하단 보더 */
 .ag-row:last-child {
   border-bottom: 1px solid #e6eef6 !important;
