@@ -51,8 +51,7 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
         setBlobUrl(url);
         setStatus("loaded");
       })
-      .catch((error: unknown) => {
-        console.error("[Contents] 이미지 썸네일 로드 실패:", error);
+      .catch(() => {
         if (!cancelled) setStatus("error");
       });
 
