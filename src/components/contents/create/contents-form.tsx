@@ -148,7 +148,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const [content, setContent] = useState(existingData?.body ?? "");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [savedFiles, setSavedFiles] = useState<SavedAttachment[]>(existingData?.attachments ?? []);
-  const initialFileIds = existingData?.attachments?.map((a) => a.id) ?? [];
+  const [initialFileIds] = useState(() => existingData?.attachments?.map((a) => a.id) ?? []);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleList = () => {

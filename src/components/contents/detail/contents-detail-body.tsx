@@ -64,11 +64,15 @@ export function ContentsDetailBody({
         </div>
       </div>
 
-      {/* 본문 — 항상 DOMPurify 적용, HTML/plain 모두 안전하게 렌더링 */}
+      {/* 본문 — DOMPurify 적용, \n → <br> 전처리로 줄바꿈 보존 */}
       {body && (
         <div
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
+          dangerouslySetInnerHTML={{
+            __html: typeof window !== "undefined"
+              ? DOMPurify.sanitize(body.replace(/\n/g, "<br>"))
+              : body.replace(/\n/g, "<br>"),
+          }}
         />
       )}
     </div>

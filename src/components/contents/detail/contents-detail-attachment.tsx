@@ -88,33 +88,40 @@ export function ContentsDetailAttachment({
 
   if (attachments.length === 0) return null;
 
+  /** 파일 1건 다운로드 (내부용 — alert 없이 throw) */
+  const downloadFile = async (fileId: number, fileName: string) => {
+    const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /** 단독 다운로드 (사용자 alert 포함) */
   const handleDownload = async (fileId: number, fileName: string) => {
     try {
-      const res = await api.get<Blob>(`/contents/${contentId}/files/${fileId}/download`, {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(fileId, fileName);
     } catch (err) {
       console.error("[Contents] 다운로드 실패:", err);
       openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
-      throw err;
     }
   };
 
+  /** 일괄 다운로드 (요약 alert만 1회) */
   const handleAllDownload = async () => {
     setDownloadingAll(true);
     let failCount = 0;
     try {
       for (const file of attachments) {
         try {
-          await handleDownload(file.id, file.fileName);
-        } catch {
+          await downloadFile(file.id, file.fileName);
+        } catch (err: unknown) {
           failCount++;
+          console.error("[Contents] 다운로드 실패:", err);
         }
       }
       if (failCount > 0) {
