@@ -253,7 +253,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
     if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
     if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgNotiYn = result.data.attributeChangeNotification ? "Y" : "N";
-    if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status] ?? result.data.status;
+    if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status];
     if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
 
     let qspResponse: Response;
@@ -304,7 +304,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       console.warn("[PUT /api/admin/members/:id] QSP 수정 실패:", parsed.data.result.message);
       return NextResponse.json(
         { error: "会員情報の更新に失敗しました" },
-        { status: 500 },
+        { status: 502 },
       );
     }
 

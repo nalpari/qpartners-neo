@@ -6,7 +6,7 @@ import { QSP_API } from "@/lib/config";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
-  STATUS_TO_STAT_CD,
+  STATUS_FILTER_TO_STAT_CD,
   lookupStatCd,
   lookupUserTypeLabel,
 } from "@/lib/schemas/member";
@@ -46,8 +46,7 @@ export async function GET(request: NextRequest) {
     if (keyword) params.set("keyword", keyword);
     if (userType) params.set("userTp", userType);
     if (status) {
-      const statCd = STATUS_TO_STAT_CD[status];
-      if (statCd) params.set("statCd", statCd);
+      params.set("statCd", STATUS_FILTER_TO_STAT_CD[status]);
     }
 
     let qspResponse: Response;

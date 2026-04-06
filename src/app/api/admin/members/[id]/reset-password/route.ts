@@ -167,12 +167,16 @@ export async function POST(request: NextRequest, { params }: Params) {
         "[POST /api/admin/members/:id/reset-password] 메일 발송 실패:",
         error instanceof Error ? { message: error.message } : error,
       );
-      // 토큰 삭제 (발송 실패 시 rate limit 미소모)
-      await prisma.passwordResetToken.deleteMany({
-        where: { token },
-      }).catch((dbError: unknown) => {
-        console.error("[POST /api/admin/members/:id/reset-password] 토큰 롤백 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
-      });
+      // 토큰 삭제 (발송 실패 시 orphan 방지)
+      try {
+        await prisma.passwordResetToken.deleteMany({ where: { token } });
+      } catch (dbError: unknown) {
+        console.error("[POST /api/admin/members/:id/reset-password] CRITICAL: 토큰 롤백 실패 — 수동 확인 필요, tokenPrefix:", token.slice(0, 8), dbError);
+        return NextResponse.json(
+          { error: "メール送信に失敗し、初期化トークンの取消にも失敗しました。管理者に連絡してください。" },
+          { status: 500 },
+        );
+      }
       return NextResponse.json(
         { error: "メールの送信に失敗しました" },
         { status: 500 },

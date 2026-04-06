@@ -12,10 +12,20 @@ export const STAT_CD_TO_STATUS = {
 export type QspStatCd = keyof typeof STAT_CD_TO_STATUS;
 export type MemberStatus = (typeof STAT_CD_TO_STATUS)[QspStatCd];
 
-/** TO-BE status → QSP statCd (withdrawn は読み取り専用のため除外) */
-export const STATUS_TO_STAT_CD: Partial<Record<MemberStatus, QspStatCd>> = {
+/** 수정 가능한 상태값 (withdrawn は読み取り専用のため除外) */
+export type WritableStatus = "active" | "deleted";
+
+/** TO-BE status → QSP statCd (수정 가능한 상태만) */
+export const STATUS_TO_STAT_CD: Record<WritableStatus, QspStatCd> = {
   active: "Y",
   deleted: "N",
+};
+
+/** 목록 필터용: withdrawn 포함 전체 매핑 */
+export const STATUS_FILTER_TO_STAT_CD: Record<MemberStatus, QspStatCd> = {
+  active: "Y",
+  deleted: "N",
+  withdrawn: "W",
 };
 
 /** QSP userTp → 화면표시 회원유형 레이블 */
@@ -25,13 +35,19 @@ export const USER_TYPE_LABEL = {
   GENERAL: "一般",
 } as const;
 
-/** as const 객체의 안전한 lookup (키가 존재하면 값 반환, 아니면 undefined) */
-export function lookupStatCd(key: string | null): string | undefined {
-  return STAT_CD_TO_STATUS[key as QspStatCd];
+/** 안전한 lookup (키가 존재하면 값 반환, 아니면 undefined) */
+export function lookupStatCd(key: string | null): MemberStatus | undefined {
+  if (key !== null && key in STAT_CD_TO_STATUS) {
+    return STAT_CD_TO_STATUS[key as QspStatCd];
+  }
+  return undefined;
 }
 
 export function lookupUserTypeLabel(key: string | null): string | undefined {
-  return USER_TYPE_LABEL[key as keyof typeof USER_TYPE_LABEL];
+  if (key !== null && key in USER_TYPE_LABEL) {
+    return USER_TYPE_LABEL[key as keyof typeof USER_TYPE_LABEL];
+  }
+  return undefined;
 }
 
 // ─── 회원 목록 쿼리 파라미터 ───
@@ -67,6 +83,15 @@ export const memberUpdateSchema = z.object({
 
 export type MemberUpdateInput = z.infer<typeof memberUpdateSchema>;
 
+// ─── QSP 공용 응답 구조 ───
+
+const qspResultSchema = z.object({
+  code: z.number(),
+  resultCode: z.string(),
+  message: z.string(),
+  resultMsg: z.string(),
+});
+
 // ─── QSP 회원 목록 응답 ───
 
 const qspMemberItemSchema = z.object({
@@ -88,12 +113,7 @@ export const qspMemberListResponseSchema = z.object({
     list: z.array(qspMemberItemSchema),
     totalCount: z.number(),
   }).nullable(),
-  result: z.object({
-    code: z.number(),
-    resultCode: z.string(),
-    message: z.string(),
-    resultMsg: z.string(),
-  }),
+  result: qspResultSchema,
 });
 
 export type QspMemberListResponse = z.infer<typeof qspMemberListResponseSchema>;
@@ -135,12 +155,7 @@ export type QspMemberDetail = z.infer<typeof qspMemberDetailSchema>;
 
 export const qspMemberDetailResponseSchema = z.object({
   data: qspMemberDetailSchema.nullable(),
-  result: z.object({
-    code: z.number(),
-    resultCode: z.string(),
-    message: z.string(),
-    resultMsg: z.string(),
-  }),
+  result: qspResultSchema,
 });
 
 export type QspMemberDetailResponse = z.infer<typeof qspMemberDetailResponseSchema>;
@@ -149,12 +164,7 @@ export type QspMemberDetailResponse = z.infer<typeof qspMemberDetailResponseSche
 
 export const qspUpdateResponseSchema = z.object({
   data: z.unknown().nullable(),
-  result: z.object({
-    code: z.number(),
-    resultCode: z.string(),
-    message: z.string(),
-    resultMsg: z.string(),
-  }),
+  result: qspResultSchema,
 });
 
 // ─── 회원 ID 파라미터 (userId=이메일 문자열) ───
