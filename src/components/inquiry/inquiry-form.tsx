@@ -93,6 +93,9 @@ export function InquiryForm() {
 
   const handleCancel = () => {
     if (isLoggedIn) {
+      setCompanyName(user?.compNm ?? "");
+      setName(user?.userNm ?? "");
+      setPhone("");
       setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
@@ -129,7 +132,12 @@ export function InquiryForm() {
       return;
     }
     if (!inquiryType) {
-      openAlert({ type: "alert", message: "お問い合わせタイプを選択してください。" });
+      openAlert({
+        type: "alert",
+        message: isCodeLoadError
+          ? "お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。"
+          : "お問い合わせタイプを選択してください。",
+      });
       return;
     }
     if (!title.trim()) {
@@ -327,8 +335,9 @@ export function InquiryForm() {
             variant="primary"
             className="w-[110px]"
             onClick={handleSubmit}
+            disabled={submitMutation.isPending}
           >
-            お問い合わせ
+            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
           </Button>
         </div>
       </div>
@@ -468,8 +477,9 @@ export function InquiryForm() {
             variant="primary"
             className="flex-1 shrink-0"
             onClick={handleSubmit}
+            disabled={submitMutation.isPending}
           >
-            お問い合わせ
+            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
           </Button>
         </div>
       </div>

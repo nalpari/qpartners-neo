@@ -31,7 +31,7 @@ async function main() {
   });
   console.log("Header:", header.id, header.headerCode);
 
-  const EMAIL = "chang9811@interplug.co.kr";
+  const EMAIL = requireEnv("INQUIRY_RECIPIENT_EMAIL");
   const details = [
     { code: "01", displayCode: "01", codeName: "ログインIDおよびログインに関するお問い合わせ", codeNameEtc: "로그인ID 및 로그인에 관한 문의" },
     { code: "02", displayCode: "02", codeName: "会員登録に関するお問い合わせ", codeNameEtc: "회원등록에 관한 문의" },
@@ -68,7 +68,7 @@ async function main() {
   await prisma.$disconnect();
 }
 
-main().catch((e) => {
-  console.error(e);
+main().catch((error: unknown) => {
+  console.error(error);
   process.exit(1);
 });

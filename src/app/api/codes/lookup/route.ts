@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const header = await prisma.codeHeader.findUnique({
-      where: { headerCode },
+    const header = await prisma.codeHeader.findFirst({
+      where: { headerCode, isActive: true },
       select: { id: true, headerCode: true, headerName: true },
     });
 
