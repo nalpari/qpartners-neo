@@ -34,8 +34,10 @@ export function PasswordChangePopup() {
       const hasUpper = /[A-Z]/.test(newPassword);
       const hasLower = /[a-z]/.test(newPassword);
       const hasNumber = /[0-9]/.test(newPassword);
-      if (newPassword.length < 8 || !hasUpper || !hasLower || !hasNumber) {
-        newErrors.new = "英大文字・英小文字・数字を組み合わせて8文字以上で設定してください";
+      if (newPassword.length < 8 || newPassword.length > 100 || !hasUpper || !hasLower || !hasNumber) {
+        newErrors.new = "英大文字・英小文字・数字を組み合わせて8文字以上100文字以内で設定してください";
+      } else if (currentPassword && newPassword === currentPassword) {
+        newErrors.new = "現在のパスワードと異なるパスワードを設定してください";
       }
     }
     if (!confirmPassword) {
@@ -64,7 +66,6 @@ export function PasswordChangePopup() {
       await api.post("/mypage/password-change", {
         currentPwd: currentPassword,
         newPwd: newPassword,
-        confirmPwd: confirmPassword,
       });
       setIsSubmitting(false);
       openAlert({

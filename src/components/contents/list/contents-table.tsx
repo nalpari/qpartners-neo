@@ -9,7 +9,7 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
-  DimSpinner,
+  Spinner,
   Pagination,
   SelectBox,
   MobileCardList,
@@ -468,7 +468,11 @@ export function ContentsTable({
   );
 
   if (isLoading) {
-    return <DimSpinner />;
+    return (
+      <div className="flex items-center justify-center w-full py-20">
+        <Spinner size={48} />
+      </div>
+    );
   }
 
   return (

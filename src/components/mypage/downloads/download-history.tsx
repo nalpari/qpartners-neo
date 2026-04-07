@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -72,9 +72,10 @@ function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
     <button
       type="button"
       onClick={() => {
-        // AG Grid context는 any 타입이므로 단언 불가피
-        const ctx = params.context as { onDownload: (item: DownloadLogItem) => void };
-        ctx.onDownload(data);
+        const ctx = params.context;
+        if (ctx && typeof ctx === "object" && "onDownload" in ctx && typeof ctx.onDownload === "function") {
+          (ctx.onDownload as (item: DownloadLogItem) => void)(data);
+        }
       }}
       className="bg-[#f7f9fb] rounded-full size-[32px] flex items-center justify-center cursor-pointer hover:bg-[#eaf0f6] transition-colors"
       aria-label="ダウンロード"
@@ -102,6 +103,7 @@ export function DownloadHistory() {
   // 모바일 누적 로드
   const [mobileItems, setMobileItems] = useState<DownloadLogItem[]>([]);
   const [mobilePage, setMobilePage] = useState(1);
+  const [isMobileLoading, setIsMobileLoading] = useState(false);
 
   // API 연동
   const { data, isLoading, error } = useQuery<DownloadLogsData>({
@@ -114,26 +116,14 @@ export function DownloadHistory() {
     },
   });
 
-  // 모바일 추가 로드용 쿼리
-  const { isFetching: isMobileLoading } = useQuery<DownloadLogsData>({
-    queryKey: ["download-logs-mobile", { page: mobilePage, pageSize: MOBILE_PAGE_SIZE, keyword: searchKeyword }],
-    queryFn: async () => {
-      const params: Record<string, string | number> = { page: mobilePage, pageSize: MOBILE_PAGE_SIZE };
-      if (searchKeyword) params.keyword = searchKeyword;
-      const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
-      return res.data.data;
-    },
-    enabled: mobilePage > 1,
-  });
-
-  // 모바일 데이터: 첫 페이지는 PC 데이터 사용, 추가 페이지는 별도 쿼리로 누적
+  // 모바일 데이터: 첫 페이지는 PC 데이터 사용, 추가 페이지는 별도 fetch로 누적
   const mobileData = mobilePage === 1
     ? (data?.list.slice(0, MOBILE_PAGE_SIZE) ?? [])
     : mobileItems;
 
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.ceil(totalCount / pageSize);
-  const mobileHasMore = mobileData.length < totalCount;
+  const mobileHasMore = mobilePage * MOBILE_PAGE_SIZE < totalCount;
 
   // 검색 실행
   const handleSearch = () => {
@@ -161,11 +151,15 @@ export function DownloadHistory() {
   const handlePageSizeChange = (value: string) => {
     setPageSize(Number(value));
     setPage(1);
+    setMobilePage(1);
+    setMobileItems([]);
   };
 
   // 모바일 もっと見る
   const handleLoadMore = async () => {
+    if (isMobileLoading) return;
     const nextPage = mobilePage + 1;
+    setIsMobileLoading(true);
     try {
       const params: Record<string, string | number> = { page: nextPage, pageSize: MOBILE_PAGE_SIZE };
       if (searchKeyword) params.keyword = searchKeyword;
@@ -174,6 +168,8 @@ export function DownloadHistory() {
       setMobilePage(nextPage);
     } catch (err: unknown) {
       console.error("[DownloadHistory] 추가 로드 실패:", err);
+    } finally {
+      setIsMobileLoading(false);
     }
   };
 
@@ -197,7 +193,7 @@ export function DownloadHistory() {
   };
 
   // AG Grid ColDefs
-  const columnDefs: ColDef<DownloadLogItem>[] = [
+  const columnDefs = useMemo<ColDef<DownloadLogItem>[]>(() => [
     {
       headerName: "ダウンロード日",
       field: "downloadedAt",
@@ -217,14 +213,14 @@ export function DownloadHistory() {
       cellRenderer: DownloadCell,
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
     },
-  ];
+  ], []);
 
   // 모바일 필드
   const mobileFields: MobileCardField<DownloadLogItem>[] = [
     {
       label: "ダウンロード日",
       key: "downloadedAt",
-      render: (item) => formatDate(item.downloadedAt),
+      render: (item) => item.downloadedAt ? formatDate(item.downloadedAt) : "",
     },
     { label: "タイトル", key: "contentTitle" },
     {

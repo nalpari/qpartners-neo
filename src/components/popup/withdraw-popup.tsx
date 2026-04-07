@@ -31,31 +31,20 @@ export function WithdrawPopup() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  // TODO: mypage/profile API 안정화 후 useQuery로 교체
-  // const { data: profile, isLoading: isProfileLoading, error: profileError } = useQuery<ProfileData>({
-  //   queryKey: ["mypage-profile"],
-  //   queryFn: async () => {
-  //     const res = await api.get<{ data: ProfileData }>("/mypage/profile");
-  //     return res.data.data;
-  //   },
-  // });
-  const profile: ProfileData = {
-    compNm: "—",
-    sei: "—",
-    mei: "",
-    email: "—",
-    telNo: "—",
-    withdrawAvailable: true,
-  };
+  // TODO: mypage/profile API 안정화 후 useQuery로 교체 — 더미 데이터는 프로필 조회 API 수정 반영 후 제거 예정
+  const profile: ProfileData | null = null;
   const isProfileLoading = false;
-  const profileError = null;
+  const profileError: Error | null = new Error("プロフィールAPIが未実装です");
+  const isProfileReady = profile != null && !isProfileLoading && !profileError;
 
-  const userInfo = [
-    { label: "会社名", value: profile.compNm ?? "-" },
-    { label: "氏名", value: [profile.sei, profile.mei].filter(Boolean).join(" ") || "-" },
-    { label: "メールアドレス (ID)", value: profile.email ?? "-" },
-    { label: "電話番号", value: profile.telNo ?? "-" },
-  ];
+  function buildUserInfo(p: ProfileData) {
+    return [
+      { label: "会社名", value: p.compNm ?? "-" },
+      { label: "氏名", value: [p.sei, p.mei].filter(Boolean).join(" ") || "-" },
+      { label: "メールアドレス (ID)", value: p.email ?? "-" },
+      { label: "電話番号", value: p.telNo ?? "-" },
+    ];
+  }
 
   const handleClose = () => {
     setIsClosing(true);
@@ -176,13 +165,13 @@ export function WithdrawPopup() {
               <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#ff1a1a] py-[20px]">
                 会員情報を読み込めませんでした
               </p>
-            ) : (
+            ) : profile ? (
               <div className="flex flex-col gap-[18px] w-full">
-                {userInfo.map((item, idx) => (
+                {buildUserInfo(profile).map((item, idx, arr) => (
                   <div
                     key={item.label}
                     className={`flex flex-col gap-[8px] pt-[18px] border-t ${
-                      idx === userInfo.length - 1
+                      idx === arr.length - 1
                         ? "border-b border-[#eff4f8] pb-[18px]"
                         : ""
                     } border-[#eff4f8]`}
@@ -196,7 +185,7 @@ export function WithdrawPopup() {
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
 
             {/* 退会理由 */}
             <div className="flex flex-col gap-[8px] w-full">
@@ -236,7 +225,7 @@ export function WithdrawPopup() {
               <Button
                 variant="primary"
                 onClick={() => { void handleSubmit(); }}
-                disabled={isSubmitting || isProfileLoading || !!profileError}
+                disabled={isSubmitting || !isProfileReady}
                 className="w-[141px] lg:w-[84px]"
               >
                 {isSubmitting ? "処理中..." : "退会する"}

@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { Button, DimSpinner } from "@/components/common";
+import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -59,7 +59,11 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
   });
 
   if (mode === "edit" && isLoadingContent) {
-    return <DimSpinner />;
+    return (
+      <div className="flex items-center justify-center w-full py-20">
+        <Spinner size={48} />
+      </div>
+    );
   }
 
   // existingData가 준비된 후 key로 내부 폼을 리마운트하여 초기값 보장
