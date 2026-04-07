@@ -74,7 +74,9 @@ export const qspUserDetailSchema = z.object({
   compPostCd: z.string().nullable(),
   compAddr: z.string().nullable(),
   compAddr2: z.string().nullable(),
-  compTelNo: z.string().nullable(),
+  // QSP 응답에서 필드 자체가 omit될 수 있어 nullish 사용
+  // (qspLoginUserSchema.compTelNo와 동일)
+  compTelNo: z.string().nullish(),
   compFaxNo: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
