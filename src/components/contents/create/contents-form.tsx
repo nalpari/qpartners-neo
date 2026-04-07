@@ -214,7 +214,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           await api.post(`/contents/${savedId}/files`, formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
-        } catch (uploadError) {
+        } catch (uploadError: unknown) {
           console.error("[Contents] 파일 업로드 실패:", uploadError);
           setIsSubmitting(false);
           openAlert({
@@ -232,14 +232,13 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
         message: "保存されました。",
         onConfirm: () => router.push(`/contents/${savedId}`),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("[Contents] 저장 실패:", error);
       if (isAxiosError(error) && error.response) {
-        console.error("[Contents] 서버 응답:", error.response.status, error.response.data);
+        console.error("[Contents] 서버 응답 status:", error.response.status);
       }
-      openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
-    } finally {
       setIsSubmitting(false);
+      openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
     }
   };
 

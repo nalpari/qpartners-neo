@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button, DimSpinner } from "@/components/common";
@@ -64,14 +64,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   const router = useRouter();
   const { openAlert } = useAlertStore();
   const [isDeleting, setIsDeleting] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Design Ref: §3.2 — 기존 헤더 캐시 구독 패턴
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  // Design Ref: §3.2 — 로그인 사용자 캐시 조회
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
 
   // Design Ref: §3.1 — API 데이터 조회
   const { data, isLoading, error } = useQuery<ContentDetailData>({
@@ -110,7 +106,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
             message: "削除されました。",
             onConfirm: () => router.push("/contents"),
           });
-        } catch (err) {
+        } catch (err: unknown) {
           console.error("[Contents] 삭제 실패:", err);
           setIsDeleting(false);
           openAlert({ type: "alert", message: "削除に失敗しました。" });

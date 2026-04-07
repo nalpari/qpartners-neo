@@ -9,7 +9,7 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid";
 import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
-import { Pagination, SelectBox, Spinner } from "@/components/common";
+import { DimSpinner, Pagination, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §2 — API Response Type
@@ -171,7 +171,7 @@ export function DownloadHistory() {
       const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
       setMobileItems((prev) => [...(prev.length === 0 ? (data?.list.slice(0, MOBILE_PAGE_SIZE) ?? []) : prev), ...res.data.data.list]);
       setMobilePage(nextPage);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[DownloadHistory] 추가 로드 실패:", err);
     }
   };
@@ -189,7 +189,7 @@ export function DownloadHistory() {
       a.download = item.fileName;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[DownloadHistory] 다운로드 실패:", err);
       openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
     }
@@ -270,11 +270,7 @@ export function DownloadHistory() {
 
   // 로딩
   if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <Spinner size={48} className="text-white" />
-      </div>
-    );
+    return <DimSpinner />;
   }
 
   // 에러

@@ -72,17 +72,18 @@ export function PasswordChangePopup() {
         message: "パスワードが変更されました。",
         onConfirm: handleClose,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       setIsSubmitting(false);
       if (isAxiosError(err) && err.response) {
         const status = err.response.status;
-        const data = err.response.data as { error?: string; issues?: { path?: string[]; message?: string }[] };
+        const data = (err.response.data ?? {}) as Record<string, unknown>;
+        const issues = Array.isArray(data.issues) ? data.issues as { path?: string[]; message?: string }[] : [];
 
         if (status === 429) {
           openAlert({ type: "alert", message: "パスワード変更の試行回数を超えました。しばらくしてからお試しください。" });
-        } else if (status === 400 && data.error === "Validation failed" && data.issues) {
+        } else if (status === 400 && data.error === "Validation failed" && issues.length > 0) {
           // 서버 Zod 검증 실패 — 필드별 에러 메시지 표시
-          const firstIssue = data.issues[0];
+          const firstIssue = issues[0];
           openAlert({ type: "alert", message: firstIssue?.message ?? "入力内容を確認してください。" });
         } else if (status === 400) {
           // QSP 비밀번호 불일치

@@ -41,11 +41,11 @@ export function WithdrawPopup() {
   //   },
   // });
   const profile: ProfileData = {
-    compNm: "INTERPLUG TEST",
-    sei: "金",
-    mei: "志映",
-    email: "kjy0501@interplug.co.kr",
-    telNo: "03-5441-5943",
+    compNm: "—",
+    sei: "—",
+    mei: "",
+    email: "—",
+    telNo: "—",
     withdrawAvailable: true,
   };
   const isProfileLoading = false;
@@ -92,7 +92,8 @@ export function WithdrawPopup() {
       // Design Ref: §5.2 — 에러 분기 처리
       if (isAxiosError(err) && err.response) {
         const status = err.response.status;
-        const data = err.response.data as { error?: string };
+        const data = (err.response.data ?? {}) as Record<string, unknown>;
+        const errorMsg = typeof data.error === "string" ? data.error : undefined;
 
         if (status === 401) {
           openAlert({
@@ -105,7 +106,7 @@ export function WithdrawPopup() {
             },
           });
         } else if (status === 403) {
-          openAlert({ type: "alert", message: data.error ?? "退会権限がありません。" });
+          openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
         } else if (status === 429) {
           openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
         } else if (status === 501) {

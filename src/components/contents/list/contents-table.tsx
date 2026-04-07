@@ -18,6 +18,9 @@ import { DimSpinner } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
+/** 브라우저 다운로드 큐 충돌 방지를 위한 딜레이 (ms) */
+const DOWNLOAD_DELAY_MS = 300;
+
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
@@ -70,9 +73,9 @@ async function downloadAllAttachments(contentId: number) {
       link.click();
       document.body.removeChild(link);
       // 브라우저 다운로드 큐 충돌 방지
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("[Contents] 첨부파일 다운로드 실패:", err);
   }
 }
