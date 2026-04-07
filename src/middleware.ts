@@ -14,7 +14,9 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
   "/api/openapi",
-  "/api/inquiry", // 문의 등록 (비로그인 가능) — route handler 내부 rate limit 적용
+  // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
+  // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
+  "/api/inquiry",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
