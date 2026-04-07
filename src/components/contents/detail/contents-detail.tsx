@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
-import { Button, Spinner } from "@/components/common";
+import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -129,11 +129,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
   // Design Ref: §6 — 로딩/에러 상태 처리
   if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <Spinner size={48} className="text-white" />
-      </div>
-    );
+    return <DimSpinner />;
   }
 
   if (error || !data) {
@@ -157,11 +153,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
   return (
     <>
-      {isDeleting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Spinner size={48} className="text-white" />
-        </div>
-      )}
+      {isDeleting && <DimSpinner />}
       <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full lg:pb-[120px]">
         <ContentsDetailInfo
           viewCount={data.viewCount}

@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { Button, Spinner } from "@/components/common";
+import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -59,11 +59,7 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
   });
 
   if (mode === "edit" && isLoadingContent) {
-    return (
-      <div className="flex items-center justify-center w-full py-20">
-        <Spinner size={48} />
-      </div>
-    );
+    return <DimSpinner />;
   }
 
   // existingData가 준비된 후 key로 내부 폼을 리마운트하여 초기값 보장
@@ -250,11 +246,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   // 수정 모드 로딩 중
   return (
     <>
-      {isSubmitting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Spinner size={48} className="text-white" />
-        </div>
-      )}
+      {isSubmitting && <DimSpinner />}
       <main className="flex flex-col items-center gap-[18px] w-full pb-[120px]">
         <ContentsFormManagement
           distributor={distributor}

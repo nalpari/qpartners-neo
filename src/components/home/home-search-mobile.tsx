@@ -35,6 +35,7 @@ export function HomeSearchMobile() {
           alt="検索"
           width={19}
           height={19}
+          style={{ width: "auto", height: "auto" }}
         />
       </button>
     </div>

@@ -14,7 +14,7 @@ import {
   MobileCardList,
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
-import { Spinner } from "@/components/common";
+import { DimSpinner } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
@@ -465,11 +465,7 @@ export function ContentsTable({
   );
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center w-full py-20">
-        <Spinner size={48} />
-      </div>
-    );
+    return <DimSpinner />;
   }
 
   return (
