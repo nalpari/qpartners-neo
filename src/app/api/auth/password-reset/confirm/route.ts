@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { passwordResetConfirmSchema } from "@/lib/schemas/password-reset";
+import { hashResetToken } from "@/lib/password-reset-token";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
@@ -85,7 +86,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { token, newPassword } = result.data;
+  const { token: rawToken, newPassword } = result.data;
+  // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회
+  const token = hashResetToken(rawToken);
 
   // 2. 토큰 재검증
   let resetToken;

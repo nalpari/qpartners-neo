@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { passwordResetVerifySchema } from "@/lib/schemas/password-reset";
+import { hashResetToken } from "@/lib/password-reset-token";
 
 // POST /api/auth/password-reset/verify — 토큰 검증
 export async function POST(request: NextRequest) {
@@ -25,13 +26,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { token } = result.data;
+  const { token: rawToken } = result.data;
+  // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회
+  const tokenHash = hashResetToken(rawToken);
 
   // 2. DB에서 토큰 조회
   let resetToken;
   try {
     resetToken = await prisma.passwordResetToken.findUnique({
-      where: { token },
+      where: { token: tokenHash },
     });
   } catch (error) {
     console.error("[POST /api/auth/password-reset/verify] DB 조회 실패:", error);
