@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { Button, Spinner } from "@/components/common";
+import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -203,7 +203,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       let savedId: number;
 
       if (mode === "create") {
-        const res = await api.post("/contents", requestBody);
+        const res = await api.post<{ data: { id: number } }>("/contents", requestBody);
         savedId = res.data.data.id;
       } else {
         await api.put(`/contents/${contentId}`, requestBody);
@@ -218,7 +218,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           await api.post(`/contents/${savedId}/files`, formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
-        } catch (uploadError) {
+        } catch (uploadError: unknown) {
           console.error("[Contents] 파일 업로드 실패:", uploadError);
           setIsSubmitting(false);
           openAlert({
@@ -236,25 +236,20 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
         message: "保存されました。",
         onConfirm: () => router.push(`/contents/${savedId}`),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("[Contents] 저장 실패:", error);
       if (isAxiosError(error) && error.response) {
-        console.error("[Contents] 서버 응답:", error.response.status, error.response.data);
+        console.error("[Contents] 서버 응답 status:", error.response.status);
       }
-      openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
-    } finally {
       setIsSubmitting(false);
+      openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
     }
   };
 
   // 수정 모드 로딩 중
   return (
     <>
-      {isSubmitting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Spinner size={48} className="text-white" />
-        </div>
-      )}
+      {isSubmitting && <DimSpinner />}
       <main className="flex flex-col items-center gap-[18px] w-full pb-[120px]">
         <ContentsFormManagement
           distributor={distributor}

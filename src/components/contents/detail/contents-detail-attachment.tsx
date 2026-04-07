@@ -51,8 +51,8 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
         setBlobUrl(url);
         setStatus("loaded");
       })
-      .catch((error: unknown) => {
-        console.error("[Contents] 이미지 썸네일 로드 실패:", error);
+      .catch((err: unknown) => {
+        console.error("[Contents] 썸네일 로드 실패:", err);
         if (!cancelled) setStatus("error");
       });
 
@@ -105,7 +105,7 @@ export function ContentsDetailAttachment({
   const handleDownload = async (fileId: number, fileName: string) => {
     try {
       await downloadFile(fileId, fileName);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[Contents] 다운로드 실패:", err);
       openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
     }

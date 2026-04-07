@@ -120,14 +120,12 @@ export function Gnb() {
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄 */}
           <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0 relative">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/asset/images/layout/logo_hanwha.svg"
               alt="Hanwha Japan"
               width={160}
               height={30}
-              unoptimized
-              style={{ height: "auto"}}
-              loading="eager"
             />
             <span className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
             <span className="font-pretendard font-medium text-[14px] leading-[1.5] text-white uppercase whitespace-nowrap">
@@ -137,13 +135,12 @@ export function Gnb() {
 
           {/* 모바일 로고 — 세로 2줄 */}
           <Link href="/" className="flex lg:hidden flex-col shrink-0">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/asset/images/layout/logo_hanwha.svg"
               alt="Hanwha Japan"
               width={133}
               height={24}
-              unoptimized
-              style={{ height: "auto" }}
             />
             <span className="font-pretendard font-medium text-[12px] leading-[1.5] text-white uppercase whitespace-nowrap pl-[30px]">
               Q.PARTNERS

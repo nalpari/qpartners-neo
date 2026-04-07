@@ -10,3 +10,4 @@ export { MobileCardList } from "./mobile-card-list";
 export type { MobileCardField } from "./mobile-card-list";
 export { AlertDialog } from "./alert-dialog";
 export { Spinner } from "./spinner";
+export { DimSpinner } from "./dim-spinner";

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
-import { Button, Spinner } from "@/components/common";
+import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -64,14 +64,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   const router = useRouter();
   const { openAlert } = useAlertStore();
   const [isDeleting, setIsDeleting] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Design Ref: §3.2 — 기존 헤더 캐시 구독 패턴
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  // Design Ref: §3.2 — 로그인 사용자 캐시 조회
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
 
   // Design Ref: §3.1 — API 데이터 조회
   const { data, isLoading, error } = useQuery<ContentDetailData>({
@@ -110,7 +106,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
             message: "削除されました。",
             onConfirm: () => router.push("/contents"),
           });
-        } catch (err) {
+        } catch (err: unknown) {
           console.error("[Contents] 삭제 실패:", err);
           setIsDeleting(false);
           openAlert({ type: "alert", message: "削除に失敗しました。" });
@@ -129,11 +125,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
   // Design Ref: §6 — 로딩/에러 상태 처리
   if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <Spinner size={48} className="text-white" />
-      </div>
-    );
+    return <DimSpinner />;
   }
 
   if (error || !data) {
@@ -157,11 +149,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
   return (
     <>
-      {isDeleting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Spinner size={48} className="text-white" />
-        </div>
-      )}
+      {isDeleting && <DimSpinner />}
       <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full lg:pb-[120px]">
         <ContentsDetailInfo
           viewCount={data.viewCount}
