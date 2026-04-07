@@ -75,7 +75,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         ...content,
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
-        categories: buildCategoryTree(content.categories),
+        categories: buildCategoryTree(content.categories, { includeInternal: internal }),
         attachments: content.attachments.map((a) => ({
           ...a,
           fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
@@ -184,10 +184,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       });
     });
 
+    // PUT 은 requireAdmin 통과자 = 사내 사용자이므로 includeInternal=true
     return NextResponse.json({
       data: {
         ...content,
-        categories: buildCategoryTree(content.categories),
+        categories: buildCategoryTree(content.categories, { includeInternal: true }),
       },
     });
   } catch (error) {

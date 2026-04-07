@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       isNew: now - c.createdAt.getTime() < FIVE_DAYS_MS,
       isUpdated: now - c.updatedAt.getTime() < FIVE_DAYS_MS,
-      categories: buildCategoryTree(c.categories),
+      categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
     }));
