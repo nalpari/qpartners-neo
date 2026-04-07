@@ -3,24 +3,9 @@
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
+import { formatDate } from "@/lib/format";
 import { Spinner } from "@/components/common";
-
-interface DownloadLogItem {
-  id: number;
-  downloadedAt: string;
-  contentTitle: string;
-  fileName: string;
-  isExpired: boolean;
-}
-
-interface DownloadLogsData {
-  totalCount: number;
-  list: DownloadLogItem[];
-}
-
-function formatDate(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, ".");
-}
+import type { DownloadLogsData } from "./home-types";
 
 export function HomeDownloadsPc() {
   const { data, isLoading } = useQuery<DownloadLogsData>({

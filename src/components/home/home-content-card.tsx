@@ -4,6 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import api from "@/lib/axios";
+import { formatDate } from "@/lib/format";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 
 interface CategoryItem {
@@ -27,28 +28,28 @@ export interface HomeContentItem {
 const DOWNLOAD_DELAY_MS = 300;
 
 async function downloadAllAttachments(contentId: number) {
-  const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
-  const attachments = res.data.data.attachments;
-  if (!attachments || attachments.length === 0) return;
+  try {
+    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
+    const attachments = res.data.data.attachments;
+    if (!attachments || attachments.length === 0) return;
 
-  for (const file of attachments) {
-    const link = document.createElement("a");
-    link.href = `/api/contents/${contentId}/files/${file.id}/download`;
-    link.download = file.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
+    for (const file of attachments) {
+      const link = document.createElement("a");
+      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
+    }
+  } catch (err: unknown) {
+    console.error("[Home] 첨부파일 다운로드 실패:", err);
   }
 }
 
 interface HomeContentCardProps {
   item: HomeContentItem;
   categoryTree: CategoryNode[];
-}
-
-function formatDate(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, ".");
 }
 
 /** 카테고리 트리에서 부모 그룹별로 매칭된 자식만 추출 (선택값 있는 그룹만) */
@@ -80,7 +81,6 @@ export function HomeContentCard({ item, categoryTree }: HomeContentCardProps) {
     if (downloadingRef.current) return;
     downloadingRef.current = true;
     void downloadAllAttachments(item.id)
-      .catch((err: unknown) => console.error("[Home] 첨부파일 다운로드 실패:", err))
       .finally(() => { downloadingRef.current = false; });
   };
 
