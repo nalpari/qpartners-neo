@@ -9,12 +9,12 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
+  DimSpinner,
   Pagination,
   SelectBox,
   MobileCardList,
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
-import { DimSpinner } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 

@@ -72,6 +72,7 @@ function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
     <button
       type="button"
       onClick={() => {
+        // AG Grid context는 any 타입이므로 단언 불가피
         const ctx = params.context as { onDownload: (item: DownloadLogItem) => void };
         ctx.onDownload(data);
       }}

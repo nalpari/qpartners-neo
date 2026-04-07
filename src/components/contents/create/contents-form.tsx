@@ -199,7 +199,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       let savedId: number;
 
       if (mode === "create") {
-        const res = await api.post("/contents", requestBody);
+        const res = await api.post<{ data: { id: number } }>("/contents", requestBody);
         savedId = res.data.data.id;
       } else {
         await api.put(`/contents/${contentId}`, requestBody);
