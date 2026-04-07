@@ -80,7 +80,8 @@ export async function GET(request: NextRequest) {
         contentId: log.contentId,
         contentTitle: log.content.title,
         attachmentId: log.attachmentId,
-        fileName: log.attachment.fileName,
+        // 첨부파일이 삭제된 경우(attachmentId=null) 표시용 폴백 — 다운로드 이력은 보존
+        fileName: log.attachment?.fileName ?? "(削除されたファイル)",
         isExpired,
       };
     });

@@ -345,9 +345,9 @@ model DownloadLog {
   userType     qp_download_logs_user_type @map("user_type")
   userId       String                     @map("user_id") @db.VarChar(255)
   contentId    Int                        @map("content_id")
-  attachmentId Int                        @map("attachment_id")
+  attachmentId Int?                       @map("attachment_id")
   downloadedAt DateTime                   @default(now()) @map("downloaded_at")
-  attachment   ContentAttachment          @relation(fields: [attachmentId], references: [id])
+  attachment   ContentAttachment?         @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
   content      Content                    @relation(fields: [contentId], references: [id])
 
   @@index([userType, userId], map: "idx_user")

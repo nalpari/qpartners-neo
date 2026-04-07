@@ -1329,6 +1329,104 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/contents/{id}/files/download-all": {
+      get: {
+        tags: ["Content"],
+        summary: "전체 첨부파일 ZIP 다운로드 (게시대상 접근제어)",
+        description: "콘텐츠에 첨부된 모든 파일을 ZIP으로 묶어 스트리밍 다운로드. 동일 파일명은 자동으로 (1), (2) 번호 부여.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": { description: "ZIP 바이너리", content: { "application/zip": { schema: { type: "string", format: "binary" } } } },
+          "403": errorResponse("접근 권한 없음"),
+          "404": errorResponse("Not found 또는 첨부파일 없음"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/contents/{id}/files/{fileId}": {
+      delete: {
+        tags: ["Content"],
+        summary: "첨부파일 삭제 (관리자)",
+        description: "DB 레코드 삭제 + 디스크 파일 삭제. DownloadLog의 attachmentId는 SetNull로 처리되어 이력은 보존됨.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "403": errorResponse("수정 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      put: {
+        tags: ["Content"],
+        summary: "첨부파일 교체 (관리자, multipart/form-data)",
+        description: "기존 첨부파일을 새 파일로 교체. 디스크 파일 + DB 레코드 모두 갱신.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: { type: "string", format: "binary", description: "교체할 새 파일 1개" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "교체 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        fileName: { type: "string" },
+                        fileSize: { type: "integer", nullable: true },
+                        mimeType: { type: "string", nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("파일 검증 실패"),
+          "403": errorResponse("수정 권한 없음"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
     "/mypage/download-logs": {
       get: {
         tags: ["DownloadLog"],

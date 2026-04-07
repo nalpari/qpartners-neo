@@ -5,6 +5,7 @@ import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { validateFiles } from "@/lib/file-validation";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -59,42 +60,10 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 파일 크기 제한 (50MB)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    // 허용 MIME 타입
-    const ALLOWED_MIMES = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ];
-    // 허용 확장자 (MIME 검증과 이중 체크) — SVG 제외 (XSS 위험)
-    const ALLOWED_EXTENSIONS = new Set([
-      "pdf", "docx", "xlsx", "pptx",
-      "jpg", "jpeg", "png", "gif", "webp", "bmp",
-    ]);
-
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: `파일 크기가 50MB를 초과합니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-      if (!ALLOWED_EXTENSIONS.has(ext)) {
-        return NextResponse.json(
-          { error: `허용되지 않는 파일 확장자입니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const mime = file.type || "";
-      if (!ALLOWED_MIMES.includes(mime) && !mime.startsWith("image/")) {
-        return NextResponse.json(
-          { error: `허용되지 않는 파일 형식입니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
+    // 파일 검증 — 공통 유틸 사용 (size, 확장자, MIME)
+    const validation = validateFiles(files);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
