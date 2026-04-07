@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           categories: {
-            include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } },
+            include: { category: CATEGORY_TREE_INCLUDE },
           },
           targets: { select: { targetType: true, startAt: true, endAt: true } },
           _count: { select: { attachments: true } },
@@ -132,7 +133,7 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       isNew: now - c.createdAt.getTime() < FIVE_DAYS_MS,
       isUpdated: now - c.updatedAt.getTime() < FIVE_DAYS_MS,
-      categories: c.categories.map((cc) => cc.category),
+      categories: buildCategoryTree(c.categories),
       targets: c.targets,
       attachmentCount: c._count.attachments,
     }));

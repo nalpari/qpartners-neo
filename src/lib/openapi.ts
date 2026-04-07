@@ -1177,7 +1177,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { type: "array", items: { type: "object" } },
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentListItem" },
+                    },
                     meta: {
                       type: "object",
                       properties: {
@@ -2503,6 +2506,38 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
         ],
+      },
+      ContentListItem: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          title: { type: "string" },
+          status: { type: "string", enum: ["draft", "published", "deleted"] },
+          authorDepartment: { type: "string", nullable: true },
+          viewCount: { type: "integer" },
+          publishedAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          isNew: { type: "boolean", description: "생성 후 5일 이내" },
+          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          categories: {
+            type: "array",
+            description: "부모-자식 트리 구조. 콘텐츠에 연결된 자식 카테고리들을 부모 기준으로 그룹화",
+            items: { $ref: "#/components/schemas/CategoryTree" },
+          },
+          targets: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                startAt: { type: "string", format: "date-time", nullable: true },
+                endAt: { type: "string", format: "date-time", nullable: true },
+              },
+            },
+          },
+          attachmentCount: { type: "integer" },
+        },
       },
       CreateCategory: {
         type: "object",
