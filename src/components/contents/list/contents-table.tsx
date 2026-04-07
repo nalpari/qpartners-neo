@@ -482,21 +482,29 @@ export function ContentsTable({
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
-          <div className="flex flex-col gap-6">
-            <div style={{ maxHeight: 800, overflow: "auto" }}>
-              <DataGrid<ContentListItem>
-                columnDefs={columnDefs}
-                rowData={data}
-                className="contents-grid"
-                maxHeight={0}
+          {data.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[300px]">
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
+                該当するコンテンツがありません。
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <div style={{ maxHeight: 800, overflow: "auto" }}>
+                <DataGrid<ContentListItem>
+                  columnDefs={columnDefs}
+                  rowData={data}
+                  className="contents-grid"
+                  maxHeight={0}
+                />
+              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={onPageChange}
               />
             </div>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={onPageChange}
-            />
-          </div>
+          )}
         </div>
       )}
 
@@ -507,12 +515,20 @@ export function ContentsTable({
             {topBar}
           </div>
           <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
-          <MobileCardList<ContentListItem>
-            data={data}
-            fields={mobileFields}
-            keyExtractor={(item) => String(item.id)}
-            onItemClick={handleMobileItemClick}
-          />
+          {data.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[300px] bg-white">
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
+                該当するコンテンツがありません。
+              </p>
+            </div>
+          ) : (
+            <MobileCardList<ContentListItem>
+              data={data}
+              fields={mobileFields}
+              keyExtractor={(item) => String(item.id)}
+              onItemClick={handleMobileItemClick}
+            />
+          )}
 
           {currentPage < totalPages && (
             <button

@@ -11,7 +11,7 @@ export function HomeSearchMobile() {
 
   const handleSearch = () => {
     if (query.trim()) {
-      router.push(`/contents?q=${encodeURIComponent(query.trim())}`);
+      router.push(`/contents?keyword=${encodeURIComponent(query.trim())}`);
     }
   };
 
