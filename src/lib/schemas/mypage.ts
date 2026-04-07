@@ -78,9 +78,9 @@ export const qspUserDetailSchema = z.object({
   compFaxNo: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
-  corporateNo: z.string().nullable(),
+  corporateNo: z.string().nullish(),
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
-  newsRcptDate: z.string().nullable(),
+  newsRcptDate: z.string().nullish(),
   // QSP 과도기: DEALER → STORE 호환 매핑 (qspLoginUserSchema와 동일 로직)
   userTp: z.string().nullable().transform((val) => {
     if (val === "DEALER") return "STORE" as const;

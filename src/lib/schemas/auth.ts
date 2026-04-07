@@ -31,6 +31,7 @@ export const qspLoginUserSchema = z.object({
   compCd: z.string().nullable(),
   compNm: z.string().nullable(),
   compNmKana: z.string().nullable(),
+  compTelNo: z.string().nullish(),
   email: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
@@ -80,6 +81,9 @@ export const loginUserSchema = qspLoginUserSchema
     authRole: z.enum(authRoleValues).optional(),
     twoFactorVerified: z.boolean(),
     pwdInitYn: z.enum(["Y", "N"]).nullable().optional(),
+    // 전화번호 — QSP compTelNo(회사 전화) 또는 Seko telNo(개인 전화) 기반
+    // optional: 기존 JWT와 호환 유지 (재로그인 전까지 없을 수 있음)
+    telNo: z.string().nullable().optional(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
   "/api/openapi",
+  "/api/inquiry", // 문의 등록 (비로그인 가능) — route handler 내부 rate limit 적용
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
@@ -21,6 +22,7 @@ const PUBLIC_GET_PATTERNS = [
   /^\/api\/contents(\/\d+)?$/, // GET /api/contents, GET /api/contents/[id]
   /^\/api\/categories(\/\d+)?$/, // GET /api/categories, GET /api/categories/[id]
   /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
+  /^\/api\/codes\/lookup$/, // GET /api/codes/lookup — 문의하기 문의유형 코드 조회
 ];
 
 /** 2차 인증 미완료 상태에서 접근 가능한 경로 */
