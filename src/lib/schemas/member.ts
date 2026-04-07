@@ -28,10 +28,15 @@ export const STATUS_FILTER_TO_STAT_CD: Record<MemberStatus, QspStatCd> = {
   withdrawn: "W",
 };
 
-/** QSP userTp → 화면표시 회원유형 레이블 */
+/** QSP userTp → 화면표시 회원유형 레이블
+ *  MF-3: 관리자 회원관리 화면에서는 시공점(SEKO)을 관리 대상에서 제외하지만,
+ *  QSP 응답에 SEKO 가 포함되어 상세/목록에 노출되는 경우를 대비해 레이블을 정의해 둔다.
+ *  (미정의 시 "unknown" 으로 표시되어 운영상 추적이 어려움)
+ */
 export const USER_TYPE_LABEL = {
   ADMIN: "管理者",
   STORE: "販売店",
+  SEKO: "施工店",
   GENERAL: "一般",
 } as const;
 
@@ -59,7 +64,10 @@ export function lookupUserTypeLabel(key: string | null): string | undefined {
 
 /** 회원 목록 필터용 상태값 */
 const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
-/** 회원 목록 필터용 유형값 (시공점 제외) */
+/** 회원 목록 필터용 유형값
+ *  시공점(SEKO)은 별도 관리 화면에서 다루므로 본 관리자 회원관리 필터에서는 의도적으로 제외.
+ *  (표시 레이블은 USER_TYPE_LABEL 에 SEKO 를 포함하여 방어적으로 대응)
+ */
 const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
 
 export const memberListQuerySchema = z.object({
@@ -75,7 +83,12 @@ export type MemberListQuery = z.infer<typeof memberListQuerySchema>;
 
 // ─── 회원 수정 요청 ───
 
-/** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3) */
+/** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3)
+ *  주의: 여기서의 SEKO 는 `authCd`(권한코드) 값이며, 위 `memberTypeValues` 의
+ *  `userTp`(회원유형)와는 다른 개념이다. 즉 일반회원(userTp=GENERAL)에게
+ *  시공점 권한(authCd=SEKO)을 부여할 수 있다는 의미로, userTp 가 SEKO 로
+ *  바뀌는 것은 아니다.
+ */
 const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"] as const;
 
 export const memberUpdateSchema = z.object({

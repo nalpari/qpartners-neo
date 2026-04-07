@@ -30,11 +30,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (authResult instanceof NextResponse) return authResult;
     const { user: admin } = authResult;
 
-    // 1-a. Rate limit: 관리자 계정 탈취 시 남용 방어 (시간당 20건)
-    const forwarded = request.headers.get("x-forwarded-for");
-    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-    const rateLimitKey = ip ?? `admin:${admin.userId}`;
-    if (!checkRateLimit(`admin-pw-reset:${rateLimitKey}`, 20, 60 * 60 * 1000)) {
+    // 1-a. Rate limit: 관리자 계정 탈취 시 남용 방어
+    // MF-2: X-Forwarded-For 는 스푸핑 가능하므로 primary 키를 admin.userId 로 고정.
+    //       in-memory 저장소 한계상 멀티 인스턴스 환경에서는 인스턴스당 카운터가 분리되므로
+    //       배포 환경(서버리스/멀티 pod)에서는 Redis 등 공유 저장소로 교체 필요.
+    const HOUR_MS = 60 * 60 * 1000;
+    if (!checkRateLimit(`admin-pw-reset:admin:${admin.userId}`, 20, HOUR_MS)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
         { status: 429 },
@@ -48,6 +49,15 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "IDが正しくありません" },
         { status: 400 },
+      );
+    }
+
+    // 1-b. 타겟 사용자 이차 캡: 동일 회원을 대상으로 한 리셋 반복 방지 (시간당 5건)
+    //       여러 관리자 계정 탈취에 대비한 회원 단위 보호.
+    if (!checkRateLimit(`admin-pw-reset:target:${rawId}`, 5, HOUR_MS)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+        { status: 429 },
       );
     }
 
@@ -140,29 +150,26 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
     const validatedUserTp = userTpResult.data;
 
-    // 5. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
+    // 5. 새 토큰 생성 (기존 토큰 무효화는 메일 발송 성공 후로 연기)
     // MF-1: DB에는 SHA-256 해시만 저장. 이메일/URL에는 원본 토큰을 전달한다.
+    // MF-5: 기존 유효 토큰을 선제 무효화했다가 메일 발송 실패 시 롤백이 불완전해
+    //       사용자가 이전에 받은 유효 링크도 모두 잃는 문제가 있었음.
+    //       → 메일 발송 성공 후 invalidate 수행. 실패 경로에서는 신규 토큰만 제거.
     const rawToken = generateRawResetToken();
     const token = hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 
     try {
-      await prisma.$transaction([
-        prisma.passwordResetToken.updateMany({
-          where: { userType: validatedUserTp, userId: memberEmail, used: false },
-          data: { used: true },
-        }),
-        prisma.passwordResetToken.create({
-          data: {
-            userType: validatedUserTp,
-            userId: memberEmail,
-            loginId: rawId,
-            token,
-            expiresAt,
-            createdBy: admin.userId,
-          },
-        }),
-      ]);
+      await prisma.passwordResetToken.create({
+        data: {
+          userType: validatedUserTp,
+          userId: memberEmail,
+          loginId: rawId,
+          token,
+          expiresAt,
+          createdBy: admin.userId,
+        },
+      });
     } catch (error: unknown) {
       console.error("[POST /api/admin/members/:id/reset-password] 토큰 생성 실패:", error);
       return NextResponse.json(
@@ -198,7 +205,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         "[POST /api/admin/members/:id/reset-password] 메일 발송 실패:",
         error instanceof Error ? { message: error.message } : error,
       );
-      // 토큰 삭제 (발송 실패 시 orphan 방지)
+      // MF-5: 신규 토큰만 삭제하면 됨. 기존 유효 토큰은 아직 무효화하지 않았으므로
+      //       사용자가 이전에 받은 링크는 그대로 유효하게 유지된다.
       try {
         await prisma.passwordResetToken.deleteMany({ where: { token } });
       } catch (dbError: unknown) {
@@ -211,6 +219,25 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "メールの送信に失敗しました" },
         { status: 500 },
+      );
+    }
+
+    // MF-5: 메일 발송 성공 후 기존 유효 토큰 무효화 (신규 토큰은 제외)
+    // 실패해도 사용자 입장에서는 메일을 받은 상태이므로 치명적이지 않음 — WARN 로그로 남김.
+    try {
+      await prisma.passwordResetToken.updateMany({
+        where: {
+          userType: validatedUserTp,
+          userId: memberEmail,
+          used: false,
+          token: { not: token },
+        },
+        data: { used: true },
+      });
+    } catch (invalidateError: unknown) {
+      console.warn(
+        "[POST /api/admin/members/:id/reset-password] 기존 토큰 무효화 실패 — 신규 링크는 정상 발송됨:",
+        invalidateError,
       );
     }
 
