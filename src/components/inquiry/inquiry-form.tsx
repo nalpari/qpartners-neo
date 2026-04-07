@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { isAxiosError } from "axios";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, InputBox, SelectBox } from "@/components/common";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
-import { useAuthStore } from "@/lib/auth-store";
+import type { LoginUser } from "@/lib/schemas/auth";
 import api from "@/lib/axios";
 
 interface CodeDetail {
@@ -19,7 +19,9 @@ interface CodeDetail {
 
 export function InquiryForm() {
   const { openAlert } = useAlertStore();
-  const user = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
+  // 헤더와 동일한 queryKey로 캐시된 로그인 사용자 정보 조회
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
   const isLoggedIn = !!user;
 
   const {
@@ -47,6 +49,7 @@ export function InquiryForm() {
 
   const [companyName, setCompanyName] = useState(user?.compNm ?? "");
   const [name, setName] = useState(user?.userNm ?? "");
+  // TODO: profile API 안정화 후 user?.telNo 연동 — 현재 LoginUser 타입에 telNo 미포함
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
@@ -162,7 +165,10 @@ export function InquiryForm() {
     });
   };
 
+  // Design Ref: §6.1 — DimSpinner 적용 (submit 액션)
   return (
+    <>
+    {submitMutation.isPending && <DimSpinner />}
     <main className="flex flex-col items-center w-full lg:pb-[48px] pb-[28px] mt-[10px] lg:mt-0">
       {/* PC 카드 */}
       <div className="hidden lg:flex flex-col gap-[24px] w-[1440px]">
@@ -515,5 +521,6 @@ export function InquiryForm() {
         </div>
       )}
     </main>
+    </>
   );
 }
