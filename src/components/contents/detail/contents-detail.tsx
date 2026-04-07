@@ -91,6 +91,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // Design Ref: §4.1 — 사내 사용자 판별 (임시: userTp 기반)
   const isAdmin = user?.userTp === "ADMIN";
   const isInternal = isAdmin;
+  // 삭제/수정 권한: Admin + 본인 등록 컨텐츠
+  const canModify = isAdmin && data != null && user?.userId === data.userId;
 
   const handleDelete = () => {
     openAlert({
@@ -109,7 +111,11 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         } catch (err: unknown) {
           console.error("[Contents] 삭제 실패:", err);
           setIsDeleting(false);
-          openAlert({ type: "alert", message: "削除に失敗しました。" });
+          const status = isAxiosError(err) ? err.response?.status : null;
+          const message = status === 403
+            ? "このコンテンツを削除する権限がありません。"
+            : "削除に失敗しました。";
+          openAlert({ type: "alert", message });
         }
       },
     });
@@ -183,7 +189,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
         {/* 하단 버튼 */}
         <div className="flex items-center gap-2 w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end">
-          {isAdmin && (
+          {canModify && (
             <>
               <Button
                 variant="secondary"
