@@ -7,6 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendMail } from "@/lib/mailer";
 import {
+  generateRawResetToken,
+  hashResetToken,
+} from "@/lib/password-reset-token";
+import {
   passwordResetMailHtml,
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
@@ -102,6 +106,19 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
+    // MF-2: 비활성 회원(탈퇴/삭제) 비밀번호 초기화 차단
+    // 탈퇴한 이메일이 재활용된 경우 제3자가 리셋 링크를 수신하여 계정 탈취 가능.
+    if (parsed.data.data.statCd !== "Y") {
+      console.warn(
+        "[POST /api/admin/members/:id/reset-password] 비활성 회원 초기화 시도 차단 — statCd:",
+        parsed.data.data.statCd,
+      );
+      return NextResponse.json(
+        { error: "アクティブな会員のみパスワード初期化が可能です" },
+        { status: 400 },
+      );
+    }
+
     const memberEmail = parsed.data.data.email;
     const memberUserTp = parsed.data.data.userTp;
     if (!memberEmail) {
@@ -124,7 +141,9 @@ export async function POST(request: NextRequest, { params }: Params) {
     const validatedUserTp = userTpResult.data;
 
     // 5. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
-    const token = crypto.randomUUID();
+    // MF-1: DB에는 SHA-256 해시만 저장. 이메일/URL에는 원본 토큰을 전달한다.
+    const rawToken = generateRawResetToken();
+    const token = hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 
     try {
@@ -154,7 +173,19 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     // 6. 비밀번호 변경 링크 메일 발송
     const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
-    const resetUrl = `${siteUrl}/password-reset?token=${token}`;
+    // HTTPS 검증: 운영환경에서 http로 링크가 발송되면 토큰이 평문으로 네트워크에 노출됨.
+    if (process.env.NODE_ENV === "production" && !siteUrl.startsWith("https://")) {
+      console.error(
+        "[POST /api/admin/members/:id/reset-password] SITE_URL이 https로 시작하지 않음:",
+        siteUrl,
+      );
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+    // URL에는 원본 토큰을 사용 — 사용자가 링크를 열면 해싱 후 DB 조회
+    const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
 
     try {
       await sendMail({
@@ -171,7 +202,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       try {
         await prisma.passwordResetToken.deleteMany({ where: { token } });
       } catch (dbError: unknown) {
-        console.error("[POST /api/admin/members/:id/reset-password] CRITICAL: 토큰 롤백 실패 — 수동 확인 필요, tokenPrefix:", token.slice(0, 8), dbError);
+        console.error("[POST /api/admin/members/:id/reset-password] CRITICAL: 토큰 롤백 실패 — 수동 확인 필요, tokenHashPrefix:", token.slice(0, 8), dbError);
         return NextResponse.json(
           { error: "メール送信に失敗し、初期化トークンの取消にも失敗しました。管理者に連絡してください。" },
           { status: 500 },

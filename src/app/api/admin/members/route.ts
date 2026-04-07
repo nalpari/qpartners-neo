@@ -115,9 +115,10 @@ export async function GET(request: NextRequest) {
       userName: item.userNm ?? "",
       userNameKana: item.userNmKana ?? "",
       email: item.email ?? "",
-      userType: lookupUserTypeLabel(item.userTp) ?? item.userTp ?? "",
+      // 알 수 없는 QSP 값은 "unknown"으로 고정 (QSP 신뢰 경계 위반 방지)
+      userType: lookupUserTypeLabel(item.userTp) ?? "unknown",
       companyName: item.compNm ?? "",
-      status: lookupStatCd(item.statCd) ?? item.statCd ?? "",
+      status: lookupStatCd(item.statCd) ?? "unknown",
       lastLoginAt: item.lastLoginDt ?? null,
       createdAt: item.regDt ?? null,
     }));

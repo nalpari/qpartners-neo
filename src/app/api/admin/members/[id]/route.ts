@@ -97,7 +97,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       userName: d.userNm ?? "",
       userNameKana: d.userNmKana ?? "",
       email: d.email ?? "",
-      userType: lookupUserTypeLabel(d.userTp) ?? d.userTp ?? "",
+      // 알 수 없는 QSP 값은 노출하지 않고 "unknown"으로 고정 (QSP 신뢰 경계 위반 방지 + OpenAPI enum 준수)
+      userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
       userRole: d.authCd ?? "",
       companyName: d.compNm ?? "",
       companyNameKana: d.compNmKana ?? "",
@@ -108,10 +109,12 @@ export async function GET(request: NextRequest, { params }: Params) {
       corporateNo: d.corpNo ?? "",
       department: d.deptNm ?? "",
       jobTitle: d.pstnNm ?? "",
-      twoFactorEnabled: d.secAuthYn === "Y",
+      // 2FA 상태: "Y"=활성, "N"=비활성, null=미설정 — 미설정과 비활성을 구분
+      twoFactorEnabled:
+        d.secAuthYn === "Y" ? true : d.secAuthYn === "N" ? false : null,
       loginNotification: d.loginNotiYn === "Y",
       attributeChangeNotification: d.attrChgNotiYn === "Y",
-      status: lookupStatCd(d.statCd) ?? d.statCd ?? "",
+      status: lookupStatCd(d.statCd) ?? "unknown",
       newsRcptYn: d.newsRcptYn ?? "N",
       newsRcptDate: d.newsRcptDt ?? null,
       lastLoginAt: d.lastLoginDt ?? null,
@@ -185,7 +188,27 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 자기 자신 상태 변경 금지 — self-lockout 방지
+    if (result.data.status !== undefined && rawId === user.userId) {
+      return NextResponse.json(
+        { error: "自分自身のアカウント状態は変更できません" },
+        { status: 400 },
+      );
+    }
+
     // 4. userRole 변경 시 대상 회원 유형 검증 (일반회원만 가능)
+    //
+    // [TOCTOU 주의] 본 검증(QSP 상세 조회)과 아래의 QSP 업데이트 호출 사이에는
+    // 짧은 경합 창(race window)이 존재한다. 동시에 다른 관리자가 동일 회원의
+    // userTp을 ADMIN/STORE 등으로 변경하면, 본 요청이 GENERAL이 아닌 회원에게
+    // authCd를 부여하여 권한 상승(privilege escalation)을 일으킬 수 있다.
+    //
+    // 근본 해결을 위해서는 QSP 업데이트 API에 `userTp=GENERAL` 조건 파라미터를
+    // 추가하여 원자적으로 처리해야 한다(QSP 측 변경 필요 — 추후 작업 예정).
+    // 그 전까지는 다음의 완화 조치를 적용한다:
+    //   1) 검증 직후 즉시 업데이트 호출 (창 최소화)
+    //   2) 관리자 동시 작업이 드문 운영 가정
+    //   3) audit log를 통한 사후 탐지(추후 작업 예정)
     if (result.data.userRole !== undefined) {
       // 대상 회원 정보를 먼저 조회
       const checkParams = new URLSearchParams({

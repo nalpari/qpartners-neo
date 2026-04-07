@@ -35,19 +35,24 @@ export const USER_TYPE_LABEL = {
   GENERAL: "一般",
 } as const;
 
-/** 안전한 lookup (키가 존재하면 값 반환, 아니면 undefined) */
+/** 안전한 lookup — `as` 캐스팅 없이 타입 가드로 좁혀서 매핑 객체에 접근 */
+function isQspStatCd(key: string): key is QspStatCd {
+  return key in STAT_CD_TO_STATUS;
+}
+
 export function lookupStatCd(key: string | null): MemberStatus | undefined {
-  if (key !== null && key in STAT_CD_TO_STATUS) {
-    return STAT_CD_TO_STATUS[key as QspStatCd];
-  }
-  return undefined;
+  if (key === null) return undefined;
+  return isQspStatCd(key) ? STAT_CD_TO_STATUS[key] : undefined;
+}
+
+type UserTypeKey = keyof typeof USER_TYPE_LABEL;
+function isUserTypeKey(key: string): key is UserTypeKey {
+  return key in USER_TYPE_LABEL;
 }
 
 export function lookupUserTypeLabel(key: string | null): string | undefined {
-  if (key !== null && key in USER_TYPE_LABEL) {
-    return USER_TYPE_LABEL[key as keyof typeof USER_TYPE_LABEL];
-  }
-  return undefined;
+  if (key === null) return undefined;
+  return isUserTypeKey(key) ? USER_TYPE_LABEL[key] : undefined;
 }
 
 // ─── 회원 목록 쿼리 파라미터 ───
@@ -58,7 +63,8 @@ const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
 const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
 
 export const memberListQuerySchema = z.object({
-  keyword: z.string().optional(),
+  // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지)
+  keyword: z.string().max(200, "検索語が長すぎます").optional(),
   userType: z.enum(memberTypeValues).optional(),
   status: z.enum(memberStatusValues).optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -169,4 +175,8 @@ export const qspUpdateResponseSchema = z.object({
 
 // ─── 회원 ID 파라미터 (userId=이메일 문자열) ───
 
-export const memberIdParamSchema = z.string().min(1, "IDは必須です");
+// 길이 제한: DB VarChar(255) 초과로 인한 truncation/에러 방지
+export const memberIdParamSchema = z
+  .string()
+  .min(1, "IDは必須です")
+  .max(255, "IDが長すぎます");
