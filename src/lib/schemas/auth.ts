@@ -31,6 +31,8 @@ export const qspLoginUserSchema = z.object({
   compCd: z.string().nullable(),
   compNm: z.string().nullable(),
   compNmKana: z.string().nullable(),
+  // QSP 응답에서 필드 자체가 omit될 수 있어 nullish 사용 (다른 형제 필드와 다름)
+  compTelNo: z.string().nullish(),
   email: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
@@ -80,6 +82,10 @@ export const loginUserSchema = qspLoginUserSchema
     authRole: z.enum(authRoleValues).optional(),
     twoFactorVerified: z.boolean(),
     pwdInitYn: z.enum(["Y", "N"]).nullable().optional(),
+    // 전화번호 — 현재는 QSP compTelNo(회사 전화번호) 단일 매핑
+    // nullish: 기존 JWT 호환 (undefined, 재로그인 전까지) + QSP 응답 null 허용
+    // TODO: SEKO 사용자는 개인 전화번호(telNo) 별도 처리 필요
+    telNo: z.string().nullish(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

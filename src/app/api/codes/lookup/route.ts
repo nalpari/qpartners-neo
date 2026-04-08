@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 
+// 비인증 공개 조회 허용 화이트리스트 — 신규 공개 코드 추가 시 본 목록에 반드시 등록
+// (middleware.ts의 PUBLIC_GET_PATTERNS와 짝을 이룸)
+const ALLOWED_PUBLIC_HEADER_CODES = new Set<string>([
+  "INQUIRY_TYPE", // 문의하기 문의 유형
+]);
+
 // GET /api/codes/lookup?headerCode=INQUIRY_TYPE — 공통코드 공개 조회 (headerCode 기반)
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +19,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: "headerCodeパラメータが不正です" },
         { status: 400 },
+      );
+    }
+
+    // 공개 화이트리스트에 등록되지 않은 headerCode는 404로 응답 (enumeration 방어)
+    // — 401/403으로 응답하면 "존재하지만 비공개"가 노출되므로 404로 통일
+    if (!ALLOWED_PUBLIC_HEADER_CODES.has(headerCode)) {
+      console.warn("[GET /api/codes/lookup] 공개 화이트리스트 미등록 headerCode:", headerCode);
+      return NextResponse.json(
+        { error: "該当するコードが見つかりません" },
+        { status: 404 },
       );
     }
 

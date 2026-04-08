@@ -204,6 +204,8 @@ export async function POST(request: NextRequest) {
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
     pwdInitYn: qsp.data.pwdInitYn,
+    // QSP compTelNo(회사 전화번호) → telNo로 전달 (문의하기 자동 입력용)
+    telNo: qsp.data.compTelNo ?? null,
   };
 
   let token: string;
