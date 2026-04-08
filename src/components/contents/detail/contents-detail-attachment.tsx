@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
-import { Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
@@ -34,40 +33,11 @@ function getFileIconSrc(mimeType: string | null): string {
   return "/asset/images/contents/zip_icon.svg";
 }
 
-/** 이미지 파일을 Blob URL로 로드하여 미리보기 표시 */
+/** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
 function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fileId: number; fileName: string }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const blobUrlRef = useRef<string | null>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<Blob>(`/contents/${contentId}/files/${fileId}/download`, { responseType: "blob" })
-      .then((res) => {
-        if (cancelled) return;
-        const url = URL.createObjectURL(res.data);
-        blobUrlRef.current = url;
-        setBlobUrl(url);
-        setStatus("loaded");
-      })
-      .catch((err: unknown) => {
-        console.error("[Contents] 썸네일 로드 실패:", err);
-        if (!cancelled) setStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, [contentId, fileId]);
-
-  if (status === "loading") return <Spinner size={24} />;
-
-  if (status === "error" || !blobUrl) {
+  if (error) {
     return (
       <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#96A1AB]">
         IMAGE
@@ -76,7 +46,14 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
   }
 
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={blobUrl} alt={fileName} className="max-w-full max-h-full object-contain" />;
+  return (
+    <img
+      src={`/api/contents/${contentId}/files/${fileId}/download`}
+      alt={fileName}
+      className="max-w-full max-h-full object-contain"
+      onError={() => setError(true)}
+    />
+  );
 }
 
 export function ContentsDetailAttachment({
