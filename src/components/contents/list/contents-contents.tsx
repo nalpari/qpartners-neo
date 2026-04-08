@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
@@ -77,13 +77,8 @@ export function ContentsContents() {
     [router],
   );
 
-  // 헤더와 동일한 queryKey로 캐시된 사용자 정보를 리액티브하게 구독
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  const queryClient = useQueryClient();
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
   const isInternal = user?.userTp === "ADMIN";
 
   // 카테고리 트리 조회
