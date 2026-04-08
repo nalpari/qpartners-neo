@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { InputBox, Radio } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import { formatDate } from "@/lib/format";
-import type { ProfileData } from "./mypage-info";
+import type { ProfileData, EditFormData } from "./mypage-info";
 
 // Design Ref: §4.3 — 회원정보 필드 타입
 interface ViewField {
@@ -13,7 +12,6 @@ interface ViewField {
   type?: "password-button" | "withdraw-button";
 }
 
-// Design Ref: §4.3 — 뉴스레터 표시 형식
 function formatNewsletter(yn: "Y" | "N", date: string | null): string {
   if (yn === "Y") {
     return date ? `許可 (許可日：${formatDate(date)})` : "許可";
@@ -21,39 +19,31 @@ function formatNewsletter(yn: "Y" | "N", date: string | null): string {
   return date ? `拒否 (拒否日：${formatDate(date)})` : "拒否";
 }
 
-// Design Ref: §4.3 — 회원정보 userType별 필드 노출
 function buildMemberFields(profile: ProfileData, userId: string, userType: string): ViewField[] {
   const fields: ViewField[] = [
     { label: "氏名", value: [profile.sei, profile.mei].filter(Boolean).join(" ") || "-" },
     { label: "氏名ひらがな", value: [profile.seiKana, profile.meiKana].filter(Boolean).join(" ") || "-" },
   ];
 
-  // メールアドレス: GENERAL은 메일이 곧 ID → 라벨 변경
   const emailLabel = userType === "GENERAL" ? "メールアドレス (ID)" : "メールアドレス";
   fields.push({ label: emailLabel, value: profile.email || "-" });
 
-  // ID(社員コード): ADMIN, STORE만 표시
   if (userType === "ADMIN" || userType === "STORE") {
     fields.push({ label: "ID(社員コード)", value: userId || "-" });
   }
 
-  // パスワード: 전 회원 — 변경 버튼
   fields.push({ label: "パスワード", type: "password-button" });
 
-  // 部署名: ADMIN, GENERAL만 표시
   if (userType === "ADMIN" || userType === "GENERAL") {
     fields.push({ label: "部署名", value: profile.department || "-" });
   }
 
-  // 役職: SEKO 제외
   if (userType !== "SEKO") {
     fields.push({ label: "役職", value: profile.jobTitle || "-" });
   }
 
-  // ニュースレター受信: 전 회원
   fields.push({ label: "ニュースレター受信", value: formatNewsletter(profile.newsRcptYn, profile.newsRcptDate) });
 
-  // 会員脱退: GENERAL만
   if (userType === "GENERAL") {
     fields.push({ label: "会員脱退", type: "withdraw-button" });
   }
@@ -95,24 +85,13 @@ interface MypageInfoMemberProps {
   userId: string;
   userType: string;
   isEditing?: boolean;
+  editData: EditFormData | null;
+  updateField: (key: keyof EditFormData) => (value: string) => void;
 }
 
-export function MypageInfoMember({ profile, userId, userType, isEditing = false }: MypageInfoMemberProps) {
-  const [data, setData] = useState({
-    lastNameKanji: profile.sei || "",
-    firstNameKanji: profile.mei || "",
-    lastNameKana: profile.seiKana || "",
-    firstNameKana: profile.meiKana || "",
-    department: profile.department || "",
-    position: profile.jobTitle || "",
-    newsletter: profile.newsRcptYn === "Y" ? "許可" : "拒否",
-  });
-
-  const updateField = (key: string) => (value: string) =>
-    setData((prev) => ({ ...prev, [key]: value }));
-
-  if (isEditing) {
-    return <MemberEditMode data={data} userType={userType} updateField={updateField} />;
+export function MypageInfoMember({ profile, userId, userType, isEditing = false, editData, updateField }: MypageInfoMemberProps) {
+  if (isEditing && editData) {
+    return <MemberEditMode data={editData} userType={userType} updateField={updateField} />;
   }
 
   const viewFields = buildMemberFields(profile, userId, userType);
@@ -128,17 +107,13 @@ export function MypageInfoMember({ profile, userId, userType, isEditing = false 
         {viewFields.map((field) => (
           <div key={field.label} className="flex gap-[4px] h-[58px] items-center w-full">
             <div className="bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] w-[160px] h-full flex items-center pl-[16px] pr-[8px] shrink-0">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                {field.label}
-              </p>
+              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">{field.label}</p>
             </div>
             <div className="bg-white border border-[#eaf0f6] rounded-[6px] flex-1 h-full flex items-center pl-[24px] pr-[8px]">
               {field.type ? (
                 <ActionButton type={field.type} />
               ) : (
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                  {field.value}
-                </p>
+                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">{field.value}</p>
               )}
             </div>
           </div>
@@ -154,15 +129,11 @@ export function MypageInfoMember({ profile, userId, userType, isEditing = false 
               idx === 0 ? "border-t border-[#101010]" : "border-t border-[#eff4f8]"
             }`}
           >
-            <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-              {field.label}
-            </p>
+            <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">{field.label}</p>
             {field.type ? (
               <ActionButton type={field.type} fullWidth />
             ) : (
-              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                {field.value}
-              </p>
+              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">{field.value}</p>
             )}
           </div>
         ))}
@@ -175,36 +146,41 @@ export function MypageInfoMember({ profile, userId, userType, isEditing = false 
 
 interface EditField {
   label: string;
-  key: string;
+  key: keyof EditFormData;
   required?: boolean;
   type?: "single" | "double" | "radio";
-  keys?: [string, string];
+  keys?: [keyof EditFormData, keyof EditFormData];
   options?: { value: string; label: string }[];
 }
 
+// Design Ref: §6.2 — userType별 수정 가능 필드
 function getEditFields(userType: string): EditField[] {
-  const fields: EditField[] = [
-    { label: "氏名", key: "name", required: true, type: "double", keys: ["lastNameKanji", "firstNameKanji"] },
-    { label: "氏名ひらがな", key: "nameKana", required: true, type: "double", keys: ["lastNameKana", "firstNameKana"] },
-  ];
+  const fields: EditField[] = [];
 
-  // 部署名: ADMIN, GENERAL만
-  if (userType === "ADMIN" || userType === "GENERAL") {
-    fields.push({ label: "部署名", key: "department", type: "single" });
+  // GENERAL, SEKO만 성명 수정 가능
+  if (userType === "GENERAL" || userType === "SEKO") {
+    fields.push(
+      { label: "氏名", key: "sei", required: true, type: "double", keys: ["sei", "mei"] },
+      { label: "氏名ひらがな", key: "seiKana", required: true, type: "double", keys: ["seiKana", "meiKana"] },
+    );
   }
 
-  // 役職: SEKO 제외
-  if (userType !== "SEKO") {
-    fields.push({ label: "役職", key: "position", type: "single" });
+  // GENERAL만 부서/직책 수정 가능
+  if (userType === "GENERAL") {
+    fields.push(
+      { label: "部署名", key: "department", type: "single" },
+      { label: "役職", key: "jobTitle", type: "single" },
+    );
   }
 
+  // 전 회원 뉴스레터 수정 가능
   fields.push({
     label: "ニュースレター受信",
-    key: "newsletter",
+    key: "newsRcptYn",
     type: "radio",
     options: [
-      { value: "許可", label: "許可" },
-      { value: "拒否", label: "拒否" },
+      { value: "Y", label: "許可" },
+      { value: "N", label: "拒否" },
     ],
   });
 
@@ -221,9 +197,9 @@ function ThLabel({ label, required }: { label: string; required?: boolean }) {
 }
 
 interface MemberEditModeProps {
-  data: Record<string, string>;
+  data: EditFormData;
   userType: string;
-  updateField: (key: string) => (value: string) => void;
+  updateField: (key: keyof EditFormData) => (value: string) => void;
 }
 
 function MemberEditMode({ data, userType, updateField }: MemberEditModeProps) {
@@ -232,8 +208,7 @@ function MemberEditMode({ data, userType, updateField }: MemberEditModeProps) {
   return (
     <article className="flex-1 bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] px-[24px] py-[34px] lg:pt-[34px] lg:pb-[42px] lg:px-[42px] self-stretch">
       <h3 className="font-['Noto_Sans_JP'] font-medium text-[16px] leading-[1.5] text-[#45576f] mb-[14px]">
-        会員情報{" "}
-        <span className="text-[#ff1a1a]">(*必須)</span>
+        会員情報 <span className="text-[#ff1a1a]">(*必須)</span>
       </h3>
 
       {/* PC */}
