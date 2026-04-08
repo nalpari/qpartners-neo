@@ -1,6 +1,6 @@
 "use client";
 
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 
 // Design Ref: §4.5 — ISO 날짜 포맷 + HTML body 렌더링
 

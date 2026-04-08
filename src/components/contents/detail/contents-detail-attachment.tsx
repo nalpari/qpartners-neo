@@ -84,7 +84,6 @@ export function ContentsDetailAttachment({
   attachments,
 }: ContentsDetailAttachmentProps) {
   const { openAlert } = useAlertStore();
-  const [downloadingAll, setDownloadingAll] = useState(false);
 
   if (attachments.length === 0) return null;
 
@@ -111,25 +110,14 @@ export function ContentsDetailAttachment({
     }
   };
 
-  /** 일괄 다운로드 (요약 alert만 1회) */
-  const handleAllDownload = async () => {
-    setDownloadingAll(true);
-    let failCount = 0;
-    try {
-      for (const file of attachments) {
-        try {
-          await downloadFile(file.id, file.fileName);
-        } catch (err: unknown) {
-          failCount++;
-          console.error("[Contents] 다운로드 실패:", err);
-        }
-      }
-      if (failCount > 0) {
-        openAlert({ type: "alert", message: `${failCount}件のファイルのダウンロードに失敗しました。` });
-      }
-    } finally {
-      setDownloadingAll(false);
-    }
+  /** 일괄 다운로드 (ZIP) */
+  const handleAllDownload = () => {
+    const link = document.createElement("a");
+    link.href = `/api/contents/${contentId}/files/download-all`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -141,22 +129,15 @@ export function ContentsDetailAttachment({
         </h2>
         <button
           type="button"
-          onClick={() => { void handleAllDownload(); }}
-          disabled={downloadingAll}
-          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5] disabled:opacity-50"
+          onClick={handleAllDownload}
+          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5]"
         >
-          {downloadingAll ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#506273] text-center">
-                All Download
-              </span>
-              <span className="inline-flex items-center justify-center w-6 bg-[#506273] rounded-[10px] font-['Noto_Sans_JP'] font-medium text-[14px] leading-normal text-white text-center">
-                {attachments.length}
-              </span>
-            </>
-          )}
+          <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#506273] text-center">
+            All Download
+          </span>
+          <span className="inline-flex items-center justify-center w-6 bg-[#506273] rounded-[10px] font-['Noto_Sans_JP'] font-medium text-[14px] leading-normal text-white text-center">
+            {attachments.length}
+          </span>
         </button>
       </div>
 

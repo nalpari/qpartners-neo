@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
@@ -17,9 +16,6 @@ import {
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
-
-/** 브라우저 다운로드 큐 충돌 방지를 위한 딜레이 (ms) */
-const DOWNLOAD_DELAY_MS = 300;
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -58,39 +54,22 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
-/** 컨텐츠의 모든 첨부파일을 순차 다운로드 */
-async function downloadAllAttachments(contentId: number) {
-  try {
-    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
-    const attachments = res.data.data.attachments;
-    if (!attachments || attachments.length === 0) return;
-
-    for (const file of attachments) {
-      const link = document.createElement("a");
-      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
-      link.download = file.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      // 브라우저 다운로드 큐 충돌 방지
-      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
-    }
-  } catch (err: unknown) {
-    console.error("[Contents] 첨부파일 다운로드 실패:", err);
-  }
+/** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) */
+function downloadAllAttachments(contentId: number) {
+  const link = document.createElement("a");
+  link.href = `/api/contents/${contentId}/files/download-all`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
-  const downloadingRef = useRef(false);
   if (!params.data || params.data.attachmentCount === 0) return null;
   const contentId = params.data.id;
 
   const handleClick = () => {
-    if (downloadingRef.current) return;
-    downloadingRef.current = true;
-    void downloadAllAttachments(contentId).finally(() => {
-      downloadingRef.current = false;
-    });
+    downloadAllAttachments(contentId);
   };
 
   return (
@@ -136,16 +115,11 @@ function renderMobileTitle(item: ContentListItem) {
 }
 
 function MobileAttachmentButton({ item }: { item: ContentListItem }) {
-  const downloadingRef = useRef(false);
   if (item.attachmentCount === 0) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (downloadingRef.current) return;
-    downloadingRef.current = true;
-    void downloadAllAttachments(item.id).finally(() => {
-      downloadingRef.current = false;
-    });
+    downloadAllAttachments(item.id);
   };
 
   return (
