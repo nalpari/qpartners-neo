@@ -45,8 +45,8 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
     );
   }
 
-  // eslint-disable-next-line @next/next/no-img-element
   return (
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={`/api/contents/${contentId}/files/${fileId}/download`}
       alt={fileName}
