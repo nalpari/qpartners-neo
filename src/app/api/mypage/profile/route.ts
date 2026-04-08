@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
@@ -208,6 +209,8 @@ export async function PUT(request: NextRequest) {
     }
 
     // QSP 수정 API 호출 (판매점/일반)
+    // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
+    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다. (admin/members 와 동일 패턴)
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
@@ -229,12 +232,13 @@ export async function PUT(request: NextRequest) {
         deptNm: d.department,
         pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
+        updBy: user.userId,
       };
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.userDetail, {
-          method: "PUT",
+        qspResponse = await fetch(QSP_API.updateUser, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(10_000),
           body: JSON.stringify(qspPayload),
@@ -266,16 +270,20 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
+      const parsed = qspUpdateResponseSchema.safeParse(qspBody);
       if (!parsed.success) {
-        console.error("[PUT /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error);
+        console.error("[PUT /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error.issues);
         return NextResponse.json(
           { error: "外部サーバーの応答形式が正しくありません" },
           { status: 502 },
         );
       }
       if (parsed.data.result.resultCode !== "S") {
-        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", parsed.data.result.resultCode);
+        console.error(
+          "[PUT /api/mypage/profile] QSP 비즈니스 에러:",
+          parsed.data.result.resultCode,
+          parsed.data.result.message,
+        );
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
