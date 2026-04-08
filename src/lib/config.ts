@@ -32,6 +32,12 @@ export const QSP_API = {
   passwordChange: `${QSP_BASE_URL}/api/qpartners/user/userPwdChg`,
   /** QSP 2차인증 일시 갱신 */
   updateSecAuthDt: `${QSP_BASE_URL}/api/qpartners/user/updateSecAuthDt`,
+  /** QSP 회원관리 목록 조회 */
+  memberList: `${QSP_BASE_URL}/api/qpartners/userMng/userList`,
+  /** QSP 회원관리 상세 조회 */
+  memberDetail: `${QSP_BASE_URL}/api/qpartners/userMng/userDtl`,
+  /** QSP 회원정보 수정 */
+  updateUser: `${QSP_BASE_URL}/api/qpartners/user/updateUserReq`,
 } as const;
 
 // ─── SMTP ───
