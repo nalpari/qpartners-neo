@@ -69,12 +69,36 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // DB 삭제 — FK는 onDelete: SetNull로 DownloadLog.attachmentId가 null로 변경됨
-    // 동시 DELETE race: 한쪽이 먼저 삭제하면 다른 쪽은 P2025 → 404로 반환 (500 아님)
+    // DB 삭제 — DownloadLog.attachmentId 를 명시적으로 null 처리한 뒤 attachment 삭제.
+    //
+    // 배경: Prisma 스키마상 `DownloadLog.attachment` 의 `onDelete: SetNull` 로 설정되어 있으나,
+    //       MariaDB/MySQL 환경에서 `prisma db push` 가 컬럼 타입 변경 후 FK 의 ON DELETE 절을
+    //       재생성하지 않아 실제 DB 제약이 이전 상태(RESTRICT)로 남는 케이스가 확인되었다.
+    //       (PR #29 Montreal Review R1 W4 경고 현실화.) 스키마 선언에 의존하지 않고 앱 레벨에서
+    //       updateMany 로 참조를 먼저 끊은 뒤 delete 하여 환경과 무관하게 동작하도록 한다.
+    //
+    // TODO(DB 마이그레이션 — 후속 작업): 각 환경(local/dev/staging/prod)에서 아래 DDL 을 실행하여
+    //       FK 제약을 스키마와 일치시킨다. 본 수정 이후에는 장애 복구 의미만 있으므로 우선순위는 낮다.
+    //         ALTER TABLE qp_download_logs DROP FOREIGN KEY qp_download_logs_attachment_id_fkey;
+    //         ALTER TABLE qp_download_logs ADD CONSTRAINT qp_download_logs_attachment_id_fkey
+    //           FOREIGN KEY (attachment_id) REFERENCES qp_content_attachments(id) ON DELETE SET NULL;
+    //
+    // 동시 DELETE race: 한쪽이 먼저 삭제하면 다른 쪽은 P2025 → 404 로 반환 (500 아님).
     try {
-      await prisma.contentAttachment.delete({
-        where: { id: parsedFileId.data },
-      });
+      // NOTE: Prisma 생성 client 가 스키마(`attachmentId Int?`)와 out-of-sync 로
+      //       `data: { attachmentId: null }` 에서 타입 에러가 발생한다. 근본 해결은
+      //       `prisma generate` 재실행이지만 본 핫픽스에서는 스코프를 넓히지 않고
+      //       `$executeRaw` 로 DB 레벨에서 직접 null 처리한다. SQL 주입 방지를 위해
+      //       tagged template 을 사용하여 파라미터 바인딩.
+      // TODO(후속 작업): `prisma generate` (Docker qpartners-db 경유) 실행하여
+      //       generated client 를 스키마와 재동기화 후 위 레거시 주석과 raw SQL 을
+      //       Prisma 표준 `downloadLog.updateMany` 호출로 되돌린다.
+      await prisma.$transaction([
+        prisma.$executeRaw`UPDATE qp_download_logs SET attachment_id = NULL WHERE attachment_id = ${parsedFileId.data}`,
+        prisma.contentAttachment.delete({
+          where: { id: parsedFileId.data },
+        }),
+      ]);
     } catch (dbError: unknown) {
       if (
         dbError instanceof Prisma.PrismaClientKnownRequestError &&
