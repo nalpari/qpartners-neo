@@ -43,14 +43,16 @@ export function inquiryConfirmationMailHtml({
     <p>今後とも Q.PARTNERS をよろしくお願いいたします。</p>
 
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
-    <p style="margin:20px 0;">
-      ${safeUserName} 님<br><br>
-      Q.PARTNERS에 문의해 주셔서 진심으로 감사드립니다.<br>
-      아래 내용으로 문의가 접수되었습니다.<br><br>
-      • 문의 유형: ${safeInquiryTypeName}<br>
-      • 제목: ${safeTitle}<br><br>
-      담당자가 확인 후 순차적으로 답변드리겠습니다. 시간이 소요될 수 있는 점 양해 부탁드립니다.
-    </p>
+    <div lang="ko">
+      <p style="margin:20px 0;">
+        ${safeUserName} 님<br><br>
+        Q.PARTNERS에 문의해 주셔서 진심으로 감사드립니다.<br>
+        아래 내용으로 문의가 접수되었습니다.<br><br>
+        • 문의 유형: ${safeInquiryTypeName}<br>
+        • 제목: ${safeTitle}<br><br>
+        담당자가 확인 후 순차적으로 답변드리겠습니다. 시간이 소요될 수 있는 점 양해 부탁드립니다.
+      </p>
+    </div>
 
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="font-size:12px;color:#999;">
@@ -58,7 +60,7 @@ export function inquiryConfirmationMailHtml({
       本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに
       「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。
     </p>
-    <p style="font-size:12px;color:#999;">
+    <p lang="ko" style="font-size:12px;color:#999;">
       이 메일은 등록하신 메일 주소로 자동 전송되고 있습니다.<br>
       본 메일에 짐작가는 바가 없는 경우에는 번거로우시겠지만 메일 제목 혹은 본문 시작에
       「등록의 기억 없음」이라고 기재해 회신(q-partners@hqj.co.jp)해 주세요.
@@ -66,12 +68,12 @@ export function inquiryConfirmationMailHtml({
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="font-size:11px;color:#999;">
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
-      ハンファジャパン株式会社 / 한화재팬 주식회사<br>
-      Q.PARTNERS事務局 / Q.PARTNERS 사무국<br>
+      ハンファジャパン株式会社 / <span lang="ko">한화재팬 주식회사</span><br>
+      Q.PARTNERS事務局 / <span lang="ko">Q.PARTNERS 사무국</span><br>
       Tel:03-5441-5976<br>
       Email : q-partners@hqj.co.jp<br>
       問い合わせ受付時間：平日10：00-12：00 13：00-17：00<br>
-      문의접수시간 : 평일10:00-12:00 13:00-17:00<br>
+      <span lang="ko">문의접수시간 : 평일10:00-12:00 13:00-17:00</span><br>
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     </p>
   </td></tr>

@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
 import { qp_inquiries_user_type } from "@/generated/prisma/client";
 
 import { getUserFromRequest } from "@/lib/jwt";
@@ -96,10 +98,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. email 기반 2차 rate limit — 항상 적용 (이메일 증폭 스팸 방지)
-    //    비로그인 사용자가 임의 email 을 제출할 수 있으므로, 피해자 주소로 confirmation 메일이
-    //    연속 발송되는 증폭 공격을 차단한다. IP 한도(10/h)와 독립적으로 email 주소당 5/h 로 제한.
-    const emailKey = `inquiry:account:${result.data.email.toLowerCase()}`;
+    // 3. 서버측에서 최종 사용될 회사명/성명/이메일 결정 (로그인 유저는 인증 정보 우선)
+    //    rate limit 키 산정 및 실제 메일 발송 주소가 동일해야 하므로 rate limit 전에 계산한다.
+    const finalCompanyName = user?.compNm ?? result.data.companyName;
+    const finalUserName = user?.userNm ?? result.data.userName;
+    const finalEmail = user?.email ?? result.data.email;
+
+    // 4. email 기반 2차 rate limit — 항상 적용 (이메일 증폭 스팸 방지)
+    //    실제 확인 메일이 발송될 주소(finalEmail)를 기준으로 버킷을 산정하여,
+    //    로그인 유저가 폼에 타인 이메일을 입력해 타인의 버킷을 소진시키는 경로를 차단한다.
+    //    IP 한도(10/h)와 독립적으로 email 주소당 5/h 로 제한.
+    const emailKey = `inquiry:account:${finalEmail.toLowerCase()}`;
     if (!checkRateLimit(emailKey, 5, 60 * 60 * 1000)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
@@ -107,7 +116,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. userTp → DB enum 매핑 (매핑 실패 시 400 에러)
+    // 5. userTp → DB enum 매핑 (매핑 실패 시 400 에러)
     const mappedUserType = user ? (USER_TP_MAP[user.userTp] ?? null) : null;
     if (user && !mappedUserType) {
       console.error(`[POST /api/inquiry] userTp 매핑 실패: "${user.userTp}"`);
@@ -116,11 +125,6 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-
-    // 5. 서버측에서 최종 사용될 회사명/성명/이메일 결정 (로그인 유저는 인증 정보 우선)
-    const finalCompanyName = user?.compNm ?? result.data.companyName;
-    const finalUserName = user?.userNm ?? result.data.userName;
-    const finalEmail = user?.email ?? result.data.email;
 
     const inquiry = await prisma.inquiry.create({
       data: {
@@ -187,12 +191,13 @@ export async function POST(request: NextRequest) {
             content: result.data.content,
           });
           await Promise.all(
-            recipientEmails.map((to) =>
+            recipientEmails.map((to, recipientIndex) =>
               sendMail({ to, subject: INQUIRY_RECIPIENT_SUBJECT, html: recipientHtml }).catch(
                 (mailError: unknown) => {
+                  // PII 보호 — 수신 담당자 이메일은 로그에 기록하지 않고 인덱스만 기록
                   console.error(
                     "[POST /api/inquiry] 수신 담당자 메일 발송 실패",
-                    { inquiryId: inquiry.id, to, error: mailError },
+                    { inquiryId: inquiry.id, recipientIndex, error: mailError },
                   );
                 },
               ),
@@ -219,10 +224,23 @@ export async function POST(request: NextRequest) {
         );
       }
     } catch (mailFlowError: unknown) {
-      console.error(
-        "[POST /api/inquiry] 메일 발송 흐름 실패 (DB 저장은 완료)",
-        { inquiryId: inquiry.id, error: mailFlowError },
-      );
+      // 장애 원인 오인 방지를 위해 Prisma DB 에러와 그 외 메일 흐름 에러를 구분 로깅
+      if (mailFlowError instanceof PrismaClientKnownRequestError) {
+        console.error(
+          "[POST /api/inquiry] 공통코드 조회 실패 (DB 저장은 완료, 메일 미발송)",
+          {
+            inquiryId: inquiry.id,
+            code: mailFlowError.code,
+            meta: mailFlowError.meta,
+            message: mailFlowError.message,
+          },
+        );
+      } else {
+        console.error(
+          "[POST /api/inquiry] 메일 발송 흐름 실패 (DB 저장은 완료)",
+          { inquiryId: inquiry.id, error: mailFlowError },
+        );
+      }
     }
 
     return NextResponse.json(
