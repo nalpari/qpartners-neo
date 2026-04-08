@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     const { currentPwd, newPwd } = result.data;
 
     // QSP userPwdChg API 호출 (chgType=C: 변경)
+    // QSP 사양서 기준 새 비밀번호 필드명은 chgPwd (newPwd 아님)
     let qspResponse: Response;
     try {
       qspResponse = await fetch(QSP_API.passwordChange, {
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
           loginId: user.userId,
           userTp: user.userTp,
           pwd: currentPwd,
-          newPwd,
+          chgPwd: newPwd,
           chgType: "C",
         }),
       });
