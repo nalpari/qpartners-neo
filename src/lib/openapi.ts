@@ -1391,6 +1391,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Inquiry"],
         summary: "문의 등록 (비로그인 가능)",
+        description:
+          "문의를 등록한다. 등록 성공 후 공통코드 INQUIRY_TYPE.relCode1~3 에 등록된 수신 담당자 메일과 작성자 접수 확인 메일을 발송한다. 메일 발송 실패는 응답을 막지 않으며 ERROR 로그로 기록된다 (DB 저장은 완료된 상태). 비로그인 사용자도 호출 가능하며 IP/이메일 기반 rate limit 이 적용된다.",
+        security: [],
         requestBody: {
           required: true,
           content: {
