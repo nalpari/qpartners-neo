@@ -10,6 +10,7 @@ import {
   isInternalUser,
   requireAdmin,
 } from "@/lib/auth";
+import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       include: {
         targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
         categories: {
-          include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } },
+          include: { category: CATEGORY_TREE_INCLUDE },
         },
         attachments: {
           select: { id: true, fileName: true, fileSize: true, mimeType: true, sortOrder: true },
@@ -74,7 +75,11 @@ export async function GET(request: NextRequest, { params }: Params) {
         ...content,
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
-        categories: content.categories.map((cc) => cc.category),
+        categories: buildCategoryTree(content.categories, { includeInternal: internal }),
+        attachments: content.attachments.map((a) => ({
+          ...a,
+          fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
+        })),
       },
     });
   } catch (error) {
@@ -174,12 +179,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
         },
         include: {
           targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
-          categories: { include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } } },
+          categories: { include: { category: CATEGORY_TREE_INCLUDE } },
         },
       });
     });
 
-    return NextResponse.json({ data: content });
+    // PUT 은 requireAdmin 통과자 = 사내 사용자이므로 includeInternal=true
+    return NextResponse.json({
+      data: {
+        ...content,
+        categories: buildCategoryTree(content.categories, { includeInternal: true }),
+      },
+    });
   } catch (error) {
     if (
       error instanceof PrismaClientKnownRequestError &&

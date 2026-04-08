@@ -3,17 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { InputBox, Button, Checkbox, Radio } from "@/components/common";
-import { usePopupStore } from "@/lib/store";
+import { Spinner } from "@/components/common/spinner";
+import { usePopupStore, useAlertStore } from "@/lib/store";
+import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 const EMAIL_CHECK_MESSAGES: Record<string, string> = {
   ok: "利用可能な電子メールです",
   duplicate: "既に使用中の電子メールです",
   invalid: "正しくない電子メールアドレスです",
+  error: "メールチェック中にエラーが発生しました",
 };
 
 export function SignupContents() {
   const router = useRouter();
+  const { openPopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
 
   // 폼 상태
   const [form, setForm] = useState({
@@ -39,72 +47,154 @@ export function SignupContents() {
 
   // UI 상태
   const [emailCheckStatus, setEmailCheckStatus] = useState<
-    "idle" | "ok" | "duplicate" | "invalid"
+    "idle" | "ok" | "duplicate" | "invalid" | "error"
   >("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [isEmailChecking, setIsEmailChecking] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // 폼 필드 업데이트 헬퍼
   const updateField = (field: keyof typeof form, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (field === "email") setEmailCheckStatus("idle");
+    // 입력 시 해당 필드 에러 클리어
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   };
 
-  // 비밀번호 유효성 (파생 값 — React Compiler 호환)
-  const isPasswordValid = (() => {
-    const p = form.password;
-    if (p.length < 8) return false;
-    let types = 0;
-    if (/[a-zA-Z]/.test(p)) types++;
-    if (/[0-9]/.test(p)) types++;
-    if (/[^a-zA-Z0-9]/.test(p)) types++;
-    return types >= 2;
-  })();
+  // 필드별 validation — 제출 시 호출
+  const validate = (): boolean => {
+    const errors: Record<string, string> = {};
 
-  // 필수필드 입력 완료 여부 (파생 값)
-  const isFormValid =
-    form.companyName.trim() !== "" &&
-    form.companyNameKana.trim() !== "" &&
-    form.postalCode.trim() !== "" &&
-    form.address1.trim() !== "" &&
-    form.phone.trim() !== "" &&
-    form.lastName.trim() !== "" &&
-    form.firstName.trim() !== "" &&
-    form.lastNameKana.trim() !== "" &&
-    form.firstNameKana.trim() !== "" &&
-    form.email.trim() !== "" &&
-    emailCheckStatus === "ok" &&
-    isPasswordValid &&
-    form.password === form.passwordConfirm &&
-    form.agreeTerms;
+    if (!form.companyName.trim()) errors.companyName = "会社名を入力してください";
+    if (!form.companyNameKana.trim()) errors.companyNameKana = "会社名ひらがなを入力してください";
+    if (!form.postalCode.trim()) errors.postalCode = "郵便番号を入力してください";
+    if (!form.address1.trim()) errors.address1 = "住所を入力してください";
+    if (!form.address2.trim()) errors.address2 = "住所の詳細を入力してください";
+    if (!form.phone.trim()) errors.phone = "電話番号を入力してください";
+    if (!form.lastName.trim()) errors.lastName = "姓を入力してください";
+    if (!form.firstName.trim()) errors.firstName = "名前を入力してください";
+    if (!form.lastNameKana.trim()) errors.lastNameKana = "姓（ひらがな）を入力してください";
+    if (!form.firstNameKana.trim()) errors.firstNameKana = "名前（ひらがな）を入力してください";
+    if (!form.email.trim()) {
+      errors.email = "メールアドレスを入力してください";
+    } else if (emailCheckStatus !== "ok") {
+      errors.email = "メール重複チェックを行ってください";
+    }
+    if (!form.password) {
+      errors.password = "パスワードを入力してください";
+    } else if (!validatePasswordPolicy(form.password)) {
+      errors.password = "英大文字、英小文字、数字を組み合わせて8文字以上で設定してください";
+    }
+    if (!form.passwordConfirm) {
+      errors.passwordConfirm = "パスワードを再入力してください";
+    } else if (form.password !== form.passwordConfirm) {
+      errors.passwordConfirm = "パスワードが一致しません";
+    }
+    if (!form.agreeTerms) errors.agreeTerms = "利用規約に同意してください";
 
-  // 이메일 중복체크
-  const handleEmailCheck = () => {
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Design Ref: §5.1.5 — 이메일 중복체크 API 연동
+  const handleEmailCheck = async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.email)) {
       setEmailCheckStatus("invalid");
       return;
     }
-    // TODO: API 연동 — 현재는 형식 검증 통과 시 OK로 목업 처리
-    setEmailCheckStatus("ok");
+
+    setIsEmailChecking(true);
+    try {
+      await api.post("/auth/email/check", { email: form.email });
+      setEmailCheckStatus("ok");
+    } catch (error) {
+      console.error("[Signup] 이메일 중복체크 실패:", error);
+      if (isAxiosError(error) && error.response?.status === 409) {
+        setEmailCheckStatus("duplicate");
+      } else {
+        setEmailCheckStatus("error");
+      }
+    } finally {
+      setIsEmailChecking(false);
+    }
   };
 
-  // 회원등록 제출
+  // Design Ref: §5.1.6 — 컨펌 다이얼로그 + 회원가입 API 연동
   const handleSubmit = () => {
-    if (!isFormValid) return;
-    // TODO: API 연동 (추후 구현) — 현재는 바로 완료 팝업 표시
-    openPopup("signup-complete", {
-      userName: `${form.lastName} ${form.firstName}`,
-      userId: form.email,
+    if (!validate()) return;
+
+    openAlert({
+      type: "confirm",
+      message: "Q.PARTNERSの一般会員として登録しますか？",
+      confirmLabel: "確認",
+      cancelLabel: "キャンセル",
+      onConfirm: submitSignup,
     });
+  };
+
+  const submitSignup = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await api.post<{ data: { userName: string; email: string } }>(
+        "/auth/signup",
+        {
+          email: form.email,
+          pwd: form.password,
+          confirmPwd: form.passwordConfirm,
+          user1stNm: form.firstName,
+          user2ndNm: form.lastName,
+          user1stNmKana: form.firstNameKana,
+          user2ndNmKana: form.lastNameKana,
+          compNm: form.companyName,
+          compNmKana: form.companyNameKana,
+          compPostCd: form.postalCode,
+          compAddr: form.address1,
+          compAddr2: form.address2,
+          compTelNo: form.phone,
+          compFaxNo: form.fax,
+          deptNm: form.department,
+          pstnNm: form.position,
+          newsRcptYn: form.newsletter ? "Y" : "N",
+        }
+      );
+
+      const { userName, email } = res.data.data;
+      openPopup("signup-complete", { userName, userId: email });
+    } catch (error) {
+      console.error("[Signup] 회원가입 실패:", error);
+      if (isAxiosError(error) && error.response) {
+        const serverMsg = extractApiError(error);
+        if (serverMsg) console.warn("[Signup] 서버 메시지:", serverMsg);
+        const status = error.response.status;
+        if (status === 409) {
+          setSubmitError("既に使用中のメールアドレスです");
+        } else if (status === 400) {
+          setSubmitError("入力内容を確認してください");
+        } else {
+          setSubmitError("サーバーエラーが発生しました。しばらくしてからお試しください。");
+        }
+      } else {
+        setSubmitError("サーバーに接続できません。ネットワーク状態を確認してください。");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 취소
   const handleCancel = () => {
     router.push("/login");
   };
-
-  const { openPopup } = usePopupStore();
 
   // 주소검색
   const handleAddressSearch = () => {
@@ -117,6 +207,13 @@ export function SignupContents() {
   };
 
   return (
+    <>
+    {/* 로딩 오버레이 — Design Ref: §5.1.8, 로그인과 동일 패턴 */}
+    {isSubmitting && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <Spinner size={48} className="text-white" />
+      </div>
+    )}
     <div className="flex flex-col gap-[10px] lg:gap-6 items-center w-full pb-6 lg:pb-12 mt-[10px] lg:mt-0">
       <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[1440px]">
         {/* 상단 안내 카드 */}
@@ -139,7 +236,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 회사명 */}
-              <FormRow label="会社名" required>
+              <FormRow label="会社名" required error={fieldErrors.companyName}>
                 <InputBox
                   value={form.companyName}
                   onChange={(v) => updateField("companyName", v)}
@@ -147,7 +244,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 회사명 히라가나 */}
-              <FormRow label="会社名ひらがな" required>
+              <FormRow label="会社名ひらがな" required error={fieldErrors.companyNameKana}>
                 <InputBox
                   value={form.companyNameKana}
                   onChange={(v) => updateField("companyNameKana", v)}
@@ -155,7 +252,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 우편번호 + 주소검색 */}
-              <FormRow label="郵便番号" required>
+              <FormRow label="郵便番号" required error={fieldErrors.postalCode}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.postalCode}
@@ -177,7 +274,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 주소 */}
-              <FormRow label="住所" required>
+              <FormRow label="住所" required error={fieldErrors.address1 || fieldErrors.address2}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.address1}
@@ -194,7 +291,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 전화번호 */}
-              <FormRow label="電話番号" required>
+              <FormRow label="電話番号" required error={fieldErrors.phone}>
                 <InputBox
                   value={form.phone}
                   onChange={(v) => updateField("phone", v)}
@@ -221,7 +318,7 @@ export function SignupContents() {
 
             <div className="flex flex-col gap-4 mt-4 lg:gap-[4px] lg:mt-4">
               {/* 성명 (2칸) */}
-              <FormRow label="氏名" required>
+              <FormRow label="氏名" required error={fieldErrors.lastName || fieldErrors.firstName}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastName}
@@ -239,7 +336,7 @@ export function SignupContents() {
               </FormRow>
 
               {/* 성명 히라가나 (2칸) */}
-              <FormRow label="氏名ひらがな" required>
+              <FormRow label="氏名ひらがな" required error={fieldErrors.lastNameKana || fieldErrors.firstNameKana}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastNameKana}
@@ -267,21 +364,22 @@ export function SignupContents() {
                   />
                   <button
                     type="button"
-                    onClick={handleEmailCheck}
-                    className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer"
+                    onClick={() => { void handleEmailCheck(); }}
+                    disabled={isEmailChecking}
+                    className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer disabled:opacity-50"
                   >
-                    重複チェック
+                    {isEmailChecking ? "確認中..." : "重複チェック"}
                   </button>
-                  {emailCheckStatus !== "idle" && (
-                    <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0">
-                      {EMAIL_CHECK_MESSAGES[emailCheckStatus]}
+                  {(emailCheckStatus !== "idle" || fieldErrors.email) && (
+                    <p className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] lg:flex lg:items-center lg:pl-[8px] lg:pr-[18px] lg:shrink-0 ${emailCheckStatus === "ok" ? "text-[#1060B4]" : "text-[#FF1A1A]"}`}>
+                      {emailCheckStatus !== "idle" ? EMAIL_CHECK_MESSAGES[emailCheckStatus] : fieldErrors.email}
                     </p>
                   )}
                 </div>
               </FormRow>
 
               {/* 비밀번호 + 눈 토글 */}
-              <FormRow label="パスワード" required>
+              <FormRow label="パスワード" required error={fieldErrors.password}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <PasswordInput
                     value={form.password}
@@ -290,13 +388,13 @@ export function SignupContents() {
                     onToggle={() => setShowPassword(!showPassword)}
                   />
                   <p className="font-['Noto_Sans_JP'] text-sm text-[#1060B4] leading-[1.5] lg:flex lg:items-center lg:pl-2 lg:pr-[18px] lg:shrink-0">
-                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                    ※英大文字、英小文字、数字を組み合わせて8文字以上に設定
                   </p>
                 </div>
               </FormRow>
 
               {/* 비밀번호 재입력 + 눈 토글 */}
-              <FormRow label="パスワード再入力" required>
+              <FormRow label="パスワード再入力" required error={fieldErrors.passwordConfirm}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <PasswordInput
                     value={form.passwordConfirm}
@@ -306,7 +404,7 @@ export function SignupContents() {
                   />
                   {/* 비밀번호 행과 너비 맞춤용 빈 영역 */}
                   <span className="hidden lg:flex lg:items-center lg:pl-2 lg:pr-[18px] lg:shrink-0 lg:invisible font-['Noto_Sans_JP'] text-sm leading-[1.5]">
-                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                    ※英大文字・英小文字・数字を組み合わせて8文字以上に設定
                   </span>
                 </div>
               </FormRow>
@@ -346,21 +444,35 @@ export function SignupContents() {
               </FormRow>
             </div>
 
+            {/* 서버 에러 메시지 */}
+            {submitError && (
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#FF1A1A] leading-[1.5] text-center pt-4">
+                {submitError}
+              </p>
+            )}
+
             {/* MO 하단: 이용약관 + 버튼 (회원정보 카드 내부) */}
             <div className="flex flex-col gap-[18px] items-center w-full pt-6 lg:hidden">
-              <div className="flex items-center justify-center gap-2 w-full">
-                <Checkbox
-                  checked={form.agreeTerms}
-                  onChange={(checked) => updateField("agreeTerms", checked)}
-                  label="利用規約の同意 (必須)"
-                />
-                <button
-                  type="button"
-                  onClick={() => openPopup("terms")}
-                  className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
-                >
-                  見る
-                </button>
+              <div className="flex flex-col items-start gap-2 w-full">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={form.agreeTerms}
+                    onChange={(checked) => updateField("agreeTerms", checked)}
+                    label="利用規約の同意 (必須)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => openPopup("terms")}
+                    className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
+                  >
+                    見る
+                  </button>
+                </div>
+                {fieldErrors.agreeTerms && (
+                  <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
+                    {fieldErrors.agreeTerms}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2 w-full">
                 <Button variant="secondary" onClick={handleCancel} fullWidth>
@@ -369,7 +481,6 @@ export function SignupContents() {
                 <Button
                   variant="primary"
                   onClick={handleSubmit}
-                  disabled={!isFormValid}
                   fullWidth
                 >
                   会員登録
@@ -381,7 +492,7 @@ export function SignupContents() {
 
       {/* PC 하단: 이용약관 + 버튼 (카드 밖, 회색 배경 위) */}
       <div className="hidden lg:flex items-center justify-between w-full max-w-[1440px] pb-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Checkbox
             checked={form.agreeTerms}
             onChange={(checked) => updateField("agreeTerms", checked)}
@@ -394,6 +505,11 @@ export function SignupContents() {
           >
             見る
           </button>
+          {fieldErrors.agreeTerms && (
+            <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
+              {fieldErrors.agreeTerms}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={handleCancel} className="w-[97px]">
@@ -402,7 +518,6 @@ export function SignupContents() {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={!isFormValid}
             className="w-[84px]"
           >
             会員登録
@@ -410,6 +525,7 @@ export function SignupContents() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -419,24 +535,33 @@ export function SignupContents() {
 function FormRow({
   label,
   required,
+  error,
   children,
 }: {
   label: string;
   required?: boolean;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
     <>
-      {/* PC 테이블 행 — gap-[4px] 개별 행 스타일 */}
-      <div className="hidden lg:flex h-[58px] items-center gap-[4px]">
-        <div className="w-[200px] h-full shrink-0 bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] flex items-center pl-[16px] pr-[8px] py-[8px]">
+      {/* PC 테이블 행 */}
+      <div className="hidden lg:flex items-stretch gap-[4px]">
+        <div className="w-[200px] min-h-[58px] shrink-0 bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] flex items-center pl-[16px] pr-[8px] py-[8px]">
           <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F] overflow-hidden text-ellipsis whitespace-nowrap">
             {label}
             {required && <span className="text-[#FF1A1A]">*</span>}
           </span>
         </div>
-        <div className="flex-1 h-full border border-[#EAF0F6] rounded-[6px] flex items-center gap-[8px] p-[8px]">
-          {children}
+        <div className="flex-1 min-h-[58px] border border-[#EAF0F6] rounded-[6px] flex flex-col justify-center gap-[4px] p-[8px]">
+          <div className="flex items-center gap-[8px]">
+            {children}
+          </div>
+          {error && (
+            <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 
@@ -447,6 +572,11 @@ function FormRow({
           {required && <span className="text-[#FF1A1A]">*</span>}
         </span>
         {children}
+        {error && (
+          <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
+            {error}
+          </p>
+        )}
       </div>
     </>
   );

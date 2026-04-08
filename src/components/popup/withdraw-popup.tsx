@@ -1,25 +1,50 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
-import { Button } from "@/components/common";
+import { useAuthStore } from "@/lib/auth-store";
+import { Button, Spinner } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
 
-const USER_INFO = [
-  { label: "会社名", value: "INTERPLUG TEST" },
-  { label: "氏名", value: "金志映" },
-  { label: "メールアドレス (ID)", value: "kjy0501@interplug.co.kr" },
-  { label: "電話番号", value: "03-5441-5943" },
-];
+// Design Ref: §6.1 — 프로필 API 응답 타입
+interface ProfileData {
+  compNm: string | null;
+  sei: string | null;
+  mei: string | null;
+  email: string | null;
+  telNo: string | null;
+  withdrawAvailable?: boolean;
+}
 
 export function WithdrawPopup() {
+  const router = useRouter();
   const { closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
+  const logout = useAuthStore((s) => s.logout);
 
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+
+  // TODO: mypage/profile API 안정화 후 useQuery로 교체 — 더미 데이터는 프로필 조회 API 수정 반영 후 제거 예정
+  const profile: ProfileData | null = null;
+  const isProfileLoading = false;
+  const profileError: Error | null = new Error("プロフィールAPIが未実装です");
+  const isProfileReady = profile != null && !isProfileLoading && !profileError;
+
+  function buildUserInfo(p: ProfileData) {
+    return [
+      { label: "会社名", value: p.compNm ?? "-" },
+      { label: "氏名", value: [p.sei, p.mei].filter(Boolean).join(" ") || "-" },
+      { label: "メールアドレス (ID)", value: p.email ?? "-" },
+      { label: "電話番号", value: p.telNo ?? "-" },
+    ];
+  }
 
   const handleClose = () => {
     setIsClosing(true);
@@ -29,13 +54,59 @@ export function WithdrawPopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleSubmit = () => {
+  // Design Ref: §3.2 — 탈퇴 요청
+  const handleSubmit = async () => {
     if (!reason.trim()) {
       setError("退会理由を入力してください");
       return;
     }
-    openAlert({ type: "alert", message: "会員退会が完了されました。ご利用ありがとうございます。" });
-    handleClose();
+
+    setIsSubmitting(true);
+    try {
+      await api.post("/mypage/withdraw", { reason: reason.trim() });
+      setIsSubmitting(false);
+      // Plan SC: 성공 → alert → 로그아웃 → 홈 이동
+      openAlert({
+        type: "alert",
+        message: "会員退会が完了されました。ご利用ありがとうございます。",
+        onConfirm: () => {
+          logout();
+          closePopup();
+          router.push("/");
+        },
+      });
+    } catch (err: unknown) {
+      setIsSubmitting(false);
+      // Design Ref: §5.2 — 에러 분기 처리
+      if (isAxiosError(err) && err.response) {
+        const status = err.response.status;
+        const data = (err.response.data ?? {}) as Record<string, unknown>;
+        const errorMsg = typeof data.error === "string" ? data.error : undefined;
+
+        if (status === 401) {
+          openAlert({
+            type: "alert",
+            message: "ログインが必要です。",
+            onConfirm: () => {
+              logout();
+              closePopup();
+              router.push("/login");
+            },
+          });
+        } else if (status === 403) {
+          openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
+        } else if (status === 429) {
+          openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
+        } else if (status === 501) {
+          openAlert({ type: "alert", message: "退会機能は現在準備中です。しばらくお待ちください。" });
+        } else {
+          openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+        }
+      } else {
+        console.error("[Withdraw] 탈퇴 처리 실패:", err);
+        openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -45,11 +116,10 @@ export function WithdrawPopup() {
   return (
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
-      onClick={handleClose}
       onKeyDown={handleKeyDown}
     >
       <div
-        className="popup-container w-[339px] lg:w-[620px] "
+        className="popup-container w-[339px] lg:w-[620px]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -86,28 +156,38 @@ export function WithdrawPopup() {
               利用者が退会手続きを進行した場合、会員限定ページ内で閲覧できた情報は一切閲覧できなくなります。退会後会員情報復旧はいたしませんので予めご了承ください。
             </p>
 
-            {/* ユーザー情報 */}
-            <div className="flex flex-col gap-[18px] w-full">
-              {USER_INFO.map((item, idx) => (
-                <div
-                  key={item.label}
-                  className={`flex flex-col gap-[8px] pt-[18px] border-t ${
-                    idx === USER_INFO.length - 1
-                      ? "border-b border-[#eff4f8] pb-[18px]"
-                      : ""
-                  } border-[#eff4f8]`}
-                >
-                  <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                    {item.label}
-                  </p>
-                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                    {item.value}
-                  </p>
-                </div>
-              ))}
-            </div>
+            {/* ユーザー情報 — Design Ref: §7.2 로딩/에러/데이터 분기 */}
+            {isProfileLoading ? (
+              <div className="flex items-center justify-center py-[40px]">
+                <Spinner />
+              </div>
+            ) : profileError ? (
+              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#ff1a1a] py-[20px]">
+                会員情報を読み込めませんでした
+              </p>
+            ) : profile ? (
+              <div className="flex flex-col gap-[18px] w-full">
+                {buildUserInfo(profile).map((item, idx, arr) => (
+                  <div
+                    key={item.label}
+                    className={`flex flex-col gap-[8px] pt-[18px] border-t ${
+                      idx === arr.length - 1
+                        ? "border-b border-[#eff4f8] pb-[18px]"
+                        : ""
+                    } border-[#eff4f8]`}
+                  >
+                    <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
+                      {item.label}
+                    </p>
+                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
-            {/* 退会理由 (기획서: 내용* textarea) */}
+            {/* 退会理由 */}
             <div className="flex flex-col gap-[8px] w-full">
               <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
                 内容<span className="text-[#ff1a1a]">*</span>
@@ -133,7 +213,7 @@ export function WithdrawPopup() {
               )}
             </div>
 
-            {/* ボタン */}
+            {/* ボタン — Design Ref: §7.3 버튼 상태 */}
             <div className="flex gap-[8px] items-center justify-center w-full">
               <Button
                 variant="secondary"
@@ -144,10 +224,11 @@ export function WithdrawPopup() {
               </Button>
               <Button
                 variant="primary"
-                onClick={handleSubmit}
+                onClick={() => { void handleSubmit(); }}
+                disabled={isSubmitting || !isProfileReady}
                 className="w-[141px] lg:w-[84px]"
               >
-                退会する
+                {isSubmitting ? "処理中..." : "退会する"}
               </Button>
             </div>
           </div>

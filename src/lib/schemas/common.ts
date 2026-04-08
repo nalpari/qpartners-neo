@@ -12,6 +12,13 @@ export const authRoleValues = [
 
 export const authRoleSchema = z.enum(authRoleValues);
 
+/** 콘텐츠 게시대상 유형 */
+export const targetTypeValues = [
+  "first_store", "second_store", "seko", "general", "non_member",
+] as const;
+
+export const targetTypeSchema = z.enum(targetTypeValues);
+
 /** URL path parameter ID 검증 — 공통 */
 export const idParamSchema = z.coerce
   .number()

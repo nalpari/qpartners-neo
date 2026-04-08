@@ -3,45 +3,46 @@
 import Image from "next/image";
 import { useAlertStore } from "@/lib/store";
 
+// Design Ref: §4.2 — approverLevel 라벨 변환
+const APPROVER_LABELS: Record<number, string> = {
+  1: "担当者",
+  2: "課長",
+  3: "事業部長",
+};
+
 interface ContentsDetailInfoProps {
   viewCount: number;
-  department: string;
-  publisher: string;
-  updater: string;
-  approver: string;
+  authorDepartment: string | null;
+  createdBy: string;
+  updatedBy: string | null;
+  approverLevel: number | null;
 }
-
-const INFO_FIELDS = [
-  { label: "担当部門", key: "department" },
-  { label: "掲載担当者", key: "publisher" },
-  { label: "更新担当者", key: "updater" },
-  { label: "最終承認者", key: "approver" },
-] as const;
 
 export function ContentsDetailInfo({
   viewCount,
-  department,
-  publisher,
-  updater,
-  approver,
+  authorDepartment,
+  createdBy,
+  updatedBy,
+  approverLevel,
 }: ContentsDetailInfoProps) {
-  const values: Record<string, string> = {
-    department,
-    publisher,
-    updater,
-    approver,
-  };
-
   const { openAlert } = useAlertStore();
 
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
       openAlert({ type: "alert", message: "URLがコピーされました。" });
-    } catch {
+    } catch (error: unknown) {
+      console.error("[Contents] URL 복사 실패:", error);
       openAlert({ type: "alert", message: "URLのコピーに失敗しました。" });
     }
   };
+
+  const fields = [
+    { label: "担当部門", value: authorDepartment ?? "-" },
+    { label: "掲載担当者", value: createdBy },
+    { label: "更新担当者", value: updatedBy ?? "-" },
+    { label: "最終承認者", value: approverLevel != null ? (APPROVER_LABELS[approverLevel] ?? `Lv.${approverLevel}`) : "-" },
+  ];
 
   return (
     <>
@@ -77,8 +78,8 @@ export function ContentsDetailInfo({
       {/* PC: 관리정보 4열 테이블 */}
       <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[1440px]">
         <div className="flex gap-1">
-          {INFO_FIELDS.map((field) => (
-            <div key={field.key} className="flex flex-1 gap-1 h-[58px]">
+          {fields.map((field) => (
+            <div key={field.label} className="flex flex-1 gap-1 h-[58px]">
               <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2">
                 <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap truncate">
                   {field.label}
@@ -86,7 +87,7 @@ export function ContentsDetailInfo({
               </div>
               <div className="flex-1 flex items-center bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2">
                 <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                  {values[field.key]}
+                  {field.value}
                 </span>
               </div>
             </div>
@@ -97,9 +98,9 @@ export function ContentsDetailInfo({
       {/* MO: 관리정보 세로 카드 */}
       <div className="block lg:hidden bg-white px-6 py-[34px] w-full">
         <div className="flex flex-col gap-[18px]">
-          {INFO_FIELDS.map((field, idx) => (
+          {fields.map((field, idx) => (
             <div
-              key={field.key}
+              key={field.label}
               className={`flex flex-col gap-2 ${
                 idx > 0 ? "border-t border-[#EFF4F8] pt-[18px]" : ""
               }`}
@@ -108,7 +109,7 @@ export function ContentsDetailInfo({
                 {field.label}
               </p>
               <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                {values[field.key]}
+                {field.value}
               </p>
             </div>
           ))}

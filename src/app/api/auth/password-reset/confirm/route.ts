@@ -5,11 +5,13 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { passwordResetConfirmSchema } from "@/lib/schemas/password-reset";
+import { hashResetToken } from "@/lib/password-reset-token";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole, type AuthRole } from "@/lib/auth";
+import { userTpValues } from "@/lib/schemas/common";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
 const qspUserDetailSchema = z.object({
@@ -64,7 +66,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/password-reset/confirm] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -83,7 +86,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { token, newPassword } = result.data;
+  const { token: rawToken, newPassword } = result.data;
+  // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회
+  const token = hashResetToken(rawToken);
 
   // 2. 토큰 재검증
   let resetToken;
@@ -184,8 +189,23 @@ export async function POST(request: NextRequest) {
       500,
     );
   }
+  if (!detailData && resetToken.userType === "GENERAL") {
+    console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
+  }
 
-  // 5. QSP 비밀번호 변경 API 호출 (chgType=I)
+  // 5. userType 검증 — QSP 호출 전에 수행 (실패 시 비밀번호 변경 방지)
+  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
+  if (!userTpParsed.success) {
+    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
+    return rollbackAndRespond(token,
+      "サーバーエラーが発生しました",
+      "サーバーエラーが発生しました",
+      500,
+    );
+  }
+  const validUserTp = userTpParsed.data;
+
+  // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
   try {
     qspResponse = await fetch(QSP_API.passwordChange, {
@@ -245,23 +265,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 6. 자동 로그인 — JWT 발행 + 쿠키 설정
+  // 7. 자동 로그인 — JWT 발행 + 쿠키 설정
   // 비밀번호 변경은 이미 완료됨 — resolveAuthRole 실패로 전체 응답을 실패시키면 안 됨
   let authRole: AuthRole;
   try {
-    authRole = await resolveAuthRole(resetToken.userType as Parameters<typeof resolveAuthRole>[0], loginId, detailData?.storeLvl ?? null);
+    authRole = await resolveAuthRole(validUserTp, loginId, detailData?.storeLvl ?? null);
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
-    authRole = resetToken.userType === "ADMIN" ? "ADMIN"
-      : resetToken.userType === "STORE" ? (detailData?.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
-      : resetToken.userType === "SEKO" ? "SEKO"
+    authRole = validUserTp === "ADMIN" ? "ADMIN"
+      : validUserTp === "STORE" ? (detailData?.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
+      : validUserTp === "SEKO" ? "SEKO"
       : "GENERAL";
   }
 
   const user: LoginUser = {
     userId: loginId,
     userNm: detailData?.userNm ?? null,
-    userTp: resetToken.userType,
+    userTp: validUserTp,
     compCd: detailData?.compCd ?? null,
     compNm: detailData?.compNm ?? null,
     email: resetToken.userId,

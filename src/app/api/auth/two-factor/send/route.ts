@@ -13,11 +13,13 @@ import { generateTwoFactorCode, hashOtp } from "@/lib/auth-utils";
 
 // POST /api/auth/two-factor/send — 2차 인증번호 발송
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/two-factor/send] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -160,4 +162,11 @@ export async function POST(request: NextRequest) {
       expiresIn: 600,
     },
   });
+ } catch (error) {
+    console.error("[POST /api/auth/two-factor/send]", error);
+    return NextResponse.json(
+      { error: "認証番号送信中にサーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }

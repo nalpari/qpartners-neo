@@ -2,40 +2,119 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button, InputBox, SelectBox } from "@/components/common";
+import { isAxiosError } from "axios";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import type { LoginUser } from "@/lib/schemas/auth";
+import api from "@/lib/axios";
 
-const INQUIRY_TYPE_OPTIONS = [
-  { label: "サービスに関するお問い合わせ", value: "service" },
-  { label: "技術的なお問い合わせ", value: "technical" },
-  { label: "その他", value: "other" },
-];
+interface CodeDetail {
+  code: string;
+  displayCode: string;
+  codeName: string;
+  codeNameEtc: string | null;
+  sortOrder: number;
+}
 
-// 더미 사용자 데이터 (추후 인증 연동)
-const DUMMY_USER = {
-  companyName: "INTERPLUG TEST",
-  name: "金志映",
-  phone: "03-5441-5943",
-  email: "kjy0501@interplug.co.kr",
-};
-
+// 외부 컴포넌트: auth 캐시 구독 → user 변경 시 key로 내부 폼 리마운트
 export function InquiryForm() {
-  const { openAlert } = useAlertStore();
-  const isLoggedIn = false; // TODO: auth-store 연동 후 실제 값으로 교체
+  // 헤더가 관리하는 auth 캐시를 구독 (직접 fetch 안 함, 캐시 변경 시 리렌더링)
+  const { data: user = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
-  const [companyName, setCompanyName] = useState(
-    isLoggedIn ? DUMMY_USER.companyName : ""
+  return (
+    <InquiryFormInner
+      key={user ? `logged-${user.userId}` : "guest"}
+      user={user}
+    />
   );
-  const [name, setName] = useState(isLoggedIn ? DUMMY_USER.name : "");
-  const [phone, setPhone] = useState(isLoggedIn ? DUMMY_USER.phone : "");
-  const [email, setEmail] = useState(isLoggedIn ? DUMMY_USER.email : "");
+}
+
+function InquiryFormInner({ user }: { user: LoginUser | null }) {
+  const { openAlert } = useAlertStore();
+  const isLoggedIn = !!user;
+
+  const {
+    data: inquiryTypeOptions = [],
+    isPending: isCodeLoading,
+    isError: isCodeLoadError,
+  } = useQuery({
+    queryKey: ["codes", "INQUIRY_TYPE"],
+    queryFn: async () => {
+      const res = await api.get<{ data: CodeDetail[] }>("/codes/lookup", {
+        params: { headerCode: "INQUIRY_TYPE" },
+      });
+      const details = res.data?.data;
+      if (!Array.isArray(details)) {
+        throw new Error("Unexpected response shape from /codes/lookup");
+      }
+      return details.map((d) => ({
+        label: d.codeName,
+        value: d.code,
+      }));
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 2,
+  });
+
+  const [companyName, setCompanyName] = useState(user?.compNm ?? "");
+  const [name, setName] = useState(user?.userNm ?? "");
+  // TODO: profile API 안정화 후 user?.telNo 연동 — 현재 LoginUser 타입에 telNo 미포함
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
+  const submitMutation = useMutation({
+    mutationFn: async (data: {
+      companyName: string;
+      userName: string;
+      tel?: string;
+      email: string;
+      inquiryType?: string;
+      title: string;
+      content: string;
+    }) => {
+      const res = await api.post<{ data: { id: number } }>("/inquiry", data);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      openAlert({
+        type: "alert",
+        message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+      });
+      handleCancel();
+    },
+    onError: (error: unknown) => {
+      console.error("[InquiryForm] 문의 등록 실패:", error);
+
+      if (isAxiosError<{ error?: string }>(error) && error.response) {
+        const { status, data } = error.response;
+        if (status === 400) {
+          openAlert({ type: "alert", message: data?.error ?? "入力内容に不備があります。内容をご確認ください。" });
+        } else if (status === 429) {
+          openAlert({ type: "alert", message: data?.error ?? "リクエストが多すぎます。しばらく経ってから再度お試しください。" });
+        } else {
+          openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+        }
+      } else {
+        openAlert({ type: "alert", message: "お問い合わせの送信に失敗しました。\nしばらく経ってから再度お試しください。" });
+      }
+    },
+  });
+
   const handleCancel = () => {
     if (isLoggedIn) {
-      setEmail(DUMMY_USER.email);
+      setCompanyName(user?.compNm ?? "");
+      setName(user?.userNm ?? "");
+      setPhone("");
+      setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
       setName("");
@@ -66,8 +145,17 @@ export function InquiryForm() {
       openAlert({ type: "alert", message: "メールアドレスを入力してください。" });
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      openAlert({ type: "alert", message: "有効なメールアドレスを入力してください。" });
+      return;
+    }
     if (!inquiryType) {
-      openAlert({ type: "alert", message: "お問い合わせタイプを選択してください。" });
+      openAlert({
+        type: "alert",
+        message: isCodeLoadError
+          ? "お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。"
+          : "お問い合わせタイプを選択してください。",
+      });
       return;
     }
     if (!title.trim()) {
@@ -79,15 +167,23 @@ export function InquiryForm() {
       return;
     }
 
-    openAlert({
-      type: "alert",
-      message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+    if (submitMutation.isPending) return;
+
+    submitMutation.mutate({
+      companyName: companyName.trim(),
+      userName: name.trim(),
+      tel: phone.trim() || undefined,
+      email: email.trim(),
+      inquiryType: inquiryType || undefined,
+      title: title.trim(),
+      content: content.trim(),
     });
-    handleCancel();
   };
 
   return (
-    <main className="flex flex-col items-center w-full lg:pb-[48px] pb-[28px] mt-[10px] lg:mt-0">
+    <>
+      {submitMutation.isPending && <DimSpinner />}
+      <main className="flex flex-col items-center w-full lg:pb-[48px] pb-[28px] mt-[10px] lg:mt-0">
       {/* PC 카드 */}
       <div className="hidden lg:flex flex-col gap-[24px] w-[1440px]">
         <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px]">
@@ -205,11 +301,17 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}
@@ -253,8 +355,9 @@ export function InquiryForm() {
             variant="primary"
             className="w-[110px]"
             onClick={handleSubmit}
+            disabled={submitMutation.isPending}
           >
-            お問い合わせ
+            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
           </Button>
         </div>
       </div>
@@ -344,11 +447,17 @@ export function InquiryForm() {
                 <span className="text-[#ff1a1a]">*</span>
               </p>
               <SelectBox
-                options={INQUIRY_TYPE_OPTIONS}
+                options={inquiryTypeOptions}
                 value={inquiryType}
                 onChange={setInquiryType}
-                placeholder="お問い合わせタイプを選択"
+                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+                disabled={isCodeLoading}
               />
+              {isCodeLoadError && (
+                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+                </p>
+              )}
             </div>
 
             {/* 제목 */}
@@ -388,8 +497,9 @@ export function InquiryForm() {
             variant="primary"
             className="flex-1 shrink-0"
             onClick={handleSubmit}
+            disabled={submitMutation.isPending}
           >
-            お問い合わせ
+            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
           </Button>
         </div>
       </div>
@@ -424,6 +534,7 @@ export function InquiryForm() {
           </Link>
         </div>
       )}
-    </main>
+      </main>
+    </>
   );
 }

@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { TermsButton } from "@/components/layout/terms-button";
 
 export function Footer() {
@@ -8,13 +7,12 @@ export function Footer() {
       <div className="hidden lg:flex items-center gap-[94px] w-[1440px] py-[20px]">
         {/* 로고 + 사무국 */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/asset/images/layout/footer_logo.svg"
             alt="Hanwha Japan"
             width={160}
             height={30}
-            unoptimized
-            style={{ height: "auto" }}
           />
           <span className="w-px h-3 bg-[rgba(16,16,16,0.2)]" />
           <span className="font-['Pretendard'] font-semibold text-[14px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
@@ -56,13 +54,12 @@ export function Footer() {
         {/* 로고 + 사무국 */}
         <div className="flex items-center gap-1.5 w-full">
           <div className="flex items-center gap-1 h-[42px]">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/asset/images/layout/footer_logo.svg"
               alt="Hanwha Japan"
               width={136}
               height={25}
-              unoptimized
-              style={{ height: "auto" }}
             />
             <span className="font-pretendard font-medium text-[12px] leading-[1.5] text-[#101010] uppercase whitespace-nowrap">
               Q.PARTNERS

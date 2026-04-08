@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAppStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -10,6 +10,7 @@ const CLOSE_ANIMATION_MS = 200;
 export function SignupCompletePopup() {
   const router = useRouter();
   const { popupData, closePopup } = usePopupStore();
+  const setPrefillEmail = useAppStore((s) => s.setPrefillEmail);
   const [isClosing, setIsClosing] = useState(false);
 
   const userName = (popupData.userName as string) ?? "";
@@ -23,7 +24,9 @@ export function SignupCompletePopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
+  // Design Ref: §5.3 — 로그인 이동 시 ID 자동입력을 위해 prefillEmail 설정
   const handleGoLogin = () => {
+    setPrefillEmail(userId);
     handleClose();
     router.push("/login");
   };

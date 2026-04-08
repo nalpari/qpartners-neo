@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
       email: user.email,
       userTp: user.userTp,
     });
-    if (user.userTp === "STORE") {
+    // ADMIN/STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달
+    // (GENERAL은 loginId = email이므로 불필요)
+    if (user.userTp === "ADMIN" || user.userTp === "STORE") {
       params.set("loginId", user.userId);
     }
 
@@ -171,7 +173,8 @@ export async function PUT(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[PUT /api/mypage/profile] Request body 파싱 실패:", error);
       return NextResponse.json(
         { error: "Invalid JSON body" },
         { status: 400 },
@@ -210,6 +213,8 @@ export async function PUT(request: NextRequest) {
         accsSiteCd: "QPARTNERS",
         email: user.email,
         userTp: user.userTp,
+        // STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달 (ADMIN은 상단에서 501 처리됨)
+        ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
         user1stNmKana: d.meiKana,

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
@@ -18,6 +20,7 @@ export function PasswordChangePopup() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
@@ -28,12 +31,13 @@ export function PasswordChangePopup() {
     if (!newPassword) {
       newErrors.new = "新規パスワードを入力してください";
     } else {
-      let types = 0;
-      if (/[a-zA-Z]/.test(newPassword)) types++;
-      if (/[0-9]/.test(newPassword)) types++;
-      if (/[^a-zA-Z0-9]/.test(newPassword)) types++;
-      if (newPassword.length < 8 || types < 2) {
-        newErrors.new = "英語/数字/記号のうち2つ以上を組み合わせて8文字以上で入力してください";
+      const hasUpper = /[A-Z]/.test(newPassword);
+      const hasLower = /[a-z]/.test(newPassword);
+      const hasNumber = /[0-9]/.test(newPassword);
+      if (newPassword.length < 8 || newPassword.length > 100 || !hasUpper || !hasLower || !hasNumber) {
+        newErrors.new = "英大文字・英小文字・数字を組み合わせて8文字以上100文字以内で設定してください";
+      } else if (currentPassword && newPassword === currentPassword) {
+        newErrors.new = "現在のパスワードと異なるパスワードを設定してください";
       }
     }
     if (!confirmPassword) {
@@ -53,10 +57,50 @@ export function PasswordChangePopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setErrors({});
     if (!validate()) return;
-    openAlert({ type: "alert", message: "パスワード変更機能は準備中です" });
-    handleClose();
+
+    setIsSubmitting(true);
+    try {
+      await api.post("/mypage/password-change", {
+        currentPwd: currentPassword,
+        newPwd: newPassword,
+        confirmPwd: confirmPassword,
+      });
+      setIsSubmitting(false);
+      openAlert({
+        type: "alert",
+        message: "パスワードが変更されました。",
+        onConfirm: handleClose,
+      });
+    } catch (err: unknown) {
+      setIsSubmitting(false);
+      if (isAxiosError(err) && err.response) {
+        const status = err.response.status;
+        const data: unknown = err.response.data;
+        const isObj = (v: unknown): v is Record<string, unknown> => v != null && typeof v === "object";
+        const errorField = isObj(data) && "error" in data ? data.error : undefined;
+        const issuesField = isObj(data) && "issues" in data && Array.isArray(data.issues) ? data.issues : [];
+        const first = issuesField[0];
+        const firstMessage = isObj(first) && "message" in first ? String(first.message) : undefined;
+
+        if (status === 429) {
+          openAlert({ type: "alert", message: "パスワード変更の試行回数を超えました。しばらくしてからお試しください。" });
+        } else if (status === 400 && errorField === "Validation failed" && firstMessage) {
+          // 서버 Zod 검증 실패 — 필드별 에러 메시지 표시
+          openAlert({ type: "alert", message: firstMessage });
+        } else if (status === 400) {
+          // QSP 비밀번호 불일치
+          openAlert({ type: "alert", message: "現在のパスワードが一致しません。" });
+        } else {
+          openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+        }
+      } else {
+        console.error("[PasswordChange] 비밀번호 변경 실패:", err);
+        openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -66,7 +110,6 @@ export function PasswordChangePopup() {
   return (
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
-      onClick={handleClose}
       onKeyDown={handleKeyDown}
     >
       <div
@@ -144,7 +187,7 @@ export function PasswordChangePopup() {
                   <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">{errors.new}</p>
                 ) : (
                   <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060b4]">
-                    ※英語/数字/記号のうち2つ以上を組み合わせて8文字以上に設定
+                    ※英大文字・英小文字・数字を組み合わせて8文字以上に設定
                   </p>
                 )}
               </div>
@@ -178,10 +221,11 @@ export function PasswordChangePopup() {
                 </Button>
                 <Button
                   variant="primary"
-                  onClick={handleSubmit}
+                  onClick={() => { void handleSubmit(); }}
+                  disabled={isSubmitting}
                   className="w-[128px] lg:w-[68px]"
                 >
-                  変更
+                  {isSubmitting ? "処理中..." : "変更"}
                 </Button>
               </div>
             </div>

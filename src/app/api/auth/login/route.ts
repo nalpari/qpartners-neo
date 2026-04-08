@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/login] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -203,6 +204,8 @@ export async function POST(request: NextRequest) {
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
     pwdInitYn: qsp.data.pwdInitYn,
+    // QSP compTelNo(회사 전화번호) → telNo로 전달 (문의하기 자동 입력용)
+    telNo: qsp.data.compTelNo ?? null,
   };
 
   let token: string;

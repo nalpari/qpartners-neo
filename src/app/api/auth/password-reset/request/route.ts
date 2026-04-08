@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { z } from "zod";
+
 import { prisma } from "@/lib/prisma";
 import { passwordResetRequestSchema } from "@/lib/schemas/password-reset";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -11,6 +13,10 @@ import {
 } from "@/lib/mail-templates/password-reset";
 import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
 import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  generateRawResetToken,
+  hashResetToken,
+} from "@/lib/password-reset-token";
 
 // POST /api/auth/password-reset/request — 비밀번호 초기화 요청 (메일 발송)
 export async function POST(request: NextRequest) {
@@ -19,7 +25,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/password-reset/request] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -126,9 +133,9 @@ export async function POST(request: NextRequest) {
 
     // ADMIN/STORE: loginId≠email일 수 있으므로 userDetail 응답에서 userId(=loginId) 추출하여 토큰에 저장
     if (userExists && !resolvedLoginId) {
-      const data = parsed.data.data as Record<string, unknown> | null;
-      if (data && typeof data.userId === "string") {
-        resolvedLoginId = data.userId;
+      const userIdResult = z.object({ userId: z.string() }).safeParse(parsed.data.data);
+      if (userIdResult.success) {
+        resolvedLoginId = userIdResult.data.userId;
       }
     }
   } catch (error) {
@@ -148,7 +155,9 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
-  const token = crypto.randomUUID();
+  // DB에는 SHA-256 해시만 저장 — 이메일/URL에는 원본 토큰을 전달한다.
+  const rawToken = generateRawResetToken();
+  const token = hashResetToken(rawToken);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 
   try {
@@ -177,7 +186,8 @@ export async function POST(request: NextRequest) {
 
   // 5. 비밀번호 변경 링크 메일 발송
   const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
-  const resetUrl = `${siteUrl}/password-reset?token=${token}`;
+  // URL에는 원본 토큰을 전달 — 사용자가 링크를 열면 verify/confirm에서 해싱 후 DB 조회
+  const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
 
   try {
     await sendMail({
@@ -194,7 +204,7 @@ export async function POST(request: NextRequest) {
     await prisma.passwordResetToken.deleteMany({
       where: { token },
     }).catch((dbError: unknown) => {
-      console.error("[POST /api/auth/password-reset/request] 토큰 롤백 실패 — orphan 토큰 잔류, tokenPrefix:", token.slice(0, 8), dbError);
+      console.error("[POST /api/auth/password-reset/request] 토큰 롤백 실패 — orphan 토큰 잔류, tokenHashPrefix:", token.slice(0, 8), dbError);
     });
     return NextResponse.json(
       { error: "メールの送信に失敗しました。しばらくしてからもう一度お試しください。" },

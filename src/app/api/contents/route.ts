@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
@@ -62,18 +63,15 @@ export async function GET(request: NextRequest) {
             : []),
         ],
       }),
-      // 게시대상 필터: 비사내 사용자는 자기 targetType에 해당 + 기간 내만
+      // 사내 사용자: targetType 쿼리 파라미터로 선택 필터링 (관리 목적)
+      ...(internal && targetType && {
+        targets: { some: { targetType } },
+      }),
+      // 비사내 사용자: 서버 측에서 역할 기반으로 targetType 강제 결정 (쿼리 파라미터 무시)
       ...(!internal && {
         targets: {
           some: {
-            targetType: (targetType ??
-              user?.role ??
-              "non_member") as
-              | "first_dealer"
-              | "second_dealer"
-              | "constructor"
-              | "general"
-              | "non_member",
+            targetType: user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member",
             AND: [
               {
                 OR: [
@@ -111,7 +109,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           categories: {
-            include: { category: { select: { id: true, name: true, categoryCode: true, isInternalOnly: true } } },
+            include: { category: CATEGORY_TREE_INCLUDE },
           },
           targets: { select: { targetType: true, startAt: true, endAt: true } },
           _count: { select: { attachments: true } },
@@ -135,7 +133,7 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       isNew: now - c.createdAt.getTime() < FIVE_DAYS_MS,
       isUpdated: now - c.updatedAt.getTime() < FIVE_DAYS_MS,
-      categories: c.categories.map((cc) => cc.category),
+      categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
     }));
@@ -168,9 +166,10 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (jsonError: unknown) {
+      console.warn("[POST /api/contents] Request body 파싱 실패:", jsonError);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -215,15 +214,22 @@ export async function POST(request: NextRequest) {
       },
       include: {
         targets: true,
-        categories: { include: { category: true } },
+        // GET/PUT과 동일하게 트리 구조 응답을 위해 CATEGORY_TREE_INCLUDE 사용
+        categories: { include: { category: CATEGORY_TREE_INCLUDE } },
       },
     });
 
-    return NextResponse.json({ data: content }, { status: 201 });
+    // POST는 requireAdmin 통과자 = 사내 사용자이므로 includeInternal=true (PUT detail과 동일 정책)
+    return NextResponse.json({
+      data: {
+        ...content,
+        categories: buildCategoryTree(content.categories, { includeInternal: true }),
+      },
+    }, { status: 201 });
   } catch (error) {
-    console.error("[POST /api/contents]", error);
+    console.error("[POST /api/contents] 콘텐츠 등록 실패:", error);
     return NextResponse.json(
-      { error: "Failed to create content" },
+      { error: "コンテンツの登録に失敗しました" },
       { status: 500 },
     );
   }

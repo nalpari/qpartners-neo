@@ -47,7 +47,8 @@ export const changePasswordSchema = z
     message:
       "パスワードは英大文字・英小文字・数字を組み合わせて8文字以上にしてください",
     path: ["newPwd"],
-  });
+  })
+  .transform((data) => ({ currentPwd: data.currentPwd, newPwd: data.newPwd }));
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
@@ -73,13 +74,15 @@ export const qspUserDetailSchema = z.object({
   compPostCd: z.string().nullable(),
   compAddr: z.string().nullable(),
   compAddr2: z.string().nullable(),
-  compTelNo: z.string().nullable(),
+  // QSP 응답에서 필드 자체가 omit될 수 있어 nullish 사용
+  // (qspLoginUserSchema.compTelNo와 동일)
+  compTelNo: z.string().nullish(),
   compFaxNo: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
-  corporateNo: z.string().nullable(),
+  corporateNo: z.string().nullish(),
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
-  newsRcptDate: z.string().nullable(),
+  newsRcptDate: z.string().nullish(),
   // QSP 과도기: DEALER → STORE 호환 매핑 (qspLoginUserSchema와 동일 로직)
   userTp: z.string().nullable().transform((val) => {
     if (val === "DEALER") return "STORE" as const;

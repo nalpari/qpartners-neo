@@ -1,18 +1,14 @@
 import { z } from "zod";
 
+import { targetTypeValues } from "@/lib/schemas/common";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
 
 const contentTargetSchema = z
   .object({
-    targetType: z.enum([
-      "first_dealer",
-      "second_dealer",
-      "constructor",
-      "general",
-      "non_member",
-    ]),
+    targetType: z.enum(targetTypeValues),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
   })
@@ -54,10 +50,10 @@ export const listContentsQuerySchema = z.object({
       message: "pageSize must be 20, 50, or 100",
     })
     .default(20),
-  keyword: z.string().optional(),
+  keyword: z.string().max(100).optional(),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),
-  targetType: z.string().optional(),
+  targetType: z.enum(targetTypeValues).optional(),
   department: z.string().optional(),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
@@ -66,7 +62,7 @@ export const listContentsQuerySchema = z.object({
 export const downloadLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  keyword: z.string().optional(),
+  keyword: z.string().max(100).optional(),
 });
 
 // ─── Types ───

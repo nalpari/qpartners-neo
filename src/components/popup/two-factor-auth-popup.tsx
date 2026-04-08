@@ -3,44 +3,103 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { usePopupStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
+import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
-const CLOSE_ANIMATION_MS = 200;
+/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 */
+const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
+  { pattern: "일치하지 않습니다", message: "認証番号が一致しません！" },
+  { pattern: "입력시간이 초과", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
+  { pattern: "시도 횟수를 초과", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
+  { pattern: "먼저 발송", message: "認証番号を先に送信してください。再送信をお試しください。" },
+];
+
+function mapServerError(serverMsg: string): string {
+  const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
+  if (!match) {
+    console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
+  }
+  return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
+}
+
 
 export function TwoFactorAuthPopup() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { closePopup } = usePopupStore();
+  const { popupData, closePopup } = usePopupStore();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // popupData 타입 가드 — undefined 방어
+  const userId = typeof popupData.userId === "string" ? popupData.userId : "";
+  const userTp = typeof popupData.userTp === "string" ? popupData.userTp : "";
 
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isClosing, setIsClosing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(600);
 
   const isCodeValid = code.length === 6;
 
-  // 팝업 열리면 자동 포커스
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  // 파생 값으로 에러 처리 — useEffect 밖에서 선언
+  const missingAuthData = !userId || !userTp;
+  const derivedError = missingAuthData
+    ? "認証情報が不足しています。ログインからやり直してください。"
+    : null;
 
-  // 10분 카운트다운 타이머
-  useEffect(() => {
-    const timer = setInterval(() => {
+  // 인증번호 발송 — useMutation으로 관리 (useEffect 내 setState 회피)
+  const sendMutation = useMutation({
+    mutationFn: () => api.post("/auth/two-factor/send", { userTp, userId }),
+    onSuccess: () => {
+      startTimer();
+    },
+    onError: (err) => {
+      console.error("[2FA] 送信失敗:", err);
+      if (isAxiosError(err) && err.response?.status === 429) {
+        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+      } else {
+        setError("メール送信に失敗しました。再送信をお試しください。");
+      }
+    },
+  });
+
+  // useRef 기반 타이머 (useEffect 내 setState 회피)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ref로 sendMutation.mutate 안정화 → eslint-disable 제거
+  const sendMutateRef = useRef(sendMutation.mutate);
+  sendMutateRef.current = sendMutation.mutate;
+
+  const startTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setRemainingSeconds(600);
+    timerRef.current = setInterval(() => {
       setRemainingSeconds((prev) => {
-        if (prev <= 0) {
-          clearInterval(timer);
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  };
+
+  // 팝업 열리면 자동 포커스 + 1회 발송 (StrictMode 중복 방지)
+  const sendCalledRef = useRef(false);
+  useEffect(() => {
+    inputRef.current?.focus();
+    if (sendCalledRef.current || missingAuthData) return;
+    sendCalledRef.current = true;
+    sendMutateRef.current();
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [missingAuthData]);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;
@@ -53,18 +112,13 @@ export function TwoFactorAuthPopup() {
     setError(null);
   };
 
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      closePopup();
-      setCode("");
-      setError(null);
-      setIsClosing(false);
-    }, CLOSE_ANIMATION_MS);
-  };
-
+  // Best-effort logout: 실패해도 로그인 화면으로 이동 (서버 세션은 TTL로 만료)
   const handleCancel = async () => {
-    await performLogout(queryClient);
+    try {
+      await performLogout(queryClient);
+    } catch (err) {
+      console.error("[2FA] ログアウト失敗:", err);
+    }
     closePopup();
     router.replace("/login");
   };
@@ -72,21 +126,51 @@ export function TwoFactorAuthPopup() {
   const handleResend = () => {
     setCode("");
     setError(null);
-    setRemainingSeconds(600);
     inputRef.current?.focus();
-    // TODO: POST /api/auth/two-factor/resend
+    sendMutation.mutate();
   };
 
-  const handleVerify = () => {
-    if (!isCodeValid) return;
-    // TODO: POST /api/auth/two-factor/verify 연동 시 성공 → handleClose() + AUTH_FLAG_KEY 설정 + router.replace("/")
-    // 현재(API 미연동): 무조건 실패 처리
-    setError("認証番号が一致しません！");
+  const handleVerify = async () => {
+    if (!isCodeValid || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await api.post("/auth/two-factor/verify", { userTp, userId, code });
+
+      // 성공: 홈화면 블러 해제 (성공 메시지 없음)
+      try {
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+      } catch (storageErr) {
+        console.error("[2FA] localStorage 쓰기 失敗:", storageErr);
+        setError("ブラウザのストレージに問題があります。シークレットモードでは正常に動作しない場合があります。");
+        return;
+      }
+      dispatchAuthChange();
+      closePopup();
+      router.replace("/");
+    } catch (err) {
+      console.error("[2FA] 認証失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        const serverError = extractApiError(err);
+        if (serverError) {
+          setError(mapServerError(serverError));
+        } else {
+          console.warn("[2FA] 予期しないエラーレスポンス形式:", err.response.data);
+          setError("認証処理中にエラーが発生しました。しばらくしてからお試しください");
+        }
+      } else {
+        setError("サーバーに接続できません。しばらくしてからお試しください");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div
-      className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
+      className="popup-overlay"
     >
       <div
         className="popup-container gap-[26px] lg:gap-8"
@@ -161,7 +245,7 @@ export function TwoFactorAuthPopup() {
               </div>
 
               {/* 오류 메시지 */}
-              {error && (
+              {(derivedError || error) && (
                 <div className="flex items-center justify-center gap-1 w-full">
                   <Image
                     src="/asset/images/contents/warning_icon.svg"
@@ -170,7 +254,7 @@ export function TwoFactorAuthPopup() {
                     height={13}
                   />
                   <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a] text-center">
-                    {error}
+                    {derivedError || error}
                   </p>
                 </div>
               )}
@@ -184,10 +268,10 @@ export function TwoFactorAuthPopup() {
               </Button>
               <Button
                 variant="primary"
-                onClick={handleVerify}
-                disabled={!isCodeValid}
+                onClick={() => { void handleVerify(); }}
+                disabled={!isCodeValid || isSubmitting}
               >
-                確認
+                {isSubmitting ? "確認中..." : "確認"}
               </Button>
             </div>
           </div>

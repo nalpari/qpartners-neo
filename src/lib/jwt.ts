@@ -35,7 +35,10 @@ export async function verifyToken(token: string): Promise<LoginUser | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
     const parsed = loginUserSchema.safeParse(payload);
-    if (!parsed.success) return null;
+    if (!parsed.success) {
+      console.warn("[verifyToken] JWT payload 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
     return parsed.data;
   } catch (error) {
     // 환경변수 설정 에러는 반드시 전파 — 무음 실패 방지

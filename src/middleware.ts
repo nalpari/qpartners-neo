@@ -14,6 +14,9 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
   "/api/openapi",
+  // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
+  // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
+  "/api/inquiry",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
@@ -21,12 +24,14 @@ const PUBLIC_GET_PATTERNS = [
   /^\/api\/contents(\/\d+)?$/, // GET /api/contents, GET /api/contents/[id]
   /^\/api\/categories(\/\d+)?$/, // GET /api/categories, GET /api/categories/[id]
   /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
+  /^\/api\/codes\/lookup$/, // GET /api/codes/lookup — 문의하기 문의유형 코드 조회
 ];
 
 /** 2차 인증 미완료 상태에서 접근 가능한 경로 */
 const TWO_FACTOR_PATHS = [
   "/api/auth/two-factor/send",
   "/api/auth/two-factor/verify",
+  "/api/auth/password-init",    // 최초 로그인 비밀번호 변경
   "/api/auth/logout",
 ];
 
@@ -103,7 +108,7 @@ export async function middleware(request: NextRequest) {
     : "GENERAL";
   requestHeaders.set("X-User-Role", user.authRole ?? fallbackRole);
   if (user.deptNm) {
-    requestHeaders.set("X-User-Department", user.deptNm);
+    requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }
 
   return NextResponse.next({

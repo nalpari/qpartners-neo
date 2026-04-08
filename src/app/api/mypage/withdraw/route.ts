@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/mypage/withdraw] Request body 파싱 실패:", error);
       return NextResponse.json(
         { error: "無効なリクエストです" },
         { status: 400 },

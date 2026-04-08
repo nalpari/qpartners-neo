@@ -41,6 +41,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "Content", description: "콘텐츠 관리 (CRUD + 첨부파일)" },
     { name: "DownloadLog", description: "다운로드 이력 조회" },
     { name: "MyPage", description: "마이페이지 (프로필/비밀번호/탈퇴/시공점)" },
+    { name: "Member", description: "회원관리 (관리자 전용)" },
   ],
 
   paths: {
@@ -320,6 +321,63 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "500": errorResponse("비밀번호 변경 실패"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+
+    "/auth/password-init": {
+      post: {
+        tags: ["Auth"],
+        summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
+        description: "JWT 인증 상태에서 비밀번호 변경. pwdInitYn=Y인 판매점 최초 로그인 시 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (pwdInitYn=N, twoFactorVerified=true).",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["newPassword", "confirmPassword"],
+                properties: {
+                  newPassword: { type: "string", minLength: 8, maxLength: 100, description: "신규 비밀번호 (영대문자+영소문자+숫자 조합 8자 이상)" },
+                  confirmPassword: { type: "string", description: "신규 비밀번호 재입력" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 성공 + JWT 재발급",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", example: "保存されました。" },
+                        user: { $ref: "#/components/schemas/LoginUser" },
+                        requireTwoFactor: { type: "boolean", example: false },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation failed (비밀번호 정책 미충족 또는 불일치)",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -945,7 +1003,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
-          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_dealer/second_dealer/constructor/general)", schema: { type: "string" } },
+          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "page", in: "query", description: "페이지 번호 (1부터)", schema: { type: "integer", default: 1, minimum: 1 } },
@@ -1119,7 +1177,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { type: "array", items: { type: "object" } },
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ContentListItem" },
+                    },
                     meta: {
                       type: "object",
                       properties: {
@@ -1161,7 +1222,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       required: ["targetType"],
                       properties: {
-                        targetType: { type: "string", enum: ["first_dealer", "second_dealer", "constructor", "general", "non_member"] },
+                        targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
                         startAt: { type: "string", format: "date-time" },
                         endAt: { type: "string", format: "date-time" },
                       },
@@ -1174,7 +1235,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
         responses: {
-          "201": { description: "등록 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "400": validationErrorResponse,
           "403": errorResponse("관리자 권한 필요"),
           "500": errorResponse("서버 에러"),
@@ -1189,7 +1260,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
         ],
         responses: {
-          "200": { description: "조회 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "403": errorResponse("접근 권한 없음"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
@@ -1206,7 +1287,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           content: { "application/json": { schema: { type: "object" } } },
         },
         responses: {
-          "200": { description: "수정 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "400": validationErrorResponse,
           "403": errorResponse("수정 권한 없음"),
           "404": errorResponse("Not found"),
@@ -1250,8 +1341,11 @@ export const openApiSpec: OpenAPIV3.Document = {
         responses: {
           "201": { description: "업로드 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "array", items: { type: "object" } } } } } } },
           "400": errorResponse("파일 검증 실패"),
+          "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("Not found"),
+          "411": errorResponse("Content-Length 헤더 누락"),
+          "413": errorResponse("Content-Length 초과"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -1266,16 +1360,121 @@ export const openApiSpec: OpenAPIV3.Document = {
         ],
         responses: {
           "200": { description: "파일 바이너리", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+          "401": errorResponse("인증 필요"),
           "403": errorResponse("접근 권한 없음"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
       },
     },
-    "/download-logs": {
+    "/contents/{id}/files/download-all": {
+      get: {
+        tags: ["Content"],
+        summary: "전체 첨부파일 ZIP 다운로드 (게시대상 접근제어)",
+        description: "콘텐츠에 첨부된 모든 파일을 ZIP으로 묶어 스트리밍 다운로드. 동일 파일명은 자동으로 (1), (2) 번호 부여.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": { description: "ZIP 바이너리", content: { "application/zip": { schema: { type: "string", format: "binary" } } } },
+          "403": errorResponse("접근 권한 없음"),
+          "404": errorResponse("Not found 또는 첨부파일 없음"),
+          "413": errorResponse("ZIP 총 용량 상한 초과"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/contents/{id}/files/{fileId}": {
+      delete: {
+        tags: ["Content"],
+        summary: "첨부파일 삭제 (관리자)",
+        description: "DB 레코드 삭제 + 디스크 파일 삭제. DownloadLog의 attachmentId는 SetNull로 처리되어 이력은 보존됨.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("수정 권한 없음"),
+          "404": errorResponse("Not found (동시 삭제 race 포함)"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      put: {
+        tags: ["Content"],
+        summary: "첨부파일 교체 (관리자, multipart/form-data)",
+        description: "기존 첨부파일을 새 파일로 교체. 디스크 파일 + DB 레코드 모두 갱신.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: { type: "string", format: "binary", description: "교체할 새 파일 1개" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "교체 성공 (기존 리소스 교체이므로 200)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        fileName: { type: "string" },
+                        fileSize: { type: "integer", nullable: true },
+                        mimeType: { type: "string", nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("파일 검증 실패"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("수정 권한 없음"),
+          "404": errorResponse("Not found"),
+          "409": errorResponse("동시성 충돌 — 다른 요청에 의해 첨부파일이 변경됨"),
+          "411": errorResponse("Content-Length 헤더 누락"),
+          "413": errorResponse("Content-Length 초과"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/mypage/download-logs": {
       get: {
         tags: ["DownloadLog"],
-        summary: "다운로드 이력 조회 (관리자)",
+        summary: "다운로드 기록 목록 조회",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
@@ -1289,13 +1488,121 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { type: "array", items: { type: "object" } },
-                    meta: { type: "object" },
+                    data: {
+                      type: "object",
+                      required: ["totalCount", "page", "pageSize", "keyword", "list"],
+                      properties: {
+                        totalCount: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        keyword: { type: "string", nullable: true },
+                        list: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            required: ["id", "downloadedAt", "contentId", "contentTitle", "fileName", "isExpired"],
+                            properties: {
+                              id: { type: "integer" },
+                              downloadedAt: { type: "string", format: "date-time" },
+                              contentId: { type: "integer" },
+                              contentTitle: { type: "string" },
+                              attachmentId: { type: "integer", nullable: true, description: "첨부파일 ID — 파일이 삭제된 경우 null (DownloadLog 이력 보존)" },
+                              fileName: { type: "string", description: "파일명 — 삭제된 경우 \"(削除されたファイル)\" 폴백 반환 (download-logs/route.ts:84)" },
+                              isExpired: { type: "boolean" },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
             },
           },
+          "400": errorResponse("入力内容に不備があります"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("2단계 인증 필요"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    // ─── Inquiry (문의) ───
+    "/inquiry": {
+      post: {
+        tags: ["Inquiry"],
+        summary: "문의 등록 (비로그인 가능)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateInquiry" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["id"],
+                      properties: {
+                        id: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("入力内容に不備があります / 無効なリクエスト"),
+          "429": errorResponse("リクエストが多すぎます"),
+          "500": errorResponse("お問い合わせの登録に失敗しました"),
+        },
+      },
+    },
+
+    // ─── Code Lookup (공개) ───
+    "/codes/lookup": {
+      get: {
+        tags: ["Code"],
+        summary: "공통코드 공개 조회 (headerCode 기반)",
+        parameters: [
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+        ],
+        responses: {
+          "200": {
+            description: "코드 상세 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          code: { type: "string" },
+                          displayCode: { type: "string" },
+                          codeName: { type: "string" },
+                          codeNameEtc: { type: "string", nullable: true },
+                          sortOrder: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
+          "404": errorResponse("해당 코드 없음"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -1717,7 +2024,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/mypage/change-password": {
+    "/mypage/password-change": {
       post: {
         tags: ["MyPage"],
         summary: "비밀번호 변경",
@@ -1840,6 +2147,161 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+
+    // ─── Member (회원관리) ───
+    "/admin/members": {
+      get: {
+        tags: ["Member"],
+        summary: "회원 목록 조회",
+        description: "관리자 전용 — 시공점 제외 전체 회원 목록 (검색/필터/페이징)",
+        parameters: [
+          { name: "keyword", in: "query", schema: { type: "string" }, description: "ID/성명/이메일/회사명 Like 검색" },
+          { name: "userType", in: "query", schema: { type: "string" }, description: "회원유형 필터 (ADMIN/STORE/GENERAL)" },
+          { name: "status", in: "query", schema: { type: "string" }, description: "상태 필터 (active/deleted/withdrawn)" },
+          { name: "page", in: "query", schema: { type: "integer", default: 1 }, description: "페이지 번호" },
+          { name: "pageSize", in: "query", schema: { type: "integer", default: 20 }, description: "페이지 크기 (max 100)" },
+        ],
+        responses: {
+          "200": {
+            description: "회원 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        totalCount: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        list: {
+                          type: "array",
+                          items: { $ref: "#/components/schemas/MemberListItem" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "500": errorResponse("서버 에러"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+    "/admin/members/{id}": {
+      get: {
+        tags: ["Member"],
+        summary: "회원 상세정보 조회",
+        description: "관리자 전용 — 회원 상세정보 (QSP 연동)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+        ],
+        responses: {
+          "200": {
+            description: "회원 상세정보",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/MemberDetail" },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("회원 없음"),
+          "500": errorResponse("서버 에러"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+      put: {
+        tags: ["Member"],
+        summary: "회원 상세정보 수정",
+        description: "관리자 전용 — userRole(일반회원만), 2차인증, 알림, 상태, 뉴스레터 수정",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/MemberUpdateRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("검증 실패 또는 권한 변경 불가"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("회원 없음"),
+          "500": errorResponse("서버 에러"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
+    "/admin/members/{id}/reset-password": {
+      post: {
+        tags: ["Member"],
+        summary: "비밀번호 초기화",
+        description: "관리자 전용 — 대상 회원 이메일로 비밀번호 변경 링크 발송",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+        ],
+        responses: {
+          "200": {
+            description: "메일 발송 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("이메일 미등록"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("회원 없음"),
+          "429": errorResponse("リクエスト制限超過"),
+          "500": errorResponse("서버 에러"),
+          "502": errorResponse("외부 서버 오류"),
+        },
+      },
+    },
   },
 
   components: {
@@ -1953,6 +2415,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"], description: "세부 권한코드 — 프론트 접근 제어 기준" },
           twoFactorVerified: { type: "boolean", description: "2FA 검증 상태 (true=완료/불필요, false=미완료)" },
           pwdInitYn: { type: "string", enum: ["Y", "N"], nullable: true, description: "비밀번호 초기화 여부 — Y면 회원정보 설정 팝업 표시 (p.12)" },
+          telNo: { type: "string", nullable: true, description: "회사 전화번호 (QSP compTelNo 매핑) — 문의하기 자동입력용. optional: 기존 JWT 호환" },
         },
       },
       SignupRequest: {
@@ -2168,19 +2631,123 @@ export const openApiSpec: OpenAPIV3.Document = {
           updatedBy: { type: "string", nullable: true },
         },
       },
+      // 카테고리 트리 응답에 사용되는 경량 노드 — DB 메타 필드(createdAt 등) 제외.
+      // CATEGORY_TREE_INCLUDE.select(`category-tree.ts`)와 일치해야 함.
+      CategoryNodeMinimal: {
+        type: "object",
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          parentId: { type: "integer", nullable: true, example: null },
+          categoryCode: { type: "string", example: "PROD" },
+          name: { type: "string", example: "상품분류" },
+          isInternalOnly: { type: "boolean", example: false },
+          sortOrder: { type: "integer", example: 1 },
+          isActive: { type: "boolean", example: true },
+        },
+      },
       CategoryTree: {
         allOf: [
-          { $ref: "#/components/schemas/Category" },
+          { $ref: "#/components/schemas/CategoryNodeMinimal" },
           {
             type: "object",
+            required: ["children"],
             properties: {
               children: {
                 type: "array",
-                items: { $ref: "#/components/schemas/Category" },
+                items: { $ref: "#/components/schemas/CategoryNodeMinimal" },
               },
             },
           },
         ],
+      },
+      ContentListItem: {
+        type: "object",
+        required: [
+          "id", "title", "status", "viewCount", "createdAt", "updatedAt",
+          "isNew", "isUpdated", "categories", "targets", "attachmentCount",
+        ],
+        properties: {
+          id: { type: "integer" },
+          title: { type: "string" },
+          status: { type: "string", enum: ["draft", "published", "deleted"] },
+          authorDepartment: { type: "string", nullable: true },
+          viewCount: { type: "integer" },
+          publishedAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          isNew: { type: "boolean", description: "생성 후 5일 이내" },
+          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          categories: {
+            type: "array",
+            description: "부모-자식 트리 구조. 콘텐츠에 연결된 자식 카테고리들을 부모 기준으로 그룹화",
+            items: { $ref: "#/components/schemas/CategoryTree" },
+          },
+          targets: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                startAt: { type: "string", format: "date-time", nullable: true },
+                endAt: { type: "string", format: "date-time", nullable: true },
+              },
+            },
+          },
+          attachmentCount: { type: "integer" },
+        },
+      },
+      ContentDetailItem: {
+        type: "object",
+        required: [
+          "id", "title", "status", "viewCount", "createdAt", "updatedAt",
+          "isNew", "isUpdated", "categories", "targets", "attachments",
+        ],
+        properties: {
+          id: { type: "integer" },
+          title: { type: "string" },
+          body: { type: "string", nullable: true },
+          status: { type: "string", enum: ["draft", "published", "deleted"] },
+          authorDepartment: { type: "string", nullable: true },
+          userType: { type: "string", nullable: true },
+          userId: { type: "string", nullable: true },
+          viewCount: { type: "integer" },
+          publishedAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          isNew: { type: "boolean", description: "생성 후 5일 이내" },
+          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          categories: {
+            type: "array",
+            description: "부모-자식 트리 구조 (NEW-2 적용)",
+            items: { $ref: "#/components/schemas/CategoryTree" },
+          },
+          targets: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                startAt: { type: "string", format: "date-time", nullable: true },
+                endAt: { type: "string", format: "date-time", nullable: true },
+              },
+            },
+          },
+          attachments: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                fileName: { type: "string" },
+                fileSize: { type: "integer", nullable: true },
+                mimeType: { type: "string", nullable: true },
+                sortOrder: { type: "integer" },
+              },
+            },
+          },
+        },
       },
       CreateCategory: {
         type: "object",
@@ -2342,7 +2909,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          targets: { type: "array", items: { type: "string" }, example: ["first_dealer", "constructor"] },
+          targets: { type: "array", items: { type: "string" }, example: ["first_store", "seko"] },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },
@@ -2463,6 +3030,80 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
+        },
+      },
+      CreateInquiry: {
+        type: "object",
+        required: ["companyName", "userName", "email", "inquiryType", "title", "content"],
+        properties: {
+          companyName: { type: "string", maxLength: 255, example: "株式会社テスト" },
+          userName: { type: "string", maxLength: 200, example: "田中太郎" },
+          tel: { type: "string", minLength: 1, maxLength: 20, nullable: true, example: "03-1234-5678" },
+          email: { type: "string", format: "email", maxLength: 255, example: "test@example.com" },
+          inquiryType: { type: "string", maxLength: 100, pattern: "^[A-Za-z0-9_-]+$", example: "01" },
+          title: { type: "string", maxLength: 500, example: "サービスについて" },
+          content: { type: "string", maxLength: 10000, example: "お問い合わせ内容" },
+        },
+      },
+      MemberListItem: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "userId" },
+          userId: { type: "string" },
+          userName: { type: "string" },
+          userNameKana: { type: "string" },
+          email: { type: "string" },
+          userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
+          companyName: { type: "string" },
+          status: { type: "string", enum: ["active", "deleted", "withdrawn", "unknown"] },
+          lastLoginAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      MemberDetail: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "userId (이메일 또는 로그인 ID)" },
+          userId: { type: "string" },
+          loginId: { type: "string" },
+          userName: { type: "string" },
+          userNameKana: { type: "string" },
+          email: { type: "string" },
+          userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
+          userRole: { type: "string" },
+          companyName: { type: "string" },
+          companyNameKana: { type: "string" },
+          zipcode: { type: "string" },
+          address: { type: "string" },
+          telNo: { type: "string" },
+          faxNo: { type: "string" },
+          corporateNo: { type: "string" },
+          department: { type: "string" },
+          jobTitle: { type: "string" },
+          // 2FA: true=활성, false=비활성, null=미설정 (QSP에서 null 반환 가능)
+          twoFactorEnabled: { type: "boolean", nullable: true },
+          loginNotification: { type: "boolean" },
+          attributeChangeNotification: { type: "boolean" },
+          status: { type: "string", enum: ["active", "deleted", "withdrawn", "unknown"] },
+          newsRcptYn: { type: "string", enum: ["Y", "N"] },
+          newsRcptDate: { type: "string", format: "date-time", nullable: true },
+          lastLoginAt: { type: "string", format: "date-time", nullable: true },
+          withdrawnAt: { type: "string", format: "date-time", nullable: true },
+          withdrawnReason: { type: "string", nullable: true },
+          createdAt: { type: "string", format: "date-time", nullable: true },
+          updatedAt: { type: "string", format: "date-time", nullable: true },
+          updatedBy: { type: "string", nullable: true },
+        },
+      },
+      MemberUpdateRequest: {
+        type: "object",
+        properties: {
+          userRole: { type: "string", description: "일반회원만 변경 가능" },
+          twoFactorEnabled: { type: "boolean" },
+          loginNotification: { type: "boolean" },
+          attributeChangeNotification: { type: "boolean" },
+          status: { type: "string", enum: ["active", "deleted"] },
+          newsRcptYn: { type: "string", enum: ["Y", "N"] },
         },
       },
     },
