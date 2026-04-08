@@ -207,28 +207,15 @@ export function ContentsTable({
     onPageSizeChange(Number(value));
   };
 
-  // 자식 카테고리 ID → 부모 그룹 코드 매핑 (카테고리 트리에서 빌드)
-  const categoryGroupMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const parent of categories) {
-      for (const child of parent.children) {
-        map.set(child.id, parent.categoryCode);
-      }
-    }
-    return map;
-  }, [categories]);
-
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
-    // 8개 카테고리 그룹 컬럼 생성 (카테고리가 있을 때만)
+    // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀
     const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
       headerName: parent.name,
-      valueGetter: (params: { data?: ContentListItem }) =>
-        params.data
-          ? params.data.categories
-              .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
-              .map((c) => c.name)
-              .join(", ")
-          : "",
+      valueGetter: (params: { data?: ContentListItem }) => {
+        if (!params.data) return "";
+        const matched = params.data.categories.find((c) => c.categoryCode === parent.categoryCode);
+        return matched?.children.map((child) => child.name).join(", ") ?? "";
+      },
       flex: 1,
       minWidth: 90,
       headerClass: "ag-header-cell-center",
@@ -237,62 +224,6 @@ export function ContentsTable({
 
     const baseCols: ColDef<ContentListItem>[] = [
       ...categoryColumns,
-      {
-        headerName: "정보유형",
-        field: "id", //정보유형 카테고리 값
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "업무분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "제품분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "제품상태",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "용도",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "내용분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "자료분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "대상",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
       {
         headerName: "タイトル",
         field: "title",
@@ -371,31 +302,21 @@ export function ContentsTable({
     }
 
     return baseCols;
-  }, [isInternal, categories, categoryGroupMap]);
+  }, [isInternal, categories]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
-    // 카테고리 그룹별 필드
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
       label: parent.name,
       key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) =>
-        item.categories
-          .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
-          .map((c) => c.name)
-          .join(", "),
+      render: (item: ContentListItem) => {
+        const matched = item.categories.find((c) => c.categoryCode === parent.categoryCode);
+        return matched?.children.map((child) => child.name).join(", ") ?? "";
+      },
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));
 
     const base: MobileCardField<ContentListItem>[] = [
       ...categoryFields,
-      { label: "정보유형", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "업무분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "제품분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "제품상태", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "용도", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "내용분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "자료분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "대상", key: "id" as keyof ContentListItem, render: () => "" },
       {
         label: "タイトル",
         key: "title",
@@ -434,7 +355,7 @@ export function ContentsTable({
     }
 
     return base;
-  }, [isInternal, categories, categoryGroupMap]);
+  }, [isInternal, categories]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
