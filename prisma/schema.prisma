@@ -348,6 +348,13 @@ model DownloadLog {
   attachmentId Int?                       @map("attachment_id")
   downloadedAt DateTime                   @default(now()) @map("downloaded_at")
   attachment   ContentAttachment?         @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  // TODO(montreal-review MF-W): contentId FK에 onDelete 미지정 → 기본 RESTRICT.
+  //   Content 삭제 시 download log가 있으면 FK violation 500 발생 가능.
+  //   설계 결정 필요:
+  //   (a) Cascade: 다운로드 이력 함께 삭제 (audit 손실, attachmentId의 SetNull 의도와 비대칭)
+  //   (b) SetNull: 이력 보존 (contentId 컬럼 nullable로 변경 필요 — 마이그레이션 영향 큼)
+  //   현재는 Content 삭제 자체가 soft-delete(`status: deleted`)로 구현되어 있어
+  //   실 FK violation 발생 가능성은 낮으나, hard delete 도입 시 즉시 반영 필요.
   content      Content                    @relation(fields: [contentId], references: [id])
 
   @@index([userType, userId], map: "idx_user")

@@ -1399,8 +1399,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
         responses: {
-          "201": {
-            description: "교체 성공",
+          "200": {
+            description: "교체 성공 (기존 리소스 교체이므로 200)",
             content: {
               "application/json": {
                 schema: {
@@ -1422,6 +1422,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("파일 검증 실패"),
           "403": errorResponse("수정 권한 없음"),
+          "409": errorResponse("동시성 충돌 — 다른 요청에 의해 첨부파일이 변경됨"),
+          "413": errorResponse("Content-Length 초과"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
@@ -1456,14 +1458,14 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "array",
                           items: {
                             type: "object",
-                            required: ["id", "downloadedAt", "contentId", "contentTitle", "attachmentId", "fileName", "isExpired"],
+                            required: ["id", "downloadedAt", "contentId", "contentTitle", "fileName", "isExpired"],
                             properties: {
                               id: { type: "integer" },
                               downloadedAt: { type: "string", format: "date-time" },
                               contentId: { type: "integer" },
                               contentTitle: { type: "string" },
-                              attachmentId: { type: "integer" },
-                              fileName: { type: "string" },
+                              attachmentId: { type: "integer", nullable: true, description: "첨부파일 ID — 파일이 삭제된 경우 null (DownloadLog 이력 보존)" },
+                              fileName: { type: "string", description: "파일명 — 삭제된 경우 \"(削除されたファイル)\" 폴백 반환 (download-logs/route.ts:84)" },
                               isExpired: { type: "boolean" },
                             },
                           },
