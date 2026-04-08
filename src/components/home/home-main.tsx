@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { HomeVisual } from "./home-visual";
 import { HomeSearchMobile } from "./home-search-mobile";
@@ -9,13 +9,8 @@ import { HomeSidebar } from "./home-sidebar";
 import { HomeDownloads } from "./home-downloads";
 
 export function HomeMain() {
-  // 헤더가 관리하는 auth 캐시를 구독 (직접 fetch 안 함, 캐시 변경 시 리렌더링)
-  const { data: user = null } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  const queryClient = useQueryClient();
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
   const isLoggedIn = user != null;
 
   return (

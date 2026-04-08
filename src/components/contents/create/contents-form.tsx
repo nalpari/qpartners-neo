@@ -239,7 +239,9 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     } catch (error: unknown) {
       console.error("[Contents] 저장 실패:", error);
       if (isAxiosError(error) && error.response) {
-        console.error("[Contents] 서버 응답 status:", error.response.status, "data:", error.response.data);
+        const resData: unknown = error.response.data;
+        const errorMsg = resData != null && typeof resData === "object" && "error" in resData ? (resData as { error: unknown }).error : undefined;
+        console.error("[Contents] 서버 응답 status:", error.response.status, "error:", errorMsg);
       }
       setIsSubmitting(false);
       openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });

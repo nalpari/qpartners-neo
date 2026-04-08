@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { DownloadLogsData } from "@/components/home/home-types";
 
-export function useHomeDownloads() {
+export function useHomeDownloads(enabled = true) {
   const { data, isLoading } = useQuery<DownloadLogsData>({
     queryKey: ["home-downloads"],
     queryFn: async () => {
@@ -12,6 +12,7 @@ export function useHomeDownloads() {
       return res.data.data;
     },
     staleTime: 60_000,
+    enabled,
   });
 
   return {

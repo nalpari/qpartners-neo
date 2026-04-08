@@ -99,7 +99,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
     if (role === "SUPER_ADMIN") {
       return !!user.deptNm && !!data.authorDepartment && user.deptNm === data.authorDepartment;
     }
-    return user.userId === data.userId;
+    if (role === "ADMIN") {
+      return user.userId === data.userId;
+    }
+    return false;
   })();
 
   const handleDelete = () => {

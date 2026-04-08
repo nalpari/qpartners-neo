@@ -21,7 +21,6 @@ export function HomeContents() {
       const res = await api.get<ContentsResponse>("/contents", {
         params: { pageSize: 20 },
       });
-      // API pageSize는 20/50/100만 허용 — 프론트에서 최대 4건만 표시
       return res.data.data.slice(0, 4);
     },
     staleTime: 60_000,

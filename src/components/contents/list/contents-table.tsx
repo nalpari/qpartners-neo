@@ -21,15 +21,17 @@ import type { ContentListItem, CategoryNode } from "./contents-contents";
 
 /** 브라우저 다운로드 큐 충돌 방지를 위한 딜레이 (ms) */
 const DOWNLOAD_DELAY_MS = 300;
+const MAX_DOWNLOAD_FILES = 20;
 
 // TODO: zip 다운로드 API 완성 후 제거
-async function downloadAllAttachments(contentId: number) {
+async function downloadAllAttachments(contentId: number): Promise<{ success: boolean }> {
   try {
     const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
     const attachments = res.data.data.attachments;
-    if (!attachments || attachments.length === 0) return;
+    if (!attachments || attachments.length === 0) return { success: true };
 
-    for (const file of attachments) {
+    const files = attachments.slice(0, MAX_DOWNLOAD_FILES);
+    for (const file of files) {
       const link = document.createElement("a");
       link.href = `/api/contents/${contentId}/files/${file.id}/download`;
       link.download = file.fileName;
@@ -38,8 +40,10 @@ async function downloadAllAttachments(contentId: number) {
       document.body.removeChild(link);
       await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
     }
+    return { success: true };
   } catch (err: unknown) {
     console.error("[Contents] 첨부파일 다운로드 실패:", err);
+    return { success: false };
   }
 }
 

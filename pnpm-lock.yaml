@@ -29,9 +29,6 @@ importers:
       axios:
         specifier: ^1.13.6
         version: 1.13.6
-      dompurify:
-        specifier: ^3.3.3
-        version: 3.3.3
       isomorphic-dompurify:
         specifier: ^3.7.1
         version: 3.7.1
