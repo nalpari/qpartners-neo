@@ -39,9 +39,10 @@ interface ContentDetailData {
   }[];
   categories: {
     id: number;
-    name: string;
     categoryCode: string;
+    name: string;
     isInternalOnly: boolean;
+    children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
   }[];
   attachments: {
     id: number;

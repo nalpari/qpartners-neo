@@ -182,18 +182,31 @@ export function ContentsTable({
   };
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
-    // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀
+    // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
     const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
       headerName: parent.name,
-      valueGetter: (params: { data?: ContentListItem }) => {
-        if (!params.data) return "";
+      cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+        if (!params.data) return null;
         const matched = params.data.categories.find((c) => c.categoryCode === parent.categoryCode);
-        return matched?.children.map((child) => child.name).join(", ") ?? "";
+        if (!matched || matched.children.length === 0) return null;
+        const normal = matched.children.filter((c) => !c.isInternalOnly);
+        const internal = matched.children.filter((c) => c.isInternalOnly);
+        return (
+          <span style={{ fontSize: "12px" }}>
+            {normal.map((c) => c.name).join(", ")}
+            {internal.length > 0 && (
+              <>
+                {normal.length > 0 ? ", " : ""}
+                <span style={{ color: "#FF1A1A" }}>{internal.map((c) => c.name).join(", ")}</span>
+              </>
+            )}
+          </span>
+        );
       },
       flex: 1,
       minWidth: 90,
       headerClass: "ag-header-cell-center",
-      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
     }));
 
     const baseCols: ColDef<ContentListItem>[] = [
@@ -284,7 +297,20 @@ export function ContentsTable({
       key: "categories" as keyof ContentListItem,
       render: (item: ContentListItem) => {
         const matched = item.categories.find((c) => c.categoryCode === parent.categoryCode);
-        return matched?.children.map((child) => child.name).join(", ") ?? "";
+        if (!matched || matched.children.length === 0) return "";
+        const normal = matched.children.filter((c) => !c.isInternalOnly);
+        const internal = matched.children.filter((c) => c.isInternalOnly);
+        return (
+          <span>
+            {normal.map((c) => c.name).join(", ")}
+            {internal.length > 0 && (
+              <>
+                {normal.length > 0 ? ", " : ""}
+                <span className="text-[#FF1A1A]">{internal.map((c) => c.name).join(", ")}</span>
+              </>
+            )}
+          </span>
+        );
       },
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));

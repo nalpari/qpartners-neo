@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import Image from "next/image";
+import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 
@@ -47,6 +48,7 @@ export function ContentsFormAttachment({
   contentId,
 }: ContentsFormAttachmentProps) {
   const { openAlert } = useAlertStore();
+  const queryClient = useQueryClient();
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,11 +96,21 @@ export function ContentsFormAttachment({
     });
   };
 
-  const handleRemoveSaved = (id: number) => {
+  const handleRemoveSaved = (fileId: number) => {
     openAlert({
       type: "confirm",
       message: "本当に削除しますか？",
-      onConfirm: () => onSavedFilesChange?.(savedFiles.filter((f) => f.id !== id)),
+      onConfirm: async () => {
+        if (!contentId) return;
+        try {
+          await api.delete(`/contents/${contentId}/files/${fileId}`);
+          onSavedFilesChange?.(savedFiles.filter((f) => f.id !== fileId));
+          queryClient.invalidateQueries({ queryKey: ["contents", contentId] });
+        } catch (err: unknown) {
+          console.error("[Contents] 첨부파일 삭제 실패:", err);
+          openAlert({ type: "alert", message: "ファイルの削除に失敗しました。" });
+        }
+      },
     });
   };
 
