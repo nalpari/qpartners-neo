@@ -27,6 +27,7 @@ export interface HomeContentItem {
 
 const DOWNLOAD_DELAY_MS = 300;
 
+// TODO: zip 다운로드 API 완성 후 제거
 async function downloadAllAttachments(contentId: number) {
   try {
     const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);

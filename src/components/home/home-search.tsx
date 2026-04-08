@@ -1,19 +1,11 @@
 // Design Ref: §3 — 검색바 (Figma 272-590, 비주얼 섹션 내부)
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useHomeSearch } from "@/hooks/use-home-search";
 
 export function HomeSearch() {
-  const [query, setQuery] = useState("");
-  const router = useRouter();
-
-  const handleSearch = () => {
-    if (query.trim()) {
-      router.push(`/contents?keyword=${encodeURIComponent(query.trim())}`);
-    }
-  };
+  const { query, setQuery, handleSearch } = useHomeSearch();
 
   return (
     <div className="flex items-center w-full h-[48px] lg:h-[60px] bg-white rounded-[8px] overflow-hidden">

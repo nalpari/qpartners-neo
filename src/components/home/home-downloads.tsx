@@ -1,26 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { Spinner } from "@/components/common";
-import type { DownloadLogsData } from "./home-types";
+import { useHomeDownloads } from "@/hooks/use-home-downloads";
 
 export function HomeDownloads() {
-  // home-downloads-pc.tsx와 동일 queryKey로 캐시 공유
-  const { data, isLoading } = useQuery<DownloadLogsData>({
-    queryKey: ["home-downloads"],
-    queryFn: async () => {
-      const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", {
-        params: { pageSize: 3 },
-      });
-      return res.data.data;
-    },
-    staleTime: 60_000,
-  });
-
-  const downloads = data?.list ?? [];
+  const { downloads, isLoading } = useHomeDownloads();
 
   return (
     <div className="flex lg:hidden flex-col gap-[10px]">

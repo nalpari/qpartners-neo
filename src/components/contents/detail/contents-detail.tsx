@@ -197,7 +197,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
         {/* 하단 버튼 */}
         <div className="flex items-center gap-2 w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end">
-          {isAdmin && (
+          {canModify && (
             <>
               <Button
                 variant="secondary"

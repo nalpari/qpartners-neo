@@ -1,25 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { Spinner } from "@/components/common";
-import type { DownloadLogsData } from "./home-types";
+import { useHomeDownloads } from "@/hooks/use-home-downloads";
 
 export function HomeDownloadsPc() {
-  const { data, isLoading } = useQuery<DownloadLogsData>({
-    queryKey: ["home-downloads"],
-    queryFn: async () => {
-      const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", {
-        params: { pageSize: 3 },
-      });
-      return res.data.data;
-    },
-    staleTime: 60_000,
-  });
-
-  const downloads = data?.list ?? [];
+  const { downloads, isLoading } = useHomeDownloads();
 
   return (
     <div className="flex flex-col flex-1 gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[32px] pb-[32px] overflow-hidden">

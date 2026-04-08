@@ -1,19 +1,11 @@
 // Design Ref: 모바일 검색바 (Figma 272-1114, 흰색 배경 + 정사각형 오렌지 버튼)
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useHomeSearch } from "@/hooks/use-home-search";
 
 export function HomeSearchMobile() {
-  const [query, setQuery] = useState("");
-  const router = useRouter();
-
-  const handleSearch = () => {
-    if (query.trim()) {
-      router.push(`/contents?keyword=${encodeURIComponent(query.trim())}`);
-    }
-  };
+  const { query, setQuery, handleSearch } = useHomeSearch();
 
   return (
     <div className="flex items-center w-full h-[52px] bg-white lg:hidden">
