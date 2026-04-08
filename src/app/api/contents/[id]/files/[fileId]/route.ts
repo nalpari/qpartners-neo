@@ -8,11 +8,22 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
 import { MAX_FILE_SIZE, validateFile } from "@/lib/file-validation";
-import { isInsideDir } from "@/lib/path-safety";
+import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
 type Params = { params: Promise<{ id: string; fileId: string }> };
+
+// TODO(리뷰 후속 — 코드 품질): DELETE/PUT 핸들러의 인증·콘텐츠 조회·권한 검사 ~30줄이 중복됨.
+//  공통 헬퍼 `resolveAttachmentOrError(request, params)` 로 추출 리팩토링 가능.
+//  이번 PR은 Must-Fix 보안/버그 수정 범위로 한정하고 리팩토링은 별도 PR에서 진행 예정.
+//
+// TODO(리뷰 후속 — 성능): content + attachment 별도 2회 DB 조회 → Prisma 중첩 select로 1회화 가능.
+//  동시 race 감지 시 에러 메시지 granularity(콘텐츠 없음/첨부 없음 분기) 설계 검토 후 반영.
+//
+// TODO(리뷰 후속 — 동시성): MariaDB DATETIME 기본 정밀도(초 단위)에서는 같은 초 내 동시 PUT의
+//  optimistic lock(updatedAt 비교)이 감지되지 않을 수 있음. 현재는 체감 가능한 충돌 빈도가 낮아
+//  우선순위가 낮지만, `@db.DateTime(3)` 로 precision 상향 + prisma db push 를 후속 PR로 진행 예정.
 
 // DELETE /api/contents/:id/files/:fileId — 첨부파일 삭제
 export async function DELETE(request: NextRequest, { params }: Params) {
@@ -59,9 +70,24 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     // DB 삭제 — FK는 onDelete: SetNull로 DownloadLog.attachmentId가 null로 변경됨
-    await prisma.contentAttachment.delete({
-      where: { id: parsedFileId.data },
-    });
+    // 동시 DELETE race: 한쪽이 먼저 삭제하면 다른 쪽은 P2025 → 404로 반환 (500 아님)
+    try {
+      await prisma.contentAttachment.delete({
+        where: { id: parsedFileId.data },
+      });
+    } catch (dbError: unknown) {
+      if (
+        dbError instanceof Prisma.PrismaClientKnownRequestError &&
+        dbError.code === "P2025"
+      ) {
+        console.warn("[DELETE /api/contents/:id/files/:fileId] 동시 DELETE 감지(P2025):", parsedFileId.data);
+        return NextResponse.json(
+          { error: "添付ファイルが見つかりません" },
+          { status: 404 },
+        );
+      }
+      throw dbError;
+    }
 
     // 디스크 파일 삭제 (실패해도 DB 삭제는 유지 — 경고 로그만)
     // TODO: 운영 환경에서 disk orphan 누적 방지를 위해 구조화된 failed_disk_deletions 로그 또는
@@ -69,13 +95,19 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const absolutePath = resolve(process.cwd(), attachment.filePath);
     const storageRoot = resolve(process.cwd(), "storage", "uploads");
     if (isInsideDir(absolutePath, storageRoot)) {
-      await unlink(absolutePath).catch((err: unknown) => {
-        console.error("[DELETE /api/contents/:id/files/:fileId] 디스크 파일 삭제 실패:", {
-          attachmentId: parsedFileId.data,
-          path: attachment.filePath,
-          error: err,
+      // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략 (lexical 검증만으로는 불충분)
+      const regular = await isRegularFile(absolutePath);
+      if (!regular) {
+        console.warn("[DELETE /api/contents/:id/files/:fileId] 정규 파일 아님/부재 — unlink 생략:", absolutePath);
+      } else {
+        await unlink(absolutePath).catch((err: unknown) => {
+          console.error("[DELETE /api/contents/:id/files/:fileId] 디스크 파일 삭제 실패:", {
+            attachmentId: parsedFileId.data,
+            path: attachment.filePath,
+            error: err,
+          });
         });
-      });
+      }
     } else {
       console.error("[DELETE /api/contents/:id/files/:fileId] 이상 경로 감지:", absolutePath);
     }
@@ -110,7 +142,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (DoS 방어)
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    // MF-1 대응: Content-Length 누락(chunked transfer encoding) 시 formData()가 무제한
+    //            바디를 메모리에 버퍼링해 OOM을 유발할 수 있음. 헤더가 없는 요청은 411로 거부.
+    //            (fast-path: 리버스 프록시에서도 body size limit를 두는 것이 최종 방어선)
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      console.warn("[PUT /api/contents/:id/files/:fileId] Content-Length 누락 — chunked encoding 거부");
+      return NextResponse.json(
+        { error: "Content-Lengthヘッダーが必要です" },
+        { status: 411 },
+      );
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        { error: "リクエストサイズが不正です" },
+        { status: 400 },
+      );
+    }
     if (contentLength > MAX_FILE_SIZE + 1024 * 1024) { // 50MB + 1MB 헤더 여유
       console.warn("[PUT /api/contents/:id/files/:fileId] Content-Length 초과:", contentLength);
       return NextResponse.json(
@@ -186,7 +235,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // basename으로 path 컴포넌트 제거 (Zip Slip 방어 — DB 저장값에서 ../ 제거)
     const sanitizedName = basename(rawFile.name);
-    const ext = sanitizedName.split(".").pop() ?? "";
+    // 리뷰 대응: 확장자 소문자 통일 — `.PDF` 등 대소문자 혼재 방지
+    const ext = (sanitizedName.split(".").pop() ?? "").toLowerCase();
     const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
     const newFilePath = `storage/uploads/contents/${parsedId.data}/${safeFileName}`;
     const newAbsolutePath = resolve(uploadDir, safeFileName);
@@ -238,13 +288,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const oldAbsolutePath = resolve(process.cwd(), oldAttachment.filePath);
     const storageRoot = resolve(process.cwd(), "storage", "uploads");
     if (isInsideDir(oldAbsolutePath, storageRoot)) {
-      await unlink(oldAbsolutePath).catch((err: unknown) => {
-        console.error("[PUT /api/contents/:id/files/:fileId] 기존 파일 삭제 실패:", {
-          attachmentId: parsedFileId.data,
-          path: oldAttachment.filePath,
-          error: err,
+      // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략
+      const regular = await isRegularFile(oldAbsolutePath);
+      if (!regular) {
+        console.warn("[PUT /api/contents/:id/files/:fileId] 기존 파일이 정규 파일 아님/부재 — unlink 생략:", oldAbsolutePath);
+      } else {
+        await unlink(oldAbsolutePath).catch((err: unknown) => {
+          console.error("[PUT /api/contents/:id/files/:fileId] 기존 파일 삭제 실패:", {
+            attachmentId: parsedFileId.data,
+            path: oldAttachment.filePath,
+            error: err,
+          });
         });
-      });
+      }
     }
 
     console.log(`[PUT /api/contents/:id/files/:fileId] 첨부파일 교체 완료 — attachmentId: ${parsedFileId.data}`);

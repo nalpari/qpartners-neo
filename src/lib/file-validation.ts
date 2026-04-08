@@ -55,9 +55,17 @@ export function validateFile(file: File): FileValidationResult {
 
   // MIME 검증
   // - 빈 MIME (file.type === ""): Windows 일부 환경에서 .docx/.xlsx/.pptx가 빈 MIME으로 전송됨 → 확장자만 신뢰
+  //   리뷰 대응: 감사 로그용 경고 출력 (확장자 기반 통과지만 비정상 흐름으로 추적 가능하게 함).
+  //   TODO(후속): magic-byte 기반 검사 도입 (별도 의존성 추가 필요로 이번 PR에서는 보류)
   // - 비어있지 않은 경우: 명시 화이트리스트만 통과 (svg+xml 우회 방지)
   const mime = file.type || "";
-  if (mime && !ALLOWED_MIMES.includes(mime) && !ALLOWED_IMAGE_MIMES.has(mime)) {
+  if (!mime) {
+    console.warn("[file-validation] 빈 MIME 수신 — 확장자 기반 통과:", {
+      fileName: file.name,
+      ext,
+      size: file.size,
+    });
+  } else if (!ALLOWED_MIMES.includes(mime) && !ALLOWED_IMAGE_MIMES.has(mime)) {
     return { ok: false, error: `許可されていないファイル形式です: ${file.name}` };
   }
 

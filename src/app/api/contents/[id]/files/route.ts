@@ -26,8 +26,25 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (DoS 방어)
+    // MF-1 대응: Content-Length 누락(chunked transfer encoding) 시 formData()가 무제한
+    //            바디를 메모리에 버퍼링해 OOM을 유발할 수 있음. 헤더가 없는 요청은 411로 거부.
+    //            (fast-path: 리버스 프록시에서도 body size limit를 두는 것이 최종 방어선)
     // 다중 파일이므로 여유롭게 MAX_FILE_SIZE * 5 + 헤더 오버헤드를 한도로 적용
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      console.warn("[POST /api/contents/:id/files] Content-Length 누락 — chunked encoding 거부");
+      return NextResponse.json(
+        { error: "Content-Lengthヘッダーが必要です" },
+        { status: 411 },
+      );
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        { error: "リクエストサイズが不正です" },
+        { status: 400 },
+      );
+    }
     const MAX_BATCH_SIZE = MAX_FILE_SIZE * 5 + 1024 * 1024; // ~251MB
     if (contentLength > MAX_BATCH_SIZE) {
       console.warn("[POST /api/contents/:id/files] Content-Length 초과:", contentLength);
@@ -146,7 +163,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           mimeType: a.mimeType,
         })),
       }, { status: 201 });
-    } catch (dbError) {
+    } catch (dbError: unknown) {
       // DB 트랜잭션 실패 시 디스크에 쓴 파일 전부 정리
       for (const w of writtenFiles) {
         await unlink(w.absolutePath).catch((unlinkErr: unknown) => {
@@ -158,7 +175,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
       throw dbError;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[POST /api/contents/:id/files] 첨부파일 업로드 실패:", error);
     return NextResponse.json(
       { error: "添付ファイルのアップロードに失敗しました" },
