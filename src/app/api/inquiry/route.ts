@@ -96,15 +96,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. email 기반 2차 rate limit (파싱 후 적용)
-    if (!ip) {
-      const emailKey = `inquiry:account:${result.data.email}`;
-      if (!checkRateLimit(emailKey, 5, 60 * 60 * 1000)) {
-        return NextResponse.json(
-          { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
-          { status: 429 },
-        );
-      }
+    // 3. email 기반 2차 rate limit — 항상 적용 (이메일 증폭 스팸 방지)
+    //    비로그인 사용자가 임의 email 을 제출할 수 있으므로, 피해자 주소로 confirmation 메일이
+    //    연속 발송되는 증폭 공격을 차단한다. IP 한도(10/h)와 독립적으로 email 주소당 5/h 로 제한.
+    const emailKey = `inquiry:account:${result.data.email.toLowerCase()}`;
+    if (!checkRateLimit(emailKey, 5, 60 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+        { status: 429 },
+      );
     }
 
     // 4. userTp → DB enum 매핑 (매핑 실패 시 400 에러)
@@ -154,13 +154,16 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // codeDetail 매칭 실패 시에도 작성자 확인 메일은 폴백으로 발송한다
+      //  (DB 저장은 성공했으므로 작성자는 반드시 1통 수신해야 함)
+      const inquiryTypeName = codeDetail?.codeName ?? result.data.inquiryType;
+
       if (!codeDetail) {
         console.error(
-          "[POST /api/inquiry] INQUIRY_TYPE 공통코드 매칭 실패 — 메일 미발송",
+          "[POST /api/inquiry] INQUIRY_TYPE 공통코드 매칭 실패 — 담당자 메일 미발송, 작성자 확인 메일은 폴백 발송",
           { inquiryId: inquiry.id, inquiryType: result.data.inquiryType },
         );
       } else {
-        const inquiryTypeName = codeDetail.codeName;
         const recipientEmails = pickRecipientEmails([
           codeDetail.relCode1,
           codeDetail.relCode2,
@@ -169,7 +172,7 @@ export async function POST(request: NextRequest) {
 
         if (recipientEmails.length === 0) {
           console.error(
-            "[POST /api/inquiry] 수신 담당자 이메일 미설정 — 메일 미발송",
+            "[POST /api/inquiry] 수신 담당자 이메일 미설정 — 담당자 메일 미발송",
             { inquiryId: inquiry.id, inquiryType: result.data.inquiryType },
           );
         } else {
@@ -196,24 +199,24 @@ export async function POST(request: NextRequest) {
             ),
           );
         }
+      }
 
-        // 작성자 접수 확인 메일
-        try {
-          await sendMail({
-            to: finalEmail,
-            subject: INQUIRY_CONFIRMATION_SUBJECT,
-            html: inquiryConfirmationMailHtml({
-              userName: finalUserName,
-              inquiryTypeName,
-              title: result.data.title,
-            }),
-          });
-        } catch (confirmError: unknown) {
-          console.error(
-            "[POST /api/inquiry] 작성자 접수 확인 메일 발송 실패",
-            { inquiryId: inquiry.id, error: confirmError },
-          );
-        }
+      // 작성자 접수 확인 메일 — codeDetail 매칭 여부와 무관하게 항상 발송
+      try {
+        await sendMail({
+          to: finalEmail,
+          subject: INQUIRY_CONFIRMATION_SUBJECT,
+          html: inquiryConfirmationMailHtml({
+            userName: finalUserName,
+            inquiryTypeName,
+            title: result.data.title,
+          }),
+        });
+      } catch (confirmError: unknown) {
+        console.error(
+          "[POST /api/inquiry] 작성자 접수 확인 메일 발송 실패",
+          { inquiryId: inquiry.id, error: confirmError },
+        );
       }
     } catch (mailFlowError: unknown) {
       console.error(
