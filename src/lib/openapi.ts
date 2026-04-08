@@ -1235,7 +1235,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
         responses: {
-          "201": { description: "등록 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "400": validationErrorResponse,
           "403": errorResponse("관리자 권한 필요"),
           "500": errorResponse("서버 에러"),
@@ -1250,7 +1260,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
         ],
         responses: {
-          "200": { description: "조회 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "403": errorResponse("접근 권한 없음"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
@@ -1267,7 +1287,17 @@ export const openApiSpec: OpenAPIV3.Document = {
           content: { "application/json": { schema: { type: "object" } } },
         },
         responses: {
-          "200": { description: "수정 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/ContentDetailItem" } },
+                },
+              },
+            },
+          },
           "400": validationErrorResponse,
           "403": errorResponse("수정 권한 없음"),
           "404": errorResponse("Not found"),
@@ -2493,15 +2523,31 @@ export const openApiSpec: OpenAPIV3.Document = {
           updatedBy: { type: "string", nullable: true },
         },
       },
+      // 카테고리 트리 응답에 사용되는 경량 노드 — DB 메타 필드(createdAt 등) 제외.
+      // CATEGORY_TREE_INCLUDE.select(`category-tree.ts`)와 일치해야 함.
+      CategoryNodeMinimal: {
+        type: "object",
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          parentId: { type: "integer", nullable: true, example: null },
+          categoryCode: { type: "string", example: "PROD" },
+          name: { type: "string", example: "상품분류" },
+          isInternalOnly: { type: "boolean", example: false },
+          sortOrder: { type: "integer", example: 1 },
+          isActive: { type: "boolean", example: true },
+        },
+      },
       CategoryTree: {
         allOf: [
-          { $ref: "#/components/schemas/Category" },
+          { $ref: "#/components/schemas/CategoryNodeMinimal" },
           {
             type: "object",
+            required: ["children"],
             properties: {
               children: {
                 type: "array",
-                items: { $ref: "#/components/schemas/Category" },
+                items: { $ref: "#/components/schemas/CategoryNodeMinimal" },
               },
             },
           },
@@ -2509,6 +2555,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       ContentListItem: {
         type: "object",
+        required: [
+          "id", "title", "status", "viewCount", "createdAt", "updatedAt",
+          "isNew", "isUpdated", "categories", "targets", "attachmentCount",
+        ],
         properties: {
           id: { type: "integer" },
           title: { type: "string" },
@@ -2537,6 +2587,58 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           attachmentCount: { type: "integer" },
+        },
+      },
+      ContentDetailItem: {
+        type: "object",
+        required: [
+          "id", "title", "status", "viewCount", "createdAt", "updatedAt",
+          "isNew", "isUpdated", "categories", "targets", "attachments",
+        ],
+        properties: {
+          id: { type: "integer" },
+          title: { type: "string" },
+          body: { type: "string", nullable: true },
+          status: { type: "string", enum: ["draft", "published", "deleted"] },
+          authorDepartment: { type: "string", nullable: true },
+          userType: { type: "string", nullable: true },
+          userId: { type: "string", nullable: true },
+          viewCount: { type: "integer" },
+          publishedAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          isNew: { type: "boolean", description: "생성 후 5일 이내" },
+          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          categories: {
+            type: "array",
+            description: "부모-자식 트리 구조 (NEW-2 적용)",
+            items: { $ref: "#/components/schemas/CategoryTree" },
+          },
+          targets: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                startAt: { type: "string", format: "date-time", nullable: true },
+                endAt: { type: "string", format: "date-time", nullable: true },
+              },
+            },
+          },
+          attachments: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                fileName: { type: "string" },
+                fileSize: { type: "integer", nullable: true },
+                mimeType: { type: "string", nullable: true },
+                sortOrder: { type: "integer" },
+              },
+            },
+          },
         },
       },
       CreateCategory: {

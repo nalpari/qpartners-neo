@@ -7,6 +7,35 @@
  * 프론트엔드에서 테이블 헤더에 부모 카테고리를 묶어 표시하기 위해 사용.
  */
 
+import type { Prisma } from "@/generated/prisma/client";
+
+/**
+ * Prisma include 옵션 (카테고리 + parent 관계).
+ * `CategoryWithParent` 타입이 이 select 구조로부터 자동 추론된다.
+ */
+export const CATEGORY_TREE_INCLUDE = {
+  select: {
+    id: true,
+    parentId: true,
+    categoryCode: true,
+    name: true,
+    isInternalOnly: true,
+    sortOrder: true,
+    isActive: true,
+    parent: {
+      select: {
+        id: true,
+        parentId: true,
+        categoryCode: true,
+        name: true,
+        isInternalOnly: true,
+        sortOrder: true,
+        isActive: true,
+      },
+    },
+  },
+} as const;
+
 /** 카테고리 기본 필드 */
 export interface CategoryNode {
   id: number;
@@ -23,17 +52,11 @@ export interface CategoryTreeNode extends CategoryNode {
   children: CategoryNode[];
 }
 
-/** Prisma에서 include한 카테고리 레코드 타입 (parent 관계 포함) */
-export interface CategoryWithParent {
-  id: number;
-  parentId: number | null;
-  categoryCode: string;
-  name: string;
-  isInternalOnly: boolean;
-  sortOrder: number;
-  isActive: boolean;
-  parent: CategoryNode | null;
-}
+/**
+ * Prisma에서 include한 카테고리 레코드 타입 (parent 관계 포함).
+ * `CATEGORY_TREE_INCLUDE.select`로부터 자동 추론되어 스키마/select 변경 시 동기 유지.
+ */
+export type CategoryWithParent = Prisma.CategoryGetPayload<typeof CATEGORY_TREE_INCLUDE>;
 
 /** buildCategoryTree 옵션 */
 export interface BuildCategoryTreeOptions {
@@ -163,26 +186,3 @@ export function buildCategoryTree(
   return result;
 }
 
-/** Prisma include 옵션 (카테고리 + parent 관계) */
-export const CATEGORY_TREE_INCLUDE = {
-  select: {
-    id: true,
-    parentId: true,
-    categoryCode: true,
-    name: true,
-    isInternalOnly: true,
-    sortOrder: true,
-    isActive: true,
-    parent: {
-      select: {
-        id: true,
-        parentId: true,
-        categoryCode: true,
-        name: true,
-        isInternalOnly: true,
-        sortOrder: true,
-        isActive: true,
-      },
-    },
-  },
-} as const;
