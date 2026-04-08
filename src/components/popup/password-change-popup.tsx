@@ -66,6 +66,7 @@ export function PasswordChangePopup() {
       await api.post("/mypage/password-change", {
         currentPwd: currentPassword,
         newPwd: newPassword,
+        confirmPwd: confirmPassword,
       });
       setIsSubmitting(false);
       openAlert({

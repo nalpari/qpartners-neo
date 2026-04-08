@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { isAxiosError } from "axios";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -19,13 +19,8 @@ interface CodeDetail {
 
 // 외부 컴포넌트: auth 캐시 구독 → user 변경 시 key로 내부 폼 리마운트
 export function InquiryForm() {
-  // 헤더가 관리하는 auth 캐시를 구독 (직접 fetch 안 함, 캐시 변경 시 리렌더링)
-  const { data: user = null } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  const queryClient = useQueryClient();
+  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]) ?? null;
 
   return (
     <InquiryFormInner
@@ -64,8 +59,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
 
   const [companyName, setCompanyName] = useState(user?.compNm ?? "");
   const [name, setName] = useState(user?.userNm ?? "");
-  // TODO: profile API 안정화 후 user?.telNo 연동 — 현재 LoginUser 타입에 telNo 미포함
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(user?.telNo ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
   const [title, setTitle] = useState("");
@@ -113,7 +107,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     if (isLoggedIn) {
       setCompanyName(user?.compNm ?? "");
       setName(user?.userNm ?? "");
-      setPhone("");
+      setPhone(user?.telNo ?? "");
       setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
@@ -250,7 +244,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
                 {isLoggedIn ? (
                   <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
                     <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                      {phone}
+                      {phone || "-"}
                     </p>
                   </div>
                 ) : (
@@ -409,7 +403,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
               </p>
               {isLoggedIn ? (
                 <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  {phone}
+                  {phone || "-"}
                 </p>
               ) : (
                 <InputBox

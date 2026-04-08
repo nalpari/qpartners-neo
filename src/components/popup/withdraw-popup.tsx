@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
@@ -31,10 +32,13 @@ export function WithdrawPopup() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  // TODO: mypage/profile API 안정화 후 useQuery로 교체 — 더미 데이터는 프로필 조회 API 수정 반영 후 제거 예정
-  const profile: ProfileData | null = null;
-  const isProfileLoading = false;
-  const profileError: Error | null = new Error("プロフィールAPIが未実装です");
+  const { data: profile = null, isLoading: isProfileLoading, error: profileError } = useQuery<ProfileData>({
+    queryKey: ["mypage", "profile"],
+    queryFn: async () => {
+      const res = await api.get<{ data: ProfileData }>("/mypage/profile");
+      return res.data.data;
+    },
+  });
   const isProfileReady = profile != null && !isProfileLoading && !profileError;
 
   function buildUserInfo(p: ProfileData) {
