@@ -5,6 +5,8 @@ import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -20,7 +22,36 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ error: "IDの形式が正しくありません" }, { status: 400 });
+    }
+
+    // Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (DoS 방어)
+    // MF-1 대응: Content-Length 누락(chunked transfer encoding) 시 formData()가 무제한
+    //            바디를 메모리에 버퍼링해 OOM을 유발할 수 있음. 헤더가 없는 요청은 411로 거부.
+    //            (fast-path: 리버스 프록시에서도 body size limit를 두는 것이 최종 방어선)
+    // 다중 파일이므로 여유롭게 MAX_FILE_SIZE * 5 + 헤더 오버헤드를 한도로 적용
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      console.warn("[POST /api/contents/:id/files] Content-Length 누락 — chunked encoding 거부");
+      return NextResponse.json(
+        { error: "Content-Lengthヘッダーが必要です" },
+        { status: 411 },
+      );
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        { error: "リクエストサイズが不正です" },
+        { status: 400 },
+      );
+    }
+    const MAX_BATCH_SIZE = MAX_FILE_SIZE * 5 + 1024 * 1024; // ~251MB
+    if (contentLength > MAX_BATCH_SIZE) {
+      console.warn("[POST /api/contents/:id/files] Content-Length 초과:", contentLength);
+      return NextResponse.json(
+        { error: "リクエストサイズが大きすぎます" },
+        { status: 413 },
+      );
     }
 
     // 콘텐츠 존재 + 수정 권한 확인
@@ -30,12 +61,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     });
 
     if (!content || content.status === "deleted") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
     if (!canModifyContent(user, content)) {
       return NextResponse.json(
-        { error: "파일 업로드 권한이 없습니다" },
+        { error: "ファイルアップロードの権限がありません" },
         { status: 403 },
       );
     }
@@ -43,9 +74,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     let formData: FormData;
     try {
       formData = await request.formData();
-    } catch {
+    } catch (formError: unknown) {
+      console.warn("[POST /api/contents/:id/files] multipart 파싱 실패:", formError);
       return NextResponse.json(
-        { error: "Invalid multipart form data" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -54,47 +86,23 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (files.length === 0) {
       return NextResponse.json(
-        { error: "파일을 선택해주세요" },
+        { error: "ファイルを選択してください" },
         { status: 400 },
       );
     }
 
-    // 파일 크기 제한 (50MB)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    // 허용 MIME 타입
-    const ALLOWED_MIMES = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ];
-    // 허용 확장자 (MIME 검증과 이중 체크) — SVG 제외 (XSS 위험)
-    const ALLOWED_EXTENSIONS = new Set([
-      "pdf", "docx", "xlsx", "pptx",
-      "jpg", "jpeg", "png", "gif", "webp", "bmp",
-    ]);
+    // 0-byte 파일 거부 (PUT과 일관성)
+    if (files.some((f) => f.size === 0)) {
+      return NextResponse.json(
+        { error: "空のファイルはアップロードできません" },
+        { status: 400 },
+      );
+    }
 
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: `파일 크기가 50MB를 초과합니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-      if (!ALLOWED_EXTENSIONS.has(ext)) {
-        return NextResponse.json(
-          { error: `허용되지 않는 파일 확장자입니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const mime = file.type || "";
-      if (!ALLOWED_MIMES.includes(mime) && !mime.startsWith("image/")) {
-        return NextResponse.json(
-          { error: `허용되지 않는 파일 형식입니다: ${file.name}` },
-          { status: 400 },
-        );
-      }
+    // 파일 검증 — 공통 유틸 사용 (size, 확장자, MIME)
+    const validation = validateFiles(files);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
@@ -106,24 +114,27 @@ export async function POST(request: NextRequest, { params }: Params) {
       String(parsed.data),
     );
     await mkdir(uploadDir, { recursive: true });
+    const uploadDirAbsolute = resolve(uploadDir);
 
     // 1단계: 모든 파일을 디스크에 기록
-    const writtenFiles: { absolutePath: string; file: File; filePath: string; safeFileName: string }[] = [];
+    const writtenFiles: { absolutePath: string; file: File; filePath: string; safeFileName: string; archivedName: string }[] = [];
 
     for (const file of files) {
-      const ext = basename(file.name).split(".").pop() ?? "";
+      // basename으로 path 컴포넌트 제거 (Zip Slip 방어 — DB 저장값에서 ../ 제거)
+      const sanitizedName = basename(file.name);
+      const ext = sanitizedName.split(".").pop() ?? "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
       const filePath = `storage/uploads/contents/${parsed.data}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
-      // path traversal 방어: 업로드 디렉토리 내부인지 검증
-      if (!absolutePath.startsWith(resolve(uploadDir))) {
-        return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
+      // path traversal 방어 — relative 기반 검증 (startsWith prefix bug 회피)
+      if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
+        return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
       await writeFile(absolutePath, buffer);
-      writtenFiles.push({ absolutePath, file, filePath, safeFileName });
+      writtenFiles.push({ absolutePath, file, filePath, safeFileName, archivedName: sanitizedName });
     }
 
     // 2단계: 트랜잭션으로 모든 DB 레코드 일괄 생성 (전부 성공 or 전부 롤백)
@@ -133,7 +144,8 @@ export async function POST(request: NextRequest, { params }: Params) {
           prisma.contentAttachment.create({
             data: {
               contentId: parsed.data,
-              fileName: w.file.name,
+              // basename 적용된 이름만 저장 (../  제거 — Zip Slip 방어)
+              fileName: w.archivedName,
               filePath: w.filePath,
               fileSize: BigInt(w.file.size),
               mimeType: w.file.type || null,
@@ -147,15 +159,15 @@ export async function POST(request: NextRequest, { params }: Params) {
         data: attachments.map((a) => ({
           id: a.id,
           fileName: a.fileName,
-          fileSize: Number(a.fileSize),
+          fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
           mimeType: a.mimeType,
         })),
       }, { status: 201 });
-    } catch (dbError) {
+    } catch (dbError: unknown) {
       // DB 트랜잭션 실패 시 디스크에 쓴 파일 전부 정리
       for (const w of writtenFiles) {
-        await unlink(w.absolutePath).catch((unlinkErr) => {
-          console.error("[upload-cleanup] Failed to remove file after DB error", {
+        await unlink(w.absolutePath).catch((unlinkErr: unknown) => {
+          console.error("[POST /api/contents/:id/files] DB 실패 후 파일 정리 실패:", {
             path: w.absolutePath,
             error: unlinkErr,
           });
@@ -163,10 +175,10 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
       throw dbError;
     }
-  } catch (error) {
-    console.error("[POST /api/contents/:id/files]", error);
+  } catch (error: unknown) {
+    console.error("[POST /api/contents/:id/files] 첨부파일 업로드 실패:", error);
     return NextResponse.json(
-      { error: "Failed to upload files" },
+      { error: "添付ファイルのアップロードに失敗しました" },
       { status: 500 },
     );
   }
