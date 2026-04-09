@@ -98,7 +98,12 @@ export function MypageInfo() {
 
   // Design Ref: §4.1 — 부모 컴포넌트 데이터 페칭
   const queryClient = useQueryClient();
-  const loginUser = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
+  const { data: loginUser } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   const { data: profile, isLoading, error } = useQuery<ProfileData>({
     queryKey: ["mypage", "profile"],

@@ -94,8 +94,13 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
 
-  // 로그인 사용자 캐시
-  const loginUser = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
+  // 로그인 사용자 캐시 구독
+  const { data: loginUser } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   // 카테고리 조회
   const { data: categories = [] } = useQuery({
