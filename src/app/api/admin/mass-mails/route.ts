@@ -14,34 +14,17 @@ import { userTpSchema } from "@/lib/schemas/common";
 import {
   massMailListQuerySchema,
   massMailCreateSchema,
-  TARGET_LABELS,
   TARGET_KEYS,
   TARGET_FILTER_MAP,
+  buildTargetsObject,
+  buildTargetLabel,
 } from "@/lib/schemas/mass-mail";
-import type { TargetKey } from "@/lib/schemas/mass-mail";
 import type { Prisma } from "@/generated/prisma/client";
-
-/** 발송대상 boolean → 객체 (responseKey 기반) */
-function buildTargetsObject(mail: Record<TargetKey, boolean>): Record<string, boolean> {
-  const targets: Record<string, boolean> = {};
-  for (const t of TARGET_LABELS) {
-    targets[t.responseKey] = mail[t.key] === true;
-  }
-  return targets;
-}
-
-/** 발송대상 boolean → 콤마 구분 라벨 문자열 */
-function buildTargetLabel(mail: Record<TargetKey, boolean>): string {
-  return TARGET_LABELS
-    .filter((t) => mail[t.key] === true)
-    .map((t) => t.label)
-    .join(", ") || "—";
-}
 
 /** 첨부파일 최대 개수 */
 const MAX_FILES = 10;
 
-/** UserInfo → DB enum 매핑 — 미지의 userType은 에러 (최소 권한 원칙, ADMIN 폴백 금지) */
+/** UserInfo → DB enum 매핑 — 미지의 userType은 에러 (fail-closed: ADMIN 폴백 금지) */
 function resolveUserType(user: UserInfo): "ADMIN" | "STORE" | "SEKO" | "GENERAL" {
   const result = userTpSchema.safeParse(user.userType);
   if (result.success) return result.data;
@@ -56,7 +39,7 @@ interface PersistedAttachment {
   filePath: string;
 }
 
-/** 디스크에 기록된 파일 + 디렉토리 cleanup */
+/** 에러 발생 시 디스크에 기록된 첨부파일 + 업로드 디렉토리 롤백 */
 async function cleanupFiles(writtenFiles: PersistedAttachment[], uploadDir?: string): Promise<void> {
   for (const w of writtenFiles) {
     await unlink(w.absolutePath).catch((e: unknown) => {
@@ -173,7 +156,7 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     }
   }
 
-  // 6. HTML body sanitization (stored XSS 방어 — style/class 제거로 CSS Injection 방어)
+  // 6. HTML body sanitization (stored XSS 방어 — 허용 태그/속성 화이트리스트 방식)
   const sanitizedBody = DOMPurify.sanitize(data.body, {
     ALLOWED_TAGS: [
       "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
@@ -225,8 +208,6 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
   await mkdir(uploadDir, { recursive: true });
   const uploadDirAbsolute = resolve(uploadDir);
 
-  const writtenFiles: PersistedAttachment[] = [];
-
   const writePromises = files.map(async (file) => {
     const sanitizedName = basename(file.name);
     const ext = sanitizedName.split(".").pop() ?? "";
@@ -234,8 +215,13 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
     const filePath = `storage/uploads/mass-mails/${tempId}/${safeFileName}`;
     const absolutePath = resolve(uploadDir, safeFileName);
 
-    // path traversal 방어 — isInsideDir (startsWith prefix bug 회피)
+    // path traversal 방어 — isInsideDir (startsWith('/uploads')가 '/uploads-evil/'도 통과시키는 문제 회피)
     if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
+      console.error("[POST /api/admin/mass-mails] PATH TRAVERSAL 감지:", {
+        fileName: file.name,
+        absolutePath,
+        uploadDir: uploadDirAbsolute,
+      });
       return { error: true as const };
     }
 
@@ -246,16 +232,16 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
 
   const results = await Promise.all(writePromises);
 
-  for (const r of results) {
-    if (r.error) {
-      // path traversal 감지 — 이미 기록된 파일 cleanup 후 에러 반환
-      await cleanupFiles(writtenFiles, uploadDir);
-      return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
-    }
-    writtenFiles.push(r);
+  // 성공 파일 전체 수집 후 에러 체크 (레이스 컨디션 방지)
+  const successes = results.filter((r): r is PersistedAttachment & { error: false } => !r.error);
+  const hasTraversalError = results.some((r) => r.error);
+
+  if (hasTraversalError) {
+    await cleanupFiles(successes, uploadDir);
+    return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
   }
 
-  return { writtenFiles, uploadDir };
+  return { writtenFiles: successes, uploadDir };
 }
 
 // ─── POST 헬퍼: DB 레코드 생성 ───
@@ -432,6 +418,8 @@ export async function POST(request: NextRequest) {
       });
     } catch (dbError: unknown) {
       await cleanupFiles(writtenFiles, uploadDir);
+      writtenFiles = [];
+      uploadDir = undefined;
       throw dbError;
     }
 

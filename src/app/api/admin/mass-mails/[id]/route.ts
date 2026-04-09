@@ -5,7 +5,8 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   massMailIdParamSchema,
-  TARGET_LABELS,
+  buildTargetsObject,
+  buildTargetLabel,
 } from "@/lib/schemas/mass-mail";
 
 type Params = { params: Promise<{ id: string }> };
@@ -49,22 +50,13 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 4. 발송대상 객체 구성 (responseKey 사용)
-    const targets: Record<string, boolean> = {};
-    for (const t of TARGET_LABELS) {
-      targets[t.responseKey] = mail[t.key] === true;
-    }
-    const targetsLabel = TARGET_LABELS
-      .filter((t) => mail[t.key] === true)
-      .map((t) => t.label)
-      .join(", ") || "—";
-
+    // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑
     const mapped = {
       id: mail.id,
       senderName: mail.senderName,
-      targets,
-      targetsLabel,
+      targets: buildTargetsObject(mail),
+      targetsLabel: buildTargetLabel(mail),
       optOut: mail.optOut,
       subject: mail.subject,
       body: mail.body,

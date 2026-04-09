@@ -8,8 +8,8 @@ export const massMailListQuerySchema = z.object({
   keyword: z.string().max(200).optional(),
   // target 필터 — responseKey 기반 ASCII 키 ("super_admin", "admin", "first_store" 등)
   target: z.string().optional(),
-  // z.coerce.boolean は "false" を true に変換するため、明示的に transform で処理
-  draftOnly: z.string().optional().transform((v) => v === "true").default(false),
+  // z.coerce.boolean은 "false"를 true로 변환하므로, 명시적 transform으로 처리
+  draftOnly: z.string().optional().transform((v) => v === "true"),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
@@ -63,9 +63,33 @@ export const TARGET_LABELS: { key: TargetKey; label: string; responseKey: string
  * 기존: label(일본어) 기반 → URL에 일본어 강제. 변경: responseKey(ASCII) 기반.
  * ?target=super_admin, ?target=first_store 등으로 사용.
  */
-export const TARGET_FILTER_MAP = Object.fromEntries(
-  TARGET_LABELS.map((t) => [t.responseKey, t.key]),
-) as Partial<Record<string, TargetKey>>;
+export const TARGET_FILTER_MAP: Record<string, TargetKey> = {
+  super_admin: "targetSuperAdmin",
+  admin: "targetAdmin",
+  first_store: "targetFirstDealer",
+  second_store: "targetSecondDealer",
+  seko: "targetConstructor",
+  general: "targetGeneral",
+};
+
+// ─── 발송대상 공통 유틸 ───
+
+/** 발송대상 boolean → 객체 (responseKey 기반) */
+export function buildTargetsObject(mail: Record<TargetKey, boolean>): Record<string, boolean> {
+  const targets: Record<string, boolean> = {};
+  for (const t of TARGET_LABELS) {
+    targets[t.responseKey] = mail[t.key] === true;
+  }
+  return targets;
+}
+
+/** 발송대상 boolean → 콤마 구분 라벨 문자열 */
+export function buildTargetLabel(mail: Record<TargetKey, boolean>): string {
+  return TARGET_LABELS
+    .filter((t) => mail[t.key] === true)
+    .map((t) => t.label)
+    .join(", ") || "—";
+}
 
 // ─── ID 파라미터 ───
 
