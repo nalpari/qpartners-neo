@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
@@ -170,6 +171,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // 관리자 프로필 수정은 미구현 (Q.ORDER T01만 — 향후 구현)
+    // body 파싱·검증 전에 조기 차단하여 불필요한 작업을 방지한다.
+    if (user.userTp === "ADMIN") {
+      return NextResponse.json(
+        { error: "管理者のプロフィール修正はまだ対応されていません" },
+        { status: 501 },
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -199,18 +209,15 @@ export async function PUT(request: NextRequest) {
 
     const d = result.data;
 
-    // 관리자 프로필 수정은 미구현 (Q.ORDER T01만 — 향후 구현)
-    if (user.userTp === "ADMIN") {
-      return NextResponse.json(
-        { error: "管理者のプロフィール修正はまだ対応されていません" },
-        { status: 501 },
-      );
-    }
-
     // QSP 수정 API 호출 (판매점/일반)
+    // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
+    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다. (admin/members 와 동일 패턴)
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
+        // 수정 대상 식별자 — admin/members updateUser 호출 패턴과 동일하게 userId 를 명시 전달.
+        // GENERAL 은 userId == email 이지만, QSP 가 우선 식별자로 사용하는 키를 모호하지 않게 한다.
+        userId: user.userId,
         email: user.email,
         userTp: user.userTp,
         // STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달 (ADMIN은 상단에서 501 처리됨)
@@ -229,12 +236,13 @@ export async function PUT(request: NextRequest) {
         deptNm: d.department,
         pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
+        updBy: user.userId,
       };
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.userDetail, {
-          method: "PUT",
+        qspResponse = await fetch(QSP_API.updateUser, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(10_000),
           body: JSON.stringify(qspPayload),
@@ -266,16 +274,20 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      const parsed = qspUserDetailResponseSchema.safeParse(qspBody);
+      const parsed = qspUpdateResponseSchema.safeParse(qspBody);
       if (!parsed.success) {
-        console.error("[PUT /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error);
+        console.error("[PUT /api/mypage/profile] QSP 응답 스키마 불일치:", parsed.error.issues);
         return NextResponse.json(
           { error: "外部サーバーの応答形式が正しくありません" },
           { status: 502 },
         );
       }
       if (parsed.data.result.resultCode !== "S") {
-        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", parsed.data.result.resultCode);
+        console.error(
+          "[PUT /api/mypage/profile] QSP 비즈니스 에러:",
+          parsed.data.result.resultCode,
+          parsed.data.result.message,
+        );
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
