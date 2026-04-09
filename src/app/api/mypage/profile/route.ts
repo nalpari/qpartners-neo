@@ -34,11 +34,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // QSP userDetail API 호출
+    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반 (클라이언트 잘못 아님).
+    // 4xx 로 반환하면 운영 알람 노이즈에 묻히므로 500 으로 올리고 사용자는 재로그인 유도.
     if (!user.email) {
+      console.error("[GET /api/mypage/profile] JWT missing email", {
+        userId: user.userId,
+        userTp: user.userTp,
+      });
       return NextResponse.json(
-        { error: "メール情報がないためプロフィールを照会できません" },
-        { status: 400 },
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
       );
     }
 
@@ -180,11 +185,16 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // QSP updateUser 호출 전 email 필수 확인 (GET 핸들러와 동일한 가드)
+    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반 (GET 핸들러와 동일 가드).
+    // 4xx 가 아닌 500 으로 반환하여 운영 알람에 노출되게 하고, 사용자는 재로그인 유도.
     if (!user.email) {
+      console.error("[PUT /api/mypage/profile] JWT missing email", {
+        userId: user.userId,
+        userTp: user.userTp,
+      });
       return NextResponse.json(
-        { error: "メール情報がないためプロフィールを修正できません" },
-        { status: 400 },
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
       );
     }
 
@@ -228,8 +238,8 @@ export async function PUT(request: NextRequest) {
         userId: user.userId,
         email: user.email,
         userTp: user.userTp,
-        // STORE는 loginId ≠ email 일 수 있으므로 loginId 를 명시 전달. (ADMIN 은 상단에서 501 처리)
-        // QSP 스펙상 STORE 의 loginId 는 userId 와 동일 값으로 저장되어, 중복 전송이지만 스펙 준수를 위해 유지한다.
+        // STORE 는 QSP updateUser 스펙상 loginId 를 별도 필드로 요구하므로 명시 전달한다.
+        // (ADMIN 은 상단에서 501 처리되어 이 분기에 도달하지 않음)
         ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
@@ -292,13 +302,19 @@ export async function PUT(request: NextRequest) {
         );
       }
       if (parsed.data.result.resultCode !== "S") {
-        // QSP message 에 내부 SQL 에러 / PII 가 포함될 수 있어 로그 길이를 제한한다.
-        const safeMessage = parsed.data.result.message?.slice(0, 200);
-        console.error(
-          "[PUT /api/mypage/profile] QSP 비즈니스 에러:",
-          parsed.data.result.resultCode,
+        // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 200자로 제한한다.
+        // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
+        const fullMessage = parsed.data.result.message ?? "";
+        const safeMessage = fullMessage.slice(0, 200);
+        const truncated = fullMessage.length > 200;
+        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
+          userId: user.userId,
+          userTp: user.userTp,
+          resultCode: parsed.data.result.resultCode,
           safeMessage,
-        );
+          truncated,
+          fullLength: fullMessage.length,
+        });
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
