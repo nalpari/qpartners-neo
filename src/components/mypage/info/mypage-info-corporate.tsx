@@ -44,7 +44,8 @@ export function MypageInfoCorporate({
         setData((prev) => ({
           ...prev,
           zipCode: addr.zipcode,
-          address: `${addr.prefecture}${addr.city}${addr.town}`,
+          address: `${addr.prefecture}${addr.city}`,
+          addressDetail: addr.town,
         }));
       },
     });
@@ -272,7 +273,7 @@ function EditFieldContent({
         <div className="flex items-center gap-[8px] w-full min-w-0">
           <InputBox
             value={data.address}
-            onChange={updateField("address")}
+            disabled
             className="h-[42px] flex-1"
           />
           <InputBox
@@ -285,7 +286,7 @@ function EditFieldContent({
         <div className="flex flex-col gap-[8px] w-full">
           <InputBox
             value={data.address}
-            onChange={updateField("address")}
+            disabled
             className="h-[42px]"
           />
           <InputBox

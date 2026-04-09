@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Checkbox, SelectBox, Button } from "@/components/common";
+import { useIsMobile } from "@/hooks/use-media-query";
 import type { CategoryNode, SearchFilters } from "./contents-contents";
 
 // 관리자용 게시대상 옵션
@@ -44,7 +45,8 @@ export function ContentsSearch({
   onSearch,
   initialFilters,
 }: ContentsSearchProps) {
-  const [isFilterOpen, setIsFilterOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [isFilterOpen, setIsFilterOpen] = useState(!isMobile);
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
   const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
