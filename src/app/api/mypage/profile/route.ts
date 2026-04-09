@@ -9,6 +9,18 @@ import {
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
 
+// QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
+const QSP_LOG_MSG_MAX_LEN = 200;
+
+// GENERAL 회원은 userId == email 이므로 로그 기록 시 반드시 제외한다
+// (.claude/rules/api.md: "이메일 주소를 로그에 기록하지 않음")
+function buildUserLogContext(user: { userId: string; userTp: string }) {
+  return {
+    userTp: user.userTp,
+    ...(user.userTp !== "GENERAL" && { userId: user.userId }),
+  };
+}
+
 // GET /api/mypage/profile — 내정보/회사정보 조회
 export async function GET(request: NextRequest) {
   try {
@@ -34,11 +46,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // QSP userDetail API 호출
+    // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
+    // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
     if (!user.email) {
+      console.error(
+        "[GET /api/mypage/profile] JWT missing email",
+        buildUserLogContext(user),
+      );
       return NextResponse.json(
-        { error: "メール情報がないためプロフィールを照会できません" },
-        { status: 400 },
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
       );
     }
 
@@ -180,6 +197,19 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
+    // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
+    if (!user.email) {
+      console.error(
+        "[PUT /api/mypage/profile] JWT missing email",
+        buildUserLogContext(user),
+      );
+      return NextResponse.json(
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -211,16 +241,18 @@ export async function PUT(request: NextRequest) {
 
     // QSP 수정 API 호출 (판매점/일반)
     // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
-    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다. (admin/members 와 동일 패턴)
+    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다.
+    //       admin/members 도 동일 엔드포인트를 사용하지만, 전달 필드가 다르다
+    //       (admin 은 메타 필드만, profile 은 전체 회사/개인 정보 포함).
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
-        // 수정 대상 식별자 — admin/members updateUser 호출 패턴과 동일하게 userId 를 명시 전달.
-        // GENERAL 은 userId == email 이지만, QSP 가 우선 식별자로 사용하는 키를 모호하지 않게 한다.
         userId: user.userId,
         email: user.email,
         userTp: user.userTp,
-        // STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달 (ADMIN은 상단에서 501 처리됨)
+        // STORE 는 userId ≠ loginId 일 수 있어 loginId 를 명시 전달한다.
+        // (admin/members 는 메타 필드만 수정하므로 loginId 미전달)
+        // (ADMIN 은 상단에서 501 처리되어 이 분기에 도달하지 않음)
         ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
@@ -283,11 +315,19 @@ export async function PUT(request: NextRequest) {
         );
       }
       if (parsed.data.result.resultCode !== "S") {
-        console.error(
-          "[PUT /api/mypage/profile] QSP 비즈니스 에러:",
-          parsed.data.result.resultCode,
-          parsed.data.result.message,
-        );
+        // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 제한한다.
+        // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
+        // fullLength 는 메시지 길이를 통해 내부 에러 구조를 역추론할 수 있어 제외한다.
+        // qspResultSchema.message 는 z.string() (non-nullable) — safeParse 통과 시 string 보장
+        const rawMessage = parsed.data.result.message;
+        const truncatedMessage = rawMessage.slice(0, QSP_LOG_MSG_MAX_LEN);
+        const truncated = rawMessage.length > QSP_LOG_MSG_MAX_LEN;
+        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
+          ...buildUserLogContext(user),
+          resultCode: parsed.data.result.resultCode,
+          truncatedMessage,
+          truncated,
+        });
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
