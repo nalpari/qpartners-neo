@@ -16,6 +16,7 @@ import {
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
 const PER_PAGE_OPTIONS = [
@@ -51,22 +52,37 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
-/** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) */
-function downloadAllAttachments(contentId: number) {
-  const link = document.createElement("a");
-  link.href = `/api/contents/${contentId}/files/download-all`;
-  link.download = "";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+/** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
+async function downloadAllAttachments(contentId: number): Promise<boolean> {
+  try {
+    const { default: api } = await import("@/lib/axios");
+    const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    a.click();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (err: unknown) {
+    console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+    return false;
+  }
 }
 
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
+  const { openAlert } = useAlertStore();
+
   if (!params.data || params.data.attachmentCount === 0) return null;
   const contentId = params.data.id;
 
-  const handleClick = () => {
-    downloadAllAttachments(contentId);
+  const handleClick = async () => {
+    const ok = await downloadAllAttachments(contentId);
+    if (!ok) {
+      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+    }
   };
 
   return (
@@ -75,7 +91,7 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
         type="button"
         aria-label="添付ファイルダウンロード"
         className="cursor-pointer"
-        onClick={handleClick}
+        onClick={() => { void handleClick(); }}
       >
         <Image
           src="/asset/images/layout/download_icon.svg"

@@ -61,6 +61,7 @@ export function ContentsDetailAttachment({
   attachments,
 }: ContentsDetailAttachmentProps) {
   const { openAlert } = useAlertStore();
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
   if (attachments.length === 0) return null;
 
@@ -87,14 +88,26 @@ export function ContentsDetailAttachment({
     }
   };
 
-  /** 일괄 다운로드 (ZIP) */
-  const handleAllDownload = () => {
-    const link = document.createElement("a");
-    link.href = `/api/contents/${contentId}/files/download-all`;
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  /** 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
+  const handleAllDownload = async () => {
+    if (isDownloadingAll) return;
+    setIsDownloadingAll(true);
+    try {
+      const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+    } finally {
+      setIsDownloadingAll(false);
+    }
   };
 
   return (
@@ -106,11 +119,12 @@ export function ContentsDetailAttachment({
         </h2>
         <button
           type="button"
-          onClick={handleAllDownload}
-          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5]"
+          onClick={() => { void handleAllDownload(); }}
+          disabled={isDownloadingAll}
+          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#506273] text-center">
-            All Download
+            {isDownloadingAll ? "ダウンロード中..." : "All Download"}
           </span>
           <span className="inline-flex items-center justify-center w-6 bg-[#506273] rounded-[10px] font-['Noto_Sans_JP'] font-medium text-[14px] leading-normal text-white text-center">
             {attachments.length}
