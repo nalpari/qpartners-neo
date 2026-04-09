@@ -179,7 +179,7 @@ export function LoginForm({
                 label="ID Save"
               />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <div className="flex items-center gap-2">
               <Checkbox
                 checked={agreeTerms}
                 onChange={onAgreeTermsChange}
@@ -195,7 +195,7 @@ export function LoginForm({
                   (表示)
                 </button>
               </span>
-            </label>
+            </div>
           </div>
         </div>
 
