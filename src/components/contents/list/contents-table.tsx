@@ -19,6 +19,31 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
+/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 */
+function renderCategoryCell(
+  item: ContentListItem,
+  parentCategoryCode: string,
+  inlineStyle?: boolean,
+): React.ReactNode {
+  const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
+  if (!matched || matched.children.length === 0) return null;
+  const normal = matched.children.filter((c) => !c.isInternalOnly);
+  const internal = matched.children.filter((c) => c.isInternalOnly);
+  return (
+    <span style={inlineStyle ? { fontSize: "12px" } : undefined}>
+      {normal.map((c) => c.name).join(", ")}
+      {internal.length > 0 && (
+        <>
+          {normal.length > 0 ? ", " : ""}
+          <span style={inlineStyle ? { color: "#FF1A1A" } : undefined} className={inlineStyle ? undefined : "text-[#FF1A1A]"}>
+            {internal.map((c) => c.name).join(", ")}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
@@ -200,21 +225,7 @@ export function ContentsTable({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
-        const matched = params.data.categories.find((c) => c.categoryCode === parent.categoryCode);
-        if (!matched || matched.children.length === 0) return null;
-        const normal = matched.children.filter((c) => !c.isInternalOnly);
-        const internal = matched.children.filter((c) => c.isInternalOnly);
-        return (
-          <span style={{ fontSize: "12px" }}>
-            {normal.map((c) => c.name).join(", ")}
-            {internal.length > 0 && (
-              <>
-                {normal.length > 0 ? ", " : ""}
-                <span style={{ color: "#FF1A1A" }}>{internal.map((c) => c.name).join(", ")}</span>
-              </>
-            )}
-          </span>
-        );
+        return renderCategoryCell(params.data, parent.categoryCode, true);
       },
       flex: 1,
       minWidth: 90,
@@ -308,23 +319,7 @@ export function ContentsTable({
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
       label: parent.name,
       key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) => {
-        const matched = item.categories.find((c) => c.categoryCode === parent.categoryCode);
-        if (!matched || matched.children.length === 0) return "";
-        const normal = matched.children.filter((c) => !c.isInternalOnly);
-        const internal = matched.children.filter((c) => c.isInternalOnly);
-        return (
-          <span>
-            {normal.map((c) => c.name).join(", ")}
-            {internal.length > 0 && (
-              <>
-                {normal.length > 0 ? ", " : ""}
-                <span className="text-[#FF1A1A]">{internal.map((c) => c.name).join(", ")}</span>
-              </>
-            )}
-          </span>
-        );
-      },
+      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode) ?? "",
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));
 
