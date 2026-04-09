@@ -176,6 +176,8 @@ export function MypageInfo() {
     }
   };
 
+  // ADMIN/STORE는 프로필 수정 API 미구현 (501) — 수정 버튼 자체를 숨김
+  const canEdit = userType !== "ADMIN" && userType !== "STORE";
   // 법인정보 수정 모드 표시 여부: STORE, ADMIN은 숨김
   const showCorporateEdit = userType !== "STORE" && userType !== "ADMIN";
 
@@ -195,14 +197,14 @@ export function MypageInfo() {
         <h2 className="flex-1 font-['Noto_Sans_JP'] font-medium text-[18px] leading-[1.5] text-[#101010]">
           {isEditing ? "私の情報/会社情報の修正" : "私の情報/会社情報"}
         </h2>
-        {!isEditing && (
+        {!isEditing && canEdit && (
           <div className="hidden lg:block">
             <Button variant="primary" className="w-[68px]" onClick={handleStartEdit}>
               修正
             </Button>
           </div>
         )}
-        {!isEditing && (
+        {!isEditing && canEdit && (
           <button
             type="button"
             className="lg:hidden shrink-0"

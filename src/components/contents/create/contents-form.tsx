@@ -152,9 +152,13 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
 
   const [approver, setApprover] = useState(existingData ? String(existingData.approverLevel ?? "") : "");
   const [postTargets, setPostTargets] = useState<PostTargetState>(initialPostTargets);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(
-    existingData?.categories?.flatMap((parent) => parent.children.map((child) => child.id)) ?? [],
-  );
+  const initialCategoryIds = existingData?.categories?.flatMap((parent) => parent.children.map((child) => child.id)) ?? [];
+  // DEBUG: 수정 모드 카테고리 초기값 확인
+  if (mode === "edit") {
+    console.log("[ContentsForm] existingData.categories:", existingData?.categories);
+    console.log("[ContentsForm] initialCategoryIds:", initialCategoryIds);
+  }
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialCategoryIds);
   const [title, setTitle] = useState(existingData?.title ?? "");
   const [content, setContent] = useState(existingData?.body ?? "");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
