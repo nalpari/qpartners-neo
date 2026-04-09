@@ -142,9 +142,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
 
   return (
     <main className="flex items-start justify-center w-full mt-[10px] lg:mt-0  lg:pb-[120px]">
-      {/* 로딩 오버레이 — fixed 전체 화면 dim */}
+      {/* 로딩 오버레이 — 전체 화면 dim, 탭/체크박스 클릭은 허용 */}
       {isSubmitting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-none">
           <Spinner size={48} className="text-white" />
         </div>
       )}
