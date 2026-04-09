@@ -4,15 +4,35 @@ import { useState } from "react";
 import { InputBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 
-const VIEW_FIELDS = [
-  { label: "会員タイプ", value: "一般会員" },
-  { label: "会社名", value: "INTERPLUG TEST" },
-  { label: "会社名ひらがな", value: "インタープラグ  テスト" },
-  { label: "住所", value: "(108-0014) 東京都港区芝4-10-1 ハンファビル9F" },
-  { label: "電話番号", value: "03-5441-5943" },
-  { label: "FAX番号", value: "088-685-3054" },
-  { label: "法人番号", value: "-" },
-];
+interface CorporateData {
+  memberType: string;
+  companyName: string;
+  companyNameKana: string;
+  zipCode: string;
+  address: string;
+  addressDetail: string;
+  phone: string;
+  fax: string;
+  corporateNumber: string;
+}
+
+type CorporateDataKey = keyof CorporateData;
+
+function buildViewFields(data: CorporateData): { label: string; value: string }[] {
+  const address = data.zipCode
+    ? `(${data.zipCode}) ${data.address}${data.addressDetail ? " " + data.addressDetail : ""}`
+    : data.address || "-";
+
+  return [
+    { label: "会員タイプ", value: data.memberType || "-" },
+    { label: "会社名", value: data.companyName || "-" },
+    { label: "会社名ひらがな", value: data.companyNameKana || "-" },
+    { label: "住所", value: address },
+    { label: "電話番号", value: data.phone || "-" },
+    { label: "FAX番号", value: data.fax || "-" },
+    { label: "法人番号", value: data.corporateNumber || "-" },
+  ];
+}
 
 interface MypageInfoCorporateProps {
   isEditing?: boolean;
@@ -21,7 +41,7 @@ interface MypageInfoCorporateProps {
 export function MypageInfoCorporate({
   isEditing = false,
 }: MypageInfoCorporateProps) {
-  const [data, setData] = useState({
+  const [data, setData] = useState<CorporateData>({
     memberType: "一般会員",
     companyName: "INTERPLUG TEST",
     companyNameKana: "インタープラグ  テスト",
@@ -33,7 +53,7 @@ export function MypageInfoCorporate({
     corporateNumber: "0000000",
   });
 
-  const updateField = (key: string) => (value: string) =>
+  const updateField = (key: CorporateDataKey) => (value: string) =>
     setData((prev) => ({ ...prev, [key]: value }));
 
   const { openPopup } = usePopupStore();
@@ -61,11 +81,13 @@ export function MypageInfoCorporate({
     );
   }
 
-  return <CorporateViewMode />;
+  return <CorporateViewMode data={data} />;
 }
 
 /* ─── 조회 모드 ─── */
-function CorporateViewMode() {
+function CorporateViewMode({ data }: { data: CorporateData }) {
+  const viewFields = buildViewFields(data);
+
   return (
     <article className="flex-1 bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] px-[24px] py-[34px] lg:pt-[34px] lg:pb-[42px] lg:px-[42px]">
       <h3 className="font-['Noto_Sans_JP'] font-medium text-[16px] leading-[1.5] text-[#45576f] mb-[14px]">
@@ -74,7 +96,7 @@ function CorporateViewMode() {
 
       {/* PC */}
       <div className="hidden lg:flex flex-col gap-[4px]">
-        {VIEW_FIELDS.map((field) => (
+        {viewFields.map((field) => (
           <div
             key={field.label}
             className="flex gap-[4px] h-[58px] items-center w-full"
@@ -95,7 +117,7 @@ function CorporateViewMode() {
 
       {/* 모바일 */}
       <div className="flex lg:hidden flex-col gap-[18px]">
-        {VIEW_FIELDS.map((field, idx) => (
+        {viewFields.map((field, idx) => (
           <div
             key={field.label}
             className={`flex flex-col gap-[8px] pt-[18px] ${
@@ -121,7 +143,7 @@ function CorporateViewMode() {
 
 interface EditField {
   label: string;
-  key: string;
+  key: CorporateDataKey;
   required?: boolean;
   type?: "readonly" | "input" | "zip" | "address";
 }
@@ -152,8 +174,8 @@ function ThLabel({
 }
 
 interface CorporateEditModeProps {
-  data: Record<string, string>;
-  updateField: (key: string) => (value: string) => void;
+  data: CorporateData;
+  updateField: (key: CorporateDataKey) => (value: string) => void;
   onZipcodeSearch: () => void;
 }
 
@@ -222,8 +244,8 @@ function EditFieldContent({
   layout,
 }: {
   field: EditField;
-  data: Record<string, string>;
-  updateField: (key: string) => (value: string) => void;
+  data: CorporateData;
+  updateField: (key: CorporateDataKey) => (value: string) => void;
   onZipcodeSearch: () => void;
   layout: "pc" | "mobile";
 }) {
