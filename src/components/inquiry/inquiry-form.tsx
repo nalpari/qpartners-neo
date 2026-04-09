@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { isAxiosError } from "axios";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -19,8 +19,13 @@ interface CodeDetail {
 
 // 외부 컴포넌트: auth 캐시 구독 → user 변경 시 key로 내부 폼 리마운트
 export function InquiryForm() {
-  const queryClient = useQueryClient();
-  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]) ?? null;
+  // useQuery로 캐시 구독 — auth 상태 변경 시 리렌더링 보장
+  const { data: user = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   return (
     <InquiryFormInner
@@ -44,7 +49,7 @@ interface UserInfoField {
   };
 }
 
-function PcUserInfoRow({ fields }: { fields: [UserInfoField, UserInfoField]; isLoggedIn: boolean }) {
+function PcUserInfoRow({ fields }: { fields: [UserInfoField, UserInfoField] }) {
   return (
     <div className="flex gap-[4px]">
       {fields.map((field) => (
@@ -395,8 +400,8 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
       <div className="hidden lg:flex flex-col gap-[24px] w-[1440px]">
         <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px]">
           <div className="flex flex-col gap-[4px]">
-            <PcUserInfoRow fields={[userFields[0], userFields[1]]} isLoggedIn={isLoggedIn} />
-            <PcUserInfoRow fields={[userFields[2], userFields[3]]} isLoggedIn={isLoggedIn} />
+            <PcUserInfoRow fields={[userFields[0], userFields[1]]} />
+            <PcUserInfoRow fields={[userFields[2], userFields[3]]} />
           </div>
           <div className="flex flex-col gap-[18px] mt-[24px]">
             <InquiryFields {...inquiryFieldsProps} />

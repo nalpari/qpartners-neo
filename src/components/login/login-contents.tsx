@@ -142,9 +142,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
 
   return (
     <main className="flex items-start justify-center w-full mt-[10px] lg:mt-0  lg:pb-[120px]">
-      {/* 로딩 오버레이 — 전체 화면 dim, 탭/체크박스 클릭은 허용 */}
+      {/* 로딩 오버레이 — 전체 화면 dim + 클릭 차단 (탭/체크박스는 z-[51]로 위에 배치) */}
       {isSubmitting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <Spinner size={48} className="text-white" />
         </div>
       )}
@@ -164,7 +164,10 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
 
         {/* 우측 — 로그인 폼 */}
         <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:p-[80px] lg:gap-8">
-          <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
+          {/* 로딩 중에도 탭/체크박스 클릭 허용 — 오버레이(z-50) 위 */}
+          <div className="relative z-[51]">
+            <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
+          </div>
           <LoginForm
             activeTab={activeTab}
             id={id}

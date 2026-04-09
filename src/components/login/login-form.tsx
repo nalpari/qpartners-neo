@@ -170,8 +170,8 @@ export function LoginForm({
             </div>
           </div>
 
-          {/* 옵션 영역 */}
-          <div className="flex flex-col gap-[14px] lg:flex-row lg:gap-5">
+          {/* 옵션 영역 — 로딩 오버레이(z-50) 위에 배치하여 클릭 허용 */}
+          <div className="flex flex-col gap-[14px] lg:flex-row lg:gap-5 relative z-[51]">
             <div className="lg:flex-1">
               <Checkbox
                 checked={saveId}
