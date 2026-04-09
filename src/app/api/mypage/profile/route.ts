@@ -9,6 +9,18 @@ import {
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
 
+// QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
+const QSP_LOG_MSG_MAX_LEN = 200;
+
+// GENERAL 회원은 userId == email 이므로 로그 기록 시 반드시 제외한다
+// (.claude/rules/api.md: "이메일 주소를 로그에 기록하지 않음")
+function buildUserLogContext(user: { userId: string; userTp: string }) {
+  return {
+    userTp: user.userTp,
+    ...(user.userTp !== "GENERAL" && { userId: user.userId }),
+  };
+}
+
 // GET /api/mypage/profile — 내정보/회사정보 조회
 export async function GET(request: NextRequest) {
   try {
@@ -37,10 +49,10 @@ export async function GET(request: NextRequest) {
     // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반 (클라이언트 잘못 아님).
     // 4xx 로 반환하면 운영 알람 노이즈에 묻히므로 500 으로 올리고 사용자는 재로그인 유도.
     if (!user.email) {
-      console.error("[GET /api/mypage/profile] JWT missing email", {
-        userId: user.userId,
-        userTp: user.userTp,
-      });
+      console.error(
+        "[GET /api/mypage/profile] JWT missing email",
+        buildUserLogContext(user),
+      );
       return NextResponse.json(
         { error: "ユーザー情報に不備があります。再ログインしてください" },
         { status: 500 },
@@ -185,13 +197,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반 (GET 핸들러와 동일 가드).
+    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반.
     // 4xx 가 아닌 500 으로 반환하여 운영 알람에 노출되게 하고, 사용자는 재로그인 유도.
     if (!user.email) {
-      console.error("[PUT /api/mypage/profile] JWT missing email", {
-        userId: user.userId,
-        userTp: user.userTp,
-      });
+      console.error(
+        "[PUT /api/mypage/profile] JWT missing email",
+        buildUserLogContext(user),
+      );
       return NextResponse.json(
         { error: "ユーザー情報に不備があります。再ログインしてください" },
         { status: 500 },
@@ -302,18 +314,17 @@ export async function PUT(request: NextRequest) {
         );
       }
       if (parsed.data.result.resultCode !== "S") {
-        // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 200자로 제한한다.
+        // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 제한한다.
         // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
-        const fullMessage = parsed.data.result.message ?? "";
-        const safeMessage = fullMessage.slice(0, 200);
-        const truncated = fullMessage.length > 200;
+        // fullLength 는 메시지 길이를 통해 내부 에러 구조를 역추론할 수 있어 제외한다.
+        const rawMessage = parsed.data.result.message ?? "";
+        const truncatedMessage = rawMessage.slice(0, QSP_LOG_MSG_MAX_LEN);
+        const truncated = rawMessage.length > QSP_LOG_MSG_MAX_LEN;
         console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
-          userId: user.userId,
-          userTp: user.userTp,
+          ...buildUserLogContext(user),
           resultCode: parsed.data.result.resultCode,
-          safeMessage,
+          truncatedMessage,
           truncated,
-          fullLength: fullMessage.length,
         });
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
