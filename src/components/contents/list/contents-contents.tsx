@@ -158,7 +158,13 @@ export interface ContentListItem {
   updatedAt: string;
   isNew: boolean;
   isUpdated: boolean;
-  categories: { id: number; name: string; categoryCode: string; isInternalOnly: boolean }[];
+  categories: {
+    id: number;
+    categoryCode: string;
+    name: string;
+    isInternalOnly: boolean;
+    children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
+  }[];
   targets: { targetType: string; startAt: string | null; endAt: string | null }[];
   attachmentCount: number;
 }

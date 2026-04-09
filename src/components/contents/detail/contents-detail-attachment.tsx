@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
-import { Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
@@ -34,40 +33,11 @@ function getFileIconSrc(mimeType: string | null): string {
   return "/asset/images/contents/zip_icon.svg";
 }
 
-/** 이미지 파일을 Blob URL로 로드하여 미리보기 표시 */
+/** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
 function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fileId: number; fileName: string }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const blobUrlRef = useRef<string | null>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<Blob>(`/contents/${contentId}/files/${fileId}/download`, { responseType: "blob" })
-      .then((res) => {
-        if (cancelled) return;
-        const url = URL.createObjectURL(res.data);
-        blobUrlRef.current = url;
-        setBlobUrl(url);
-        setStatus("loaded");
-      })
-      .catch((err: unknown) => {
-        console.error("[Contents] 썸네일 로드 실패:", err);
-        if (!cancelled) setStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, [contentId, fileId]);
-
-  if (status === "loading") return <Spinner size={24} />;
-
-  if (status === "error" || !blobUrl) {
+  if (error) {
     return (
       <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#96A1AB]">
         IMAGE
@@ -75,8 +45,15 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
     );
   }
 
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={blobUrl} alt={fileName} className="max-w-full max-h-full object-contain" />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/api/contents/${contentId}/files/${fileId}/download`}
+      alt={fileName}
+      className="max-w-full max-h-full object-contain"
+      onError={() => setError(true)}
+    />
+  );
 }
 
 export function ContentsDetailAttachment({
@@ -84,7 +61,7 @@ export function ContentsDetailAttachment({
   attachments,
 }: ContentsDetailAttachmentProps) {
   const { openAlert } = useAlertStore();
-  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
   if (attachments.length === 0) return null;
 
@@ -111,24 +88,25 @@ export function ContentsDetailAttachment({
     }
   };
 
-  /** 일괄 다운로드 (요약 alert만 1회) */
+  /** 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
   const handleAllDownload = async () => {
-    setDownloadingAll(true);
-    let failCount = 0;
+    if (isDownloadingAll) return;
+    setIsDownloadingAll(true);
     try {
-      for (const file of attachments) {
-        try {
-          await downloadFile(file.id, file.fileName);
-        } catch (err: unknown) {
-          failCount++;
-          console.error("[Contents] 다운로드 실패:", err);
-        }
-      }
-      if (failCount > 0) {
-        openAlert({ type: "alert", message: `${failCount}件のファイルのダウンロードに失敗しました。` });
-      }
+      const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
     } finally {
-      setDownloadingAll(false);
+      setIsDownloadingAll(false);
     }
   };
 
@@ -142,21 +120,15 @@ export function ContentsDetailAttachment({
         <button
           type="button"
           onClick={() => { void handleAllDownload(); }}
-          disabled={downloadingAll}
-          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5] disabled:opacity-50"
+          disabled={isDownloadingAll}
+          className="flex items-center gap-2 h-[42px] px-4 border border-[#96A1AB] rounded-[4px] bg-white cursor-pointer transition-colors hover:bg-[#F5F5F5] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {downloadingAll ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#506273] text-center">
-                All Download
-              </span>
-              <span className="inline-flex items-center justify-center w-6 bg-[#506273] rounded-[10px] font-['Noto_Sans_JP'] font-medium text-[14px] leading-normal text-white text-center">
-                {attachments.length}
-              </span>
-            </>
-          )}
+          <span className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-[#506273] text-center">
+            {isDownloadingAll ? "ダウンロード中..." : "All Download"}
+          </span>
+          <span className="inline-flex items-center justify-center w-6 bg-[#506273] rounded-[10px] font-['Noto_Sans_JP'] font-medium text-[14px] leading-normal text-white text-center">
+            {attachments.length}
+          </span>
         </button>
       </div>
 

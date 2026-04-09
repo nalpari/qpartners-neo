@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Checkbox, SelectBox, Button } from "@/components/common";
+import { useIsMobile } from "@/hooks/use-media-query";
 import type { CategoryNode, SearchFilters } from "./contents-contents";
 
 // 관리자용 게시대상 옵션
@@ -44,7 +45,11 @@ export function ContentsSearch({
   onSearch,
   initialFilters,
 }: ContentsSearchProps) {
-  const [isFilterOpen, setIsFilterOpen] = useState(true);
+  const isMobile = useIsMobile();
+  // 사용자가 토글하기 전에는 뷰포트 반응형 (PC: 열림, MO: 닫힘)
+  // 토글 후에는 사용자 선택값 유지
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const isFilterOpen = userToggled ?? !isMobile;
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
   const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
@@ -111,7 +116,7 @@ export function ContentsSearch({
           <button
             type="button"
             className="flex items-center justify-center gap-2.5 h-full px-6 lg:px-4 bg-[#246097] shrink-0"
-            onClick={() => setIsFilterOpen((prev) => !prev)}
+            onClick={() => setUserToggled((prev) => !(prev ?? !isMobile))}
           >
             <span className="hidden lg:inline font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white whitespace-nowrap">
               詳細条件

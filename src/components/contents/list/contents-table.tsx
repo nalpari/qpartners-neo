@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
@@ -17,34 +16,32 @@ import {
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 
-/** 브라우저 다운로드 큐 충돌 방지를 위한 딜레이 (ms) */
-const DOWNLOAD_DELAY_MS = 300;
-const MAX_DOWNLOAD_FILES = 20;
-
-// TODO: zip 다운로드 API 완성 후 제거
-async function downloadAllAttachments(contentId: number): Promise<{ success: boolean }> {
-  try {
-    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
-    const attachments = res.data.data.attachments;
-    if (!attachments || attachments.length === 0) return { success: true };
-
-    const files = attachments.slice(0, MAX_DOWNLOAD_FILES);
-    for (const file of files) {
-      const link = document.createElement("a");
-      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
-      link.download = file.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
-    }
-    return { success: true };
-  } catch (err: unknown) {
-    console.error("[Contents] 첨부파일 다운로드 실패:", err);
-    return { success: false };
-  }
+/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 */
+function renderCategoryCell(
+  item: ContentListItem,
+  parentCategoryCode: string,
+  inlineStyle?: boolean,
+): React.ReactNode {
+  const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
+  if (!matched || matched.children.length === 0) return null;
+  const normal = matched.children.filter((c) => !c.isInternalOnly);
+  const internal = matched.children.filter((c) => c.isInternalOnly);
+  return (
+    <span style={inlineStyle ? { fontSize: "12px" } : undefined}>
+      {normal.map((c) => c.name).join(", ")}
+      {internal.length > 0 && (
+        <>
+          {normal.length > 0 ? ", " : ""}
+          <span style={inlineStyle ? { color: "#FF1A1A" } : undefined} className={inlineStyle ? undefined : "text-[#FF1A1A]"}>
+            {internal.map((c) => c.name).join(", ")}
+          </span>
+        </>
+      )}
+    </span>
+  );
 }
 
 const PER_PAGE_OPTIONS = [
@@ -80,18 +77,37 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
+/** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
+async function downloadAllAttachments(contentId: number): Promise<boolean> {
+  try {
+    const { default: api } = await import("@/lib/axios");
+    const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    a.click();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (err: unknown) {
+    console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+    return false;
+  }
+}
 
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
-  const downloadingRef = useRef(false);
+  const { openAlert } = useAlertStore();
+
   if (!params.data || params.data.attachmentCount === 0) return null;
   const contentId = params.data.id;
 
-  const handleClick = () => {
-    if (downloadingRef.current) return;
-    downloadingRef.current = true;
-    void downloadAllAttachments(contentId).finally(() => {
-      downloadingRef.current = false;
-    });
+  const handleClick = async () => {
+    const ok = await downloadAllAttachments(contentId);
+    if (!ok) {
+      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+    }
   };
 
   return (
@@ -100,7 +116,7 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
         type="button"
         aria-label="添付ファイルダウンロード"
         className="cursor-pointer"
-        onClick={handleClick}
+        onClick={() => { void handleClick(); }}
       >
         <Image
           src="/asset/images/layout/download_icon.svg"
@@ -137,16 +153,11 @@ function renderMobileTitle(item: ContentListItem) {
 }
 
 function MobileAttachmentButton({ item }: { item: ContentListItem }) {
-  const downloadingRef = useRef(false);
   if (item.attachmentCount === 0) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (downloadingRef.current) return;
-    downloadingRef.current = true;
-    void downloadAllAttachments(item.id).finally(() => {
-      downloadingRef.current = false;
-    });
+    downloadAllAttachments(item.id);
   };
 
   return (
@@ -208,32 +219,18 @@ export function ContentsTable({
     onPageSizeChange(Number(value));
   };
 
-  // 자식 카테고리 ID → 부모 그룹 코드 매핑 (카테고리 트리에서 빌드)
-  const categoryGroupMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const parent of categories) {
-      for (const child of parent.children) {
-        map.set(child.id, parent.categoryCode);
-      }
-    }
-    return map;
-  }, [categories]);
-
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
-    // 8개 카테고리 그룹 컬럼 생성 (카테고리가 있을 때만)
+    // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
     const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
       headerName: parent.name,
-      valueGetter: (params: { data?: ContentListItem }) =>
-        params.data
-          ? params.data.categories
-              .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
-              .map((c) => c.name)
-              .join(", ")
-          : "",
+      cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+        if (!params.data) return null;
+        return renderCategoryCell(params.data, parent.categoryCode, true);
+      },
       flex: 1,
       minWidth: 90,
       headerClass: "ag-header-cell-center",
-      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" },
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
     }));
 
     const baseCols: ColDef<ContentListItem>[] = [
@@ -316,18 +313,13 @@ export function ContentsTable({
     }
 
     return baseCols;
-  }, [isInternal, categories, categoryGroupMap]);
+  }, [isInternal, categories]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
-    // 카테고리 그룹별 필드
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
       label: parent.name,
       key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) =>
-        item.categories
-          .filter((c) => categoryGroupMap.get(c.id) === parent.categoryCode)
-          .map((c) => c.name)
-          .join(", "),
+      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode) ?? "",
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));
 
@@ -371,7 +363,7 @@ export function ContentsTable({
     }
 
     return base;
-  }, [isInternal, categories, categoryGroupMap]);
+  }, [isInternal, categories]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
