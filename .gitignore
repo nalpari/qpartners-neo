@@ -53,3 +53,6 @@ docs/ref/
 
 # superset
 .superset/
+
+# uploaded files
+storage/uploads/

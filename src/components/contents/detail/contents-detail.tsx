@@ -89,9 +89,22 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Design Ref: §4.1 — 사내 사용자 판별 (임시: userTp 기반)
+  // Design Ref: §4.1 — 사내 사용자 판별
   const isAdmin = user?.userTp === "ADMIN";
   const isInternal = isAdmin;
+  // 삭제/수정 권한: 서버 canModifyContent 로직과 동기화
+  // SUPER_ADMIN → 동일 부문, ADMIN(또는 authRole 미설정) → 본인 등록
+  const canModify = (() => {
+    if (!isAdmin || !data || !user) return false;
+    const role = user.authRole ?? "ADMIN"; // 과도기 JWT 폴백 (middleware와 동일)
+    if (role === "SUPER_ADMIN") {
+      return !!user.deptNm && !!data.authorDepartment && user.deptNm === data.authorDepartment;
+    }
+    if (role === "ADMIN") {
+      return user.userId === data.userId;
+    }
+    return false;
+  })();
 
   const handleDelete = () => {
     openAlert({
@@ -110,7 +123,11 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         } catch (err: unknown) {
           console.error("[Contents] 삭제 실패:", err);
           setIsDeleting(false);
-          openAlert({ type: "alert", message: "削除に失敗しました。" });
+          const status = isAxiosError(err) ? err.response?.status : null;
+          const message = status === 403
+            ? "このコンテンツを削除する権限がありません。"
+            : "削除に失敗しました。";
+          openAlert({ type: "alert", message });
         }
       },
     });
@@ -184,7 +201,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
         {/* 하단 버튼 */}
         <div className="flex items-center gap-2 w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end">
-          {isAdmin && (
+          {canModify && (
             <>
               <Button
                 variant="secondary"

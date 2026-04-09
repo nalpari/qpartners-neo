@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm build:*)",
+      "Bash(gh pr:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "mcp__plugin_bkit_bkit-pdca__bkit_pdca_status",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git status:*)",
+      "Bash(git commit:*)",
+      "Bash(gh api:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(QSP_BASE_URL=https://jp-dev.qsalesplatform.com pnpm build)",
+      "Bash(git branch:*)"
+    ]
+  }
+}
