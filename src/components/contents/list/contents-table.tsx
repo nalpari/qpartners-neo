@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
+import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
@@ -20,16 +21,37 @@ import type { ContentListItem, CategoryNode } from "./contents-contents";
 
 /** 브라우저 다운로드 큐 충돌 방지를 위한 딜레이 (ms) */
 const DOWNLOAD_DELAY_MS = 300;
+const MAX_DOWNLOAD_FILES = 20;
+
+// TODO: zip 다운로드 API 완성 후 제거
+async function downloadAllAttachments(contentId: number): Promise<{ success: boolean }> {
+  try {
+    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
+    const attachments = res.data.data.attachments;
+    if (!attachments || attachments.length === 0) return { success: true };
+
+    const files = attachments.slice(0, MAX_DOWNLOAD_FILES);
+    for (const file of files) {
+      const link = document.createElement("a");
+      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
+    }
+    return { success: true };
+  } catch (err: unknown) {
+    console.error("[Contents] 첨부파일 다운로드 실패:", err);
+    return { success: false };
+  }
+}
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
   { value: "100", label: "100" },
 ];
-
-function formatDate(dateStr: string): string {
-  return dateStr.slice(0, 10);
-}
 
 function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const data = params.data;
@@ -58,27 +80,6 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
-/** 컨텐츠의 모든 첨부파일을 순차 다운로드 */
-async function downloadAllAttachments(contentId: number) {
-  try {
-    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
-    const attachments = res.data.data.attachments;
-    if (!attachments || attachments.length === 0) return;
-
-    for (const file of attachments) {
-      const link = document.createElement("a");
-      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
-      link.download = file.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      // 브라우저 다운로드 큐 충돌 방지
-      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
-    }
-  } catch (err: unknown) {
-    console.error("[Contents] 첨부파일 다운로드 실패:", err);
-  }
-}
 
 function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const downloadingRef = useRef(false);
@@ -238,62 +239,6 @@ export function ContentsTable({
     const baseCols: ColDef<ContentListItem>[] = [
       ...categoryColumns,
       {
-        headerName: "정보유형",
-        field: "id", //정보유형 카테고리 값
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "업무분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "제품분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "제품상태",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "용도",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "내용분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "자료분류",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
-        headerName: "대상",
-        field: "id",
-        width: 90,
-        headerClass: "ag-header-cell-center",
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-      },
-      {
         headerName: "タイトル",
         field: "title",
         flex: categoryColumns.length > 0 ? 2 : 3,
@@ -388,14 +333,6 @@ export function ContentsTable({
 
     const base: MobileCardField<ContentListItem>[] = [
       ...categoryFields,
-      { label: "정보유형", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "업무분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "제품분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "제품상태", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "용도", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "내용분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "자료분류", key: "id" as keyof ContentListItem, render: () => "" },
-      { label: "대상", key: "id" as keyof ContentListItem, render: () => "" },
       {
         label: "タイトル",
         key: "title",
@@ -482,21 +419,29 @@ export function ContentsTable({
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
-          <div className="flex flex-col gap-6">
-            <div style={{ maxHeight: 800, overflow: "auto" }}>
-              <DataGrid<ContentListItem>
-                columnDefs={columnDefs}
-                rowData={data}
-                className="contents-grid"
-                maxHeight={0}
+          {data.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[300px]">
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
+                該当するコンテンツがありません。
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <div style={{ maxHeight: 800, overflow: "auto" }}>
+                <DataGrid<ContentListItem>
+                  columnDefs={columnDefs}
+                  rowData={data}
+                  className="contents-grid"
+                  maxHeight={0}
+                />
+              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={onPageChange}
               />
             </div>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={onPageChange}
-            />
-          </div>
+          )}
         </div>
       )}
 
@@ -507,12 +452,20 @@ export function ContentsTable({
             {topBar}
           </div>
           <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
-          <MobileCardList<ContentListItem>
-            data={data}
-            fields={mobileFields}
-            keyExtractor={(item) => String(item.id)}
-            onItemClick={handleMobileItemClick}
-          />
+          {data.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[300px] bg-white">
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
+                該当するコンテンツがありません。
+              </p>
+            </div>
+          ) : (
+            <MobileCardList<ContentListItem>
+              data={data}
+              fields={mobileFields}
+              keyExtractor={(item) => String(item.id)}
+              onItemClick={handleMobileItemClick}
+            />
+          )}
 
           {currentPage < totalPages && (
             <button

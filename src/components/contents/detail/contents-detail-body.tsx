@@ -2,6 +2,8 @@
 
 import DOMPurify from "isomorphic-dompurify";
 
+import { formatDate } from "@/lib/format";
+
 // Design Ref: §4.5 — ISO 날짜 포맷 + HTML body 렌더링
 
 interface ContentsDetailBodyProps {
@@ -9,10 +11,6 @@ interface ContentsDetailBodyProps {
   createdAt: string;
   updatedAt: string;
   body: string | null;
-}
-
-function formatDate(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, ".");
 }
 
 function DateBadge({ label, date }: { label: string; date: string }) {
@@ -69,9 +67,7 @@ export function ContentsDetailBody({
         <div
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{
-            __html: typeof window !== "undefined"
-              ? DOMPurify.sanitize(body.replace(/\n/g, "<br>"))
-              : body.replace(/\n/g, "<br>"),
+            __html: DOMPurify.sanitize(body.replace(/\n/g, "<br>")),
           }}
         />
       )}
