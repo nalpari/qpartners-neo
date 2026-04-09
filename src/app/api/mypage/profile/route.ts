@@ -180,6 +180,14 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // QSP updateUser 호출 전 email 필수 확인 (GET 핸들러와 동일한 가드)
+    if (!user.email) {
+      return NextResponse.json(
+        { error: "メール情報がないためプロフィールを修正できません" },
+        { status: 400 },
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -211,16 +219,17 @@ export async function PUT(request: NextRequest) {
 
     // QSP 수정 API 호출 (판매점/일반)
     // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
-    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다. (admin/members 와 동일 패턴)
+    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다.
+    //       (admin/members 라우트와 동일하게 POST + updateUser 조합을 사용)
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
-        // 수정 대상 식별자 — admin/members updateUser 호출 패턴과 동일하게 userId 를 명시 전달.
-        // GENERAL 은 userId == email 이지만, QSP 가 우선 식별자로 사용하는 키를 모호하지 않게 한다.
+        // QSP updateUser 의 수정 대상 키는 userId 이며, JWT 에서 추출한 값을 그대로 전달한다.
         userId: user.userId,
         email: user.email,
         userTp: user.userTp,
-        // STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달 (ADMIN은 상단에서 501 처리됨)
+        // STORE는 loginId ≠ email 일 수 있으므로 loginId 를 명시 전달. (ADMIN 은 상단에서 501 처리)
+        // QSP 스펙상 STORE 의 loginId 는 userId 와 동일 값으로 저장되어, 중복 전송이지만 스펙 준수를 위해 유지한다.
         ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
@@ -283,10 +292,12 @@ export async function PUT(request: NextRequest) {
         );
       }
       if (parsed.data.result.resultCode !== "S") {
+        // QSP message 에 내부 SQL 에러 / PII 가 포함될 수 있어 로그 길이를 제한한다.
+        const safeMessage = parsed.data.result.message?.slice(0, 200);
         console.error(
           "[PUT /api/mypage/profile] QSP 비즈니스 에러:",
           parsed.data.result.resultCode,
-          parsed.data.result.message,
+          safeMessage,
         );
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
