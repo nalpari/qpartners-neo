@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 4. 발송대상 객체 구성 (responseKey 사용, as 캐스팅 금지)
+    // 4. 발송대상 객체 구성 (responseKey 사용)
     const targets: Record<string, boolean> = {};
     for (const t of TARGET_LABELS) {
       targets[t.responseKey] = mail[t.key] === true;

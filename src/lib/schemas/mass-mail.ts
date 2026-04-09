@@ -30,7 +30,7 @@ export const massMailCreateSchema = z.object({
   targetConstructor: formBool,
   targetGeneral: formBool,
   optOut: formBool,
-  // CRLF 헤더 인젝션 방어 — subject에 개행 문자 금지
+  // 이메일 헤더 인젝션 방어 — subject에 개행 문자 금지
   subject: z.string().min(1, "件名は必須です").max(500)
     .refine((v) => !/[\r\n]/.test(v), { message: "件名に改行を含めることはできません" }),
   body: z.string().min(1, "本文は必須です"),

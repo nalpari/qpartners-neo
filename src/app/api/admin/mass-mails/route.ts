@@ -71,12 +71,16 @@ export async function GET(request: NextRequest) {
     // 발송대상 필터: responseKey 기반 ASCII 키 ("super_admin", "admin" 등)
     if (target) {
       const targetField = TARGET_FILTER_MAP[target];
-      if (targetField) {
-        where[targetField] = true;
+      if (!targetField) {
+        return NextResponse.json(
+          { error: "送信先フィルタの値が正しくありません" },
+          { status: 400 },
+        );
       }
+      where[targetField] = true;
     }
 
-    // 4. 조회 (최근 발송순 정렬)
+    // 4. 조회 (최근 등록순 정렬)
     const [totalCount, list] = await Promise.all([
       prisma.massMail.count({ where }),
       prisma.massMail.findMany({
@@ -124,14 +128,29 @@ export async function GET(request: NextRequest) {
 
 // POST /api/admin/mass-mails — 대량메일 등록 (multipart/form-data)
 export async function POST(request: NextRequest) {
+  const writtenFiles: { absolutePath: string; file: File; filePath: string }[] = [];
   try {
     // 1. 관리자 권한 확인
     const authResult = requireAdmin(request.headers);
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
-    // 2. Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (DoS 방어)
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    // 2. Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (honest client 대상 사전 체크)
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      console.warn("[POST /api/admin/mass-mails] Content-Length 누락 — chunked encoding 거부");
+      return NextResponse.json(
+        { error: "Content-Lengthヘッダーが必要です" },
+        { status: 411 },
+      );
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        { error: "リクエストサイズが不正です" },
+        { status: 400 },
+      );
+    }
     const MAX_BATCH_SIZE = MAX_FILE_SIZE * MAX_FILES + 1024 * 1024; // ~501MB + 1MB 헤더 여유
     if (contentLength > MAX_BATCH_SIZE) {
       console.warn("[POST /api/admin/mass-mails] Content-Length 초과:", contentLength);
@@ -205,7 +224,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. HTML body sanitization (stored XSS 방어 — script, event handlers, javascript: URL 제거)
+    // 6. HTML body sanitization (stored XSS 방어 — 허용 태그/속성 화이트리스트 적용)
     const sanitizedBody = DOMPurify.sanitize(data.body, {
       ALLOWED_TAGS: [
         "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
@@ -218,10 +237,18 @@ export async function POST(request: NextRequest) {
     });
 
     // 7. userType 매핑
-    const userType = resolveUserType(user);
+    let userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
+    try {
+      userType = resolveUserType(user);
+    } catch {
+      console.error("[POST /api/admin/mass-mails] userType 매핑 실패:", user.userType);
+      return NextResponse.json(
+        { error: "ユーザー種別が不正です" },
+        { status: 400 },
+      );
+    }
 
     // 8. 첨부파일 디스크 기록 (트랜잭션 전에 준비)
-    const writtenFiles: { absolutePath: string; file: File; filePath: string }[] = [];
     const tempId = randomUUID();
     if (files.length > 0) {
       const uploadDir = join(process.cwd(), "storage", "uploads", "mass-mails", tempId);
@@ -274,7 +301,7 @@ export async function POST(request: NextRequest) {
           await tx.massMailAttachment.create({
             data: {
               massMailId: massMail.id,
-              // basename 적용된 이름만 저장 (Zip Slip / XSS 방어)
+              // basename 적용된 이름만 저장 (path traversal / XSS 방어)
               fileName: basename(w.file.name),
               filePath: w.filePath,
               fileSize: BigInt(w.file.size),
@@ -291,7 +318,7 @@ export async function POST(request: NextRequest) {
       // DB 트랜잭션 실패 시 디스크 파일 정리
       for (const w of writtenFiles) {
         await unlink(w.absolutePath).catch((unlinkErr: unknown) => {
-          console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", unlinkErr);
+          console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", w.absolutePath, unlinkErr);
         });
       }
       throw dbError;
@@ -308,6 +335,12 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error: unknown) {
+    // 파일 쓰기 도중 실패 등 — 이미 기록된 파일 cleanup
+    for (const w of writtenFiles) {
+      await unlink(w.absolutePath).catch((e: unknown) => {
+        console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", w.absolutePath, e);
+      });
+    }
     console.error("[POST /api/admin/mass-mails] 등록 실패:", error);
     return NextResponse.json(
       { error: "メールの登録に失敗しました" },
