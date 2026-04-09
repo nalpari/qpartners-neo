@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반 (클라이언트 잘못 아님).
-    // 4xx 로 반환하면 운영 알람 노이즈에 묻히므로 500 으로 올리고 사용자는 재로그인 유도.
+    // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
+    // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
     if (!user.email) {
       console.error(
         "[GET /api/mypage/profile] JWT missing email",
@@ -197,8 +197,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // JWT 에 email 이 없는 것은 토큰 발급 단계의 서버 invariant 위반.
-    // 4xx 가 아닌 500 으로 반환하여 운영 알람에 노출되게 하고, 사용자는 재로그인 유도.
+    // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
+    // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
     if (!user.email) {
       console.error(
         "[PUT /api/mypage/profile] JWT missing email",
@@ -242,15 +242,16 @@ export async function PUT(request: NextRequest) {
     // QSP 수정 API 호출 (판매점/일반)
     // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
     //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다.
-    //       (admin/members 라우트와 동일하게 POST + updateUser 조합을 사용)
+    //       admin/members 도 동일 엔드포인트를 사용하지만, 전달 필드가 다르다
+    //       (admin 은 메타 필드만, profile 은 전체 회사/개인 정보 포함).
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
-        // QSP updateUser 의 수정 대상 키는 userId 이며, JWT 에서 추출한 값을 그대로 전달한다.
         userId: user.userId,
         email: user.email,
         userTp: user.userTp,
-        // STORE 는 QSP updateUser 스펙상 loginId 를 별도 필드로 요구하므로 명시 전달한다.
+        // STORE 는 userId ≠ loginId 일 수 있어 loginId 를 명시 전달한다.
+        // (admin/members 는 메타 필드만 수정하므로 loginId 미전달)
         // (ADMIN 은 상단에서 501 처리되어 이 분기에 도달하지 않음)
         ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
@@ -317,7 +318,8 @@ export async function PUT(request: NextRequest) {
         // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 제한한다.
         // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
         // fullLength 는 메시지 길이를 통해 내부 에러 구조를 역추론할 수 있어 제외한다.
-        const rawMessage = parsed.data.result.message ?? "";
+        // qspResultSchema.message 는 z.string() (non-nullable) — safeParse 통과 시 string 보장
+        const rawMessage = parsed.data.result.message;
         const truncatedMessage = rawMessage.slice(0, QSP_LOG_MSG_MAX_LEN);
         const truncated = rawMessage.length > QSP_LOG_MSG_MAX_LEN;
         console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
