@@ -54,12 +54,17 @@ export async function GET(request: NextRequest, { params }: Params) {
     for (const t of TARGET_LABELS) {
       targets[t.responseKey] = mail[t.key] === true;
     }
+    const targetsLabel = TARGET_LABELS
+      .filter((t) => mail[t.key] === true)
+      .map((t) => t.label)
+      .join(", ") || "—";
 
     // 5. 응답 매핑
     const mapped = {
       id: mail.id,
       senderName: mail.senderName,
       targets,
+      targetsLabel,
       optOut: mail.optOut,
       subject: mail.subject,
       body: mail.body,
@@ -74,7 +79,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       createdAt: mail.createdAt.toISOString(),
     };
 
-    console.log(`[GET /api/admin/mass-mails/:id] 대량메일 상세 조회 — id: ${mail.id}`);
+    console.log(`[GET /api/admin/mass-mails/:id] 대량메일 상세 조회 — id: ${mail.id}, userId: ${authResult.user.userId}`);
 
     return NextResponse.json({ data: mapped });
   } catch (error: unknown) {

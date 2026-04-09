@@ -2318,7 +2318,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 대량메일 목록 (검색/필터/페이징)",
         parameters: [
           { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
-          { name: "target", in: "query", schema: { type: "string" }, description: "발송대상 필터" },
+          { name: "target", in: "query", schema: { type: "string", enum: ["super_admin", "admin", "first_store", "second_store", "seko", "general"] }, description: "발송대상 필터" },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
@@ -2376,6 +2376,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         id: { type: "integer" },
+                        status: { type: "string", enum: ["draft", "pending"] },
                         message: { type: "string" },
                       },
                     },
@@ -2384,9 +2385,34 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("검증 실패"),
+          "400": {
+            description: "검증 실패",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                    details: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          field: { type: "string" },
+                          message: { type: "string" },
+                        },
+                      },
+                    },
+                  },
+                  required: ["error"],
+                },
+              },
+            },
+          },
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
+          "411": errorResponse("Content-Length 필요"),
+          "413": errorResponse("요청 크기 초과"),
         },
       },
     },
@@ -3228,13 +3254,24 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "integer" },
           status: { type: "string", enum: ["draft", "pending", "sent"] },
-          targets: { type: "string", description: "발송대상 콤마 구분" },
+          targets: {
+            type: "object",
+            properties: {
+              super_admin: { type: "boolean" },
+              admin: { type: "boolean" },
+              first_store: { type: "boolean" },
+              second_store: { type: "boolean" },
+              seko: { type: "boolean" },
+              general: { type: "boolean" },
+            },
+          },
+          targetsLabel: { type: "string", description: "발송대상 콤마 구분 표시용" },
           subject: { type: "string" },
           hasAttachment: { type: "boolean" },
           senderName: { type: "string" },
           senderId: { type: "string" },
-          sentAt: { type: "string", nullable: true },
-          createdAt: { type: "string" },
+          sentAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
       MassMailDetail: {
@@ -3253,11 +3290,12 @@ export const openApiSpec: OpenAPIV3.Document = {
               general: { type: "boolean" },
             },
           },
+          targetsLabel: { type: "string", description: "발송대상 콤마 구분 표시용" },
           optOut: { type: "boolean" },
           subject: { type: "string" },
           body: { type: "string" },
           status: { type: "string", enum: ["draft", "pending", "sent"] },
-          sentAt: { type: "string", nullable: true },
+          sentAt: { type: "string", format: "date-time", nullable: true },
           attachments: {
             type: "array",
             items: {
@@ -3270,7 +3308,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           createdBy: { type: "string" },
-          createdAt: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
         },
       },
       MassMailCreateRequest: {
