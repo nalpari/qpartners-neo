@@ -76,27 +76,18 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     //       ON DELETE 절을 재생성하지 않아 실제 DB 제약이 이전 상태(NOT NULL + RESTRICT)로
     //       남는 환경이 관찰되었다 (Montreal Review on PR #29 에서 제기된
     //       "db push 가 FK ON DELETE 절을 재생성하지 않는다" 경고가 실제 장애로 현실화).
-    //       본 PR 의 정식 마이그레이션
     //       `prisma/migrations/20260409000000_fix_download_log_attachment_nullable_set_null`
-    //       이 모든 환경에서 스키마-DB 상태를 일치시키지만, 이미 드리프트된 환경에서 즉시
-    //       복구되도록 애플리케이션 레벨에서도 참조를 먼저 끊은 뒤 delete 를 수행한다.
+    //       마이그레이션으로 모든 환경에서 스키마-DB 상태를 일치시켰으며, 애플리케이션
+    //       레벨에서도 참조를 먼저 끊은 뒤 delete 를 수행하여 재드리프트 시에도 안전하게
+    //       동작하도록 방어한다.
     //
     // 동시 DELETE race: 한쪽이 먼저 삭제하면 다른 쪽은 P2025 → 404 로 반환 (500 아님).
     try {
-      // NOTE: 현재 커밋에 포함된 Prisma 생성 client (node_modules/.prisma/client) 가 schema.prisma
-      //       와 out-of-sync 상태여서 `downloadLog.updateMany({ data: { attachmentId: null } })`
-      //       호출 시 TS2322 가 발생한다. (schema 는 `attachmentId Int?` 로 nullable 이지만
-      //       생성된 update 타입이 null 을 허용하지 않음 — `prisma generate` 재실행 필요.)
-      //       핫픽스 스코프 유지를 위해 `$executeRaw` 로 DB 레벨에서 직접 NULL 처리한다.
-      //       SQL 주입 방지를 위해 tagged template 파라미터 바인딩 사용.
-      //
-      // TODO(후속 작업 — 본 NOTE 블록 L88-94 및 아래 `$executeRaw` 호출 삭제 대상):
-      //       Docker `qpartners-db` 컨테이너 경유로 `prisma generate` 실행하여 generated client
-      //       를 스키마와 재동기화 후, raw SQL 을 `prisma.downloadLog.updateMany({ where: {...},
-      //       data: { attachmentId: null } })` 표준 호출로 되돌린다. 배경 주석과 마이그레이션
-      //       파일은 유지 (히스토리 기록).
       await prisma.$transaction([
-        prisma.$executeRaw`UPDATE qp_download_logs SET attachment_id = NULL WHERE attachment_id = ${parsedFileId.data}`,
+        prisma.downloadLog.updateMany({
+          where: { attachmentId: parsedFileId.data },
+          data: { attachmentId: null },
+        }),
         prisma.contentAttachment.delete({
           where: { id: parsedFileId.data },
         }),
