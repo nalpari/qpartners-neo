@@ -42,6 +42,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "DownloadLog", description: "다운로드 이력 조회" },
     { name: "MyPage", description: "마이페이지 (프로필/비밀번호/탈퇴/시공점)" },
     { name: "Member", description: "회원관리 (관리자 전용)" },
+    { name: "MassMail", description: "대량메일 발송 (관리자 전용)" },
   ],
 
   paths: {
@@ -2308,6 +2309,115 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+
+    // ─── MassMail (대량메일) ───
+    "/admin/mass-mails": {
+      get: {
+        tags: ["MassMail"],
+        summary: "대량메일 목록 조회",
+        description: "관리자 전용 — 대량메일 목록 (검색/필터/페이징)",
+        parameters: [
+          { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
+          { name: "target", in: "query", schema: { type: "string" }, description: "발송대상 필터" },
+          { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
+        ],
+        responses: {
+          "200": {
+            description: "대량메일 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        totalCount: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        list: {
+                          type: "array",
+                          items: { $ref: "#/components/schemas/MassMailListItem" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+        },
+      },
+      post: {
+        tags: ["MassMail"],
+        summary: "대량메일 등록",
+        description: "관리자 전용 — multipart/form-data (draft 또는 pending)",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: { $ref: "#/components/schemas/MassMailCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "등록 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        message: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("검증 실패"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+        },
+      },
+    },
+    "/admin/mass-mails/{id}": {
+      get: {
+        tags: ["MassMail"],
+        summary: "대량메일 상세 조회",
+        description: "관리자 전용 — 대량메일 상세 + 첨부파일 목록",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "대량메일 상세",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/MassMailDetail" },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("메일 없음"),
+        },
+      },
+    },
   },
 
   components: {
@@ -3110,6 +3220,75 @@ export const openApiSpec: OpenAPIV3.Document = {
           attributeChangeNotification: { type: "boolean" },
           status: { type: "string", enum: ["active", "deleted"] },
           newsRcptYn: { type: "string", enum: ["Y", "N"] },
+        },
+      },
+      // ─── MassMail Schemas (대량메일) ───
+      MassMailListItem: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          targets: { type: "string", description: "발송대상 콤마 구분" },
+          subject: { type: "string" },
+          hasAttachment: { type: "boolean" },
+          senderName: { type: "string" },
+          senderId: { type: "string" },
+          sentAt: { type: "string", nullable: true },
+          createdAt: { type: "string" },
+        },
+      },
+      MassMailDetail: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          senderName: { type: "string" },
+          targets: {
+            type: "object",
+            properties: {
+              super_admin: { type: "boolean" },
+              admin: { type: "boolean" },
+              first_store: { type: "boolean" },
+              second_store: { type: "boolean" },
+              seko: { type: "boolean" },
+              general: { type: "boolean" },
+            },
+          },
+          optOut: { type: "boolean" },
+          subject: { type: "string" },
+          body: { type: "string" },
+          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          sentAt: { type: "string", nullable: true },
+          attachments: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                fileName: { type: "string" },
+                fileSize: { type: "integer", nullable: true },
+              },
+            },
+          },
+          createdBy: { type: "string" },
+          createdAt: { type: "string" },
+        },
+      },
+      MassMailCreateRequest: {
+        type: "object",
+        required: ["senderName", "subject", "body", "status"],
+        properties: {
+          senderName: { type: "string" },
+          targetSuperAdmin: { type: "boolean" },
+          targetAdmin: { type: "boolean" },
+          targetFirstDealer: { type: "boolean" },
+          targetSecondDealer: { type: "boolean" },
+          targetSeko: { type: "boolean" },
+          targetGeneral: { type: "boolean" },
+          optOut: { type: "boolean", description: "뉴스레터 수신거부 제외 여부" },
+          subject: { type: "string" },
+          body: { type: "string" },
+          status: { type: "string", enum: ["draft", "pending"], description: "draft=임시저장, pending=발송대기" },
+          files: { type: "array", items: { type: "string", format: "binary" } },
         },
       },
     },
