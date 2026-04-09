@@ -81,7 +81,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     onSuccess: () => {
       openAlert({
         type: "alert",
-        message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+        message: "お問い合わせが受け付けられました。\nご入力いただいたメールアドレスに確認メールをお送りしました。\n内容確認後、担当者よりご連絡差し上げます。",
       });
       handleCancel();
     },
