@@ -188,15 +188,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 관리자 프로필 수정은 미구현 (Q.ORDER T01만 — 향후 구현)
-    // body 파싱·검증 전에 조기 차단하여 불필요한 작업을 방지한다.
-    if (user.userTp === "ADMIN") {
-      return NextResponse.json(
-        { error: "管理者のプロフィール修正はまだ対応されていません" },
-        { status: 501 },
-      );
-    }
-
     // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
     // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
     if (!user.email) {
@@ -250,10 +241,8 @@ export async function PUT(request: NextRequest) {
         userId: user.userId,
         email: user.email,
         userTp: user.userTp,
-        // STORE 는 userId ≠ loginId 일 수 있어 loginId 를 명시 전달한다.
-        // (admin/members 는 메타 필드만 수정하므로 loginId 미전달)
-        // (ADMIN 은 상단에서 501 처리되어 이 분기에 도달하지 않음)
-        ...(user.userTp === "STORE" && { loginId: user.userId }),
+        // STORE/ADMIN 은 userId ≠ email 일 수 있어 loginId 를 명시 전달한다.
+        ...((user.userTp === "STORE" || user.userTp === "ADMIN") && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
         user1stNmKana: d.meiKana,
