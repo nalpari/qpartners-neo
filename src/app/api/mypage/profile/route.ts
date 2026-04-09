@@ -230,19 +230,15 @@ export async function PUT(request: NextRequest) {
 
     const d = result.data;
 
-    // QSP 수정 API 호출 (판매점/일반)
-    // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
-    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다.
-    //       admin/members 도 동일 엔드포인트를 사용하지만, 전달 필드가 다르다
-    //       (admin 은 메타 필드만, profile 은 전체 회사/개인 정보 포함).
+    // QSP 마이페이지 회원정보 수정 API (POST /api/qpartners/user/updateUserDtl)
+    // 사양서 v1.0 기준 필수: userTp, userId, accsSiteCd, user1stNm, user2ndNm,
+    //   user1stNmKana, user2ndNmKana, compNm, compNmKana, compPostCd,
+    //   compAddr, compAddr2, compTelNo, newsRcptYn
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
         userId: user.userId,
-        email: user.email,
         userTp: user.userTp,
-        // STORE/ADMIN 은 userId ≠ email 일 수 있어 loginId 를 명시 전달한다.
-        ...((user.userTp === "STORE" || user.userTp === "ADMIN") && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
         user1stNmKana: d.meiKana,
@@ -257,12 +253,12 @@ export async function PUT(request: NextRequest) {
         deptNm: d.department,
         pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
-        updBy: user.userId,
+        bizNo: d.corporateNo,
       };
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.updateUser, {
+        qspResponse = await fetch(QSP_API.updateUserDtl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(10_000),
