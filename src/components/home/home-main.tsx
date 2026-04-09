@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { HomeVisual } from "./home-visual";
 import { HomeSearchMobile } from "./home-search-mobile";
@@ -9,8 +9,12 @@ import { HomeSidebar } from "./home-sidebar";
 import { HomeDownloads } from "./home-downloads";
 
 export function HomeMain() {
-  const queryClient = useQueryClient();
-  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
   const isLoggedIn = user != null;
 
   return (

@@ -39,9 +39,10 @@ interface ContentDetailData {
   }[];
   categories: {
     id: number;
-    name: string;
     categoryCode: string;
+    name: string;
     isInternalOnly: boolean;
+    children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
   }[];
   attachments: {
     id: number;
@@ -97,7 +98,9 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
     if (!isAdmin || !data || !user) return false;
     const role = user.authRole ?? "ADMIN"; // 과도기 JWT 폴백 (middleware와 동일)
     if (role === "SUPER_ADMIN") {
-      return !!user.deptNm && !!data.authorDepartment && user.deptNm === data.authorDepartment;
+      // 양쪽 모두 부서 정보가 없으면 수정 불가 (fail-closed)
+      if (!user.deptNm || !data.authorDepartment) return false;
+      return user.deptNm === data.authorDepartment;
     }
     if (role === "ADMIN") {
       return user.userId === data.userId;

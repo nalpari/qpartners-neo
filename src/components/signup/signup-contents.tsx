@@ -201,7 +201,8 @@ export function SignupContents() {
     openPopup("zipcode-search", {
       onSelect: (address: { zipcode: string; prefecture: string; city: string; town: string }) => {
         updateField("postalCode", address.zipcode);
-        updateField("address1", `${address.prefecture}${address.city}${address.town}`);
+        updateField("address1", `${address.prefecture}${address.city}`);
+        updateField("address2", address.town);
       },
     });
   };

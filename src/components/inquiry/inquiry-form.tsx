@@ -19,7 +19,7 @@ interface CodeDetail {
 
 // 외부 컴포넌트: auth 캐시 구독 → user 변경 시 key로 내부 폼 리마운트
 export function InquiryForm() {
-  // 헤더가 관리하는 auth 캐시를 구독 (직접 fetch 안 함, 캐시 변경 시 리렌더링)
+  // useQuery로 캐시 구독 — auth 상태 변경 시 리렌더링 보장
   const { data: user = null } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
     queryFn: () => null,
@@ -35,6 +35,183 @@ export function InquiryForm() {
   );
 }
 
+/* ─── 사용자 정보 필드 (PC 테이블 행) ─── */
+type InputType = "text" | "email" | "tel" | "password" | "number" | "url";
+
+interface UserInfoField {
+  label: string;
+  value: string;
+  input?: {
+    value: string;
+    onChange: (v: string) => void;
+    type?: InputType;
+    placeholder: string;
+  };
+}
+
+function PcUserInfoRow({ fields }: { fields: [UserInfoField, UserInfoField] }) {
+  return (
+    <div className="flex gap-[4px]">
+      {fields.map((field) => (
+        <div key={field.label} className="flex flex-1 gap-[4px] h-[58px] items-center">
+          <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
+            <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
+              {field.label}
+            </span>
+          </div>
+          {field.input ? (
+            <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
+              <InputBox
+                value={field.input.value}
+                onChange={field.input.onChange}
+                type={field.input.type}
+                placeholder={field.input.placeholder}
+                className="border-[#ebebeb] h-[42px]"
+              />
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
+              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
+                {field.value}
+              </p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MoUserInfoField({ field, isFirst }: { field: UserInfoField; isFirst?: boolean }) {
+  return (
+    <div className={`flex flex-col gap-[8px] ${isFirst ? "" : "border-t border-[#eff4f8] pt-[18px] mt-[18px]"}`}>
+      <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
+        {field.label}
+      </p>
+      {field.input ? (
+        <InputBox
+          value={field.input.value}
+          onChange={field.input.onChange}
+          type={field.input.type}
+          placeholder={field.input.placeholder}
+        />
+      ) : (
+        <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+          {field.value}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ─── 문의 폼 필드 (PC/MO 공통) ─── */
+function InquiryFields({
+  inquiryType,
+  setInquiryType,
+  inquiryTypeOptions,
+  isCodeLoading,
+  isCodeLoadError,
+  title,
+  setTitle,
+  content,
+  setContent,
+  isMobile,
+}: {
+  inquiryType: string;
+  setInquiryType: (v: string) => void;
+  inquiryTypeOptions: { label: string; value: string }[];
+  isCodeLoading: boolean;
+  isCodeLoadError: boolean;
+  title: string;
+  setTitle: (v: string) => void;
+  content: string;
+  setContent: (v: string) => void;
+  isMobile?: boolean;
+}) {
+  const separator = isMobile ? "border-t border-[#eff4f8] pt-[18px] mt-[18px]" : "";
+
+  return (
+    <>
+      <div className={`flex flex-col gap-[8px] ${separator}`}>
+        <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
+          お問い合わせタイプ
+          <span className="text-[#ff1a1a]">*</span>
+        </p>
+        <SelectBox
+          options={inquiryTypeOptions}
+          value={inquiryType}
+          onChange={setInquiryType}
+          placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
+          disabled={isCodeLoading}
+        />
+        {isCodeLoadError && (
+          <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
+            お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
+          </p>
+        )}
+      </div>
+
+      <div className={`flex flex-col gap-[8px] ${separator}`}>
+        <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
+          タイトル
+          <span className="text-[#ff1a1a]">*</span>
+        </p>
+        <InputBox value={title} onChange={setTitle} placeholder="" />
+      </div>
+
+      <div className={`flex flex-col gap-[8px] ${separator}`}>
+        <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
+          内容
+          <span className="text-[#ff1a1a]">*</span>
+        </p>
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          className="w-full h-[300px] bg-white border border-[#ebebeb] rounded-[4px] p-[16px] resize-none outline-none font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#AAAAAA] focus:border-[#101010] transition-colors duration-150"
+        />
+      </div>
+    </>
+  );
+}
+
+/* ─── 액션 버튼 ─── */
+function ActionButtons({
+  onCancel,
+  onSubmit,
+  isPending,
+  isMobile,
+}: {
+  onCancel: () => void;
+  onSubmit: () => void;
+  isPending: boolean;
+  isMobile?: boolean;
+}) {
+  return (
+    <div className={
+      isMobile
+        ? "flex items-center justify-center gap-[6px] px-[24px] pb-[28px] bg-white"
+        : "flex items-center justify-end gap-2 pb-[4px]"
+    }>
+      <Button
+        variant="secondary"
+        className={isMobile ? "flex-1" : "w-[97px]"}
+        onClick={onCancel}
+      >
+        キャンセル
+      </Button>
+      <Button
+        variant="primary"
+        className={isMobile ? "flex-1 shrink-0" : "w-[110px]"}
+        onClick={onSubmit}
+        disabled={isPending}
+      >
+        {isPending ? "送信中..." : "お問い合わせ"}
+      </Button>
+    </div>
+  );
+}
+
+/* ─── 메인 폼 ─── */
 function InquiryFormInner({ user }: { user: LoginUser | null }) {
   const { openAlert } = useAlertStore();
   const isLoggedIn = !!user;
@@ -64,8 +241,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
 
   const [companyName, setCompanyName] = useState(user?.compNm ?? "");
   const [name, setName] = useState(user?.userNm ?? "");
-  // TODO: profile API 안정화 후 user?.telNo 연동 — 현재 LoginUser 타입에 telNo 미포함
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(user?.telNo ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [inquiryType, setInquiryType] = useState("");
   const [title, setTitle] = useState("");
@@ -87,7 +263,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     onSuccess: () => {
       openAlert({
         type: "alert",
-        message: "お問い合わせが受け付けられました。\n内容確認後、担当者よりご連絡差し上げます。",
+        message: "お問い合わせが受け付けられました。\nご入力いただいたメールアドレスに確認メールをお送りしました。\n内容確認後、担当者よりご連絡差し上げます。",
       });
       handleCancel();
     },
@@ -113,7 +289,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     if (isLoggedIn) {
       setCompanyName(user?.compNm ?? "");
       setName(user?.userNm ?? "");
-      setPhone("");
+      setPhone(user?.telNo ?? "");
       setEmail(user?.email ?? "");
     } else {
       setCompanyName("");
@@ -180,6 +356,42 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     });
   };
 
+  // 사용자 정보 필드 정의 (로그인 시 읽기전용, 비로그인 시 입력)
+  const userFields: UserInfoField[] = [
+    {
+      label: "会社名",
+      value: companyName,
+      input: isLoggedIn ? undefined : { value: companyName, onChange: setCompanyName, placeholder: "会社名を入力" },
+    },
+    {
+      label: "氏名",
+      value: name,
+      input: isLoggedIn ? undefined : { value: name, onChange: setName, placeholder: "氏名を入力" },
+    },
+    {
+      label: "電話番号",
+      value: phone || "-",
+      input: isLoggedIn ? undefined : { value: phone, onChange: setPhone, type: "tel", placeholder: "電話番号を入力" },
+    },
+    {
+      label: "メールアドレス",
+      value: email,
+      input: isLoggedIn ? undefined : { value: email, onChange: setEmail, type: "email", placeholder: "メールアドレスを入力" },
+    },
+  ];
+
+  const inquiryFieldsProps = {
+    inquiryType,
+    setInquiryType,
+    inquiryTypeOptions,
+    isCodeLoading,
+    isCodeLoadError,
+    title,
+    setTitle,
+    content,
+    setContent,
+  };
+
   return (
     <>
       {submitMutation.isPending && <DimSpinner />}
@@ -187,321 +399,28 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
       {/* PC 카드 */}
       <div className="hidden lg:flex flex-col gap-[24px] w-[1440px]">
         <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px]">
-          {/* 사용자 정보 — 2열 테이블 */}
           <div className="flex flex-col gap-[4px]">
-            {/* Row 1: 회사명 / 성명 */}
-            <div className="flex gap-[4px]">
-              <div className="flex flex-1 gap-[4px] h-[58px] items-center">
-                <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                    会社名
-                  </span>
-                </div>
-                {isLoggedIn ? (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
-                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                      {companyName}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
-                    <InputBox
-                      value={companyName}
-                      onChange={setCompanyName}
-                      placeholder="会社名を入力"
-                      className="border-[#ebebeb] h-[42px]"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-1 gap-[4px] h-[58px] items-center">
-                <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                    氏名
-                  </span>
-                </div>
-                {isLoggedIn ? (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
-                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                      {name}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
-                    <InputBox
-                      value={name}
-                      onChange={setName}
-                      placeholder="氏名を入力"
-                      className="border-[#ebebeb] h-[42px]"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Row 2: 전화번호 / 메일주소 */}
-            <div className="flex gap-[4px]">
-              <div className="flex flex-1 gap-[4px] h-[58px] items-center">
-                <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                    電話番号
-                  </span>
-                </div>
-                {isLoggedIn ? (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
-                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                      {phone}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
-                    <InputBox
-                      value={phone}
-                      onChange={setPhone}
-                      type="tel"
-                      placeholder="電話番号を入力"
-                      className="border-[#ebebeb] h-[42px]"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-1 gap-[4px] h-[58px] items-center">
-                <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                    メールアドレス
-                  </span>
-                </div>
-                {isLoggedIn ? (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] pl-[24px] pr-[8px] py-[8px]">
-                    <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                      {email}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-1 items-center h-full bg-white border border-[#eaf0f6] rounded-[6px] p-[8px]">
-                    <InputBox
-                      value={email}
-                      onChange={setEmail}
-                      type="email"
-                      placeholder="メールアドレスを入力"
-                      className="border-[#ebebeb] h-[42px]"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
+            <PcUserInfoRow fields={[userFields[0], userFields[1]]} />
+            <PcUserInfoRow fields={[userFields[2], userFields[3]]} />
           </div>
-
-          {/* 문의 폼 필드 */}
           <div className="flex flex-col gap-[18px] mt-[24px]">
-            {/* 문의유형 */}
-            <div className="flex flex-col gap-[8px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                お問い合わせタイプ
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <SelectBox
-                options={inquiryTypeOptions}
-                value={inquiryType}
-                onChange={setInquiryType}
-                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
-                disabled={isCodeLoading}
-              />
-              {isCodeLoadError && (
-                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
-                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
-                </p>
-              )}
-            </div>
-
-            {/* 제목 */}
-            <div className="flex flex-col gap-[8px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                タイトル
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <InputBox
-                value={title}
-                onChange={setTitle}
-                placeholder=""
-              />
-            </div>
-
-            {/* 내용 */}
-            <div className="flex flex-col gap-[8px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                内容
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full h-[300px] bg-white border border-[#ebebeb] rounded-[4px] p-[16px] resize-none outline-none font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#AAAAAA] focus:border-[#101010] transition-colors duration-150"
-              />
-            </div>
+            <InquiryFields {...inquiryFieldsProps} />
           </div>
         </div>
-
-        {/* PC 버튼 영역 — 카드 바깥 우측 정렬 */}
-        <div className="flex items-center justify-end gap-2 pb-[4px]">
-          <Button
-            variant="secondary"
-            className="w-[97px]"
-            onClick={handleCancel}
-          >
-            キャンセル
-          </Button>
-          <Button
-            variant="primary"
-            className="w-[110px]"
-            onClick={handleSubmit}
-            disabled={submitMutation.isPending}
-          >
-            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
-          </Button>
-        </div>
+        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} />
       </div>
 
       {/* 모바일 카드 */}
       <div className="flex lg:hidden flex-col w-full">
         <div className="bg-white px-[24px] py-[34px]">
           <div className="flex flex-col">
-            {/* 회사명 */}
-            <div className="flex flex-col gap-[8px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                会社名
-              </p>
-              {isLoggedIn ? (
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  {companyName}
-                </p>
-              ) : (
-                <InputBox
-                  value={companyName}
-                  onChange={setCompanyName}
-                  placeholder="会社名を入力"
-                />
-              )}
-            </div>
-
-            {/* 성명 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                氏名
-              </p>
-              {isLoggedIn ? (
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  {name}
-                </p>
-              ) : (
-                <InputBox
-                  value={name}
-                  onChange={setName}
-                  placeholder="氏名を入力"
-                />
-              )}
-            </div>
-
-            {/* 전화번호 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                電話番号
-              </p>
-              {isLoggedIn ? (
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  {phone}
-                </p>
-              ) : (
-                <InputBox
-                  value={phone}
-                  onChange={setPhone}
-                  type="tel"
-                  placeholder="電話番号を入力"
-                />
-              )}
-            </div>
-
-            {/* 메일주소 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                メールアドレス
-              </p>
-              {isLoggedIn ? (
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  {email}
-                </p>
-              ) : (
-                <InputBox
-                  value={email}
-                  onChange={setEmail}
-                  type="email"
-                  placeholder="メールアドレスを入力"
-                />
-              )}
-            </div>
-
-            {/* 문의유형 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                お問い合わせタイプ
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <SelectBox
-                options={inquiryTypeOptions}
-                value={inquiryType}
-                onChange={setInquiryType}
-                placeholder={isCodeLoading ? "読み込み中..." : "お問い合わせタイプを選択"}
-                disabled={isCodeLoading}
-              />
-              {isCodeLoadError && (
-                <p className="font-['Noto_Sans_JP'] text-[12px] text-[#ff1a1a]">
-                  お問い合わせタイプの読み込みに失敗しました。ページを再読み込みしてください。
-                </p>
-              )}
-            </div>
-
-            {/* 제목 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                タイトル
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <InputBox
-                value={title}
-                onChange={setTitle}
-                placeholder=""
-              />
-            </div>
-
-            {/* 내용 */}
-            <div className="flex flex-col gap-[8px] border-t border-[#eff4f8] pt-[18px] mt-[18px]">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-                内容
-                <span className="text-[#ff1a1a]">*</span>
-              </p>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full h-[300px] bg-white border border-[#ebebeb] rounded-[4px] p-[16px] resize-none outline-none font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#AAAAAA] focus:border-[#101010] transition-colors duration-150"
-              />
-            </div>
+            {userFields.map((field, idx) => (
+              <MoUserInfoField key={field.label} field={field} isFirst={idx === 0} />
+            ))}
+            <InquiryFields {...inquiryFieldsProps} isMobile />
           </div>
         </div>
-
-        {/* 모바일 버튼 영역 */}
-        <div className="flex items-center justify-center gap-[6px] px-[24px] pb-[28px] bg-white">
-          <Button variant="secondary" className="flex-1" onClick={handleCancel}>
-            キャンセル
-          </Button>
-          <Button
-            variant="primary"
-            className="flex-1 shrink-0"
-            onClick={handleSubmit}
-            disabled={submitMutation.isPending}
-          >
-            {submitMutation.isPending ? "送信中..." : "お問い合わせ"}
-          </Button>
-        </div>
+        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} isMobile />
       </div>
 
       {/* 비로그인 전용: 로그인 유도 안내 */}

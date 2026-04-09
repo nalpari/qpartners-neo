@@ -230,9 +230,7 @@ export async function POST(request: NextRequest) {
           "[POST /api/inquiry] 공통코드 조회 실패 (DB 저장은 완료, 메일 미발송)",
           {
             inquiryId: inquiry.id,
-            code: mailFlowError.code,
-            meta: mailFlowError.meta,
-            message: mailFlowError.message,
+            prismaCode: mailFlowError.code,
           },
         );
       } else {

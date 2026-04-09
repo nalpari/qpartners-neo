@@ -38,7 +38,13 @@ interface ContentDetailResponse {
   createdAt: string;
   updatedAt: string;
   targets: { targetType: string; startAt: string | null; endAt: string | null }[];
-  categories: { id: number; name: string; categoryCode: string; isInternalOnly: boolean }[];
+  categories: {
+    id: number;
+    categoryCode: string;
+    name: string;
+    isInternalOnly: boolean;
+    children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
+  }[];
   attachments: { id: number; fileName: string; fileSize: number }[];
 }
 
@@ -142,7 +148,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const [approver, setApprover] = useState(existingData ? String(existingData.approverLevel ?? "") : "");
   const [postTargets, setPostTargets] = useState<PostTargetState>(initialPostTargets);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(
-    existingData?.categories?.map((c) => c.id) ?? [],
+    existingData?.categories?.flatMap((parent) => parent.children.map((child) => child.id)) ?? [],
   );
   const [title, setTitle] = useState(existingData?.title ?? "");
   const [content, setContent] = useState(existingData?.body ?? "");
@@ -231,6 +237,9 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       }
 
       setIsSubmitting(false);
+      // 저장 완료 후 캐시 무효화 — 상세/목록 페이지에서 최신 데이터 표시
+      queryClient.invalidateQueries({ queryKey: ["contents", String(savedId)] });
+      queryClient.invalidateQueries({ queryKey: ["contents"] });
       openAlert({
         type: "alert",
         message: "保存されました。",

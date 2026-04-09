@@ -4,15 +4,16 @@ import type { CategoryNode } from "@/components/contents/list/contents-contents"
 
 // Design Ref: §4.4 — 카테고리 8그룹 매핑, isInternalOnly 적색, 콤마 처리
 
-interface CategoryItem {
+interface CategoryTreeItem {
   id: number;
-  name: string;
   categoryCode: string;
+  name: string;
   isInternalOnly: boolean;
+  children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
 }
 
 interface ContentsDetailCategoryProps {
-  categories: CategoryItem[];
+  categories: CategoryTreeItem[];
   categoryTree: CategoryNode[];
   isInternal: boolean;
 }
@@ -22,21 +23,17 @@ export function ContentsDetailCategory({
   categoryTree,
   isInternal,
 }: ContentsDetailCategoryProps) {
-  // 부모 그룹(parentId=null) 추출 — 고정 8개 카테고리 그룹 (7-2)
+  // 부모 그룹(parentId=null) 추출
   const parentGroups = categoryTree.filter((c) => c.parentId === null);
-
-  // 콘텐츠 카테고리 ID 셋
-  const contentCategoryIds = new Set(categories.map((c) => c.id));
 
   // 각 그룹별 매칭된 자식 카테고리 구성
   const groupedCategories = parentGroups.map((parent) => {
-    const matchedChildren = parent.children.filter((child) =>
-      contentCategoryIds.has(child.id)
-    );
+    // 콘텐츠 categories에서 해당 부모 그룹 찾기
+    const matched = categories.find((c) => c.categoryCode === parent.categoryCode);
+    const children = matched?.children ?? [];
 
-    // 일반 항목과 사내 전용 항목 분리
-    const normalItems = matchedChildren.filter((c) => !c.isInternalOnly);
-    const internalItems = matchedChildren.filter((c) => c.isInternalOnly);
+    const normalItems = children.filter((c) => !c.isInternalOnly);
+    const internalItems = children.filter((c) => c.isInternalOnly);
 
     return {
       label: parent.name,
@@ -71,9 +68,7 @@ export function ContentsDetailCategory({
               <div className="bg-[#FDFEFE] px-4 py-[14px] rounded-b-[6px] min-h-[49px]">
                 {hasValues ? (
                   <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                    {/* (7-3) 복수개면 콤마 처리 */}
                     {group.normalValues.join(", ")}
-                    {/* (7-1) 사내 전용 항목 적색 표시 */}
                     {group.internalValues.length > 0 && (
                       <>
                         {group.normalValues.length > 0 ? ", " : ""}
@@ -85,7 +80,6 @@ export function ContentsDetailCategory({
                   </p>
                 ) : (
                   <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                    {/* (7-3) 없으면 미표시 */}
                   </p>
                 )}
               </div>

@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["dev.q-partners.q-cells.jp", "121.168.9.37:8080"],
+  allowedDevOrigins: process.env.ALLOWED_DEV_ORIGINS
+    ? process.env.ALLOWED_DEV_ORIGINS.split(",").map((s) => s.trim())
+    : [],
   reactCompiler: true,
   output: "standalone",
   experimental: {
