@@ -3,9 +3,12 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
+import DOMPurify from "isomorphic-dompurify";
 
 import { requireAdmin } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
+import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
 import {
@@ -25,18 +28,8 @@ function buildTargetLabel(mail: Record<TargetKey, boolean>): string {
     .join(", ") || "—";
 }
 
-/** 파일 검증 상수 */
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const ALLOWED_EXTENSIONS = new Set([
-  "pdf", "docx", "xlsx", "pptx",
-  "jpg", "jpeg", "png", "gif", "webp", "bmp",
-]);
-const ALLOWED_MIMES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
+/** 첨부파일 최대 개수 */
+const MAX_FILES = 10;
 
 // GET /api/admin/mass-mails — 대량메일 목록
 export async function GET(request: NextRequest) {
@@ -75,7 +68,7 @@ export async function GET(request: NextRequest) {
       where.status = "draft";
     }
 
-    // 발송대상 필터: 특정 대상이 true인 메일만 조회 (매핑 객체 사용, as 캐스팅 금지)
+    // 발송대상 필터: responseKey 기반 ASCII 키 ("super_admin", "admin" 등)
     if (target) {
       const targetField = TARGET_FILTER_MAP[target];
       if (targetField) {
@@ -137,19 +130,30 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
-    // 2. FormData 파싱
+    // 2. Body size 사전 차단 — formData() 호출 전 Content-Length 확인 (DoS 방어)
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    const MAX_BATCH_SIZE = MAX_FILE_SIZE * MAX_FILES + 1024 * 1024; // ~501MB + 1MB 헤더 여유
+    if (contentLength > MAX_BATCH_SIZE) {
+      console.warn("[POST /api/admin/mass-mails] Content-Length 초과:", contentLength);
+      return NextResponse.json(
+        { error: "リクエストサイズが大きすぎます" },
+        { status: 413 },
+      );
+    }
+
+    // 3. FormData 파싱
     let formData: FormData;
     try {
       formData = await request.formData();
     } catch (error: unknown) {
       console.warn("[POST /api/admin/mass-mails] FormData 파싱 실패:", error);
       return NextResponse.json(
-        { error: "無効なリクエストです" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
 
-    // 3. 텍스트 필드 검증
+    // 4. 텍스트 필드 검증
     const fields: Record<string, string> = {};
     for (const [key, value] of formData.entries()) {
       if (typeof value === "string") {
@@ -183,53 +187,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. 첨부파일 검증
+    // 5. 첨부파일 검증 — 공통 유틸 사용 (size, 확장자, MIME 검증 일원화)
     const rawFiles = formData.getAll("files");
     const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
 
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: `ファイルサイズが50MBを超えています: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-      if (!ALLOWED_EXTENSIONS.has(ext)) {
-        return NextResponse.json(
-          { error: `許可されていないファイル拡張子です: ${file.name}` },
-          { status: 400 },
-        );
-      }
-      const mime = file.type || "";
-      if (!ALLOWED_MIMES.includes(mime) && !mime.startsWith("image/")) {
-        return NextResponse.json(
-          { error: `許可されていないファイル形式です: ${file.name}` },
-          { status: 400 },
-        );
+    if (files.length > MAX_FILES) {
+      return NextResponse.json(
+        { error: `添付ファイルは${MAX_FILES}件以内にしてください` },
+        { status: 400 },
+      );
+    }
+
+    if (files.length > 0) {
+      const validation = validateFiles(files);
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
       }
     }
 
-    // 5. userType 매핑
+    // 6. HTML body sanitization (stored XSS 방어 — script, event handlers, javascript: URL 제거)
+    const sanitizedBody = DOMPurify.sanitize(data.body, {
+      ALLOWED_TAGS: [
+        "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
+        "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
+        "table", "thead", "tbody", "tr", "th", "td",
+        "img", "span", "div", "hr",
+      ],
+      ALLOWED_ATTR: ["href", "src", "alt", "title", "style", "class", "target", "rel"],
+      ALLOW_DATA_ATTR: false,
+    });
+
+    // 7. userType 매핑
     const userType = resolveUserType(user);
 
-    // 6. 첨부파일 디스크 기록 (트랜잭션 전에 준비)
+    // 8. 첨부파일 디스크 기록 (트랜잭션 전에 준비)
     const writtenFiles: { absolutePath: string; file: File; filePath: string }[] = [];
-    // massMail ID 미확정 상태이므로 임시 디렉토리에 먼저 기록
     const tempId = randomUUID();
     if (files.length > 0) {
       const uploadDir = join(process.cwd(), "storage", "uploads", "mass-mails", tempId);
       await mkdir(uploadDir, { recursive: true });
+      const uploadDirAbsolute = resolve(uploadDir);
 
       for (const file of files) {
-        const ext = basename(file.name).split(".").pop() ?? "";
+        const sanitizedName = basename(file.name);
+        const ext = sanitizedName.split(".").pop() ?? "";
         const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
         const filePath = `storage/uploads/mass-mails/${tempId}/${safeFileName}`;
         const absolutePath = resolve(uploadDir, safeFileName);
 
-        // path traversal 방어
-        if (!absolutePath.startsWith(resolve(uploadDir))) {
-          return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
+        // path traversal 방어 — isInsideDir (startsWith prefix bug 회피)
+        if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
+          return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
@@ -238,10 +246,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 7. interactive 트랜잭션: massMail + attachment 일괄 생성 (고아 레코드 방지)
+    // 9. interactive 트랜잭션: massMail + attachment 일괄 생성 (고아 레코드 방지)
     let massMailId: number;
     try {
-      const result = await prisma.$transaction(async (tx) => {
+      const txResult = await prisma.$transaction(async (tx) => {
         const massMail = await tx.massMail.create({
           data: {
             userType,
@@ -255,7 +263,7 @@ export async function POST(request: NextRequest) {
             targetGeneral: data.targetGeneral,
             optOut: data.optOut,
             subject: data.subject,
-            body: data.body,
+            body: sanitizedBody,
             status: data.status,
             createdBy: user.userId,
             updatedBy: user.userId,
@@ -266,7 +274,8 @@ export async function POST(request: NextRequest) {
           await tx.massMailAttachment.create({
             data: {
               massMailId: massMail.id,
-              fileName: w.file.name,
+              // basename 적용된 이름만 저장 (Zip Slip / XSS 방어)
+              fileName: basename(w.file.name),
               filePath: w.filePath,
               fileSize: BigInt(w.file.size),
               createdBy: user.userId,
@@ -277,7 +286,7 @@ export async function POST(request: NextRequest) {
 
         return massMail;
       });
-      massMailId = result.id;
+      massMailId = txResult.id;
     } catch (dbError: unknown) {
       // DB 트랜잭션 실패 시 디스크 파일 정리
       for (const w of writtenFiles) {

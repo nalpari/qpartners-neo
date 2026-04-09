@@ -5,9 +5,11 @@ import { idParamSchema } from "@/lib/schemas/common";
 // ─── 목록 쿼리 파라미터 ───
 
 export const massMailListQuerySchema = z.object({
-  keyword: z.string().optional(),
+  keyword: z.string().max(200).optional(),
+  // target 필터 — responseKey 기반 ASCII 키 ("super_admin", "admin", "first_store" 등)
   target: z.string().optional(),
-  draftOnly: z.coerce.boolean().default(false),
+  // z.coerce.boolean は "false" を true に変換するため、明示的に transform で処理
+  draftOnly: z.string().optional().transform((v) => v === "true").default(false),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
@@ -28,7 +30,9 @@ export const massMailCreateSchema = z.object({
   targetConstructor: formBool,
   targetGeneral: formBool,
   optOut: formBool,
-  subject: z.string().min(1, "件名は必須です").max(500),
+  // CRLF 헤더 인젝션 방어 — subject에 개행 문자 금지
+  subject: z.string().min(1, "件名は必須です").max(500)
+    .refine((v) => !/[\r\n]/.test(v), { message: "件名に改行を含めることはできません" }),
   body: z.string().min(1, "本文は必須です"),
   status: z.enum(["draft", "pending"]),
 });
@@ -54,10 +58,14 @@ export const TARGET_LABELS: { key: TargetKey; label: string; responseKey: string
   { key: "targetGeneral", label: "一般", responseKey: "general" },
 ];
 
-/** label → DB 필드명 매핑 (목록 API target 필터용) */
-export const TARGET_FILTER_MAP: Record<string, TargetKey> = Object.fromEntries(
-  TARGET_LABELS.map((t) => [t.label, t.key]),
-) as Record<string, TargetKey>;
+/**
+ * responseKey → DB 필드명 매핑 (목록 API target 필터용).
+ * 기존: label(일본어) 기반 → URL에 일본어 강제. 변경: responseKey(ASCII) 기반.
+ * ?target=super_admin, ?target=first_store 등으로 사용.
+ */
+export const TARGET_FILTER_MAP = Object.fromEntries(
+  TARGET_LABELS.map((t) => [t.responseKey, t.key]),
+) as Partial<Record<string, TargetKey>>;
 
 // ─── ID 파라미터 ───
 

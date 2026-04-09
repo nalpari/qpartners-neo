@@ -3282,7 +3282,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetAdmin: { type: "boolean" },
           targetFirstDealer: { type: "boolean" },
           targetSecondDealer: { type: "boolean" },
-          targetSeko: { type: "boolean" },
+          targetConstructor: { type: "boolean" },
           targetGeneral: { type: "boolean" },
           optOut: { type: "boolean", description: "뉴스레터 수신거부 제외 여부" },
           subject: { type: "string" },
