@@ -103,6 +103,8 @@ export function ContentsDetailInfo({
           type="button"
           onClick={() => setInfoOpen((prev) => !prev)}
           className="flex items-center gap-[10px] w-full cursor-pointer"
+          aria-expanded={infoOpen}
+          aria-controls="info-panel"
         >
           <p className="flex-1 text-left font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
             管理情報/公開対象
@@ -117,8 +119,10 @@ export function ContentsDetailInfo({
         </button>
 
         <div
+          id="info-panel"
           className="grid transition-[grid-template-rows] duration-300 ease-in-out"
           style={{ gridTemplateRows: infoOpen ? "1fr" : "0fr" }}
+          aria-hidden={!infoOpen}
         >
           <div className="overflow-hidden">
             <div className="flex flex-col gap-[18px] mt-6">

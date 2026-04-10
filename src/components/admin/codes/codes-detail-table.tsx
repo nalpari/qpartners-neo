@@ -5,7 +5,10 @@ import type { ColDef, ICellRendererParams, CellDoubleClickedEvent, CellClickedEv
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
-import type { DetailGridRow } from "./codes-contents";
+import type { DetailGridRow } from "./codes-types";
+
+// 편집 불가 필드 (Craftsman: ColDef 메타로 관리)
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "isActive"]);
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -47,6 +50,7 @@ interface CodesDetailTableProps {
   selectedHeaderCode: string;
   hasNewRow: boolean;
   isLoading?: boolean;
+  isError?: boolean;
   editingCell: { rowId: string; field: string } | null;
   onAdd: () => void;
   onCancelAdd: () => void;
@@ -64,6 +68,7 @@ export function CodesDetailTable({
   selectedHeaderCode,
   hasNewRow,
   isLoading,
+  isError,
   editingCell,
   onAdd,
   onCancelAdd,
@@ -75,11 +80,7 @@ export function CodesDetailTable({
   activeOnly,
   onActiveOnlyChange,
 }: CodesDetailTableProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // --- Cell Renderers ---
-
-  // headerCode 컬럼은 편집 불가 (항상 span)
+  // headerCode 컬럼은 편집 불가
   function HeaderCodeCellRenderer(params: ICellRendererParams<DetailGridRow>) {
     const data = params.data;
     if (!data) return null;
@@ -90,26 +91,11 @@ export function CodesDetailTable({
     return function Renderer(params: ICellRendererParams<DetailGridRow>) {
       const data = params.data;
       if (!data) return null;
-      // 신규행 → 항상 입력
       if (data.isNew) {
-        return (
-          <CellInput
-            defaultValue={newRowFieldsRef.current[field] ?? ""}
-            placeholder=""
-            onChange={(v) => onNewRowFieldChange(field, v)}
-          />
-        );
+        return <CellInput defaultValue={newRowFieldsRef.current[field] ?? ""} placeholder="" onChange={(v) => onNewRowFieldChange(field, v)} />;
       }
-      // 더블클릭된 특정 셀만 편집 모드
       if (data.editingField === field) {
-        return (
-          <CellInput
-            defaultValue={String(params.value ?? "")}
-            placeholder=""
-            onChange={(v) => onEditFieldChange(field, v)}
-            autoFocus
-          />
-        );
+        return <CellInput defaultValue={String(params.value ?? "")} placeholder="" onChange={(v) => onEditFieldChange(field, v)} autoFocus />;
       }
       return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
     };
@@ -139,7 +125,6 @@ export function CodesDetailTable({
     return undefined;
   };
 
-  // 다른 셀 클릭 시 편집 해제
   const handleCellClicked = (event: CellClickedEvent<DetailGridRow>) => {
     if (!editingCell) return;
     const data = event.data;
@@ -148,23 +133,19 @@ export function CodesDetailTable({
     onEditCancel();
   };
 
-  // 더블클릭 → 해당 셀만 편집 모드
   const handleCellDoubleClicked = (event: CellDoubleClickedEvent<DetailGridRow>) => {
     const data = event.data;
     const field = event.colDef.field;
     if (!data || data.isNew || !field) return;
-    // headerCode, isActive는 편집 불가
-    if (field === "headerCode" || field === "isActive") return;
+    if (NON_EDITABLE_FIELDS.has(field)) return;
     onCellEditStart(data.id, field);
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
+    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">
-            Code Detail
-          </h2>
+          <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">Code Detail</h2>
           <Checkbox checked={activeOnly} onChange={onActiveOnlyChange} label="使用可否がYの値のみ表示" />
         </div>
         <div className="flex items-center gap-2">
@@ -175,16 +156,24 @@ export function CodesDetailTable({
           )}
         </div>
       </div>
-      <DataGrid<DetailGridRow>
-        columnDefs={columnDefs}
-        rowData={rows}
-        getRowClass={getRowClass}
-        className="codes-detail-grid"
-        maxHeight={0}
-        loading={isLoading}
-        onCellDoubleClicked={handleCellDoubleClicked}
-        onCellClicked={handleCellClicked}
-      />
+      {isError ? (
+        <div className="flex items-center justify-center h-[57px] font-['Noto_Sans_JP'] text-[14px] text-[#E97923]">
+          データの読み込みに失敗しました。
+        </div>
+      ) : (
+        <DataGrid<DetailGridRow>
+          columnDefs={columnDefs}
+          rowData={rows}
+          getRowClass={getRowClass}
+          getRowId={(p) => p.data.id}
+          className="codes-detail-grid"
+          maxHeight={0}
+          loading={isLoading}
+          emptyMessage="値がありません"
+          onCellDoubleClicked={handleCellDoubleClicked}
+          onCellClicked={handleCellClicked}
+        />
+      )}
     </div>
   );
 }

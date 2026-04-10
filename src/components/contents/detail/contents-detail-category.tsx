@@ -86,7 +86,7 @@ export function ContentsDetailCategory({
   return (
     <>
       {/* PC: 기존 레이아웃 */}
-      <div className="hidden lg:flex bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex-col gap-4 pt-[34px] pb-6 px-6 w-[1440px]">
+      <div className="hidden lg:flex bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex-col gap-4 pt-[34px] pb-6 px-6 max-w-[1440px] w-full">
         <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
           カテゴリー
         </h2>
@@ -101,6 +101,8 @@ export function ContentsDetailCategory({
           type="button"
           onClick={() => setCategoryOpen((prev) => !prev)}
           className="flex items-center gap-[10px] w-full cursor-pointer"
+          aria-expanded={categoryOpen}
+          aria-controls="category-panel"
         >
           <p className="flex-1 text-left font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
             カテゴリー
@@ -115,8 +117,10 @@ export function ContentsDetailCategory({
         </button>
 
         <div
+          id="category-panel"
           className="grid transition-[grid-template-rows] duration-300 ease-in-out"
           style={{ gridTemplateRows: categoryOpen ? "1fr" : "0fr" }}
+          aria-hidden={!categoryOpen}
         >
           <div className="overflow-hidden">
             <div className="flex flex-col gap-4 mt-6">
