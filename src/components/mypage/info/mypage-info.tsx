@@ -176,9 +176,8 @@ export function MypageInfo() {
     }
   };
 
-  // ADMIN/STORE는 프로필 수정 API 미구현 (501) — 수정 버튼 자체를 숨김
-  const canEdit = userType !== "ADMIN" && userType !== "STORE";
-  // 법인정보 수정 모드 표시 여부: STORE, ADMIN은 숨김
+  const canEdit = true;
+  // Design Ref: §2.1 — 법인정보 수정: STORE/ADMIN 숨김, GENERAL/SEKO 표시
   const showCorporateEdit = userType !== "STORE" && userType !== "ADMIN";
 
   return (
