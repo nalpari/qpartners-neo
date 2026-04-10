@@ -3,12 +3,16 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCodeHeaderSchema } from "@/lib/schemas/code";
 
-// GET /api/codes — Header Code 목록
+// GET /api/codes — Header Code 목록 (관리자 전용)
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { searchParams } = request.nextUrl;
     const keyword = searchParams.get("keyword") ?? undefined;
     const activeOnly = searchParams.get("activeOnly") !== "false";
@@ -30,21 +34,25 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/codes]", error);
     return NextResponse.json(
-      { error: "Failed to fetch code headers" },
+      { error: "コードヘッダーの取得に失敗しました" },
       { status: 500 },
     );
   }
 }
 
-// POST /api/codes — Header Code 등록
+// POST /api/codes — Header Code 등록 (관리자 전용)
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/codes] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディの形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -53,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が正しくありません", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -66,13 +74,13 @@ export async function POST(request: NextRequest) {
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: "이미 존재하는 headerCode입니다" },
+        { error: "既に存在するヘッダーコードです" },
         { status: 409 },
       );
     }
     console.error("[POST /api/codes]", error);
     return NextResponse.json(
-      { error: "Failed to create code header" },
+      { error: "コードヘッダーの作成に失敗しました" },
       { status: 500 },
     );
   }

@@ -3,18 +3,23 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCodeDetailSchema, idParamSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/codes/:id/details — Detail 목록
+// GET /api/codes/:id/details — Detail 목록 (관리자 전용)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      console.warn("[GET /api/codes/:id/details] ヘッダーID 파싱 실패:", id);
+      return NextResponse.json({ error: "ヘッダーIDの形式が正しくありません" }, { status: 400 });
     }
 
     const { searchParams } = request.nextUrl;
@@ -25,7 +30,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     });
 
     if (!header) {
-      return NextResponse.json({ error: "Header not found" }, { status: 404 });
+      return NextResponse.json({ error: "ヘッダーコードが見つかりません" }, { status: 404 });
     }
 
     const details = await prisma.codeDetail.findMany({
@@ -40,27 +45,32 @@ export async function GET(request: NextRequest, { params }: Params) {
   } catch (error) {
     console.error("[GET /api/codes/:id/details]", error);
     return NextResponse.json(
-      { error: "Failed to fetch code details" },
+      { error: "コード詳細の取得に失敗しました" },
       { status: 500 },
     );
   }
 }
 
-// POST /api/codes/:id/details — Detail 등록
+// POST /api/codes/:id/details — Detail 등록 (관리자 전용)
 export async function POST(request: NextRequest, { params }: Params) {
   try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      console.warn("[POST /api/codes/:id/details] ヘッダーID 파싱 실패:", id);
+      return NextResponse.json({ error: "ヘッダーIDの形式が正しくありません" }, { status: 400 });
     }
 
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/codes/:id/details] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディの形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -69,7 +79,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が正しくありません", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -79,7 +89,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     });
 
     if (!header) {
-      return NextResponse.json({ error: "Header not found" }, { status: 404 });
+      return NextResponse.json({ error: "ヘッダーコードが見つかりません" }, { status: 404 });
     }
 
     const detail = await prisma.codeDetail.create({
@@ -94,20 +104,20 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (error instanceof PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
         return NextResponse.json(
-          { error: "Duplicate code in this header" },
+          { error: "このヘッダー内で既に存在するコードです" },
           { status: 409 },
         );
       }
       if (error.code === "P2003") {
         return NextResponse.json(
-          { error: "Header not found" },
+          { error: "ヘッダーコードが見つかりません" },
           { status: 404 },
         );
       }
     }
     console.error("[POST /api/codes/:id/details]", error);
     return NextResponse.json(
-      { error: "Failed to create code detail" },
+      { error: "コード詳細の作成に失敗しました" },
       { status: 500 },
     );
   }
