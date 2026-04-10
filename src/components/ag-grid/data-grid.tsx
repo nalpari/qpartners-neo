@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import {
   CellStyleModule,
@@ -11,6 +12,9 @@ import {
   themeQuartz,
   type ColDef,
   type RowClassParams,
+  type RowDoubleClickedEvent,
+  type CellDoubleClickedEvent,
+  type CellClickedEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
@@ -47,7 +51,13 @@ interface DataGridProps<T> {
   className?: string;
   maxHeight?: number;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
+  getRowId?: (params: { data: T }) => string;
   context?: Record<string, unknown>;
+  loading?: boolean;
+  emptyMessage?: ReactNode;
+  onRowDoubleClicked?: (event: RowDoubleClickedEvent<T>) => void;
+  onCellDoubleClicked?: (event: CellDoubleClickedEvent<T>) => void;
+  onCellClicked?: (event: CellClickedEvent<T>) => void;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -58,7 +68,13 @@ export function DataGrid<T>({
   className = "",
   maxHeight = DEFAULT_MAX_HEIGHT,
   getRowClass: externalGetRowClass,
+  getRowId,
   context,
+  loading,
+  emptyMessage,
+  onRowDoubleClicked,
+  onCellDoubleClicked,
+  onCellClicked,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -93,12 +109,23 @@ export function DataGrid<T>({
         defaultColDef={defaultColDef}
         domLayout={maxHeight ? "normal" : "autoHeight"}
         getRowClass={getRowClass}
+        getRowId={getRowId}
         context={context}
         suppressCellFocus
         suppressRowHoverHighlight={false}
         headerHeight={57}
         rowHeight={57}
+        suppressNoRowsOverlay={!!emptyMessage}
+        loading={loading}
+        onRowDoubleClicked={onRowDoubleClicked}
+        onCellDoubleClicked={onCellDoubleClicked}
+        onCellClicked={onCellClicked}
       />
+      {emptyMessage && rowData.length === 0 && !loading && (
+        <div className="flex items-center justify-center h-[57px] border-b border-[#E6EEF6] font-['Noto_Sans_JP'] text-[14px] text-[#AAAAAA]">
+          {emptyMessage}
+        </div>
+      )}
     </div>
   );
 }
