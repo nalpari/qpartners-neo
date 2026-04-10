@@ -7,7 +7,7 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 /** 프로필 수정 스키마 (userType에 따라 회사 필드 필수/선택 분기) */
 export const profileUpdateSchema = z.object({
-  userType: z.string().optional(),
+  userType: z.enum(userTpValues).optional(),
   sei: z.string().min(1, "姓は必須です").max(50),
   mei: z.string().min(1, "名は必須です").max(50),
   seiKana: z.string().min(1, "姓(カナ)は必須です").max(50),

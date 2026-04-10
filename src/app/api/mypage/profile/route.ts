@@ -212,7 +212,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const result = profileUpdateSchema.safeParse({ ...(body as Record<string, unknown>), userType: user.userTp });
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "リクエスト形式が正しくありません" },
+        { status: 400 },
+      );
+    }
+    const result = profileUpdateSchema.safeParse({ ...body, userType: user.userTp });
     if (!result.success) {
       return NextResponse.json(
         { error: "入力内容に不備があります", issues: result.error.issues },

@@ -209,40 +209,48 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
   await mkdir(uploadDir, { recursive: true });
   const uploadDirAbsolute = resolve(uploadDir);
 
-  const writePromises = files.map(async (file) => {
-    const sanitizedName = basename(file.name);
-    const ext = sanitizedName.split(".").pop() ?? "";
-    const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
-    const filePath = `storage/uploads/mass-mails/${tempId}/${safeFileName}`;
-    const absolutePath = resolve(uploadDir, safeFileName);
+  try {
+    const writePromises = files.map(async (file) => {
+      const sanitizedName = basename(file.name);
+      const ext = sanitizedName.split(".").pop() ?? "";
+      const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
+      const filePath = `storage/uploads/mass-mails/${tempId}/${safeFileName}`;
+      const absolutePath = resolve(uploadDir, safeFileName);
 
-    // path traversal 방어 — isInsideDir (startsWith('/uploads')가 '/uploads-evil/'도 통과시키는 문제 회피)
-    if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
-      console.error("[POST /api/admin/mass-mails] PATH TRAVERSAL 감지:", {
-        fileName: file.name,
-        absolutePath,
-        uploadDir: uploadDirAbsolute,
-      });
-      return { error: true as const };
+      // path traversal 방어 — isInsideDir (startsWith('/uploads')가 '/uploads-evil/'도 통과시키는 문제 회피)
+      if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
+        console.error("[POST /api/admin/mass-mails] PATH TRAVERSAL 감지:", {
+          fileName: file.name,
+          absolutePath,
+          uploadDir: uploadDirAbsolute,
+        });
+        return { error: true as const };
+      }
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await writeFile(absolutePath, buffer);
+      return { error: false as const, absolutePath, file, filePath };
+    });
+
+    const results = await Promise.all(writePromises);
+
+    // 성공 파일 전체 수집 후 에러 체크 (레이스 컨디션 방지)
+    const successes = results.filter((r): r is PersistedAttachment & { error: false } => !r.error);
+    const hasTraversalError = results.some((r) => r.error);
+
+    if (hasTraversalError) {
+      await cleanupFiles(successes, uploadDir);
+      return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(absolutePath, buffer);
-    return { error: false as const, absolutePath, file, filePath };
-  });
-
-  const results = await Promise.all(writePromises);
-
-  // 성공 파일 전체 수집 후 에러 체크 (레이스 컨디션 방지)
-  const successes = results.filter((r): r is PersistedAttachment & { error: false } => !r.error);
-  const hasTraversalError = results.some((r) => r.error);
-
-  if (hasTraversalError) {
-    await cleanupFiles(successes, uploadDir);
-    return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
+    return { writtenFiles: successes, uploadDir };
+  } catch (error: unknown) {
+    // writeFile 부분 실패 시 업로드 디렉토리 전체 정리 (파일 누수 방지)
+    await rm(uploadDir, { recursive: true, force: true }).catch((e: unknown) => {
+      console.error("[POST /api/admin/mass-mails] 부분 실패 디렉토리 정리 실패:", uploadDir, e);
+    });
+    throw error;
   }
-
-  return { writtenFiles: successes, uploadDir };
 }
 
 // ─── POST 헬퍼: DB 레코드 생성 ───
