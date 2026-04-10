@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
-import { QSP_API } from "@/lib/config";
+import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
@@ -13,6 +13,7 @@ import {
   lookupStatCd,
   lookupUserTypeLabel,
 } from "@/lib/schemas/member";
+import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -43,17 +44,20 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    const userTp = request.nextUrl.searchParams.get("userTp");
-    if (!userTp || !["ADMIN", "STORE", "GENERAL"].includes(userTp)) {
+    const userTpResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
+    if (!userTpResult.success) {
       return NextResponse.json(
-        { error: "ユーザータイプ(userTp)は必須です" },
+        { error: "ユーザータイプが不正です" },
         { status: 400 },
       );
     }
+    const userTp = userTpResult.data;
 
     // 3. QSP 유저 정보 조회 (사양서 No.13 userDetail)
     const detailResult = await fetchQspUserDetail(rawId, userTp, "[GET /api/admin/members/:id]");
-    if (!detailResult.ok) return detailResult.response;
+    if (!detailResult.ok) {
+      return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
+    }
 
     // 4. 응답 매핑 (QSP → TO-BE)
     const d = detailResult.detail;
@@ -150,16 +154,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4. userTp 파라미터 검증 + 대상 회원 QSP 상세 조회
-    const userTp = request.nextUrl.searchParams.get("userTp");
-    if (!userTp || !["ADMIN", "STORE", "GENERAL"].includes(userTp)) {
+    const userTpResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
+    if (!userTpResult.success) {
       return NextResponse.json(
-        { error: "ユーザータイプ(userTp)は必須です" },
+        { error: "ユーザータイプが不正です" },
         { status: 400 },
       );
     }
+    const userTp = userTpResult.data;
 
     const preDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id]");
-    if (!preDetailResult.ok) return preDetailResult.response;
+    if (!preDetailResult.ok) {
+      return NextResponse.json({ error: preDetailResult.error.error }, { status: preDetailResult.error.status });
+    }
     const preDetail = preDetailResult.detail;
 
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
@@ -192,7 +199,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 5. QSP 회원정보 수정 API 호출
     const updatePayload: Record<string, unknown> = {
-      accsSiteCd: "QPARTNERS",
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userId: rawId,
       updBy: user.userId,
     };

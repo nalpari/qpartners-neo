@@ -53,4 +53,5 @@ export const SMTP_DEFAULTS = {
 
 export const SITE_DEFAULTS = {
   url: "https://dev.q-partners.q-cells.jp",
+  accsSiteCd: "QPARTNERS",
 } as const;

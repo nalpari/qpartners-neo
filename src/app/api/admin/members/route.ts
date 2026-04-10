@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
-import { QSP_API } from "@/lib/config";
+import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     const startRow = (page - 1) * pageSize + 1;
     const endRow = page * pageSize;
     const params = new URLSearchParams({
-      accsSiteCd: "QPARTNERS",
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       loginId: user.userId,
       startRow: String(startRow),
       endRow: String(endRow),
@@ -113,7 +113,8 @@ export async function GET(request: NextRequest) {
     }
 
     // 5. 응답 매핑 (QSP → TO-BE)
-    const { list, totCnt } = parsed.data.data;
+    const { list, totCnt: rawTotCnt } = parsed.data.data;
+    const totCnt = rawTotCnt ?? 0;
     if (list === null && totCnt > 0) {
       console.warn("[GET /api/admin/members] QSP totCnt > 0 이지만 list가 null:", { totCnt });
     }

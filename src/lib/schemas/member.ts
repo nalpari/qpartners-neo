@@ -47,7 +47,11 @@ function isQspStatCd(key: string): key is QspStatCd {
 
 export function lookupStatCd(key: string | null): MemberStatus | undefined {
   if (key === null) return undefined;
-  return isQspStatCd(key) ? STAT_CD_TO_STATUS[key] : undefined;
+  if (!isQspStatCd(key)) {
+    console.warn("[lookupStatCd] 매핑되지 않는 statCd:", key);
+    return undefined;
+  }
+  return STAT_CD_TO_STATUS[key];
 }
 
 type UserTypeKey = keyof typeof USER_TYPE_LABEL;
@@ -57,7 +61,11 @@ function isUserTypeKey(key: string): key is UserTypeKey {
 
 export function lookupUserTypeLabel(key: string | null): string | undefined {
   if (key === null) return undefined;
-  return isUserTypeKey(key) ? USER_TYPE_LABEL[key] : undefined;
+  if (!isUserTypeKey(key)) {
+    console.warn("[lookupUserTypeLabel] 매핑되지 않는 userTp:", key);
+    return undefined;
+  }
+  return USER_TYPE_LABEL[key];
 }
 
 // ─── 회원 목록 쿼리 파라미터 ───
@@ -131,7 +139,7 @@ export type QspMemberItem = z.infer<typeof qspMemberItemSchema>;
 
 export const qspMemberListResponseSchema = z.object({
   data: z.object({
-    totCnt: z.number(),
+    totCnt: z.number().nullable().default(0),
     list: z.array(qspMemberItemSchema).nullable(),
   }).nullable(),
   result: qspResultSchema,

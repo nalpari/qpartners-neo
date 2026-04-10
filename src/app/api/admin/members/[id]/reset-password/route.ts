@@ -60,16 +60,19 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // 3. userTp 파라미터 검증 + 대상 회원 정보 조회 (이메일 획득)
-    const userTp = request.nextUrl.searchParams.get("userTp");
-    if (!userTp || !["ADMIN", "STORE", "GENERAL"].includes(userTp)) {
+    const userTpParseResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
+    if (!userTpParseResult.success) {
       return NextResponse.json(
-        { error: "ユーザータイプ(userTp)は必須です" },
+        { error: "ユーザータイプが不正です" },
         { status: 400 },
       );
     }
+    const userTp = userTpParseResult.data;
 
     const detailResult = await fetchQspUserDetail(rawId, userTp, "[POST /api/admin/members/:id/reset-password]");
-    if (!detailResult.ok) return detailResult.response;
+    if (!detailResult.ok) {
+      return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
+    }
     const detail = detailResult.detail;
 
     // MF-2: 비활성 회원(탈퇴/삭제) 비밀번호 초기화 차단

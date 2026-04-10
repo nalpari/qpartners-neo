@@ -2207,7 +2207,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 회원 상세정보 (QSP 연동)",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
-          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         responses: {
           "200": {
@@ -2237,7 +2237,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — userRole(일반회원만), 2차인증, 알림, 상태, 뉴스레터 수정",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
-          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         requestBody: {
           required: true,
@@ -2282,7 +2282,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 대상 회원 이메일로 비밀번호 변경 링크 발송",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
-          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         responses: {
           "200": {
