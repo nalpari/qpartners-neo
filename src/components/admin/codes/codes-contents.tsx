@@ -116,7 +116,6 @@ export function CodesContents() {
         relNum1: data.relNum1 || null,
         relNum2: data.relNum2 || null,
         relNum3: data.relNum3 || null,
-        isActive: true,
       };
       return api.post("/codes", body);
     },
@@ -195,16 +194,31 @@ export function CodesContents() {
   }, []);
 
   const handleHeaderClick = useCallback((id: string) => {
-    // C3: 신규행 id("new-*") NaN 가드
     if (id.startsWith("new-")) return;
     const numId = Number(id);
     if (!Number.isFinite(numId)) return;
+    // H9: 편집 중 전환 시 경고
+    const hasUnsaved = editingCell && Object.keys(detailEditRef.current).length > 0;
+    if (hasUnsaved) {
+      openAlert({
+        type: "confirm",
+        message: "編集中のデータが破棄されます。よろしいですか？",
+        onConfirm: () => {
+          setSelectedHeaderId(numId);
+          setDetailNewRow(null);
+          setEditingCell(null);
+          detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS };
+          detailEditRef.current = {};
+        },
+      });
+      return;
+    }
     setSelectedHeaderId(numId);
     setDetailNewRow(null);
     setEditingCell(null);
     detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS };
     detailEditRef.current = {};
-  }, []);
+  }, [editingCell, openAlert]);
 
   // --- Detail 핸들러 ---
   const handleDetailAdd = useCallback(() => {
@@ -256,7 +270,11 @@ export function CodesContents() {
           openAlert({ type: "alert", message: "Header Code、Header Id、Header Code Nameは必須です。" });
           return;
         }
-        await headerCreateMutation.mutateAsync(f);
+        try {
+          await headerCreateMutation.mutateAsync(f);
+        } catch (err: unknown) {
+          throw Object.assign(err as Error, { _stage: "Header登録" });
+        }
       }
       // Detail 신규행 저장
       if (detailNewRow) {
@@ -265,7 +283,11 @@ export function CodesContents() {
           openAlert({ type: "alert", message: "Code、Display Code、Code Nameは必須です。" });
           return;
         }
-        await detailCreateMutation.mutateAsync(f);
+        try {
+          await detailCreateMutation.mutateAsync(f);
+        } catch (err: unknown) {
+          throw Object.assign(err as Error, { _stage: "Detail登録" });
+        }
       }
       // Detail 편집행 저장 (C3: NaN 가드)
       if (editingCell && !editingCell.rowId.startsWith("new-")) {
@@ -278,7 +300,11 @@ export function CodesContents() {
           else data[field] = edit[field];
         }
         if (Object.keys(data).length > 0) {
-          await detailUpdateMutation.mutateAsync({ detailId: Number(editingCell.rowId), data });
+          try {
+            await detailUpdateMutation.mutateAsync({ detailId: Number(editingCell.rowId), data });
+          } catch (err: unknown) {
+            throw Object.assign(err as Error, { _stage: "Detail修正" });
+          }
         }
       }
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
@@ -286,7 +312,8 @@ export function CodesContents() {
       // C4: PII 로깅 방지 — status만 기록
       const status = isAxiosError(err) ? err.response?.status : undefined;
       console.error("[Codes] 저장 실패: status=", status);
-      openAlert({ type: "alert", message: getApiErrorMessage(err) });
+      const stage = (err as Record<string, unknown>)?._stage as string | undefined;
+      openAlert({ type: "alert", message: getApiErrorMessage(err, stage) });
     } finally {
       setIsSaving(false);
     }
@@ -328,6 +355,7 @@ export function CodesContents() {
         onCancelAdd={handleDetailCancelAdd}
         onCellEditStart={handleCellEditStart}
         onEditCancel={handleEditCancel}
+        onSave={handleSave}
         onNewRowFieldChange={(field, value) => { detailNewRowRef.current[field] = value; }}
         onEditFieldChange={(field, value) => { detailEditRef.current[field] = value; }}
         newRowFieldsRef={detailNewRowRef}

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import type { ColDef, ICellRendererParams, CellDoubleClickedEvent, CellClickedEvent } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { DetailGridRow } from "./codes-types";
 
-// 편집 불가 필드 (Craftsman: ColDef 메타로 관리)
+// 편집 불가 필드
 const NON_EDITABLE_FIELDS = new Set(["headerCode", "isActive"]);
 
 const centerCellStyle = {
@@ -20,11 +20,13 @@ function CellInput({
   defaultValue,
   placeholder,
   onChange,
+  onKeyDown,
   autoFocus,
 }: {
   defaultValue: string;
   placeholder: string;
   onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
   autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -38,11 +40,44 @@ function CellInput({
       type="text"
       defaultValue={defaultValue}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
       onMouseDown={(e) => e.stopPropagation()}
       placeholder={placeholder}
       className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
     />
   );
+}
+
+// C5: 파일 스코프 단일 렌더러 — ag-grid context로 상태 주입
+function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
+  const data = params.data;
+  const field = params.colDef?.field;
+  if (!data || !field) return null;
+  const ctx = params.context as {
+    newRowFieldsRef: React.RefObject<Record<string, string>>;
+    onNewRowFieldChange: (field: string, value: string) => void;
+    onEditFieldChange: (field: string, value: string) => void;
+    onKeyDown: (e: React.KeyboardEvent) => void;
+  };
+  if (data.isNew) {
+    return <CellInput defaultValue={ctx.newRowFieldsRef.current[field] ?? ""} placeholder="" onChange={(v) => ctx.onNewRowFieldChange(field, v)} />;
+  }
+  if (data.editingField === field) {
+    return <CellInput defaultValue={String(params.value ?? "")} placeholder="" onChange={(v) => ctx.onEditFieldChange(field, v)} onKeyDown={ctx.onKeyDown} autoFocus />;
+  }
+  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
+}
+
+function HeaderCodeCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
+  const data = params.data;
+  if (!data) return null;
+  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.headerCode}</span>;
+}
+
+function ActiveTextRendererFn(params: ICellRendererParams<DetailGridRow>) {
+  const data = params.data;
+  if (!data || data.isNew) return null;
+  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
 }
 
 interface CodesDetailTableProps {
@@ -56,6 +91,7 @@ interface CodesDetailTableProps {
   onCancelAdd: () => void;
   onCellEditStart: (rowId: string, field: string) => void;
   onEditCancel: () => void;
+  onSave?: () => void;
   onNewRowFieldChange: (field: string, value: string) => void;
   onEditFieldChange: (field: string, value: string) => void;
   newRowFieldsRef: React.RefObject<Record<string, string>>;
@@ -74,72 +110,66 @@ export function CodesDetailTable({
   onCancelAdd,
   onCellEditStart,
   onEditCancel,
+  onSave,
   onNewRowFieldChange,
   onEditFieldChange,
   newRowFieldsRef,
   activeOnly,
   onActiveOnlyChange,
 }: CodesDetailTableProps) {
-  // headerCode 컬럼은 편집 불가
-  function HeaderCodeCellRenderer(params: ICellRendererParams<DetailGridRow>) {
-    const data = params.data;
-    if (!data) return null;
-    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.headerCode}</span>;
-  }
+  // H10: Enter → 저장, Escape → 취소
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onSave?.();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onEditCancel();
+    }
+  }, [onSave, onEditCancel]);
 
-  function EditableCellRenderer(field: string) {
-    return function Renderer(params: ICellRendererParams<DetailGridRow>) {
-      const data = params.data;
-      if (!data) return null;
-      if (data.isNew) {
-        return <CellInput defaultValue={newRowFieldsRef.current[field] ?? ""} placeholder="" onChange={(v) => onNewRowFieldChange(field, v)} />;
-      }
-      if (data.editingField === field) {
-        return <CellInput defaultValue={String(params.value ?? "")} placeholder="" onChange={(v) => onEditFieldChange(field, v)} autoFocus />;
-      }
-      return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
-    };
-  }
+  // C5: ag-grid context로 핸들러 주입 (identity 안정)
+  const gridContext = useMemo(() => ({
+    newRowFieldsRef,
+    onNewRowFieldChange,
+    onEditFieldChange,
+    onKeyDown: handleKeyDown,
+  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown]);
 
-  function ActiveTextRenderer(params: ICellRendererParams<DetailGridRow>) {
-    const data = params.data;
-    if (!data || data.isNew) return null;
-    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
-  }
+  // C5: columnDefs useMemo — 파일 스코프 렌더러 참조로 identity 안정
+  const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
+    { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap" },
+    { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap" },
+    { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap" },
+    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap" },
+    { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap" },
+    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+  ], []);
 
-  const columnDefs: ColDef<DetailGridRow>[] = [
-    { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
-    { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRenderer("code"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: EditableCellRenderer("displayCode"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-    { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRenderer("codeName"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
-    { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRenderer("codeNameEtc"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-    { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRenderer("relCode1"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-    { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRenderer("relCode2"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRenderer("relNum1"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-    { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRenderer("sortOrder"), cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: () => true },
-    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
-  ];
-
-  const getRowClass = (params: RowClassParams<DetailGridRow>) => {
+  const getRowClass = useCallback((params: RowClassParams<DetailGridRow>) => {
     if (params.data?.isNew) return "ag-row-new";
     return undefined;
-  };
+  }, []);
 
-  const handleCellClicked = (event: CellClickedEvent<DetailGridRow>) => {
+  const handleCellClicked = useCallback((event: CellClickedEvent<DetailGridRow>) => {
     if (!editingCell) return;
     const data = event.data;
     const field = event.colDef.field;
     if (data?.id === editingCell.rowId && field === editingCell.field) return;
     onEditCancel();
-  };
+  }, [editingCell, onEditCancel]);
 
-  const handleCellDoubleClicked = (event: CellDoubleClickedEvent<DetailGridRow>) => {
+  const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<DetailGridRow>) => {
     const data = event.data;
     const field = event.colDef.field;
     if (!data || data.isNew || !field) return;
     if (NON_EDITABLE_FIELDS.has(field)) return;
     onCellEditStart(data.id, field);
-  };
+  }, [onCellEditStart]);
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
@@ -166,6 +196,7 @@ export function CodesDetailTable({
           rowData={rows}
           getRowClass={getRowClass}
           getRowId={(p) => p.data.id}
+          context={gridContext}
           className="codes-detail-grid"
           maxHeight={0}
           loading={isLoading}
