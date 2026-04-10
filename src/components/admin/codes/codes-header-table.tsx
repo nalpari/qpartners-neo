@@ -4,7 +4,7 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
-import type { CodeHeaderItem } from "./codes-dummy-data";
+import type { HeaderGridRow } from "./codes-contents";
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -34,11 +34,13 @@ function CellInput({
 }
 
 interface CodesHeaderTableProps {
-  rows: CodeHeaderItem[];
+  rows: HeaderGridRow[];
   hasNewRow: boolean;
+  isLoading?: boolean;
   onAdd: () => void;
   onCancelAdd: () => void;
   onSave: () => void;
+  isSaving?: boolean;
   onHeaderClick: (id: string) => void;
   onNewRowFieldChange: (field: string, value: string) => void;
   newRowFieldsRef: React.RefObject<Record<string, string>>;
@@ -49,9 +51,11 @@ interface CodesHeaderTableProps {
 export function CodesHeaderTable({
   rows,
   hasNewRow,
+  isLoading,
   onAdd,
   onCancelAdd,
   onSave,
+  isSaving,
   onHeaderClick,
   onNewRowFieldChange,
   newRowFieldsRef,
@@ -60,7 +64,7 @@ export function CodesHeaderTable({
 }: CodesHeaderTableProps) {
   // --- Cell Renderers ---
 
-  function HeaderCodeRenderer(params: ICellRendererParams<CodeHeaderItem>) {
+  function HeaderCodeRenderer(params: ICellRendererParams<HeaderGridRow>) {
     const data = params.data;
     if (!data) return null;
     if (data.isNew) {
@@ -83,7 +87,7 @@ export function CodesHeaderTable({
     );
   }
 
-  function AliasRenderer(params: ICellRendererParams<CodeHeaderItem>) {
+  function AliasRenderer(params: ICellRendererParams<HeaderGridRow>) {
     const data = params.data;
     if (!data) return null;
     if (data.isNew) {
@@ -98,7 +102,7 @@ export function CodesHeaderTable({
     return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.headerAlias}</span>;
   }
 
-  function NameRenderer(params: ICellRendererParams<CodeHeaderItem>) {
+  function NameRenderer(params: ICellRendererParams<HeaderGridRow>) {
     const data = params.data;
     if (!data) return null;
     if (data.isNew) {
@@ -113,29 +117,29 @@ export function CodesHeaderTable({
     return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.headerName}</span>;
   }
 
-  function RelFieldRenderer(params: ICellRendererParams<CodeHeaderItem>) {
+  function RelFieldRenderer(params: ICellRendererParams<HeaderGridRow>) {
     const data = params.data;
     if (!data) return null;
-    const field = params.colDef?.field as keyof CodeHeaderItem | undefined;
+    const field = params.colDef?.field as keyof HeaderGridRow | undefined;
     if (data.isNew && field) {
       return (
         <CellInput
           defaultValue=""
           placeholder=""
-          onChange={(v) => onNewRowFieldChange(field as "relCode1", v)}
+          onChange={(v) => onNewRowFieldChange(field, v)}
         />
       );
     }
     return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
   }
 
-  function ActiveTextRenderer(params: ICellRendererParams<CodeHeaderItem>) {
+  function ActiveTextRenderer(params: ICellRendererParams<HeaderGridRow>) {
     const data = params.data;
     if (!data || data.isNew) return null;
     return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
   }
 
-  const columnDefs: ColDef<CodeHeaderItem>[] = [
+  const columnDefs: ColDef<HeaderGridRow>[] = [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
     { headerName: "Header Id", field: "headerAlias", flex: 1, cellRenderer: AliasRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
     { headerName: "Header Code Name", field: "headerName", flex: 1.5, cellRenderer: NameRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: () => true },
@@ -148,7 +152,7 @@ export function CodesHeaderTable({
     { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRenderer, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
   ];
 
-  const getRowClass = (params: RowClassParams<CodeHeaderItem>) => {
+  const getRowClass = (params: RowClassParams<HeaderGridRow>) => {
     if (params.data?.isNew) return "ag-row-new";
     return undefined;
   };
@@ -168,15 +172,16 @@ export function CodesHeaderTable({
           ) : (
             <Button variant="outline" onClick={onAdd}>追加</Button>
           )}
-          <Button variant="primary" onClick={onSave}>保存</Button>
+          <Button variant="primary" onClick={onSave} disabled={isSaving}>保存</Button>
         </div>
       </div>
-      <DataGrid<CodeHeaderItem>
+      <DataGrid<HeaderGridRow>
         columnDefs={columnDefs}
         rowData={rows}
         getRowClass={getRowClass}
         className="codes-header-grid"
         maxHeight={0}
+        loading={isLoading}
       />
     </div>
   );

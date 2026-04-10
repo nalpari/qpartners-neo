@@ -11,6 +11,9 @@ import {
   themeQuartz,
   type ColDef,
   type RowClassParams,
+  type RowDoubleClickedEvent,
+  type CellDoubleClickedEvent,
+  type CellClickedEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
@@ -48,6 +51,10 @@ interface DataGridProps<T> {
   maxHeight?: number;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
   context?: Record<string, unknown>;
+  loading?: boolean;
+  onRowDoubleClicked?: (event: RowDoubleClickedEvent<T>) => void;
+  onCellDoubleClicked?: (event: CellDoubleClickedEvent<T>) => void;
+  onCellClicked?: (event: CellClickedEvent<T>) => void;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -59,6 +66,10 @@ export function DataGrid<T>({
   maxHeight = DEFAULT_MAX_HEIGHT,
   getRowClass: externalGetRowClass,
   context,
+  loading,
+  onRowDoubleClicked,
+  onCellDoubleClicked,
+  onCellClicked,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -98,7 +109,17 @@ export function DataGrid<T>({
         suppressRowHoverHighlight={false}
         headerHeight={57}
         rowHeight={57}
+        suppressNoRowsOverlay
+        loading={loading}
+        onRowDoubleClicked={onRowDoubleClicked}
+        onCellDoubleClicked={onCellDoubleClicked}
+        onCellClicked={onCellClicked}
       />
+      {rowData.length === 0 && !loading && (
+        <div className="flex items-center justify-center h-[57px] border-b border-[#E6EEF6] font-['Noto_Sans_JP'] text-[14px] text-[#AAAAAA]">
+          値がありません
+        </div>
+      )}
     </div>
   );
 }
