@@ -48,7 +48,8 @@ function CellInput({
   );
 }
 
-// C5: 파일 스코프 단일 렌더러 — ag-grid context로 상태 주입
+// cell renderer는 파일 스코프 함수로 선언 — 매 렌더 identity가 안정되어 ag-grid 셀 재마운트 방지
+// 상태·핸들러는 ag-grid context(`params.context`)를 경유해 주입
 function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const data = params.data;
   const field = params.colDef?.field;
@@ -91,6 +92,8 @@ interface CodesDetailTableProps {
   onCancelAdd: () => void;
   onCellEditStart: (rowId: string, field: string) => void;
   onEditCancel: () => void;
+  /** H9: 셀 전환 시 미저장 편집이 있으면 확인 다이얼로그 후 취소 */
+  onRequestEditCancel: (onConfirm?: () => void) => void;
   onSave?: () => void;
   onNewRowFieldChange: (field: string, value: string) => void;
   onEditFieldChange: (field: string, value: string) => void;
@@ -110,6 +113,7 @@ export function CodesDetailTable({
   onCancelAdd,
   onCellEditStart,
   onEditCancel,
+  onRequestEditCancel,
   onSave,
   onNewRowFieldChange,
   onEditFieldChange,
@@ -117,7 +121,7 @@ export function CodesDetailTable({
   activeOnly,
   onActiveOnlyChange,
 }: CodesDetailTableProps) {
-  // H10: Enter → 저장, Escape → 취소
+  // 키보드 편집 접근성 — Enter 저장 / Escape 취소 (WCAG 2.1.1 Keyboard)
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -128,7 +132,7 @@ export function CodesDetailTable({
     }
   }, [onSave, onEditCancel]);
 
-  // C5: ag-grid context로 핸들러 주입 (identity 안정)
+  // ag-grid context로 핸들러 주입 — 파일 스코프 렌더러가 params.context로 접근
   const gridContext = useMemo(() => ({
     newRowFieldsRef,
     onNewRowFieldChange,
@@ -136,7 +140,6 @@ export function CodesDetailTable({
     onKeyDown: handleKeyDown,
   }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown]);
 
-  // C5: columnDefs useMemo — 파일 스코프 렌더러 참조로 identity 안정
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
     { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
@@ -155,13 +158,14 @@ export function CodesDetailTable({
     return undefined;
   }, []);
 
+  // 셀 전환 시 미저장 편집값이 있으면 확인 다이얼로그 — onEditCancel() 직접 호출 대신 onRequestEditCancel 사용
   const handleCellClicked = useCallback((event: CellClickedEvent<DetailGridRow>) => {
     if (!editingCell) return;
     const data = event.data;
     const field = event.colDef.field;
     if (data?.id === editingCell.rowId && field === editingCell.field) return;
-    onEditCancel();
-  }, [editingCell, onEditCancel]);
+    onRequestEditCancel();
+  }, [editingCell, onRequestEditCancel]);
 
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<DetailGridRow>) => {
     const data = event.data;
