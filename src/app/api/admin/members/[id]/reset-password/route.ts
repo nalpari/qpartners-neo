@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
-import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { SITE_DEFAULTS } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendMail } from "@/lib/mailer";
@@ -14,10 +14,8 @@ import {
   passwordResetMailHtml,
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
-import {
-  memberIdParamSchema,
-  qspMemberDetailResponseSchema,
-} from "@/lib/schemas/member";
+import { fetchQspUserDetail } from "@/lib/qsp-member";
+import { memberIdParamSchema } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
@@ -61,67 +59,25 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 3. 대상 회원 정보 조회 (이메일 획득)
-    const qspParams = new URLSearchParams({
-      accsSiteCd: "QPARTNERS",
-      userId: rawId,
-    });
-
-    let qspResponse: Response;
-    try {
-      qspResponse = await fetch(`${QSP_API.userDetail}?${qspParams.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (error: unknown) {
-      console.error("[POST /api/admin/members/:id/reset-password] QSP 회원 조회 실패:", error);
+    // 3. userTp 파라미터 검증 + 대상 회원 정보 조회 (이메일 획득)
+    const userTp = request.nextUrl.searchParams.get("userTp");
+    if (!userTp || !["ADMIN", "STORE", "GENERAL"].includes(userTp)) {
       return NextResponse.json(
-        { error: "外部サーバーに接続できません" },
-        { status: 502 },
+        { error: "ユーザータイプ(userTp)は必須です" },
+        { status: 400 },
       );
     }
 
-    if (!qspResponse.ok) {
-      console.error("[POST /api/admin/members/:id/reset-password] QSP 비정상 응답:", qspResponse.status);
-      return NextResponse.json(
-        { error: "外部サーバーエラーが発生しました" },
-        { status: 502 },
-      );
-    }
-
-    let qspBody: unknown;
-    try {
-      qspBody = await qspResponse.json();
-    } catch (error: unknown) {
-      console.error("[POST /api/admin/members/:id/reset-password] QSP 응답 파싱 실패:", error);
-      return NextResponse.json(
-        { error: "外部サーバーの応答を処理できません" },
-        { status: 502 },
-      );
-    }
-
-    const parsed = qspMemberDetailResponseSchema.safeParse(qspBody);
-    if (!parsed.success) {
-      console.error("[POST /api/admin/members/:id/reset-password] QSP 응답 스키마 불일치:", parsed.error.issues);
-      return NextResponse.json(
-        { error: "外部サーバーの応答形式が正しくありません" },
-        { status: 502 },
-      );
-    }
-
-    if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
-      return NextResponse.json(
-        { error: "会員情報が見つかりません" },
-        { status: 404 },
-      );
-    }
+    const detailResult = await fetchQspUserDetail(rawId, userTp, "[POST /api/admin/members/:id/reset-password]");
+    if (!detailResult.ok) return detailResult.response;
+    const detail = detailResult.detail;
 
     // MF-2: 비활성 회원(탈퇴/삭제) 비밀번호 초기화 차단
     // 탈퇴한 이메일이 재활용된 경우 제3자가 리셋 링크를 수신하여 계정 탈취 가능.
-    if (parsed.data.data.statCd !== "Y") {
+    if (detail.statCd !== "A") {
       console.warn(
         "[POST /api/admin/members/:id/reset-password] 비활성 회원 초기화 시도 차단 — statCd:",
-        parsed.data.data.statCd,
+        detail.statCd,
       );
       return NextResponse.json(
         { error: "アクティブな会員のみパスワード初期化が可能です" },
@@ -129,8 +85,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    const memberEmail = parsed.data.data.email;
-    const memberUserTp = parsed.data.data.userTp;
+    const memberEmail = detail.email;
+    const memberUserTp = detail.userTp;
     if (!memberEmail) {
       console.warn("[POST /api/admin/members/:id/reset-password] 회원 이메일 없음");
       return NextResponse.json(
