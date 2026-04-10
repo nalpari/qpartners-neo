@@ -139,7 +139,7 @@ export type QspMemberItem = z.infer<typeof qspMemberItemSchema>;
 
 export const qspMemberListResponseSchema = z.object({
   data: z.object({
-    totCnt: z.number().nullable().default(0),
+    totCnt: z.number().nullable().transform(v => v ?? 0),
     list: z.array(qspMemberItemSchema).nullable(),
   }).nullable(),
   result: qspResultSchema,
@@ -180,8 +180,6 @@ const qspMemberDetailSchema = z.object({
   pwdInitYn: z.string().nullable(),
   storeLvl: z.string().nullable(),
 });
-
-export type QspMemberDetail = z.infer<typeof qspMemberDetailSchema>;
 
 export const qspMemberDetailResponseSchema = z.object({
   data: qspMemberDetailSchema.nullable(),

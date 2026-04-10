@@ -1,6 +1,7 @@
+import type { z } from "zod";
+
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { qspMemberDetailResponseSchema } from "@/lib/schemas/member";
-import type { z } from "zod";
 import type { UserTp } from "@/lib/schemas/common";
 
 export type QspMemberDetail = NonNullable<
