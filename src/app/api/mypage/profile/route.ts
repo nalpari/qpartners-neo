@@ -207,15 +207,15 @@ export async function PUT(request: NextRequest) {
     } catch (error) {
       console.warn("[PUT /api/mypage/profile] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
 
-    const result = profileUpdateSchema.safeParse(body);
+    const result = profileUpdateSchema.safeParse({ ...(body as Record<string, unknown>), userType: user.userTp });
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }

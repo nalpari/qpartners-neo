@@ -25,8 +25,8 @@ export const massMailCreateSchema = z.object({
   senderName: z.string().min(1, "送信者名は必須です").max(255),
   targetSuperAdmin: formBool,
   targetAdmin: formBool,
-  targetFirstDealer: formBool,
-  targetSecondDealer: formBool,
+  targetFirstStore: formBool,
+  targetSecondStore: formBool,
   targetConstructor: formBool,
   targetGeneral: formBool,
   optOut: formBool,
@@ -43,8 +43,8 @@ export type MassMailCreateInput = z.infer<typeof massMailCreateSchema>;
 
 /** DB 모델의 target boolean 필드명 */
 export const TARGET_KEYS = [
-  "targetSuperAdmin", "targetAdmin", "targetFirstDealer",
-  "targetSecondDealer", "targetConstructor", "targetGeneral",
+  "targetSuperAdmin", "targetAdmin", "targetFirstStore",
+  "targetSecondStore", "targetConstructor", "targetGeneral",
 ] as const;
 
 export type TargetKey = (typeof TARGET_KEYS)[number];
@@ -52,8 +52,8 @@ export type TargetKey = (typeof TARGET_KEYS)[number];
 export const TARGET_LABELS: { key: TargetKey; label: string; responseKey: string }[] = [
   { key: "targetSuperAdmin", label: "スーパー管理者", responseKey: "super_admin" },
   { key: "targetAdmin", label: "管理者", responseKey: "admin" },
-  { key: "targetFirstDealer", label: "1次販売店", responseKey: "first_store" },
-  { key: "targetSecondDealer", label: "2次以降販売店", responseKey: "second_store" },
+  { key: "targetFirstStore", label: "1次販売店", responseKey: "first_store" },
+  { key: "targetSecondStore", label: "2次以降販売店", responseKey: "second_store" },
   { key: "targetConstructor", label: "施工店", responseKey: "seko" },
   { key: "targetGeneral", label: "一般", responseKey: "general" },
 ];
@@ -66,8 +66,8 @@ export const TARGET_LABELS: { key: TargetKey; label: string; responseKey: string
 export const TARGET_FILTER_MAP: Record<string, TargetKey> = {
   super_admin: "targetSuperAdmin",
   admin: "targetAdmin",
-  first_store: "targetFirstDealer",
-  second_store: "targetSecondDealer",
+  first_store: "targetFirstStore",
+  second_store: "targetSecondStore",
   seko: "targetConstructor",
   general: "targetGeneral",
 };

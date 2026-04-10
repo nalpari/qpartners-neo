@@ -165,6 +165,7 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
       "img", "span", "div", "hr",
     ],
     ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
+    ALLOWED_URI_REGEXP: /^https:\/\//i,
     ALLOW_DATA_ATTR: false,
   });
 
@@ -265,8 +266,8 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
         senderName: data.senderName,
         targetSuperAdmin: data.targetSuperAdmin,
         targetAdmin: data.targetAdmin,
-        targetFirstDealer: data.targetFirstDealer,
-        targetSecondDealer: data.targetSecondDealer,
+        targetFirstStore: data.targetFirstStore,
+        targetSecondStore: data.targetSecondStore,
         targetConstructor: data.targetConstructor,
         targetGeneral: data.targetGeneral,
         optOut: data.optOut,

@@ -5,17 +5,19 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 // ─── 프로필 수정 요청 ───
 
+/** 프로필 수정 스키마 (userType에 따라 회사 필드 필수/선택 분기) */
 export const profileUpdateSchema = z.object({
+  userType: z.string().optional(),
   sei: z.string().min(1, "姓は必須です").max(50),
   mei: z.string().min(1, "名は必須です").max(50),
   seiKana: z.string().min(1, "姓(カナ)は必須です").max(50),
   meiKana: z.string().min(1, "名(カナ)は必須です").max(50),
-  compNm: z.string().min(1, "会社名は必須です").max(100),
+  compNm: z.string().max(100).optional().default(""),
   compNmKana: z.string().max(100).optional().default(""),
-  zipcode: z.string().min(1, "郵便番号は必須です").max(10),
-  address1: z.string().min(1, "住所は必須です").max(255),
+  zipcode: z.string().max(10).optional().default(""),
+  address1: z.string().max(255).optional().default(""),
   address2: z.string().max(255).optional().default(""),
-  telNo: z.string().min(1, "電話番号は必須です").max(100),
+  telNo: z.string().max(100).optional().default(""),
   fax: z.string().max(100).optional().default(""),
   department: z.string().max(50).optional().default(""),
   jobTitle: z.string().max(50).optional().default(""),
@@ -23,6 +25,22 @@ export const profileUpdateSchema = z.object({
   newsRcptYn: z.enum(["Y", "N"], {
     message: "ニュースレター受信はYまたはNです",
   }),
+}).superRefine((data, ctx) => {
+  // ADMIN은 회사 정보가 없을 수 있으므로 필수 검증 제외
+  if (data.userType === "ADMIN") return;
+
+  if (!data.compNm) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "会社名は必須です", path: ["compNm"] });
+  }
+  if (!data.zipcode) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "郵便番号は必須です", path: ["zipcode"] });
+  }
+  if (!data.address1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "住所は必須です", path: ["address1"] });
+  }
+  if (!data.telNo) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "電話番号は必須です", path: ["telNo"] });
+  }
 });
 
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
