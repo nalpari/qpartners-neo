@@ -188,15 +188,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 관리자 프로필 수정은 미구현 (Q.ORDER T01만 — 향후 구현)
-    // body 파싱·검증 전에 조기 차단하여 불필요한 작업을 방지한다.
-    if (user.userTp === "ADMIN") {
-      return NextResponse.json(
-        { error: "管理者のプロフィール修正はまだ対応されていません" },
-        { status: 501 },
-      );
-    }
-
     // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
     // 데이터 정합성 이슈이므로 500 으로 승격하여 운영 알람에 노출시키고, 사용자는 재로그인 유도.
     if (!user.email) {
@@ -216,15 +207,21 @@ export async function PUT(request: NextRequest) {
     } catch (error) {
       console.warn("[PUT /api/mypage/profile] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
 
-    const result = profileUpdateSchema.safeParse(body);
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "リクエスト形式が正しくありません" },
+        { status: 400 },
+      );
+    }
+    const result = profileUpdateSchema.safeParse({ ...body, userType: user.userTp });
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -239,21 +236,15 @@ export async function PUT(request: NextRequest) {
 
     const d = result.data;
 
-    // QSP 수정 API 호출 (판매점/일반)
-    // NOTE: 이전 구현은 QSP_API.userDetail 에 PUT 으로 호출하여 QSP 가 405 를 반환하던 버그가 있었음.
-    //       QSP 에서 사용자 업데이트는 `updateUser` (POST) 엔드포인트를 사용한다.
-    //       admin/members 도 동일 엔드포인트를 사용하지만, 전달 필드가 다르다
-    //       (admin 은 메타 필드만, profile 은 전체 회사/개인 정보 포함).
+    // QSP 마이페이지 회원정보 수정 API (POST /api/qpartners/user/updateUserDtl)
+    // 사양서 v1.0 기준 필수: userTp, userId, accsSiteCd, user1stNm, user2ndNm,
+    //   user1stNmKana, user2ndNmKana, compNm, compNmKana, compPostCd,
+    //   compAddr, compAddr2, compTelNo, newsRcptYn
     {
       const qspPayload = {
         accsSiteCd: "QPARTNERS",
         userId: user.userId,
-        email: user.email,
         userTp: user.userTp,
-        // STORE 는 userId ≠ loginId 일 수 있어 loginId 를 명시 전달한다.
-        // (admin/members 는 메타 필드만 수정하므로 loginId 미전달)
-        // (ADMIN 은 상단에서 501 처리되어 이 분기에 도달하지 않음)
-        ...(user.userTp === "STORE" && { loginId: user.userId }),
         user1stNm: d.mei,
         user2ndNm: d.sei,
         user1stNmKana: d.meiKana,
@@ -268,12 +259,12 @@ export async function PUT(request: NextRequest) {
         deptNm: d.department,
         pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
-        updBy: user.userId,
+        bizNo: d.corporateNo,
       };
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.updateUser, {
+        qspResponse = await fetch(QSP_API.updateUserDtl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(10_000),
