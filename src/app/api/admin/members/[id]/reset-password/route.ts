@@ -69,7 +69,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
+      qspResponse = await fetch(`${QSP_API.userDetail}?${qspParams.toString()}`, {
         method: "GET",
         signal: AbortSignal.timeout(10_000),
       });

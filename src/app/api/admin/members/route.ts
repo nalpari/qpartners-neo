@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.memberList}?${params.toString()}`, {
+      qspResponse = await fetch(`${QSP_API.userListMng}?${params.toString()}`, {
         method: "GET",
         signal: AbortSignal.timeout(15_000),
       });

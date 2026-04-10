@@ -20,7 +20,7 @@ type QspMemberDetail = NonNullable<
 >;
 
 /**
- * QSP memberDetail 조회 공통 헬퍼.
+ * QSP userDetail 조회 공통 헬퍼.
  * 성공 시 `{ ok: true, detail }`, 실패 시 그대로 반환할 NextResponse를 돌려준다.
  * MF-4/MF-6 대응으로 PUT 핸들러가 self-guard, existence check, TOCTOU 재검증에 재사용한다.
  */
@@ -31,7 +31,7 @@ async function fetchQspMemberDetail(
   const qspParams = new URLSearchParams({ accsSiteCd: "QPARTNERS", userId: rawId });
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
+    qspResponse = await fetch(`${QSP_API.userDetail}?${qspParams.toString()}`, {
       method: "GET",
       signal: AbortSignal.timeout(10_000),
     });
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
+      qspResponse = await fetch(`${QSP_API.userDetail}?${qspParams.toString()}`, {
         method: "GET",
         signal: AbortSignal.timeout(10_000),
       });
@@ -315,7 +315,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.updateUser, {
+      qspResponse = await fetch(QSP_API.updateUserDtlMng, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(10_000),

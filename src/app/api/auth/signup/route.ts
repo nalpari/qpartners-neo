@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   // 2. QSP newUserReq I/F 호출
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_API.signup, {
+    qspResponse = await fetch(QSP_API.newUserReq, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // M4: 10초 타임아웃
