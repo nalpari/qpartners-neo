@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
 import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §4.2 — approverLevel 라벨 변환
@@ -26,6 +27,7 @@ export function ContentsDetailInfo({
   approverLevel,
 }: ContentsDetailInfoProps) {
   const { openAlert } = useAlertStore();
+  const [infoOpen, setInfoOpen] = useState(true);
 
   const handleCopyUrl = async () => {
     try {
@@ -95,24 +97,48 @@ export function ContentsDetailInfo({
         </div>
       </div>
 
-      {/* MO: 관리정보 세로 카드 */}
-      <div className="block lg:hidden bg-white px-6 py-[34px] w-full">
-        <div className="flex flex-col gap-[18px]">
-          {fields.map((field, idx) => (
-            <div
-              key={field.label}
-              className={`flex flex-col gap-2 ${
-                idx > 0 ? "border-t border-[#EFF4F8] pt-[18px]" : ""
-              }`}
-            >
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F]">
-                {field.label}
-              </p>
-              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                {field.value}
-              </p>
+      {/* MO: 관리정보 세로 카드 (토글) */}
+      <div className="block lg:hidden bg-white px-6 py-6 w-full">
+        <button
+          type="button"
+          onClick={() => setInfoOpen((prev) => !prev)}
+          className="flex items-center gap-[10px] w-full cursor-pointer"
+        >
+          <p className="flex-1 text-left font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
+            管理情報/公開対象
+          </p>
+          <Image
+            src="/asset/images/contents/content_toggle.svg"
+            alt=""
+            width={32}
+            height={32}
+            className={`transition-transform duration-200 ${infoOpen ? "" : "rotate-180"}`}
+          />
+        </button>
+
+        <div
+          className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+          style={{ gridTemplateRows: infoOpen ? "1fr" : "0fr" }}
+        >
+          <div className="overflow-hidden">
+            <div className="flex flex-col gap-[18px] mt-6">
+              {fields.map((field, idx) => (
+                <div
+                  key={field.label}
+                  className={`flex flex-col gap-2 ${
+                    idx > 0 ? "border-t border-[#EFF4F8] pt-[18px]" : ""
+                  }`}
+                >
+                  <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F]">
+                    {field.label}
+                  </p>
+                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+                    {field.value}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       </div>
     </>

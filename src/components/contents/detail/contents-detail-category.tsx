@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Image from "next/image";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 
 // Design Ref: §4.4 — 카테고리 8그룹 매핑, isInternalOnly 적색, 콤마 처리
@@ -42,51 +44,92 @@ export function ContentsDetailCategory({
     };
   });
 
+  const [categoryOpen, setCategoryOpen] = useState(true);
+
   if (groupedCategories.every((g) => g.normalValues.length === 0 && g.internalValues.length === 0)) return null;
 
+  const categoryGrid = groupedCategories.map((group) => {
+    const hasValues = group.normalValues.length > 0 || group.internalValues.length > 0;
+
+    return (
+      <div
+        key={group.label}
+        className="border border-[#EAF0F6] rounded-[6px] flex flex-col"
+      >
+        <div className="bg-[#F7F9FB] border-b border-[#EFF4F8] px-4 py-[10px] rounded-t-[6px]">
+          <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+            {group.label}
+          </p>
+        </div>
+        <div className="bg-[#FDFEFE] px-4 py-[14px] rounded-b-[6px] min-h-[49px]">
+          {hasValues ? (
+            <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+              {group.normalValues.join(", ")}
+              {group.internalValues.length > 0 && (
+                <>
+                  {group.normalValues.length > 0 ? ", " : ""}
+                  <span className="text-[#FF1A1A]">
+                    {group.internalValues.join(", ")}
+                  </span>
+                </>
+              )}
+            </p>
+          ) : (
+            <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  });
+
   return (
-    <div className="bg-white rounded-[12px] lg:rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-4 pt-[34px] pb-6 px-6 w-full lg:w-[1440px]">
-      <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
-        カテゴリー
-      </h2>
+    <>
+      {/* PC: 기존 레이아웃 */}
+      <div className="hidden lg:flex bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex-col gap-4 pt-[34px] pb-6 px-6 w-[1440px]">
+        <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
+          カテゴリー
+        </h2>
+        <div className="grid grid-cols-4 gap-2">
+          {categoryGrid}
+        </div>
+      </div>
 
-      {/* PC: 4열×2행 그리드 / MO: 1열 */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-2">
-        {groupedCategories.map((group) => {
-          const hasValues = group.normalValues.length > 0 || group.internalValues.length > 0;
+      {/* MO: 토글 레이아웃 */}
+      <div className="block lg:hidden bg-white px-6 py-6 w-full">
+        <button
+          type="button"
+          onClick={() => setCategoryOpen((prev) => !prev)}
+          className="flex items-center gap-[10px] w-full cursor-pointer"
+        >
+          <p className="flex-1 text-left font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
+            カテゴリー
+          </p>
+          <Image
+            src="/asset/images/contents/content_toggle.svg"
+            alt=""
+            width={32}
+            height={32}
+            className={`transition-transform duration-200 ${categoryOpen ? "" : "rotate-180"}`}
+          />
+        </button>
 
-          return (
-            <div
-              key={group.label}
-              className="border border-[#EAF0F6] rounded-[6px] flex flex-col"
-            >
-              <div className="bg-[#F7F9FB] border-b border-[#EFF4F8] px-4 py-[10px] rounded-t-[6px]">
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
-                  {group.label}
-                </p>
-              </div>
-              <div className="bg-[#FDFEFE] px-4 py-[14px] rounded-b-[6px] min-h-[49px]">
-                {hasValues ? (
-                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                    {group.normalValues.join(", ")}
-                    {group.internalValues.length > 0 && (
-                      <>
-                        {group.normalValues.length > 0 ? ", " : ""}
-                        <span className="text-[#FF1A1A]">
-                          {group.internalValues.join(", ")}
-                        </span>
-                      </>
-                    )}
-                  </p>
-                ) : (
-                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-                  </p>
-                )}
+        <div
+          className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+          style={{ gridTemplateRows: categoryOpen ? "1fr" : "0fr" }}
+        >
+          <div className="overflow-hidden">
+            <div className="flex flex-col gap-4 mt-6">
+              <h3 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
+                カテゴリー
+              </h3>
+              <div className="flex flex-col gap-2">
+                {categoryGrid}
               </div>
             </div>
-          );
-        })}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
