@@ -1,38 +1,7 @@
-// Design Ref: §2 — 코드관리 공용 타입 (H5 의존 역전 해소)
-
-// API Response Types
-export interface CodeHeaderResponse {
-  id: number;
-  headerCode: string;
-  headerAlias: string;
-  headerName: string;
-  relCode1: string | null;
-  relCode2: string | null;
-  relCode3: string | null;
-  relNum1: string | null;
-  relNum2: string | null;
-  relNum3: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CodeDetailResponse {
-  id: number;
-  headerId: number;
-  code: string;
-  displayCode: string;
-  codeName: string;
-  codeNameEtc: string | null;
-  relCode1: string | null;
-  relCode2: string | null;
-  relCode3: string | null;
-  relNum1: string | null;
-  sortOrder: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+// 코드관리 화면 공용 타입 — 서버 Zod 스키마(src/lib/schemas/code.ts)의 z.infer를 단일 소스로 재수출하고
+// 그리드 전용 파생 타입(HeaderGridRow/DetailGridRow)과 API → Grid 변환 함수를 정의
+import type { CodeHeaderResponse, CodeDetailResponse } from "@/lib/schemas/code";
+export type { CodeHeaderResponse, CodeDetailResponse };
 
 // Grid ViewModel Types
 export interface HeaderGridRow {

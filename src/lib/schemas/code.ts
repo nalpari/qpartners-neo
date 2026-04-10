@@ -78,9 +78,60 @@ export const updateCodeDetailSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+// ─── Response Schemas (프론트 응답 safeParse 검증 및 z.infer 타입 파생용) ───
+
+/**
+ * Prisma JSON 직렬화 후 클라이언트가 받는 CodeHeader 형태.
+ * - Date → ISO string
+ * - Decimal(15,2) → string | null
+ * - Boolean → boolean
+ */
+export const codeHeaderResponseSchema = z.object({
+  id: z.number().int(),
+  headerCode: z.string(),
+  headerAlias: z.string(),
+  headerName: z.string(),
+  relCode1: z.string().nullable(),
+  relCode2: z.string().nullable(),
+  relCode3: z.string().nullable(),
+  relNum1: z.string().nullable(),
+  relNum2: z.string().nullable(),
+  relNum3: z.string().nullable(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const codeHeaderListResponseSchema = z.object({
+  data: z.array(codeHeaderResponseSchema),
+});
+
+export const codeDetailResponseSchema = z.object({
+  id: z.number().int(),
+  headerId: z.number().int(),
+  code: z.string(),
+  displayCode: z.string(),
+  codeName: z.string(),
+  codeNameEtc: z.string().nullable(),
+  relCode1: z.string().nullable(),
+  relCode2: z.string().nullable(),
+  relCode3: z.string().nullable(),
+  relNum1: z.string().nullable(),
+  sortOrder: z.number().int(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const codeDetailListResponseSchema = z.object({
+  data: z.array(codeDetailResponseSchema),
+});
+
 // ─── Types ───
 
 export type CreateCodeHeaderInput = z.infer<typeof createCodeHeaderSchema>;
 export type UpdateCodeHeaderInput = z.infer<typeof updateCodeHeaderSchema>;
 export type CreateCodeDetailInput = z.infer<typeof createCodeDetailSchema>;
 export type UpdateCodeDetailInput = z.infer<typeof updateCodeDetailSchema>;
+export type CodeHeaderResponse = z.infer<typeof codeHeaderResponseSchema>;
+export type CodeDetailResponse = z.infer<typeof codeDetailResponseSchema>;
