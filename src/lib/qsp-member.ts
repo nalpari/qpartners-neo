@@ -63,6 +63,10 @@ export async function fetchQspUserDetail(
     };
   }
   if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
+    console.warn(`${logTag} QSP 회원 조회 결과 없음:`, {
+      resultCode: parsed.data.result.resultCode,
+      message: parsed.data.result.message,
+    });
     return {
       ok: false,
       response: NextResponse.json({ error: "会員情報が見つかりません" }, { status: 404 }),

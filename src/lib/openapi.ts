@@ -2207,6 +2207,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 회원 상세정보 (QSP 연동)",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         responses: {
           "200": {
@@ -2222,6 +2223,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("userTp 누락"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("회원 없음"),
@@ -2235,6 +2237,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — userRole(일반회원만), 2차인증, 알림, 상태, 뉴스레터 수정",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         requestBody: {
           required: true,
@@ -2279,6 +2282,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 대상 회원 이메일로 비밀번호 변경 링크 발송",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
+          { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
         ],
         responses: {
           "200": {
@@ -3207,9 +3211,12 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "string", description: "userId (이메일 또는 로그인 ID)" },
           userId: { type: "string" },
-          loginId: { type: "string" },
           userName: { type: "string" },
           userNameKana: { type: "string" },
+          firstName: { type: "string" },
+          lastName: { type: "string" },
+          firstNameKana: { type: "string" },
+          lastNameKana: { type: "string" },
           email: { type: "string" },
           userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
           userRole: { type: "string" },
@@ -3217,24 +3224,16 @@ export const openApiSpec: OpenAPIV3.Document = {
           companyNameKana: { type: "string" },
           zipcode: { type: "string" },
           address: { type: "string" },
+          address2: { type: "string" },
           telNo: { type: "string" },
           faxNo: { type: "string" },
-          corporateNo: { type: "string" },
           department: { type: "string" },
           jobTitle: { type: "string" },
-          // 2FA: true=활성, false=비활성, null=미설정 (QSP에서 null 반환 가능)
           twoFactorEnabled: { type: "boolean", nullable: true },
           loginNotification: { type: "boolean" },
           attributeChangeNotification: { type: "boolean" },
           status: { type: "string", enum: ["active", "deleted", "withdrawn", "unknown"] },
           newsRcptYn: { type: "string", enum: ["Y", "N"] },
-          newsRcptDate: { type: "string", format: "date-time", nullable: true },
-          lastLoginAt: { type: "string", format: "date-time", nullable: true },
-          withdrawnAt: { type: "string", format: "date-time", nullable: true },
-          withdrawnReason: { type: "string", nullable: true },
-          createdAt: { type: "string", format: "date-time", nullable: true },
-          updatedAt: { type: "string", format: "date-time", nullable: true },
-          updatedBy: { type: "string", nullable: true },
         },
       },
       MemberUpdateRequest: {

@@ -200,7 +200,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.userRole !== undefined) updatePayload.authCd = result.data.userRole;
     if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
     if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
-    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgNotiYn = result.data.attributeChangeNotification ? "Y" : "N";
+    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgYn = result.data.attributeChangeNotification ? "Y" : "N";
     if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status];
     if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
 
@@ -261,7 +261,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
     //      CRITICAL 감사 로그로 탐지 가능하게 한다.
     if (result.data.userRole !== undefined) {
       const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
-      if (postDetailResult.ok && postDetailResult.detail.userTp !== "GENERAL") {
+      if (!postDetailResult.ok) {
+        console.warn(
+          "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
+          { rawId, byAdmin: user.userId },
+        );
+      } else if (postDetailResult.detail.userTp !== "GENERAL") {
         console.error(
           "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
           { rawId, postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },

@@ -114,6 +114,9 @@ export async function GET(request: NextRequest) {
 
     // 5. 응답 매핑 (QSP → TO-BE)
     const { list, totCnt } = parsed.data.data;
+    if (list === null && totCnt > 0) {
+      console.warn("[GET /api/admin/members] QSP totCnt > 0 이지만 list가 null:", { totCnt });
+    }
     const mappedList = (list ?? []).map((item) => ({
       id: item.userId,
       userId: item.userId,

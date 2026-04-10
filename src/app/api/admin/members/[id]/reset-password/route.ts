@@ -74,6 +74,13 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     // MF-2: 비활성 회원(탈퇴/삭제) 비밀번호 초기화 차단
     // 탈퇴한 이메일이 재활용된 경우 제3자가 리셋 링크를 수신하여 계정 탈취 가능.
+    if (detail.statCd === null) {
+      console.error("[POST /api/admin/members/:id/reset-password] 회원 statCd가 null — 데이터 이상:", rawId);
+      return NextResponse.json(
+        { error: "会員のステータス情報が不正です" },
+        { status: 502 },
+      );
+    }
     if (detail.statCd !== "A") {
       console.warn(
         "[POST /api/admin/members/:id/reset-password] 비활성 회원 초기화 시도 차단 — statCd:",
