@@ -56,14 +56,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
         });
 
         const newOrder = result.data.sortOrder;
-        if (newOrder !== current.sortOrder) {
+        if (newOrder < current.sortOrder) {
+          // 위로 이동: [newOrder, oldOrder) 범위 형제 +1
           await tx.category.updateMany({
             where: {
               parentId: current.parentId,
               id: { not: parsed.data },
-              sortOrder: { gte: newOrder },
+              sortOrder: { gte: newOrder, lt: current.sortOrder },
             },
             data: { sortOrder: { increment: 1 } },
+          });
+        } else if (newOrder > current.sortOrder) {
+          // 아래로 이동: (oldOrder, newOrder] 범위 형제 -1
+          await tx.category.updateMany({
+            where: {
+              parentId: current.parentId,
+              id: { not: parsed.data },
+              sortOrder: { gt: current.sortOrder, lte: newOrder },
+            },
+            data: { sortOrder: { decrement: 1 } },
           });
         }
       }
