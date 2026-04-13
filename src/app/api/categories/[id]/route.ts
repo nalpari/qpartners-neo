@@ -47,9 +47,31 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const category = await prisma.category.update({
-      where: { id: parsed.data },
-      data: result.data,
+    const category = await prisma.$transaction(async (tx) => {
+      // sortOrder 변경 시 같은 parentId 형제들 자동 재정렬
+      if (result.data.sortOrder !== undefined) {
+        const current = await tx.category.findUniqueOrThrow({
+          where: { id: parsed.data },
+          select: { parentId: true, sortOrder: true },
+        });
+
+        const newOrder = result.data.sortOrder;
+        if (newOrder !== current.sortOrder) {
+          await tx.category.updateMany({
+            where: {
+              parentId: current.parentId,
+              id: { not: parsed.data },
+              sortOrder: { gte: newOrder },
+            },
+            data: { sortOrder: { increment: 1 } },
+          });
+        }
+      }
+
+      return tx.category.update({
+        where: { id: parsed.data },
+        data: result.data,
+      });
     });
 
     return NextResponse.json({ data: category });
