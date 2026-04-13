@@ -40,6 +40,14 @@ export const QSP_API = {
   updateUserDtlMng: `${QSP_BASE_URL}/api/qpartners/userMng/updateUserDtlMng`,
 } as const;
 
+// ─── Upload Storage ───
+
+import { join } from "path";
+
+/** 파일 업로드 저장 경로 — 환경변수로 주입, 미설정 시 프로젝트 루트 fallback (개발환경) */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ?? join(process.cwd(), "storage", "uploads");
+
 // ─── SMTP ───
 
 export const SMTP_DEFAULTS = {

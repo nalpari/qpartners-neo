@@ -7,6 +7,7 @@ import archiver from "archiver";
 import { PassThrough } from "stream";
 
 import { canAccessContent, getUserFromHeaders } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
@@ -95,10 +96,10 @@ export async function GET(request: NextRequest, { params }: Params) {
     // 디스크 파일 존재 확인 (path traversal + symlink 방어 포함)
     // 리뷰 대응: 기존 `for + await stat`는 N회 순차 I/O → `Promise.allSettled` 로 병렬화.
     //            동시에 symlink 가드(`isRegularFile`)로 방어 심층(defense-in-depth) 적용.
-    const storageRoot = resolve(process.cwd(), "storage", "uploads");
+    const storageRoot = resolve(UPLOAD_DIR);
     const statResults = await Promise.allSettled(
       content.attachments.map(async (att) => {
-        const absolutePath = resolve(process.cwd(), att.filePath);
+        const absolutePath = resolve(UPLOAD_DIR, att.filePath);
         if (!isInsideDir(absolutePath, storageRoot)) {
           throw new Error(`invalid-path:${absolutePath}`);
         }

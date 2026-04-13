@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@/generated/prisma/client";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFile } from "@/lib/file-validation";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -109,8 +110,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 디스크 파일 삭제 (실패해도 DB 삭제는 유지 — 경고 로그만)
     // TODO: 운영 환경에서 disk orphan 누적 방지를 위해 구조화된 failed_disk_deletions 로그 또는
     //       orphan_files 테이블 도입 후 batch cleanup 별도 구현 예정 (리뷰 권장 사항)
-    const absolutePath = resolve(process.cwd(), attachment.filePath);
-    const storageRoot = resolve(process.cwd(), "storage", "uploads");
+    const absolutePath = resolve(UPLOAD_DIR, attachment.filePath);
+    const storageRoot = resolve(UPLOAD_DIR);
     if (isInsideDir(absolutePath, storageRoot)) {
       // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략 (lexical 검증만으로는 불충분)
       const regular = await isRegularFile(absolutePath);
@@ -249,13 +250,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 새 파일 저장
-    const uploadDir = join(
-      process.cwd(),
-      "storage",
-      "uploads",
-      "contents",
-      String(parsedId.data),
-    );
+    const uploadDir = join(UPLOAD_DIR, "contents", String(parsedId.data));
     await mkdir(uploadDir, { recursive: true });
     const uploadDirAbsolute = resolve(uploadDir);
 
@@ -264,7 +259,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 리뷰 대응: 확장자 소문자 통일 — `.PDF` 등 대소문자 혼재 방지
     const ext = (sanitizedName.split(".").pop() ?? "").toLowerCase();
     const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
-    const newFilePath = `storage/uploads/contents/${parsedId.data}/${safeFileName}`;
+    const newFilePath = `contents/${parsedId.data}/${safeFileName}`;
     const newAbsolutePath = resolve(uploadDir, safeFileName);
 
     // path traversal 방어 — relative 기반 검증 (startsWith prefix bug 회피)
@@ -311,8 +306,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 기존 디스크 파일 삭제 (실패해도 업데이트는 유지)
-    const oldAbsolutePath = resolve(process.cwd(), oldAttachment.filePath);
-    const storageRoot = resolve(process.cwd(), "storage", "uploads");
+    const oldAbsolutePath = resolve(UPLOAD_DIR, oldAttachment.filePath);
+    const storageRoot = resolve(UPLOAD_DIR);
     if (isInsideDir(oldAbsolutePath, storageRoot)) {
       // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략
       const regular = await isRegularFile(oldAbsolutePath);

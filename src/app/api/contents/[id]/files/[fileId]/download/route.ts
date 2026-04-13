@@ -4,6 +4,7 @@ import { readFile } from "fs/promises";
 import { resolve } from "path";
 
 import { canAccessContent, getUserFromHeaders } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -47,8 +48,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 파일 읽기 (storage/ 디렉토리 기준, path traversal 방어)
-    const storageRoot = resolve(process.cwd(), "storage", "uploads");
-    const absolutePath = resolve(process.cwd(), attachment.filePath);
+    const storageRoot = resolve(UPLOAD_DIR);
+    const absolutePath = resolve(UPLOAD_DIR, attachment.filePath);
 
     if (!absolutePath.startsWith(storageRoot)) {
       return NextResponse.json({ error: "접근할 수 없는 경로입니다" }, { status: 403 });

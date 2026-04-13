@@ -7,6 +7,7 @@ import DOMPurify from "isomorphic-dompurify";
 
 import { requireAdmin } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -205,7 +206,7 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
   }
 
   const tempId = randomUUID();
-  const uploadDir = join(process.cwd(), "storage", "uploads", "mass-mails", tempId);
+  const uploadDir = join(UPLOAD_DIR, "mass-mails", tempId);
   await mkdir(uploadDir, { recursive: true });
   const uploadDirAbsolute = resolve(uploadDir);
 
@@ -214,7 +215,7 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       const sanitizedName = basename(file.name);
       const ext = sanitizedName.split(".").pop() ?? "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
-      const filePath = `storage/uploads/mass-mails/${tempId}/${safeFileName}`;
+      const filePath = `mass-mails/${tempId}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
       // path traversal 방어 — isInsideDir (startsWith('/uploads')가 '/uploads-evil/'도 통과시키는 문제 회피)

@@ -5,6 +5,7 @@ import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -106,13 +107,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
-    const uploadDir = join(
-      process.cwd(),
-      "storage",
-      "uploads",
-      "contents",
-      String(parsed.data),
-    );
+    const uploadDir = join(UPLOAD_DIR, "contents", String(parsed.data));
     await mkdir(uploadDir, { recursive: true });
     const uploadDirAbsolute = resolve(uploadDir);
 
@@ -124,7 +119,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const sanitizedName = basename(file.name);
       const ext = sanitizedName.split(".").pop() ?? "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
-      const filePath = `storage/uploads/contents/${parsed.data}/${safeFileName}`;
+      const filePath = `contents/${parsed.data}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
       // path traversal 방어 — relative 기반 검증 (startsWith prefix bug 회피)
