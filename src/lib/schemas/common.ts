@@ -4,6 +4,7 @@ import { z } from "zod";
 export const userTpValues = ["ADMIN", "STORE", "SEKO", "GENERAL"] as const;
 
 export const userTpSchema = z.enum(userTpValues);
+export type UserTp = z.infer<typeof userTpSchema>;
 
 /** 세부 권한코드 — 프론트에서 authRole로 접근 제어 */
 export const authRoleValues = [

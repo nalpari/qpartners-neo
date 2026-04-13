@@ -2,11 +2,11 @@ import { z } from "zod";
 
 // ─── QSP statCd ↔ TO-BE status 매핑 (공용) ───
 
-/** QSP statCd → TO-BE status */
+/** QSP statCd → TO-BE status (사양서 기준: A=정상, D=삭제, R=탈퇴) */
 export const STAT_CD_TO_STATUS = {
-  Y: "active",
-  N: "deleted",
-  W: "withdrawn",
+  A: "active",
+  D: "deleted",
+  R: "withdrawn",
 } as const;
 
 export type QspStatCd = keyof typeof STAT_CD_TO_STATUS;
@@ -17,15 +17,15 @@ export type WritableStatus = "active" | "deleted";
 
 /** TO-BE status → QSP statCd (수정 가능한 상태만) */
 export const STATUS_TO_STAT_CD: Record<WritableStatus, QspStatCd> = {
-  active: "Y",
-  deleted: "N",
+  active: "A",
+  deleted: "D",
 };
 
 /** 목록 필터용: withdrawn 포함 전체 매핑 */
 export const STATUS_FILTER_TO_STAT_CD: Record<MemberStatus, QspStatCd> = {
-  active: "Y",
-  deleted: "N",
-  withdrawn: "W",
+  active: "A",
+  deleted: "D",
+  withdrawn: "R",
 };
 
 /** QSP userTp → 화면표시 회원유형 레이블
@@ -47,7 +47,11 @@ function isQspStatCd(key: string): key is QspStatCd {
 
 export function lookupStatCd(key: string | null): MemberStatus | undefined {
   if (key === null) return undefined;
-  return isQspStatCd(key) ? STAT_CD_TO_STATUS[key] : undefined;
+  if (!isQspStatCd(key)) {
+    console.warn("[lookupStatCd] 매핑되지 않는 statCd:", key);
+    return undefined;
+  }
+  return STAT_CD_TO_STATUS[key];
 }
 
 type UserTypeKey = keyof typeof USER_TYPE_LABEL;
@@ -57,7 +61,11 @@ function isUserTypeKey(key: string): key is UserTypeKey {
 
 export function lookupUserTypeLabel(key: string | null): string | undefined {
   if (key === null) return undefined;
-  return isUserTypeKey(key) ? USER_TYPE_LABEL[key] : undefined;
+  if (!isUserTypeKey(key)) {
+    console.warn("[lookupUserTypeLabel] 매핑되지 않는 userTp:", key);
+    return undefined;
+  }
+  return USER_TYPE_LABEL[key];
 }
 
 // ─── 회원 목록 쿼리 파라미터 ───
@@ -119,9 +127,11 @@ const qspMemberItemSchema = z.object({
   userNmKana: z.string().nullable(),
   email: z.string().nullable(),
   userTp: z.string().nullable(),
+  userTpNm: z.string().nullable(),
   compNm: z.string().nullable(),
   statCd: z.string().nullable(),
-  lastLoginDt: z.string().nullable(),
+  statNm: z.string().nullable(),
+  loginDt: z.string().nullable(),
   regDt: z.string().nullable(),
 });
 
@@ -129,8 +139,8 @@ export type QspMemberItem = z.infer<typeof qspMemberItemSchema>;
 
 export const qspMemberListResponseSchema = z.object({
   data: z.object({
-    list: z.array(qspMemberItemSchema),
-    totalCount: z.number(),
+    totCnt: z.number().nullable().transform(v => v ?? 0),
+    list: z.array(qspMemberItemSchema).nullable(),
   }).nullable(),
   result: qspResultSchema,
 });
@@ -139,38 +149,37 @@ export type QspMemberListResponse = z.infer<typeof qspMemberListResponseSchema>;
 
 // ─── QSP 회원 상세 응답 ───
 
+/** QSP 유저 정보 조회 응답 (사양서 No.13 userDetail — /api/qpartners/user/detail) */
 const qspMemberDetailSchema = z.object({
   userId: z.string(),
-  loginId: z.string().nullable().optional(),
+  userTp: z.string().nullable(),
   userNm: z.string().nullable(),
   userNmKana: z.string().nullable(),
+  user1stNm: z.string().nullable(),
+  user2ndNm: z.string().nullable(),
+  user1stNmKana: z.string().nullable(),
+  user2ndNmKana: z.string().nullable(),
   email: z.string().nullable(),
-  userTp: z.string().nullable(),
   authCd: z.string().nullable(),
   compNm: z.string().nullable(),
   compNmKana: z.string().nullable(),
   compPostCd: z.string().nullable(),
   compAddr: z.string().nullable(),
+  compAddr2: z.string().nullable(),
   compTelNo: z.string().nullable(),
   compFaxNo: z.string().nullable(),
-  corpNo: z.string().nullable(),
+  compCd: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
+  statCd: z.string().nullable(),
   secAuthYn: z.enum(["Y", "N"]).nullable(),
   loginNotiYn: z.enum(["Y", "N"]).nullable(),
-  attrChgNotiYn: z.enum(["Y", "N"]).nullable(),
-  statCd: z.string().nullable(),
+  attrChgYn: z.enum(["Y", "N"]).nullable(),
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
-  newsRcptDt: z.string().nullable(),
-  lastLoginDt: z.string().nullable(),
-  wdrawDt: z.string().nullable(),
-  wdrawRsn: z.string().nullable(),
-  regDt: z.string().nullable(),
-  updDt: z.string().nullable(),
-  updBy: z.string().nullable(),
+  pwdChgDt: z.string().nullable(),
+  pwdInitYn: z.string().nullable(),
+  storeLvl: z.string().nullable(),
 });
-
-export type QspMemberDetail = z.infer<typeof qspMemberDetailSchema>;
 
 export const qspMemberDetailResponseSchema = z.object({
   data: qspMemberDetailSchema.nullable(),
