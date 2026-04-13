@@ -267,6 +267,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { status: 502 },
       );
     }
+    // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
+    if (rc !== "S") {
+      console.warn("[PUT /api/admin/members/:id] QSP 비표준 성공 코드 — message fallback:", { resultCode: rc, message: msg });
+    }
 
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
     //      사전 검증 이후 userTp 가 변하지 않았는지 확인한다. 롤백은 불가하지만

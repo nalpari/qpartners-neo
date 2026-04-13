@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
       telNo: d.compTelNo,
       fax: d.compFaxNo,
       newsRcptYn: d.newsRcptYn ?? "N",
-      newsRcptDate: d.newsRcptDate,
+      newsRcptDate: d.newsRcptDate ?? null,
     };
 
     // 회원유형별 표시 필드 (SEKO는 위에서 early return 처리됨)
