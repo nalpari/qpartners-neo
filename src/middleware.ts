@@ -48,6 +48,14 @@ function isTwoFactorPath(pathname: string): boolean {
   return TWO_FACTOR_PATHS.includes(pathname);
 }
 
+/** userTp → authRole 폴백 (authRole 미설정 JWT 대응) */
+function getFallbackRole(userTp: string): string {
+  if (userTp === "ADMIN") return "ADMIN";
+  if (userTp === "STORE") return "2ND_STORE";
+  if (userTp === "SEKO") return "SEKO";
+  return "GENERAL";
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -62,15 +70,12 @@ export async function middleware(request: NextRequest) {
           const requestHeaders = new Headers(request.headers);
           requestHeaders.set("X-User-Type", publicUser.userTp);
           requestHeaders.set("X-User-Id", publicUser.userId);
-          const publicFallbackRole = publicUser.userTp === "ADMIN" ? "ADMIN"
-            : publicUser.userTp === "STORE" ? "2ND_STORE"
-            : publicUser.userTp === "SEKO" ? "SEKO"
-            : "GENERAL";
-          requestHeaders.set("X-User-Role", publicUser.authRole ?? publicFallbackRole);
+          requestHeaders.set("X-User-Role", publicUser.authRole ?? getFallbackRole(publicUser.userTp));
           return NextResponse.next({ request: { headers: requestHeaders } });
         }
-      } catch {
-        // JWT 검증 실패 시 비회원으로 통과
+      } catch (error) {
+        // 토큰 만료·서명 불일치는 정상 — 비회원으로 통과
+        console.warn("[middleware] public 경로 JWT 검증 실패 (비회원 통과):", error);
       }
     }
     return NextResponse.next();
@@ -123,11 +128,7 @@ export async function middleware(request: NextRequest) {
   if (!user.authRole) {
     console.warn("[middleware] 과도기 JWT — authRole 없음, userTp 기반 최소권한 폴백 적용 (userTp:", user.userTp, ")");
   }
-  const fallbackRole = user.userTp === "ADMIN" ? "ADMIN"
-    : user.userTp === "STORE" ? "2ND_STORE"
-    : user.userTp === "SEKO" ? "SEKO"
-    : "GENERAL";
-  requestHeaders.set("X-User-Role", user.authRole ?? fallbackRole);
+  requestHeaders.set("X-User-Role", user.authRole ?? getFallbackRole(user.userTp));
   if (user.deptNm) {
     requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }
