@@ -38,10 +38,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 시공점은 별도 API (seko-info)
+    // 시공점은 別途 API を使用
     if (user.userTp === "SEKO") {
       return NextResponse.json(
-        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
+        { error: "施工店会員はこのAPIをご利用いただけません" },
         { status: 400 },
       );
     }
@@ -192,10 +192,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 시공점은 별도 API (seko-info)
+    // 시공점은 別途 API を使用
     if (user.userTp === "SEKO") {
       return NextResponse.json(
-        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
+        { error: "施工店会員はこのAPIをご利用いただけません" },
         { status: 400 },
       );
     }
@@ -232,13 +232,32 @@ export async function PUT(request: NextRequest) {
     }
     const result = profileUpdateSchema.safeParse({ ...body, userType: user.userTp });
     if (!result.success) {
+      console.warn("[PUT /api/mypage/profile] 입력 검증 실패:", {
+        ...buildUserLogContext(user),
+        issues: result.error.issues,
+      });
       return NextResponse.json(
-        { error: "入力内容に不備があります", issues: result.error.issues },
+        { error: "入力内容に不備があります" },
         { status: 400 },
       );
     }
 
     const d = result.data;
+
+    // ADMIN/STORE: 뉴스레터만 수정 가능 — 불허 필드가 전송되어도 서버에서 strip
+    // (qspPayload 구성에서도 이미 분기하지만, defense-in-depth)
+    // 불허 필드가 포함된 요청은 warn 로그 기록 후 strip
+    if (user.userTp === "ADMIN" || user.userTp === "STORE") {
+      const readOnlyFields = ["sei", "mei", "seiKana", "meiKana", "compNm", "compNmKana",
+        "zipcode", "address1", "address2", "telNo", "fax", "department", "jobTitle", "corporateNo"] as const;
+      const submitted = readOnlyFields.filter((k) => d[k] && d[k] !== "");
+      if (submitted.length > 0) {
+        console.warn("[PUT /api/mypage/profile] ADMIN/STORE 불허 필드 strip:", {
+          ...buildUserLogContext(user),
+          strippedFields: submitted,
+        });
+      }
+    }
 
     // 마이페이지 수정 정책:
     //   GENERAL — 전체 수정 가능
