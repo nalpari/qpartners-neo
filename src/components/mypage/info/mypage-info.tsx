@@ -76,12 +76,12 @@ function createEditFormData(profile: ProfileData): EditFormData {
 function validateEditForm(data: EditFormData, userType: string): string[] {
   const errors: string[] = [];
 
-  if (userType === "GENERAL" || userType === "SEKO") {
+  // SEKO는 뉴스레터만 수정 가능 → 필수 검증 불필요
+  if (userType === "GENERAL") {
     if (!data.compNm.trim()) errors.push("会社名は必須です。");
     if (!data.zipcode.trim()) errors.push("郵便番号は必須です。");
     if (!data.address1.trim()) errors.push("住所は必須です。");
     if (!data.telNo.trim()) errors.push("電話番号は必須です。");
-    if (userType === "SEKO" && !data.fax.trim()) errors.push("FAX番号は必須です。");
     if (!data.sei.trim()) errors.push("姓は必須です。");
     if (!data.mei.trim()) errors.push("名は必須です。");
     if (!data.seiKana.trim()) errors.push("姓(カナ)は必須です。");
@@ -177,8 +177,9 @@ export function MypageInfo() {
   };
 
   const canEdit = true;
-  // Design Ref: §2.1 — 법인정보 수정: STORE/ADMIN 숨김, GENERAL/SEKO 표시
-  const showCorporateEdit = userType !== "STORE" && userType !== "ADMIN";
+  // Design Ref: §2.1 — 법인정보 수정: GENERAL만 표시 (STORE/ADMIN/SEKO 숨김)
+  // SEKO는 뉴스레터만 수정 가능하므로 법인정보 수정 제외
+  const showCorporateEdit = userType === "GENERAL";
 
   return (
     <section className="flex flex-col gap-[18px] items-center w-full">

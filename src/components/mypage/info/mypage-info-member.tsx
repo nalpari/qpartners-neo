@@ -157,8 +157,8 @@ interface EditField {
 function getEditFields(userType: string): EditField[] {
   const fields: EditField[] = [];
 
-  // GENERAL, SEKO만 성명 수정 가능
-  if (userType === "GENERAL" || userType === "SEKO") {
+  // GENERAL만 성명 수정 가능 (SEKO는 뉴스레터만 수정 가능)
+  if (userType === "GENERAL") {
     fields.push(
       { label: "氏名", key: "sei", required: true, type: "double", keys: ["sei", "mei"] },
       { label: "氏名ひらがな", key: "seiKana", required: true, type: "double", keys: ["seiKana", "meiKana"] },
