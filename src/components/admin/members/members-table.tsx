@@ -10,7 +10,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
-import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
+import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -34,7 +34,10 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
     <button
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
-      onClick={() => openPopup("member-detail", { member: data })}
+      onClick={() => openPopup("member-detail", {
+        userId: data.userId,
+        userTp: USER_TYPE_REVERSE_MAP[data.userType] ?? "GENERAL",
+      })}
     >
       {data.userName}
     </button>

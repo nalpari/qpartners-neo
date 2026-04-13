@@ -1,30 +1,32 @@
 "use client";
 
+// Design Ref: §4.2 — 회원 상세 팝업 (useQuery + useMutation 2개)
+
 import { useState } from "react";
+import { isAxiosError } from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
-import { Button, SelectBox, Radio } from "@/components/common";
-// TODO: 상세 팝업 API 연동 시 MemberDetailItem 타입으로 교체
-// 현재는 목록에서 전달받는 데이터가 더미 구조와 다르므로 Record 사용
+import { Button, SelectBox, Radio, Spinner } from "@/components/common";
+import type { MemberDetail, MemberUpdatePayload } from "@/components/admin/members/members-types";
+import {
+  USER_TYPE_REVERSE_MAP,
+  ROLE_OPTIONS_GENERAL,
+  ROLE_LABEL_MAP,
+  API_TO_STATUS,
+  formatDateTime,
+} from "@/components/admin/members/members-types";
 
 const CLOSE_ANIMATION_MS = 200;
 
-const PERMISSION_OPTIONS_GENERAL = [
-  { value: "1次販売店", label: "1次販売店" },
-  { value: "2次以降販売店", label: "2次以降販売店" },
-  { value: "施工店", label: "施工店" },
-  { value: "一般", label: "一般" },
-];
-
-/** 읽기전용 텍스트 값 */
 function TextValue({ value }: { value: string }) {
   return (
     <p className="flex-1 font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#101010] overflow-hidden text-ellipsis whitespace-nowrap">
-      {value || "—"}
+      {value || "-"}
     </p>
   );
 }
 
-/** 라벨 셀 */
 function LabelCell({ label }: { label: string }) {
   return (
     <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
@@ -35,7 +37,6 @@ function LabelCell({ label }: { label: string }) {
   );
 }
 
-/** 값 셀 — 텍스트/컨트롤 직접 배치 (Figma 기준: 셀 안에 텍스트 직접) */
 function ValueCell({ children, hasBorder = true }: { children: React.ReactNode; hasBorder?: boolean }) {
   return (
     <div className={`flex flex-1 items-center h-full rounded-[6px] pl-4 pr-2 py-2 ${
@@ -46,7 +47,6 @@ function ValueCell({ children, hasBorder = true }: { children: React.ReactNode; 
   );
 }
 
-/** 값 셀 — 내부에 InputBox/SelectBox 등 폼 요소 배치 */
 function FormCell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-1 items-center h-full bg-white border border-[#EAF0F6] rounded-[6px] p-2">
@@ -55,7 +55,6 @@ function FormCell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** 2열 행 */
 function DetailRow({
   left,
   right,
@@ -87,17 +86,94 @@ function DetailRow({
 export function MemberDetailPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
+  const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
 
-  const member = popupData.member as Record<string, string> | undefined;
+  const { userId, userTp } = popupData as { userId?: string; userTp?: string };
 
-  // 편집 가능 필드 state (상세 API 연동은 별도 feature — 현재 초기값 사용)
-  const [userPermission, setUserPermission] = useState("");
-  const [twoFactorAuth, setTwoFactorAuth] = useState("有効");
-  const [loginNotify, setLoginNotify] = useState("有効");
-  const [memberStatus, setMemberStatus] = useState("Active");
-  const [attributeNotify, setAttributeNotify] = useState("有効");
-  const [newsletter, setNewsletter] = useState("許可");
+  // Design Ref: §4.2 — 상세 조회
+  const { data: member, isLoading } = useQuery<MemberDetail>({
+    queryKey: ["admin", "member", userId, userTp],
+    queryFn: async () => {
+      const res = await api.get<{ data: MemberDetail }>(
+        `/admin/members/${encodeURIComponent(userId!)}`,
+        { params: { userTp } },
+      );
+      return res.data.data;
+    },
+    enabled: !!userId && !!userTp,
+  });
+
+  // 편집 가능 필드 state (member 로드 후 초기화)
+  const isGeneral = member ? (USER_TYPE_REVERSE_MAP[member.userType] === "GENERAL") : false;
+  const [userRole, setUserRole] = useState(member?.userRole || "GENERAL");
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(member?.twoFactorEnabled ?? true);
+  const [loginNotification, setLoginNotification] = useState(member?.loginNotification ?? true);
+  const [memberStatus, setMemberStatus] = useState(API_TO_STATUS[member?.status ?? "active"] ?? "Active");
+  const [attributeNotify, setAttributeNotify] = useState(member?.attributeChangeNotification ?? true);
+  const [newsRcptYn, setNewsRcptYn] = useState(member?.newsRcptYn ?? "Y");
+
+  // member 로드 후 state 동기화 (첫 로드 시 한 번만)
+  const [initialized, setInitialized] = useState(false);
+  if (member && !initialized) {
+    setUserRole(member.userRole || "GENERAL");
+    setTwoFactorEnabled(member.twoFactorEnabled ?? true);
+    setLoginNotification(member.loginNotification);
+    setMemberStatus(API_TO_STATUS[member.status] ?? "Active");
+    setAttributeNotify(member.attributeChangeNotification);
+    setNewsRcptYn(member.newsRcptYn);
+    setInitialized(true);
+  }
+
+  // Design Ref: §6 — API 에러 처리
+  function handleApiError(err: unknown, context: string) {
+    if (!isAxiosError(err) || !err.response) {
+      openAlert({ type: "alert", message: "サーバーエラーが発生しました。" });
+      return;
+    }
+    const { status, data } = err.response as { status: number; data: { error?: string } };
+    const msg = data?.error ?? "";
+
+    if (status === 400 && msg.includes("自分自身")) {
+      openAlert({ type: "alert", message: "自分自身のアカウントは変更できません。" });
+    } else if (status === 400 && msg.includes("一般会員のみ")) {
+      openAlert({ type: "alert", message: "ユーザー権限の変更は一般会員のみ可能です。" });
+    } else if (status === 400 && msg.includes("アクティブ")) {
+      openAlert({ type: "alert", message: "アクティブな会員のみパスワード初期化が可能です。" });
+    } else if (status === 429) {
+      openAlert({ type: "alert", message: "リクエストが多すぎます。しばらくしてからお試しください。" });
+    } else {
+      openAlert({ type: "alert", message: `${context}に失敗しました。` });
+    }
+  }
+
+  // Design Ref: §4.2 — 수정 mutation
+  const updateMutation = useMutation({
+    mutationFn: (payload: MemberUpdatePayload) =>
+      api.put(`/admin/members/${encodeURIComponent(userId!)}`, payload, {
+        params: { userTp },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      openAlert({ type: "alert", message: "保存しました。" });
+    },
+    onError: (err: unknown) => handleApiError(err, "会員情報の更新"),
+  });
+
+  // Design Ref: §4.2 — 비밀번호 초기화 mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/admin/members/${encodeURIComponent(userId!)}/reset-password`, null, {
+        params: { userTp },
+      }),
+    onSuccess: () => {
+      openAlert({ type: "alert", message: "パスワード変更リンクをメールで送信しました。" });
+    },
+    onError: (err: unknown) => handleApiError(err, "パスワード初期化"),
+  });
+
+  const isSaving = updateMutation.isPending || resetPasswordMutation.isPending;
 
   const handleClose = () => {
     setIsClosing(true);
@@ -108,25 +184,33 @@ export function MemberDetailPopup() {
   };
 
   const handleSave = () => {
-    openAlert({
-      type: "alert",
-      message: "保存しました。",
-      confirmLabel: "確認",
-    });
+    if (!member) return;
+
+    const payload: MemberUpdatePayload = {
+      twoFactorEnabled,
+      loginNotification,
+      attributeChangeNotification: attributeNotify,
+      status: memberStatus === "Active" ? "active" : "deleted",
+      newsRcptYn,
+    };
+
+    // GENERAL만 userRole 포함
+    if (isGeneral) {
+      payload.userRole = userRole;
+    }
+
+    updateMutation.mutate(payload);
   };
 
   const handlePasswordReset = () => {
     openAlert({
       type: "confirm",
-      message: "パスワードを初期化しますか？",
-      confirmLabel: "初期化",
-      cancelLabel: "キャンセル",
+      message: "パスワードを初期化しますか？\n初期化されたパスワードはメールで送信されます。",
+      onConfirm: () => resetPasswordMutation.mutate(),
     });
   };
 
-  if (!member) return null;
-
-  const isGeneral = member.memberType === "一般";
+  if (!userId) return null;
 
   return (
     <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}>
@@ -137,196 +221,205 @@ export function MemberDetailPopup() {
         aria-label="会員情報"
       >
         <div className="popup-container__inner !gap-[18px]">
-        {/* 타이틀 */}
-        
-        <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
-          <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
-            会員情報
-          </h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-[#E97923] cursor-pointer"
-            aria-label="閉じる"
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M1 1L9 9M9 1L1 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-
-        {/* 등록일 / 갱신일 뱃지 */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center px-2 py-[2px] bg-white border border-[#eee] rounded-[4px] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
-              登録日
-            </span>
-            <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
-              {member.createdAt}
-            </span>
+          {/* 타이틀 */}
+          <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
+            <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
+              会員情報
+            </h2>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-[#E97923] cursor-pointer"
+              aria-label="閉じる"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M1 1L9 9M9 1L1 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
           </div>
-          <span className="text-[#ccc]">|</span>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center px-2 py-[2px] bg-white border border-[#eee] rounded-[4px] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
-              更新日
-            </span>
-            <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
-              {member.updatedAt}
-            </span>
-            <span className="font-['Noto_Sans_JP'] font-normal text-[13px] text-[#bbb]">
-              ({member.updatedBy})
-            </span>
-          </div>
-        </div>
 
-        {/* 상단 테이블 — 회원 정보 */}
-        <div className="flex flex-col gap-1">
-          {/* 1행: ID / 비밀번호 초기화 */}
-          <DetailRow
-            left={{ label: "ID", children: <TextValue value={member.id} /> }}
-            right={{
-              label: "PW初期化",
-              isForm: true,
-              children: (
-                <Button variant="outline" onClick={handlePasswordReset} className="w-full">
-                  パスワード初期化
-                </Button>
-              ),
-            }}
-          />
-          {/* 2행: 氏名 / 会員タイプ */}
-          <DetailRow
-            left={{ label: "氏名", children: <TextValue value={member.name} /> }}
-            right={{ label: "会員タイプ", children: <TextValue value={member.memberType} /> }}
-          />
-          {/* 3행: 氏名ひらがな / ユーザー権限 */}
-          <DetailRow
-            left={{ label: "氏名ひらがな", children: <TextValue value={member.nameKana} /> }}
-            right={{
-              label: "ユーザー権限",
-              isForm: isGeneral,
-              children: isGeneral ? (
-                <SelectBox
-                  options={PERMISSION_OPTIONS_GENERAL}
-                  value={userPermission}
-                  onChange={setUserPermission}
-                  className="w-full"
-                />
-              ) : (
-                <TextValue value={member.userPermission} />
-              ),
-            }}
-          />
-          {/* 4행: Email / 部署名 */}
-          <DetailRow
-            left={{ label: "Email", children: <TextValue value={member.email} /> }}
-            right={{ label: "部署名", children: <TextValue value={member.department} /> }}
-          />
-          {/* 5행: 最近アクセス日時 / 役職 */}
-          <DetailRow
-            left={{ label: "最近アクセス", children: <TextValue value={member.lastAccessAt} /> }}
-            right={{ label: "役職", children: <TextValue value={member.position} /> }}
-          />
-          {/* 6행: 二次認証 / ログイン通知 */}
-          <DetailRow
-            left={{
-              label: "二次認証",
-
-              children: (
-                <div className="flex items-center gap-3">
-                  <Radio name="twoFactor" value="有効" checked={twoFactorAuth === "有効"} onChange={() => setTwoFactorAuth("有効")} label="有効" />
-                  <Radio name="twoFactor" value="無効" checked={twoFactorAuth === "無効"} onChange={() => setTwoFactorAuth("無効")} label="無効" />
-                </div>
-              ),
-            }}
-            right={{
-              label: "ログイン通知",
-
-              children: (
-                <div className="flex items-center gap-3">
-                  <Radio name="loginNotify" value="有効" checked={loginNotify === "有効"} onChange={() => setLoginNotify("有効")} label="有効" />
-                  <Radio name="loginNotify" value="無効" checked={loginNotify === "無効"} onChange={() => setLoginNotify("無効")} label="無効" />
-                </div>
-              ),
-            }}
-          />
-          {/* 7행: 会員状態 / 属性変更通知 */}
-          <DetailRow
-            left={{
-              label: "会員状態",
-
-              children: (
-                <div className="flex items-center gap-3">
-                  <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" />
-                  <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" />
-                </div>
-              ),
-            }}
-            right={{
-              label: "属性変更通知",
-
-              children: (
-                <div className="flex items-center gap-3">
-                  <Radio name="attrNotify" value="有効" checked={attributeNotify === "有効"} onChange={() => setAttributeNotify("有効")} label="有効" />
-                  <Radio name="attrNotify" value="無効" checked={attributeNotify === "無効"} onChange={() => setAttributeNotify("無効")} label="無効" />
-                </div>
-              ),
-            }}
-          />
-          {/* 8행: 退会日時 / ニュースレター受信 */}
-          <DetailRow
-            left={{ label: "退会日時", children: <TextValue value={member.withdrawnAt} /> }}
-            right={{
-              label: "ニュースレター",
-              children: (
-                <div className="flex items-center gap-3">
-                  <Radio name="newsletter" value="許可" checked={newsletter === "許可"} onChange={() => setNewsletter("許可")} label="許可" />
-                  <Radio name="newsletter" value="拒否" checked={newsletter === "拒否"} onChange={() => setNewsletter("拒否")} label="拒否" />
-                  <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#999] whitespace-nowrap">
-                    (許可日：{member.newsletterAllowedAt ?? "—"})
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Spinner size={48} />
+            </div>
+          ) : !member ? (
+            <div className="flex items-center justify-center py-20">
+              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#ff1a1a]">
+                会員情報を読み込めませんでした。
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* 등록일 / 갱신일 뱃지 */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center px-2 py-[2px] bg-white border border-[#eee] rounded-[4px] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
+                    登録日
+                  </span>
+                  <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
+                    {member.createdAt ? formatDateTime(member.createdAt) : "-"}
                   </span>
                 </div>
-              ),
-            }}
-          />
-          {/* 9행: 退会理由 (전체 너비) */}
-          <DetailRow
-            left={{ label: "退会理由", children: <TextValue value={member.withdrawReason} /> }}
-          />
-        </div>
+                <span className="text-[#ccc]">|</span>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center px-2 py-[2px] bg-white border border-[#eee] rounded-[4px] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
+                    更新日
+                  </span>
+                  <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
+                    {member.updatedAt ? formatDateTime(member.updatedAt) : "-"}
+                  </span>
+                  {member.updatedBy && (
+                    <span className="font-['Noto_Sans_JP'] font-normal text-[13px] text-[#bbb]">
+                      ({member.updatedBy})
+                    </span>
+                  )}
+                </div>
+              </div>
 
-        {/* 하단 테이블 — 회사 정보 (gap 18px) */}
-        <div className="flex flex-col gap-1 mt-[18px]">
-          {/* 1행: 会社名 / 法人番号 */}
-          <DetailRow
-            left={{ label: "会社名", children: <TextValue value={member.companyName} /> }}
-            right={{ label: "法人番号", children: <TextValue value={member.corporateNumber} /> }}
-          />
-          {/* 2행: 会社名ひらがな / 電話番号 */}
-          <DetailRow
-            left={{ label: "会社名ひらがな", children: <TextValue value={member.companyNameKana} /> }}
-            right={{ label: "電話番号", children: <TextValue value={member.phone} /> }}
-          />
-          {/* 3행: 郵便番号 / FAX番号 */}
-          <DetailRow
-            left={{ label: "郵便番号", children: <TextValue value={member.zipcode} /> }}
-            right={{ label: "FAX番号", children: <TextValue value={member.fax} /> }}
-          />
-          {/* 4행: 住所 (전체 너비) */}
-          <DetailRow
-            left={{ label: "住所", children: <TextValue value={member.address} /> }}
-          />
-        </div>
+              {/* 상단 테이블 — 회원 정보 */}
+              <div className="flex flex-col gap-1">
+                {/* 1행: ID / PW初期化 */}
+                <DetailRow
+                  left={{ label: "ID", children: <TextValue value={member.userId} /> }}
+                  right={{
+                    label: "PW初期化",
+                    isForm: true,
+                    children: (
+                      <Button variant="outline" onClick={handlePasswordReset} disabled={isSaving} className="w-full">
+                        パスワード初期化
+                      </Button>
+                    ),
+                  }}
+                />
+                {/* 2행: 氏名 / 会員タイプ */}
+                <DetailRow
+                  left={{ label: "氏名", children: <TextValue value={member.userName} /> }}
+                  right={{ label: "会員タイプ", children: <TextValue value={member.userType} /> }}
+                />
+                {/* 3행: 氏名ひらがな / ユーザー権限 */}
+                <DetailRow
+                  left={{ label: "氏名ひらがな", children: <TextValue value={member.userNameKana} /> }}
+                  right={{
+                    label: "ユーザー権限",
+                    isForm: isGeneral,
+                    children: isGeneral ? (
+                      <SelectBox
+                        options={[...ROLE_OPTIONS_GENERAL]}
+                        value={userRole}
+                        onChange={setUserRole}
+                        className="w-full"
+                      />
+                    ) : (
+                      <TextValue value={ROLE_LABEL_MAP[member.userRole] ?? member.userRole} />
+                    ),
+                  }}
+                />
+                {/* 4행: Email / 部署名 */}
+                <DetailRow
+                  left={{ label: "Email", children: <TextValue value={member.email} /> }}
+                  right={{ label: "部署名", children: <TextValue value={member.department} /> }}
+                />
+                {/* 5행: 最近アクセス / 役職 */}
+                <DetailRow
+                  left={{ label: "最近アクセス", children: <TextValue value={member.lastLoginAt ? formatDateTime(member.lastLoginAt) : "-"} /> }}
+                  right={{ label: "役職", children: <TextValue value={member.jobTitle} /> }}
+                />
+                {/* 6행: 二次認証 / ログイン通知 */}
+                <DetailRow
+                  left={{
+                    label: "二次認証",
+                    children: (
+                      <div className="flex items-center gap-3">
+                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" />
+                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" />
+                      </div>
+                    ),
+                  }}
+                  right={{
+                    label: "ログイン通知",
+                    children: (
+                      <div className="flex items-center gap-3">
+                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
+                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
+                      </div>
+                    ),
+                  }}
+                />
+                {/* 7행: 会員状態 / 属性変更通知 */}
+                <DetailRow
+                  left={{
+                    label: "会員状態",
+                    children: (
+                      <div className="flex items-center gap-3">
+                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" />
+                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" />
+                      </div>
+                    ),
+                  }}
+                  right={{
+                    label: "属性変更通知",
+                    children: (
+                      <div className="flex items-center gap-3">
+                        <Radio name="attrNotify" value="true" checked={attributeNotify} onChange={() => setAttributeNotify(true)} label="有効" />
+                        <Radio name="attrNotify" value="false" checked={!attributeNotify} onChange={() => setAttributeNotify(false)} label="無効" />
+                      </div>
+                    ),
+                  }}
+                />
+                {/* 8행: 退会日時 / ニュースレター */}
+                <DetailRow
+                  left={{ label: "退会日時", children: <TextValue value={member.withdrawnAt ? formatDateTime(member.withdrawnAt) : "-"} /> }}
+                  right={{
+                    label: "ニュースレター",
+                    children: (
+                      <div className="flex items-center gap-3">
+                        <Radio name="newsletter" value="Y" checked={newsRcptYn === "Y"} onChange={() => setNewsRcptYn("Y")} label="許可" />
+                        <Radio name="newsletter" value="N" checked={newsRcptYn === "N"} onChange={() => setNewsRcptYn("N")} label="拒否" />
+                        {member.newsRcptDate && (
+                          <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#999] whitespace-nowrap">
+                            (許可日：{formatDateTime(member.newsRcptDate)})
+                          </span>
+                        )}
+                      </div>
+                    ),
+                  }}
+                />
+                {/* 9행: 退会理由 */}
+                <DetailRow
+                  left={{ label: "退会理由", children: <TextValue value={member.withdrawReason ?? "-"} /> }}
+                />
+              </div>
 
-        {/* 하단 버튼 */}
-        <div className="popup-buttons--inline">
-          <Button variant="secondary" onClick={handleClose}>
-            キャンセル
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            保存
-          </Button>
-        </div>
+              {/* 하단 테이블 — 회사 정보 */}
+              <div className="flex flex-col gap-1 mt-[18px]">
+                <DetailRow
+                  left={{ label: "会社名", children: <TextValue value={member.companyName} /> }}
+                  right={{ label: "法人番号", children: <TextValue value="-" /> }}
+                />
+                <DetailRow
+                  left={{ label: "会社名ひらがな", children: <TextValue value={member.companyNameKana} /> }}
+                  right={{ label: "電話番号", children: <TextValue value={member.telNo} /> }}
+                />
+                <DetailRow
+                  left={{ label: "郵便番号", children: <TextValue value={member.zipcode} /> }}
+                  right={{ label: "FAX番号", children: <TextValue value={member.faxNo} /> }}
+                />
+                <DetailRow
+                  left={{ label: "住所", children: <TextValue value={[member.address, member.address2].filter(Boolean).join(" ")} /> }}
+                />
+              </div>
+
+              {/* 하단 버튼 */}
+              <div className="popup-buttons--inline">
+                <Button variant="secondary" onClick={handleClose}>
+                  キャンセル
+                </Button>
+                <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+                  {isSaving ? "保存中..." : "保存"}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
