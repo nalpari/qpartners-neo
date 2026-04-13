@@ -12,8 +12,9 @@ services:
       DB_PASSWORD: "UtCxBswla1g9beoV+dwe"
       DB_NAME: development
       DATABASE_URL: "mysql://development:UtCxBswla1g9beoV+dwe@db:3306/development"
+      UPLOAD_DIR: /data/uploads
     volumes:
-      - uploads_data:/app/storage/uploads
+      - uploads_data:/data/uploads
     depends_on:
       db:
         condition: service_healthy
