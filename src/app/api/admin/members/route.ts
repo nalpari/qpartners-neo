@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
-import { QSP_API } from "@/lib/config";
+import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
@@ -37,13 +37,18 @@ export async function GET(request: NextRequest) {
 
     const { keyword, userType, status, page, pageSize } = queryResult.data;
 
-    // 3. QSP 회원 목록 API 호출
+    // 3. QSP 회원관리 목록 조회 API 호출 (사양서 No.10 userListMng)
+    //    QSP는 page/pageSize가 아닌 startRow/endRow 방식
+    const { user } = authResult;
+    const startRow = (page - 1) * pageSize + 1;
+    const endRow = page * pageSize;
     const params = new URLSearchParams({
-      accsSiteCd: "QPARTNERS",
-      page: String(page),
-      pageSize: String(pageSize),
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+      loginId: user.userId,
+      startRow: String(startRow),
+      endRow: String(endRow),
     });
-    if (keyword) params.set("keyword", keyword);
+    if (keyword) params.set("userNm", keyword);
     if (userType) params.set("userTp", userType);
     if (status) {
       params.set("statCd", STATUS_FILTER_TO_STAT_CD[status]);
@@ -51,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.memberList}?${params.toString()}`, {
+      qspResponse = await fetch(`${QSP_API.userListMng}?${params.toString()}`, {
         method: "GET",
         signal: AbortSignal.timeout(15_000),
       });
@@ -108,26 +113,28 @@ export async function GET(request: NextRequest) {
     }
 
     // 5. 응답 매핑 (QSP → TO-BE)
-    const { list, totalCount } = parsed.data.data;
-    const mappedList = list.map((item) => ({
+    const { list, totCnt } = parsed.data.data;
+    if (list === null && totCnt > 0) {
+      console.warn("[GET /api/admin/members] QSP totCnt > 0 이지만 list가 null:", { totCnt });
+    }
+    const mappedList = (list ?? []).map((item) => ({
       id: item.userId,
       userId: item.userId,
       userName: item.userNm ?? "",
       userNameKana: item.userNmKana ?? "",
       email: item.email ?? "",
-      // 알 수 없는 QSP 값은 "unknown"으로 고정 (QSP 신뢰 경계 위반 방지)
       userType: lookupUserTypeLabel(item.userTp) ?? "unknown",
       companyName: item.compNm ?? "",
       status: lookupStatCd(item.statCd) ?? "unknown",
-      lastLoginAt: item.lastLoginDt ?? null,
+      lastLoginAt: item.loginDt ?? null,
       createdAt: item.regDt ?? null,
     }));
 
-    console.log(`[GET /api/admin/members] 회원 목록 조회 완료 — ${totalCount}건 중 ${mappedList.length}건 반환`);
+    console.log(`[GET /api/admin/members] 회원 목록 조회 완료 — ${totCnt}건 중 ${mappedList.length}건 반환`);
 
     return NextResponse.json({
       data: {
-        totalCount,
+        totalCount: totCnt,
         page,
         pageSize,
         list: mappedList,
