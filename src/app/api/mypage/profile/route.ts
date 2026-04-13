@@ -322,17 +322,19 @@ export async function PUT(request: NextRequest) {
           { status: 502 },
         );
       }
-      if (parsed.data.result.resultCode !== "S") {
+      // QSP updateUserDtl: resultCode "S" 또는 message "success" 를 성공으로 판정
+      // (updateUserDtlMng → resultCode "0000" + message "success" 패턴과 동일 완화 적용)
+      const resultCode = parsed.data.result.resultCode;
+      const message = parsed.data.result.message;
+      const isSuccess = resultCode === "S" || message.trim().toLowerCase() === "success";
+      if (!isSuccess) {
         // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 제한한다.
         // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
-        // fullLength 는 메시지 길이를 통해 내부 에러 구조를 역추론할 수 있어 제외한다.
-        // qspResultSchema.message 는 z.string() (non-nullable) — safeParse 통과 시 string 보장
-        const rawMessage = parsed.data.result.message;
-        const truncatedMessage = rawMessage.slice(0, QSP_LOG_MSG_MAX_LEN);
-        const truncated = rawMessage.length > QSP_LOG_MSG_MAX_LEN;
+        const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+        const truncated = message.length > QSP_LOG_MSG_MAX_LEN;
         console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
           ...buildUserLogContext(user),
-          resultCode: parsed.data.result.resultCode,
+          resultCode,
           truncatedMessage,
           truncated,
         });
@@ -340,6 +342,16 @@ export async function PUT(request: NextRequest) {
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
         );
+      }
+      // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
+      if (resultCode !== "S") {
+        const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+        console.warn("[PUT /api/mypage/profile] QSP 비표준 성공 코드 — message fallback:", {
+          ...buildUserLogContext(user),
+          resultCode,
+          message: truncatedMessage,
+          truncated: message.length > QSP_LOG_MSG_MAX_LEN,
+        });
       }
     }
 

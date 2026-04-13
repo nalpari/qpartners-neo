@@ -17,6 +17,8 @@ import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
 
+const QSP_LOG_MSG_MAX_LEN = 200;
+
 /**
  * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
  * MF-4: 단순 path rawId 비교 대신 QSP 의 canonical userId/loginId 를 사용해
@@ -255,21 +257,31 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const rc = parsed.data.result.resultCode;
-    const msg = parsed.data.result.message;
+    const resultCode = parsed.data.result.resultCode;
+    const message = parsed.data.result.message;
     // QSP updateUserDtlMng: resultCode "S" 또는 message "success" 를 성공으로 판정
-    // (updateUserDtl은 "S", updateUserDtlMng은 다른 코드 + message "success" 패턴 확인됨)
-    const isSuccess = rc === "S" || msg.toLowerCase() === "success";
+    // (updateUserDtl → "S", updateUserDtlMng → resultCode "0000" + message "success" 패턴 확인됨)
+    const isSuccess = resultCode === "S" || message.trim().toLowerCase() === "success";
     if (!isSuccess) {
-      console.warn("[PUT /api/admin/members/:id] QSP 수정 실패:", { resultCode: rc, message: msg });
+      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+      console.error("[PUT /api/admin/members/:id] QSP 수정 실패:", {
+        resultCode,
+        truncatedMessage,
+        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
+      });
       return NextResponse.json(
         { error: "会員情報の更新に失敗しました" },
         { status: 502 },
       );
     }
     // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
-    if (rc !== "S") {
-      console.warn("[PUT /api/admin/members/:id] QSP 비표준 성공 코드 — message fallback:", { resultCode: rc, message: msg });
+    if (resultCode !== "S") {
+      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+      console.warn("[PUT /api/admin/members/:id] QSP 비표준 성공 코드 — message fallback:", {
+        resultCode,
+        truncatedMessage,
+        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
+      });
     }
 
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
