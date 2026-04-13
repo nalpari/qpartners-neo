@@ -106,7 +106,11 @@ export function MemberDetailPopup() {
 
   // 편집 가능 필드 state (member 로드 후 초기화)
   const isGeneral = member ? (USER_TYPE_REVERSE_MAP[member.userType] === "GENERAL") : false;
-  const [userRole, setUserRole] = useState(member?.userRole || "GENERAL");
+  // GENERAL 회원의 권한 — 유효한 옵션에 없으면 "GENERAL" 디폴트
+  const validRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
+  const safeRole = (role: string | undefined) =>
+    role && validRoleValues.includes(role) ? role : "GENERAL";
+  const [userRole, setUserRole] = useState(safeRole(member?.userRole));
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(member?.twoFactorEnabled ?? true);
   const [loginNotification, setLoginNotification] = useState(member?.loginNotification ?? true);
   const [memberStatus, setMemberStatus] = useState(API_TO_STATUS[member?.status ?? "active"] ?? "Active");
@@ -116,7 +120,7 @@ export function MemberDetailPopup() {
   // member 로드 후 state 동기화 (첫 로드 시 한 번만)
   const [initialized, setInitialized] = useState(false);
   if (member && !initialized) {
-    setUserRole(member.userRole || "GENERAL");
+    setUserRole(safeRole(member.userRole));
     setTwoFactorEnabled(member.twoFactorEnabled ?? true);
     setLoginNotification(member.loginNotification);
     setMemberStatus(API_TO_STATUS[member.status] ?? "Active");
@@ -153,10 +157,14 @@ export function MemberDetailPopup() {
       api.put(`/admin/members/${encodeURIComponent(userId!)}`, payload, {
         params: { userTp },
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
-      queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
-      openAlert({ type: "alert", message: "保存しました。" });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      openAlert({
+        type: "alert",
+        message: "保存しました。",
+        onConfirm: () => closePopup(),
+      });
     },
     onError: (err: unknown) => handleApiError(err, "会員情報の更新"),
   });
