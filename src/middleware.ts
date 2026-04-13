@@ -66,7 +66,8 @@ export async function middleware(request: NextRequest) {
     if (publicToken) {
       try {
         const publicUser = await verifyToken(publicToken);
-        if (publicUser) {
+        // 2FA 미완료 사용자는 비회원으로 통과 (관리자 전용 데이터 접근 방지)
+        if (publicUser && publicUser.twoFactorVerified !== false) {
           const requestHeaders = new Headers(request.headers);
           requestHeaders.set("X-User-Type", publicUser.userTp);
           requestHeaders.set("X-User-Id", publicUser.userId);
