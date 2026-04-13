@@ -1,25 +1,20 @@
 "use client";
 
-// Design Ref: §5.3 — 우측 카테고리 상세 편집 폼
-// 수정사항: 버튼들은 タイトル 우측 정렬
+// Design Ref: §4.3 — 우측 카테고리 상세 편집 폼
+// AutoCompleteSelect + 자동채번 + isSaving
 
 import { useState } from "react";
-import { Button, InputBox, SelectBox, Radio } from "@/components/common";
-import type { CategoryItem } from "./categories-dummy-data";
-
-interface CategoryFormState {
-  isInternalOnly: boolean;
-  parentId: number | null;
-  categoryCode: string;
-  name: string;
-  sortOrder: number;
-  isActive: boolean;
-}
+import { Button, InputBox, Radio } from "@/components/common";
+import { AutoCompleteSelect } from "./auto-complete-select";
+import type { CategoryNode, CategoryFormState } from "./categories-types";
+import { generateChildCode } from "./categories-types";
 
 interface CategoriesDetailProps {
-  selectedCategory: CategoryItem | null;
+  selectedCategory: CategoryNode | null;
   parentOptions: { label: string; value: string }[];
+  treeData: CategoryNode[];
   isNewMode: boolean;
+  isSaving: boolean;
   onSave: (form: CategoryFormState) => void;
   onDelete: () => void;
   onNew: () => void;
@@ -35,7 +30,7 @@ const INITIAL_FORM: CategoryFormState = {
   isActive: true,
 };
 
-function getInitialForm(category: CategoryItem | null): CategoryFormState {
+function getInitialForm(category: CategoryNode | null): CategoryFormState {
   if (!category) return INITIAL_FORM;
   return {
     isInternalOnly: category.isInternalOnly,
@@ -50,7 +45,9 @@ function getInitialForm(category: CategoryItem | null): CategoryFormState {
 export function CategoriesDetail({
   selectedCategory,
   parentOptions,
+  treeData,
   isNewMode,
+  isSaving,
   onSave,
   onDelete,
   onNew,
@@ -58,23 +55,41 @@ export function CategoriesDetail({
 }: CategoriesDetailProps) {
   // key prop으로 리마운트 제어 — useEffect 내 setState 대신 초기값으로 직접 설정
   const [form, setForm] = useState<CategoryFormState>(
-    isNewMode ? INITIAL_FORM : getInitialForm(selectedCategory)
+    isNewMode ? INITIAL_FORM : getInitialForm(selectedCategory),
   );
 
   const isEditMode = selectedCategory !== null && !isNewMode;
   const hasSelection = selectedCategory !== null || isNewMode;
   const depth = form.parentId === null ? 1 : 2;
 
+  // Design Ref: §4.3 — categoryCode 비활성화 조건
+  const isCodeDisabled = isEditMode || form.parentId !== null;
+
   const updateField = <K extends keyof CategoryFormState>(
     key: K,
-    value: CategoryFormState[K]
+    value: CategoryFormState[K],
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  // Design Ref: §4.3 — parentId 변경 시 자동채번 연동
+  const handleParentChange = (parentId: number | null) => {
+    updateField("parentId", parentId);
+
+    if (parentId === null) {
+      updateField("categoryCode", "");
+    } else {
+      const parent = treeData.find((p) => p.id === parentId);
+      if (parent) {
+        const autoCode = generateChildCode(parent.categoryCode, parent.children);
+        updateField("categoryCode", autoCode);
+      }
+    }
+  };
+
   return (
     <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[24px] pb-[24px] overflow-hidden self-stretch">
-      {/* Header + Buttons (수정사항: 타이틀 우측 버튼 정렬) */}
+      {/* Header + Buttons */}
       <div className="flex items-center justify-between">
         <h2 className="text-[16px] font-medium text-[#45576f] font-['Noto_Sans_JP']">
           カテゴリ情報
@@ -82,26 +97,20 @@ export function CategoriesDetail({
         <div className="flex items-center gap-[6px]">
           <Button
             variant="secondary"
-            disabled={!isEditMode}
+            disabled={!isEditMode || isSaving}
             onClick={onDelete}
           >
             削除
           </Button>
-          <Button
-            variant="secondary"
-            onClick={onReset}
-          >
+          <Button variant="secondary" onClick={onReset}>
             初期化
           </Button>
-          <Button
-            variant="point"
-            onClick={onNew}
-          >
+          <Button variant="point" onClick={onNew}>
             新規
           </Button>
           <Button
             variant="primary"
-            disabled={!hasSelection}
+            disabled={!hasSelection || isSaving}
             onClick={() => onSave(form)}
           >
             保存
@@ -111,7 +120,7 @@ export function CategoriesDetail({
 
       {/* Form Rows */}
       <div className="flex flex-col gap-[4px]">
-        {/* Row 1: 社内会員専用 (상단) */}
+        {/* Row 1: 社内会員専用 */}
         <FormRow label="社内会員専用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
@@ -129,14 +138,14 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 2: 親カテゴリ */}
+        {/* Row 2: 親カテゴリ — AutoCompleteSelect */}
         <FormRow label="親カテゴリ">
           <div className="w-full p-[8px]">
-            <SelectBox
+            <AutoCompleteSelect
               options={parentOptions}
               value={form.parentId !== null ? String(form.parentId) : ""}
-              onChange={(val) => updateField("parentId", val ? Number(val) : null)}
-              placeholder="選択してください"
+              onChange={(val) => handleParentChange(val ? Number(val) : null)}
+              placeholder="カテゴリ名で検索"
               disabled={isEditMode}
             />
           </div>
@@ -145,10 +154,7 @@ export function CategoriesDetail({
         {/* Row 3: Depth */}
         <FormRow label="Depth">
           <div className="w-full p-[8px]">
-            <InputBox
-              value={String(depth)}
-              readOnly
-            />
+            <InputBox value={String(depth)} readOnly />
           </div>
         </FormRow>
 
@@ -158,7 +164,7 @@ export function CategoriesDetail({
             <InputBox
               value={form.categoryCode}
               onChange={(val) => updateField("categoryCode", val)}
-              disabled={isEditMode}
+              disabled={isCodeDisabled}
             />
           </div>
         </FormRow>
@@ -184,7 +190,7 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 7: 社内会員専用 (하단 — 使用여부) */}
+        {/* Row 7: 使用 */}
         <FormRow label="使用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
@@ -203,7 +209,6 @@ export function CategoriesDetail({
         </FormRow>
       </div>
 
-      {/* Bottom Note */}
       <p className="text-[14px] text-[#101010] font-['Noto_Sans_JP']">
         ※カテゴリはDepth-2までのみ管理できます.
       </p>
@@ -211,7 +216,6 @@ export function CategoriesDetail({
   );
 }
 
-// Form Row 내부 컴포넌트
 function FormRow({
   label,
   required,
