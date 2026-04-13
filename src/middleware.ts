@@ -52,6 +52,27 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublicPath(pathname) || isPublicGetPath(pathname, request.method)) {
+    // public 경로라도 JWT가 있으면 사용자 정보 헤더 주입 (인증 실패 시 무시하고 통과)
+    // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
+    const publicToken = request.cookies.get(COOKIE_NAME)?.value;
+    if (publicToken) {
+      try {
+        const publicUser = await verifyToken(publicToken);
+        if (publicUser) {
+          const requestHeaders = new Headers(request.headers);
+          requestHeaders.set("X-User-Type", publicUser.userTp);
+          requestHeaders.set("X-User-Id", publicUser.userId);
+          const publicFallbackRole = publicUser.userTp === "ADMIN" ? "ADMIN"
+            : publicUser.userTp === "STORE" ? "2ND_STORE"
+            : publicUser.userTp === "SEKO" ? "SEKO"
+            : "GENERAL";
+          requestHeaders.set("X-User-Role", publicUser.authRole ?? publicFallbackRole);
+          return NextResponse.next({ request: { headers: requestHeaders } });
+        }
+      } catch {
+        // JWT 검증 실패 시 비회원으로 통과
+      }
+    }
     return NextResponse.next();
   }
 

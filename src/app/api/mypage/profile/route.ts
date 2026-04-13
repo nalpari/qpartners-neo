@@ -124,13 +124,18 @@ export async function GET(request: NextRequest) {
     const d = qsp.data;
     const userType = user.userTp;
 
+    // QSP는 user1stNm/user2ndNm이 null이고 userNm("姓 名")에 합쳐서 반환함
+    // userNm을 공백 기준으로 분리하여 sei/mei fallback
+    const [seiFromNm, meiFromNm] = d.userNm?.split(" ", 2) ?? [null, null];
+    const [seiKanaFromNm, meiKanaFromNm] = d.userNmKana?.split(" ", 2) ?? [null, null];
+
     // 회원유형별 응답 구성
     const profile: Record<string, unknown> = {
       userType,
-      sei: d.user2ndNm,
-      mei: d.user1stNm,
-      seiKana: d.user2ndNmKana,
-      meiKana: d.user1stNmKana,
+      sei: d.user2ndNm ?? seiFromNm ?? null,
+      mei: d.user1stNm ?? meiFromNm ?? null,
+      seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? null,
+      meiKana: d.user1stNmKana ?? meiKanaFromNm ?? null,
       email: d.email,
       compNm: d.compNm,
       compNmKana: d.compNmKana,
@@ -139,7 +144,7 @@ export async function GET(request: NextRequest) {
       address2: d.compAddr2,
       telNo: d.compTelNo,
       fax: d.compFaxNo,
-      newsRcptYn: d.newsRcptYn,
+      newsRcptYn: d.newsRcptYn ?? "N",
       newsRcptDate: d.newsRcptDate,
     };
 
@@ -226,41 +231,44 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 판매점은 fax 필수
-    if (user.userTp === "STORE" && !result.data.fax) {
-      return NextResponse.json(
-        { error: "販売店はFAXが必須です" },
-        { status: 400 },
-      );
-    }
-
     const d = result.data;
 
-    // QSP 마이페이지 회원정보 수정 API (POST /api/qpartners/user/updateUserDtl)
-    // 사양서 v1.0 기준 필수: userTp, userId, accsSiteCd, user1stNm, user2ndNm,
-    //   user1stNmKana, user2ndNmKana, compNm, compNmKana, compPostCd,
-    //   compAddr, compAddr2, compTelNo, newsRcptYn
+    // 마이페이지 수정 정책:
+    //   GENERAL — 전체 수정 가능
+    //   ADMIN/STORE/SEKO — 패스워드 + 뉴스레터만 수정 가능
+    // (SEKO는 위에서 early return 처리됨)
     {
-      const qspPayload = {
+      const qspPayload: Record<string, unknown> = {
         accsSiteCd: "QPARTNERS",
         userId: user.userId,
+        email: user.email,
         userTp: user.userTp,
-        user1stNm: d.mei,
-        user2ndNm: d.sei,
-        user1stNmKana: d.meiKana,
-        user2ndNmKana: d.seiKana,
-        compNm: d.compNm,
-        compNmKana: d.compNmKana,
-        compPostCd: d.zipcode,
-        compAddr: d.address1,
-        compAddr2: d.address2,
-        compTelNo: d.telNo,
-        compFaxNo: d.fax,
-        deptNm: d.department,
-        pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
-        bizNo: d.corporateNo,
+        updBy: user.userId,
       };
+
+      // GENERAL만 이름·회사 등 전체 필드 수정 가능
+      if (user.userTp === "GENERAL") {
+        qspPayload.user1stNm = d.mei;
+        qspPayload.user2ndNm = d.sei;
+        qspPayload.user1stNmKana = d.meiKana;
+        qspPayload.user2ndNmKana = d.seiKana;
+        qspPayload.compNm = d.compNm;
+        qspPayload.compNmKana = d.compNmKana;
+        qspPayload.compPostCd = d.zipcode;
+        qspPayload.compAddr = d.address1;
+        qspPayload.compAddr2 = d.address2;
+        qspPayload.compTelNo = d.telNo;
+        qspPayload.compFaxNo = d.fax;
+        qspPayload.deptNm = d.department;
+        qspPayload.pstnNm = d.jobTitle;
+        qspPayload.bizNo = d.corporateNo;
+      }
+
+      // ADMIN/STORE는 userId ≠ email 일 수 있어 loginId 명시 전달
+      if (user.userTp === "ADMIN" || user.userTp === "STORE") {
+        qspPayload.loginId = user.userId;
+      }
 
       let qspResponse: Response;
       try {
