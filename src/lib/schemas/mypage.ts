@@ -35,29 +35,29 @@ export const profileUpdateSchema = z.object({
   // ADMIN/STORE는 뉴스레터만 수정 가능 → 다른 필드 검증 불필요
   if (data.userType === "ADMIN" || data.userType === "STORE") return;
 
-  // GENERAL: 이름 + 회사 정보 필수
-  if (!data.sei) {
+  // GENERAL: 이름 + 회사 정보 필수 (공백만으로 구성된 값도 빈 값 취급)
+  if (!data.sei?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "姓は必須です", path: ["sei"] });
   }
-  if (!data.mei) {
+  if (!data.mei?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "名は必須です", path: ["mei"] });
   }
-  if (!data.seiKana) {
+  if (!data.seiKana?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "姓(カナ)は必須です", path: ["seiKana"] });
   }
-  if (!data.meiKana) {
+  if (!data.meiKana?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "名(カナ)は必須です", path: ["meiKana"] });
   }
-  if (!data.compNm) {
+  if (!data.compNm?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "会社名は必須です", path: ["compNm"] });
   }
-  if (!data.zipcode) {
+  if (!data.zipcode?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "郵便番号は必須です", path: ["zipcode"] });
   }
-  if (!data.address1) {
+  if (!data.address1?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "住所は必須です", path: ["address1"] });
   }
-  if (!data.telNo) {
+  if (!data.telNo?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "電話番号は必須です", path: ["telNo"] });
   }
 });

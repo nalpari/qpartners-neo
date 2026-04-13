@@ -126,8 +126,15 @@ export async function GET(request: NextRequest) {
 
     // QSP는 user1stNm/user2ndNm이 null이고 userNm("姓 名")에 합쳐서 반환함
     // userNm을 공백 기준으로 분리하여 sei/mei fallback
-    const [seiFromNm, meiFromNm] = d.userNm?.split(" ", 2) ?? [null, null];
-    const [seiKanaFromNm, meiKanaFromNm] = d.userNmKana?.split(" ", 2) ?? [null, null];
+    // 전각 공백(U+3000)도 구분자로 인식, 분리 불가(공백 없음) 시 양쪽 null
+    const splitName = (nm: string | null): [string | null, string | null] => {
+      if (!nm) return [null, null];
+      const parts = nm.split(/[\s\u3000]+/, 2);
+      if (parts.length < 2) return [null, null];
+      return [parts[0], parts[1]];
+    };
+    const [seiFromNm, meiFromNm] = splitName(d.userNm);
+    const [seiKanaFromNm, meiKanaFromNm] = splitName(d.userNmKana);
 
     // 회원유형별 응답 구성
     const profile: Record<string, unknown> = {
@@ -235,7 +242,7 @@ export async function PUT(request: NextRequest) {
 
     // 마이페이지 수정 정책:
     //   GENERAL — 전체 수정 가능
-    //   ADMIN/STORE/SEKO — 패스워드 + 뉴스레터만 수정 가능
+    //   ADMIN/STORE/SEKO — 뉴스레터만 수정 가능 (패스워드는 별도 API)
     // (SEKO는 위에서 early return 처리됨)
     {
       const qspPayload: Record<string, unknown> = {

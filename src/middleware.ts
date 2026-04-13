@@ -49,34 +49,48 @@ function isTwoFactorPath(pathname: string): boolean {
 }
 
 /** userTp → authRole 폴백 (authRole 미설정 JWT 대응) */
+const USERTP_ROLE_MAP: Record<string, string> = {
+  ADMIN: "ADMIN",
+  STORE: "2ND_STORE",
+  SEKO: "SEKO",
+  GENERAL: "GENERAL",
+};
+
 function getFallbackRole(userTp: string): string {
-  if (userTp === "ADMIN") return "ADMIN";
-  if (userTp === "STORE") return "2ND_STORE";
-  if (userTp === "SEKO") return "SEKO";
-  return "GENERAL";
+  const role = USERTP_ROLE_MAP[userTp];
+  if (!role) {
+    console.error("[middleware] 미지의 userTp — GENERAL 폴백 적용:", userTp);
+    return "GENERAL";
+  }
+  return role;
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isPublicPath(pathname) || isPublicGetPath(pathname, request.method)) {
-    // public 경로라도 JWT가 있으면 사용자 정보 헤더 주입 (인증 실패 시 무시하고 통과)
+  const isPublicGet = isPublicGetPath(pathname, request.method);
+
+  if (isPublicPath(pathname) || isPublicGet) {
+    // GET 조회 경로에 한해 JWT가 있으면 사용자 정보 헤더 주입 (최소 권한 원칙)
     // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
-    const publicToken = request.cookies.get(COOKIE_NAME)?.value;
-    if (publicToken) {
-      try {
-        const publicUser = await verifyToken(publicToken);
-        // 2FA 미완료 사용자는 비회원으로 통과 (관리자 전용 데이터 접근 방지)
-        if (publicUser && publicUser.twoFactorVerified !== false) {
-          const requestHeaders = new Headers(request.headers);
-          requestHeaders.set("X-User-Type", publicUser.userTp);
-          requestHeaders.set("X-User-Id", publicUser.userId);
-          requestHeaders.set("X-User-Role", publicUser.authRole ?? getFallbackRole(publicUser.userTp));
-          return NextResponse.next({ request: { headers: requestHeaders } });
+    // POST 경로(/api/inquiry, /api/auth/signup 등)에는 헤더 주입하지 않음
+    if (isPublicGet) {
+      const publicToken = request.cookies.get(COOKIE_NAME)?.value;
+      if (publicToken) {
+        try {
+          const publicUser = await verifyToken(publicToken);
+          // 2FA 미완료 사용자는 비회원으로 통과 (관리자 전용 데이터 접근 방지)
+          if (publicUser && publicUser.twoFactorVerified !== false) {
+            const requestHeaders = new Headers(request.headers);
+            requestHeaders.set("X-User-Type", publicUser.userTp);
+            requestHeaders.set("X-User-Id", publicUser.userId);
+            requestHeaders.set("X-User-Role", publicUser.authRole ?? getFallbackRole(publicUser.userTp));
+            return NextResponse.next({ request: { headers: requestHeaders } });
+          }
+        } catch (error) {
+          // 토큰 만료·서명 불일치는 정상 — 비회원으로 통과
+          console.warn("[middleware] public GET JWT 검증 실패 (비회원 통과):", error);
         }
-      } catch (error) {
-        // 토큰 만료·서명 불일치는 정상 — 비회원으로 통과
-        console.warn("[middleware] public 경로 JWT 검증 실패 (비회원 통과):", error);
       }
     }
     return NextResponse.next();

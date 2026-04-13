@@ -1940,10 +1940,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         userType: { type: "string", enum: [...userTpValues] },
-                        sei: { type: "string" },
-                        mei: { type: "string" },
-                        seiKana: { type: "string" },
-                        meiKana: { type: "string" },
+                        sei: { type: "string", nullable: true },
+                        mei: { type: "string", nullable: true },
+                        seiKana: { type: "string", nullable: true },
+                        meiKana: { type: "string", nullable: true },
                         email: { type: "string" },
                         compNm: { type: "string" },
                         compNmKana: { type: "string" },
@@ -1976,14 +1976,14 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["MyPage"],
         summary: "프로필 수정",
-        description: "회원유형별 필수/수정 가능 항목 차별화, QSP API 호출",
+        description: "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["sei", "mei", "seiKana", "meiKana", "compNm", "zipcode", "address1", "telNo", "newsRcptYn"],
+                required: ["newsRcptYn"],
                 properties: {
                   sei: { type: "string", maxLength: 50 },
                   mei: { type: "string", maxLength: 50 },
@@ -2022,11 +2022,10 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("Validation 실패 / 施工店会員は別途API使用 / STORE FAX 누락"),
+          "400": errorResponse("Validation 실패 / 施工店会員は別途API使用"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("내부 에러 / JWT email 누락 등 사용자 정보 불완전 (재로그인 유도)"),
-          "501": errorResponse("관리자 프로필 수정 미지원"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
