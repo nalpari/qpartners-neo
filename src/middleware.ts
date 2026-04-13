@@ -88,6 +88,14 @@ export async function middleware(request: NextRequest) {
             return NextResponse.next({ request: { headers: requestHeaders } });
           }
         } catch (error) {
+          // ConfigError(JWT_SECRET 미설정) = 서버 설정 문제 → protected path와 동일하게 500 반환
+          if (error instanceof Error && error.name === "ConfigError") {
+            console.error("[middleware] CRITICAL 설정 에러 (public GET):", error);
+            return NextResponse.json(
+              { error: "サーバー設定エラーが発生しました" },
+              { status: 500 },
+            );
+          }
           // 토큰 만료·서명 불일치는 정상 — 비회원으로 통과
           console.warn("[middleware] public GET JWT 검증 실패 (비회원 통과):", error);
         }

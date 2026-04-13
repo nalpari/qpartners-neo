@@ -245,7 +245,7 @@ export async function PUT(request: NextRequest) {
     //   ADMIN/STORE/SEKO — 뉴스레터만 수정 가능 (패스워드는 별도 API)
     // (SEKO는 위에서 early return 처리됨)
     {
-      const qspPayload: Record<string, unknown> = {
+      const basePayload = {
         accsSiteCd: "QPARTNERS",
         userId: user.userId,
         email: user.email,
@@ -254,28 +254,30 @@ export async function PUT(request: NextRequest) {
         updBy: user.userId,
       };
 
-      // GENERAL만 이름·회사 등 전체 필드 수정 가능
-      if (user.userTp === "GENERAL") {
-        qspPayload.user1stNm = d.mei;
-        qspPayload.user2ndNm = d.sei;
-        qspPayload.user1stNmKana = d.meiKana;
-        qspPayload.user2ndNmKana = d.seiKana;
-        qspPayload.compNm = d.compNm;
-        qspPayload.compNmKana = d.compNmKana;
-        qspPayload.compPostCd = d.zipcode;
-        qspPayload.compAddr = d.address1;
-        qspPayload.compAddr2 = d.address2;
-        qspPayload.compTelNo = d.telNo;
-        qspPayload.compFaxNo = d.fax;
-        qspPayload.deptNm = d.department;
-        qspPayload.pstnNm = d.jobTitle;
-        qspPayload.bizNo = d.corporateNo;
-      }
-
-      // ADMIN/STORE는 userId ≠ email 일 수 있어 loginId 명시 전달
-      if (user.userTp === "ADMIN" || user.userTp === "STORE") {
-        qspPayload.loginId = user.userId;
-      }
+      // GENERAL: 이름·회사 등 전체 필드 수정 가능
+      // ADMIN/STORE: 뉴스레터만 수정 + loginId 명시 전달 (userId ≠ email 일 수 있음)
+      const qspPayload = user.userTp === "GENERAL"
+        ? {
+          ...basePayload,
+          user1stNm: d.mei,
+          user2ndNm: d.sei,
+          user1stNmKana: d.meiKana,
+          user2ndNmKana: d.seiKana,
+          compNm: d.compNm,
+          compNmKana: d.compNmKana,
+          compPostCd: d.zipcode,
+          compAddr: d.address1,
+          compAddr2: d.address2,
+          compTelNo: d.telNo,
+          compFaxNo: d.fax,
+          deptNm: d.department,
+          pstnNm: d.jobTitle,
+          bizNo: d.corporateNo,
+        }
+        : {
+          ...basePayload,
+          loginId: user.userId,
+        };
 
       let qspResponse: Response;
       try {

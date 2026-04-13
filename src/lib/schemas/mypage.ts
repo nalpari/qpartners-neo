@@ -10,7 +10,7 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
  * 마이페이지 수정 정책:
  *   GENERAL — 전체 수정 가능 (이름, 회사, 뉴스레터)
  *   ADMIN/STORE — 뉴스레터만 수정 가능 (패스워드는 별도 API)
- *   SEKO — 뉴스레터만 수정 가능 (route에서 별도 처리)
+ *   SEKO — 이 API 사용 불가 (route에서 400 early return, /api/mypage/seko-info 사용)
  */
 export const profileUpdateSchema = z.object({
   userType: z.enum(userTpValues).optional(),
