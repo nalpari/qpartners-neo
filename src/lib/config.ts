@@ -5,6 +5,8 @@
  * - base URL / 비밀값은 환경변수(.env)에서 주입
  */
 
+import { join, resolve } from "path";
+
 // ─── QSP External API ───
 // NOTE: Node.js runtime 전용 — Edge Runtime에서는 함수 내부에서 env를 읽어야 함
 
@@ -42,11 +44,17 @@ export const QSP_API = {
 
 // ─── Upload Storage ───
 
-import { join } from "path";
+const rawUploadDir = process.env.UPLOAD_DIR?.trim();
+if (isProduction && !rawUploadDir) {
+  throw new Error("UPLOAD_DIR is required in production");
+}
 
 /** 파일 업로드 저장 경로 — 환경변수로 주입, 미설정 시 프로젝트 루트 fallback (개발환경) */
-export const UPLOAD_DIR = process.env.UPLOAD_DIR
-  ?? join(process.cwd(), "storage", "uploads");
+export const UPLOAD_DIR = resolve(
+  rawUploadDir || join(process.cwd(), "storage", "uploads"),
+);
+
+console.info("[config] UPLOAD_DIR =", UPLOAD_DIR);
 
 // ─── SMTP ───
 

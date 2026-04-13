@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { writeFile, unlink, mkdir } from "fs/promises";
-import { join, basename, resolve } from "path";
+import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import { Prisma } from "@/generated/prisma/client";
@@ -116,7 +116,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략 (lexical 검증만으로는 불충분)
       const regular = await isRegularFile(absolutePath);
       if (!regular) {
-        console.warn("[DELETE /api/contents/:id/files/:fileId] 정규 파일 아님/부재 — unlink 생략:", absolutePath);
+        console.warn("[DELETE /api/contents/:id/files/:fileId] 정규 파일 아님/부재 — unlink 생략:", relative(UPLOAD_DIR, absolutePath));
       } else {
         await unlink(absolutePath).catch((err: unknown) => {
           console.error("[DELETE /api/contents/:id/files/:fileId] 디스크 파일 삭제 실패:", {
@@ -127,6 +127,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         });
       }
     } else {
+      // 보안 이벤트 — 포렌식 목적으로 절대경로 유지
       console.error("[DELETE /api/contents/:id/files/:fileId] 이상 경로 감지:", absolutePath);
     }
 
@@ -312,7 +313,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       // 심볼릭 링크 방어(리뷰 권장) — symlink면 unlink 생략
       const regular = await isRegularFile(oldAbsolutePath);
       if (!regular) {
-        console.warn("[PUT /api/contents/:id/files/:fileId] 기존 파일이 정규 파일 아님/부재 — unlink 생략:", oldAbsolutePath);
+        console.warn("[PUT /api/contents/:id/files/:fileId] 기존 파일이 정규 파일 아님/부재 — unlink 생략:", relative(UPLOAD_DIR, oldAbsolutePath));
       } else {
         await unlink(oldAbsolutePath).catch((err: unknown) => {
           console.error("[PUT /api/contents/:id/files/:fileId] 기존 파일 삭제 실패:", {

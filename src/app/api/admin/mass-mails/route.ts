@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir, unlink, rm } from "fs/promises";
-import { join, basename, resolve } from "path";
+import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -44,12 +44,12 @@ interface PersistedAttachment {
 async function cleanupFiles(writtenFiles: PersistedAttachment[], uploadDir?: string): Promise<void> {
   for (const w of writtenFiles) {
     await unlink(w.absolutePath).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", w.absolutePath, e);
+      console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", relative(UPLOAD_DIR, w.absolutePath), e);
     });
   }
   if (uploadDir) {
     await rm(uploadDir, { recursive: true, force: true }).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 디렉토리 정리 실패:", uploadDir, e);
+      console.error("[POST /api/admin/mass-mails] 디렉토리 정리 실패:", relative(UPLOAD_DIR, uploadDir), e);
     });
   }
 }
@@ -218,11 +218,12 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       const filePath = `mass-mails/${tempId}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
-      // path traversal 방어 — isInsideDir (startsWith('/uploads')가 '/uploads-evil/'도 통과시키는 문제 회피)
+      // path traversal 방어 — isInsideDir (startsWith prefix bug 회피)
       if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
+        // 보안 이벤트 — 포렌식 목적으로 절대경로 유지
         console.error("[POST /api/admin/mass-mails] PATH TRAVERSAL 감지:", {
           fileName: file.name,
-          absolutePath,
+          resolvedPath: absolutePath,
           uploadDir: uploadDirAbsolute,
         });
         return { error: true as const };

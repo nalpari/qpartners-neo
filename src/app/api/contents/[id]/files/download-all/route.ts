@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { createReadStream } from "fs";
 import { stat } from "fs/promises";
-import { basename, resolve } from "path";
+import { basename, relative, resolve } from "path";
 import archiver from "archiver";
 import { PassThrough } from "stream";
 
@@ -101,11 +101,11 @@ export async function GET(request: NextRequest, { params }: Params) {
       content.attachments.map(async (att) => {
         const absolutePath = resolve(UPLOAD_DIR, att.filePath);
         if (!isInsideDir(absolutePath, storageRoot)) {
-          throw new Error(`invalid-path:${absolutePath}`);
+          throw new Error(`invalid-path:${relative(UPLOAD_DIR, absolutePath)}`);
         }
         // 심볼릭 링크/특수 파일 거부
         if (!(await isRegularFile(absolutePath))) {
-          throw new Error(`non-regular:${absolutePath}`);
+          throw new Error(`non-regular:${relative(UPLOAD_DIR, absolutePath)}`);
         }
         const info = await stat(absolutePath);
         return {

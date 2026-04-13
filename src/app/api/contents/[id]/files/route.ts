@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { writeFile, mkdir, unlink } from "fs/promises";
-import { join, basename, resolve } from "path";
+import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import { canModifyContent, requireAdmin } from "@/lib/auth";
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       for (const w of writtenFiles) {
         await unlink(w.absolutePath).catch((unlinkErr: unknown) => {
           console.error("[POST /api/contents/:id/files] DB 실패 후 파일 정리 실패:", {
-            path: w.absolutePath,
+            path: relative(UPLOAD_DIR, w.absolutePath),
             error: unlinkErr,
           });
         });
