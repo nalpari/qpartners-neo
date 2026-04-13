@@ -50,14 +50,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const category = await prisma.$transaction(async (tx) => {
       // sortOrder 변경 시 같은 parentId 형제들 자동 재정렬
       if (result.data.sortOrder !== undefined) {
-        const current = await tx.category.findUniqueOrThrow({
+        const current = await tx.category.findUnique({
           where: { id: parsed.data },
           select: { parentId: true, sortOrder: true },
         });
 
+        if (!current) {
+          throw new Error("NOT_FOUND");
+        }
+
         const newOrder = result.data.sortOrder;
         if (newOrder < current.sortOrder) {
           // 위로 이동: [newOrder, oldOrder) 범위 형제 +1
+          console.log("[PUT /api/categories/:id] sortOrder 재정렬", {
+            categoryId: parsed.data,
+            parentId: current.parentId,
+            oldOrder: current.sortOrder,
+            newOrder,
+            direction: "up",
+          });
           await tx.category.updateMany({
             where: {
               parentId: current.parentId,
@@ -68,6 +79,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
           });
         } else if (newOrder > current.sortOrder) {
           // 아래로 이동: (oldOrder, newOrder] 범위 형제 -1
+          console.log("[PUT /api/categories/:id] sortOrder 재정렬", {
+            categoryId: parsed.data,
+            parentId: current.parentId,
+            oldOrder: current.sortOrder,
+            newOrder,
+            direction: "down",
+          });
           await tx.category.updateMany({
             where: {
               parentId: current.parentId,
@@ -87,6 +105,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: category });
   } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     if (
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2025"
