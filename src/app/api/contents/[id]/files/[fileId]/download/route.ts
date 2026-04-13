@@ -1,9 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
-import { resolve } from "path";
+import { relative, resolve } from "path";
 
 import { canAccessContent, getUserFromHeaders } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
+import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
 
@@ -46,30 +48,41 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
     }
 
-    // 파일 읽기 (storage/ 디렉토리 기준, path traversal 방어)
-    const storageRoot = resolve(process.cwd(), "storage", "uploads");
-    const absolutePath = resolve(process.cwd(), attachment.filePath);
+    // 파일 읽기 (UPLOAD_DIR 기준, path traversal 방어)
+    const storageRoot = resolve(UPLOAD_DIR);
+    const absolutePath = resolve(UPLOAD_DIR, attachment.filePath);
 
-    if (!absolutePath.startsWith(storageRoot)) {
+    if (!isInsideDir(absolutePath, storageRoot)) {
       return NextResponse.json({ error: "접근할 수 없는 경로입니다" }, { status: 403 });
+    }
+
+    const regular = await isRegularFile(absolutePath);
+    if (!regular) {
+      console.error("[download] 정규 파일 아님/부재:", relative(UPLOAD_DIR, absolutePath));
+      return NextResponse.json(
+        { error: "파일이 서버에 존재하지 않습니다" },
+        { status: 404 },
+      );
     }
 
     let fileBuffer: Buffer;
     try {
       fileBuffer = await readFile(absolutePath);
     } catch (fsError: unknown) {
-      if (fsError instanceof Error && "code" in fsError) {
-        const code = (fsError as NodeJS.ErrnoException).code;
-        if (code === "ENOENT") {
-          console.error("[download] File missing from disk", {
-            absolutePath,
-            attachmentId: parsedFileId.data,
-          });
-          return NextResponse.json(
-            { error: "파일이 서버에 존재하지 않습니다" },
-            { status: 404 },
-          );
-        }
+      // isRegularFile 통과 후 readFile 사이 TOCTOU 윈도우 방어
+      if (
+        fsError instanceof Error &&
+        "code" in fsError &&
+        (fsError as { code?: string }).code === "ENOENT"
+      ) {
+        console.error("[download] 파일 디스크 부재 (TOCTOU)", {
+          filePath: relative(UPLOAD_DIR, absolutePath),
+          attachmentId: parsedFileId.data,
+        });
+        return NextResponse.json(
+          { error: "파일이 서버에 존재하지 않습니다" },
+          { status: 404 },
+        );
       }
       throw fsError;
     }

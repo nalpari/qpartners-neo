@@ -40,7 +40,15 @@ export async function isRegularFile(absolutePath: string): Promise<boolean> {
   try {
     const info = await lstat(absolutePath);
     return info.isFile() && !info.isSymbolicLink();
-  } catch {
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as { code?: string }).code === "ENOENT"
+    ) {
+      return false;
+    }
+    console.error("[isRegularFile] lstat 예기치 않은 에러:", err);
     return false;
   }
 }
