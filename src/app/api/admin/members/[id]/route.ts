@@ -255,8 +255,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    if (parsed.data.result.resultCode !== "S") {
-      console.warn("[PUT /api/admin/members/:id] QSP 수정 실패:", parsed.data.result.message);
+    const rc = parsed.data.result.resultCode;
+    const msg = parsed.data.result.message;
+    // QSP updateUserDtlMng: resultCode "S" 또는 message "success" 를 성공으로 판정
+    // (updateUserDtl은 "S", updateUserDtlMng은 다른 코드 + message "success" 패턴 확인됨)
+    const isSuccess = rc === "S" || msg.toLowerCase() === "success";
+    if (!isSuccess) {
+      console.warn("[PUT /api/admin/members/:id] QSP 수정 실패:", { resultCode: rc, message: msg });
       return NextResponse.json(
         { error: "会員情報の更新に失敗しました" },
         { status: 502 },
