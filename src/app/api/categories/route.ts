@@ -95,19 +95,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const category = await prisma.$transaction(async (tx) => {
-      // 같은 parentId 형제 중 sortOrder 이상인 항목들을 +1 shift
-      await tx.category.updateMany({
-        where: {
-          parentId: result.data.parentId,
-          sortOrder: { gte: result.data.sortOrder },
-        },
-        data: { sortOrder: { increment: 1 } },
-      });
-
-      return tx.category.create({ data: result.data });
-    });
-
+    const category = await prisma.category.create({ data: result.data });
     return NextResponse.json({ data: category }, { status: 201 });
   } catch (error) {
     if (

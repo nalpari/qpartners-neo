@@ -1738,7 +1738,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 지정 시 같은 parentId 형제의 순서를 자동 재정렬합니다.",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가.",
         requestBody: {
           required: true,
           content: {
@@ -1773,8 +1773,6 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
-        description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다.",
         parameters: [
           {
             name: "id",
