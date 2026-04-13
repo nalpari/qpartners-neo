@@ -124,13 +124,25 @@ export async function GET(request: NextRequest) {
     const d = qsp.data;
     const userType = user.userTp;
 
+    // QSP는 user1stNm/user2ndNm이 null이고 userNm("姓 名")에 합쳐서 반환함
+    // userNm을 공백 기준으로 분리하여 sei/mei fallback
+    // 전각 공백(U+3000)도 구분자로 인식, 분리 불가(공백 없음) 시 양쪽 null
+    const splitName = (nm: string | null): [string | null, string | null] => {
+      if (!nm) return [null, null];
+      const parts = nm.split(/[\s\u3000]+/, 2);
+      if (parts.length < 2) return [null, null];
+      return [parts[0], parts[1]];
+    };
+    const [seiFromNm, meiFromNm] = splitName(d.userNm);
+    const [seiKanaFromNm, meiKanaFromNm] = splitName(d.userNmKana);
+
     // 회원유형별 응답 구성
     const profile: Record<string, unknown> = {
       userType,
-      sei: d.user2ndNm,
-      mei: d.user1stNm,
-      seiKana: d.user2ndNmKana,
-      meiKana: d.user1stNmKana,
+      sei: d.user2ndNm ?? seiFromNm ?? null,
+      mei: d.user1stNm ?? meiFromNm ?? null,
+      seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? null,
+      meiKana: d.user1stNmKana ?? meiKanaFromNm ?? null,
       email: d.email,
       compNm: d.compNm,
       compNmKana: d.compNmKana,
@@ -139,7 +151,7 @@ export async function GET(request: NextRequest) {
       address2: d.compAddr2,
       telNo: d.compTelNo,
       fax: d.compFaxNo,
-      newsRcptYn: d.newsRcptYn,
+      newsRcptYn: d.newsRcptYn ?? "N",
       newsRcptDate: d.newsRcptDate,
     };
 
@@ -226,41 +238,46 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 판매점은 fax 필수
-    if (user.userTp === "STORE" && !result.data.fax) {
-      return NextResponse.json(
-        { error: "販売店はFAXが必須です" },
-        { status: 400 },
-      );
-    }
-
     const d = result.data;
 
-    // QSP 마이페이지 회원정보 수정 API (POST /api/qpartners/user/updateUserDtl)
-    // 사양서 v1.0 기준 필수: userTp, userId, accsSiteCd, user1stNm, user2ndNm,
-    //   user1stNmKana, user2ndNmKana, compNm, compNmKana, compPostCd,
-    //   compAddr, compAddr2, compTelNo, newsRcptYn
+    // 마이페이지 수정 정책:
+    //   GENERAL — 전체 수정 가능
+    //   ADMIN/STORE/SEKO — 뉴스레터만 수정 가능 (패스워드는 별도 API)
+    // (SEKO는 위에서 early return 처리됨)
     {
-      const qspPayload = {
+      const basePayload = {
         accsSiteCd: "QPARTNERS",
         userId: user.userId,
+        email: user.email,
         userTp: user.userTp,
-        user1stNm: d.mei,
-        user2ndNm: d.sei,
-        user1stNmKana: d.meiKana,
-        user2ndNmKana: d.seiKana,
-        compNm: d.compNm,
-        compNmKana: d.compNmKana,
-        compPostCd: d.zipcode,
-        compAddr: d.address1,
-        compAddr2: d.address2,
-        compTelNo: d.telNo,
-        compFaxNo: d.fax,
-        deptNm: d.department,
-        pstnNm: d.jobTitle,
         newsRcptYn: d.newsRcptYn,
-        bizNo: d.corporateNo,
+        updBy: user.userId,
       };
+
+      // GENERAL: 이름·회사 등 전체 필드 수정 가능
+      // ADMIN/STORE: 뉴스레터만 수정 + loginId 명시 전달 (userId ≠ email 일 수 있음)
+      const qspPayload = user.userTp === "GENERAL"
+        ? {
+          ...basePayload,
+          user1stNm: d.mei,
+          user2ndNm: d.sei,
+          user1stNmKana: d.meiKana,
+          user2ndNmKana: d.seiKana,
+          compNm: d.compNm,
+          compNmKana: d.compNmKana,
+          compPostCd: d.zipcode,
+          compAddr: d.address1,
+          compAddr2: d.address2,
+          compTelNo: d.telNo,
+          compFaxNo: d.fax,
+          deptNm: d.department,
+          pstnNm: d.jobTitle,
+          bizNo: d.corporateNo,
+        }
+        : {
+          ...basePayload,
+          loginId: user.userId,
+        };
 
       let qspResponse: Response;
       try {
