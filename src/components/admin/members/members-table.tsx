@@ -7,7 +7,7 @@ import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox, Spinner } from "@/components/common";
+import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
@@ -85,8 +85,10 @@ export function MembersTable({
         headerName: "状態",
         field: "status",
         flex: 0.8,
-        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
-          STATUS_LABEL_MAP[p.value as string] ?? (p.value as string),
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string>) => {
+          const v = p.value ?? "";
+          return STATUS_LABEL_MAP[v] ?? v;
+        },
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -126,8 +128,8 @@ export function MembersTable({
         headerName: "最近アクセス日時",
         field: "lastLoginAt",
         flex: 1.2,
-        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
-          formatDateTime(p.value as string | null),
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
+          formatDateTime(p.value ?? null),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -141,22 +143,14 @@ export function MembersTable({
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
-        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
-          formatDate(p.value as string | null),
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
+          formatDate(p.value ?? null),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
     ],
     [],
   );
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center w-[1440px] h-[300px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
-        <Spinner />
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
@@ -183,12 +177,17 @@ export function MembersTable({
         <DataGrid<MemberListItem>
           columnDefs={columnDefs}
           rowData={list}
+          getRowId={(p) => p.data.id}
+          loading={isLoading}
+          emptyMessage="検索結果がありません"
         />
-        <Pagination
-          currentPage={page}
-          totalPages={totalPages}
-          onPageChange={onPageChange}
-        />
+        {totalPages > 0 && (
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={onPageChange}
+          />
+        )}
       </div>
     </div>
   );

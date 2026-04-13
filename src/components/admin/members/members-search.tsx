@@ -4,11 +4,10 @@
 
 import { useState } from "react";
 import { InputBox, SelectBox, Button } from "@/components/common";
-import type { MemberSearchFilters } from "./members-types";
 import { STATUS_OPTIONS, MEMBER_TYPE_OPTIONS } from "./members-types";
+import type { MemberSearchFilters } from "./members-types";
 
 interface MembersSearchProps {
-  filters: MemberSearchFilters;
   onSearch: (filters: MemberSearchFilters) => void;
   onReset: () => void;
 }

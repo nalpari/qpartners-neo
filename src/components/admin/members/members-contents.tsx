@@ -30,7 +30,7 @@ export function MembersContents() {
 
   return (
     <main className="flex flex-col items-center gap-[18px] w-full pb-[48px]">
-      <MembersSearch filters={filters} onSearch={handleSearch} onReset={handleReset} />
+      <MembersSearch onSearch={handleSearch} onReset={handleReset} />
       <MembersTable
         filters={filters}
         page={page}
