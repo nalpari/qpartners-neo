@@ -4,8 +4,8 @@ export const interfaceLogQuerySchema = z.object({
   system: z.string().optional(),
   apiName: z.string().optional(),
   resultCode: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });

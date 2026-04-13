@@ -25,6 +25,14 @@ const SENSITIVE_KEYS = new Set([
   "currentPassword",
 ]);
 
+const EMAIL_KEYS = new Set(["email"]);
+
+function maskEmail(value: string): string {
+  const atIdx = value.indexOf("@");
+  if (atIdx <= 0) return value;
+  return value[0] + "***" + value.slice(atIdx);
+}
+
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
   try {
@@ -34,6 +42,8 @@ function maskSensitiveFields(body: string | null | undefined): string | null {
     for (const key of Object.keys(masked)) {
       if (SENSITIVE_KEYS.has(key)) {
         masked[key] = "***";
+      } else if (EMAIL_KEYS.has(key) && typeof masked[key] === "string") {
+        masked[key] = maskEmail(masked[key] as string);
       }
     }
     return JSON.stringify(masked);
