@@ -47,61 +47,81 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const category = await prisma.$transaction(async (tx) => {
-      // sortOrder 변경 시 같은 parentId 형제들 자동 재정렬
-      if (result.data.sortOrder !== undefined) {
-        const current = await tx.category.findUnique({
+    let reorderLog: {
+      categoryId: number;
+      parentId: number | null;
+      oldOrder: number;
+      newOrder: number;
+      direction: "up" | "down";
+      shiftedCount: number;
+    } | null = null;
+
+    const category = await prisma.$transaction(
+      async (tx) => {
+        // sortOrder가 명시적으로 전달된 경우에만 같은 parentId 형제들 자동 재정렬
+        // NOTE: parentId는 updateCategorySchema에서 수정 불가. 변경 시 이 로직도 수정 필요
+        if (result.data.sortOrder !== undefined) {
+          const current = await tx.category.findUnique({
+            where: { id: parsed.data },
+            select: { parentId: true, sortOrder: true },
+          });
+
+          if (!current) {
+            throw new Error("NOT_FOUND");
+          }
+
+          const newOrder = result.data.sortOrder;
+          if (newOrder < current.sortOrder) {
+            // 위로 이동: [newOrder, oldOrder) 범위 형제 +1
+            const shifted = await tx.category.updateMany({
+              where: {
+                parentId: current.parentId,
+                id: { not: parsed.data },
+                sortOrder: { gte: newOrder, lt: current.sortOrder },
+              },
+              data: { sortOrder: { increment: 1 } },
+            });
+            reorderLog = {
+              categoryId: parsed.data,
+              parentId: current.parentId,
+              oldOrder: current.sortOrder,
+              newOrder,
+              direction: "up",
+              shiftedCount: shifted.count,
+            };
+          } else if (newOrder > current.sortOrder) {
+            // 아래로 이동: (oldOrder, newOrder] 범위 형제 -1
+            const shifted = await tx.category.updateMany({
+              where: {
+                parentId: current.parentId,
+                id: { not: parsed.data },
+                sortOrder: { gt: current.sortOrder, lte: newOrder },
+              },
+              data: { sortOrder: { decrement: 1 } },
+            });
+            reorderLog = {
+              categoryId: parsed.data,
+              parentId: current.parentId,
+              oldOrder: current.sortOrder,
+              newOrder,
+              direction: "down",
+              shiftedCount: shifted.count,
+            };
+          }
+          // newOrder === current.sortOrder: 형제 재정렬 불필요
+        }
+
+        return tx.category.update({
           where: { id: parsed.data },
-          select: { parentId: true, sortOrder: true },
+          data: result.data,
         });
+      },
+      { isolationLevel: "Serializable" },
+    );
 
-        if (!current) {
-          throw new Error("NOT_FOUND");
-        }
-
-        const newOrder = result.data.sortOrder;
-        if (newOrder < current.sortOrder) {
-          // 위로 이동: [newOrder, oldOrder) 범위 형제 +1
-          console.log("[PUT /api/categories/:id] sortOrder 재정렬", {
-            categoryId: parsed.data,
-            parentId: current.parentId,
-            oldOrder: current.sortOrder,
-            newOrder,
-            direction: "up",
-          });
-          await tx.category.updateMany({
-            where: {
-              parentId: current.parentId,
-              id: { not: parsed.data },
-              sortOrder: { gte: newOrder, lt: current.sortOrder },
-            },
-            data: { sortOrder: { increment: 1 } },
-          });
-        } else if (newOrder > current.sortOrder) {
-          // 아래로 이동: (oldOrder, newOrder] 범위 형제 -1
-          console.log("[PUT /api/categories/:id] sortOrder 재정렬", {
-            categoryId: parsed.data,
-            parentId: current.parentId,
-            oldOrder: current.sortOrder,
-            newOrder,
-            direction: "down",
-          });
-          await tx.category.updateMany({
-            where: {
-              parentId: current.parentId,
-              id: { not: parsed.data },
-              sortOrder: { gt: current.sortOrder, lte: newOrder },
-            },
-            data: { sortOrder: { decrement: 1 } },
-          });
-        }
-      }
-
-      return tx.category.update({
-        where: { id: parsed.data },
-        data: result.data,
-      });
-    });
+    if (reorderLog) {
+      console.log("[PUT /api/categories/:id] sortOrder 재정렬", reorderLog);
+    }
 
     return NextResponse.json({ data: category });
   } catch (error) {

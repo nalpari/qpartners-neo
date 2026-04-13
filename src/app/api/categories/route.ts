@@ -73,48 +73,67 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2Depth 제한: parent의 parentId가 not null이면 3Depth → 거부
-    if (result.data.parentId !== null) {
-      const parent = await prisma.category.findUnique({
-        where: { id: result.data.parentId },
-        select: { parentId: true },
-      });
+    let shiftLog: {
+      parentId: number | null;
+      insertAt: number;
+      shiftedCount: number;
+    } | null = null;
 
-      if (!parent) {
-        return NextResponse.json(
-          { error: "상위 카테고리가 존재하지 않습니다" },
-          { status: 404 },
-        );
-      }
+    const category = await prisma.$transaction(
+      async (tx) => {
+        // 2Depth 제한: parent의 parentId가 not null이면 3Depth → 거부
+        if (result.data.parentId !== null) {
+          const parent = await tx.category.findUnique({
+            where: { id: result.data.parentId },
+            select: { parentId: true },
+          });
 
-      if (parent.parentId !== null) {
-        return NextResponse.json(
-          { error: "2Depth까지만 등록 가능합니다" },
-          { status: 400 },
-        );
-      }
-    }
+          if (!parent) {
+            throw new Error("PARENT_NOT_FOUND");
+          }
 
-    const category = await prisma.$transaction(async (tx) => {
-      // 같은 parentId 형제 중 sortOrder 이상인 항목들을 +1 shift
-      const shifted = await tx.category.updateMany({
-        where: {
+          if (parent.parentId !== null) {
+            throw new Error("DEPTH_EXCEEDED");
+          }
+        }
+
+        // 먼저 기존 형제를 밀어낸 뒤 새 카테고리를 삽입 (순서 중요)
+        const shifted = await tx.category.updateMany({
+          where: {
+            parentId: result.data.parentId,
+            sortOrder: { gte: result.data.sortOrder },
+          },
+          data: { sortOrder: { increment: 1 } },
+        });
+        shiftLog = {
           parentId: result.data.parentId,
-          sortOrder: { gte: result.data.sortOrder },
-        },
-        data: { sortOrder: { increment: 1 } },
-      });
-      console.log("[POST /api/categories] sortOrder 재정렬", {
-        parentId: result.data.parentId,
-        insertAt: result.data.sortOrder,
-        shiftedCount: shifted.count,
-      });
+          insertAt: result.data.sortOrder,
+          shiftedCount: shifted.count,
+        };
 
-      return tx.category.create({ data: result.data });
-    });
+        return tx.category.create({ data: result.data });
+      },
+      { isolationLevel: "Serializable" },
+    );
+
+    if (shiftLog) {
+      console.log("[POST /api/categories] sortOrder 재정렬", shiftLog);
+    }
 
     return NextResponse.json({ data: category }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && error.message === "PARENT_NOT_FOUND") {
+      return NextResponse.json(
+        { error: "상위 카테고리가 존재하지 않습니다" },
+        { status: 404 },
+      );
+    }
+    if (error instanceof Error && error.message === "DEPTH_EXCEEDED") {
+      return NextResponse.json(
+        { error: "2Depth까지만 등록 가능합니다" },
+        { status: 400 },
+      );
+    }
     if (
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2002"
