@@ -113,16 +113,16 @@ export function MypageInfo() {
     },
   });
 
-  const userType = profile?.userType ?? loginUser?.userTp ?? "GENERAL";
+  // 최소 권한 원칙: userType 불명 시 수정 불가 상태로 처리
+  const userType = profile?.userType ?? loginUser?.userTp ?? null;
   const userId = loginUser?.userId ?? "";
 
   // Design Ref: §3 — 폼 상태 (profile 로딩 완료 후 초기화)
   const [editData, setEditData] = useState<EditFormData | null>(null);
 
   const handleStartEdit = () => {
-    if (profile) {
-      setEditData(createEditFormData(profile));
-    }
+    if (!profile) return;
+    setEditData(createEditFormData(profile));
     setIsEditing(true);
   };
 
@@ -137,7 +137,7 @@ export function MypageInfo() {
 
   // Design Ref: §4 — 저장 로직
   const handleSave = async () => {
-    if (!editData) return;
+    if (!editData || !userType) return;
 
     const errors = validateEditForm(editData, userType);
     if (errors.length > 0) {
@@ -145,18 +145,23 @@ export function MypageInfo() {
       return;
     }
 
+    // SEKO는 뉴스레터만 수정 가능 → 최소 payload 전송
+    const payload = userType === "SEKO"
+      ? { newsRcptYn: editData.newsRcptYn }
+      : editData;
+
     setIsSaving(true);
     try {
-      await api.put("/mypage/profile", editData);
+      await api.put("/mypage/profile", payload);
       openAlert({
         type: "alert",
         message: "保存されました。",
         onConfirm: () => {
           setIsEditing(false);
           setEditData(null);
+          queryClient.invalidateQueries({ queryKey: ["mypage", "profile"] });
         },
       });
-      queryClient.invalidateQueries({ queryKey: ["mypage", "profile"] });
     } catch (err: unknown) {
       console.error("[Mypage] 프로필 수정 실패:", err);
       if (isAxiosError(err) && err.response) {
@@ -176,7 +181,6 @@ export function MypageInfo() {
     }
   };
 
-  const canEdit = true;
   // Design Ref: §2.1 — 법인정보 수정: GENERAL만 표시 (STORE/ADMIN/SEKO 숨김)
   // SEKO는 뉴스레터만 수정 가능하므로 법인정보 수정 제외
   const showCorporateEdit = userType === "GENERAL";
@@ -197,14 +201,14 @@ export function MypageInfo() {
         <h2 className="flex-1 font-['Noto_Sans_JP'] font-medium text-[18px] leading-[1.5] text-[#101010]">
           {isEditing ? "私の情報/会社情報の修正" : "私の情報/会社情報"}
         </h2>
-        {!isEditing && canEdit && (
+        {!isEditing && userType && (
           <div className="hidden lg:block">
             <Button variant="primary" className="w-[68px]" onClick={handleStartEdit}>
               修正
             </Button>
           </div>
         )}
-        {!isEditing && canEdit && (
+        {!isEditing && userType && (
           <button
             type="button"
             className="lg:hidden shrink-0"
@@ -234,7 +238,7 @@ export function MypageInfo() {
             {(!isEditing || showCorporateEdit) && (
               <MypageInfoCorporate
                 profile={profile}
-                userType={userType}
+                userType={profile.userType}
                 isEditing={isEditing}
                 editData={editData}
                 updateField={updateField}
@@ -243,14 +247,14 @@ export function MypageInfo() {
             <MypageInfoMember
               profile={profile}
               userId={userId}
-              userType={userType}
+              userType={profile.userType}
               isEditing={isEditing}
               editData={editData}
               updateField={updateField}
             />
           </div>
 
-          {userType === "SEKO" && !isEditing && <MypageInfoConstruction />}
+          {profile.userType === "SEKO" && !isEditing && <MypageInfoConstruction />}
 
           {isEditing && (
             <div className="flex gap-[6px] justify-center lg:justify-end w-full lg:max-w-[1440px] px-[24px] lg:px-0 pb-[28px] lg:pb-0">
