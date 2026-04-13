@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { getUserFromRequest, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -109,9 +110,17 @@ export async function POST(request: NextRequest) {
     let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
 
     try {
-      const detailRes = await fetch(
+      const detailRes = await fetchWithLog(
         `${QSP_API.userDetail}?${detailParams.toString()}`,
         { method: "GET", signal: AbortSignal.timeout(10_000) },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userDetail",
+          callerRoute: "[POST /api/auth/password-init]",
+          userId: user.userId,
+          userType: user.userTp,
+        },
       );
       if (detailRes.ok) {
         let detailBody: unknown;
@@ -155,19 +164,30 @@ export async function POST(request: NextRequest) {
     // 6. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.userPwdChg, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify({
-          accsSiteCd: "QPARTNERS",
-          userTp: user.userTp,
-          loginId,
-          chgType: "I",
-          email: user.email,
-          chgPwd: newPassword,
-        }),
-      });
+      qspResponse = await fetchWithLog(
+        QSP_API.userPwdChg,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({
+            accsSiteCd: "QPARTNERS",
+            userTp: user.userTp,
+            loginId,
+            chgType: "I",
+            email: user.email,
+            chgPwd: newPassword,
+          }),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userPwdChg",
+          callerRoute: "[POST /api/auth/password-init]",
+          userId: user.userId,
+          userType: user.userTp,
+        },
+      );
     } catch (error) {
       console.error("[POST /api/auth/password-init] QSP API 호출 실패:", error);
       return NextResponse.json(

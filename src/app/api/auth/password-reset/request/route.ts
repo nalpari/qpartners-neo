@@ -12,6 +12,7 @@ import {
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
 import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   generateRawResetToken,
@@ -98,10 +99,21 @@ export async function POST(request: NextRequest) {
   let userExists = false;
   let resolvedLoginId: string | null = loginId ?? null;
   try {
-    const qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(10_000),
-    });
+    const qspResponse = await fetchWithLog(
+      `${QSP_API.userDetail}?${params.toString()}`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "userDetail",
+        callerRoute: "[POST /api/auth/password-reset/request]",
+        userId: email,
+        userType: userTp,
+      },
+    );
 
     if (!qspResponse.ok) {
       console.error("[POST /api/auth/password-reset/request] QSP 비정상 응답:", qspResponse.status);

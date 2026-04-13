@@ -11,6 +11,7 @@ import {
   SIGNUP_COMPLETE_SUBJECT,
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 
 // POST /api/auth/signup — 일반 회원가입 (QSP newUserReq 프록시 + 승인완료 메일)
 export async function POST(request: NextRequest) {
@@ -61,33 +62,44 @@ export async function POST(request: NextRequest) {
   // 2. QSP newUserReq I/F 호출
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_API.newUserReq, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // M4: 10초 타임아웃
-      signal: AbortSignal.timeout(10_000),
-      body: JSON.stringify({
-        userTp: "GENERAL",
+    qspResponse = await fetchWithLog(
+      QSP_API.newUserReq,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // M4: 10초 타임아웃
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({
+          userTp: "GENERAL",
+          userId: email,
+          pwd,
+          user1stNm,
+          user2ndNm,
+          user1stNmKana,
+          user2ndNmKana,
+          email,
+          deptNm,
+          pstnNm,
+          compNm,
+          compNmKana,
+          compPostCd,
+          compAddr,
+          compAddr2,
+          compTelNo,
+          compFaxNo,
+          newsRcptYn,
+          authCd: "NORMAL",
+        }),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "newUserReq",
+        callerRoute: "[POST /api/auth/signup]",
         userId: email,
-        pwd,
-        user1stNm,
-        user2ndNm,
-        user1stNmKana,
-        user2ndNmKana,
-        email,
-        deptNm,
-        pstnNm,
-        compNm,
-        compNmKana,
-        compPostCd,
-        compAddr,
-        compAddr2,
-        compTelNo,
-        compFaxNo,
-        newsRcptYn,
-        authCd: "NORMAL",
-      }),
-    });
+        userType: "GENERAL",
+      },
+    );
   } catch {
     console.error("[POST /api/auth/signup] QSP API 호출 실패");
     return NextResponse.json(

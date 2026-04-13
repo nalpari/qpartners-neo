@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
+import { getUserFromRequest } from "@/lib/jwt";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
@@ -72,10 +73,21 @@ export async function GET(request: NextRequest) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(10_000),
-      });
+      qspResponse = await fetchWithLog(
+        `${QSP_API.userDetail}?${params.toString()}`,
+        {
+          method: "GET",
+          signal: AbortSignal.timeout(10_000),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userDetail",
+          callerRoute: "[GET /api/mypage/profile]",
+          userId: user.userId,
+          userType: user.userTp,
+        },
+      );
     } catch (error) {
       console.error("[GET /api/mypage/profile] QSP API 호출 실패:", error);
       return NextResponse.json(
@@ -281,12 +293,23 @@ export async function PUT(request: NextRequest) {
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.updateUserDtl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(10_000),
-          body: JSON.stringify(qspPayload),
-        });
+        qspResponse = await fetchWithLog(
+          QSP_API.updateUserDtl,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(10_000),
+            body: JSON.stringify(qspPayload),
+          },
+          {
+            system: "QSP",
+            direction: "OUTBOUND",
+            apiName: "updateUserDtl",
+            callerRoute: "[PUT /api/mypage/profile]",
+            userId: user.userId,
+            userType: user.userTp,
+          },
+        );
       } catch (error) {
         console.error("[PUT /api/mypage/profile] QSP API 호출 실패:", error);
         return NextResponse.json(

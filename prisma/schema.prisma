@@ -461,3 +461,32 @@ enum qp_download_logs_user_type {
   SEKO
   GENERAL
 }
+
+/// 외부 시스템 인터페이스 로그
+/// QSP, 시공점 등 외부 API 호출 이력 기록
+model QpInterfaceLog {
+  id             Int      @id @default(autoincrement())
+  traceId        String   @map("trace_id") @db.VarChar(36)
+  system         String   @db.VarChar(20)
+  direction      String   @db.VarChar(10)
+  apiName        String   @map("api_name") @db.VarChar(50)
+  method         String   @db.VarChar(10)
+  requestUrl     String   @map("request_url") @db.VarChar(2000)
+  requestBody    String?  @map("request_body") @db.Text
+  responseStatus Int      @map("response_status")
+  responseBody   String?  @map("response_body") @db.Text
+  resultCode     String?  @map("result_code") @db.VarChar(10)
+  durationMs     Int      @map("duration_ms")
+  callerRoute    String   @map("caller_route") @db.VarChar(255)
+  userId         String?  @map("user_id") @db.VarChar(255)
+  userType       String?  @map("user_type") @db.VarChar(20)
+  errorMessage   String?  @map("error_message") @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String   @default("SYSTEM") @map("created_by") @db.VarChar(255)
+
+  @@index([traceId])
+  @@index([system, apiName, createdAt])
+  @@index([callerRoute, createdAt])
+  @@index([resultCode])
+  @@map("qp_interface_log")
+}
