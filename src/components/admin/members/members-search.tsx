@@ -1,35 +1,59 @@
 "use client";
 
+// Design Ref: §4.2 — 검색 필터 (2행 6필드 레이아웃)
+
 import { useState } from "react";
 import { InputBox, SelectBox, Button } from "@/components/common";
+import type { MemberSearchFilters } from "./members-types";
+import { STATUS_OPTIONS, MEMBER_TYPE_OPTIONS } from "./members-types";
 
-const STATUS_OPTIONS = [
-  { value: "", label: "全体" },
-  { value: "active", label: "アクティブ" },
-  { value: "inactive", label: "非アクティブ" },
-];
+interface MembersSearchProps {
+  filters: MemberSearchFilters;
+  onSearch: (filters: MemberSearchFilters) => void;
+  onReset: () => void;
+}
 
-const MEMBER_TYPE_OPTIONS = [
-  { value: "", label: "全体" },
-  { value: "btob", label: "BtoB" },
-  { value: "btoc", label: "BtoC" },
-];
+interface LocalFields {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  userType: string;
+  companyName: string;
+}
 
-export function MembersSearch() {
-  const [id, setId] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("");
-  const [memberType, setMemberType] = useState("");
-  const [companyName, setCompanyName] = useState("");
+const INITIAL_LOCAL: LocalFields = {
+  id: "",
+  name: "",
+  email: "",
+  status: "",
+  userType: "",
+  companyName: "",
+};
+
+export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
+  const [local, setLocal] = useState<LocalFields>(INITIAL_LOCAL);
+
+  const updateLocal = (key: keyof LocalFields) => (value: string) => {
+    setLocal((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleReset = () => {
-    setId("");
-    setName("");
-    setEmail("");
-    setStatus("");
-    setMemberType("");
-    setCompanyName("");
+    setLocal(INITIAL_LOCAL);
+    onReset();
+  };
+
+  const handleSearch = () => {
+    // API keyword 단일 파라미터: 입력된 텍스트 필드 중 첫 번째 비어있지 않은 값 사용
+    const keyword = [local.id, local.name, local.email, local.companyName]
+      .map((v) => v.trim())
+      .find(Boolean) ?? "";
+
+    onSearch({
+      keyword,
+      status: local.status,
+      userType: local.userType,
+    });
   };
 
   return (
@@ -37,85 +61,72 @@ export function MembersSearch() {
       <div className="flex flex-col gap-1">
         {/* 1행: ID / 氏名 / Email */}
         <div className="flex gap-1 items-start">
-          <div className="flex flex-1 gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                ID
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={id} onChange={setId} placeholder="" className="w-full" />
-            </div>
-          </div>
-
-          <div className="flex w-[461px] gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                氏名
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={name} onChange={setName} placeholder="" className="w-full" />
-            </div>
-          </div>
-
-          <div className="flex w-[461px] gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                Email
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={email} onChange={setEmail} placeholder="" className="w-full" />
-            </div>
-          </div>
+          <SearchField label="ID">
+            <InputBox value={local.id} onChange={updateLocal("id")} placeholder="" className="w-full" />
+          </SearchField>
+          <SearchField label="氏名" width="w-[461px]">
+            <InputBox value={local.name} onChange={updateLocal("name")} placeholder="" className="w-full" />
+          </SearchField>
+          <SearchField label="Email" width="w-[461px]">
+            <InputBox value={local.email} onChange={updateLocal("email")} placeholder="" className="w-full" />
+          </SearchField>
         </div>
 
         {/* 2행: 状態 / 会員タイプ / 会社名 */}
         <div className="flex gap-1 items-start">
-          <div className="flex flex-1 gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                状態
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <SelectBox options={STATUS_OPTIONS} value={status} onChange={setStatus} className="w-full" />
-            </div>
-          </div>
-
-          <div className="flex w-[461px] gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                会員タイプ
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <SelectBox options={MEMBER_TYPE_OPTIONS} value={memberType} onChange={setMemberType} className="w-full" />
-            </div>
-          </div>
-
-          <div className="flex w-[461px] gap-1 h-[58px] items-center">
-            <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
-                会社名
-              </span>
-            </div>
-            <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={companyName} onChange={setCompanyName} placeholder="" className="w-full" />
-            </div>
-          </div>
+          <SearchField label="状態">
+            <SelectBox
+              options={[...STATUS_OPTIONS]}
+              value={local.status}
+              onChange={updateLocal("status")}
+              className="w-full"
+            />
+          </SearchField>
+          <SearchField label="会員タイプ" width="w-[461px]">
+            <SelectBox
+              options={[...MEMBER_TYPE_OPTIONS]}
+              value={local.userType}
+              onChange={updateLocal("userType")}
+              className="w-full"
+            />
+          </SearchField>
+          <SearchField label="会社名" width="w-[461px]">
+            <InputBox value={local.companyName} onChange={updateLocal("companyName")} placeholder="" className="w-full" />
+          </SearchField>
         </div>
       </div>
 
       {/* 버튼 영역 */}
       <div className="flex items-center justify-end gap-[6px] mt-[18px]">
-        <Button variant="primary">
+        <Button variant="primary" onClick={handleSearch}>
           検索
         </Button>
         <Button variant="secondary" onClick={handleReset}>
           初期化
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function SearchField({
+  label,
+  width,
+  children,
+}: {
+  label: string;
+  width?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`flex ${width ?? "flex-1"} gap-1 h-[58px] items-center`}>
+      <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
+        <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
+        {children}
       </div>
     </div>
   );

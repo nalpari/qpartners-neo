@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+// Design Ref: §4.3 — AG Grid + useQuery + 페이지네이션
+
+import { useMemo } from "react";
+import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-community";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox } from "@/components/common";
+import { Pagination, SelectBox, Spinner } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
-import { DUMMY_MEMBERS } from "./members-dummy-data";
-import type { MemberDetailItem } from "./members-dummy-data";
+import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
+import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -20,7 +24,7 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
-function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
+function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   const data = params.data;
   if (!data) return null;
 
@@ -32,43 +36,76 @@ function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
       onClick={() => openPopup("member-detail", { member: data })}
     >
-      {data.name}
+      {data.userName}
     </button>
   );
 }
 
-export function MembersTable() {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState("100");
+interface MembersTableProps {
+  filters: MemberSearchFilters;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}
 
-  const totalCount = DUMMY_MEMBERS.length;
-  const totalPages = Math.ceil(totalCount / Number(perPage));
+export function MembersTable({
+  filters,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: MembersTableProps) {
+  // Design Ref: §4.3 — useQuery
+  const { data, isLoading } = useQuery<MemberListResponse["data"]>({
+    queryKey: ["admin", "members", filters, page, pageSize],
+    queryFn: async () => {
+      const params: Record<string, string> = {
+        page: String(page),
+        pageSize: String(pageSize),
+      };
+      if (filters.keyword) params.keyword = filters.keyword;
+      if (filters.userType) params.userType = filters.userType;
+      if (filters.status) params.status = filters.status;
 
-  const columnDefs = useMemo<ColDef<MemberDetailItem>[]>(
+      const res = await api.get<MemberListResponse>("/admin/members", { params });
+      return res.data.data;
+    },
+    staleTime: Infinity,
+  });
+
+  const list = data?.list ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Design Ref: §4.3 — AG Grid 컬럼 (Plan §1.4 필드 매핑)
+  const columnDefs = useMemo<ColDef<MemberListItem>[]>(
     () => [
       {
         headerName: "状態",
         field: "status",
         flex: 0.8,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
+          STATUS_LABEL_MAP[p.value as string] ?? (p.value as string),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "ID",
-        field: "id",
+        field: "userId",
         flex: 1,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "氏名",
-        field: "name",
+        field: "userName",
         flex: 1,
         cellRenderer: NameCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "氏名ひらがな",
-        field: "nameKana",
+        field: "userNameKana",
         flex: 1.2,
         headerClass: "ag-header-cell-center",
       },
@@ -80,15 +117,17 @@ export function MembersTable() {
       },
       {
         headerName: "会員タイプ",
-        field: "memberType",
+        field: "userType",
         flex: 0.8,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "最近アクセス日時",
-        field: "lastAccessAt",
+        field: "lastLoginAt",
         flex: 1.2,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
+          formatDateTime(p.value as string | null),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -102,12 +141,22 @@ export function MembersTable() {
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem>) =>
+          formatDate(p.value as string | null),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
     ],
-    []
+    [],
   );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center w-[1440px] h-[300px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
@@ -123,22 +172,22 @@ export function MembersTable() {
         <div className="w-[100px]">
           <SelectBox
             options={PER_PAGE_OPTIONS}
-            value={perPage}
-            onChange={setPerPage}
+            value={String(pageSize)}
+            onChange={(val) => onPageSizeChange(Number(val))}
           />
         </div>
       </div>
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        <DataGrid<MemberDetailItem>
+        <DataGrid<MemberListItem>
           columnDefs={columnDefs}
-          rowData={DUMMY_MEMBERS}
+          rowData={list}
         />
         <Pagination
-          currentPage={currentPage}
+          currentPage={page}
           totalPages={totalPages}
-          onPageChange={setCurrentPage}
+          onPageChange={onPageChange}
         />
       </div>
     </div>

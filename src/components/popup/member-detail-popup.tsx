@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, SelectBox, Radio } from "@/components/common";
-import type { MemberDetailItem } from "@/components/admin/members/members-dummy-data";
+// TODO: 상세 팝업 API 연동 시 MemberDetailItem 타입으로 교체
+// 현재는 목록에서 전달받는 데이터가 더미 구조와 다르므로 Record 사용
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -88,15 +89,15 @@ export function MemberDetailPopup() {
   const { openAlert } = useAlertStore();
   const [isClosing, setIsClosing] = useState(false);
 
-  const member = popupData.member as MemberDetailItem | undefined;
+  const member = popupData.member as Record<string, string> | undefined;
 
-  // 편집 가능 필드 state
-  const [userPermission, setUserPermission] = useState(member?.userPermission ?? "");
-  const [twoFactorAuth, setTwoFactorAuth] = useState(member?.twoFactorAuth ?? "有効");
-  const [loginNotify, setLoginNotify] = useState(member?.loginNotify ?? "有効");
-  const [memberStatus, setMemberStatus] = useState(member?.memberStatus ?? "Active");
-  const [attributeNotify, setAttributeNotify] = useState(member?.attributeNotify ?? "有効");
-  const [newsletter, setNewsletter] = useState(member?.newsletter ?? "許可");
+  // 편집 가능 필드 state (상세 API 연동은 별도 feature — 현재 초기값 사용)
+  const [userPermission, setUserPermission] = useState("");
+  const [twoFactorAuth, setTwoFactorAuth] = useState("有効");
+  const [loginNotify, setLoginNotify] = useState("有効");
+  const [memberStatus, setMemberStatus] = useState("Active");
+  const [attributeNotify, setAttributeNotify] = useState("有効");
+  const [newsletter, setNewsletter] = useState("許可");
 
   const handleClose = () => {
     setIsClosing(true);
