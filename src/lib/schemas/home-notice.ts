@@ -7,8 +7,8 @@ export { idParamSchema } from "@/lib/schemas/common";
 const targetFields = {
   targetSuperAdmin: z.boolean().default(false),
   targetAdmin: z.boolean().default(false),
-  targetFirstDealer: z.boolean().default(false),
-  targetSecondDealer: z.boolean().default(false),
+  targetFirstStore: z.boolean().default(false),
+  targetSecondStore: z.boolean().default(false),
   targetConstructor: z.boolean().default(false),
   targetGeneral: z.boolean().default(false),
 };
@@ -33,8 +33,8 @@ export const createHomeNoticeSchema = z
     (data) =>
       data.targetSuperAdmin ||
       data.targetAdmin ||
-      data.targetFirstDealer ||
-      data.targetSecondDealer ||
+      data.targetFirstStore ||
+      data.targetSecondStore ||
       data.targetConstructor ||
       data.targetGeneral,
     { message: "게시대상을 최소 1개 이상 선택하세요" },
@@ -48,8 +48,8 @@ export const updateHomeNoticeSchema = z
   .object({
     targetSuperAdmin: z.boolean().optional(),
     targetAdmin: z.boolean().optional(),
-    targetFirstDealer: z.boolean().optional(),
-    targetSecondDealer: z.boolean().optional(),
+    targetFirstStore: z.boolean().optional(),
+    targetSecondStore: z.boolean().optional(),
     targetConstructor: z.boolean().optional(),
     targetGeneral: z.boolean().optional(),
     startAt: z.coerce.date().optional(),
@@ -71,8 +71,8 @@ export const updateHomeNoticeSchema = z
       const targetKeys = [
         "targetSuperAdmin",
         "targetAdmin",
-        "targetFirstDealer",
-        "targetSecondDealer",
+        "targetFirstStore",
+        "targetSecondStore",
         "targetConstructor",
         "targetGeneral",
       ] as const;

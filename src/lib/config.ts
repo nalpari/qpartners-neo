@@ -36,7 +36,9 @@ export const QSP_API = {
   memberList: `${QSP_BASE_URL}/api/qpartners/userMng/userList`,
   /** QSP 회원관리 상세 조회 */
   memberDetail: `${QSP_BASE_URL}/api/qpartners/userMng/userDtl`,
-  /** QSP 회원정보 수정 */
+  /** QSP 마이페이지 회원정보 수정 */
+  updateUserDtl: `${QSP_BASE_URL}/api/qpartners/user/updateUserDtl`,
+  /** QSP 회원관리 회원정보 수정 (메타 필드만) */
   updateUser: `${QSP_BASE_URL}/api/qpartners/user/updateUserReq`,
 } as const;
 

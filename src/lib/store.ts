@@ -34,7 +34,7 @@ export const usePopupStore = create<PopupState>((set) => ({
   closePopup: () => set({ activePopup: null, popupData: {} }),
 }));
 
-interface AlertOptions {
+export interface AlertOptions {
   type: "alert" | "confirm";
   message: string;
   confirmLabel?: string;

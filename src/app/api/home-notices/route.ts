@@ -17,16 +17,16 @@ function computeStatus(startAt: Date, endAt: Date): string {
 function toTargetArray(row: {
   targetSuperAdmin: boolean;
   targetAdmin: boolean;
-  targetFirstDealer: boolean;
-  targetSecondDealer: boolean;
+  targetFirstStore: boolean;
+  targetSecondStore: boolean;
   targetConstructor: boolean;
   targetGeneral: boolean;
 }): string[] {
   const targets: string[] = [];
   if (row.targetSuperAdmin) targets.push("super_admin");
   if (row.targetAdmin) targets.push("admin");
-  if (row.targetFirstDealer) targets.push("first_store");
-  if (row.targetSecondDealer) targets.push("second_store");
+  if (row.targetFirstStore) targets.push("first_store");
+  if (row.targetSecondStore) targets.push("second_store");
   if (row.targetConstructor) targets.push("seko");
   if (row.targetGeneral) targets.push("general");
   return targets;
@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
     const targetMap: Record<string, string> = {
       super_admin: "targetSuperAdmin",
       admin: "targetAdmin",
-      first_store: "targetFirstDealer",
-      second_store: "targetSecondDealer",
+      first_store: "targetFirstStore",
+      second_store: "targetSecondStore",
       seko: "targetConstructor",
       general: "targetGeneral",
     };
