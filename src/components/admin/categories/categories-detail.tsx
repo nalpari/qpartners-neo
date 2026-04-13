@@ -72,7 +72,7 @@ export function CategoriesDetail({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Design Ref: §4.3 — parentId 변경 시 자동채번 연동
+  // Design Ref: §4.3 — parentId 변경 시 자동채번 + 사내전용 연동
   const handleParentChange = (parentId: number | null) => {
     updateField("parentId", parentId);
 
@@ -83,9 +83,14 @@ export function CategoriesDetail({
       if (parent) {
         const autoCode = generateChildCode(parent.categoryCode, parent.children);
         updateField("categoryCode", autoCode);
+        // 2Depth는 부모의 사내전용 값을 따라감
+        updateField("isInternalOnly", parent.isInternalOnly);
       }
     }
   };
+
+  // 2Depth일 때 사내전용은 부모를 따라가므로 비활성화
+  const isInternalOnlyDisabled = form.parentId !== null;
 
   return (
     <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[24px] pb-[24px] overflow-hidden self-stretch">
@@ -125,15 +130,17 @@ export function CategoriesDetail({
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
               checked={form.isInternalOnly}
-              onChange={() => updateField("isInternalOnly", true)}
+              onChange={() => !isInternalOnlyDisabled && updateField("isInternalOnly", true)}
               label="Y"
               name="isInternalOnly"
+              disabled={isInternalOnlyDisabled}
             />
             <Radio
               checked={!form.isInternalOnly}
-              onChange={() => updateField("isInternalOnly", false)}
+              onChange={() => !isInternalOnlyDisabled && updateField("isInternalOnly", false)}
               label="N"
               name="isInternalOnly"
+              disabled={isInternalOnlyDisabled}
             />
           </div>
         </FormRow>
