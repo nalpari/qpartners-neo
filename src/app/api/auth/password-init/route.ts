@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     // 6. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.passwordChange, {
+      qspResponse = await fetch(QSP_API.userPwdChg, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(10_000),

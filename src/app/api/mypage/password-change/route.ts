@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     // QSP 사양서 기준 새 비밀번호 필드명은 chgPwd (newPwd 아님)
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.passwordChange, {
+      qspResponse = await fetch(QSP_API.userPwdChg, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(10_000),

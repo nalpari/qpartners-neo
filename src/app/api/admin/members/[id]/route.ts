@@ -2,79 +2,20 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
-import { QSP_API } from "@/lib/config";
+import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchQspUserDetail } from "@/lib/qsp-member";
+import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
   memberIdParamSchema,
   memberUpdateSchema,
-  qspMemberDetailResponseSchema,
   qspUpdateResponseSchema,
   STATUS_TO_STAT_CD,
   lookupStatCd,
   lookupUserTypeLabel,
 } from "@/lib/schemas/member";
-import type { z } from "zod";
+import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
-type QspMemberDetail = NonNullable<
-  z.infer<typeof qspMemberDetailResponseSchema>["data"]
->;
-
-/**
- * QSP memberDetail 조회 공통 헬퍼.
- * 성공 시 `{ ok: true, detail }`, 실패 시 그대로 반환할 NextResponse를 돌려준다.
- * MF-4/MF-6 대응으로 PUT 핸들러가 self-guard, existence check, TOCTOU 재검증에 재사용한다.
- */
-async function fetchQspMemberDetail(
-  rawId: string,
-  logTag: string,
-): Promise<{ ok: true; detail: QspMemberDetail } | { ok: false; response: NextResponse }> {
-  const qspParams = new URLSearchParams({ accsSiteCd: "QPARTNERS", userId: rawId });
-  let qspResponse: Response;
-  try {
-    qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch (error: unknown) {
-    console.error(`${logTag} QSP 회원 조회 실패:`, error);
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "外部サーバーに接続できません" }, { status: 502 }),
-    };
-  }
-  if (!qspResponse.ok) {
-    console.error(`${logTag} QSP 비정상 응답:`, qspResponse.status);
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "外部サーバーエラーが発生しました" }, { status: 502 }),
-    };
-  }
-  let qspBody: unknown;
-  try {
-    qspBody = await qspResponse.json();
-  } catch (error: unknown) {
-    console.error(`${logTag} QSP 응답 파싱 실패:`, error);
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "外部サーバーの応答を処理できません" }, { status: 502 }),
-    };
-  }
-  const parsed = qspMemberDetailResponseSchema.safeParse(qspBody);
-  if (!parsed.success) {
-    console.error(`${logTag} QSP 응답 스키마 불일치:`, parsed.error.issues);
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "外部サーバーの応答形式が正しくありません" }, { status: 502 }),
-    };
-  }
-  if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "会員情報が見つかりません" }, { status: 404 }),
-    };
-  }
-  return { ok: true, detail: parsed.data.data };
-}
 
 /**
  * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
@@ -83,10 +24,7 @@ async function fetchQspMemberDetail(
  */
 function isSelfTarget(adminUserId: string, detail: QspMemberDetail): boolean {
   const admin = adminUserId.trim().toLowerCase();
-  const candidates = [detail.userId, detail.loginId]
-    .filter((v): v is string => typeof v === "string" && v.length > 0)
-    .map((v) => v.trim().toLowerCase());
-  return candidates.includes(admin);
+  return detail.userId.trim().toLowerCase() === admin;
 }
 
 // GET /api/admin/members/:id — 회원 상세정보
@@ -96,7 +34,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const authResult = requireAdmin(request.headers);
     if (authResult instanceof NextResponse) return authResult;
 
-    // 2. ID 파라미터 검증
+    // 2. ID/userTp 파라미터 검증
     const { id: rawId } = await params;
     const idResult = memberIdParamSchema.safeParse(rawId);
     if (!idResult.success) {
@@ -106,97 +44,50 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 3. QSP 회원 상세 API 호출
-    const qspParams = new URLSearchParams({
-      accsSiteCd: "QPARTNERS",
-      userId: rawId,
-    });
-
-    let qspResponse: Response;
-    try {
-      qspResponse = await fetch(`${QSP_API.memberDetail}?${qspParams.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (error: unknown) {
-      console.error("[GET /api/admin/members/:id] QSP 회원 상세 API 호출 실패:", error);
+    const userTpResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
+    if (!userTpResult.success) {
       return NextResponse.json(
-        { error: "外部サーバーに接続できません" },
-        { status: 502 },
+        { error: "ユーザータイプが不正です" },
+        { status: 400 },
       );
     }
+    const userTp = userTpResult.data;
 
-    if (!qspResponse.ok) {
-      console.error("[GET /api/admin/members/:id] QSP 비정상 응답:", qspResponse.status);
-      return NextResponse.json(
-        { error: "外部サーバーエラーが発生しました" },
-        { status: 502 },
-      );
+    // 3. QSP 유저 정보 조회 (사양서 No.13 userDetail)
+    const detailResult = await fetchQspUserDetail(rawId, userTp, "[GET /api/admin/members/:id]");
+    if (!detailResult.ok) {
+      return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
     }
 
-    // 4. QSP 응답 파싱
-    let qspBody: unknown;
-    try {
-      qspBody = await qspResponse.json();
-    } catch (error: unknown) {
-      console.error("[GET /api/admin/members/:id] QSP 응답 JSON 파싱 실패:", error);
-      return NextResponse.json(
-        { error: "外部サーバーの応答を処理できません" },
-        { status: 502 },
-      );
-    }
-
-    const parsed = qspMemberDetailResponseSchema.safeParse(qspBody);
-    if (!parsed.success) {
-      console.error("[GET /api/admin/members/:id] QSP 응답 스키마 불일치:", parsed.error.issues);
-      return NextResponse.json(
-        { error: "外部サーバーの応答形式が正しくありません" },
-        { status: 502 },
-      );
-    }
-
-    if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
-      return NextResponse.json(
-        { error: "会員情報が見つかりません" },
-        { status: 404 },
-      );
-    }
-
-    // 5. 응답 매핑 (QSP → TO-BE)
-    const d = parsed.data.data;
+    // 4. 응답 매핑 (QSP → TO-BE)
+    const d = detailResult.detail;
     const mapped = {
       id: idResult.data,
       userId: d.userId,
-      loginId: d.loginId ?? d.userId,
       userName: d.userNm ?? "",
       userNameKana: d.userNmKana ?? "",
+      firstName: d.user1stNm ?? "",
+      lastName: d.user2ndNm ?? "",
+      firstNameKana: d.user1stNmKana ?? "",
+      lastNameKana: d.user2ndNmKana ?? "",
       email: d.email ?? "",
-      // 알 수 없는 QSP 값은 노출하지 않고 "unknown"으로 고정 (QSP 신뢰 경계 위반 방지 + OpenAPI enum 준수)
       userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
       userRole: d.authCd ?? "",
       companyName: d.compNm ?? "",
       companyNameKana: d.compNmKana ?? "",
       zipcode: d.compPostCd ?? "",
       address: d.compAddr ?? "",
+      address2: d.compAddr2 ?? "",
       telNo: d.compTelNo ?? "",
       faxNo: d.compFaxNo ?? "",
-      corporateNo: d.corpNo ?? "",
       department: d.deptNm ?? "",
       jobTitle: d.pstnNm ?? "",
-      // 2FA 상태: "Y"=활성, "N"=비활성, null=미설정 — 미설정과 비활성을 구분
       twoFactorEnabled:
         d.secAuthYn === "Y" ? true : d.secAuthYn === "N" ? false : null,
       loginNotification: d.loginNotiYn === "Y",
-      attributeChangeNotification: d.attrChgNotiYn === "Y",
+      attributeChangeNotification: d.attrChgYn === "Y",
       status: lookupStatCd(d.statCd) ?? "unknown",
       newsRcptYn: d.newsRcptYn ?? "N",
-      newsRcptDate: d.newsRcptDt ?? null,
-      lastLoginAt: d.lastLoginDt ?? null,
-      withdrawnAt: d.wdrawDt ?? null,
-      withdrawnReason: d.wdrawRsn ?? null,
-      createdAt: d.regDt ?? null,
-      updatedAt: d.updDt ?? null,
-      updatedBy: d.updBy ?? null,
     };
 
     console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
@@ -262,13 +153,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 4. 대상 회원 QSP 상세 조회 (존재성 + canonical identifier + userType 확인)
-    //    MF-4: 단순 path id 비교 대신 canonical userId/loginId 로 self-guard 수행
-    //    MF-6: userRole 변경 시 GENERAL 사전 검증용. 추가로 update 직후 재조회로
-    //          TOCTOU window 사후 탐지.
-    //    WARNING 대응: userRole 미변경 경로에서도 존재 여부를 먼저 확인한다.
-    const preDetailResult = await fetchQspMemberDetail(rawId, "[PUT /api/admin/members/:id]");
-    if (!preDetailResult.ok) return preDetailResult.response;
+    // 4. userTp 파라미터 검증 + 대상 회원 QSP 상세 조회
+    const userTpResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
+    if (!userTpResult.success) {
+      return NextResponse.json(
+        { error: "ユーザータイプが不正です" },
+        { status: 400 },
+      );
+    }
+    const userTp = userTpResult.data;
+
+    const preDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id]");
+    if (!preDetailResult.ok) {
+      return NextResponse.json({ error: preDetailResult.error.error }, { status: preDetailResult.error.status });
+    }
     const preDetail = preDetailResult.detail;
 
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
@@ -301,7 +199,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 5. QSP 회원정보 수정 API 호출
     const updatePayload: Record<string, unknown> = {
-      accsSiteCd: "QPARTNERS",
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userId: rawId,
       updBy: user.userId,
     };
@@ -309,13 +207,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.userRole !== undefined) updatePayload.authCd = result.data.userRole;
     if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
     if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
-    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgNotiYn = result.data.attributeChangeNotification ? "Y" : "N";
+    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgYn = result.data.attributeChangeNotification ? "Y" : "N";
     if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status];
     if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.updateUser, {
+      qspResponse = await fetch(QSP_API.updateUserDtlMng, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(10_000),
@@ -369,8 +267,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     //      사전 검증 이후 userTp 가 변하지 않았는지 확인한다. 롤백은 불가하지만
     //      CRITICAL 감사 로그로 탐지 가능하게 한다.
     if (result.data.userRole !== undefined) {
-      const postDetailResult = await fetchQspMemberDetail(rawId, "[PUT /api/admin/members/:id] POST-CHECK");
-      if (postDetailResult.ok && postDetailResult.detail.userTp !== "GENERAL") {
+      const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
+      if (!postDetailResult.ok) {
+        console.warn(
+          "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
+          { rawId, byAdmin: user.userId },
+        );
+      } else if (postDetailResult.detail.userTp !== "GENERAL") {
         console.error(
           "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
           { rawId, postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
