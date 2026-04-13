@@ -76,12 +76,16 @@ function createEditFormData(profile: ProfileData): EditFormData {
 function validateEditForm(data: EditFormData, userType: string): string[] {
   const errors: string[] = [];
 
-  // SEKO는 뉴스레터만 수정 가능 → 필수 검증 불필요
-  if (userType === "GENERAL") {
+  // SEKO: 뉴스레터만 수정 → 검증 불필요
+  // ADMIN: 서버 superRefine에서 회사 필수 제외
+  // GENERAL/STORE: 회사 필수 + GENERAL만 성명 필수
+  if (userType === "GENERAL" || userType === "STORE") {
     if (!data.compNm.trim()) errors.push("会社名は必須です。");
     if (!data.zipcode.trim()) errors.push("郵便番号は必須です。");
     if (!data.address1.trim()) errors.push("住所は必須です。");
     if (!data.telNo.trim()) errors.push("電話番号は必須です。");
+  }
+  if (userType === "GENERAL") {
     if (!data.sei.trim()) errors.push("姓は必須です。");
     if (!data.mei.trim()) errors.push("名は必須です。");
     if (!data.seiKana.trim()) errors.push("姓(カナ)は必須です。");
