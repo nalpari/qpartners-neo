@@ -48,10 +48,59 @@ function isTwoFactorPath(pathname: string): boolean {
   return TWO_FACTOR_PATHS.includes(pathname);
 }
 
+/** userTp → authRole 폴백 (authRole 미설정 JWT 대응) */
+const USERTP_ROLE_MAP: Record<string, string> = {
+  ADMIN: "ADMIN",
+  STORE: "2ND_STORE",
+  SEKO: "SEKO",
+  GENERAL: "GENERAL",
+};
+
+function getFallbackRole(userTp: string): string {
+  const role = USERTP_ROLE_MAP[userTp];
+  if (!role) {
+    console.error("[middleware] 미지의 userTp — GENERAL 폴백 적용:", userTp);
+    return "GENERAL";
+  }
+  return role;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isPublicPath(pathname) || isPublicGetPath(pathname, request.method)) {
+  const isPublicGet = isPublicGetPath(pathname, request.method);
+
+  if (isPublicPath(pathname) || isPublicGet) {
+    // GET 조회 경로에 한해 JWT가 있으면 사용자 정보 헤더 주입 (최소 권한 원칙)
+    // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
+    // POST 경로(/api/inquiry, /api/auth/signup 등)에는 헤더 주입하지 않음
+    if (isPublicGet) {
+      const publicToken = request.cookies.get(COOKIE_NAME)?.value;
+      if (publicToken) {
+        try {
+          const publicUser = await verifyToken(publicToken);
+          // 2FA 미완료 사용자는 비회원으로 통과 (관리자 전용 데이터 접근 방지)
+          if (publicUser && publicUser.twoFactorVerified !== false) {
+            const requestHeaders = new Headers(request.headers);
+            requestHeaders.set("X-User-Type", publicUser.userTp);
+            requestHeaders.set("X-User-Id", publicUser.userId);
+            requestHeaders.set("X-User-Role", publicUser.authRole ?? getFallbackRole(publicUser.userTp));
+            return NextResponse.next({ request: { headers: requestHeaders } });
+          }
+        } catch (error) {
+          // ConfigError(JWT_SECRET 미설정) = 서버 설정 문제 → protected path와 동일하게 500 반환
+          if (error instanceof Error && error.name === "ConfigError") {
+            console.error("[middleware] CRITICAL 설정 에러 (public GET):", error);
+            return NextResponse.json(
+              { error: "サーバー設定エラーが発生しました" },
+              { status: 500 },
+            );
+          }
+          // 토큰 만료·서명 불일치는 정상 — 비회원으로 통과
+          console.warn("[middleware] public GET JWT 검증 실패 (비회원 통과):", error);
+        }
+      }
+    }
     return NextResponse.next();
   }
 
@@ -102,11 +151,7 @@ export async function middleware(request: NextRequest) {
   if (!user.authRole) {
     console.warn("[middleware] 과도기 JWT — authRole 없음, userTp 기반 최소권한 폴백 적용 (userTp:", user.userTp, ")");
   }
-  const fallbackRole = user.userTp === "ADMIN" ? "ADMIN"
-    : user.userTp === "STORE" ? "2ND_STORE"
-    : user.userTp === "SEKO" ? "SEKO"
-    : "GENERAL";
-  requestHeaders.set("X-User-Role", user.authRole ?? fallbackRole);
+  requestHeaders.set("X-User-Role", user.authRole ?? getFallbackRole(user.userTp));
   if (user.deptNm) {
     requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }

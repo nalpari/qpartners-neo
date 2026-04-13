@@ -5,13 +5,19 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
 // ─── 프로필 수정 요청 ───
 
-/** 프로필 수정 스키마 (userType에 따라 회사 필드 필수/선택 분기) */
+/**
+ * 프로필 수정 스키마.
+ * 마이페이지 수정 정책:
+ *   GENERAL — 전체 수정 가능 (이름, 회사, 뉴스레터)
+ *   ADMIN/STORE — 뉴스레터만 수정 가능 (패스워드는 별도 API)
+ *   SEKO — 이 API 사용 불가 (route에서 400 early return, /api/mypage/seko-info 사용)
+ */
 export const profileUpdateSchema = z.object({
   userType: z.enum(userTpValues).optional(),
-  sei: z.string().min(1, "姓は必須です").max(50),
-  mei: z.string().min(1, "名は必須です").max(50),
-  seiKana: z.string().min(1, "姓(カナ)は必須です").max(50),
-  meiKana: z.string().min(1, "名(カナ)は必須です").max(50),
+  sei: z.string().max(50).optional().default(""),
+  mei: z.string().max(50).optional().default(""),
+  seiKana: z.string().max(50).optional().default(""),
+  meiKana: z.string().max(50).optional().default(""),
   compNm: z.string().max(100).optional().default(""),
   compNmKana: z.string().max(100).optional().default(""),
   zipcode: z.string().max(10).optional().default(""),
@@ -26,19 +32,32 @@ export const profileUpdateSchema = z.object({
     message: "ニュースレター受信はYまたはNです",
   }),
 }).superRefine((data, ctx) => {
-  // ADMIN은 회사 정보가 없을 수 있으므로 필수 검증 제외
-  if (data.userType === "ADMIN") return;
+  // ADMIN/STORE는 뉴스레터만 수정 가능 → 다른 필드 검증 불필요
+  if (data.userType === "ADMIN" || data.userType === "STORE") return;
 
-  if (!data.compNm) {
+  // GENERAL: 이름 + 회사 정보 필수 (공백만으로 구성된 값도 빈 값 취급)
+  if (!data.sei?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "姓は必須です", path: ["sei"] });
+  }
+  if (!data.mei?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "名は必須です", path: ["mei"] });
+  }
+  if (!data.seiKana?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "姓(カナ)は必須です", path: ["seiKana"] });
+  }
+  if (!data.meiKana?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "名(カナ)は必須です", path: ["meiKana"] });
+  }
+  if (!data.compNm?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "会社名は必須です", path: ["compNm"] });
   }
-  if (!data.zipcode) {
+  if (!data.zipcode?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "郵便番号は必須です", path: ["zipcode"] });
   }
-  if (!data.address1) {
+  if (!data.address1?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "住所は必須です", path: ["address1"] });
   }
-  if (!data.telNo) {
+  if (!data.telNo?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "電話番号は必須です", path: ["telNo"] });
   }
 });
@@ -82,6 +101,8 @@ export type WithdrawInput = z.infer<typeof withdrawSchema>;
 
 export const qspUserDetailSchema = z.object({
   userId: z.string(),
+  userNm: z.string().nullable(),
+  userNmKana: z.string().nullable(),
   user1stNm: z.string().nullable(),
   user2ndNm: z.string().nullable(),
   user1stNmKana: z.string().nullable(),
