@@ -201,18 +201,29 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
     // 5. QSP 회원정보 수정 API 호출
+    // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
+    // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
     const updatePayload: Record<string, unknown> = {
+      loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+      userTp,
       userId: rawId,
+      authCd: result.data.userRole ?? preDetail.authCd ?? "",
+      secAuthYn: result.data.twoFactorEnabled !== undefined
+        ? (result.data.twoFactorEnabled ? "Y" : "N")
+        : (preDetail.secAuthYn ?? "N"),
+      loginNotiYn: result.data.loginNotification !== undefined
+        ? (result.data.loginNotification ? "Y" : "N")
+        : (preDetail.loginNotiYn ?? "N"),
+      attrChgYn: result.data.attributeChangeNotification !== undefined
+        ? (result.data.attributeChangeNotification ? "Y" : "N")
+        : (preDetail.attrChgYn ?? "N"),
+      newsRcptYn: result.data.newsRcptYn ?? preDetail.newsRcptYn ?? "N",
+      statCd: result.data.status !== undefined
+        ? STATUS_TO_STAT_CD[result.data.status]
+        : (preDetail.statCd ?? "A"),
       updBy: user.userId,
     };
-
-    if (result.data.userRole !== undefined) updatePayload.authCd = result.data.userRole;
-    if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
-    if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
-    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgYn = result.data.attributeChangeNotification ? "Y" : "N";
-    if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status];
-    if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
 
     let qspResponse: Response;
     try {
@@ -270,16 +281,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const resultCode = parsed.data.result.resultCode;
-    const message = parsed.data.result.message;
+    const resultMsg = parsed.data.result.resultMsg;
     // QSP updateUserDtlMng: resultCode 기준으로만 성공 판정
-    // "S" 또는 "0000"만 성공, 그 외(E 등)는 message 내용과 무관하게 실패
-    const isSuccess = resultCode === "S" || resultCode === "0000";
-    if (!isSuccess) {
-      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+    // "S"만 성공, 그 외(E 등)는 message 내용과 무관하게 실패
+    if (resultCode !== "S") {
+      const truncatedMsg = resultMsg.slice(0, QSP_LOG_MSG_MAX_LEN);
       console.error("[PUT /api/admin/members/:id] QSP 수정 실패:", {
         resultCode,
-        truncatedMessage,
-        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
+        resultMsg: truncatedMsg,
       });
       return NextResponse.json(
         { error: "会員情報の更新に失敗しました" },

@@ -72,6 +72,8 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           userTp: "GENERAL",
           userId: email,
+          accsSiteCd: "QPARTNERS",
+          joinSourceCd: "QPARTNERS",
           pwd,
           user1stNm,
           user2ndNm,
