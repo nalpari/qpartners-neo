@@ -51,6 +51,21 @@
   min-height: 57px !important;
 }
 
+/* autoHeight 모드: No Rows 오버레이 높이 확보 */
+.ag-layout-auto-height .ag-overlay {
+  position: relative !important;
+  min-height: 57px !important;
+}
+.ag-layout-auto-height .ag-overlay-wrapper {
+  min-height: 57px !important;
+}
+.ag-layout-auto-height .ag-overlay-no-rows-wrapper {
+  min-height: 57px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
 /* 마지막 행 하단 보더 */
 .ag-row:last-child {
   border-bottom: 1px solid #e6eef6 !important;
