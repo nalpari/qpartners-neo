@@ -28,6 +28,11 @@ const SENSITIVE_KEYS = new Set([
 
 const EMAIL_KEYS = new Set(["email"]);
 
+const MAX_BODY_LENGTH = 8_000;
+const MAX_MASK_DEPTH = 10;
+/** DB VARCHAR(500) 제한 — 말줄임 여유 포함 */
+const MAX_ERROR_MSG_LENGTH = 490;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -38,15 +43,17 @@ export function maskEmail(value: string): string {
   return value[0] + "***" + value.slice(atIdx);
 }
 
-const MAX_BODY_LENGTH = 8_000;
-
 function truncateBody(text: string | null): string | null {
   if (!text) return null;
   if (text.length <= MAX_BODY_LENGTH) return text;
   return text.slice(0, MAX_BODY_LENGTH) + "...[truncated]";
 }
 
-function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown> {
+function maskObjectFields(
+  obj: Record<string, unknown>,
+  depth = 0,
+): Record<string, unknown> {
+  if (depth > MAX_MASK_DEPTH) return { "[truncated]": true };
   const masked: Record<string, unknown> = {};
   for (const key of Object.keys(obj)) {
     const val = obj[key];
@@ -56,10 +63,10 @@ function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown>
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
       masked[key] = val.map((item) =>
-        isRecord(item) ? maskObjectFields(item) : item,
+        isRecord(item) ? maskObjectFields(item, depth + 1) : item,
       );
     } else if (isRecord(val)) {
-      masked[key] = maskObjectFields(val);
+      masked[key] = maskObjectFields(val, depth + 1);
     } else {
       masked[key] = val;
     }
@@ -67,15 +74,24 @@ function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown>
   return masked;
 }
 
-const SENSITIVE_PATTERN = /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword)"\s*:\s*)"[^"]*"/gi;
+const SENSITIVE_PATTERN =
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
   try {
     const parsed: unknown = JSON.parse(body);
-    if (!isRecord(parsed)) return truncateBody(body);
-    const masked = maskObjectFields(parsed);
-    return truncateBody(JSON.stringify(masked));
+    if (isRecord(parsed)) {
+      const masked = maskObjectFields(parsed);
+      return truncateBody(JSON.stringify(masked));
+    }
+    if (Array.isArray(parsed)) {
+      const masked = parsed.map((item) =>
+        isRecord(item) ? maskObjectFields(item) : item,
+      );
+      return truncateBody(JSON.stringify(masked));
+    }
+    return truncateBody(body);
   } catch (error: unknown) {
     console.warn("[InterfaceLogger] JSON 파싱 실패 — regex fallback 마스킹:", error);
     const fallback = body.replace(SENSITIVE_PATTERN, '$1"***"');
@@ -166,7 +182,7 @@ export async function fetchWithLog(
       responseBody: null,
       resultCode: "F",
       durationMs,
-      errorMessage: rawMsg.slice(0, 490),
+      errorMessage: rawMsg.slice(0, MAX_ERROR_MSG_LENGTH),
     });
 
     throw error;
