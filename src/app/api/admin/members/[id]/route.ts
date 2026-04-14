@@ -66,7 +66,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
       }
 
-      console.log("[GET /api/admin/members/:id] QSP 미조회 회원 — 빈 데이터로 응답:", rawId);
+      console.warn("[GET /api/admin/members/:id] QSP 미조회 회원 — 빈 데이터로 응답:", rawId);
       return NextResponse.json({
         data: {
           id: idResult.data,
@@ -220,13 +220,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       result.data.userRole !== undefined ||
       result.data.twoFactorEnabled !== undefined;
     if (modifiesSelfCritical) {
+      // preDetail 없으면 canonical ID 비교 불가 → 안전하게 차단
       if (!preDetail) {
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId 직접 비교 fallback (MF-4 보호 약화):", { rawId, adminUserId: user.userId });
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — critical 필드 변경 차단 (MF-4 보호):", { rawId, adminUserId: user.userId });
+        return NextResponse.json(
+          { error: "会員の詳細情報を確認できないため、重要項目の変更はできません" },
+          { status: 409 },
+        );
       }
-      const isSelf = preDetail
-        ? isSelfTarget(user.userId, preDetail)
-        : user.userId.trim().toLowerCase() === rawId.trim().toLowerCase();
-      if (isSelf) {
+      if (isSelfTarget(user.userId, preDetail)) {
         return NextResponse.json(
           { error: "自分自身のアカウントに対するこの変更は実行できません" },
           { status: 400 },
@@ -235,10 +237,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail 없는 경우(삭제/탈퇴) userTp 검증 불가 → userTp 파라미터로 대체
-    if (result.data.userRole !== undefined) {
-      const effectiveUserTp = preDetail?.userTp ?? userTp;
-      if (effectiveUserTp !== "GENERAL") {
+    // preDetail 없는 경우 → 위의 modifiesSelfCritical 가드에서 이미 차단됨
+    if (result.data.userRole !== undefined && preDetail) {
+      if (preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },
           { status: 400 },
@@ -263,6 +264,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
     // preDetail이 없는 경우(삭제/탈퇴 회원) → status 필수 지정됨 (위에서 검증)
+    // ※ critical 필드(status/userRole/twoFactorEnabled)는 preDetail null 시 위에서 차단됨
+    const defaultedFields: string[] = [];
+    if (!preDetail) {
+      if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn→N");
+      if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn→N");
+      if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn→N");
+      if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn→N");
+      if (result.data.userRole === undefined) defaultedFields.push(`authCd→${userTp}`);
+      if (defaultedFields.length > 0) {
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
+      }
+    }
     const updatePayload: Record<string, unknown> = {
       loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
@@ -363,7 +376,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.userRole !== undefined) {
       const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
       if (!postDetailResult.ok) {
-        console.warn(
+        console.error(
           "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
           { rawId, byAdmin: user.userId },
         );
@@ -380,7 +393,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
     console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료");
 
     return NextResponse.json({
-      data: { message: "会員情報を更新しました", ...(warning !== undefined && { warning }) },
+      data: {
+        message: "会員情報を更新しました",
+        ...(warning !== undefined && { warning }),
+        ...(defaultedFields.length > 0 && { defaultedFields }),
+      },
     });
   } catch (error: unknown) {
     console.error("[PUT /api/admin/members/:id] 회원 정보 수정 실패:", error);
