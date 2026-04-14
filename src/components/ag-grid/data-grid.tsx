@@ -49,6 +49,7 @@ interface DataGridProps<T> {
   columnDefs: ColDef<T>[];
   rowData: T[];
   className?: string;
+  /** autoHeight 모드에서 wrapper에 적용할 최대 높이 (px). 초과 시 스크롤 */
   maxHeight?: number;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
   getRowId?: (params: { data: T }) => string;
@@ -84,7 +85,7 @@ export function DataGrid<T>({
       suppressMovable: false,
       cellStyle: { display: "flex", alignItems: "center" },
     }),
-    []
+    [],
   );
 
   const getRowClass = (params: RowClassParams<T>) => {
@@ -99,15 +100,15 @@ export function DataGrid<T>({
 
   return (
     <div
-      className={`w-full ${className}`}
-      style={maxHeight ? { height: maxHeight } : undefined}
+      className={`w-full overflow-y-auto ${className}`}
+      style={{ maxHeight }}
     >
       <AgGridReact<T>
         theme={customTheme}
         rowData={rowData}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
-        domLayout={maxHeight ? "normal" : "autoHeight"}
+        domLayout="autoHeight"
         getRowClass={getRowClass}
         getRowId={getRowId}
         context={context}
