@@ -49,7 +49,6 @@ interface DataGridProps<T> {
   columnDefs: ColDef<T>[];
   rowData: T[];
   className?: string;
-  /** autoHeight 모드에서 wrapper에 적용할 최대 높이 (px). 초과 시 스크롤 */
   maxHeight?: number;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
   getRowId?: (params: { data: T }) => string;
@@ -62,8 +61,6 @@ interface DataGridProps<T> {
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
-/** 헤더(57px) + "No Rows To Show" 오버레이 표시 영역(57px) */
-const NO_ROWS_MIN_HEIGHT = 114;
 
 export function DataGrid<T>({
   columnDefs,
@@ -102,15 +99,15 @@ export function DataGrid<T>({
 
   return (
     <div
-      className={`w-full overflow-y-auto ${className}`}
-      style={{ maxHeight, minHeight: NO_ROWS_MIN_HEIGHT }}
+      className={`w-full ${className}`}
+      style={maxHeight ? { height: maxHeight } : undefined}
     >
       <AgGridReact<T>
         theme={customTheme}
         rowData={rowData}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
-        domLayout="autoHeight"
+        domLayout={maxHeight ? "normal" : "autoHeight"}
         getRowClass={getRowClass}
         getRowId={getRowId}
         context={context}

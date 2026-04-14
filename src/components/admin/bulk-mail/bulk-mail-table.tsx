@@ -199,13 +199,22 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
               メール一覧の取得に失敗しました。ページを更新してください。
             </p>
           </div>
+        ) : list.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+              データがありません
+            </p>
+          </div>
         ) : (
           <>
-            <DataGrid<MassMailListItem>
-              columnDefs={columnDefs}
-              rowData={list}
-              context={{ router }}
-            />
+            <div style={{ maxHeight: 600, overflowY: "auto" }}>
+              <DataGrid<MassMailListItem>
+                columnDefs={columnDefs}
+                rowData={list}
+                maxHeight={0}
+                context={{ router }}
+              />
+            </div>
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}

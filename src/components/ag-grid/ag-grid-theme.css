@@ -43,27 +43,12 @@
   border: none !important;
 }
 
-/* autoHeight 모드: 기본 min-height(150px)를 1행 높이로 축소 — "No Rows To Show" 오버레이 표시 보장 */
+/* autoHeight 모드: AG Grid 내부 min-height 제거 (행이 있을 때 불필요한 여백 방지) */
 .ag-layout-auto-height .ag-body-viewport {
-  min-height: 115px !important;
+  min-height: auto !important;
 }
 .ag-center-cols-container, .ag-center-cols-viewport {
-  min-height: 115px !important;
-}
-
-/* autoHeight 모드: No Rows 오버레이 높이 확보 */
-.ag-layout-auto-height .ag-overlay {
-  position: relative !important;
-  min-height: 115px !important;
-}
-.ag-layout-auto-height .ag-overlay-wrapper {
-  min-height: 115px !important;
-}
-.ag-layout-auto-height .ag-overlay-no-rows-wrapper {
-  min-height: 115px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  min-height: auto !important;
 }
 
 /* 마지막 행 하단 보더 */
