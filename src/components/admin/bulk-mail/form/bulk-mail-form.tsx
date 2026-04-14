@@ -1,61 +1,130 @@
 "use client";
 
+// Design Ref: §3 — 등록 API 연동 (4모드: create/detail/edit/copy)
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
 import { BulkMailFormAttachment } from "./bulk-mail-form-attachment";
-import type { BulkMailFormData, AttachmentFile } from "./bulk-mail-form-dummy-data";
+import type {
+  FormMode,
+  FormInitialData,
+  MassMailCreateResponse,
+} from "@/components/admin/bulk-mail/bulk-mail-types";
+import { buildFormData } from "@/components/admin/bulk-mail/bulk-mail-types";
+
+const DEFAULT_SENDER = "Q.PARTNERS事務局 (q.partners@hqj.co.jp)";
 
 interface BulkMailFormProps {
-  mode: "create" | "detail";
-  initialData: BulkMailFormData;
+  mode: FormMode;
+  initialData?: Partial<FormInitialData>;
 }
 
 export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const router = useRouter();
   const { openAlert } = useAlertStore();
+
   const isDetail = mode === "detail";
+  const isEditable = mode === "create" || mode === "edit" || mode === "copy";
 
-  const [targets, setTargets] = useState<string[]>(initialData.targets);
-  const [optOut, setOptOut] = useState(false);
-  const [title, setTitle] = useState(initialData.title);
-  const [content, setContent] = useState(initialData.content);
-  const [attachments, setAttachments] = useState<AttachmentFile[]>(initialData.attachments);
+  // ─── Form State ───
+  const [senderName, setSenderName] = useState(initialData?.senderName ?? DEFAULT_SENDER);
+  const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
+  const [optOut, setOptOut] = useState(initialData?.optOut ?? false);
+  const [subject, setSubject] = useState(initialData?.subject ?? "");
+  const [body, setBody] = useState(initialData?.body ?? "");
+  const [files, setFiles] = useState<File[]>([]);
 
+  // Design Ref: §3.2 — useMutation
+  const submitMutation = useMutation({
+    mutationFn: (fd: FormData) =>
+      api.post<MassMailCreateResponse>("/admin/mass-mails", fd),
+    onSuccess: (res) => {
+      const { id, message } = res.data.data;
+      openAlert({ type: "alert", message });
+      router.push(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
+    },
+    onError: () => {
+      openAlert({ type: "alert", message: "メールの登録に失敗しました。" });
+    },
+  });
+
+  // Design Ref: §3.3 — 필수항목 검증
+  function validate(): string | null {
+    if (!senderName.trim()) return "送信者名は必須です。";
+    if (targets.length === 0) return "配信対象を1つ以上選択してください。";
+    if (!subject.trim()) return "件名は必須です。";
+    if (!body.trim()) return "本文は必須です。";
+    return null;
+  }
+
+  // ─── 버튼 핸들러 (Design Ref: §3.4) ───
   const handleList = () => {
     router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
   };
 
+  // Plan SC: キャンセル → 입력값 초기화
   const handleCancel = () => {
-    handleList();
+    setSenderName(initialData?.senderName ?? DEFAULT_SENDER);
+    setTargets(initialData?.targets ?? []);
+    setOptOut(initialData?.optOut ?? false);
+    setSubject(initialData?.subject ?? "");
+    setBody(initialData?.body ?? "");
+    setFiles([]);
   };
 
+  // Plan SC: 配信 → status: pending → 상세로 이동
   const handleSend = () => {
+    const error = validate();
+    if (error) {
+      openAlert({ type: "alert", message: error });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "メールを配信しますか？",
       confirmLabel: "配信",
       cancelLabel: "キャンセル",
+      onConfirm: () => {
+        const fd = buildFormData({
+          senderName, targets, optOut, subject, body,
+          status: "pending", files,
+        });
+        submitMutation.mutate(fd);
+      },
     });
   };
 
+  // Plan SC: 下書き保存 → status: draft → 상세로 이동
   const handleDraft = () => {
-    openAlert({
-      type: "alert",
-      message: "下書きを保存しました。",
-      confirmLabel: "確認",
+    const fd = buildFormData({
+      senderName, targets, optOut, subject, body,
+      status: "draft", files,
     });
+    submitMutation.mutate(fd);
   };
 
+  // Plan SC: コピーして作成 → sessionStorage에 저장 → 등록 화면 이동
   const handleCopy = () => {
-    // detail → create로 이동하면서 내용 복사 (파일첨부 제외)
-    // 실제로는 query param이나 store로 전달하겠지만, 퍼블리싱에서는 단순 이동
+    const copyData = {
+      senderName,
+      targets,
+      optOut,
+      subject,
+      body,
+    };
+    sessionStorage.setItem("mass-mail-copy", JSON.stringify(copyData));
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
+
+  const isPending = submitMutation.isPending;
+  const showSentAt = mode === "detail" || mode === "edit";
 
   const cardClass = "bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]";
 
@@ -64,10 +133,10 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 관리 정보 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormInfo
-          senderName={initialData.senderName}
-          authorName={initialData.authorName}
-          authorId={initialData.authorId}
-          sentAt={initialData.sentAt}
+          senderName={senderName}
+          authorName={initialData?.createdBy ?? ""}
+          authorId={initialData?.createdBy ?? ""}
+          sentAt={showSentAt && initialData?.createdAt ? formatDate(initialData.createdAt) : ""}
         />
       </section>
 
@@ -92,8 +161,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 제목 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormTitle
-          title={title}
-          onTitleChange={setTitle}
+          title={subject}
+          onTitleChange={setSubject}
           disabled={isDetail}
         />
       </section>
@@ -101,8 +170,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 내용 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormBody
-          content={content}
-          onContentChange={setContent}
+          content={body}
+          onContentChange={setBody}
           disabled={isDetail}
         />
       </section>
@@ -110,13 +179,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 파일첨부 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormAttachment
-          attachments={attachments}
-          onAttachmentsChange={setAttachments}
+          files={files}
+          onFilesChange={setFiles}
+          serverAttachments={initialData?.attachments}
           disabled={isDetail}
         />
       </section>
 
-      {/* 하단 버튼 */}
+      {/* 하단 버튼 (Design Ref: §7.1 모드별 분기) */}
       <div className="flex items-center justify-end gap-2 w-[1440px] pb-1">
         {isDetail ? (
           <>
@@ -127,7 +197,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
               一覧
             </Button>
           </>
-        ) : (
+        ) : isEditable ? (
           <>
             <Button variant="secondary" onClick={handleList}>
               一覧
@@ -135,15 +205,26 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
             <Button variant="secondary" onClick={handleCancel}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSend}>
+            <Button variant="primary" onClick={handleSend} disabled={isPending}>
               配信
             </Button>
-            <Button variant="outline" onClick={handleDraft}>
+            <Button variant="outline" onClick={handleDraft} disabled={isPending}>
               下書き保存
             </Button>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
+}
+
+/** ISO 날짜 → YYYY.MM.DD HH:mm 포맷 */
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}.${m}.${day} ${h}:${min}`;
 }
