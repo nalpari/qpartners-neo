@@ -1,92 +1,82 @@
 "use client";
 
-import { useState } from "react";
 import { InputBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
+import type { ProfileData, EditFormData } from "./mypage-info";
 
-interface CorporateData {
-  memberType: string;
-  companyName: string;
-  companyNameKana: string;
-  zipCode: string;
-  address: string;
-  addressDetail: string;
-  phone: string;
-  fax: string;
-  corporateNumber: string;
+// Design Ref: §4.2 — userType 라벨 매핑
+const USER_TYPE_LABELS: Record<string, string> = {
+  ADMIN: "管理者",
+  STORE: "販売店",
+  GENERAL: "一般会員",
+  SEKO: "施工店",
+};
+
+interface ViewField {
+  label: string;
+  value: string;
 }
 
-type CorporateDataKey = keyof CorporateData;
+function buildCorporateFields(profile: ProfileData, userType: string): ViewField[] {
+  const address = profile.zipcode
+    ? `(${profile.zipcode}) ${profile.address1}${profile.address2 ? " " + profile.address2 : ""}`
+    : profile.address1 || "-";
 
-function buildViewFields(data: CorporateData): { label: string; value: string }[] {
-  const address = data.zipCode
-    ? `(${data.zipCode}) ${data.address}${data.addressDetail ? " " + data.addressDetail : ""}`
-    : data.address || "-";
-
-  return [
-    { label: "会員タイプ", value: data.memberType || "-" },
-    { label: "会社名", value: data.companyName || "-" },
-    { label: "会社名ひらがな", value: data.companyNameKana || "-" },
+  const fields: ViewField[] = [
+    { label: "会員タイプ", value: USER_TYPE_LABELS[userType] ?? userType },
+    { label: "会社名", value: profile.compNm || "-" },
+    { label: "会社名ひらがな", value: profile.compNmKana || "-" },
     { label: "住所", value: address },
-    { label: "電話番号", value: data.phone || "-" },
-    { label: "FAX番号", value: data.fax || "-" },
-    { label: "法人番号", value: data.corporateNumber || "-" },
+    { label: "電話番号", value: profile.telNo || "-" },
+    { label: "FAX番号", value: profile.fax || "-" },
   ];
+
+  if (userType === "ADMIN" || userType === "STORE") {
+    fields.push({ label: "法人番号", value: profile.corporateNo || "-" });
+  }
+
+  return fields;
 }
 
 interface MypageInfoCorporateProps {
+  profile: ProfileData;
+  userType: string;
   isEditing?: boolean;
+  editData: EditFormData | null;
+  updateField: (key: keyof EditFormData) => (value: string) => void;
 }
 
 export function MypageInfoCorporate({
+  profile,
+  userType,
   isEditing = false,
+  editData,
+  updateField,
 }: MypageInfoCorporateProps) {
-  const [data, setData] = useState<CorporateData>({
-    memberType: "一般会員",
-    companyName: "INTERPLUG TEST",
-    companyNameKana: "インタープラグ  テスト",
-    zipCode: "1080014",
-    address: "東京都港区芝4-10-1",
-    addressDetail: "ハンファビル9F",
-    phone: "088-685-3054",
-    fax: "088-685-3054",
-    corporateNumber: "0000000",
-  });
-
-  const updateField = (key: CorporateDataKey) => (value: string) =>
-    setData((prev) => ({ ...prev, [key]: value }));
-
   const { openPopup } = usePopupStore();
 
   const handleZipcodeSearch = () => {
     openPopup("zipcode-search", {
       onSelect: (addr: { zipcode: string; prefecture: string; city: string; town: string }) => {
-        setData((prev) => ({
-          ...prev,
-          zipCode: addr.zipcode,
-          address: `${addr.prefecture}${addr.city}`,
-          addressDetail: addr.town,
-        }));
+        updateField("zipcode")(addr.zipcode);
+        updateField("address1")(`${addr.prefecture}${addr.city}`);
+        updateField("address2")(addr.town);
       },
     });
   };
 
-  if (isEditing) {
+  if (isEditing && editData) {
     return (
       <CorporateEditMode
-        data={data}
+        data={editData}
+        userType={userType}
         updateField={updateField}
         onZipcodeSearch={handleZipcodeSearch}
       />
     );
   }
 
-  return <CorporateViewMode data={data} />;
-}
-
-/* ─── 조회 모드 ─── */
-function CorporateViewMode({ data }: { data: CorporateData }) {
-  const viewFields = buildViewFields(data);
+  const viewFields = buildCorporateFields(profile, userType);
 
   return (
     <article className="flex-1 bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] px-[24px] py-[34px] lg:pt-[34px] lg:pb-[42px] lg:px-[42px]">
@@ -97,19 +87,12 @@ function CorporateViewMode({ data }: { data: CorporateData }) {
       {/* PC */}
       <div className="hidden lg:flex flex-col gap-[4px]">
         {viewFields.map((field) => (
-          <div
-            key={field.label}
-            className="flex gap-[4px] h-[58px] items-center w-full"
-          >
+          <div key={field.label} className="flex gap-[4px] h-[58px] items-center w-full">
             <div className="bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] w-[160px] h-full flex items-center pl-[16px] pr-[8px] shrink-0">
-              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
-                {field.label}
-              </p>
+              <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">{field.label}</p>
             </div>
             <div className="bg-white border border-[#eaf0f6] rounded-[6px] flex-1 h-full flex items-center pl-[24px] pr-[8px]">
-              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                {field.value}
-              </p>
+              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">{field.value}</p>
             </div>
           </div>
         ))}
@@ -118,20 +101,9 @@ function CorporateViewMode({ data }: { data: CorporateData }) {
       {/* 모바일 */}
       <div className="flex lg:hidden flex-col gap-[18px]">
         {viewFields.map((field, idx) => (
-          <div
-            key={field.label}
-            className={`flex flex-col gap-[8px] pt-[18px] ${
-              idx === 0
-                ? "border-t border-[#101010]"
-                : "border-t border-[#eff4f8]"
-            }`}
-          >
-            <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
-              {field.label}
-            </p>
-            <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
-              {field.value}
-            </p>
+          <div key={field.label} className={`flex flex-col gap-[8px] pt-[18px] ${idx === 0 ? "border-t border-[#101010]" : "border-t border-[#eff4f8]"}`}>
+            <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">{field.label}</p>
+            <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">{field.value}</p>
           </div>
         ))}
       </div>
@@ -143,28 +115,28 @@ function CorporateViewMode({ data }: { data: CorporateData }) {
 
 interface EditField {
   label: string;
-  key: CorporateDataKey;
+  key: keyof EditFormData;
   required?: boolean;
-  type?: "readonly" | "input" | "zip" | "address";
+  type?: "input" | "zip" | "address";
 }
 
-const EDIT_FIELDS: EditField[] = [
-  { label: "会社名", key: "companyName", required: true, type: "input" },
-  { label: "会社名ひらがな", key: "companyNameKana", type: "input" },
-  { label: "郵便番号", key: "zipCode", required: true, type: "zip" },
-  { label: "住所", key: "address", required: true, type: "address" },
-  { label: "電話番号", key: "phone", required: true, type: "input" },
-  { label: "FAX番号", key: "fax", type: "input" },
-  { label: "法人番号", key: "corporateNumber", type: "input" },
-];
+// Design Ref: §2.2 — GENERAL, SEKO만 법인정보 수정 가능
+function getEditFields(userType: string): EditField[] {
+  const fields: EditField[] = [
+    { label: "会社名", key: "compNm", required: true, type: "input" },
+    { label: "会社名ひらがな", key: "compNmKana", type: "input" },
+    { label: "郵便番号", key: "zipcode", required: true, type: "zip" },
+    { label: "住所", key: "address1", required: true, type: "address" },
+    { label: "電話番号", key: "telNo", required: true, type: "input" },
+  ];
 
-function ThLabel({
-  label,
-  required,
-}: {
-  label: string;
-  required?: boolean;
-}) {
+  // SEKO는 FAX 필수
+  fields.push({ label: "FAX番号", key: "fax", required: userType === "SEKO", type: "input" });
+
+  return fields;
+}
+
+function ThLabel({ label, required }: { label: string; required?: boolean }) {
   return (
     <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
       {label}
@@ -174,37 +146,30 @@ function ThLabel({
 }
 
 interface CorporateEditModeProps {
-  data: CorporateData;
-  updateField: (key: CorporateDataKey) => (value: string) => void;
+  data: EditFormData;
+  userType: string;
+  updateField: (key: keyof EditFormData) => (value: string) => void;
   onZipcodeSearch: () => void;
 }
 
-function CorporateEditMode({ data, updateField, onZipcodeSearch }: CorporateEditModeProps) {
+function CorporateEditMode({ data, userType, updateField, onZipcodeSearch }: CorporateEditModeProps) {
+  const editFields = getEditFields(userType);
+
   return (
     <article className="flex-1 bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] px-[24px] py-[34px] lg:pt-[34px] lg:pb-[42px] lg:px-[42px]">
       <h3 className="font-['Noto_Sans_JP'] font-medium text-[16px] leading-[1.5] text-[#45576f] mb-[14px]">
-        法人情報{" "}
-        <span className="text-[#ff1a1a]">(*必須)</span>
+        法人情報 <span className="text-[#ff1a1a]">(*必須)</span>
       </h3>
 
       {/* PC */}
       <div className="hidden lg:flex flex-col gap-[4px]">
-        {EDIT_FIELDS.map((field) => (
-          <div
-            key={field.label}
-            className="flex gap-[4px] h-[58px] items-center w-full"
-          >
+        {editFields.map((field) => (
+          <div key={field.label} className="flex gap-[4px] h-[58px] items-center w-full">
             <div className="bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] w-[160px] h-full flex items-center pl-[16px] pr-[8px] shrink-0">
               <ThLabel label={field.label} required={field.required} />
             </div>
             <div className="bg-white border border-[#eaf0f6] rounded-[6px] flex-1 h-full flex items-center p-[8px]">
-              <EditFieldContent
-                field={field}
-                data={data}
-                updateField={updateField}
-                onZipcodeSearch={onZipcodeSearch}
-                layout="pc"
-              />
+              <EditFieldContent field={field} data={data} updateField={updateField} onZipcodeSearch={onZipcodeSearch} layout="pc" />
             </div>
           </div>
         ))}
@@ -212,23 +177,10 @@ function CorporateEditMode({ data, updateField, onZipcodeSearch }: CorporateEdit
 
       {/* 모바일 */}
       <div className="flex lg:hidden flex-col gap-[18px]">
-        {EDIT_FIELDS.map((field, idx) => (
-          <div
-            key={field.label}
-            className={`flex flex-col gap-[8px] pt-[18px] ${
-              idx === 0
-                ? "border-t border-[#101010]"
-                : "border-t border-[#eff4f8]"
-            }`}
-          >
+        {editFields.map((field, idx) => (
+          <div key={field.label} className={`flex flex-col gap-[8px] pt-[18px] ${idx === 0 ? "border-t border-[#101010]" : "border-t border-[#eff4f8]"}`}>
             <ThLabel label={field.label} required={field.required} />
-            <EditFieldContent
-              field={field}
-              data={data}
-              updateField={updateField}
-              onZipcodeSearch={onZipcodeSearch}
-              layout="mobile"
-            />
+            <EditFieldContent field={field} data={data} updateField={updateField} onZipcodeSearch={onZipcodeSearch} layout="mobile" />
           </div>
         ))}
       </div>
@@ -244,27 +196,16 @@ function EditFieldContent({
   layout,
 }: {
   field: EditField;
-  data: CorporateData;
-  updateField: (key: CorporateDataKey) => (value: string) => void;
+  data: EditFormData;
+  updateField: (key: keyof EditFormData) => (value: string) => void;
   onZipcodeSearch: () => void;
   layout: "pc" | "mobile";
 }) {
   switch (field.type) {
-    case "readonly":
-      return (
-        <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate pl-[16px] lg:pl-[16px]">
-          {data[field.key]}
-        </p>
-      );
-
     case "zip":
       return layout === "pc" ? (
         <div className="flex items-center gap-[8px] w-full">
-          <InputBox
-            value={data.zipCode}
-            disabled
-            className="h-[42px] flex-1"
-          />
+          <InputBox value={data.zipcode} disabled className="h-[42px] flex-1" />
           <button
             type="button"
             onClick={onZipcodeSearch}
@@ -275,11 +216,7 @@ function EditFieldContent({
         </div>
       ) : (
         <div className="flex flex-col gap-[8px] w-full">
-          <InputBox
-            value={data.zipCode}
-            disabled
-            className="h-[42px]"
-          />
+          <InputBox value={data.zipcode} disabled className="h-[42px]" />
           <button
             type="button"
             onClick={onZipcodeSearch}
@@ -293,29 +230,13 @@ function EditFieldContent({
     case "address":
       return layout === "pc" ? (
         <div className="flex items-center gap-[8px] w-full min-w-0">
-          <InputBox
-            value={data.address}
-            disabled
-            className="h-[42px] flex-1"
-          />
-          <InputBox
-            value={data.addressDetail}
-            onChange={updateField("addressDetail")}
-            className="h-[42px] flex-1"
-          />
+          <InputBox value={data.address1} disabled className="h-[42px] flex-1" />
+          <InputBox value={data.address2} onChange={updateField("address2")} className="h-[42px] flex-1" />
         </div>
       ) : (
         <div className="flex flex-col gap-[8px] w-full">
-          <InputBox
-            value={data.address}
-            disabled
-            className="h-[42px]"
-          />
-          <InputBox
-            value={data.addressDetail}
-            onChange={updateField("addressDetail")}
-            className="h-[42px]"
-          />
+          <InputBox value={data.address1} disabled className="h-[42px]" />
+          <InputBox value={data.address2} onChange={updateField("address2")} className="h-[42px]" />
         </div>
       );
 
