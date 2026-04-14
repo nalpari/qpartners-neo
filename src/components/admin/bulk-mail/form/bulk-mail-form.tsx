@@ -17,7 +17,7 @@ import type {
   FormInitialData,
   MassMailCreateResponse,
 } from "@/components/admin/bulk-mail/bulk-mail-types";
-import { buildFormData } from "@/components/admin/bulk-mail/bulk-mail-types";
+import { buildFormData, FORM_DATA_CONFIG } from "@/components/admin/bulk-mail/bulk-mail-types";
 
 const DEFAULT_SENDER = "Q.PARTNERS事務局 (q.partners@hqj.co.jp)";
 
@@ -44,7 +44,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   // Design Ref: §3.2 — useMutation
   const submitMutation = useMutation({
     mutationFn: (fd: FormData) =>
-      api.post<MassMailCreateResponse>("/admin/mass-mails", fd),
+      api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
     onSuccess: (res) => {
       const { id, message } = res.data.data;
       openAlert({ type: "alert", message });

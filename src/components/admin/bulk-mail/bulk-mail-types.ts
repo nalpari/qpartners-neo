@@ -158,3 +158,8 @@ export function buildFormData(params: {
 
   return fd;
 }
+
+/** FormData 전송용 axios config — 기본 Content-Type 헤더를 제거하여 multipart 자동 설정 */
+export const FORM_DATA_CONFIG = {
+  headers: { "Content-Type": undefined },
+} as const;
