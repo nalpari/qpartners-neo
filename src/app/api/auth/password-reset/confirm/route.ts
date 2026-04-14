@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "userDetail",
         callerRoute: "[POST /api/auth/password-reset/confirm]",
-        userId: resetToken.userId,
+        userId: maskEmail(resetToken.userId),
         userType: resetToken.userType,
       },
     );

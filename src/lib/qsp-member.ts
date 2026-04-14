@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { qspMemberDetailResponseSchema } from "@/lib/schemas/member";
 import type { UserTp } from "@/lib/schemas/common";
 
@@ -46,7 +46,7 @@ export async function fetchQspUserDetail(
         direction: "OUTBOUND",
         apiName: "userDetail",
         callerRoute: logTag,
-        userId: userId ?? rawId,
+        userId: maskEmail(userId ?? rawId),
         userType: userTp,
       },
     );

@@ -268,7 +268,7 @@ export async function PUT(request: NextRequest) {
         // GENERAL: 프론트에서 전체 필드를 받아서 전송
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-          userId: maskEmail(user.userId),
+          userId: user.userId,
           email: user.email,
           userTp: user.userTp,
           user1stNm: d.mei,
@@ -304,7 +304,7 @@ export async function PUT(request: NextRequest) {
         const current = detailResult.detail;
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-          userId: maskEmail(user.userId),
+          userId: user.userId,
           loginId: user.userId,
           userTp: user.userTp,
           user1stNm: current.user1stNm ?? "",
