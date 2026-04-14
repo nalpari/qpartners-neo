@@ -40,10 +40,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const [body, setBody] = useState(initialData?.body ?? "");
   const [files, setFiles] = useState<File[]>([]);
 
-  // Design Ref: §3.2 — useMutation
+  const editId = initialData?.id;
+
+  // Design Ref: §3.2 — useMutation (edit 모드: PUT, 그 외: POST)
   const submitMutation = useMutation({
     mutationFn: (fd: FormData) =>
-      api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
+      mode === "edit" && editId
+        ? api.put<MassMailCreateResponse>(`/admin/mass-mails/${editId}`, fd, FORM_DATA_CONFIG)
+        : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
     onSuccess: (res) => {
       const { id, message } = res.data.data;
       openAlert({ type: "alert", message });

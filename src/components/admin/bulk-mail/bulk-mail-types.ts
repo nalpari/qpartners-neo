@@ -80,6 +80,8 @@ export type FormMode = "create" | "detail" | "edit" | "copy";
 
 /** 폼 초기 데이터 */
 export interface FormInitialData {
+  /** edit 모드 시 기존 레코드 ID */
+  id?: number;
   senderName: string;
   targets: string[];
   optOut: boolean;
@@ -119,6 +121,7 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
     .filter(Boolean);
 
   return {
+    id: detail.id,
     senderName: detail.senderName,
     targets,
     optOut: detail.optOut,

@@ -4,7 +4,11 @@
 
 import { useState, useRef } from "react";
 import Image from "next/image";
+import { useAlertStore } from "@/lib/store";
 import type { MassMailAttachment } from "@/components/admin/bulk-mail/bulk-mail-types";
+
+const MAX_FILES = 10;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 interface BulkMailFormAttachmentProps {
   /** 실제 File 객체 (등록/편집 모드) */
@@ -28,11 +32,26 @@ export function BulkMailFormAttachment({
   serverAttachments = [],
   disabled,
 }: BulkMailFormAttachmentProps) {
+  const { openAlert } = useAlertStore();
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (fileList: FileList) => {
     const newFiles = Array.from(fileList);
+
+    // 개수 제한
+    if (files.length + newFiles.length > MAX_FILES) {
+      openAlert({ type: "alert", message: `添付ファイルは${MAX_FILES}件以内にしてください。` });
+      return;
+    }
+
+    // 파일 크기 제한
+    const oversized = newFiles.find((f) => f.size > MAX_FILE_SIZE);
+    if (oversized) {
+      openAlert({ type: "alert", message: `ファイルサイズが上限(10MB)を超えています：${oversized.name}` });
+      return;
+    }
+
     onFilesChange([...files, ...newFiles]);
   };
 

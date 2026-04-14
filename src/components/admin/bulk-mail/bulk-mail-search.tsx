@@ -76,6 +76,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
                   checked={authorSearchType === "name"}
                   onChange={() => setAuthorSearchType("name")}
                   label="Name"
+                  disabled
                 />
                 <Radio
                   name="authorSearchType"
@@ -83,12 +84,14 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
                   checked={authorSearchType === "id"}
                   onChange={() => setAuthorSearchType("id")}
                   label="ID"
+                  disabled
                 />
                 <InputBox
                   value={authorQuery}
                   onChange={setAuthorQuery}
                   placeholder=""
                   className="flex-1 min-w-[120px]"
+                  disabled
                 />
               </div>
             </div>
@@ -115,9 +118,9 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
               </span>
             </div>
             <div className="flex flex-1 items-center gap-1 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <DatePicker value={startDate} onChange={setStartDate} className="flex-1" />
+              <DatePicker value={startDate} onChange={setStartDate} className="flex-1" disabled />
               <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">~</span>
-              <DatePicker value={endDate} onChange={setEndDate} className="flex-1" />
+              <DatePicker value={endDate} onChange={setEndDate} className="flex-1" disabled />
             </div>
           </div>
         </div>
