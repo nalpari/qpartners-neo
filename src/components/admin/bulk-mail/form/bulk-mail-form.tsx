@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
-import { BulkMailFormTargets } from "./bulk-mail-form-targets";
+import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
 import { BulkMailFormAttachment } from "./bulk-mail-form-attachment";
 import type { BulkMailFormData, AttachmentFile } from "./bulk-mail-form-dummy-data";
@@ -21,6 +21,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const isDetail = mode === "detail";
 
   const [targets, setTargets] = useState<string[]>(initialData.targets);
+  const [optOut, setOptOut] = useState(false);
   const [title, setTitle] = useState(initialData.title);
   const [content, setContent] = useState(initialData.content);
   const [attachments, setAttachments] = useState<AttachmentFile[]>(initialData.attachments);
@@ -75,6 +76,15 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormTargets
           targets={targets}
           onTargetsChange={setTargets}
+          disabled={isDetail}
+        />
+      </section>
+
+      {/* 뉴스레터 배송대상 카드 */}
+      <section className={`${cardClass} flex flex-col gap-4`}>
+        <BulkMailFormNewsletter
+          optOut={optOut}
+          onOptOutChange={setOptOut}
           disabled={isDetail}
         />
       </section>
