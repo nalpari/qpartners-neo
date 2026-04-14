@@ -182,6 +182,9 @@ export function MemberDetailPopup() {
   });
 
   const isSaving = updateMutation.isPending || resetPasswordMutation.isPending;
+  // 탈퇴(withdrawn) 상태는 조회만 가능, 수정 불가
+  const isWithdrawn = member?.status === "withdrawn";
+  const isReadOnly = isWithdrawn;
 
   const handleClose = () => {
     setIsClosing(true);
@@ -293,7 +296,7 @@ export function MemberDetailPopup() {
                     label: "PW初期化",
                     isForm: true,
                     children: (
-                      <Button variant="outline" onClick={handlePasswordReset} disabled={isSaving} className="w-full">
+                      <Button variant="outline" onClick={handlePasswordReset} disabled={isSaving || isReadOnly} className="w-full">
                         パスワード初期化
                       </Button>
                     ),
@@ -309,8 +312,8 @@ export function MemberDetailPopup() {
                   left={{ label: "氏名ひらがな", children: <TextValue value={member.userNameKana} /> }}
                   right={{
                     label: "ユーザー権限",
-                    isForm: isGeneral,
-                    children: isGeneral ? (
+                    isForm: isGeneral && !isReadOnly,
+                    children: isGeneral && !isReadOnly ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
                         value={userRole}
@@ -338,8 +341,8 @@ export function MemberDetailPopup() {
                     label: "二次認証",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" />
-                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" />
+                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly} />
+                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly} />
                       </div>
                     ),
                   }}
@@ -347,8 +350,8 @@ export function MemberDetailPopup() {
                     label: "ログイン通知",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
-                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
+                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" disabled={isReadOnly} />
+                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" disabled={isReadOnly} />
                       </div>
                     ),
                   }}
@@ -359,8 +362,8 @@ export function MemberDetailPopup() {
                     label: "会員状態",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" />
-                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" />
+                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" disabled={isReadOnly} />
+                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" disabled={isReadOnly} />
                       </div>
                     ),
                   }}
@@ -368,8 +371,8 @@ export function MemberDetailPopup() {
                     label: "属性変更通知",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="attrNotify" value="true" checked={attributeNotify} onChange={() => setAttributeNotify(true)} label="有効" />
-                        <Radio name="attrNotify" value="false" checked={!attributeNotify} onChange={() => setAttributeNotify(false)} label="無効" />
+                        <Radio name="attrNotify" value="true" checked={attributeNotify} onChange={() => setAttributeNotify(true)} label="有効" disabled={isReadOnly} />
+                        <Radio name="attrNotify" value="false" checked={!attributeNotify} onChange={() => setAttributeNotify(false)} label="無効" disabled={isReadOnly} />
                       </div>
                     ),
                   }}
@@ -381,8 +384,8 @@ export function MemberDetailPopup() {
                     label: "ニュースレター",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="newsletter" value="Y" checked={newsRcptYn === "Y"} onChange={() => setNewsRcptYn("Y")} label="許可" />
-                        <Radio name="newsletter" value="N" checked={newsRcptYn === "N"} onChange={() => setNewsRcptYn("N")} label="拒否" />
+                        <Radio name="newsletter" value="Y" checked={newsRcptYn === "Y"} onChange={() => setNewsRcptYn("Y")} label="許可" disabled={isReadOnly} />
+                        <Radio name="newsletter" value="N" checked={newsRcptYn === "N"} onChange={() => setNewsRcptYn("N")} label="拒否" disabled={isReadOnly} />
                         {member.newsRcptDate && (
                           <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#999] whitespace-nowrap">
                             (許可日：{formatDateTime(member.newsRcptDate)})
@@ -420,11 +423,13 @@ export function MemberDetailPopup() {
               {/* 하단 버튼 */}
               <div className="popup-buttons--inline">
                 <Button variant="secondary" onClick={handleClose}>
-                  キャンセル
+                  {isReadOnly ? "閉じる" : "キャンセル"}
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? "保存中..." : "保存"}
-                </Button>
+                {!isReadOnly && (
+                  <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? "保存中..." : "保存"}
+                  </Button>
+                )}
               </div>
             </>
           )}
