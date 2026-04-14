@@ -21,6 +21,7 @@ const SENSITIVE_KEYS = new Set([
   "password",
   "newPwd",
   "curPwd",
+  "chgPwd",
   "newPassword",
   "currentPassword",
 ]);
@@ -42,8 +43,11 @@ function maskSensitiveFields(body: string | null | undefined): string | null {
     for (const key of Object.keys(masked)) {
       if (SENSITIVE_KEYS.has(key)) {
         masked[key] = "***";
-      } else if (EMAIL_KEYS.has(key) && typeof masked[key] === "string") {
-        masked[key] = maskEmail(masked[key] as string);
+      } else if (EMAIL_KEYS.has(key)) {
+        const val: unknown = masked[key];
+        if (typeof val === "string") {
+          masked[key] = maskEmail(val);
+        }
       }
     }
     return JSON.stringify(masked);
@@ -179,6 +183,10 @@ function writeLog(data: LogData): void {
   prisma.qpInterfaceLog
     .create({ data })
     .catch((err: unknown) => {
-      console.error("[interface-logger] 로그 기록 실패:", err);
+      console.error("[interface-logger] 로그 기록 실패:", {
+        traceId: data.traceId,
+        apiName: data.apiName,
+        error: err,
+      });
     });
 }

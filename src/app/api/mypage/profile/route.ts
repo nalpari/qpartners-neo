@@ -292,7 +292,7 @@ export async function PUT(request: NextRequest) {
         // ADMIN/STORE: 뉴스레터만 수정 — 필수값은 QSP 기존 값으로 채움
         const detailResult = await fetchQspUserDetail(
           user.userId,
-          user.userTp as "ADMIN" | "STORE",
+          user.userTp,
           "[PUT /api/mypage/profile]",
         );
         if (!detailResult.ok) {

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ error: "無効なIDです" }, { status: 400 });
     }
 
     const log = await prisma.qpInterfaceLog.findUnique({
@@ -24,14 +24,14 @@ export async function GET(request: NextRequest, { params }: Params) {
     });
 
     if (!log) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "ログが見つかりません" }, { status: 404 });
     }
 
     return NextResponse.json({ data: log });
   } catch (error) {
     console.error("[GET /api/tests/interface-log/:id]", error);
     return NextResponse.json(
-      { error: "Failed to fetch interface log" },
+      { error: "ログの取得に失敗しました" },
       { status: 500 },
     );
   }

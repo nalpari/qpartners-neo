@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     if (!query.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: query.error.issues },
+        { error: "パラメータが正しくありません" },
         { status: 400 },
       );
     }
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/tests/interface-log]", error);
     return NextResponse.json(
-      { error: "Failed to fetch interface logs" },
+      { error: "ログの取得に失敗しました" },
       { status: 500 },
     );
   }

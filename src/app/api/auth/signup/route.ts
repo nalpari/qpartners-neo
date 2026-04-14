@@ -102,8 +102,8 @@ export async function POST(request: NextRequest) {
         userType: "GENERAL",
       },
     );
-  } catch {
-    console.error("[POST /api/auth/signup] QSP API 호출 실패");
+  } catch (error: unknown) {
+    console.error("[POST /api/auth/signup] QSP API 호출 실패:", error);
     return NextResponse.json(
       { error: "외부 서버에 연결할 수 없습니다" },
       { status: 502 },
