@@ -17,7 +17,7 @@ import type {
   FormInitialData,
   MassMailCreateResponse,
 } from "@/components/admin/bulk-mail/bulk-mail-types";
-import { buildFormData, FORM_DATA_CONFIG } from "@/components/admin/bulk-mail/bulk-mail-types";
+import { buildFormData, formatMailDate, FORM_DATA_CONFIG } from "@/components/admin/bulk-mail/bulk-mail-types";
 
 const DEFAULT_SENDER = "Q.PARTNERS事務局 (q.partners@hqj.co.jp)";
 
@@ -49,7 +49,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       openAlert({ type: "alert", message });
       router.push(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      console.error("[BulkMailForm] 메일 등록 실패:", error);
       openAlert({ type: "alert", message: "メールの登録に失敗しました。" });
     },
   });
@@ -107,23 +108,22 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       confirmLabel: "削除",
       cancelLabel: "キャンセル",
       onConfirm: () => {
-        // TODO: DELETE /api/admin/mass-mails/:id API 연동
-        openAlert({ type: "alert", message: "削除しました。" });
-        router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+        // TODO: DELETE /api/admin/mass-mails/:id API 연동 (백엔드 요청 예정)
+        openAlert({ type: "alert", message: "この機能は現在準備中です。" });
       },
     });
   };
 
   // Plan SC: コピーして作成 → sessionStorage에 저장 → 등록 화면 이동
   const handleCopy = () => {
-    const copyData = {
-      senderName,
-      targets,
-      optOut,
-      subject,
-      body,
-    };
-    sessionStorage.setItem("mass-mail-copy", JSON.stringify(copyData));
+    const copyData = { senderName, targets, optOut, subject, body };
+    try {
+      sessionStorage.setItem("mass-mail-copy", JSON.stringify(copyData));
+    } catch (error: unknown) {
+      console.warn("[BulkMailForm] sessionStorage 저장 실패:", error);
+      openAlert({ type: "alert", message: "コピーデータの保存に失敗しました。" });
+      return;
+    }
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
@@ -140,7 +140,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           senderName={senderName}
           authorName={initialData?.createdBy ?? ""}
           authorId={initialData?.createdBy ?? ""}
-          sentAt={showSentAt && initialData?.createdAt ? formatDate(initialData.createdAt) : ""}
+          sentAt={showSentAt && initialData?.sentAt ? formatMailDate(initialData.sentAt) : (showSentAt && initialData?.createdAt ? formatMailDate(initialData.createdAt) : "")}
         />
       </section>
 
@@ -222,15 +222,4 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       </div>
     </div>
   );
-}
-
-/** ISO 날짜 → YYYY.MM.DD HH:mm 포맷 */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}.${m}.${day} ${h}:${min}`;
 }

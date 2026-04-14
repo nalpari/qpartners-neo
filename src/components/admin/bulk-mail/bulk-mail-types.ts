@@ -131,6 +131,19 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
   };
 }
 
+/** ISO 날짜 → YYYY.MM.DD HH:mm 포맷 */
+export function formatMailDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}.${m}.${day} ${h}:${min}`;
+}
+
 /** FormData 구성 (등록 API 전송용) */
 export function buildFormData(params: {
   senderName: string;

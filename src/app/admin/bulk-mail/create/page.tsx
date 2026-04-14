@@ -14,9 +14,20 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
 
   sessionStorage.removeItem("mass-mail-copy");
   try {
-    const parsed = JSON.parse(stored) as Partial<FormInitialData>;
-    return { mode: "copy", initialData: { ...parsed, attachments: [] } };
-  } catch {
+    const parsed: unknown = JSON.parse(stored);
+    if (typeof parsed !== "object" || parsed === null) return { mode: "create" };
+    const data = parsed as Record<string, unknown>;
+    const initialData: Partial<FormInitialData> = {
+      senderName: typeof data.senderName === "string" ? data.senderName : undefined,
+      targets: Array.isArray(data.targets) ? data.targets.filter((t): t is string => typeof t === "string") : undefined,
+      optOut: typeof data.optOut === "boolean" ? data.optOut : undefined,
+      subject: typeof data.subject === "string" ? data.subject : undefined,
+      body: typeof data.body === "string" ? data.body : undefined,
+      attachments: [],
+    };
+    return { mode: "copy", initialData };
+  } catch (error: unknown) {
+    console.warn("[BulkMailCreatePage] mass-mail-copy 데이터 파싱 실패:", error);
     return { mode: "create" };
   }
 }

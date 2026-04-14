@@ -10,7 +10,7 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams } from "./bulk-mail-types";
-import { STATUS_LABEL_MAP } from "./bulk-mail-types";
+import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 
 const PER_PAGE_OPTIONS = [
   { value: "20", label: "20" },
@@ -41,18 +41,6 @@ function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
       {data.subject}
     </button>
   );
-}
-
-/** Design Ref: §4 — ISO 날짜 → YYYY.MM.DD HH:mm 포맷 */
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}.${m}.${day} ${h}:${min}`;
 }
 
 interface BulkMailTableProps {
@@ -107,7 +95,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         flex: 1,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
-        valueFormatter: (params) => formatDate(params.value),
+        valueFormatter: (params) => formatMailDate(params.value),
       },
       {
         headerName: "配信状態",
