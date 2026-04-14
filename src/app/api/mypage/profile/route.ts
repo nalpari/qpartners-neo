@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userDetail",
           callerRoute: "[GET /api/mypage/profile]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: user.userTp,
         },
       );
@@ -268,7 +268,7 @@ export async function PUT(request: NextRequest) {
         // GENERAL: 프론트에서 전체 필드를 받아서 전송
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           email: user.email,
           userTp: user.userTp,
           user1stNm: d.mei,
@@ -304,7 +304,7 @@ export async function PUT(request: NextRequest) {
         const current = detailResult.detail;
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           loginId: user.userId,
           userTp: user.userTp,
           user1stNm: current.user1stNm ?? "",
@@ -338,7 +338,7 @@ export async function PUT(request: NextRequest) {
             direction: "OUTBOUND",
             apiName: "updateUserDtl",
             callerRoute: "[PUT /api/mypage/profile]",
-            userId: user.userId,
+            userId: maskEmail(user.userId),
             userType: user.userTp,
           },
         );

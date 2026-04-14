@@ -28,6 +28,10 @@ const SENSITIVE_KEYS = new Set([
 
 const EMAIL_KEYS = new Set(["email"]);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function maskEmail(value: string): string {
   const atIdx = value.indexOf("@");
   if (atIdx <= 0) return value;
@@ -52,12 +56,10 @@ function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown>
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
       masked[key] = val.map((item) =>
-        typeof item === "object" && item !== null
-          ? maskObjectFields(item as Record<string, unknown>)
-          : item,
+        isRecord(item) ? maskObjectFields(item) : item,
       );
-    } else if (typeof val === "object" && val !== null) {
-      masked[key] = maskObjectFields(val as Record<string, unknown>);
+    } else if (isRecord(val)) {
+      masked[key] = maskObjectFields(val);
     } else {
       masked[key] = val;
     }
@@ -65,16 +67,19 @@ function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown>
   return masked;
 }
 
+const SENSITIVE_PATTERN = /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword)"\s*:\s*)"[^"]*"/gi;
+
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
   try {
     const parsed: unknown = JSON.parse(body);
-    if (typeof parsed !== "object" || parsed === null) return truncateBody(body);
-    const masked = maskObjectFields(parsed as Record<string, unknown>);
+    if (!isRecord(parsed)) return truncateBody(body);
+    const masked = maskObjectFields(parsed);
     return truncateBody(JSON.stringify(masked));
   } catch (error: unknown) {
-    console.warn("[InterfaceLogger] JSON 파싱 실패 — 원본 반환:", error);
-    return truncateBody(body);
+    console.warn("[InterfaceLogger] JSON 파싱 실패 — regex fallback 마스킹:", error);
+    const fallback = body.replace(SENSITIVE_PATTERN, '$1"***"');
+    return truncateBody(fallback);
   }
 }
 
@@ -95,10 +100,10 @@ function extractResultCode(responseBody: string | null): string | null {
   if (!responseBody) return null;
   try {
     const parsed: unknown = JSON.parse(responseBody);
-    if (typeof parsed === "object" && parsed !== null) {
-      const result = (parsed as Record<string, unknown>).result;
-      if (typeof result === "object" && result !== null) {
-        const code = (result as Record<string, unknown>).resultCode;
+    if (isRecord(parsed)) {
+      const result: unknown = parsed.result;
+      if (isRecord(result)) {
+        const code: unknown = result.resultCode;
         if (typeof code === "string") return code;
       }
     }
@@ -184,8 +189,8 @@ export async function fetchWithLog(
 
 type LogData = {
   traceId: string;
-  system: string;
-  direction: string;
+  system: "QSP" | "SEKO";
+  direction: "OUTBOUND" | "INBOUND";
   apiName: string;
   method: string;
   requestUrl: string;

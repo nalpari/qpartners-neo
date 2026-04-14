@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
@@ -240,7 +240,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
           direction: "OUTBOUND",
           apiName: "updateUserDtlMng",
           callerRoute: "[PUT /api/admin/members/:id]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: "ADMIN",
         },
       );

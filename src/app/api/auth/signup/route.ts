@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch (error: unknown) {
-    console.warn("[POST /api/auth/signup] JSON parse 実敗:", error);
+    console.warn("[POST /api/auth/signup] JSON parse 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },

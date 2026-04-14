@@ -8,7 +8,7 @@ import {
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "login",
         callerRoute: "[POST /api/auth/login]",
-        userId: loginId,
+        userId: maskEmail(loginId),
         userType: userTp,
       },
     );
