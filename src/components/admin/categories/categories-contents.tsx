@@ -30,7 +30,7 @@ export function CategoriesContents() {
   const [hasUserToggled, setHasUserToggled] = useState(false);
 
   // ─── Server State: 목록 조회 ───
-  const { data: treeData = [], isLoading } = useQuery<CategoryNode[]>({
+  const { data: treeData = [], isLoading, isError } = useQuery<CategoryNode[]>({
     queryKey: ["categories"],
     queryFn: async () => {
       const res = await api.get<{ data: CategoryNode[] }>("/categories", {
@@ -43,13 +43,18 @@ export function CategoriesContents() {
 
   // ─── API 에러 → UI 메시지 (Design Ref: §6) ───
   function handleApiError(err: unknown) {
+    console.error("[Categories] API 에러:", err);
+
     if (!isAxiosError(err) || !err.response) {
       openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
       return;
     }
 
-    const { status, data } = err.response as { status: number; data: { error?: string } };
-    const msg = data?.error ?? "";
+    const status = err.response.status;
+    const resData: unknown = err.response.data;
+    const msg = typeof resData === "object" && resData !== null && "error" in resData && typeof (resData as Record<string, unknown>).error === "string"
+      ? (resData as Record<string, unknown>).error as string
+      : "";
 
     if (status === 409) {
       openAlert({ type: "alert", message: "入力されたカテゴリコードは既に使用中のカテゴリコードです。" });
@@ -74,8 +79,9 @@ export function CategoriesContents() {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       setSelectedId(res.data.data.id);
       setIsNewMode(false);
-      if (res.data.data.parentId !== null) {
-        setExpandedIds((prev) => ({ ...prev, [res.data.data.parentId!]: true as const }));
+      const parentId = res.data.data.parentId;
+      if (parentId !== null) {
+        setExpandedIds((prev) => ({ ...prev, [parentId]: true as const }));
       }
       openAlert({ type: "alert", message: "保存されました。" });
     },
@@ -97,6 +103,7 @@ export function CategoriesContents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       setSelectedId(null);
+      openAlert({ type: "alert", message: "削除されました。" });
     },
     onError: handleApiError,
   });
@@ -211,6 +218,16 @@ export function CategoriesContents() {
     return (
       <div className="flex items-center justify-center w-[1440px] h-[400px]">
         <Spinner />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center w-[1440px] h-[400px]">
+        <p className="text-[14px] text-[#999] font-['Noto_Sans_JP']">
+          カテゴリの読み込みに失敗しました。ページを更新してください。
+        </p>
       </div>
     );
   }

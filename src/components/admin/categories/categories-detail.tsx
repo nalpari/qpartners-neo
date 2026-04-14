@@ -74,17 +74,21 @@ export function CategoriesDetail({
 
   // Design Ref: §4.3 — parentId 변경 시 자동채번 + 사내전용 연동
   const handleParentChange = (parentId: number | null) => {
-    updateField("parentId", parentId);
-
     if (parentId === null) {
-      updateField("categoryCode", "");
+      setForm((prev) => ({ ...prev, parentId, categoryCode: "" }));
     } else {
       const parent = treeData.find((p) => p.id === parentId);
       if (parent) {
         const autoCode = generateChildCode(parent.categoryCode, parent.children);
-        updateField("categoryCode", autoCode);
         // 2Depth는 부모의 사내전용 값을 따라감
-        updateField("isInternalOnly", parent.isInternalOnly);
+        setForm((prev) => ({
+          ...prev,
+          parentId,
+          categoryCode: autoCode,
+          isInternalOnly: parent.isInternalOnly,
+        }));
+      } else {
+        setForm((prev) => ({ ...prev, parentId }));
       }
     }
   };
