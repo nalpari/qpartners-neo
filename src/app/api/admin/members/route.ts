@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
@@ -56,10 +57,21 @@ export async function GET(request: NextRequest) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.userListMng}?${params.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(15_000),
-      });
+      qspResponse = await fetchWithLog(
+        `${QSP_API.userListMng}?${params.toString()}`,
+        {
+          method: "GET",
+          signal: AbortSignal.timeout(15_000),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userListMng",
+          callerRoute: "[GET /api/admin/members]",
+          userId: user.userId,
+          userType: "ADMIN",
+        },
+      );
     } catch (error: unknown) {
       console.error("[GET /api/admin/members] QSP 회원 목록 API 호출 실패:", error);
       return NextResponse.json(

@@ -9,6 +9,7 @@ import { hashResetToken } from "@/lib/password-reset-token";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole, type AuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
@@ -146,9 +147,17 @@ export async function POST(request: NextRequest) {
     detailParams.set("loginId", resetToken.loginId);
   }
   try {
-    const detailRes = await fetch(
+    const detailRes = await fetchWithLog(
       `${QSP_API.userDetail}?${detailParams.toString()}`,
       { method: "GET", signal: AbortSignal.timeout(10_000) },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "userDetail",
+        callerRoute: "[POST /api/auth/password-reset/confirm]",
+        userId: resetToken.userId,
+        userType: resetToken.userType,
+      },
     );
     if (detailRes.ok) {
       let detailBody: unknown;
@@ -208,19 +217,30 @@ export async function POST(request: NextRequest) {
   // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_API.userPwdChg, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(10_000),
-      body: JSON.stringify({
-        accsSiteCd: "QPARTNERS",
-        userTp: resetToken.userType,
-        loginId,
-        chgType: "I",
-        email: resetToken.userId,
-        chgPwd: newPassword,
-      }),
-    });
+    qspResponse = await fetchWithLog(
+      QSP_API.userPwdChg,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({
+          accsSiteCd: "QPARTNERS",
+          userTp: resetToken.userType,
+          loginId,
+          chgType: "I",
+          email: resetToken.userId,
+          chgPwd: newPassword,
+        }),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "userPwdChg",
+        callerRoute: "[POST /api/auth/password-reset/confirm]",
+        userId: loginId,
+        userType: resetToken.userType,
+      },
+    );
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] QSP API 호출 실패:", error);
     // QSP 네트워크 에러 — 비밀번호 변경 미도달 확실 → 토큰 롤백

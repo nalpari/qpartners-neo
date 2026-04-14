@@ -7,6 +7,7 @@ import { verifyToken, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { timingSafeEqual } from "crypto";
 
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import { hashOtp } from "@/lib/auth-utils";
 
 const MAX_VERIFY_ATTEMPTS = 5;
@@ -150,16 +151,27 @@ export async function POST(request: NextRequest) {
   }
 
   // 7. QSP 2차인증 일시 갱신 (비동기 — 실패해도 사용자 흐름 차단하지 않음)
-  fetch(QSP_API.updateSecAuthDt, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(10_000),
-    body: JSON.stringify({
-      userTp,
-      loginId: userId,
-      accsSiteCd: "QPARTNERS",
-    }),
-  })
+  fetchWithLog(
+    QSP_API.updateSecAuthDt,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify({
+        userTp,
+        loginId: userId,
+        accsSiteCd: "QPARTNERS",
+      }),
+    },
+    {
+      system: "QSP",
+      direction: "OUTBOUND",
+      apiName: "updateSecAuthDt",
+      callerRoute: "[POST /api/auth/two-factor/verify]",
+      userId,
+      userType: userTp,
+    },
+  )
     .then((res) => {
       if (!res.ok) {
         console.error(
