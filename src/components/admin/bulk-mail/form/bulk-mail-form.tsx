@@ -1,6 +1,6 @@
 "use client";
 
-// Design Ref: §3 — 등록 API 연동 (4모드: create/detail/edit/copy)
+// Design Ref: §3 — 메일 폼 컴포넌트 (4모드: create/detail/edit/copy)
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -95,7 +95,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     });
   };
 
-  // Plan SC: 下書き保存 → status: draft → 상세로 이동
+  // Plan SC: 下書き保存 → status: draft → 상세로 이동 (임시저장은 빈 필드 허용 — 의도적 미검증)
   const handleDraft = () => {
     const fd = buildFormData({
       senderName, targets, optOut, subject, body,

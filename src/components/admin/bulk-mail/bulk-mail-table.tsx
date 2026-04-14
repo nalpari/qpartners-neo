@@ -1,6 +1,6 @@
 "use client";
 
-// Design Ref: §3.4 — useQuery + AG Grid + 서버 사이드 페이지네이션
+// Design Ref: §3.4 — useQuery + AG Grid + API 페이지네이션
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,7 +9,7 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
-import type { MassMailListItem, MassMailListResponse, MassMailSearchParams } from "./bulk-mail-types";
+import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 
 const PER_PAGE_OPTIONS = [
@@ -103,7 +103,10 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         flex: 0.8,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
-        valueFormatter: (params) => STATUS_LABEL_MAP[params.value] ?? params.value,
+        valueFormatter: (params) => {
+          const status = params.value as string;
+          return (status in STATUS_LABEL_MAP ? STATUS_LABEL_MAP[status as MassMailStatus] : status) ?? status;
+        },
       },
       {
         headerName: "配信対象",

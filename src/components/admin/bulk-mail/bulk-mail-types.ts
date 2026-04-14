@@ -1,9 +1,12 @@
 // Design Ref: §2 — API 응답 타입 + 검색 파라미터 + 상태 라벨
 
+/** 메일 상태 */
+export type MassMailStatus = "draft" | "pending" | "sent";
+
 /** GET /api/admin/mass-mails 응답의 각 목록 항목 */
 export interface MassMailListItem {
   id: number;
-  status: "draft" | "pending" | "sent";
+  status: MassMailStatus;
   targets: Record<string, boolean>;
   targetsLabel: string;
   subject: string;
@@ -31,7 +34,7 @@ export interface MassMailSearchParams {
 }
 
 /** API status → UI 표시 매핑 */
-export const STATUS_LABEL_MAP: Record<string, string> = {
+export const STATUS_LABEL_MAP: Record<MassMailStatus, string> = {
   draft: "下書き",
   pending: "配信待ち",
   sent: "配信完了",
@@ -55,7 +58,7 @@ export interface MassMailDetail {
   optOut: boolean;
   subject: string;
   body: string;
-  status: "draft" | "pending" | "sent";
+  status: MassMailStatus;
   sentAt: string | null;
   attachments: MassMailAttachment[];
   createdBy: string;
@@ -117,7 +120,11 @@ export const API_KEY_TO_TARGET: Record<string, string> = {
 export function toFormInitialData(detail: MassMailDetail): FormInitialData {
   const targets = Object.entries(detail.targets)
     .filter(([, v]) => v)
-    .map(([k]) => API_KEY_TO_TARGET[k])
+    .map(([k]) => {
+      const mapped = API_KEY_TO_TARGET[k];
+      if (!mapped) console.warn("[toFormInitialData] 알 수 없는 target key:", k);
+      return mapped;
+    })
     .filter(Boolean);
 
   return {
