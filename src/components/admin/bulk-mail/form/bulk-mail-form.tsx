@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
-import { BulkMailFormRecipients } from "./bulk-mail-form-recipients";
 import { BulkMailFormTargets } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
 import { BulkMailFormAttachment } from "./bulk-mail-form-attachment";
-import type { BulkMailFormData, RecipientItem, AttachmentFile } from "./bulk-mail-form-dummy-data";
+import type { BulkMailFormData, AttachmentFile } from "./bulk-mail-form-dummy-data";
 
 interface BulkMailFormProps {
   mode: "create" | "detail";
@@ -21,8 +20,6 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const { openAlert } = useAlertStore();
   const isDetail = mode === "detail";
 
-  const [ccRecipients, setCcRecipients] = useState<RecipientItem[]>(initialData.ccRecipients);
-  const [bccRecipients, setBccRecipients] = useState<RecipientItem[]>(initialData.bccRecipients);
   const [targets, setTargets] = useState<string[]>(initialData.targets);
   const [title, setTitle] = useState(initialData.title);
   const [content, setContent] = useState(initialData.content);
@@ -70,17 +67,6 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           authorName={initialData.authorName}
           authorId={initialData.authorId}
           sentAt={initialData.sentAt}
-        />
-      </section>
-
-      {/* CC/BCC 수신자 카드 */}
-      <section className={`${cardClass} flex flex-col gap-4`}>
-        <BulkMailFormRecipients
-          ccRecipients={ccRecipients}
-          bccRecipients={bccRecipients}
-          onCcChange={setCcRecipients}
-          onBccChange={setBccRecipients}
-          disabled={isDetail}
         />
       </section>
 
