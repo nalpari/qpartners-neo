@@ -2259,6 +2259,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         message: { type: "string" },
+                        warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
                       },
                     },
                   },
@@ -2269,7 +2270,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("검증 실패 또는 권한 변경 불가"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "404": errorResponse("회원 없음"),
+          "409": errorResponse("QSP 상태 미확인 — status 명시 필요"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },

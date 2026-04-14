@@ -220,6 +220,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
       result.data.userRole !== undefined ||
       result.data.twoFactorEnabled !== undefined;
     if (modifiesSelfCritical) {
+      if (!preDetail) {
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId 직접 비교 fallback (MF-4 보호 약화):", { rawId, adminUserId: user.userId });
+      }
       const isSelf = preDetail
         ? isSelfTarget(user.userId, preDetail)
         : user.userId.trim().toLowerCase() === rawId.trim().toLowerCase();
@@ -248,10 +251,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 그 전까지 본 핸들러는 업데이트 직후 QSP 를 재조회하여 사후 검증을 수행하고,
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
+    // preDetail이 없는 경우(삭제/탈퇴) status를 명시하지 않으면 기존 상태를 알 수 없어 안전하지 않음
+    if (!preDetail && result.data.status === undefined) {
+      return NextResponse.json(
+        { error: "会員の現在状態を確認できないため、ステータスを明示してください" },
+        { status: 409 },
+      );
+    }
+
     // 5. QSP 회원정보 수정 API 호출
     // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
-    // preDetail이 없는 경우(삭제/탈퇴 회원) → 요청 값만 사용 + 기본값 fallback
+    // preDetail이 없는 경우(삭제/탈퇴 회원) → status 필수 지정됨 (위에서 검증)
     const updatePayload: Record<string, unknown> = {
       loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
@@ -348,6 +359,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
     //      사전 검증 이후 userTp 가 변하지 않았는지 확인한다. 롤백은 불가하지만
     //      CRITICAL 감사 로그로 탐지 가능하게 한다.
+    let warning: string | undefined;
     if (result.data.userRole !== undefined) {
       const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
       if (!postDetailResult.ok) {
@@ -355,18 +367,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
           "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
           { rawId, byAdmin: user.userId },
         );
+        warning = "更新は完了しましたが、事後検証ができませんでした";
       } else if (postDetailResult.detail.userTp !== "GENERAL") {
         console.error(
           "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
           { rawId, postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
         );
+        warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
       }
     }
 
     console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료");
 
     return NextResponse.json({
-      data: { message: "会員情報を更新しました" },
+      data: { message: "会員情報を更新しました", ...(warning !== undefined && { warning }) },
     });
   } catch (error: unknown) {
     console.error("[PUT /api/admin/members/:id] 회원 정보 수정 실패:", error);
