@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { qspMemberDetailResponseSchema } from "@/lib/schemas/member";
 import type { UserTp } from "@/lib/schemas/common";
 
@@ -23,6 +24,7 @@ export async function fetchQspUserDetail(
   rawId: string,
   userTp: UserTp,
   logTag: string,
+  userId?: string,
 ): Promise<{ ok: true; detail: QspMemberDetail } | { ok: false; error: QspFetchError }> {
   const qspParams = new URLSearchParams({ accsSiteCd: SITE_DEFAULTS.accsSiteCd, userTp });
   if (userTp === "GENERAL") {
@@ -33,10 +35,21 @@ export async function fetchQspUserDetail(
 
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(`${QSP_API.userDetail}?${qspParams.toString()}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(10_000),
-    });
+    qspResponse = await fetchWithLog(
+      `${QSP_API.userDetail}?${qspParams.toString()}`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "userDetail",
+        callerRoute: logTag,
+        userId: maskEmail(userId ?? rawId),
+        userType: userTp,
+      },
+    );
   } catch (error: unknown) {
     console.error(`${logTag} QSP 회원 조회 실패:`, error);
     return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
 // POST /api/auth/email/check — 이메일 중복 체크 (QSP /user/detail 활용)
@@ -49,10 +50,21 @@ export async function POST(request: NextRequest) {
 
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(10_000),
-    });
+    qspResponse = await fetchWithLog(
+      `${QSP_API.userDetail}?${params.toString()}`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "userDetail",
+        callerRoute: "[POST /api/auth/email/check]",
+        userId: maskEmail(email),
+        userType: "GENERAL",
+      },
+    );
   } catch (error) {
     console.error("[POST /api/auth/email/check] QSP API 호출 실패:", error);
     return NextResponse.json(

@@ -2449,6 +2449,81 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+
+    // ─── Interface Log ───
+    "/admin/interface-logs": {
+      get: {
+        tags: ["InterfaceLog"],
+        summary: "인터페이스 로그 목록 조회",
+        description: "관리자 전용 — QSP/시공점 등 외부 시스템 API 호출 이력 조회. requestBody/responseBody는 목록에서 제외.",
+        parameters: [
+          { name: "system", in: "query", schema: { type: "string" }, description: "시스템 필터 (QSP, SEKO 등)" },
+          { name: "apiName", in: "query", schema: { type: "string" }, description: "API명 필터 (login, userDetail 등)" },
+          { name: "resultCode", in: "query", schema: { type: "string" }, description: "결과코드 필터 (S, F)" },
+          { name: "from", in: "query", schema: { type: "string", format: "date-time" }, description: "시작일시" },
+          { name: "to", in: "query", schema: { type: "string", format: "date-time" }, description: "종료일시" },
+          { name: "page", in: "query", schema: { type: "integer", default: 1 }, description: "페이지 번호" },
+          { name: "limit", in: "query", schema: { type: "integer", default: 20, maximum: 100 }, description: "페이지 크기" },
+        ],
+        responses: {
+          "200": {
+            description: "인터페이스 로그 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/InterfaceLogSummary" },
+                    },
+                    pagination: {
+                      type: "object",
+                      properties: {
+                        page: { type: "integer" },
+                        limit: { type: "integer" },
+                        total: { type: "integer" },
+                        totalPages: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+        },
+      },
+    },
+    "/admin/interface-logs/{id}": {
+      get: {
+        tags: ["InterfaceLog"],
+        summary: "인터페이스 로그 상세 조회",
+        description: "관리자 전용 — requestBody/responseBody 포함 전체 필드 조회",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "로그 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "인터페이스 로그 상세",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/InterfaceLogDetail" },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("로그 없음"),
+        },
+      },
+    },
   },
 
   components: {
@@ -3309,6 +3384,49 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           createdBy: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      InterfaceLogSummary: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          traceId: { type: "string" },
+          system: { type: "string" },
+          direction: { type: "string" },
+          apiName: { type: "string" },
+          method: { type: "string" },
+          requestUrl: { type: "string" },
+          responseStatus: { type: "integer" },
+          resultCode: { type: "string", nullable: true },
+          durationMs: { type: "integer" },
+          callerRoute: { type: "string" },
+          userId: { type: "string", nullable: true },
+          userType: { type: "string", nullable: true },
+          errorMessage: { type: "string", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      InterfaceLogDetail: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          traceId: { type: "string" },
+          system: { type: "string" },
+          direction: { type: "string" },
+          apiName: { type: "string" },
+          method: { type: "string" },
+          requestUrl: { type: "string" },
+          requestBody: { type: "string", nullable: true },
+          responseStatus: { type: "integer" },
+          responseBody: { type: "string", nullable: true },
+          resultCode: { type: "string", nullable: true },
+          durationMs: { type: "integer" },
+          callerRoute: { type: "string" },
+          userId: { type: "string", nullable: true },
+          userType: { type: "string", nullable: true },
+          errorMessage: { type: "string", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string" },
         },
       },
       MassMailCreateRequest: {

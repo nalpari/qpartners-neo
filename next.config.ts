@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     : [],
   reactCompiler: true,
   output: "standalone",
+  serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
   experimental: {
     viewTransition: true,
   },

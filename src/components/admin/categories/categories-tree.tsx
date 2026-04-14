@@ -4,10 +4,10 @@
 
 import Image from "next/image";
 import { Checkbox } from "@/components/common";
-import type { CategoryTree } from "./categories-dummy-data";
+import type { CategoryNode } from "./categories-types";
 
 interface CategoriesTreeProps {
-  treeData: CategoryTree[];
+  treeData: CategoryNode[];
   selectedId: number | null;
   expandedIds: Record<number, true>;
   totalCount: number;

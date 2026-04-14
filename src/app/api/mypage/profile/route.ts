@@ -1,8 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
-import { QSP_API } from "@/lib/config";
+import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
@@ -38,10 +40,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 시공점은 별도 API (seko-info)
+    // 시공점은 別途 API を使用
     if (user.userTp === "SEKO") {
       return NextResponse.json(
-        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
+        { error: "施工店会員はこのAPIをご利用いただけません" },
         { status: 400 },
       );
     }
@@ -72,10 +74,21 @@ export async function GET(request: NextRequest) {
 
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(`${QSP_API.userDetail}?${params.toString()}`, {
-        method: "GET",
-        signal: AbortSignal.timeout(10_000),
-      });
+      qspResponse = await fetchWithLog(
+        `${QSP_API.userDetail}?${params.toString()}`,
+        {
+          method: "GET",
+          signal: AbortSignal.timeout(10_000),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userDetail",
+          callerRoute: "[GET /api/mypage/profile]",
+          userId: maskEmail(user.userId),
+          userType: user.userTp,
+        },
+      );
     } catch (error) {
       console.error("[GET /api/mypage/profile] QSP API 호출 실패:", error);
       return NextResponse.json(
@@ -192,10 +205,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 시공점은 별도 API (seko-info)
+    // 시공점은 別途 API を使用
     if (user.userTp === "SEKO") {
       return NextResponse.json(
-        { error: "施工店会員は /api/mypage/seko-info をご利用ください" },
+        { error: "施工店会員はこのAPIをご利用いただけません" },
         { status: 400 },
       );
     }
@@ -232,33 +245,51 @@ export async function PUT(request: NextRequest) {
     }
     const result = profileUpdateSchema.safeParse({ ...body, userType: user.userTp });
     if (!result.success) {
+      console.warn("[PUT /api/mypage/profile] 입력 검증 실패:", {
+        ...buildUserLogContext(user),
+        issues: result.error.issues,
+      });
       return NextResponse.json(
-        { error: "入力内容に不備があります", issues: result.error.issues },
+        { error: "入力内容に不備があります" },
         { status: 400 },
       );
     }
 
     const d = result.data;
 
+    // ADMIN/STORE: 뉴스레터만 수정 가능 — 불허 필드가 전송되어도 서버에서 strip
+    // (qspPayload 구성에서도 이미 분기하지만, defense-in-depth)
+    // 불허 필드가 포함된 요청은 warn 로그 기록 후 strip
+    if (user.userTp === "ADMIN" || user.userTp === "STORE") {
+      const readOnlyFields = ["sei", "mei", "seiKana", "meiKana", "compNm", "compNmKana",
+        "zipcode", "address1", "address2", "telNo", "fax", "department", "jobTitle", "corporateNo"] as const;
+      const submitted = readOnlyFields.filter((k) => d[k] && d[k] !== "");
+      if (submitted.length > 0) {
+        console.warn("[PUT /api/mypage/profile] ADMIN/STORE 불허 필드 strip:", {
+          ...buildUserLogContext(user),
+          strippedFields: submitted,
+        });
+      }
+    }
+
     // 마이페이지 수정 정책:
     //   GENERAL — 전체 수정 가능
     //   ADMIN/STORE/SEKO — 뉴스레터만 수정 가능 (패스워드는 별도 API)
     // (SEKO는 위에서 early return 처리됨)
+    //
+    // updateUserDtl 필수값(사양서): userTp, userId, accsSiteCd,
+    //   user1stNm, user2ndNm, user1stNmKana, user2ndNmKana,
+    //   compNm, compNmKana, compPostCd, compAddr, compAddr2, compTelNo, newsRcptYn
     {
-      const basePayload = {
-        accsSiteCd: "QPARTNERS",
-        userId: user.userId,
-        email: user.email,
-        userTp: user.userTp,
-        newsRcptYn: d.newsRcptYn,
-        updBy: user.userId,
-      };
+      let qspPayload: Record<string, unknown>;
 
-      // GENERAL: 이름·회사 등 전체 필드 수정 가능
-      // ADMIN/STORE: 뉴스레터만 수정 + loginId 명시 전달 (userId ≠ email 일 수 있음)
-      const qspPayload = user.userTp === "GENERAL"
-        ? {
-          ...basePayload,
+      if (user.userTp === "GENERAL") {
+        // GENERAL: 프론트에서 전체 필드를 받아서 전송
+        qspPayload = {
+          accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+          userId: user.userId,
+          email: user.email,
+          userTp: user.userTp,
           user1stNm: d.mei,
           user2ndNm: d.sei,
           user1stNmKana: d.meiKana,
@@ -272,21 +303,64 @@ export async function PUT(request: NextRequest) {
           compFaxNo: d.fax,
           deptNm: d.department,
           pstnNm: d.jobTitle,
+          newsRcptYn: d.newsRcptYn,
           bizNo: d.corporateNo,
-        }
-        : {
-          ...basePayload,
-          loginId: user.userId,
+          updBy: user.userId,
         };
+      } else {
+        // ADMIN/STORE: 뉴스레터만 수정 — 필수값은 QSP 기존 값으로 채움
+        const detailResult = await fetchQspUserDetail(
+          user.userId,
+          user.userTp,
+          "[PUT /api/mypage/profile]",
+        );
+        if (!detailResult.ok) {
+          return NextResponse.json(
+            { error: detailResult.error.error },
+            { status: detailResult.error.status },
+          );
+        }
+        const current = detailResult.detail;
+        qspPayload = {
+          accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+          userId: user.userId,
+          loginId: user.userId,
+          userTp: user.userTp,
+          user1stNm: current.user1stNm ?? "",
+          user2ndNm: current.user2ndNm ?? "",
+          user1stNmKana: current.user1stNmKana ?? "",
+          user2ndNmKana: current.user2ndNmKana ?? "",
+          compNm: current.compNm ?? "",
+          compNmKana: current.compNmKana ?? "",
+          compPostCd: current.compPostCd ?? "",
+          compAddr: current.compAddr ?? "",
+          compAddr2: current.compAddr2 ?? "",
+          compTelNo: current.compTelNo ?? "",
+          compFaxNo: current.compFaxNo ?? "",
+          newsRcptYn: d.newsRcptYn,
+          updBy: user.userId,
+        };
+      }
 
       let qspResponse: Response;
       try {
-        qspResponse = await fetch(QSP_API.updateUserDtl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(10_000),
-          body: JSON.stringify(qspPayload),
-        });
+        qspResponse = await fetchWithLog(
+          QSP_API.updateUserDtl,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(10_000),
+            body: JSON.stringify(qspPayload),
+          },
+          {
+            system: "QSP",
+            direction: "OUTBOUND",
+            apiName: "updateUserDtl",
+            callerRoute: "[PUT /api/mypage/profile]",
+            userId: maskEmail(user.userId),
+            userType: user.userTp,
+          },
+        );
       } catch (error) {
         console.error("[PUT /api/mypage/profile] QSP API 호출 실패:", error);
         return NextResponse.json(
@@ -322,36 +396,20 @@ export async function PUT(request: NextRequest) {
           { status: 502 },
         );
       }
-      // QSP updateUserDtl: resultCode "S" 또는 message "success" 를 성공으로 판정
-      // (updateUserDtlMng → resultCode "0000" + message "success" 패턴과 동일 완화 적용)
+      // QSP updateUserDtl: resultCode 기준으로만 성공 판정
       const resultCode = parsed.data.result.resultCode;
-      const message = parsed.data.result.message;
-      const isSuccess = resultCode === "S" || message.trim().toLowerCase() === "success";
-      if (!isSuccess) {
-        // QSP message 에 내부 SQL 에러가 포함될 수 있어 로그 길이를 제한한다.
-        // 절단 여부를 함께 기록하여 운영자가 전체 메시지 확보 필요성을 판단할 수 있게 한다.
-        const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
-        const truncated = message.length > QSP_LOG_MSG_MAX_LEN;
-        console.error("[PUT /api/mypage/profile] QSP 비즈니스 에러:", {
+      const resultMsg = parsed.data.result.resultMsg;
+      if (resultCode !== "S") {
+        const truncatedMsg = (resultMsg ?? "").slice(0, QSP_LOG_MSG_MAX_LEN);
+        console.error("[PUT /api/mypage/profile] QSP 수정 실패:", {
           ...buildUserLogContext(user),
           resultCode,
-          truncatedMessage,
-          truncated,
+          resultMsg: truncatedMsg,
         });
         return NextResponse.json(
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
         );
-      }
-      // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
-      if (resultCode !== "S") {
-        const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
-        console.warn("[PUT /api/mypage/profile] QSP 비표준 성공 코드 — message fallback:", {
-          ...buildUserLogContext(user),
-          resultCode,
-          message: truncatedMessage,
-          truncated: message.length > QSP_LOG_MSG_MAX_LEN,
-        });
       }
     }
 

@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
@@ -77,8 +77,12 @@ export function ContentsContents() {
     [router],
   );
 
-  const queryClient = useQueryClient();
-  const user = queryClient.getQueryData<LoginUser>(["auth", "login-user-info"]);
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
   const isInternal = user?.userTp === "ADMIN";
 
   // 카테고리 트리 조회

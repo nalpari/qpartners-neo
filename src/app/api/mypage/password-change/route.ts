@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { getUserFromRequest } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { getUserFromRequest } from "@/lib/jwt";
 import { changePasswordSchema } from "@/lib/schemas/mypage";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -57,19 +58,30 @@ export async function POST(request: NextRequest) {
     // QSP 사양서 기준 새 비밀번호 필드명은 chgPwd (newPwd 아님)
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.userPwdChg, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify({
-          accsSiteCd: "QPARTNERS",
-          loginId: user.userId,
-          userTp: user.userTp,
-          pwd: currentPwd,
-          chgPwd: newPwd,
-          chgType: "C",
-        }),
-      });
+      qspResponse = await fetchWithLog(
+        QSP_API.userPwdChg,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({
+            accsSiteCd: "QPARTNERS",
+            loginId: user.userId,
+            userTp: user.userTp,
+            pwd: currentPwd,
+            chgPwd: newPwd,
+            chgType: "C",
+          }),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "userPwdChg",
+          callerRoute: "[POST /api/mypage/password-change]",
+          userId: maskEmail(user.userId),
+          userType: user.userTp,
+        },
+      );
     } catch (error) {
       console.error("[POST /api/mypage/password-change] QSP API 호출 실패:", error);
       return NextResponse.json(
