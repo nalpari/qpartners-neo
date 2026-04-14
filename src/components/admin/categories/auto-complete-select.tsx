@@ -80,7 +80,7 @@ export function AutoCompleteSelect({
   const handleClear = () => {
     onChange("");
     setIsSearching(false);
-    inputRef.current?.focus();
+    setIsOpen(false);
   };
 
   return (

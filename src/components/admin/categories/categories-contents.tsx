@@ -27,6 +27,7 @@ export function CategoriesContents() {
   const [expandedIds, setExpandedIds] = useState<Record<number, true>>({});
   const [isNewMode, setIsNewMode] = useState(false);
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
+  const [hasUserToggled, setHasUserToggled] = useState(false);
 
   // ─── Server State: 목록 조회 ───
   const { data: treeData = [], isLoading } = useQuery<CategoryNode[]>({
@@ -130,6 +131,7 @@ export function CategoriesContents() {
   };
 
   const handleToggle = (id: number) => {
+    setHasUserToggled(true);
     setExpandedIds((prev) => {
       const next = { ...prev };
       if (next[id]) {
@@ -197,15 +199,13 @@ export function CategoriesContents() {
   // ─── 초기 로드 시 전체 1Depth 펼침 ───
   // treeData 로드 완료 시 expandedIds에 없는 1Depth를 추가
   const expandedWithDefaults = useMemo(() => {
-    if (treeData.length === 0) return expandedIds;
-    const hasAnyExpanded = Object.keys(expandedIds).length > 0;
-    if (hasAnyExpanded) return expandedIds;
+    if (treeData.length === 0 || hasUserToggled) return expandedIds;
     const map: Record<number, true> = {};
     for (const c of treeData) {
       map[c.id] = true;
     }
     return map;
-  }, [treeData, expandedIds]);
+  }, [treeData, expandedIds, hasUserToggled]);
 
   if (isLoading) {
     return (
