@@ -231,7 +231,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         QSP_API.updateUserDtlMng,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json; charset=utf-8" },
           signal: AbortSignal.timeout(10_000),
           body: JSON.stringify(updatePayload),
         },
