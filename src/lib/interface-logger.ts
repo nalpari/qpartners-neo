@@ -8,7 +8,7 @@
 import { prisma } from "@/lib/prisma";
 
 export type InterfaceLogParams = {
-  system: string;
+  system: "QSP" | "SEKO";
   direction: "OUTBOUND" | "INBOUND";
   apiName: string;
   callerRoute: string;
@@ -28,31 +28,53 @@ const SENSITIVE_KEYS = new Set([
 
 const EMAIL_KEYS = new Set(["email"]);
 
-function maskEmail(value: string): string {
+export function maskEmail(value: string): string {
   const atIdx = value.indexOf("@");
   if (atIdx <= 0) return value;
   return value[0] + "***" + value.slice(atIdx);
 }
 
+const MAX_BODY_LENGTH = 8_000;
+
+function truncateBody(text: string | null): string | null {
+  if (!text) return null;
+  if (text.length <= MAX_BODY_LENGTH) return text;
+  return text.slice(0, MAX_BODY_LENGTH) + "...[truncated]";
+}
+
+function maskObjectFields(obj: Record<string, unknown>): Record<string, unknown> {
+  const masked: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (SENSITIVE_KEYS.has(key)) {
+      masked[key] = "***";
+    } else if (EMAIL_KEYS.has(key) && typeof val === "string") {
+      masked[key] = maskEmail(val);
+    } else if (Array.isArray(val)) {
+      masked[key] = val.map((item) =>
+        typeof item === "object" && item !== null
+          ? maskObjectFields(item as Record<string, unknown>)
+          : item,
+      );
+    } else if (typeof val === "object" && val !== null) {
+      masked[key] = maskObjectFields(val as Record<string, unknown>);
+    } else {
+      masked[key] = val;
+    }
+  }
+  return masked;
+}
+
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
   try {
-    const parsed = JSON.parse(body);
-    if (typeof parsed !== "object" || parsed === null) return body;
-    const masked = { ...parsed };
-    for (const key of Object.keys(masked)) {
-      if (SENSITIVE_KEYS.has(key)) {
-        masked[key] = "***";
-      } else if (EMAIL_KEYS.has(key)) {
-        const val: unknown = masked[key];
-        if (typeof val === "string") {
-          masked[key] = maskEmail(val);
-        }
-      }
-    }
-    return JSON.stringify(masked);
-  } catch {
-    return body;
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed !== "object" || parsed === null) return truncateBody(body);
+    const masked = maskObjectFields(parsed as Record<string, unknown>);
+    return truncateBody(JSON.stringify(masked));
+  } catch (error: unknown) {
+    console.warn("[InterfaceLogger] JSON 파싱 실패 — 원본 반환:", error);
+    return truncateBody(body);
   }
 }
 
@@ -72,9 +94,17 @@ function maskEmailInUrl(url: string): string {
 function extractResultCode(responseBody: string | null): string | null {
   if (!responseBody) return null;
   try {
-    const parsed = JSON.parse(responseBody);
-    return parsed?.result?.resultCode ?? null;
-  } catch {
+    const parsed: unknown = JSON.parse(responseBody);
+    if (typeof parsed === "object" && parsed !== null) {
+      const result = (parsed as Record<string, unknown>).result;
+      if (typeof result === "object" && result !== null) {
+        const code = (result as Record<string, unknown>).resultCode;
+        if (typeof code === "string") return code;
+      }
+    }
+    return null;
+  } catch (error: unknown) {
+    console.warn("[InterfaceLogger] resultCode 추출 실패:", error);
     return null;
   }
 }
@@ -96,9 +126,21 @@ export async function fetchWithLog(
 
   const requestBody = typeof init.body === "string" ? init.body : null;
 
+  const baseLog = {
+    traceId,
+    system: params.system,
+    direction: params.direction,
+    apiName: params.apiName,
+    method,
+    requestUrl: maskEmailInUrl(url),
+    requestBody: maskSensitiveFields(requestBody),
+    callerRoute: params.callerRoute,
+    userId: params.userId ?? null,
+    userType: params.userType ?? null,
+  };
+
   let response: Response;
   let responseBodyText: string | null = null;
-  let errorMessage: string | null = null;
 
   try {
     response = await fetch(url, init);
@@ -106,31 +148,20 @@ export async function fetchWithLog(
     const cloned = response.clone();
     try {
       responseBodyText = await cloned.text();
-    } catch {
-      // 응답 body 읽기 실패 — 무시
+    } catch (error: unknown) {
+      console.warn("[InterfaceLogger] 응답 body 읽기 실패:", error);
     }
   } catch (error: unknown) {
     const durationMs = Math.round(performance.now() - startTime);
-    errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const rawMsg = error instanceof Error ? error.message : String(error);
 
-    // 네트워크 에러도 로그 기록
     writeLog({
-      traceId,
-      system: params.system,
-      direction: params.direction,
-      apiName: params.apiName,
-      method,
-      requestUrl: maskEmailInUrl(url),
-      requestBody: maskSensitiveFields(requestBody),
+      ...baseLog,
       responseStatus: 0,
       responseBody: null,
       resultCode: "F",
       durationMs,
-      callerRoute: params.callerRoute,
-      userId: params.userId ?? null,
-      userType: params.userType ?? null,
-      errorMessage,
+      errorMessage: rawMsg.slice(0, 490),
     });
 
     throw error;
@@ -140,20 +171,11 @@ export async function fetchWithLog(
   const resultCode = extractResultCode(responseBodyText);
 
   writeLog({
-    traceId,
-    system: params.system,
-    direction: params.direction,
-    apiName: params.apiName,
-    method,
-    requestUrl: maskEmailInUrl(url),
-    requestBody: maskSensitiveFields(requestBody),
+    ...baseLog,
     responseStatus: response.status,
-    responseBody: responseBodyText,
+    responseBody: maskSensitiveFields(responseBodyText),
     resultCode,
     durationMs,
-    callerRoute: params.callerRoute,
-    userId: params.userId ?? null,
-    userType: params.userType ?? null,
     errorMessage: null,
   });
 

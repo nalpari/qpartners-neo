@@ -2451,7 +2451,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
 
     // ─── Interface Log ───
-    "/tests/interface-log": {
+    "/admin/interface-logs": {
       get: {
         tags: ["InterfaceLog"],
         summary: "인터페이스 로그 목록 조회",
@@ -2496,7 +2496,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/tests/interface-log/{id}": {
+    "/admin/interface-logs/{id}": {
       get: {
         tags: ["InterfaceLog"],
         summary: "인터페이스 로그 상세 조회",

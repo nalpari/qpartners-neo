@@ -11,7 +11,7 @@ import {
   SIGNUP_COMPLETE_SUBJECT,
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 
 // POST /api/auth/signup — 일반 회원가입 (QSP newUserReq 프록시 + 승인완료 메일)
 export async function POST(request: NextRequest) {
@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error: unknown) {
+    console.warn("[POST /api/auth/signup] JSON parse 実敗:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -98,14 +99,14 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "newUserReq",
         callerRoute: "[POST /api/auth/signup]",
-        userId: email,
+        userId: maskEmail(email),
         userType: "GENERAL",
       },
     );
   } catch (error: unknown) {
     console.error("[POST /api/auth/signup] QSP API 호출 실패:", error);
     return NextResponse.json(
-      { error: "외부 서버에 연결할 수 없습니다" },
+      { error: "外部サーバーに接続できません" },
       { status: 502 },
     );
   }
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/signup] QSP 비정상 응답:", qspResponse.status);
     return NextResponse.json(
-      { error: "외부 서버 오류가 발생했습니다" },
+      { error: "外部サーバーエラーが発生しました" },
       { status: 502 },
     );
   }
@@ -123,10 +124,10 @@ export async function POST(request: NextRequest) {
   let qspBody: unknown;
   try {
     qspBody = await qspResponse.json();
-  } catch {
-    console.error("[POST /api/auth/signup] QSP 응답 JSON 파싱 실패");
+  } catch (error: unknown) {
+    console.error("[POST /api/auth/signup] QSP 응답 JSON 파싱 실패:", error);
     return NextResponse.json(
-      { error: "외부 서버 응답을 처리할 수 없습니다" },
+      { error: "外部サーバーの応答を処理できません" },
       { status: 502 },
     );
   }
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     console.error("[POST /api/auth/signup] QSP 응답 스키마 불일치");
     return NextResponse.json(
-      { error: "외부 서버 응답 형식이 올바르지 않습니다" },
+      { error: "外部サーバーの応答形式が正しくありません" },
       { status: 502 },
     );
   }
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
     const isDuplicate = msg?.includes("既に") || msg?.includes("すでに") || msg?.includes("already");
     // QSP 에러 메시지를 클라이언트에 직접 노출하지 않음 (내부 정보 유출 방지)
     return NextResponse.json(
-      { error: isDuplicate ? "이미 사용중인 이메일입니다" : "회원가입에 실패했습니다" },
+      { error: isDuplicate ? "すでに使用されているメールアドレスです" : "会員登録に失敗しました" },
       { status: isDuplicate ? 409 : 400 },
     );
   }

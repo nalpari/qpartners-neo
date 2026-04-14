@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
 // POST /api/auth/email/check — 이메일 중복 체크 (QSP /user/detail 활용)
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "userDetail",
         callerRoute: "[POST /api/auth/email/check]",
-        userId: email,
+        userId: maskEmail(email),
         userType: "GENERAL",
       },
     );

@@ -7,7 +7,7 @@ import { idParamSchema } from "@/lib/schemas/category";
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/tests/interface-log/:id — 인터페이스 로그 상세 조회 (관리자 전용)
+// GET /api/admin/interface-logs/:id — 인터페이스 로그 상세 조회 (관리자 전용)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const auth = requireAdmin(request.headers);
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: log });
   } catch (error) {
-    console.error("[GET /api/tests/interface-log/:id]", error);
+    console.error("[GET /api/admin/interface-logs/:id]", error);
     return NextResponse.json(
       { error: "ログの取得に失敗しました" },
       { status: 500 },
