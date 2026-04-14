@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       QSP_API.login,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           loginId,

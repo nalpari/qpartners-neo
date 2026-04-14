@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       QSP_API.newUserReq,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         // M4: 10초 타임아웃
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
