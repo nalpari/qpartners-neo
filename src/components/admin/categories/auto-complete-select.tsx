@@ -32,8 +32,11 @@ export function AutoCompleteSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const listId = "autocomplete-listbox";
 
   // 실제 표시 텍스트: 검색 중이면 searchText, 아니면 선택된 label
   const inputValue = isSearching ? searchText : displayText;
@@ -44,6 +47,7 @@ export function AutoCompleteSelect({
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setIsSearching(false);
+        setActiveIndex(-1);
       }
     }
     document.addEventListener("mousedown", handleMouseDown);
@@ -60,6 +64,7 @@ export function AutoCompleteSelect({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchText(e.target.value);
     setIsSearching(true);
+    setActiveIndex(-1);
     if (!isOpen) setIsOpen(true);
   };
 
@@ -68,6 +73,7 @@ export function AutoCompleteSelect({
       setIsOpen(true);
       setIsSearching(true);
       setSearchText("");
+      setActiveIndex(-1);
     }
   };
 
@@ -75,13 +81,71 @@ export function AutoCompleteSelect({
     onChange(opt.value);
     setIsSearching(false);
     setIsOpen(false);
+    setActiveIndex(-1);
   };
 
   const handleClear = () => {
     onChange("");
     setIsSearching(false);
     setIsOpen(false);
+    setActiveIndex(-1);
   };
+
+  // 키보드 탐색: ArrowDown/ArrowUp/Enter/Escape
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        if (!isOpen) {
+          setIsOpen(true);
+          setIsSearching(true);
+          setSearchText("");
+          setActiveIndex(0);
+        } else {
+          setActiveIndex((prev) =>
+            prev < filteredOptions.length - 1 ? prev + 1 : 0,
+          );
+        }
+        break;
+      }
+      case "ArrowUp": {
+        e.preventDefault();
+        if (isOpen) {
+          setActiveIndex((prev) =>
+            prev > 0 ? prev - 1 : filteredOptions.length - 1,
+          );
+        }
+        break;
+      }
+      case "Enter": {
+        e.preventDefault();
+        if (isOpen && activeIndex >= 0 && activeIndex < filteredOptions.length) {
+          handleSelect(filteredOptions[activeIndex]);
+        }
+        break;
+      }
+      case "Escape": {
+        e.preventDefault();
+        setIsOpen(false);
+        setIsSearching(false);
+        setActiveIndex(-1);
+        break;
+      }
+    }
+  };
+
+  // activeIndex 변경 시 스크롤 보정
+  const activeOptionId = activeIndex >= 0 ? `autocomplete-option-${activeIndex}` : undefined;
+  useEffect(() => {
+    if (activeIndex < 0 || !listRef.current) return;
+    const activeEl = listRef.current.querySelector(`#autocomplete-option-${activeIndex}`);
+    if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
+
+  const showDropdown = isOpen && !disabled;
+  const hasResults = filteredOptions.length > 0;
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -95,9 +159,15 @@ export function AutoCompleteSelect({
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-controls={listId}
+          aria-activedescendant={activeOptionId}
+          aria-autocomplete="list"
           value={inputValue}
           onChange={handleInputChange}
           onFocus={handleFocus}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
           className={`flex-1 font-['Noto_Sans_JP'] text-sm leading-[1.5] outline-none bg-transparent ${
@@ -126,28 +196,42 @@ export function AutoCompleteSelect({
       </div>
 
       {/* 드롭다운 */}
-      {!disabled && (
+      {showDropdown && (
         <div
+          ref={listRef}
+          id={listId}
+          role="listbox"
           className={`absolute top-full left-0 z-10 w-full mt-1 bg-white border border-[#EBEBEB] rounded-[6px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] max-h-[240px] overflow-y-auto transition-all duration-200 origin-top ${
-            isOpen && filteredOptions.length > 0
+            hasResults || isSearching
               ? "opacity-100 scale-y-100 visible"
               : "opacity-0 scale-y-95 invisible"
           }`}
         >
-          {filteredOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => handleSelect(opt)}
-              className={`flex items-center w-full px-4 h-[40px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-left transition-colors duration-100 ${
-                opt.value === value
-                  ? "bg-[#EDF4FB] text-[#1060B4]"
-                  : "text-[#101010] hover:bg-[#F5F5F5]"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {hasResults ? (
+            filteredOptions.map((opt, index) => (
+              <button
+                key={opt.value}
+                id={`autocomplete-option-${index}`}
+                type="button"
+                role="option"
+                aria-selected={opt.value === value}
+                onClick={() => handleSelect(opt)}
+                className={`flex items-center w-full px-4 h-[40px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-left transition-colors duration-100 ${
+                  index === activeIndex
+                    ? "bg-[#EDF4FB] text-[#1060B4]"
+                    : opt.value === value
+                      ? "bg-[#EDF4FB] text-[#1060B4]"
+                      : "text-[#101010] hover:bg-[#F5F5F5]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))
+          ) : (
+            <div className="flex items-center justify-center h-[40px] font-['Noto_Sans_JP'] text-sm text-[#999]">
+              該当するカテゴリがありません
+            </div>
+          )}
         </div>
       )}
     </div>

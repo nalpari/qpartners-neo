@@ -1,26 +1,19 @@
 "use client";
 
-// Design Ref: §4.1 — 메인 컨테이너 (useQuery + useMutation 3개)
+// Design Ref: §4.1 — 메인 컨테이너 (2-Column 레이아웃 + 상태 관리)
 
 import { useState, useMemo } from "react";
-import { isAxiosError } from "axios";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
-import type {
-  CategoryNode,
-  CategoryFormState,
-  CreateCategoryPayload,
-  UpdateCategoryPayload,
-} from "./categories-types";
+import type { CategoryFormState } from "./categories-types";
 import { findCategoryById } from "./categories-types";
+import { useCategoryQuery } from "./use-category-query";
+import { useCategoryMutations } from "./use-category-mutations";
 
 export function CategoriesContents() {
   const { openAlert } = useAlertStore();
-  const queryClient = useQueryClient();
 
   // ─── Local State ───
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -29,86 +22,22 @@ export function CategoriesContents() {
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
   const [hasUserToggled, setHasUserToggled] = useState(false);
 
-  // ─── Server State: 목록 조회 ───
-  const { data: treeData = [], isLoading, isError } = useQuery<CategoryNode[]>({
-    queryKey: ["categories"],
-    queryFn: async () => {
-      const res = await api.get<{ data: CategoryNode[] }>("/categories", {
-        params: { activeOnly: "false" },
-      });
-      return res.data.data;
-    },
-    staleTime: Infinity, // mutation invalidateQueries 시에만 refetch
-  });
+  // ─── Server State ───
+  const { data: treeData = [], isLoading, isError } = useCategoryQuery();
 
-  // ─── API 에러 → UI 메시지 (Design Ref: §6) ───
-  function handleApiError(err: unknown) {
-    console.error("[Categories] API 에러:", err);
-
-    if (!isAxiosError(err) || !err.response) {
-      openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
-      return;
-    }
-
-    const status = err.response.status;
-    const resData: unknown = err.response.data;
-    const msg = typeof resData === "object" && resData !== null && "error" in resData && typeof (resData as Record<string, unknown>).error === "string"
-      ? (resData as Record<string, unknown>).error as string
-      : "";
-
-    if (status === 409) {
-      openAlert({ type: "alert", message: "入力されたカテゴリコードは既に使用中のカテゴリコードです。" });
-    } else if (status === 400 && msg.includes("하위 카테고리")) {
-      openAlert({ type: "alert", message: "下位カテゴリが存在するため削除できません。" });
-    } else if (status === 400 && msg.includes("콘텐츠")) {
-      openAlert({ type: "alert", message: "コンテンツが紐づいているため削除できません。" });
-    } else if (status === 400 && msg.includes("2Depth")) {
-      openAlert({ type: "alert", message: "カテゴリはDepth-2までのみ登録できます。" });
-    } else if (status === 404) {
-      openAlert({ type: "alert", message: "対象が見つかりません。" });
-    } else {
-      openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
-    }
-  }
-
-  // ─── Mutations (Design Ref: §4.1) ───
-  const createMutation = useMutation({
-    mutationFn: (payload: CreateCategoryPayload) =>
-      api.post<{ data: CategoryNode }>("/categories", payload),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      setSelectedId(res.data.data.id);
+  const { createMutation, updateMutation, deleteMutation, isSaving } = useCategoryMutations({
+    onCreateSuccess: (node) => {
+      setSelectedId(node.id);
       setIsNewMode(false);
-      const parentId = res.data.data.parentId;
+      const parentId = node.parentId;
       if (parentId !== null) {
         setExpandedIds((prev) => ({ ...prev, [parentId]: true as const }));
       }
-      openAlert({ type: "alert", message: "保存されました。" });
     },
-    onError: handleApiError,
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: UpdateCategoryPayload }) =>
-      api.put(`/categories/${id}`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      openAlert({ type: "alert", message: "保存されました。" });
-    },
-    onError: handleApiError,
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/categories/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    onDeleteSuccess: () => {
       setSelectedId(null);
-      openAlert({ type: "alert", message: "削除されました。" });
     },
-    onError: handleApiError,
   });
-
-  const isSaving = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   // ─── 파생 데이터 ───
   // Plan SC: SC-07 — 사내전용 필터
@@ -203,8 +132,7 @@ export function CategoriesContents() {
     setIsNewMode(false);
   };
 
-  // ─── 초기 로드 시 전체 1Depth 펼침 ───
-  // treeData 로드 완료 시 expandedIds에 없는 1Depth를 추가
+  // ─── 사용자 토글 전까지 전체 1Depth 펼침 ───
   const expandedWithDefaults = useMemo(() => {
     if (treeData.length === 0 || hasUserToggled) return expandedIds;
     const map: Record<number, true> = {};
