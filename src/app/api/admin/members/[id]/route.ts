@@ -271,9 +271,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const resultCode = parsed.data.result.resultCode;
     const message = parsed.data.result.message;
-    // QSP updateUserDtlMng: resultCode "S" 또는 message "success" 를 성공으로 판정
-    // (updateUserDtl → "S", updateUserDtlMng → resultCode "0000" + message "success" 패턴 확인됨)
-    const isSuccess = resultCode === "S" || message.trim().toLowerCase() === "success";
+    // QSP updateUserDtlMng: resultCode 기준으로만 성공 판정
+    // "S" 또는 "0000"만 성공, 그 외(E 등)는 message 내용과 무관하게 실패
+    const isSuccess = resultCode === "S" || resultCode === "0000";
     if (!isSuccess) {
       const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
       console.error("[PUT /api/admin/members/:id] QSP 수정 실패:", {
@@ -285,15 +285,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: "会員情報の更新に失敗しました" },
         { status: 502 },
       );
-    }
-    // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
-    if (resultCode !== "S") {
-      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
-      console.warn("[PUT /api/admin/members/:id] QSP 비표준 성공 코드 — message fallback:", {
-        resultCode,
-        truncatedMessage,
-        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
-      });
     }
 
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
