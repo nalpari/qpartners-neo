@@ -58,8 +58,45 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // 3. QSP 유저 정보 조회 (사양서 No.13 userDetail)
     const detailResult = await fetchQspUserDetail(rawId, userTp, "[GET /api/admin/members/:id]");
+
+    // QSP에서 삭제/탈퇴 회원은 F_NOT_USER로 데이터 미반환 → 빈 데이터로 정상 응답
     if (!detailResult.ok) {
-      return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
+      // 502(외부 서버 오류)는 그대로 에러 반환
+      if (detailResult.error.status !== 404) {
+        return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
+      }
+
+      console.log("[GET /api/admin/members/:id] QSP 미조회 회원 — 빈 데이터로 응답:", rawId);
+      return NextResponse.json({
+        data: {
+          id: idResult.data,
+          userId: rawId,
+          userName: "",
+          userNameKana: "",
+          firstName: "",
+          lastName: "",
+          firstNameKana: "",
+          lastNameKana: "",
+          email: "",
+          userType: "unknown",
+          userRole: "",
+          companyName: "",
+          companyNameKana: "",
+          zipcode: "",
+          address: "",
+          address2: "",
+          telNo: "",
+          faxNo: "",
+          department: "",
+          jobTitle: "",
+          twoFactorEnabled: null,
+          loginNotification: false,
+          attributeChangeNotification: false,
+          status: "unknown",
+          newsRcptYn: "N",
+          notFoundInQsp: true,
+        },
+      });
     }
 
     // 4. 응답 매핑 (QSP → TO-BE)
@@ -91,6 +128,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       attributeChangeNotification: d.attrChgYn === "Y",
       status: lookupStatCd(d.statCd) ?? "unknown",
       newsRcptYn: d.newsRcptYn ?? "N",
+      notFoundInQsp: false,
     };
 
     console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
@@ -167,10 +205,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const userTp = userTpResult.data;
 
     const preDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id]");
-    if (!preDetailResult.ok) {
+    // QSP 상세조회 실패 시: 502(외부 서버 오류)만 차단, 404(삭제/탈퇴)는 업데이트 시도
+    if (!preDetailResult.ok && preDetailResult.error.status !== 404) {
       return NextResponse.json({ error: preDetailResult.error.error }, { status: preDetailResult.error.status });
     }
-    const preDetail = preDetailResult.detail;
+    const preDetail = preDetailResult.ok ? preDetailResult.detail : null;
 
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
     // MF-4: 보호 대상을 status + userRole + twoFactorEnabled 로 확장한다.
@@ -180,19 +219,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
       result.data.status !== undefined ||
       result.data.userRole !== undefined ||
       result.data.twoFactorEnabled !== undefined;
-    if (modifiesSelfCritical && isSelfTarget(user.userId, preDetail)) {
-      return NextResponse.json(
-        { error: "自分自身のアカウントに対するこの変更は実行できません" },
-        { status: 400 },
-      );
+    if (modifiesSelfCritical) {
+      const isSelf = preDetail
+        ? isSelfTarget(user.userId, preDetail)
+        : user.userId.trim().toLowerCase() === rawId.trim().toLowerCase();
+      if (isSelf) {
+        return NextResponse.json(
+          { error: "自分自身のアカウントに対するこの変更は実行できません" },
+          { status: 400 },
+        );
+      }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    if (result.data.userRole !== undefined && preDetail.userTp !== "GENERAL") {
-      return NextResponse.json(
-        { error: "ユーザー権限の変更は一般会員のみ可能です" },
-        { status: 400 },
-      );
+    // preDetail 없는 경우(삭제/탈퇴) userTp 검증 불가 → userTp 파라미터로 대체
+    if (result.data.userRole !== undefined) {
+      const effectiveUserTp = preDetail?.userTp ?? userTp;
+      if (effectiveUserTp !== "GENERAL") {
+        return NextResponse.json(
+          { error: "ユーザー権限の変更は一般会員のみ可能です" },
+          { status: 400 },
+        );
+      }
     }
     // [TOCTOU 완화 — MF-6] 본 검증과 아래 QSP 업데이트 사이에는 경합 창이 존재한다.
     // QSP 업데이트 API 에 `expectedUserTp=GENERAL` 같은 원자적 조건을 추가하는 것이
@@ -203,25 +251,26 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 5. QSP 회원정보 수정 API 호출
     // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
+    // preDetail이 없는 경우(삭제/탈퇴 회원) → 요청 값만 사용 + 기본값 fallback
     const updatePayload: Record<string, unknown> = {
       loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userTp,
       userId: rawId,
-      authCd: result.data.userRole ?? preDetail.authCd ?? "",
+      authCd: result.data.userRole ?? preDetail?.authCd ?? userTp,
       secAuthYn: result.data.twoFactorEnabled !== undefined
         ? (result.data.twoFactorEnabled ? "Y" : "N")
-        : (preDetail.secAuthYn ?? "N"),
+        : (preDetail?.secAuthYn ?? "N"),
       loginNotiYn: result.data.loginNotification !== undefined
         ? (result.data.loginNotification ? "Y" : "N")
-        : (preDetail.loginNotiYn ?? "N"),
+        : (preDetail?.loginNotiYn ?? "N"),
       attrChgYn: result.data.attributeChangeNotification !== undefined
         ? (result.data.attributeChangeNotification ? "Y" : "N")
-        : (preDetail.attrChgYn ?? "N"),
-      newsRcptYn: result.data.newsRcptYn ?? preDetail.newsRcptYn ?? "N",
+        : (preDetail?.attrChgYn ?? "N"),
+      newsRcptYn: result.data.newsRcptYn ?? preDetail?.newsRcptYn ?? "N",
       statCd: result.data.status !== undefined
         ? STATUS_TO_STAT_CD[result.data.status]
-        : (preDetail.statCd ?? "A"),
+        : (preDetail?.statCd ?? "D"),
       updBy: user.userId,
     };
 
