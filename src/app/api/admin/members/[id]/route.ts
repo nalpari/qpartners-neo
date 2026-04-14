@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
@@ -200,27 +201,49 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
     // 5. QSP 회원정보 수정 API 호출
+    // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
+    // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
     const updatePayload: Record<string, unknown> = {
+      loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+      userTp,
       userId: rawId,
+      authCd: result.data.userRole ?? preDetail.authCd ?? "",
+      secAuthYn: result.data.twoFactorEnabled !== undefined
+        ? (result.data.twoFactorEnabled ? "Y" : "N")
+        : (preDetail.secAuthYn ?? "N"),
+      loginNotiYn: result.data.loginNotification !== undefined
+        ? (result.data.loginNotification ? "Y" : "N")
+        : (preDetail.loginNotiYn ?? "N"),
+      attrChgYn: result.data.attributeChangeNotification !== undefined
+        ? (result.data.attributeChangeNotification ? "Y" : "N")
+        : (preDetail.attrChgYn ?? "N"),
+      newsRcptYn: result.data.newsRcptYn ?? preDetail.newsRcptYn ?? "N",
+      statCd: result.data.status !== undefined
+        ? STATUS_TO_STAT_CD[result.data.status]
+        : (preDetail.statCd ?? "A"),
       updBy: user.userId,
     };
 
-    if (result.data.userRole !== undefined) updatePayload.authCd = result.data.userRole;
-    if (result.data.twoFactorEnabled !== undefined) updatePayload.secAuthYn = result.data.twoFactorEnabled ? "Y" : "N";
-    if (result.data.loginNotification !== undefined) updatePayload.loginNotiYn = result.data.loginNotification ? "Y" : "N";
-    if (result.data.attributeChangeNotification !== undefined) updatePayload.attrChgYn = result.data.attributeChangeNotification ? "Y" : "N";
-    if (result.data.status !== undefined) updatePayload.statCd = STATUS_TO_STAT_CD[result.data.status];
-    if (result.data.newsRcptYn !== undefined) updatePayload.newsRcptYn = result.data.newsRcptYn;
-
     let qspResponse: Response;
     try {
-      qspResponse = await fetch(QSP_API.updateUserDtlMng, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify(updatePayload),
-      });
+      qspResponse = await fetchWithLog(
+        QSP_API.updateUserDtlMng,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify(updatePayload),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "updateUserDtlMng",
+          callerRoute: "[PUT /api/admin/members/:id]",
+          userId: user.userId,
+          userType: "ADMIN",
+        },
+      );
     } catch (error: unknown) {
       console.error("[PUT /api/admin/members/:id] QSP 회원 수정 API 호출 실패:", error);
       return NextResponse.json(
@@ -258,30 +281,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const resultCode = parsed.data.result.resultCode;
-    const message = parsed.data.result.message;
-    // QSP updateUserDtlMng: resultCode "S" 또는 message "success" 를 성공으로 판정
-    // (updateUserDtl → "S", updateUserDtlMng → resultCode "0000" + message "success" 패턴 확인됨)
-    const isSuccess = resultCode === "S" || message.trim().toLowerCase() === "success";
-    if (!isSuccess) {
-      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
+    const resultMsg = parsed.data.result.resultMsg;
+    // QSP updateUserDtlMng: resultCode 기준으로만 성공 판정
+    // "S"만 성공, 그 외(E 등)는 message 내용과 무관하게 실패
+    if (resultCode !== "S") {
+      const truncatedMsg = resultMsg.slice(0, QSP_LOG_MSG_MAX_LEN);
       console.error("[PUT /api/admin/members/:id] QSP 수정 실패:", {
         resultCode,
-        truncatedMessage,
-        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
+        resultMsg: truncatedMsg,
       });
       return NextResponse.json(
         { error: "会員情報の更新に失敗しました" },
         { status: 502 },
       );
-    }
-    // message fallback 성공: resultCode가 "S"가 아닌데 message로 성공 판정된 경우 감시 로그
-    if (resultCode !== "S") {
-      const truncatedMessage = message.slice(0, QSP_LOG_MSG_MAX_LEN);
-      console.warn("[PUT /api/admin/members/:id] QSP 비표준 성공 코드 — message fallback:", {
-        resultCode,
-        truncatedMessage,
-        truncated: message.length > QSP_LOG_MSG_MAX_LEN,
-      });
     }
 
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여

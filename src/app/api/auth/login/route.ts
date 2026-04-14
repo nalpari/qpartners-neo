@@ -8,6 +8,7 @@ import {
 import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
+import { fetchWithLog } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 
@@ -43,20 +44,30 @@ export async function POST(request: NextRequest) {
 
   let qspResponse: Response;
   try {
-    qspResponse = await fetch(QSP_API.login, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(10_000),
-      body: JSON.stringify({
-        loginId,
-        pwd,
-        userTp,
-        accsSiteCd: "QPARTNERS",
-        // QSP API 규격상 로그인 요청 시 actLog="LOGOUT" 전송 (QSP 인터페이스 사양서 참조)
-        actLog: "LOGOUT",
-        requestId: crypto.randomUUID(),
-      }),
-    });
+    qspResponse = await fetchWithLog(
+      QSP_API.login,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({
+          loginId,
+          pwd,
+          userTp,
+          accsSiteCd: "QPARTNERS",
+          actLog: "LOGOUT",
+          requestId: crypto.randomUUID(),
+        }),
+      },
+      {
+        system: "QSP",
+        direction: "OUTBOUND",
+        apiName: "login",
+        callerRoute: "[POST /api/auth/login]",
+        userId: loginId,
+        userType: userTp,
+      },
+    );
   } catch (error) {
     console.error("[POST /api/auth/login] QSP API 호출 실패:", error);
     return NextResponse.json(
