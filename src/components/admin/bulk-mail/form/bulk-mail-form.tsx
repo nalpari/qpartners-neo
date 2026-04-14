@@ -31,10 +31,9 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const { openAlert } = useAlertStore();
 
   const isDetail = mode === "detail";
-  const isEditable = mode === "create" || mode === "edit" || mode === "copy";
 
   // ─── Form State ───
-  const [senderName, setSenderName] = useState(initialData?.senderName ?? DEFAULT_SENDER);
+  const senderName = initialData?.senderName ?? DEFAULT_SENDER;
   const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
   const [optOut, setOptOut] = useState(initialData?.optOut ?? false);
   const [subject, setSubject] = useState(initialData?.subject ?? "");
@@ -69,16 +68,6 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
   };
 
-  // Plan SC: キャンセル → 입력값 초기화
-  const handleCancel = () => {
-    setSenderName(initialData?.senderName ?? DEFAULT_SENDER);
-    setTargets(initialData?.targets ?? []);
-    setOptOut(initialData?.optOut ?? false);
-    setSubject(initialData?.subject ?? "");
-    setBody(initialData?.body ?? "");
-    setFiles([]);
-  };
-
   // Plan SC: 配信 → status: pending → 상세로 이동
   const handleSend = () => {
     const error = validate();
@@ -108,6 +97,21 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       status: "draft", files,
     });
     submitMutation.mutate(fd);
+  };
+
+  // 임시저장 삭제 (API 미구현 — 백엔드 요청 예정)
+  const handleDelete = () => {
+    openAlert({
+      type: "confirm",
+      message: "下書きを削除しますか？",
+      confirmLabel: "削除",
+      cancelLabel: "キャンセル",
+      onConfirm: () => {
+        // TODO: DELETE /api/admin/mass-mails/:id API 연동
+        openAlert({ type: "alert", message: "削除しました。" });
+        router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+      },
+    });
   };
 
   // Plan SC: コピーして作成 → sessionStorage에 저장 → 등록 화면 이동
@@ -186,7 +190,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         />
       </section>
 
-      {/* 하단 버튼 (Design Ref: §7.1 모드별 분기) */}
+      {/* 하단 버튼 — 모드별 분기 */}
       <div className="flex items-center justify-end gap-2 w-[1440px] pb-1">
         {isDetail ? (
           <>
@@ -197,22 +201,24 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
               一覧
             </Button>
           </>
-        ) : isEditable ? (
+        ) : (
           <>
             <Button variant="secondary" onClick={handleList}>
               一覧
             </Button>
-            <Button variant="secondary" onClick={handleCancel}>
-              キャンセル
-            </Button>
+            {mode === "edit" && (
+              <Button variant="secondary" onClick={handleDelete} disabled={isPending}>
+                削除
+              </Button>
+            )}
             <Button variant="primary" onClick={handleSend} disabled={isPending}>
-              配信
+              登録
             </Button>
             <Button variant="outline" onClick={handleDraft} disabled={isPending}>
               下書き保存
             </Button>
           </>
-        ) : null}
+        )}
       </div>
     </div>
   );
