@@ -62,6 +62,8 @@ interface DataGridProps<T> {
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
+/** 헤더(57px) + "No Rows To Show" 오버레이 표시 영역(57px) */
+const NO_ROWS_MIN_HEIGHT = 114;
 
 export function DataGrid<T>({
   columnDefs,
@@ -101,7 +103,7 @@ export function DataGrid<T>({
   return (
     <div
       className={`w-full overflow-y-auto ${className}`}
-      style={{ maxHeight }}
+      style={{ maxHeight, minHeight: NO_ROWS_MIN_HEIGHT }}
     >
       <AgGridReact<T>
         theme={customTheme}
