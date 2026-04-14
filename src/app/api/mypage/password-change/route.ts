@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
 import { changePasswordSchema } from "@/lib/schemas/mypage";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userPwdChg",
           callerRoute: "[POST /api/mypage/password-change]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: user.userTp,
         },
       );

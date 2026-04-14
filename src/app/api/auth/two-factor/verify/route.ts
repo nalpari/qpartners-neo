@@ -7,7 +7,7 @@ import { verifyToken, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { timingSafeEqual } from "crypto";
 
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { hashOtp } from "@/lib/auth-utils";
 
 const MAX_VERIFY_ATTEMPTS = 5;
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       direction: "OUTBOUND",
       apiName: "updateSecAuthDt",
       callerRoute: "[POST /api/auth/two-factor/verify]",
-      userId,
+      userId: maskEmail(userId),
       userType: userTp,
     },
   )

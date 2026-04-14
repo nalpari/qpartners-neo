@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { interfaceLogQuerySchema } from "@/lib/schemas/interface-log";
 
-// GET /api/tests/interface-log — 인터페이스 로그 목록 조회 (관리자 전용)
+// GET /api/admin/interface-logs — 인터페이스 로그 목록 조회 (관리자 전용)
 export async function GET(request: NextRequest) {
   try {
     const auth = requireAdmin(request.headers);
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[GET /api/tests/interface-log]", error);
+    console.error("[GET /api/admin/interface-logs]", error);
     return NextResponse.json(
       { error: "ログの取得に失敗しました" },
       { status: 500 },

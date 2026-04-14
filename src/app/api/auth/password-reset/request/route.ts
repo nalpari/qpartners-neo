@@ -12,7 +12,7 @@ import {
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
 import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   generateRawResetToken,
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "userDetail",
         callerRoute: "[POST /api/auth/password-reset/request]",
-        userId: email,
+        userId: maskEmail(email),
         userType: userTp,
       },
     );
