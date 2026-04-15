@@ -1,14 +1,19 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { unlink } from "fs/promises";
-import { join, resolve } from "path";
+import { writeFile, mkdir, unlink, rm } from "fs/promises";
+import { basename, resolve, join, relative } from "path";
+import { randomUUID } from "crypto";
+import DOMPurify from "isomorphic-dompurify";
 
 import { requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
+import { validateFiles } from "@/lib/file-validation";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
   massMailIdParamSchema,
+  massMailCreateSchema,
+  TARGET_KEYS,
   buildTargetsObject,
   buildTargetLabel,
 } from "@/lib/schemas/mass-mail";
@@ -143,6 +148,276 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     console.error("[DELETE /api/admin/mass-mails/:id] 삭제 실패:", error);
     return NextResponse.json(
       { error: "メールの削除に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── PUT /api/admin/mass-mails/:id — 대량메일 수정 (multipart/form-data) ───
+
+const MAX_FILES = 10;
+
+// PUT 용 첨부파일 정리
+interface WrittenFile {
+  absolutePath: string;
+  file: File;
+  filePath: string;
+}
+
+async function cleanupWrittenFiles(files: WrittenFile[], dir?: string): Promise<void> {
+  for (const w of files) {
+    await unlink(w.absolutePath).catch((e: unknown) => {
+      console.error("[PUT /api/admin/mass-mails/:id] 첨부파일 정리 실패:", relative(UPLOAD_DIR, w.absolutePath), e);
+    });
+  }
+  if (dir) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: Params) {
+  let writtenFiles: WrittenFile[] = [];
+  let uploadDir: string | undefined;
+
+  try {
+    // 1. 관리자 권한 확인
+    const authResult = requireAdmin(request.headers);
+    if (authResult instanceof NextResponse) return authResult;
+    const { user } = authResult;
+
+    // 2. ID 파라미터 검증
+    const { id: rawId } = await params;
+    const idResult = massMailIdParamSchema.safeParse(rawId);
+    if (!idResult.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    // 3. 기존 레코드 확인 (draft만 수정 가능)
+    const existing = await prisma.massMail.findUnique({
+      where: { id: idResult.data },
+      include: {
+        attachments: { select: { id: true, filePath: true } },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "メールが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    if (existing.status !== "draft") {
+      return NextResponse.json(
+        { error: "下書き以外のメールは編集できません" },
+        { status: 400 },
+      );
+    }
+
+    // 4. FormData 파싱
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (error: unknown) {
+      console.warn("[PUT /api/admin/mass-mails/:id] FormData 파싱 실패:", error);
+      return NextResponse.json(
+        { error: "リクエスト形式が正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    const fields: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === "string") {
+        fields[key] = value;
+      }
+    }
+
+    const result = massMailCreateSchema.safeParse(fields);
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          error: "入力内容に不備があります",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+          })),
+        },
+        { status: 400 },
+      );
+    }
+
+    const data = result.data;
+    const hasTarget = TARGET_KEYS.some((k) => data[k] === true);
+    if (!hasTarget) {
+      return NextResponse.json(
+        { error: "送信先を1つ以上選択してください" },
+        { status: 400 },
+      );
+    }
+
+    // 5. 첨부파일 검증
+    const rawFiles = formData.getAll("files");
+    const newFiles = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
+
+    // 삭제할 기존 첨부파일 ID 목록 (프론트에서 JSON 배열 문자열로 전달)
+    const deleteIdsRaw = fields.deleteAttachmentIds;
+    let deleteAttachmentIds: number[] = [];
+    if (deleteIdsRaw) {
+      try {
+        const parsed = JSON.parse(deleteIdsRaw);
+        if (Array.isArray(parsed)) {
+          deleteAttachmentIds = parsed.filter((id): id is number => typeof id === "number" && Number.isInteger(id));
+        }
+      } catch {
+        // 무시 — 파싱 실패 시 삭제 없음
+      }
+    }
+
+    // 기존 유지 첨부파일 수 + 신규 파일 수 체크
+    const keepCount = existing.attachments.length - deleteAttachmentIds.length;
+    if (keepCount + newFiles.length > MAX_FILES) {
+      return NextResponse.json(
+        { error: `添付ファイルは${MAX_FILES}件以内にしてください` },
+        { status: 400 },
+      );
+    }
+
+    if (newFiles.length > 0) {
+      const validation = validateFiles(newFiles);
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
+      }
+    }
+
+    // 6. HTML body sanitization
+    const sanitizedBody = DOMPurify.sanitize(data.body, {
+      ALLOWED_TAGS: [
+        "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
+        "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
+        "table", "thead", "tbody", "tr", "th", "td",
+        "img", "span", "div", "hr",
+      ],
+      ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
+      ALLOWED_URI_REGEXP: /^https:\/\//i,
+      ALLOW_DATA_ATTR: false,
+    });
+
+    if (!sanitizedBody.trim()) {
+      return NextResponse.json(
+        { error: "本文の内容が無効です" },
+        { status: 400 },
+      );
+    }
+
+    // 7. 신규 첨부파일 디스크 기록
+    if (newFiles.length > 0) {
+      const tempId = randomUUID();
+      uploadDir = join(UPLOAD_DIR, "mass-mails", tempId);
+      await mkdir(uploadDir, { recursive: true });
+      const uploadDirAbs = resolve(uploadDir);
+
+      for (const file of newFiles) {
+        const sanitizedName = basename(file.name);
+        const ext = sanitizedName.split(".").pop() ?? "";
+        const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
+        const filePath = `mass-mails/${tempId}/${safeFileName}`;
+        const absolutePath = resolve(uploadDir, safeFileName);
+
+        if (!isInsideDir(absolutePath, uploadDirAbs)) {
+          console.error("[PUT /api/admin/mass-mails/:id] PATH TRAVERSAL 감지:", { fileName: file.name });
+          await cleanupWrittenFiles(writtenFiles, uploadDir);
+          return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
+        }
+
+        const buffer = Buffer.from(await file.arrayBuffer());
+        await writeFile(absolutePath, buffer);
+        writtenFiles.push({ absolutePath, file, filePath });
+      }
+    }
+
+    // 8. DB 업데이트 (트랜잭션)
+    try {
+      await prisma.$transaction(async (tx) => {
+        // 기존 첨부파일 삭제
+        if (deleteAttachmentIds.length > 0) {
+          await tx.massMailAttachment.deleteMany({
+            where: {
+              id: { in: deleteAttachmentIds },
+              massMailId: idResult.data,
+            },
+          });
+        }
+
+        // 메일 본문 업데이트
+        await tx.massMail.update({
+          where: { id: idResult.data },
+          data: {
+            senderName: data.senderName,
+            targetSuperAdmin: data.targetSuperAdmin,
+            targetAdmin: data.targetAdmin,
+            targetFirstStore: data.targetFirstStore,
+            targetSecondStore: data.targetSecondStore,
+            targetConstructor: data.targetConstructor,
+            targetGeneral: data.targetGeneral,
+            optOut: data.optOut,
+            subject: data.subject,
+            body: sanitizedBody,
+            status: data.status,
+            updatedBy: user.userId,
+          },
+        });
+
+        // 신규 첨부파일 레코드 추가
+        if (writtenFiles.length > 0) {
+          await tx.massMailAttachment.createMany({
+            data: writtenFiles.map((w) => ({
+              massMailId: idResult.data,
+              fileName: basename(w.file.name),
+              filePath: w.filePath,
+              fileSize: BigInt(w.file.size),
+              createdBy: user.userId,
+              updatedBy: user.userId,
+            })),
+          });
+        }
+      });
+    } catch (dbError: unknown) {
+      await cleanupWrittenFiles(writtenFiles, uploadDir);
+      writtenFiles = [];
+      uploadDir = undefined;
+      throw dbError;
+    }
+
+    // 9. 삭제 첨부파일 디스크 정리 (best-effort)
+    if (deleteAttachmentIds.length > 0) {
+      const toDelete = existing.attachments.filter((a) => deleteAttachmentIds.includes(a.id));
+      for (const att of toDelete) {
+        const absPath = resolve(UPLOAD_DIR, att.filePath);
+        if (!isInsideDir(absPath, UPLOAD_DIR)) continue;
+        await unlink(absPath).catch((e: unknown) => {
+          console.warn("[PUT /api/admin/mass-mails/:id] 삭제 첨부파일 정리 실패:", att.filePath, e);
+        });
+      }
+    }
+
+    const statusMsg = data.status === "pending"
+      ? "メールが送信予約されました。"
+      : "下書きとして保存しました。";
+
+    console.log(`[PUT /api/admin/mass-mails/:id] 대량메일 수정 완료 — id: ${idResult.data}, status: ${data.status}`);
+
+    return NextResponse.json({
+      data: { id: idResult.data, status: data.status, message: statusMsg },
+    });
+  } catch (error: unknown) {
+    await cleanupWrittenFiles(writtenFiles, uploadDir);
+    console.error("[PUT /api/admin/mass-mails/:id] 수정 실패:", error);
+    return NextResponse.json(
+      { error: "メールの更新に失敗しました" },
       { status: 500 },
     );
   }

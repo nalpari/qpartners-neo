@@ -10,6 +10,14 @@ export const massMailListQuerySchema = z.object({
   target: z.string().optional(),
   // z.coerce.boolean은 "false"를 true로 변환하므로, 명시적 transform으로 처리
   draftOnly: z.string().optional().transform((v) => v === "true"),
+  // 登録者 검색
+  authorSearchType: z.enum(["name", "id"]).optional(),
+  authorQuery: z.string().max(200).optional(),
+  // 配信日 범위 검색
+  startDate: z.string().datetime({ offset: true }).optional()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()),
+  endDate: z.string().datetime({ offset: true }).optional()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });

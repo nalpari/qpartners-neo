@@ -156,15 +156,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 활성(scheduled + active) 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
+    // 게시기간 겹치는 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
     const notice = await prisma.$transaction(
       async (tx) => {
-        const now = new Date();
-        const activeCount = await tx.homeNotice.count({
-          where: { endAt: { gte: now } },
+        const overlapCount = await tx.homeNotice.count({
+          where: {
+            startAt: { lte: result.data.endAt },
+            endAt: { gte: result.data.startAt },
+          },
         });
 
-        if (activeCount >= 5) {
+        if (overlapCount >= 5) {
           throw new Error("LIMIT_EXCEEDED");
         }
 
@@ -184,7 +186,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
       return NextResponse.json(
-        { error: "활성(예정 포함) 공지가 5개를 초과할 수 없습니다" },
+        { error: "同一期間に掲載できるお知らせは5件までです" },
         { status: 400 },
       );
     }

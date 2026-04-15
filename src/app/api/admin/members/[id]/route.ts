@@ -230,12 +230,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // preDetail 없으면 canonical ID 비교 불가 → fail-closed (MF-4 보호)
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — self-target 판정 불가, critical 필드 변경 차단 (MF-4 보호)");
-        return NextResponse.json(
-          { error: "会員情報を確認できないため、この変更は実行できません。しばらくしてから再度お試しください" },
-          { status: 503 },
-        );
+        // preDetail 없으면 canonical ID 비교 불가 → rawId 기반 fallback 비교
+        const adminLower = user.userId.trim().toLowerCase();
+        const targetLower = rawId.trim().toLowerCase();
+        if (adminLower === targetLower) {
+          return NextResponse.json(
+            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { status: 400 },
+          );
+        }
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId fallback 비교로 self-target 판정 통과");
       }
     }
 

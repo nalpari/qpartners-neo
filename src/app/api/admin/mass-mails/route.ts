@@ -321,6 +321,10 @@ export async function GET(request: NextRequest) {
       keyword: searchParams.get("keyword") ?? undefined,
       target: searchParams.get("target") ?? undefined,
       draftOnly: searchParams.get("draftOnly") ?? undefined,
+      authorSearchType: searchParams.get("authorSearchType") ?? undefined,
+      authorQuery: searchParams.get("authorQuery") ?? undefined,
+      startDate: searchParams.get("startDate") ?? undefined,
+      endDate: searchParams.get("endDate") ?? undefined,
       page: searchParams.get("page") ?? undefined,
       pageSize: searchParams.get("pageSize") ?? undefined,
     });
@@ -332,7 +336,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { keyword, target, draftOnly, page, pageSize } = queryResult.data;
+    const { keyword, target, draftOnly, authorSearchType, authorQuery, startDate, endDate, page, pageSize } = queryResult.data;
 
     // 3. 검색 조건 구성
     const where: Prisma.MassMailWhereInput = {};
@@ -355,6 +359,31 @@ export async function GET(request: NextRequest) {
         );
       }
       where[targetField] = true;
+    }
+
+    // 登録者 검색 (name → senderName, id → userId)
+    if (authorQuery && authorSearchType) {
+      if (authorSearchType === "name") {
+        where.senderName = { contains: authorQuery };
+      } else {
+        where.userId = { contains: authorQuery };
+      }
+    }
+
+    // 配信日 범위 검색
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // endDate는 해당 일자 끝까지 포함
+        const end = new Date(endDate);
+        if (!endDate.includes("T")) {
+          end.setHours(23, 59, 59, 999);
+        }
+        where.createdAt.lte = end;
+      }
     }
 
     // 4. 조회 (최근 등록순 정렬)
