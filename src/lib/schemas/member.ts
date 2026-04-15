@@ -89,6 +89,23 @@ export const memberListQuerySchema = z.object({
 
 export type MemberListQuery = z.infer<typeof memberListQuerySchema>;
 
+// ─── userTp → authCd 기본값 매핑 ───
+
+/**
+ * preDetail 없는 삭제/탈퇴 회원 수정 시 authCd fallback 값을 결정한다.
+ * STORE는 1ST_STORE/2ND_STORE 구분이 불가하므로 매핑 불가(null).
+ */
+const USER_TP_TO_DEFAULT_AUTH_CD: Record<string, string | null> = {
+  GENERAL: "GENERAL",
+  ADMIN: "ADMIN",
+  SEKO: "SEKO",
+  STORE: null, // 1ST_STORE/2ND_STORE 구분 불가
+};
+
+export function defaultAuthCdFromUserTp(userTp: string): string | null {
+  return USER_TP_TO_DEFAULT_AUTH_CD[userTp] ?? null;
+}
+
 // ─── 회원 수정 요청 ───
 
 /** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3)

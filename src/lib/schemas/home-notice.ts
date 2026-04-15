@@ -92,6 +92,37 @@ export const updateHomeNoticeSchema = z
     { message: "시작일은 종료일보다 이전이어야 합니다", path: ["startAt"] },
   );
 
+// ─── Helpers ───
+
+type HomeNoticeStatus = "scheduled" | "active" | "ended";
+
+/** status 동적 산출 (DB 컬럼 없음) */
+export function computeStatus(startAt: Date, endAt: Date): HomeNoticeStatus {
+  const now = new Date();
+  if (now < startAt) return "scheduled";
+  if (now > endAt) return "ended";
+  return "active";
+}
+
+/** target Boolean 필드를 배열로 변환 */
+export function toTargetArray(row: {
+  targetSuperAdmin: boolean;
+  targetAdmin: boolean;
+  targetFirstStore: boolean;
+  targetSecondStore: boolean;
+  targetConstructor: boolean;
+  targetGeneral: boolean;
+}): string[] {
+  const targets: string[] = [];
+  if (row.targetSuperAdmin) targets.push("super_admin");
+  if (row.targetAdmin) targets.push("admin");
+  if (row.targetFirstStore) targets.push("first_store");
+  if (row.targetSecondStore) targets.push("second_store");
+  if (row.targetConstructor) targets.push("seko");
+  if (row.targetGeneral) targets.push("general");
+  return targets;
+}
+
 // ─── Types ───
 
 export type CreateHomeNoticeInput = z.infer<typeof createHomeNoticeSchema>;

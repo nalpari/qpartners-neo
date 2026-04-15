@@ -8,9 +8,65 @@ import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
   updateHomeNoticeSchema,
+  computeStatus,
+  toTargetArray,
 } from "@/lib/schemas/home-notice";
 
 type Params = { params: Promise<{ id: string }> };
+
+// GET /api/home-notices/:id — 공지 단건 조회
+export async function GET(request: NextRequest, { params }: Params) {
+  try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
+    const { id } = await params;
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    const notice = await prisma.homeNotice.findUnique({
+      where: { id: parsed.data },
+    });
+
+    if (!notice) {
+      return NextResponse.json(
+        { error: "お知らせが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    const data = {
+      id: notice.id,
+      targets: toTargetArray(notice),
+      content: notice.content,
+      url: notice.url,
+      startAt: notice.startAt,
+      endAt: notice.endAt,
+      status: computeStatus(notice.startAt, notice.endAt),
+      userType: notice.userType,
+      userId: notice.userId,
+      createdAt: notice.createdAt,
+      createdBy: notice.createdBy,
+      updatedAt: notice.updatedAt,
+      updatedBy: notice.updatedBy,
+    };
+
+    console.log(`[GET /api/home-notices/:id] 공지 단건 조회 — id: ${notice.id}`);
+
+    return NextResponse.json({ data });
+  } catch (error: unknown) {
+    console.error("[GET /api/home-notices/:id] 공지 단건 조회 실패:", error);
+    return NextResponse.json(
+      { error: "お知らせの取得に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
 
 // PUT /api/home-notices/:id — 공지 수정
 export async function PUT(request: NextRequest, { params }: Params) {
