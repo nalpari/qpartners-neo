@@ -1,12 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, Button } from "@/components/common";
+import { Pagination, Button, Spinner } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
-import { DUMMY_NOTICES, toFormData, EMPTY_NOTICE_FORM } from "./notices-dummy-data";
-import type { NoticeItem } from "./notices-dummy-data";
+import api from "@/lib/axios";
+import type {
+  NoticeListItem,
+  NoticeListResponse,
+  NoticeSearchFilters,
+  NoticeFormData,
+} from "./notices-types";
+import {
+  STATUS_LABEL_MAP,
+  targetsToLabel,
+  formatDate,
+} from "./notices-types";
+
+// Design Ref: §4.3 — NoticesTable useQuery + AG Grid 컬럼 매핑
+
+const PAGE_SIZE = 20;
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -14,7 +29,7 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
-function ContentCellRenderer(params: ICellRendererParams<NoticeItem>) {
+function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
   const data = params.data;
   if (!data) return null;
 
@@ -24,31 +39,95 @@ function ContentCellRenderer(params: ICellRendererParams<NoticeItem>) {
     <button
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-      onClick={() => openPopup("notice-form", { mode: "edit", notice: toFormData(data) })}
+      onClick={() => {
+        const formData: NoticeFormData = {
+          targets: data.targets,
+          startDate: data.startAt,
+          endDate: data.endAt,
+          content: data.content,
+          url: data.url ?? "",
+          author: data.createdBy,
+          authorId: data.userId,
+          createdAt: data.createdAt,
+          updater: data.updatedBy ?? "",
+          updaterId: "",
+          updatedAt: data.updatedAt,
+        };
+        openPopup("notice-form", { mode: "edit", notice: formData });
+      }}
     >
       {data.content}
     </button>
   );
 }
 
-export function NoticesTable() {
-  const { openPopup } = usePopupStore();
-  const [currentPage, setCurrentPage] = useState(1);
-  const perPage = 100;
+interface NoticesTableProps {
+  filters: NoticeSearchFilters;
+  page: number;
+  onPageChange: (page: number) => void;
+}
 
-  const totalCount = DUMMY_NOTICES.length;
-  const totalPages = Math.ceil(totalCount / perPage);
+export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps) {
+  const { openPopup } = usePopupStore();
+
+  const { data, isLoading } = useQuery<NoticeListResponse>({
+    queryKey: [
+      "home-notices",
+      filters.keyword,
+      filters.statuses,
+      filters.targetType,
+      filters.startDate?.toISOString(),
+      filters.endDate?.toISOString(),
+      page,
+    ],
+    queryFn: async () => {
+      const params: Record<string, string> = {
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      };
+      if (filters.keyword) params.keyword = filters.keyword;
+      if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
+      if (filters.targetType) params.targetType = filters.targetType;
+      if (filters.startDate) params.startDate = filters.startDate.toISOString().slice(0, 10);
+      if (filters.endDate) params.endDate = filters.endDate.toISOString().slice(0, 10);
+
+      const res = await api.get<NoticeListResponse>("/home-notices", { params });
+      return res.data;
+    },
+  });
+
+  // Plan SC-07: 등록자 클라이언트 필터링
+  const items = data?.data ?? [];
+  const filteredItems = filters.author
+    ? items.filter((item) => item.createdBy?.includes(filters.author))
+    : items;
+
+  const totalPages = data?.meta.totalPages ?? 1;
 
   const handleRegister = () => {
-    openPopup("notice-form", { mode: "create", notice: EMPTY_NOTICE_FORM });
+    const emptyForm: NoticeFormData = {
+      targets: [],
+      startDate: "",
+      endDate: "",
+      content: "",
+      url: "",
+      author: "",
+      authorId: "",
+      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      updater: "",
+      updaterId: "",
+      updatedAt: "",
+    };
+    openPopup("notice-form", { mode: "create", notice: emptyForm });
   };
 
-  const columnDefs = useMemo<ColDef<NoticeItem>[]>(
+  const columnDefs = useMemo<ColDef<NoticeListItem>[]>(
     () => [
       {
         headerName: "掲示対象",
-        field: "target",
+        field: "targets",
         flex: 1,
+        valueFormatter: (p) => targetsToLabel(p.value as string[]),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -61,8 +140,9 @@ export function NoticesTable() {
       },
       {
         headerName: "掲示期間",
-        field: "period",
         flex: 1.2,
+        valueGetter: (p) =>
+          `${formatDate(p.data?.startAt)} ~ ${formatDate(p.data?.endAt)}`,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -70,6 +150,7 @@ export function NoticesTable() {
         headerName: "お知らせ状態",
         field: "status",
         flex: 0.8,
+        valueFormatter: (p) => STATUS_LABEL_MAP[p.value as string] ?? (p.value as string),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
@@ -77,12 +158,13 @@ export function NoticesTable() {
         headerName: "登録日",
         field: "createdAt",
         flex: 0.8,
+        valueFormatter: (p) => formatDate(p.value as string),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "登録者",
-        field: "author",
+        field: "createdBy",
         flex: 0.8,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
@@ -91,18 +173,19 @@ export function NoticesTable() {
         headerName: "更新日",
         field: "updatedAt",
         flex: 0.8,
+        valueFormatter: (p) => formatDate(p.value as string),
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "更新者",
-        field: "updater",
+        field: "updatedBy",
         flex: 0.8,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
     ],
-    []
+    [],
   );
 
   return (
@@ -116,14 +199,20 @@ export function NoticesTable() {
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        <DataGrid<NoticeItem>
-          columnDefs={columnDefs}
-          rowData={DUMMY_NOTICES}
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center h-[400px]">
+            <Spinner size={32} />
+          </div>
+        ) : (
+          <DataGrid<NoticeListItem>
+            columnDefs={columnDefs}
+            rowData={filteredItems}
+          />
+        )}
         <Pagination
-          currentPage={currentPage}
+          currentPage={page}
           totalPages={totalPages}
-          onPageChange={setCurrentPage}
+          onPageChange={onPageChange}
         />
       </div>
     </div>

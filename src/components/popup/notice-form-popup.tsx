@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
-import type { NoticeFormData } from "@/components/admin/notices/notices-dummy-data";
+import type { NoticeFormData } from "@/components/admin/notices/notices-types";
 
 const CLOSE_ANIMATION_MS = 200;
 

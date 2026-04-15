@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { InputBox, Checkbox, Button, DatePicker } from "@/components/common";
+import type { NoticeSearchFilters } from "./notices-types";
+
+// Design Ref: §4.2 — NoticesSearch props + TARGET_OPTIONS API value 통일
 
 const STATUS_OPTIONS = [
   { value: "scheduled", label: "掲示予定" },
@@ -10,21 +13,29 @@ const STATUS_OPTIONS = [
 ];
 
 const TARGET_OPTIONS = [
-  { value: "super-admin", label: "スーパー管理者" },
+  { value: "super_admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
-  { value: "first-dealer", label: "1次店" },
-  { value: "second-dealer", label: "2次店以下" },
-  { value: "installer", label: "施工店" },
+  { value: "first_store", label: "1次店" },
+  { value: "second_store", label: "2次店以下" },
+  { value: "seko", label: "施工店" },
   { value: "general", label: "一般会員" },
 ];
 
-export function NoticesSearch() {
-  const [content, setContent] = useState("");
-  const [statuses, setStatuses] = useState<string[]>([]);
-  const [author, setAuthor] = useState("");
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  const [targets, setTargets] = useState<string[]>([]);
+interface NoticesSearchProps {
+  filters: NoticeSearchFilters;
+  onSearch: (filters: NoticeSearchFilters) => void;
+  onReset: () => void;
+}
+
+export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps) {
+  const [content, setContent] = useState(filters.keyword);
+  const [statuses, setStatuses] = useState<string[]>(filters.statuses);
+  const [author, setAuthor] = useState(filters.author);
+  const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
+  const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
+  const [targets, setTargets] = useState<string[]>(
+    filters.targetType ? [filters.targetType] : [],
+  );
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
@@ -34,6 +45,17 @@ export function NoticesSearch() {
     setTargets(checked ? [...targets, value] : targets.filter((t) => t !== value));
   };
 
+  const handleSearch = () => {
+    onSearch({
+      keyword: content,
+      statuses,
+      targetType: targets[0] ?? "",
+      startDate,
+      endDate,
+      author,
+    });
+  };
+
   const handleReset = () => {
     setContent("");
     setStatuses([]);
@@ -41,6 +63,7 @@ export function NoticesSearch() {
     setStartDate(null);
     setEndDate(null);
     setTargets([]);
+    onReset();
   };
 
   return (
@@ -129,7 +152,7 @@ export function NoticesSearch() {
 
       {/* 버튼 */}
       <div className="flex items-center justify-end gap-[6px] mt-[18px]">
-        <Button variant="primary">検索</Button>
+        <Button variant="primary" onClick={handleSearch}>検索</Button>
         <Button variant="secondary" onClick={handleReset}>初期化</Button>
       </div>
     </div>
