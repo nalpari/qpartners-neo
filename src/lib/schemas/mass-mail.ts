@@ -13,11 +13,13 @@ export const massMailListQuerySchema = z.object({
   // 登録者 검색
   authorSearchType: z.enum(["name", "id"]).optional(),
   authorQuery: z.string().max(200).optional(),
-  // 配信日 범위 검색
-  startDate: z.string().datetime({ offset: true }).optional()
-    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()),
-  endDate: z.string().datetime({ offset: true }).optional()
-    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()),
+  // 登録日(createdAt) 범위 검색
+  startDate: z.string()
+    .refine((v) => !isNaN(new Date(v).getTime()), { message: "有効な日付を入力してください" })
+    .optional(),
+  endDate: z.string()
+    .refine((v) => !isNaN(new Date(v).getTime()), { message: "有効な日付を入力してください" })
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });

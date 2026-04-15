@@ -171,7 +171,9 @@ async function cleanupWrittenFiles(files: WrittenFile[], dir?: string): Promise<
     });
   }
   if (dir) {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    await rm(dir, { recursive: true, force: true }).catch((e: unknown) => {
+      console.error("[PUT /api/admin/mass-mails/:id] 디렉토리 정리 실패:", relative(UPLOAD_DIR, dir), e);
+    });
   }
 }
 
@@ -272,13 +274,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
         if (Array.isArray(parsed)) {
           deleteAttachmentIds = parsed.filter((id): id is number => typeof id === "number" && Number.isInteger(id));
         }
-      } catch {
-        // 무시 — 파싱 실패 시 삭제 없음
+      } catch (e: unknown) {
+        console.warn("[PUT /api/admin/mass-mails/:id] deleteAttachmentIds JSON 파싱 실패 — 삭제 무시:", deleteIdsRaw, e);
       }
     }
 
-    // 기존 유지 첨부파일 수 + 신규 파일 수 체크
-    const keepCount = existing.attachments.length - deleteAttachmentIds.length;
+    // 실제 존재하는 첨부파일 ID만 필터링 (가짜 ID로 keepCount 음수 방지)
+    const validDeleteIds = deleteAttachmentIds.filter(
+      (id) => existing.attachments.some((a) => a.id === id),
+    );
+    const keepCount = existing.attachments.length - validDeleteIds.length;
     if (keepCount + newFiles.length > MAX_FILES) {
       return NextResponse.json(
         { error: `添付ファイルは${MAX_FILES}件以内にしてください` },
@@ -343,10 +348,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
     try {
       await prisma.$transaction(async (tx) => {
         // 기존 첨부파일 삭제
-        if (deleteAttachmentIds.length > 0) {
+        if (validDeleteIds.length > 0) {
           await tx.massMailAttachment.deleteMany({
             where: {
-              id: { in: deleteAttachmentIds },
+              id: { in: validDeleteIds },
               massMailId: idResult.data,
             },
           });
@@ -393,8 +398,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 9. 삭제 첨부파일 디스크 정리 (best-effort)
-    if (deleteAttachmentIds.length > 0) {
-      const toDelete = existing.attachments.filter((a) => deleteAttachmentIds.includes(a.id));
+    if (validDeleteIds.length > 0) {
+      const toDelete = existing.attachments.filter((a) => validDeleteIds.includes(a.id));
       for (const att of toDelete) {
         const absPath = resolve(UPLOAD_DIR, att.filePath);
         if (!isInsideDir(absPath, UPLOAD_DIR)) continue;

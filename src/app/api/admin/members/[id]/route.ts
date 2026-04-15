@@ -230,7 +230,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // preDetail 없으면 canonical ID 비교 불가 → rawId 기반 fallback 비교
+        // preDetail 없으면 canonical ID 비교 불가 → rawId 기반 fallback 비교 (보안 강도 저하)
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId fallback self-target 비교 실행:", { adminUserId: user.userId, targetRawId: rawId });
         const adminLower = user.userId.trim().toLowerCase();
         const targetLower = rawId.trim().toLowerCase();
         if (adminLower === targetLower) {
@@ -239,12 +240,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
             { status: 400 },
           );
         }
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId fallback 비교로 self-target 판정 통과");
       }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail 없는 경우 → 위의 modifiesSelfCritical 가드에서 이미 차단됨
+    // preDetail 없는 경우: critical 필드는 rawId fallback 비교로 self-target만 차단, 그 외는 통과
     if (result.data.userRole !== undefined && preDetail) {
       if (preDetail.userTp !== "GENERAL") {
         return NextResponse.json(

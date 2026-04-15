@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
     }
     console.error("[POST /api/home-notices]", error);
     return NextResponse.json(
-      { error: "Failed to create home notice" },
+      { error: "お知らせの登録に失敗しました" },
       { status: 500 },
     );
   }
