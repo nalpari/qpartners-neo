@@ -103,8 +103,8 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       filters.keyword,
       filters.statuses,
       filters.targetType,
-      filters.startDate?.toISOString(),
-      filters.endDate?.toISOString(),
+      filters.startDate?.getTime(),
+      filters.endDate?.getTime(),
       page,
     ],
     queryFn: async () => {
@@ -115,8 +115,14 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       if (filters.keyword) params.keyword = filters.keyword;
       if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
       if (filters.targetType) params.targetType = filters.targetType;
-      if (filters.startDate) params.startDate = filters.startDate.toISOString().slice(0, 10);
-      if (filters.endDate) params.endDate = filters.endDate.toISOString().slice(0, 10);
+      if (filters.startDate) {
+        const d = filters.startDate;
+        params.startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
+      if (filters.endDate) {
+        const d = filters.endDate;
+        params.endDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
 
       const res = await api.get<NoticeListResponse>("/home-notices", { params });
       return res.data;
