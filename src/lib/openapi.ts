@@ -1079,7 +1079,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { $ref: "#/components/schemas/HomeNotice" },
+                    data: { $ref: "#/components/schemas/HomeNoticeListItem" },
                   },
                 },
               },
@@ -2296,9 +2296,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("검증 실패 또는 권한 변경 불가"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "409": errorResponse("QSP 상태 미확인 — status 명시 또는 중요 항목 변경 불가"),
+          "409": errorResponse("QSP 상태 미확인 — status 또는 authCd 명시 필요"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
+          "503": errorResponse("회원 정보 확인 불가 — 일시적 서버 오류 (재시도)"),
         },
       },
     },
@@ -3207,6 +3208,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           id: { type: "integer" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
+          startAt: { type: "string", format: "date-time" },
         },
       },
       CreateHomeNotice: {

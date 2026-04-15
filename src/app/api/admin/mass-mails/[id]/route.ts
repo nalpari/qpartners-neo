@@ -1,10 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { unlink } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
 
 import { requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
+import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
   massMailIdParamSchema,
@@ -125,7 +126,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     // 5. 첨부파일 디스크 정리 (DB 삭제 성공 후 — best-effort)
     for (const att of mail.attachments) {
-      const absPath = join(UPLOAD_DIR, att.filePath);
+      const absPath = resolve(UPLOAD_DIR, att.filePath);
+      if (!isInsideDir(absPath, UPLOAD_DIR)) {
+        console.error("[DELETE /api/admin/mass-mails/:id] Path Traversal 차단:", att.filePath);
+        continue;
+      }
       await unlink(absPath).catch((e: unknown) => {
         console.warn("[DELETE /api/admin/mass-mails/:id] 첨부파일 삭제 실패:", att.filePath, e);
       });
