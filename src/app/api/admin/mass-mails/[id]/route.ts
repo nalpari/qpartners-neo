@@ -219,6 +219,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 소유권 검증: 작성자만 수정 가능
+    if (existing.userId !== user.userId) {
+      return NextResponse.json(
+        { error: "他のユーザーが作成したメールは編集できません" },
+        { status: 403 },
+      );
+    }
+
     // 4. FormData 파싱
     let formData: FormData;
     try {
@@ -279,10 +287,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 실제 존재하는 첨부파일 ID만 필터링 (가짜 ID로 keepCount 음수 방지)
-    const validDeleteIds = deleteAttachmentIds.filter(
-      (id) => existing.attachments.some((a) => a.id === id),
-    );
+    // 중복 제거 + 실제 존재하는 첨부파일 ID만 필터링 (중복 ID로 keepCount 음수 방지)
+    const uniqueDeleteIds = new Set(deleteAttachmentIds);
+    const validDeleteIds = existing.attachments
+      .filter((a) => uniqueDeleteIds.has(a.id))
+      .map((a) => a.id);
     const keepCount = existing.attachments.length - validDeleteIds.length;
     if (keepCount + newFiles.length > MAX_FILES) {
       return NextResponse.json(
@@ -327,7 +336,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
       for (const file of newFiles) {
         const sanitizedName = basename(file.name);
-        const ext = sanitizedName.split(".").pop() ?? "";
+        const lastDot = sanitizedName.lastIndexOf(".");
+        const ext = lastDot > 0
+          ? sanitizedName.slice(lastDot + 1).toLowerCase().replace(/[^a-z0-9]/g, "")
+          : "";
         const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
         const filePath = `mass-mails/${tempId}/${safeFileName}`;
         const absolutePath = resolve(uploadDir, safeFileName);
@@ -357,9 +369,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
           });
         }
 
-        // 메일 본문 업데이트
-        await tx.massMail.update({
-          where: { id: idResult.data },
+        // 메일 본문 업데이트 (낙관적 락: status=draft 조건으로 TOCTOU 방어)
+        const updated = await tx.massMail.updateMany({
+          where: { id: idResult.data, status: "draft" },
           data: {
             senderName: data.senderName,
             targetSuperAdmin: data.targetSuperAdmin,
@@ -375,6 +387,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
             updatedBy: user.userId,
           },
         });
+        if (updated.count === 0) {
+          throw new Error("NOT_DRAFT_ANYMORE");
+        }
 
         // 신규 첨부파일 레코드 추가
         if (writtenFiles.length > 0) {
@@ -420,6 +435,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
     });
   } catch (error: unknown) {
     await cleanupWrittenFiles(writtenFiles, uploadDir);
+    if (error instanceof Error && error.message === "NOT_DRAFT_ANYMORE") {
+      return NextResponse.json(
+        { error: "このメールは既に下書き状態ではないため、編集できません" },
+        { status: 409 },
+      );
+    }
     console.error("[PUT /api/admin/mass-mails/:id] 수정 실패:", error);
     return NextResponse.json(
       { error: "メールの更新に失敗しました" },

@@ -13,12 +13,12 @@ export const massMailListQuerySchema = z.object({
   // 登録者 검색
   authorSearchType: z.enum(["name", "id"]).optional(),
   authorQuery: z.string().max(200).optional(),
-  // 登録日(createdAt) 범위 검색
+  // 登録日(createdAt) 범위 검색 — YYYY-MM-DD 포맷 강제 (타임존 안전)
   startDate: z.string()
-    .refine((v) => !isNaN(new Date(v).getTime()), { message: "有効な日付を入力してください" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "日付はYYYY-MM-DD形式で入力してください" })
     .optional(),
   endDate: z.string()
-    .refine((v) => !isNaN(new Date(v).getTime()), { message: "有効な日付を入力してください" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "日付はYYYY-MM-DD形式で入力してください" })
     .optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),

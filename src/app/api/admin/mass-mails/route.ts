@@ -213,7 +213,10 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
   try {
     const writePromises = files.map(async (file) => {
       const sanitizedName = basename(file.name);
-      const ext = sanitizedName.split(".").pop() ?? "";
+      const lastDot = sanitizedName.lastIndexOf(".");
+      const ext = lastDot > 0
+        ? sanitizedName.slice(lastDot + 1).toLowerCase().replace(/[^a-z0-9]/g, "")
+        : "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
       const filePath = `mass-mails/${tempId}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
@@ -370,19 +373,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 配信日 범위 검색
+    // 登録日 범위 검색 (JST 타임존 명시)
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) {
-        where.createdAt.gte = new Date(startDate);
+        where.createdAt.gte = new Date(`${startDate}T00:00:00+09:00`);
       }
       if (endDate) {
-        // endDate는 해당 일자 끝까지 포함
-        const end = new Date(endDate);
-        if (!endDate.includes("T")) {
-          end.setHours(23, 59, 59, 999);
-        }
-        where.createdAt.lte = end;
+        where.createdAt.lte = new Date(`${endDate}T23:59:59.999+09:00`);
       }
     }
 

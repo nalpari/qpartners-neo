@@ -230,22 +230,27 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // preDetail 없으면 canonical ID 비교 불가 → rawId 기반 fallback 비교 (보안 강도 저하)
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — rawId fallback self-target 비교 실행:", { adminUserId: user.userId, targetRawId: rawId });
-        const adminLower = user.userId.trim().toLowerCase();
-        const targetLower = rawId.trim().toLowerCase();
-        if (adminLower === targetLower) {
-          return NextResponse.json(
-            { error: "自分自身のアカウントに対するこの変更は実行できません" },
-            { status: 400 },
-          );
-        }
+        // MF-4 fail-closed: preDetail 없으면 canonical ID 비교 불가 → critical 변경 차단
+        console.warn("[PUT /api/admin/members/:id] preDetail null — critical 변경 차단:", {
+          adminUserId: maskEmail(user.userId),
+          targetRawId: maskEmail(rawId),
+        });
+        return NextResponse.json(
+          { error: "会員情報を確認できないため、この変更は実行できません" },
+          { status: 409 },
+        );
       }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail 없는 경우: critical 필드는 rawId fallback 비교로 self-target만 차단, 그 외는 통과
-    if (result.data.userRole !== undefined && preDetail) {
+    if (result.data.userRole !== undefined) {
+      if (!preDetail) {
+        // preDetail null → userTp 확인 불가 → 안전하게 거부
+        return NextResponse.json(
+          { error: "会員情報を確認できないため、権限変更は実行できません" },
+          { status: 409 },
+        );
+      }
       if (preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },
