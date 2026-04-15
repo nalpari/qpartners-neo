@@ -12,6 +12,87 @@ import {
 
 type Params = { params: Promise<{ id: string }> };
 
+/** status 동적 산출 (DB 컬럼 없음) */
+function computeStatus(startAt: Date, endAt: Date): string {
+  const now = new Date();
+  if (now < startAt) return "scheduled";
+  if (now > endAt) return "ended";
+  return "active";
+}
+
+/** target Boolean 필드를 배열로 변환 */
+function toTargetArray(row: {
+  targetSuperAdmin: boolean;
+  targetAdmin: boolean;
+  targetFirstStore: boolean;
+  targetSecondStore: boolean;
+  targetConstructor: boolean;
+  targetGeneral: boolean;
+}): string[] {
+  const targets: string[] = [];
+  if (row.targetSuperAdmin) targets.push("super_admin");
+  if (row.targetAdmin) targets.push("admin");
+  if (row.targetFirstStore) targets.push("first_store");
+  if (row.targetSecondStore) targets.push("second_store");
+  if (row.targetConstructor) targets.push("seko");
+  if (row.targetGeneral) targets.push("general");
+  return targets;
+}
+
+// GET /api/home-notices/:id — 공지 단건 조회
+export async function GET(request: NextRequest, { params }: Params) {
+  try {
+    const auth = requireAdmin(request.headers);
+    if (auth instanceof NextResponse) return auth;
+
+    const { id } = await params;
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    const notice = await prisma.homeNotice.findUnique({
+      where: { id: parsed.data },
+    });
+
+    if (!notice) {
+      return NextResponse.json(
+        { error: "お知らせが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    const data = {
+      id: notice.id,
+      targets: toTargetArray(notice),
+      content: notice.content,
+      url: notice.url,
+      startAt: notice.startAt,
+      endAt: notice.endAt,
+      status: computeStatus(notice.startAt, notice.endAt),
+      userType: notice.userType,
+      userId: notice.userId,
+      createdAt: notice.createdAt,
+      createdBy: notice.createdBy,
+      updatedAt: notice.updatedAt,
+      updatedBy: notice.updatedBy,
+    };
+
+    console.log(`[GET /api/home-notices/:id] 공지 단건 조회 — id: ${notice.id}`);
+
+    return NextResponse.json({ data });
+  } catch (error: unknown) {
+    console.error("[GET /api/home-notices/:id] 공지 단건 조회 실패:", error);
+    return NextResponse.json(
+      { error: "お知らせの取得に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
+
 // PUT /api/home-notices/:id — 공지 수정
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
