@@ -155,7 +155,6 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         field: "targets",
         flex: 1,
         valueFormatter: (p) => targetsToLabel(p.value as string[]),
-        cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {

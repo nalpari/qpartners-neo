@@ -33,8 +33,23 @@ interface FormErrors {
 
 function parseDate(str: string): Date | null {
   if (!str) return null;
-  const d = new Date(str.replace(/\./g, "-"));
-  return isNaN(d.getTime()) ? null : d;
+  // ISO 문자열은 직접 파싱, "2026.03.14" 형식은 dot→dash 치환 후 파싱
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+  const replaced = new Date(str.replace(/\./g, "-"));
+  return isNaN(replaced.getTime()) ? null : replaced;
+}
+
+function formatDateTime(value: string | undefined | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}.${m}.${day} ${h}:${min}`;
 }
 
 export function NoticeFormPopup() {
@@ -249,7 +264,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">登録日</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {initialData?.createdAt || "—"}
+                  {formatDateTime(initialData?.createdAt)}
                 </span>
               </div>
             </div>
@@ -265,7 +280,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">更新日</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {initialData?.updatedAt || "—"}
+                  {formatDateTime(initialData?.updatedAt)}
                 </span>
               </div>
             </div>
