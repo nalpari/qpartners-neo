@@ -29,33 +29,59 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+interface NoticeDetailResponse {
+  data: {
+    id: number;
+    targets: string[];
+    content: string;
+    url: string | null;
+    startAt: string;
+    endAt: string;
+    status: string;
+    userType: string;
+    userId: string;
+    createdAt: string;
+    createdBy: string | null;
+    updatedAt: string;
+    updatedBy: string | null;
+  };
+}
+
 function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
   const data = params.data;
   if (!data) return null;
 
   const openPopup = usePopupStore.getState().openPopup;
 
+  const handleClick = async () => {
+    try {
+      const res = await api.get<NoticeDetailResponse>(`/home-notices/${data.id}`);
+      const d = res.data.data;
+      const formData: NoticeFormData = {
+        id: d.id,
+        targets: d.targets,
+        startDate: d.startAt,
+        endDate: d.endAt,
+        content: d.content,
+        url: d.url ?? "",
+        author: d.createdBy ?? "",
+        authorId: d.userId,
+        createdAt: d.createdAt,
+        updater: d.updatedBy ?? "",
+        updaterId: "",
+        updatedAt: d.updatedAt,
+      };
+      openPopup("notice-form", { mode: "edit", notice: formData });
+    } catch (error: unknown) {
+      console.error("[NoticesTable] 공지 상세 조회 실패:", error);
+    }
+  };
+
   return (
     <button
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-      onClick={() => {
-        const formData: NoticeFormData = {
-          id: data.id,
-          targets: data.targets,
-          startDate: data.startAt,
-          endDate: data.endAt,
-          content: data.content,
-          url: data.url ?? "",
-          author: data.createdBy,
-          authorId: data.userId,
-          createdAt: data.createdAt,
-          updater: data.updatedBy ?? "",
-          updaterId: "",
-          updatedAt: data.updatedAt,
-        };
-        openPopup("notice-form", { mode: "edit", notice: formData });
-      }}
+      onClick={handleClick}
     >
       {data.content}
     </button>
