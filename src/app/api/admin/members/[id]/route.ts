@@ -13,6 +13,7 @@ import {
   STATUS_TO_STAT_CD,
   lookupStatCd,
   lookupUserTypeLabel,
+  defaultAuthCdFromUserTp,
 } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
 
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         return NextResponse.json({ error: detailResult.error.error }, { status: detailResult.error.status });
       }
 
-      console.warn("[GET /api/admin/members/:id] QSP 미조회 회원 — 빈 데이터로 응답:", rawId);
+      console.warn("[GET /api/admin/members/:id] QSP 미조회 회원 — 빈 데이터로 응답");
       return NextResponse.json({
         data: {
           id: idResult.data,
@@ -222,7 +223,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (modifiesSelfCritical) {
       // preDetail 없으면 canonical ID 비교 불가 → 안전하게 차단
       if (!preDetail) {
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — critical 필드 변경 차단 (MF-4 보호):", { rawId, adminUserId: user.userId });
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — critical 필드 변경 차단 (MF-4 보호)");
         return NextResponse.json(
           { error: "会員の詳細情報を確認できないため、重要項目の変更はできません" },
           { status: 409 },
@@ -265,13 +266,23 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
     // preDetail이 없는 경우(삭제/탈퇴 회원) → status 필수 지정됨 (위에서 검증)
     // ※ critical 필드(status/userRole/twoFactorEnabled)는 preDetail null 시 위에서 차단됨
-    const defaultedFields: string[] = [];
+    // preDetail 없는 경우(삭제/탈퇴) authCd 기본값 결정
+    // userTp→authCd 매핑 불가(STORE 등) 시 에러 반환
+    const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
+    if (!preDetail && result.data.userRole === undefined && fallbackAuthCd === null) {
+      return NextResponse.json(
+        { error: "会員の権限情報を確認できないため、権限コードを明示してください" },
+        { status: 409 },
+      );
+    }
+
     if (!preDetail) {
-      if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn→N");
-      if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn→N");
-      if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn→N");
-      if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn→N");
-      if (result.data.userRole === undefined) defaultedFields.push(`authCd→${userTp}`);
+      const defaultedFields: string[] = [];
+      if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn");
+      if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn");
+      if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn");
+      if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn");
+      if (result.data.userRole === undefined) defaultedFields.push("authCd");
       if (defaultedFields.length > 0) {
         console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
       }
@@ -281,7 +292,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userTp,
       userId: rawId,
-      authCd: result.data.userRole ?? preDetail?.authCd ?? userTp,
+      authCd: result.data.userRole ?? preDetail?.authCd ?? fallbackAuthCd,
       secAuthYn: result.data.twoFactorEnabled !== undefined
         ? (result.data.twoFactorEnabled ? "Y" : "N")
         : (preDetail?.secAuthYn ?? "N"),
@@ -378,13 +389,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       if (!postDetailResult.ok) {
         console.error(
           "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
-          { rawId, byAdmin: user.userId },
+          { byAdmin: user.userId },
         );
         warning = "更新は完了しましたが、事後検証ができませんでした";
       } else if (postDetailResult.detail.userTp !== "GENERAL") {
         console.error(
           "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
-          { rawId, postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
+          { postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
         );
         warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
       }
@@ -396,7 +407,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
       data: {
         message: "会員情報を更新しました",
         ...(warning !== undefined && { warning }),
-        ...(defaultedFields.length > 0 && { defaultedFields }),
       },
     });
   } catch (error: unknown) {

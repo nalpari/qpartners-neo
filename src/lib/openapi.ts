@@ -2260,7 +2260,6 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         message: { type: "string" },
                         warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
-                        defaultedFields: { type: "array", items: { type: "string" }, description: "preDetail 미조회로 기본값 적용된 필드 목록" },
                       },
                     },
                   },
