@@ -70,12 +70,15 @@ export async function fetchQspUserDetail(
     console.error(`${logTag} QSP 응답 스키마 불일치:`, parsed.error.issues);
     return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
   }
-  if (parsed.data.result.resultCode !== "S" || !parsed.data.data) {
-    console.warn(`${logTag} QSP 회원 조회 결과 없음:`, {
-      resultCode: parsed.data.result.resultCode,
-      message: parsed.data.result.message,
-    });
+  const resultCode = parsed.data.result.resultCode;
+  // F_NOT_USER(회원 미존재)만 404, 그 외 비정상 코드는 502
+  if (resultCode === "F_NOT_USER") {
+    console.warn(`${logTag} QSP 회원 조회 결과 없음 (resultCode: ${resultCode})`);
     return { ok: false, error: { error: "会員情報が見つかりません", status: 404 } };
+  }
+  if (resultCode !== "S" || !parsed.data.data) {
+    console.error(`${logTag} QSP 회원 조회 실패 (resultCode: ${resultCode})`);
+    return { ok: false, error: { error: "外部サーバーエラーが発生しました", status: 502 } };
   }
   return { ok: true, detail: parsed.data.data };
 }
