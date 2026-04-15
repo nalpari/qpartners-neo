@@ -41,6 +41,7 @@ function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
       onClick={() => {
         const formData: NoticeFormData = {
+          id: data.id,
           targets: data.targets,
           startDate: data.startAt,
           endDate: data.endAt,

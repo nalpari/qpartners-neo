@@ -30,6 +30,7 @@ export interface NoticeListResponse {
 
 /** 팝업 폼 데이터 (등록/수정용) */
 export interface NoticeFormData {
+  id?: number;
   targets: string[];
   startDate: string;
   endDate: string;
@@ -83,6 +84,27 @@ export const TARGET_LABEL_MAP: Record<string, string> = {
 export function targetsToLabel(targets: string[]): string {
   if (!targets || targets.length === 0) return "-";
   return targets.map((t) => TARGET_LABEL_MAP[t] ?? t).join(", ");
+}
+
+// Design Ref: §2 — targets ↔ API boolean 필드 변환
+
+/** targets key → API boolean 필드명 매핑 */
+export const TARGET_FIELD_MAP: Record<string, string> = {
+  super_admin: "targetSuperAdmin",
+  admin: "targetAdmin",
+  first_store: "targetFirstStore",
+  second_store: "targetSecondStore",
+  seko: "targetConstructor",
+  general: "targetGeneral",
+};
+
+/** targets 배열 → API request body boolean 필드 변환 */
+export function targetsToPayload(targets: string[]): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  for (const [key, field] of Object.entries(TARGET_FIELD_MAP)) {
+    result[field] = targets.includes(key);
+  }
+  return result;
 }
 
 /** ISO 8601 → YYYY.MM.DD */
