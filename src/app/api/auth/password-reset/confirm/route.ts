@@ -9,7 +9,7 @@ import { hashResetToken } from "@/lib/password-reset-token";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole, type AuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "userDetail",
         callerRoute: "[POST /api/auth/password-reset/confirm]",
-        userId: resetToken.userId,
+        userId: maskEmail(resetToken.userId),
         userType: resetToken.userType,
       },
     );
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       QSP_API.userPwdChg,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           accsSiteCd: "QPARTNERS",
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
         direction: "OUTBOUND",
         apiName: "userPwdChg",
         callerRoute: "[POST /api/auth/password-reset/confirm]",
-        userId: loginId,
+        userId: maskEmail(loginId),
         userType: resetToken.userType,
       },
     );

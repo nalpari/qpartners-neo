@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { getUserFromRequest, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userDetail",
           callerRoute: "[POST /api/auth/password-init]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: user.userTp,
         },
       );
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
         QSP_API.userPwdChg,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json; charset=utf-8" },
           signal: AbortSignal.timeout(10_000),
           body: JSON.stringify({
             accsSiteCd: "QPARTNERS",
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userPwdChg",
           callerRoute: "[POST /api/auth/password-init]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: user.userTp,
         },
       );

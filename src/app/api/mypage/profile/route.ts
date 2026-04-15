@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userDetail",
           callerRoute: "[GET /api/mypage/profile]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: user.userTp,
         },
       );
@@ -348,7 +348,7 @@ export async function PUT(request: NextRequest) {
           QSP_API.updateUserDtl,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json; charset=utf-8" },
             signal: AbortSignal.timeout(10_000),
             body: JSON.stringify(qspPayload),
           },
@@ -357,7 +357,7 @@ export async function PUT(request: NextRequest) {
             direction: "OUTBOUND",
             apiName: "updateUserDtl",
             callerRoute: "[PUT /api/mypage/profile]",
-            userId: user.userId,
+            userId: maskEmail(user.userId),
             userType: user.userTp,
           },
         );

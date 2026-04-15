@@ -3,34 +3,11 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createHomeNoticeSchema } from "@/lib/schemas/home-notice";
-
-/** status 동적 산출 (DB 컬럼 없음) */
-function computeStatus(startAt: Date, endAt: Date): string {
-  const now = new Date();
-  if (now < startAt) return "scheduled";
-  if (now > endAt) return "ended";
-  return "active";
-}
-
-/** target Boolean 필드를 배열로 변환 */
-function toTargetArray(row: {
-  targetSuperAdmin: boolean;
-  targetAdmin: boolean;
-  targetFirstStore: boolean;
-  targetSecondStore: boolean;
-  targetConstructor: boolean;
-  targetGeneral: boolean;
-}): string[] {
-  const targets: string[] = [];
-  if (row.targetSuperAdmin) targets.push("super_admin");
-  if (row.targetAdmin) targets.push("admin");
-  if (row.targetFirstStore) targets.push("first_store");
-  if (row.targetSecondStore) targets.push("second_store");
-  if (row.targetConstructor) targets.push("seko");
-  if (row.targetGeneral) targets.push("general");
-  return targets;
-}
+import {
+  createHomeNoticeSchema,
+  computeStatus,
+  toTargetArray,
+} from "@/lib/schemas/home-notice";
 
 // GET /api/home-notices — 공지 목록 (관리자용)
 export async function GET(request: NextRequest) {

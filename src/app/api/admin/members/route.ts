@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
-import { fetchWithLog } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userListMng",
           callerRoute: "[GET /api/admin/members]",
-          userId: user.userId,
+          userId: maskEmail(user.userId),
           userType: "ADMIN",
         },
       );
