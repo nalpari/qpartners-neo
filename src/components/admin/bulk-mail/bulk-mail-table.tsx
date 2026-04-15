@@ -57,6 +57,10 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const queryParams = {
     keyword: searchParams.keyword || undefined,
     target: searchParams.target || undefined,
+    authorSearchType: searchParams.authorSearchType || undefined,
+    authorQuery: searchParams.authorQuery || undefined,
+    startDate: searchParams.startDate || undefined,
+    endDate: searchParams.endDate || undefined,
     draftOnly: draftOnly ? "true" : undefined,
     page: String(currentPage),
     pageSize: perPage,

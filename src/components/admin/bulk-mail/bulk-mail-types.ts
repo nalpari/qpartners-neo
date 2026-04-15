@@ -31,6 +31,10 @@ export interface MassMailListResponse {
 export interface MassMailSearchParams {
   keyword?: string;
   target?: string;
+  authorSearchType?: "name" | "id";
+  authorQuery?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 /** API status → UI 표시 매핑 */

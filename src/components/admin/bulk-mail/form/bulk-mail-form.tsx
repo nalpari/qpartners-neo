@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -28,6 +28,7 @@ interface BulkMailFormProps {
 
 export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { openAlert } = useAlertStore();
 
   const isDetail = mode === "detail";
@@ -50,8 +51,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
     onSuccess: (res) => {
       const { id, message } = res.data.data;
-      openAlert({ type: "alert", message });
-      router.push(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
+      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      openAlert({
+        type: "alert",
+        message,
+        onConfirm: () => {
+          router.push(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
+        },
+      });
     },
     onError: (error: unknown) => {
       console.error("[BulkMailForm] 메일 등록 실패:", error);
@@ -104,7 +111,25 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     submitMutation.mutate(fd);
   };
 
-  // 임시저장 삭제 (API 미구현 — 백엔드 요청 예정)
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/admin/mass-mails/${editId}`),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["mass-mails"] });
+      void queryClient.invalidateQueries({ queryKey: ["mass-mails"] });
+      openAlert({
+        type: "alert",
+        message: "削除しました。",
+        onConfirm: () => {
+          router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+        },
+      });
+    },
+    onError: (error: unknown) => {
+      console.error("[BulkMailForm] 메일 삭제 실패:", error);
+      openAlert({ type: "alert", message: "削除に失敗しました。" });
+    },
+  });
+
   const handleDelete = () => {
     openAlert({
       type: "confirm",
@@ -112,8 +137,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       confirmLabel: "削除",
       cancelLabel: "キャンセル",
       onConfirm: () => {
-        // TODO: DELETE /api/admin/mass-mails/:id API 연동 (백엔드 요청 예정)
-        openAlert({ type: "alert", message: "この機能は現在準備中です。" });
+        deleteMutation.mutate();
       },
     });
   };
@@ -131,7 +155,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
-  const isPending = submitMutation.isPending;
+  const isPending = submitMutation.isPending || deleteMutation.isPending;
   const showSentAt = mode === "detail" || mode === "edit";
 
   const cardClass = "bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]";
