@@ -89,11 +89,9 @@ export function MemberDetailPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
 
-  const { userId, userTp, listItem } = popupData as {
-    userId?: string;
-    userTp?: string;
-    listItem?: MemberListItem;
-  };
+  const userId = typeof popupData.userId === "string" ? popupData.userId : undefined;
+  const userTp = typeof popupData.userTp === "string" ? popupData.userTp : undefined;
+  const listItem = popupData.listItem as MemberListItem | undefined;
 
   // Design Ref: §4.2 — 상세 조회
   const { data: rawMember, isLoading } = useQuery<MemberDetail & { notFoundInQsp?: boolean }>({
@@ -160,8 +158,10 @@ export function MemberDetailPopup() {
       openAlert({ type: "alert", message: "サーバーエラーが発生しました。" });
       return;
     }
-    const { status, data } = err.response as { status: number; data: { error?: string } };
-    const msg = data?.error ?? "";
+    const { status, data } = err.response;
+    const msg = typeof data === "object" && data !== null && "error" in data && typeof (data as Record<string, unknown>).error === "string"
+      ? (data as Record<string, unknown>).error as string
+      : "";
 
     if (status === 400 && msg.includes("自分自身")) {
       openAlert({ type: "alert", message: "自分自身のアカウントは変更できません。" });
@@ -210,6 +210,8 @@ export function MemberDetailPopup() {
   // 탈퇴(withdrawn) 상태는 조회만 가능, 수정 불가
   const isWithdrawn = member?.status === "withdrawn";
   const isReadOnly = isWithdrawn;
+  // QSP 미조회 회원은 twoFactor/userRole 편집 불가 (백엔드 critical 변경 차단)
+  const isQspNotFound = rawMember?.notFoundInQsp === true;
 
   const handleClose = () => {
     setIsClosing(true);
@@ -221,8 +223,6 @@ export function MemberDetailPopup() {
 
   const handleSave = () => {
     if (!member) return;
-
-    const isQspNotFound = rawMember?.notFoundInQsp === true;
 
     const payload: MemberUpdatePayload = {
       loginNotification,
@@ -347,8 +347,8 @@ export function MemberDetailPopup() {
                   left={{ label: "氏名ひらがな", children: <TextValue value={member.userNameKana} /> }}
                   right={{
                     label: "ユーザー権限",
-                    isForm: isGeneral && !isReadOnly,
-                    children: isGeneral && !isReadOnly ? (
+                    isForm: isGeneral && !isReadOnly && !isQspNotFound,
+                    children: isGeneral && !isReadOnly && !isQspNotFound ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
                         value={userRole}
@@ -376,8 +376,8 @@ export function MemberDetailPopup() {
                     label: "二次認証",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly} />
-                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly} />
+                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly || isQspNotFound} />
+                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly || isQspNotFound} />
                       </div>
                     ),
                   }}
