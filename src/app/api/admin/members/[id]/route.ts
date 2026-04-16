@@ -15,11 +15,38 @@ import {
   lookupUserTypeLabel,
   defaultAuthCdFromUserTp,
 } from "@/lib/schemas/member";
+import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
 
 const QSP_LOG_MSG_MAX_LEN = 200;
+
+/**
+ * 4-0: GENERAL 외 회원(STORE/SEKO/ADMIN)이 수정 가능한 필드 화이트리스트.
+ *      화면설계서 v1.1(2026-03-30) — 이들 회원은 ニュースレター受信設定만 변경 가능.
+ *
+ * 블랙리스트가 아닌 화이트리스트로 유지하는 이유:
+ *   memberUpdateSchema 에 새 필드가 추가될 때 자동으로 "허용"되는 fail-open 위험
+ *   을 방지하기 위함(신규 필드는 여기에 명시적으로 추가해야만 허용됨).
+ */
+const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set([
+  "newsRcptYn",
+]);
+
+/**
+ * preDetail null 경로에서 QSP 필수 필드 제약으로 기본값이 강제 주입되는 필드의
+ * 클라이언트 노출용 일본어 라벨. 내부 필드명(secAuthYn 등)이 응답에 새어나가지
+ * 않도록 하기 위한 매핑.
+ */
+const DEFAULTED_FIELD_LABELS_JA: Record<string, string> = {
+  secAuthYn: "二段階認証設定",
+  loginNotiYn: "ログイン通知設定",
+  attrChgYn: "属性変更通知設定",
+  newsRcptYn: "ニュースレター受信設定",
+  authCd: "ユーザー権限",
+  statCd: "アカウント状態",
+};
 
 /**
  * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
@@ -215,22 +242,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 4-0. 권한별 수정 제한 정책 (화면설계서 v1.1, 2026-03-30)
     // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는 newsRcptYn 만 허용.
     // ※ 비밀번호는 별도 API(/reset-password) 로 처리되므로 본 PUT 스키마에 없음.
+    //
+    // 화이트리스트(ALLOWED_NON_GENERAL_FIELDS) 기반 fail-closed 검증:
+    //   스키마에 새 필드가 추가되어도 화이트리스트에 올리지 않으면 자동 차단된다.
     if (userTp !== "GENERAL") {
-      const restrictedFields = (
-        [
-          "userRole",
-          "twoFactorEnabled",
-          "loginNotification",
-          "attributeChangeNotification",
-          "status",
-        ] as const
-      ).filter((key) => result.data[key] !== undefined);
-      if (restrictedFields.length > 0) {
+      const disallowedFields = (Object.keys(result.data) as Array<keyof MemberUpdateInput>)
+        .filter((key) => result.data[key] !== undefined)
+        .filter((key) => !ALLOWED_NON_GENERAL_FIELDS.has(key));
+      if (disallowedFields.length > 0) {
         return NextResponse.json(
           {
             error:
               "一般会員以外はニュースレター受信設定のみ変更可能です",
-            details: restrictedFields.map((field) => ({ field, message: "変更不可" })),
+            details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
           },
           { status: 400 },
         );
@@ -304,12 +328,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
           s.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
         const adminNorm = normalize(user.userId);
         const targetNorm = normalize(rawId);
-        console.warn("[PUT /api/admin/members/:id] preDetail null — NFKC 정규화 rawId fallback self-target 비교:", {
-          adminUserId: maskEmail(user.userId),
-          targetRawId: maskEmail(rawId),
-          matched: adminNorm === targetNorm,
-        });
         if (adminNorm === targetNorm) {
+          // matched 케이스만 감사 로그 출력 (불일치는 정상 경로 — 노이즈 방지)
+          console.warn("[PUT /api/admin/members/:id] preDetail null — NFKC 정규화 rawId fallback 매칭(self-target 차단):", {
+            adminUserId: maskEmail(user.userId),
+            targetRawId: maskEmail(rawId),
+          });
           return NextResponse.json(
             { error: "自分自身のアカウントに対するこの変更は実行できません" },
             { status: 400 },
@@ -482,11 +506,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
       warning: warning ?? null,
     });
 
+    // QSP 내부 필드명이 클라이언트 응답에 노출되지 않도록 일본어 라벨로 치환.
+    // 매핑에 없는 키(신규 필드 추가 누락 등)는 방어적으로 원시 키로 폴백.
     const warnings =
       defaultedFields.length > 0
-        ? defaultedFields.map(
-            (f) => `${f} が既定値で更新されました (元の値を取得できなかったため)`,
-          )
+        ? defaultedFields.map((f) => {
+            const label = DEFAULTED_FIELD_LABELS_JA[f] ?? f;
+            return `${label}が既定値で更新されました (元の値を取得できなかったため)`;
+          })
         : undefined;
 
     return NextResponse.json({
