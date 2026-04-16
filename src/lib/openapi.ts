@@ -2530,6 +2530,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
+          "500": errorResponse("수정 실패"),
         },
       },
       delete: {

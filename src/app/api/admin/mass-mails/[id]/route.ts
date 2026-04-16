@@ -334,7 +334,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       await mkdir(uploadDir, { recursive: true });
       const uploadDirAbs = resolve(uploadDir);
 
-      for (const file of newFiles) {
+      const writeResults = await Promise.all(newFiles.map(async (file) => {
         const sanitizedName = basename(file.name);
         const lastDot = sanitizedName.lastIndexOf(".");
         const ext = lastDot > 0
@@ -342,17 +342,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
           : "";
         const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
         const filePath = `mass-mails/${tempId}/${safeFileName}`;
-        const absolutePath = resolve(uploadDir, safeFileName);
+        const absolutePath = resolve(uploadDir!, safeFileName);
 
         if (!isInsideDir(absolutePath, uploadDirAbs)) {
           console.error("[PUT /api/admin/mass-mails/:id] PATH TRAVERSAL 감지:", { fileName: file.name });
-          await cleanupWrittenFiles(writtenFiles, uploadDir);
-          return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
+          return { error: true as const };
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
         await writeFile(absolutePath, buffer);
-        writtenFiles.push({ absolutePath, file, filePath });
+        return { error: false as const, absolutePath, file, filePath };
+      }));
+
+      const successes = writeResults.filter((r): r is WrittenFile & { error: false } => !r.error);
+      writtenFiles = successes;
+
+      if (writeResults.some((r) => r.error)) {
+        await cleanupWrittenFiles(writtenFiles, uploadDir);
+        return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
       }
     }
 

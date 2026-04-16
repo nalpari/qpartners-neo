@@ -77,7 +77,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ error: "IDが正しくありません" }, { status: 400 });
     }
 
     let body: unknown;
@@ -85,7 +85,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       body = await request.json();
     } catch {
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -173,7 +173,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ error: "IDが正しくありません" }, { status: 400 });
     }
 
     await prisma.homeNotice.delete({ where: { id: parsed.data } });
@@ -184,11 +184,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2025"
     ) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
     }
     console.error("[DELETE /api/home-notices/:id]", error);
     return NextResponse.json(
-      { error: "Failed to delete home notice" },
+      { error: "お知らせの削除に失敗しました" },
       { status: 500 },
     );
   }
