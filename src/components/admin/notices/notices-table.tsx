@@ -126,7 +126,9 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     },
   });
 
-  // Plan SC-07: 등록자 클라이언트 필터링
+  // TODO(SC-07): author 필터를 서버 사이드로 이전 필요
+  // 현재 클라이언트 필터는 현재 페이지(20건) 내에서만 동작하므로
+  // 다른 페이지의 등록자는 검색 결과에서 누락됨
   const items = data?.data ?? [];
   const filteredItems = filters.author
     ? items.filter((item) => item.createdBy?.includes(filters.author))

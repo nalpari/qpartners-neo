@@ -12,6 +12,7 @@ import type { NoticeSearchFilters } from "./notices-types";
 export function NoticesContents() {
   const [filters, setFilters] = useState<NoticeSearchFilters>(INITIAL_FILTERS);
   const [page, setPage] = useState(1);
+  const [resetKey, setResetKey] = useState(0);
 
   const handleSearch = (newFilters: NoticeSearchFilters) => {
     setFilters(newFilters);
@@ -21,11 +22,12 @@ export function NoticesContents() {
   const handleReset = () => {
     setFilters(INITIAL_FILTERS);
     setPage(1);
+    setResetKey((k) => k + 1);
   };
 
   return (
     <main className="flex flex-col items-center gap-[18px] w-full pb-[48px]">
-      <NoticesSearch filters={filters} onSearch={handleSearch} onReset={handleReset} />
+      <NoticesSearch key={resetKey} filters={filters} onSearch={handleSearch} onReset={handleReset} />
       <NoticesTable filters={filters} page={page} onPageChange={setPage} />
     </main>
   );

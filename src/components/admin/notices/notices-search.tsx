@@ -33,23 +33,17 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   const [author, setAuthor] = useState(filters.author);
   const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
   const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
-  const [targets, setTargets] = useState<string[]>(
-    filters.targetType ? [filters.targetType] : [],
-  );
+  const [targetType, setTargetType] = useState(filters.targetType);
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
-  };
-
-  const toggleTarget = (value: string, checked: boolean) => {
-    setTargets(checked ? [...targets, value] : targets.filter((t) => t !== value));
   };
 
   const handleSearch = () => {
     onSearch({
       keyword: content,
       statuses,
-      targetType: targets[0] ?? "",
+      targetType,
       startDate,
       endDate,
       author,
@@ -62,7 +56,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
     setAuthor("");
     setStartDate(null);
     setEndDate(null);
-    setTargets([]);
+    setTargetType("");
     onReset();
   };
 
@@ -140,8 +134,8 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               {TARGET_OPTIONS.map((opt) => (
                 <Checkbox
                   key={opt.value}
-                  checked={targets.includes(opt.value)}
-                  onChange={(checked) => toggleTarget(opt.value, checked)}
+                  checked={targetType === opt.value}
+                  onChange={(checked) => setTargetType(checked ? opt.value : "")}
                   label={opt.label}
                 />
               ))}
