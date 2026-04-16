@@ -222,20 +222,26 @@ export function MemberDetailPopup() {
   const handleSave = () => {
     if (!member) return;
 
+    const isQspNotFound = rawMember?.notFoundInQsp === true;
+
     const payload: MemberUpdatePayload = {
-      twoFactorEnabled,
       loginNotification,
       attributeChangeNotification: attributeNotify,
       newsRcptYn,
     };
+
+    // QSP 미조회(탈퇴/삭제) 회원은 twoFactorEnabled/userRole 제외 (백엔드 critical 변경 차단)
+    if (!isQspNotFound) {
+      payload.twoFactorEnabled = twoFactorEnabled;
+    }
 
     // 판매점(STORE)·관리자(ADMIN)는 상태 수정 불가
     if (isStatusEditable) {
       payload.status = memberStatus === "Active" ? "active" : "deleted";
     }
 
-    // GENERAL만 userRole 포함
-    if (isGeneral) {
+    // GENERAL만 userRole 포함 (QSP 미조회 시 제외)
+    if (isGeneral && !isQspNotFound) {
       payload.userRole = userRole;
     }
 
