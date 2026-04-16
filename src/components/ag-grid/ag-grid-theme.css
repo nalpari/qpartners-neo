@@ -43,11 +43,11 @@
   border: none !important;
 }
 
-/* autoHeight 모드: AG Grid 내부 min-height 제거 */
+/* autoHeight 모드: AG Grid 내부 min-height 제거 (행이 있을 때 불필요한 여백 방지) */
 .ag-layout-auto-height .ag-body-viewport {
   min-height: auto !important;
 }
-.ag-center-cols-container, .ag-center-cols-viewport{
+.ag-center-cols-container, .ag-center-cols-viewport {
   min-height: auto !important;
 }
 

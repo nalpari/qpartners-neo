@@ -1,22 +1,44 @@
 "use client";
 
+// Design Ref: §3.3 — 검색 UI + onSearch/onReset 콜백
+
 import { useState } from "react";
 import { InputBox, SelectBox, Radio, Button, DatePicker } from "@/components/common";
+import type { MassMailSearchParams } from "./bulk-mail-types";
 
 const TARGET_OPTIONS = [
   { value: "", label: "全体" },
-  { value: "all-members", label: "全会員" },
-  { value: "btob", label: "BtoB" },
-  { value: "btoc", label: "BtoC" },
+  { value: "super_admin", label: "スーパー管理者" },
+  { value: "admin", label: "管理者" },
+  { value: "first_store", label: "1次販売店" },
+  { value: "second_store", label: "2次以降販売店" },
+  { value: "seko", label: "施工店" },
+  { value: "general", label: "一般" },
 ];
 
-export function BulkMailSearch() {
+interface BulkMailSearchProps {
+  onSearch: (params: MassMailSearchParams) => void;
+  onReset: () => void;
+}
+
+export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
   const [title, setTitle] = useState("");
   const [authorSearchType, setAuthorSearchType] = useState<"name" | "id">("name");
   const [authorQuery, setAuthorQuery] = useState("");
   const [target, setTarget] = useState("");
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
+
+  const handleSearch = () => {
+    onSearch({
+      keyword: title.trim() || undefined,
+      target: target || undefined,
+      authorSearchType: authorQuery.trim() ? authorSearchType : undefined,
+      authorQuery: authorQuery.trim() || undefined,
+      startDate: startDate ? startDate.toISOString() : undefined,
+      endDate: endDate ? endDate.toISOString() : undefined,
+    });
+  };
 
   const handleReset = () => {
     setTitle("");
@@ -25,6 +47,7 @@ export function BulkMailSearch() {
     setTarget("");
     setStartDate(null);
     setEndDate(null);
+    onReset();
   };
 
   return (
@@ -106,7 +129,7 @@ export function BulkMailSearch() {
 
       {/* 버튼 */}
       <div className="flex items-center justify-end gap-[6px] mt-[18px]">
-        <Button variant="primary">検索</Button>
+        <Button variant="primary" onClick={handleSearch}>検索</Button>
         <Button variant="secondary" onClick={handleReset}>初期化</Button>
       </div>
     </div>
