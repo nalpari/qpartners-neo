@@ -238,7 +238,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4-0-b. STORE + preDetail null 명시 거부
-    // userListMng 에 storeLvl 미포함 → 탈퇴/삭제 STORE 의 authCd(1ST/2ND) 확정 불가.
+    // QSP userDetail 이 F_NOT_USER 반환 → preDetail.storeLvl 확보 불가.
+    // 상위 userListMng 응답에도 storeLvl 미포함으로 query param 대체 불가.
     // QSP I/F 개선(userListMng 에 storeLvl 추가) 요청 중. 개선 전까지는 fail-closed 로 차단.
     if (userTp === "STORE" && !preDetail) {
       console.warn(
@@ -251,10 +252,36 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 4-0-c. preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 critical 변경 제한
+    // userRole/twoFactorEnabled 는 canonical userTp 확인 불가 상태에서 바꾸면
+    // 권한 상승 / 2FA 무력화 위험이 있으므로 fail-closed. status(복구) 만 허용.
+    // 회원 복구 완료 후 재요청하면 preDetail 이 확보되므로 정상 경로로 처리됨.
+    if (!preDetail) {
+      const blockedCriticalFields: string[] = [];
+      if (result.data.userRole !== undefined) blockedCriticalFields.push("userRole");
+      if (result.data.twoFactorEnabled !== undefined) blockedCriticalFields.push("twoFactorEnabled");
+      if (blockedCriticalFields.length > 0) {
+        console.warn(
+          "[PUT /api/admin/members/:id] preDetail null — critical 변경 차단 (권한/2FA 는 복구 후 재요청):",
+          { targetRawId: maskEmail(rawId), blockedCriticalFields },
+        );
+        return NextResponse.json(
+          {
+            error:
+              "退会・削除済み会員の権限・二段階認証は変更できません。先にステータスを復元してください",
+            details: blockedCriticalFields.map((field) => ({ field, message: "復元後に変更可能" })),
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
     // MF-4: 보호 대상을 status + userRole + twoFactorEnabled 로 확장한다.
     //       관리자가 본인 계정을 무력화(비활성/2FA off)하거나 권한을 마음대로
     //       조작할 수 없어야 한다.
+    // preDetail null 경로는 4-0-c 에서 userRole/2FA 가 이미 차단되므로,
+    // 여기서는 status 변경에 한해 rawId 기반 fallback 자기 비교만 수행한다.
     const modifiesSelfCritical =
       result.data.status !== undefined ||
       result.data.userRole !== undefined ||
@@ -269,15 +296,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) → rawId 기반 fallback 비교
-        // 보안 강도 저하이나, 탈퇴 회원 상태 복구/변경을 위해 불가피
-        console.warn("[PUT /api/admin/members/:id] preDetail null — rawId fallback self-target 비교:", {
+        // preDetail null (F_NOT_USER): NFKC 정규화 후 rawId fallback 비교
+        // - 전각/반각, 한글 조합, invisible char(ZWSP 등) 우회 차단
+        // - 대소문자·좌우 공백 무시
+        // - 도달 가능한 케이스는 status 변경(복구) 에 한정됨 (4-0-c)
+        const normalize = (s: string) =>
+          s.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        const adminNorm = normalize(user.userId);
+        const targetNorm = normalize(rawId);
+        console.warn("[PUT /api/admin/members/:id] preDetail null — NFKC 정규화 rawId fallback self-target 비교:", {
           adminUserId: maskEmail(user.userId),
           targetRawId: maskEmail(rawId),
+          matched: adminNorm === targetNorm,
         });
-        const adminLower = user.userId.trim().toLowerCase();
-        const targetLower = rawId.trim().toLowerCase();
-        if (adminLower === targetLower) {
+        if (adminNorm === targetNorm) {
           return NextResponse.json(
             { error: "自分自身のアカウントに対するこの変更は実行できません" },
             { status: 400 },
@@ -287,10 +319,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail null (F_NOT_USER) 시 query param userTp로 fallback
+    // preDetail null 경로는 이미 4-0-c 에서 차단됨 → 여기 도달 시 preDetail 존재 확정
     if (result.data.userRole !== undefined) {
-      const effectiveUserTp = preDetail?.userTp ?? userTp;
-      if (effectiveUserTp !== "GENERAL") {
+      if (preDetail && preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },
           { status: 400 },
@@ -311,13 +342,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // preDetail null + STORE 는 위 4-0-b 에서 이미 차단됨. 여기서는 GENERAL/ADMIN/SEKO 만 처리.
     const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
 
+    // preDetail null 시 fallback 기본값이 주입된 필드 목록을 수집하여
+    // 응답 `warnings` 로 클라이언트에 통보한다 (사일런트 상태 변경 방지).
+    // 4-0-c 에 의해 userRole/twoFactorEnabled 변경 요청 자체는 차단되지만,
+    // QSP 필수 필드 제약으로 secAuthYn 등은 "N" 이 강제 주입되므로 통보 대상.
+    const defaultedFields: string[] = [];
     if (!preDetail) {
-      const defaultedFields: string[] = [];
       if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn");
       if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn");
       if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn");
       if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn");
       if (result.data.userRole === undefined) defaultedFields.push("authCd");
+      if (result.data.status === undefined) defaultedFields.push("statCd");
       if (defaultedFields.length > 0) {
         console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
       }
@@ -436,12 +472,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료");
+    console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료", {
+      targetUserId: maskEmail(rawId),
+      targetUserTp: userTp,
+      byAdmin: maskEmail(user.userId),
+      changedFields: Object.keys(result.data),
+      preDetailPresent: preDetail !== null,
+      defaultedFields,
+      warning: warning ?? null,
+    });
+
+    const warnings =
+      defaultedFields.length > 0
+        ? defaultedFields.map(
+            (f) => `${f} が既定値で更新されました (元の値を取得できなかったため)`,
+          )
+        : undefined;
 
     return NextResponse.json({
       data: {
         message: "会員情報を更新しました",
         ...(warning !== undefined && { warning }),
+        ...(warnings !== undefined && { warnings }),
       },
     });
   } catch (error: unknown) {

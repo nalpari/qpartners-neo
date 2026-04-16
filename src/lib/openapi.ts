@@ -2263,7 +2263,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         description:
           "관리자 전용 — 권한별 수정 제한 정책: GENERAL 은 전체 필드 수정 가능. " +
           "STORE/SEKO/ADMIN 은 newsRcptYn 만 변경 가능 (비밀번호는 별도 /reset-password API). " +
-          "탈퇴/삭제된 STORE 회원은 storeLvl 확보 불가로 수정 차단(400).",
+          "탈퇴/삭제된 STORE 회원은 storeLvl 확보 불가로 수정 차단(400). " +
+          "preDetail null (탈퇴/삭제 회원) 경로에서는 userRole/twoFactorEnabled 변경 불가(400), status 복구만 허용. " +
+          "preDetail null 시 QSP 필수 필드에 기본값이 주입된 경우 응답 warnings 배열로 통보.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
           { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
@@ -2289,6 +2291,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         message: { type: "string" },
                         warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
+                        warnings: {
+                          type: "array",
+                          items: { type: "string" },
+                          description:
+                            "preDetail null 경로에서 QSP 필수 필드에 기본값이 주입된 경우, 해당 필드별 통보 메시지 배열 (사일런트 상태 변경 방지)",
+                        },
                       },
                     },
                   },
@@ -2296,7 +2304,9 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단"),
+          "400": errorResponse(
+            "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null + userRole·twoFactorEnabled 변경 차단",
+          ),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "500": errorResponse("서버 에러"),

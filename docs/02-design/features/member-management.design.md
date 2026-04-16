@@ -4,11 +4,11 @@
 >
 > **Project**: qpartners-neo
 > **Author**: CK
-> **Date**: 2026-04-16 (v1.1)
+> **Date**: 2026-04-16 (v1.2)
 > **Status**: Active
 > **Planning Doc**: [member-management.plan.md](../../01-plan/features/member-management.plan.md)
 > **화면설계서**: p.46-47 (v1.1, 2026-03-30 확정본)
-> **관련 정책**: 권한별 수정 제한 정책 (2026-03-30 도입, 2026-04-13 ADMIN 추가, 2026-04-16 관리자 API 확장)
+> **관련 정책**: 권한별 수정 제한 정책 (2026-03-30 도입, 2026-04-13 ADMIN 추가, 2026-04-16 관리자 API 확장, 2026-04-16 리뷰 반영)
 
 ---
 
@@ -169,18 +169,32 @@
    - 404/F_NOT_USER (탈퇴·삭제): `preDetail = null` 로 두고 다음 단계 진행 (수정 허용)
 5. **권한별 수정 제한 정책 검증** — `userTp !== "GENERAL"` 이면 `newsRcptYn` 외 필드 포함 시 400
 6. **STORE + preDetail null 명시 거부** — storeLvl 확보 불가 → 400 (QSP `userListMng` 에 storeLvl 추가 요청 회신 대기 중)
-7. **본인 계정 보호 가드** (아래 §1.3)
-8. `userRole` 변경 시 대상 회원이 GENERAL 인지 검증 — `preDetail?.userTp ?? userTp` fallback
-9. QSP 업데이트 payload 구성 (아래 §1.4)
-10. QSP `/api/qpartners/userMng/updateUserDtlMng` 호출
-11. `userRole` 변경 경로일 때만 사후 검증 (아래 §1.5)
+7. **preDetail null + critical 변경 제한** (v1.2) — 탈퇴/삭제 회원에 대한 `userRole` / `twoFactorEnabled` 변경은 fail-closed 400. `status` 복구만 허용 (아래 §1.3)
+8. **본인 계정 보호 가드** (아래 §1.3)
+9. `userRole` 변경 시 대상 회원이 GENERAL 인지 검증 — preDetail null 은 §1.3 에서 이미 차단되므로 여기서는 `preDetail.userTp` 기준으로만 판정
+10. QSP 업데이트 payload 구성 (아래 §1.4)
+11. QSP `/api/qpartners/userMng/updateUserDtlMng` 호출
+12. `userRole` 변경 경로일 때만 사후 검증 (아래 §1.5)
 
-#### 1.3 본인 계정 보호 가드 (self-lockout / self-escalation 방지)
+#### 1.3 본인 계정 보호 가드 및 preDetail null 제약 (self-lockout / self-escalation 방지)
 
-관리자가 **본인 계정**의 critical 필드 3종(`status`, `userRole`, `twoFactorEnabled`)을 변경하려 할 때 차단한다.
+관리자가 **본인 계정**의 critical 필드 3종(`status`, `userRole`, `twoFactorEnabled`)을 변경하려 할 때 차단한다. 추가로 v1.2 부터 탈퇴/삭제 회원(preDetail null) 에 대한 critical 변경 자체를 제한한다.
+
+**preDetail null 경로 제약 (v1.2, 리뷰 반영):**
+
+| 요청 필드 | preDetail null 시 처리 |
+|-----------|------------------------|
+| `userRole` | **400 차단** — canonical `userTp` 미확인 상태에서 권한 부여 시 권한 상승 위험. 복구 후 재요청 필요 |
+| `twoFactorEnabled` | **400 차단** — 기존 2FA 설정 확인 불가 상태에서 변경 시 사일런트 downgrade 위험 |
+| `status=active` | 허용 (복구 목적) |
+| `newsRcptYn` / `loginNotification` / `attributeChangeNotification` | 허용 (단 기본값 "N" 강제 주입 시 §1.4 warnings 로 통보) |
+
+**self-target 비교 로직:**
 
 - `preDetail` 존재: canonical ID(QSP 반환 `userId/loginId`) 비교 (`isSelfTarget`)
-- `preDetail` null(F_NOT_USER): `rawId` vs `user.userId` 대소문자·공백 무시 비교 (보안 강도 저하이나 탈퇴 회원 복구 위해 허용)
+- `preDetail` null(F_NOT_USER): **NFKC 정규화 + 공백 전체 제거 + toLowerCase** 후 `rawId` vs `user.userId` 비교
+  - NFKC 로 전각/반각, 한글 조합, ZWSP 등 invisible char 우회 차단
+  - 이 경로는 위 제약에 의해 `status` 복구 요청에만 도달 가능
 - 자기 자신이면 400 반환: `"自分自身のアカウントに対するこの変更は実行できません"`
 
 #### 1.4 QSP 업데이트 필수 필드 매핑
@@ -193,15 +207,17 @@ QSP `updateUserDtlMng` 필수 9개 필드를 `preDetail` + request body + fallba
 | `accsSiteCd` | `SITE_DEFAULTS.accsSiteCd` 고정 |
 | `userTp` | query parameter |
 | `userId` | path `id` (rawId) |
-| `authCd` | `request.userRole` ?? `preDetail.authCd` ?? `defaultAuthCdFromUserTp(userTp)` (STORE 는 null 반환 → 위 6번에서 이미 차단) |
-| `secAuthYn` | `request.twoFactorEnabled` Y/N ?? `preDetail.secAuthYn` ?? "N" |
+| `authCd` | `request.userRole` ?? `preDetail.authCd` ?? `defaultAuthCdFromUserTp(userTp)` (STORE 는 null 반환 → 위 6번에서 이미 차단 / preDetail null + userRole 조합은 §1.3 에서 차단) |
+| `secAuthYn` | `request.twoFactorEnabled` Y/N ?? `preDetail.secAuthYn` ?? "N" (preDetail null + twoFactorEnabled 조합은 §1.3 에서 차단) |
 | `loginNotiYn` | `request.loginNotification` ?? `preDetail.loginNotiYn` ?? "N" |
 | `attrChgYn` | `request.attributeChangeNotification` ?? `preDetail.attrChgYn` ?? "N" |
 | `newsRcptYn` | `request.newsRcptYn` ?? `preDetail.newsRcptYn` ?? "N" |
 | `statCd` | `STATUS_TO_STAT_CD[request.status]` ?? `preDetail.statCd` ?? "D" |
 | `updBy` | 관리자 userId |
 
-**Fallback 원칙**: `preDetail` null 시 보수적 기본값("N", "D") 적용. STORE 만 storeLvl 의존이라 차단.
+**Fallback 원칙**: `preDetail` null 시 보수적 기본값("N", "D") 적용. STORE 는 storeLvl 의존이라 차단 (§1.2 6번). userRole/twoFactorEnabled 조합은 §1.3 에서 차단.
+
+**Fallback 통보 (v1.2, 리뷰 반영)**: preDetail null 경로에서 기본값이 주입된 QSP 필드 목록을 응답 `warnings` 배열로 클라이언트에 통보하여 사일런트 상태 변경을 방지한다. 통보 대상: `secAuthYn` / `loginNotiYn` / `attrChgYn` / `newsRcptYn` / `authCd` / `statCd` 중 request 에서 대응 필드가 undefined 인 것. (예: `{status:"active"}` 만 보낸 복구 요청 → 나머지 5개 필드가 모두 warnings 에 포함)
 
 #### 1.5 TOCTOU 사후 검증 (MF-6)
 
@@ -223,18 +239,24 @@ QSP `updateUserDtlMng` 필수 9개 필드를 `preDetail` + request body + fallba
 {
   "data": {
     "message": "会員情報を更新しました",
-    "warning": "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。"
+    "warning": "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。",
+    "warnings": [
+      "secAuthYn が既定値で更新されました (元の値を取得できなかったため)",
+      "statCd が既定値で更新されました (元の値を取得できなかったため)"
+    ]
   }
 }
 ```
 
-`warning` 은 TOCTOU 사후 검증 실패/불일치 시에만 포함.
+- `warning` (단수): TOCTOU 사후 검증 실패/불일치 시에만 포함 (§1.5)
+- `warnings` (복수, v1.2 신규): preDetail null 경로에서 기본값이 주입된 QSP 필드 목록 (§1.4 Fallback 통보)
+- 두 필드는 공존 가능하며 각각 독립적으로 세팅된다
 
 #### 에러 응답 매트릭스
 
 | Status | 사유 |
 |--------|------|
-| 400 | ① 입력 검증 실패 (Zod) / ② 권한별 수정 제한 위반 (userTp≠GENERAL + newsRcptYn 외 필드) / ③ 탈퇴·삭제 STORE 차단 / ④ 본인 계정 critical 변경 차단 / ⑤ userRole 대상 회원 비일반 / ⑥ userTp 파라미터 누락·형식 오류 |
+| 400 | ① 입력 검증 실패 (Zod) / ② 권한별 수정 제한 위반 (userTp≠GENERAL + newsRcptYn 외 필드) / ③ 탈퇴·삭제 STORE 차단 / ④ 본인 계정 critical 변경 차단 / ⑤ userRole 대상 회원 비일반 / ⑥ userTp 파라미터 누락·형식 오류 / ⑦ **preDetail null + userRole/twoFactorEnabled 변경 차단** (v1.2, §1.3) |
 | 401 | 인증 필요 |
 | 403 | 관리자 권한 없음 |
 | 500 | 서버 내부 오류 |
@@ -311,3 +333,4 @@ src/lib/
 |---------|------|---------|--------|
 | 0.1 | 2026-03-28 | Initial draft | CK |
 | 1.1 | 2026-04-16 | 권한별 수정 제한 정책(2026-03-30, 04-13), 탈퇴·삭제 회원 수정 허용(04-15), STORE storeLvl 의존성(04-16), self-lockout 가드, TOCTOU 사후 검증, QSP 필수 9필드 매핑, 에러 응답 매트릭스, userTp query parameter, F_NOT_USER 처리 반영 | CK |
+| 1.2 | 2026-04-16 | PR #53 코드 리뷰 반영: §1.3 preDetail null + userRole/twoFactorEnabled fail-closed 차단(에러매트릭스 ⑦), self-target 비교 NFKC 정규화, §1.4 Fallback 통보(warnings 배열) 추가, Response 예시 업데이트 | CK |
