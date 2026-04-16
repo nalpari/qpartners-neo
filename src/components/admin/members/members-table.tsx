@@ -7,14 +7,8 @@ import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import { DUMMY_MEMBERS } from "./members-dummy-data";
 import type { MemberDetailItem } from "./members-dummy-data";
-import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
 import { useCommonCode } from "@/hooks/use-common-code";
-
-const centerCellStyle = {
-  display: "flex" as const,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
 
 function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
   const data = params.data;
@@ -47,7 +41,7 @@ export function MembersTable() {
         headerName: "状態",
         field: "status",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -79,14 +73,14 @@ export function MembersTable() {
         headerName: "会員タイプ",
         field: "memberType",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "最近アクセス日時",
         field: "lastAccessAt",
         flex: 1.2,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -99,7 +93,7 @@ export function MembersTable() {
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
@@ -136,13 +130,10 @@ export function MembersTable() {
           </div>
         ) : (
           <>
-            <div style={{ maxHeight: 500, overflow: "auto" }}>
-              <DataGrid<MemberDetailItem>
-                columnDefs={columnDefs}
-                rowData={DUMMY_MEMBERS}
-                maxHeight={0}
-              />
-            </div>
+            <DataGrid<MemberDetailItem>
+              columnDefs={columnDefs}
+              rowData={DUMMY_MEMBERS}
+            />
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}

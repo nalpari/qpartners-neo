@@ -4,3 +4,10 @@ export const PAGE_SIZE_OPTIONS_FALLBACK: { value: string; label: string }[] = [
   { value: "50", label: "50" },
   { value: "100", label: "100" },
 ];
+
+/** AG Grid 셀 중앙 정렬 스타일 */
+export const CENTER_CELL_STYLE = {
+  display: "flex" as const,
+  alignItems: "center" as const,
+  justifyContent: "center" as const,
+};

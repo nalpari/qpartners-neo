@@ -9,12 +9,7 @@ import { useAlertStore, usePopupStore } from "@/lib/store";
 import { DUMMY_PERMISSIONS } from "./permissions-dummy-data";
 import type { PermissionItem } from "./permissions-dummy-data";
 import type { RowClassParams } from "ag-grid-community";
-
-const centerCellStyle = {
-  display: "flex" as const,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
+import { CENTER_CELL_STYLE } from "@/lib/constants";
 
 /** 셀 내 InputBox — 로컬 state로 완전 독립 관리, blur 시 ref에만 반영 (리렌더 없음) */
 function CellInput({
@@ -204,7 +199,7 @@ export function PermissionsTable() {
       field: "code",
       flex: 1,
       cellRenderer: CodeCellRenderer,
-      cellStyle: centerCellStyle,
+      cellStyle: CENTER_CELL_STYLE,
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: () => true,
     },
@@ -229,7 +224,7 @@ export function PermissionsTable() {
       field: "isActive",
       flex: 0.8,
       cellRenderer: ActiveCellRenderer,
-      cellStyle: centerCellStyle,
+      cellStyle: CENTER_CELL_STYLE,
       headerClass: "ag-header-cell-center",
     },
     {
@@ -237,7 +232,7 @@ export function PermissionsTable() {
       field: "isSaved",
       flex: 1,
       cellRenderer: MenuCellRenderer,
-      cellStyle: centerCellStyle,
+      cellStyle: CENTER_CELL_STYLE,
       headerClass: "ag-header-cell-center",
     },
   ];
@@ -280,15 +275,12 @@ export function PermissionsTable() {
           </p>
         </div>
       ) : (
-        <div style={{ maxHeight: 500, overflow: "auto" }}>
-          <DataGrid<PermissionItem>
-            columnDefs={columnDefs}
-            rowData={filteredRows}
-            getRowClass={getRowClass}
-            maxHeight={0}
-            className="permissions-grid"
-          />
-        </div>
+        <DataGrid<PermissionItem>
+          columnDefs={columnDefs}
+          rowData={filteredRows}
+          getRowClass={getRowClass}
+          className="permissions-grid"
+        />
       )}
     </div>
   );

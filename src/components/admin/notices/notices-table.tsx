@@ -7,6 +7,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, Button, Spinner } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import api from "@/lib/axios";
+import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
   NoticeListItem,
   NoticeListResponse,
@@ -23,11 +24,6 @@ import {
 
 const PAGE_SIZE = 20;
 
-const centerCellStyle = {
-  display: "flex" as const,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
 
 interface NoticeDetailResponse {
   data: {
@@ -175,7 +171,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         flex: 1.2,
         valueGetter: (p) =>
           `${formatDate(p.data?.startAt)} ~ ${formatDate(p.data?.endAt)}`,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -183,7 +179,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         field: "status",
         flex: 0.8,
         valueFormatter: (p) => STATUS_LABEL_MAP[p.value as string] ?? (p.value as string),
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -191,14 +187,14 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         field: "createdAt",
         flex: 0.8,
         valueFormatter: (p) => formatDate(p.value as string),
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "登録者",
         field: "createdBy",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -206,14 +202,14 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         field: "updatedAt",
         flex: 0.8,
         valueFormatter: (p) => formatDate(p.value as string),
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "更新者",
         field: "updatedBy",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
@@ -243,13 +239,10 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           </div>
         ) : (
           <>
-            <div style={{ maxHeight: 500, overflow: "auto" }}>
-              <DataGrid<NoticeListItem>
-                columnDefs={columnDefs}
-                rowData={filteredItems}
-                maxHeight={0}
-              />
-            </div>
+            <DataGrid<NoticeListItem>
+              columnDefs={columnDefs}
+              rowData={filteredItems}
+            />
             <Pagination
               currentPage={page}
               totalPages={totalPages}
