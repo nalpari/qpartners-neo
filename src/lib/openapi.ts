@@ -1005,6 +1005,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
           { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
+          { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "page", in: "query", description: "페이지 번호 (1부터)", schema: { type: "integer", default: 1, minimum: 1 } },

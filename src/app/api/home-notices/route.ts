@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get("keyword") ?? undefined;
     const statusFilter = searchParams.get("status") ?? undefined;
     const targetType = searchParams.get("targetType") ?? undefined;
+    const createdBy = searchParams.get("createdBy") ?? undefined;
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
@@ -82,6 +83,7 @@ export async function GET(request: NextRequest) {
 
     const where = {
       ...(keyword && { content: { contains: keyword } }),
+      ...(createdBy && { createdBy: { contains: createdBy } }),
       ...(targetField && { [targetField]: true }),
       ...((startDate || endDate) && {
         createdAt: {

@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { Spinner } from "@/components/common";
-import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { HomeContentCard } from "./home-content-card";
 import type { HomeContentItem } from "./home-content-card";
 
@@ -26,16 +25,6 @@ export function HomeContents() {
     staleTime: 60_000,
   });
 
-  // 카테고리 트리 (부모 그룹명 매핑용)
-  const { data: categoryTree = [] } = useQuery<CategoryNode[]>({
-    queryKey: ["categories"],
-    queryFn: async () => {
-      const res = await api.get<{ data: CategoryNode[] }>("/categories?activeOnly=true");
-      return res.data.data;
-    },
-    staleTime: 5 * 60_000,
-  });
-
   return (
     <>
       {/* PC Layout */}
@@ -52,7 +41,7 @@ export function HomeContents() {
         ) : (
           <div className="flex flex-col gap-[18px]">
             {contents.map((item) => (
-              <HomeContentCard key={item.id} item={item} categoryTree={categoryTree} />
+              <HomeContentCard key={item.id} item={item} />
             ))}
           </div>
         )}
@@ -76,7 +65,7 @@ export function HomeContents() {
         ) : (
           contents.map((item) => (
             <div key={item.id} className="bg-white">
-              <HomeContentCard item={item} categoryTree={categoryTree} />
+              <HomeContentCard item={item} />
             </div>
           ))
         )}

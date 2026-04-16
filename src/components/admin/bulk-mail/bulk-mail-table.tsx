@@ -11,14 +11,8 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
-import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
 import { useCommonCode } from "@/hooks/use-common-code";
-
-const centerCellStyle = {
-  display: "flex" as const,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
 
 /** Design Ref: §3.4 — 제목 클릭 시 상세화면 이동 */
 function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
@@ -94,7 +88,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         headerName: "配信日",
         field: "sentAt",
         flex: 1,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
         valueFormatter: (params) => formatMailDate(params.value),
       },
@@ -102,7 +96,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         headerName: "配信状態",
         field: "status",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
         valueFormatter: (params) => {
           const status = params.value as string;
@@ -113,7 +107,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         headerName: "配信対象",
         field: "targetsLabel",
         flex: 1.2,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -128,7 +122,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         field: "hasAttachment",
         flex: 0.6,
         cellDataType: false,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
         valueFormatter: (params) => params.value ? "Y" : "N",
       },
@@ -202,7 +196,6 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
             <DataGrid<MassMailListItem>
               columnDefs={columnDefs}
               rowData={list}
-              maxHeight={600}
               context={{ router }}
             />
             <Pagination
