@@ -2260,7 +2260,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Member"],
         summary: "회원 상세정보 수정",
-        description: "관리자 전용 — userRole(일반회원만), 2차인증, 알림, 상태, 뉴스레터 수정",
+        description:
+          "관리자 전용 — 권한별 수정 제한 정책: GENERAL 은 전체 필드 수정 가능. " +
+          "STORE/SEKO/ADMIN 은 newsRcptYn 만 변경 가능 (비밀번호는 별도 /reset-password API). " +
+          "탈퇴/삭제된 STORE 회원은 storeLvl 확보 불가로 수정 차단(400).",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
           { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
@@ -2293,13 +2296,11 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("검증 실패 또는 권한 변경 불가"),
+          "400": errorResponse("검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "409": errorResponse("회원정보 확인 불가 — status/authCd 명시 필요 또는 critical 변경 차단"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
-          "503": errorResponse("회원 정보 확인 불가 — 일시적 서버 오류 (재시도)"),
         },
       },
     },

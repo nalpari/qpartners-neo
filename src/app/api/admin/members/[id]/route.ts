@@ -212,6 +212,45 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
     const preDetail = preDetailResult.ok ? preDetailResult.detail : null;
 
+    // 4-0. 권한별 수정 제한 정책 (화면설계서 v1.1, 2026-03-30)
+    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는 newsRcptYn 만 허용.
+    // ※ 비밀번호는 별도 API(/reset-password) 로 처리되므로 본 PUT 스키마에 없음.
+    if (userTp !== "GENERAL") {
+      const restrictedFields = (
+        [
+          "userRole",
+          "twoFactorEnabled",
+          "loginNotification",
+          "attributeChangeNotification",
+          "status",
+        ] as const
+      ).filter((key) => result.data[key] !== undefined);
+      if (restrictedFields.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "一般会員以外はニュースレター受信設定のみ変更可能です",
+            details: restrictedFields.map((field) => ({ field, message: "変更不可" })),
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    // 4-0-b. STORE + preDetail null 명시 거부
+    // userListMng 에 storeLvl 미포함 → 탈퇴/삭제 STORE 의 authCd(1ST/2ND) 확정 불가.
+    // QSP I/F 개선(userListMng 에 storeLvl 추가) 요청 중. 개선 전까지는 fail-closed 로 차단.
+    if (userTp === "STORE" && !preDetail) {
+      console.warn(
+        "[PUT /api/admin/members/:id] 退会/削除済み販売店会員 수정 차단 — storeLvl 확보 불가",
+        { targetRawId: maskEmail(rawId) },
+      );
+      return NextResponse.json(
+        { error: "退会・削除済みの販売店会員は修正できません。先に会員復元が必要です" },
+        { status: 400 },
+      );
+    }
+
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
     // MF-4: 보호 대상을 status + userRole + twoFactorEnabled 로 확장한다.
     //       관리자가 본인 계정을 무력화(비활성/2FA off)하거나 권한을 마음대로
@@ -230,28 +269,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // MF-4 fail-closed: preDetail 없으면 canonical ID 비교 불가 → critical 변경 차단
-        console.warn("[PUT /api/admin/members/:id] preDetail null — critical 변경 차단:", {
+        // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) → rawId 기반 fallback 비교
+        // 보안 강도 저하이나, 탈퇴 회원 상태 복구/변경을 위해 불가피
+        console.warn("[PUT /api/admin/members/:id] preDetail null — rawId fallback self-target 비교:", {
           adminUserId: maskEmail(user.userId),
           targetRawId: maskEmail(rawId),
         });
-        return NextResponse.json(
-          { error: "会員情報を確認できないため、この変更は実行できません" },
-          { status: 409 },
-        );
+        const adminLower = user.userId.trim().toLowerCase();
+        const targetLower = rawId.trim().toLowerCase();
+        if (adminLower === targetLower) {
+          return NextResponse.json(
+            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { status: 400 },
+          );
+        }
       }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
+    // preDetail null (F_NOT_USER) 시 query param userTp로 fallback
     if (result.data.userRole !== undefined) {
-      if (!preDetail) {
-        // preDetail null → userTp 확인 불가 → 안전하게 거부
-        return NextResponse.json(
-          { error: "会員情報を確認できないため、権限変更は実行できません" },
-          { status: 409 },
-        );
-      }
-      if (preDetail.userTp !== "GENERAL") {
+      const effectiveUserTp = preDetail?.userTp ?? userTp;
+      if (effectiveUserTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },
           { status: 400 },
@@ -264,28 +303,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 그 전까지 본 핸들러는 업데이트 직후 QSP 를 재조회하여 사후 검증을 수행하고,
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
-    // preDetail이 없는 경우(삭제/탈퇴) status를 명시하지 않으면 기존 상태를 알 수 없어 안전하지 않음
-    if (!preDetail && result.data.status === undefined) {
-      return NextResponse.json(
-        { error: "会員の現在状態を確認できないため、ステータスを明示してください" },
-        { status: 409 },
-      );
-    }
-
     // 5. QSP 회원정보 수정 API 호출
     // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
-    // preDetail이 없는 경우(삭제/탈퇴 회원) → status 필수 지정됨 (위에서 검증)
-    // ※ critical 필드(status/userRole/twoFactorEnabled)는 preDetail null 시 위에서 차단됨
-    // preDetail 없는 경우(삭제/탈퇴) authCd 기본값 결정
-    // userTp→authCd 매핑 불가(STORE 등) 시 에러 반환
+    // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 status 미지정이면 기본값 "D"로 완화
+    // STORE 는 storeLvl 로 1ST/2ND 를 구분하지만 userListMng 에 storeLvl 미포함이라
+    // preDetail null + STORE 는 위 4-0-b 에서 이미 차단됨. 여기서는 GENERAL/ADMIN/SEKO 만 처리.
     const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
-    if (!preDetail && result.data.userRole === undefined && fallbackAuthCd === null) {
-      return NextResponse.json(
-        { error: "会員の権限情報を確認できないため、権限コードを明示してください" },
-        { status: 409 },
-      );
-    }
 
     if (!preDetail) {
       const defaultedFields: string[] = [];
