@@ -1,65 +1,115 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+// Design Ref: §4.3 — AG Grid + useQuery + 페이지네이션
+
+import { useMemo } from "react";
+import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-community";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
-import { DUMMY_MEMBERS } from "./members-dummy-data";
-import type { MemberDetailItem } from "./members-dummy-data";
+import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
+import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
 import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
 import { useCommonCode } from "@/hooks/use-common-code";
 
-function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
+function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   const data = params.data;
   if (!data) return null;
 
   const openPopup = usePopupStore.getState().openPopup;
 
+  const userTp = USER_TYPE_REVERSE_MAP[data.userType];
+
+  const handleClick = () => {
+    if (!userTp) {
+      console.warn("[MembersTable] 매핑 불가 userType:", data.userType);
+      return;
+    }
+    openPopup("member-detail", { userId: data.userId, userTp, listItem: data });
+  };
+
   return (
     <button
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
-      onClick={() => openPopup("member-detail", { member: data })}
+      onClick={handleClick}
     >
-      {data.name}
+      {data.userName}
     </button>
   );
 }
 
-export function MembersTable() {
+interface MembersTableProps {
+  filters: MemberSearchFilters;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}
+
+export function MembersTable({
+  filters,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: MembersTableProps) {
   const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState("100");
 
-  const totalCount = DUMMY_MEMBERS.length;
-  const totalPages = Math.ceil(totalCount / Number(perPage));
+  // Design Ref: §4.3 — useQuery
+  const { data, isLoading } = useQuery<MemberListResponse["data"]>({
+    queryKey: ["admin", "members", filters, page, pageSize],
+    queryFn: async () => {
+      const params: Record<string, string> = {
+        page: String(page),
+        pageSize: String(pageSize),
+      };
+      if (filters.keyword) params.keyword = filters.keyword;
+      if (filters.userType) params.userType = filters.userType;
+      if (filters.status) params.status = filters.status;
 
-  const columnDefs = useMemo<ColDef<MemberDetailItem>[]>(
+      const res = await api.get<MemberListResponse>("/admin/members", { params });
+      return res.data.data;
+    },
+    staleTime: Infinity,
+  });
+
+  const list = data?.list ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Design Ref: §4.3 — AG Grid 컬럼 (Plan §1.4 필드 매핑)
+  const columnDefs = useMemo<ColDef<MemberListItem>[]>(
     () => [
       {
         headerName: "状態",
         field: "status",
         flex: 0.8,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string>) => {
+          const v = p.value ?? "";
+          return STATUS_LABEL_MAP[v] ?? v;
+        },
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "ID",
-        field: "id",
+        field: "userId",
         flex: 1,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "氏名",
-        field: "name",
+        field: "userName",
         flex: 1,
         cellRenderer: NameCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "氏名ひらがな",
-        field: "nameKana",
+        field: "userNameKana",
         flex: 1.2,
         headerClass: "ag-header-cell-center",
       },
@@ -71,15 +121,17 @@ export function MembersTable() {
       },
       {
         headerName: "会員タイプ",
-        field: "memberType",
+        field: "userType",
         flex: 0.8,
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "最近アクセス日時",
-        field: "lastAccessAt",
+        field: "lastLoginAt",
         flex: 1.2,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
+          formatDateTime(p.value ?? null),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
@@ -93,11 +145,13 @@ export function MembersTable() {
         headerName: "登録日",
         field: "createdAt",
         flex: 1,
+        valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
+          formatDate(p.value ?? null),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
-    []
+    [],
   );
 
   return (
@@ -114,32 +168,27 @@ export function MembersTable() {
         <div className="w-[100px]">
           <SelectBox
             options={pageSizeOptions}
-            value={perPage}
-            onChange={setPerPage}
+            value={String(pageSize)}
+            onChange={(val) => onPageSizeChange(Number(val))}
           />
         </div>
       </div>
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        {DUMMY_MEMBERS.length === 0 ? (
-          <div className="flex items-center justify-center min-h-[200px]">
-            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-              データがありません
-            </p>
-          </div>
-        ) : (
-          <>
-            <DataGrid<MemberDetailItem>
-              columnDefs={columnDefs}
-              rowData={DUMMY_MEMBERS}
-            />
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-            />
-          </>
+        <DataGrid<MemberListItem>
+          columnDefs={columnDefs}
+          rowData={list}
+          getRowId={(p) => p.data.id}
+          loading={isLoading}
+          emptyMessage="検索結果がありません"
+        />
+        {totalPages > 0 && (
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={onPageChange}
+          />
         )}
       </div>
     </div>
