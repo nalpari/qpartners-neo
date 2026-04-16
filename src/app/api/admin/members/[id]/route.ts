@@ -15,11 +15,38 @@ import {
   lookupUserTypeLabel,
   defaultAuthCdFromUserTp,
 } from "@/lib/schemas/member";
+import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
 
 type Params = { params: Promise<{ id: string }> };
 
 const QSP_LOG_MSG_MAX_LEN = 200;
+
+/**
+ * 4-0: GENERAL 외 회원(STORE/SEKO/ADMIN)이 수정 가능한 필드 화이트리스트.
+ *      화면설계서 v1.1(2026-03-30) — 이들 회원은 ニュースレター受信設定만 변경 가능.
+ *
+ * 블랙리스트가 아닌 화이트리스트로 유지하는 이유:
+ *   memberUpdateSchema 에 새 필드가 추가될 때 자동으로 "허용"되는 fail-open 위험
+ *   을 방지하기 위함(신규 필드는 여기에 명시적으로 추가해야만 허용됨).
+ */
+const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set([
+  "newsRcptYn",
+]);
+
+/**
+ * preDetail null 경로에서 QSP 필수 필드 제약으로 기본값이 강제 주입되는 필드의
+ * 클라이언트 노출용 일본어 라벨. 내부 필드명(secAuthYn 등)이 응답에 새어나가지
+ * 않도록 하기 위한 매핑.
+ */
+const DEFAULTED_FIELD_LABELS_JA: Record<string, string> = {
+  secAuthYn: "二段階認証設定",
+  loginNotiYn: "ログイン通知設定",
+  attrChgYn: "属性変更通知設定",
+  newsRcptYn: "ニュースレター受信設定",
+  authCd: "ユーザー権限",
+  statCd: "アカウント状態",
+};
 
 /**
  * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
@@ -212,10 +239,73 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
     const preDetail = preDetailResult.ok ? preDetailResult.detail : null;
 
+    // 4-0. 권한별 수정 제한 정책 (화면설계서 v1.1, 2026-03-30)
+    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는 newsRcptYn 만 허용.
+    // ※ 비밀번호는 별도 API(/reset-password) 로 처리되므로 본 PUT 스키마에 없음.
+    //
+    // 화이트리스트(ALLOWED_NON_GENERAL_FIELDS) 기반 fail-closed 검증:
+    //   스키마에 새 필드가 추가되어도 화이트리스트에 올리지 않으면 자동 차단된다.
+    if (userTp !== "GENERAL") {
+      const disallowedFields = (Object.keys(result.data) as Array<keyof MemberUpdateInput>)
+        .filter((key) => result.data[key] !== undefined)
+        .filter((key) => !ALLOWED_NON_GENERAL_FIELDS.has(key));
+      if (disallowedFields.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "一般会員以外はニュースレター受信設定のみ変更可能です",
+            details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    // 4-0-b. STORE + preDetail null 명시 거부
+    // QSP userDetail 이 F_NOT_USER 반환 → preDetail.storeLvl 확보 불가.
+    // 상위 userListMng 응답에도 storeLvl 미포함으로 query param 대체 불가.
+    // QSP I/F 개선(userListMng 에 storeLvl 추가) 요청 중. 개선 전까지는 fail-closed 로 차단.
+    if (userTp === "STORE" && !preDetail) {
+      console.warn(
+        "[PUT /api/admin/members/:id] 退会/削除済み販売店会員 수정 차단 — storeLvl 확보 불가",
+        { targetRawId: maskEmail(rawId) },
+      );
+      return NextResponse.json(
+        { error: "退会・削除済みの販売店会員は修正できません。先に会員復元が必要です" },
+        { status: 400 },
+      );
+    }
+
+    // 4-0-c. preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 critical 변경 제한
+    // userRole/twoFactorEnabled 는 canonical userTp 확인 불가 상태에서 바꾸면
+    // 권한 상승 / 2FA 무력화 위험이 있으므로 fail-closed. status(복구) 만 허용.
+    // 회원 복구 완료 후 재요청하면 preDetail 이 확보되므로 정상 경로로 처리됨.
+    if (!preDetail) {
+      const blockedCriticalFields: string[] = [];
+      if (result.data.userRole !== undefined) blockedCriticalFields.push("userRole");
+      if (result.data.twoFactorEnabled !== undefined) blockedCriticalFields.push("twoFactorEnabled");
+      if (blockedCriticalFields.length > 0) {
+        console.warn(
+          "[PUT /api/admin/members/:id] preDetail null — critical 변경 차단 (권한/2FA 는 복구 후 재요청):",
+          { targetRawId: maskEmail(rawId), blockedCriticalFields },
+        );
+        return NextResponse.json(
+          {
+            error:
+              "退会・削除済み会員の権限・二段階認証は変更できません。先にステータスを復元してください",
+            details: blockedCriticalFields.map((field) => ({ field, message: "復元後に変更可能" })),
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
     // MF-4: 보호 대상을 status + userRole + twoFactorEnabled 로 확장한다.
     //       관리자가 본인 계정을 무력화(비활성/2FA off)하거나 권한을 마음대로
     //       조작할 수 없어야 한다.
+    // preDetail null 경로는 4-0-c 에서 userRole/2FA 가 이미 차단되므로,
+    // 여기서는 status 변경에 한해 rawId 기반 fallback 자기 비교만 수행한다.
     const modifiesSelfCritical =
       result.data.status !== undefined ||
       result.data.userRole !== undefined ||
@@ -230,28 +320,32 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // MF-4 fail-closed: preDetail 없으면 canonical ID 비교 불가 → critical 변경 차단
-        console.warn("[PUT /api/admin/members/:id] preDetail null — critical 변경 차단:", {
-          adminUserId: maskEmail(user.userId),
-          targetRawId: maskEmail(rawId),
-        });
-        return NextResponse.json(
-          { error: "会員情報を確認できないため、この変更は実行できません" },
-          { status: 409 },
-        );
+        // preDetail null (F_NOT_USER): NFKC 정규화 후 rawId fallback 비교
+        // - 전각/반각, 한글 조합, invisible char(ZWSP 등) 우회 차단
+        // - 대소문자·좌우 공백 무시
+        // - 도달 가능한 케이스는 status 변경(복구) 에 한정됨 (4-0-c)
+        const normalize = (s: string) =>
+          s.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        const adminNorm = normalize(user.userId);
+        const targetNorm = normalize(rawId);
+        if (adminNorm === targetNorm) {
+          // matched 케이스만 감사 로그 출력 (불일치는 정상 경로 — 노이즈 방지)
+          console.warn("[PUT /api/admin/members/:id] preDetail null — NFKC 정규화 rawId fallback 매칭(self-target 차단):", {
+            adminUserId: maskEmail(user.userId),
+            targetRawId: maskEmail(rawId),
+          });
+          return NextResponse.json(
+            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { status: 400 },
+          );
+        }
       }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
+    // preDetail null 경로는 이미 4-0-c 에서 차단됨 → 여기 도달 시 preDetail 존재 확정
     if (result.data.userRole !== undefined) {
-      if (!preDetail) {
-        // preDetail null → userTp 확인 불가 → 안전하게 거부
-        return NextResponse.json(
-          { error: "会員情報を確認できないため、権限変更は実行できません" },
-          { status: 409 },
-        );
-      }
-      if (preDetail.userTp !== "GENERAL") {
+      if (preDetail && preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },
           { status: 400 },
@@ -264,36 +358,26 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 그 전까지 본 핸들러는 업데이트 직후 QSP 를 재조회하여 사후 검증을 수행하고,
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
-    // preDetail이 없는 경우(삭제/탈퇴) status를 명시하지 않으면 기존 상태를 알 수 없어 안전하지 않음
-    if (!preDetail && result.data.status === undefined) {
-      return NextResponse.json(
-        { error: "会員の現在状態を確認できないため、ステータスを明示してください" },
-        { status: 409 },
-      );
-    }
-
     // 5. QSP 회원정보 수정 API 호출
     // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
     // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
-    // preDetail이 없는 경우(삭제/탈퇴 회원) → status 필수 지정됨 (위에서 검증)
-    // ※ critical 필드(status/userRole/twoFactorEnabled)는 preDetail null 시 위에서 차단됨
-    // preDetail 없는 경우(삭제/탈퇴) authCd 기본값 결정
-    // userTp→authCd 매핑 불가(STORE 등) 시 에러 반환
+    // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 status 미지정이면 기본값 "D"로 완화
+    // STORE 는 storeLvl 로 1ST/2ND 를 구분하지만 userListMng 에 storeLvl 미포함이라
+    // preDetail null + STORE 는 위 4-0-b 에서 이미 차단됨. 여기서는 GENERAL/ADMIN/SEKO 만 처리.
     const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
-    if (!preDetail && result.data.userRole === undefined && fallbackAuthCd === null) {
-      return NextResponse.json(
-        { error: "会員の権限情報を確認できないため、権限コードを明示してください" },
-        { status: 409 },
-      );
-    }
 
+    // preDetail null 시 fallback 기본값이 주입된 필드 목록을 수집하여
+    // 응답 `warnings` 로 클라이언트에 통보한다 (사일런트 상태 변경 방지).
+    // 4-0-c 에 의해 userRole/twoFactorEnabled 변경 요청 자체는 차단되지만,
+    // QSP 필수 필드 제약으로 secAuthYn 등은 "N" 이 강제 주입되므로 통보 대상.
+    const defaultedFields: string[] = [];
     if (!preDetail) {
-      const defaultedFields: string[] = [];
       if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn");
       if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn");
       if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn");
       if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn");
       if (result.data.userRole === undefined) defaultedFields.push("authCd");
+      if (result.data.status === undefined) defaultedFields.push("statCd");
       if (defaultedFields.length > 0) {
         console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
       }
@@ -412,12 +496,31 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료");
+    console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료", {
+      targetUserId: maskEmail(rawId),
+      targetUserTp: userTp,
+      byAdmin: maskEmail(user.userId),
+      changedFields: Object.keys(result.data),
+      preDetailPresent: preDetail !== null,
+      defaultedFields,
+      warning: warning ?? null,
+    });
+
+    // QSP 내부 필드명이 클라이언트 응답에 노출되지 않도록 일본어 라벨로 치환.
+    // 매핑에 없는 키(신규 필드 추가 누락 등)는 방어적으로 원시 키로 폴백.
+    const warnings =
+      defaultedFields.length > 0
+        ? defaultedFields.map((f) => {
+            const label = DEFAULTED_FIELD_LABELS_JA[f] ?? f;
+            return `${label}が既定値で更新されました (元の値を取得できなかったため)`;
+          })
+        : undefined;
 
     return NextResponse.json({
       data: {
         message: "会員情報を更新しました",
         ...(warning !== undefined && { warning }),
+        ...(warnings !== undefined && { warnings }),
       },
     });
   } catch (error: unknown) {

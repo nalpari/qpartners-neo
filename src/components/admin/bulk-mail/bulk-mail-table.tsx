@@ -1,18 +1,18 @@
 "use client";
 
+// Design Ref: §3.4 — useQuery + AG Grid + API 페이지네이션
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox, Checkbox, Button } from "@/components/common";
-import { DUMMY_BULK_MAILS } from "./bulk-mail-dummy-data";
-import type { BulkMailItem } from "./bulk-mail-dummy-data";
-
-const PER_PAGE_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "100", label: "100" },
-];
+import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
+import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
+import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
+import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { useCommonCode } from "@/hooks/use-common-code";
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -20,7 +20,8 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
-function TitleCellRenderer(params: ICellRendererParams<BulkMailItem>) {
+/** Design Ref: §3.4 — 제목 클릭 시 상세화면 이동 */
+function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
   const data = params.data;
   if (!data) return null;
 
@@ -33,29 +34,61 @@ function TitleCellRenderer(params: ICellRendererParams<BulkMailItem>) {
         router?.push(`/admin/bulk-mail/${data.id}`, { transitionTypes: ["fade"] });
       }}
     >
-      {data.title}
+      {data.subject}
     </button>
   );
 }
 
-export function BulkMailTable() {
+interface BulkMailTableProps {
+  searchParams: MassMailSearchParams;
+}
+
+export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const router = useRouter();
+  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState("100");
   const [draftOnly, setDraftOnly] = useState(false);
 
-  const filteredData = draftOnly
-    ? DUMMY_BULK_MAILS.filter((m) => m.status === "下書き")
-    : DUMMY_BULK_MAILS;
+  // Design Ref: §3.4 — useQuery API 호출
+  const queryParams = {
+    keyword: searchParams.keyword || undefined,
+    target: searchParams.target || undefined,
+    authorSearchType: searchParams.authorSearchType || undefined,
+    authorQuery: searchParams.authorQuery || undefined,
+    startDate: searchParams.startDate || undefined,
+    endDate: searchParams.endDate || undefined,
+    draftOnly: draftOnly ? "true" : undefined,
+    page: String(currentPage),
+    pageSize: perPage,
+  };
 
-  const totalCount = filteredData.length;
+  const { data, isLoading, isError } = useQuery<MassMailListResponse>({
+    queryKey: ["mass-mails", queryParams],
+    queryFn: () => api.get("/admin/mass-mails", { params: queryParams }).then((r) => r.data),
+  });
+
+  const list = data?.data.list ?? [];
+  const totalCount = data?.data.totalCount ?? 0;
   const totalPages = Math.ceil(totalCount / Number(perPage));
 
   const handleSendMail = () => {
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
-  const columnDefs = useMemo<ColDef<BulkMailItem>[]>(
+  // Design Ref: §5 — perPage 변경 시 1페이지 리셋
+  const handlePerPageChange = (val: string) => {
+    setPerPage(val);
+    setCurrentPage(1);
+  };
+
+  // Plan SC: SC-04 — draftOnly 변경 시 1페이지 리셋
+  const handleDraftOnlyChange = (checked: boolean) => {
+    setDraftOnly(checked);
+    setCurrentPage(1);
+  };
+
+  const columnDefs = useMemo<ColDef<MassMailListItem>[]>(
     () => [
       {
         headerName: "配信日",
@@ -63,7 +96,7 @@ export function BulkMailTable() {
         flex: 1,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
-        valueFormatter: (params) => params.value || "—",
+        valueFormatter: (params) => formatMailDate(params.value),
       },
       {
         headerName: "配信状態",
@@ -71,17 +104,21 @@ export function BulkMailTable() {
         flex: 0.8,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
+        valueFormatter: (params) => {
+          const status = params.value as string;
+          return (status in STATUS_LABEL_MAP ? STATUS_LABEL_MAP[status as MassMailStatus] : status) ?? status;
+        },
       },
       {
         headerName: "配信対象",
-        field: "target",
-        flex: 0.8,
+        field: "targetsLabel",
+        flex: 1.2,
         cellStyle: centerCellStyle,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "タイトル",
-        field: "title",
+        field: "subject",
         flex: 2,
         cellRenderer: TitleCellRenderer,
         headerClass: "ag-header-cell-center",
@@ -97,18 +134,18 @@ export function BulkMailTable() {
       },
       {
         headerName: "登録者名",
-        field: "authorName",
+        field: "senderName",
         flex: 1,
         headerClass: "ag-header-cell-center",
       },
       {
         headerName: "登録者ID",
-        field: "authorId",
+        field: "senderId",
         flex: 1,
         headerClass: "ag-header-cell-center",
       },
     ],
-    []
+    [],
   );
 
   return (
@@ -124,7 +161,7 @@ export function BulkMailTable() {
           </p>
           <Checkbox
             checked={draftOnly}
-            onChange={setDraftOnly}
+            onChange={handleDraftOnlyChange}
             label="下書き保存メールのみ表示"
           />
         </div>
@@ -134,9 +171,9 @@ export function BulkMailTable() {
           </Button>
           <div className="w-[100px]">
             <SelectBox
-              options={PER_PAGE_OPTIONS}
+              options={pageSizeOptions}
               value={perPage}
-              onChange={setPerPage}
+              onChange={handlePerPageChange}
             />
           </div>
         </div>
@@ -144,16 +181,37 @@ export function BulkMailTable() {
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        <DataGrid<BulkMailItem>
-          columnDefs={columnDefs}
-          rowData={filteredData}
-          context={{ router }}
-        />
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center h-[400px]">
+            <Spinner size={48} />
+          </div>
+        ) : isError ? (
+          <div className="flex items-center justify-center h-[400px]">
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+              メール一覧の取得に失敗しました。ページを更新してください。
+            </p>
+          </div>
+        ) : list.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+              データがありません
+            </p>
+          </div>
+        ) : (
+          <>
+            <DataGrid<MassMailListItem>
+              columnDefs={columnDefs}
+              rowData={list}
+              maxHeight={600}
+              context={{ router }}
+            />
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          </>
+        )}
       </div>
     </div>
   );

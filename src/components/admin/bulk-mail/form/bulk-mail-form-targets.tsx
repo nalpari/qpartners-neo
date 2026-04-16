@@ -1,15 +1,14 @@
 "use client";
 
-import { Checkbox } from "@/components/common";
+import { Checkbox, Radio } from "@/components/common";
 
 const TARGET_OPTIONS = [
-  { value: "market-admin", label: "全マーケット管理者" },
+  { value: "super-admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
   { value: "first-dealer", label: "1次販売店" },
   { value: "second-dealer", label: "2次以降販売店" },
   { value: "installer", label: "施工店" },
-  { value: "general", label: "一般" },
-  { value: "delivery-notify", label: "配信完了通知受信者" },
+  { value: "general", label: "一般会員" },
 ];
 
 interface BulkMailFormTargetsProps {
@@ -47,6 +46,43 @@ export function BulkMailFormTargets({
             disabled={disabled}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+interface BulkMailFormNewsletterProps {
+  optOut: boolean;
+  onOptOutChange: (optOut: boolean) => void;
+  disabled: boolean;
+}
+
+export function BulkMailFormNewsletter({
+  optOut,
+  onOptOutChange,
+  disabled,
+}: BulkMailFormNewsletterProps) {
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="font-['Noto_Sans_JP'] font-semibold text-[14px] text-[#101010]">
+        ニュースレター配信対象
+        <span className="text-[#FF1A1A]">*</span>
+      </h3>
+      <div className="flex items-center gap-x-[18px]">
+        <Radio
+          name="optOut"
+          checked={!optOut}
+          onChange={() => onOptOutChange(false)}
+          label="ニュースレター受信拒否会員を除外して配信"
+          disabled={disabled}
+        />
+        <Radio
+          name="optOut"
+          checked={optOut}
+          onChange={() => onOptOutChange(true)}
+          label="ニュースレター受信拒否会員を含めて配信"
+          disabled={disabled}
+        />
       </div>
     </div>
   );

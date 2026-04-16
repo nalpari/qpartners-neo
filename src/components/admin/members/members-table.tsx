@@ -11,18 +11,8 @@ import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
-
-const PER_PAGE_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "100", label: "100" },
-];
-
-const centerCellStyle = {
-  display: "flex" as const,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
+import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
+import { useCommonCode } from "@/hooks/use-common-code";
 
 function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   const data = params.data;
@@ -60,6 +50,8 @@ export function MembersTable({
   onPageChange,
   onPageSizeChange,
 }: MembersTableProps) {
+  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
+
   // Design Ref: §4.3 — useQuery
   const { data, isLoading } = useQuery<MemberListResponse["data"]>({
     queryKey: ["admin", "members", filters, page, pageSize],
@@ -93,7 +85,7 @@ export function MembersTable({
           const v = p.value ?? "";
           return STATUS_LABEL_MAP[v] ?? v;
         },
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -125,7 +117,7 @@ export function MembersTable({
         headerName: "会員タイプ",
         field: "userType",
         flex: 0.8,
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -134,7 +126,7 @@ export function MembersTable({
         flex: 1.2,
         valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
           formatDateTime(p.value ?? null),
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -149,7 +141,7 @@ export function MembersTable({
         flex: 1,
         valueFormatter: (p: ValueFormatterParams<MemberListItem, string | null>) =>
           formatDate(p.value ?? null),
-        cellStyle: centerCellStyle,
+        cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
@@ -169,7 +161,7 @@ export function MembersTable({
         </p>
         <div className="w-[100px]">
           <SelectBox
-            options={PER_PAGE_OPTIONS}
+            options={pageSizeOptions}
             value={String(pageSize)}
             onChange={(val) => onPageSizeChange(Number(val))}
           />
