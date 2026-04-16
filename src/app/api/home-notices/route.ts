@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     if (targetType && !targetMap[targetType]) {
       return NextResponse.json(
-        { error: `Invalid targetType: ${targetType}` },
+        { error: "送信先フィルタの値が正しくありません" },
         { status: 400 },
       );
     }
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       for (const s of statusSet) {
         if (!VALID_STATUSES.has(s)) {
           return NextResponse.json(
-            { error: `Invalid status value: ${s}` },
+            { error: "ステータスの値が正しくありません" },
             { status: 400 },
           );
         }
@@ -74,10 +74,10 @@ export async function GET(request: NextRequest) {
 
     // 날짜 파라미터 검증
     if (startDate && isNaN(new Date(startDate).getTime())) {
-      return NextResponse.json({ error: "Invalid startDate format" }, { status: 400 });
+      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
     if (endDate && isNaN(new Date(endDate).getTime())) {
-      return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
+      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
 
     const where = {
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       ...((startDate || endDate) && {
         createdAt: {
           ...(startDate && { gte: new Date(startDate) }),
-          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
+          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999+09:00`) }),
         },
       }),
       ...statusWhere,
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/home-notices]", error);
     return NextResponse.json(
-      { error: "Failed to fetch home notices" },
+      { error: "お知らせ一覧の取得に失敗しました" },
       { status: 500 },
     );
   }
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch {
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }
