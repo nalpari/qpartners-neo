@@ -100,6 +100,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       filters.keyword,
       filters.statuses,
       filters.targetType,
+      filters.author,
       filters.startDate?.getTime(),
       filters.endDate?.getTime(),
       page,
@@ -112,6 +113,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       if (filters.keyword) params.keyword = filters.keyword;
       if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
       if (filters.targetType) params.targetType = filters.targetType;
+      if (filters.author) params.createdBy = filters.author;
       if (filters.startDate) {
         const d = filters.startDate;
         params.startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -126,14 +128,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     },
   });
 
-  // TODO(SC-07): author 필터를 서버 사이드로 이전 필요
-  // 현재 클라이언트 필터는 현재 페이지(20건) 내에서만 동작하므로
-  // 다른 페이지의 등록자는 검색 결과에서 누락됨
   const items = data?.data ?? [];
-  const filteredItems = filters.author
-    ? items.filter((item) => item.createdBy?.includes(filters.author))
-    : items;
-
   const totalPages = data?.meta.totalPages ?? 1;
 
   const handleRegister = () => {
@@ -234,7 +229,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           <div className="flex items-center justify-center h-[400px]">
             <Spinner size={48} />
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="flex items-center justify-center min-h-[200px]">
             <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
               データがありません
@@ -244,7 +239,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           <>
             <DataGrid<NoticeListItem>
               columnDefs={columnDefs}
-              rowData={filteredItems}
+              rowData={items}
             />
             <Pagination
               currentPage={page}
