@@ -7,7 +7,8 @@ import { Pagination, SelectBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import { DUMMY_MEMBERS } from "./members-dummy-data";
 import type { MemberDetailItem } from "./members-dummy-data";
-import { PAGE_SIZE_OPTIONS } from "@/lib/constants";
+import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { useCommonCode } from "@/hooks/use-common-code";
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -33,6 +34,7 @@ function NameCellRenderer(params: ICellRendererParams<MemberDetailItem>) {
 }
 
 export function MembersTable() {
+  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState("100");
 
@@ -117,7 +119,7 @@ export function MembersTable() {
         </p>
         <div className="w-[100px]">
           <SelectBox
-            options={PAGE_SIZE_OPTIONS}
+            options={pageSizeOptions}
             value={perPage}
             onChange={setPerPage}
           />

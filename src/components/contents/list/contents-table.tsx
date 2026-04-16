@@ -18,7 +18,8 @@ import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
-import { PAGE_SIZE_OPTIONS } from "@/lib/constants";
+import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { useCommonCode } from "@/hooks/use-common-code";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 */
 function renderCategoryCell(
@@ -203,6 +204,7 @@ export function ContentsTable({
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
+  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
   const [perPage, setPerPage] = useState("20");
 
   const totalCount = meta?.total ?? 0;
@@ -382,7 +384,7 @@ export function ContentsTable({
           </Link>
         )}
         <SelectBox
-          options={PAGE_SIZE_OPTIONS}
+          options={pageSizeOptions}
           value={perPage}
           onChange={handlePerPageChange}
           className="w-[80px]"
