@@ -1118,8 +1118,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": validationErrorResponse,
-          "404": errorResponse("Not found"),
+          "400": errorResponse("검증 실패 또는 동일기간 5건 초과"),
+          "404": errorResponse("공지 없음"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -2296,7 +2296,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("검증 실패 또는 권한 변경 불가"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "409": errorResponse("QSP 상태 미확인 — status 또는 authCd 명시 필요"),
+          "409": errorResponse("회원정보 확인 불가 — status/authCd 명시 필요 또는 critical 변경 차단"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
           "503": errorResponse("회원 정보 확인 불가 — 일시적 서버 오류 (재시도)"),
@@ -2352,6 +2352,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
           { name: "target", in: "query", schema: { type: "string", enum: ["super_admin", "admin", "first_store", "second_store", "seko", "general"] }, description: "발송대상 필터" },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
+          { name: "authorSearchType", in: "query", schema: { type: "string", enum: ["name", "id"] }, description: "登録者 검색 대상 (이름/ID)" },
+          { name: "authorQuery", in: "query", schema: { type: "string", minLength: 2 }, description: "登録者 검색어 (부분일치, 2文字以上)" },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 시작 (YYYY-MM-DD, JST 기준)" },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 끝 (YYYY-MM-DD, JST 기준)" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
         ],
@@ -2473,6 +2477,60 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("메일 없음"),
+        },
+      },
+      put: {
+        tags: ["MassMail"],
+        summary: "대량메일 수정",
+        description: "관리자 전용 — 임시저장(draft) 상태의 메일만 수정 가능. multipart/form-data",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                allOf: [
+                  { $ref: "#/components/schemas/MassMailCreateRequest" },
+                  {
+                    type: "object",
+                    properties: {
+                      deleteAttachmentIds: { type: "string", description: "삭제할 기존 첨부파일 ID 배열 (JSON 문자열, 예: [1,2,3])" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        status: { type: "string", enum: ["draft", "pending"] },
+                        message: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("검증 실패 또는 draft 이외 수정 시도"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "404": errorResponse("메일 없음"),
+          "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
+          "500": errorResponse("수정 실패"),
         },
       },
       delete: {
