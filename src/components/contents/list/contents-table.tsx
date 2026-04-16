@@ -18,6 +18,7 @@ import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
+import { PAGE_SIZE_OPTIONS } from "@/lib/constants";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 */
 function renderCategoryCell(
@@ -43,12 +44,6 @@ function renderCategoryCell(
     </span>
   );
 }
-
-const PER_PAGE_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "100", label: "100" },
-];
 
 function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const data = params.data;
@@ -387,7 +382,7 @@ export function ContentsTable({
           </Link>
         )}
         <SelectBox
-          options={PER_PAGE_OPTIONS}
+          options={PAGE_SIZE_OPTIONS}
           value={perPage}
           onChange={handlePerPageChange}
           className="w-[80px]"

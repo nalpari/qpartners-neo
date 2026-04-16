@@ -11,12 +11,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
-
-const PER_PAGE_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "100", label: "100" },
-];
+import { PAGE_SIZE_OPTIONS } from "@/lib/constants";
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -174,7 +169,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
           </Button>
           <div className="w-[100px]">
             <SelectBox
-              options={PER_PAGE_OPTIONS}
+              options={PAGE_SIZE_OPTIONS}
               value={perPage}
               onChange={handlePerPageChange}
             />
@@ -186,7 +181,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
       <div className="flex flex-col gap-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-[400px]">
-            <Spinner />
+            <Spinner size={48} />
           </div>
         ) : isError ? (
           <div className="flex items-center justify-center h-[400px]">

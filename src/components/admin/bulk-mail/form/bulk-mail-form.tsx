@@ -102,24 +102,46 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     });
   };
 
-  // Plan SC: 下書き保存 → status: draft → 상세로 이동 (임시저장은 빈 필드 허용 — 의도적 미검증)
+  // Plan SC: 下書き保存 → status: draft (임시저장은 빈 필드 허용 — 의도적 미검증)
+  const draftMutation = useMutation({
+    mutationFn: (fd: FormData) =>
+      mode === "edit" && editId
+        ? api.put<MassMailCreateResponse>(`/admin/mass-mails/${editId}`, fd, FORM_DATA_CONFIG)
+        : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      openAlert({
+        type: "alert",
+        message: "下書き保存しました。",
+        onConfirm: () => {
+          router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+        },
+      });
+    },
+    onError: (error: unknown) => {
+      console.error("[BulkMailForm] 임시저장 실패:", error);
+      openAlert({ type: "alert", message: "下書き保存に失敗しました。" });
+    },
+  });
+
   const handleDraft = () => {
     const fd = buildFormData({
       senderName, targets, optOut, subject, body,
       status: "draft", files,
     });
-    submitMutation.mutate(fd);
+    draftMutation.mutate(fd);
   };
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/admin/mass-mails/${editId}`),
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ["mass-mails"] });
-      void queryClient.invalidateQueries({ queryKey: ["mass-mails"] });
+      // 삭제된 상세 쿼리를 즉시 제거하여 404 refetch 방지
+      queryClient.removeQueries({ queryKey: ["mass-mails", String(editId)] });
       openAlert({
         type: "alert",
         message: "削除しました。",
         onConfirm: () => {
+          void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
           router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
         },
       });
@@ -155,7 +177,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
-  const isPending = submitMutation.isPending || deleteMutation.isPending;
+  const isPending = submitMutation.isPending || draftMutation.isPending || deleteMutation.isPending;
   const showSentAt = mode === "detail" || mode === "edit";
 
   const cardClass = "bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]";
