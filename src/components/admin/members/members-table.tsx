@@ -128,15 +128,26 @@ export function MembersTable() {
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        <DataGrid<MemberDetailItem>
-          columnDefs={columnDefs}
-          rowData={DUMMY_MEMBERS}
-        />
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
+        {DUMMY_MEMBERS.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+              データがありません
+            </p>
+          </div>
+        ) : (
+          <>
+            <DataGrid<MemberDetailItem>
+              columnDefs={columnDefs}
+              rowData={DUMMY_MEMBERS}
+              maxHeight={0}
+            />
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          </>
+        )}
       </div>
     </div>
   );

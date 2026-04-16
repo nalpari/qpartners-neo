@@ -233,19 +233,28 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       <div className="flex flex-col gap-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-[400px]">
-            <Spinner size={32} />
+            <Spinner size={48} />
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+              データがありません
+            </p>
           </div>
         ) : (
-          <DataGrid<NoticeListItem>
-            columnDefs={columnDefs}
-            rowData={filteredItems}
-          />
+          <>
+            <DataGrid<NoticeListItem>
+              columnDefs={columnDefs}
+              rowData={filteredItems}
+              maxHeight={0}
+            />
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              onPageChange={onPageChange}
+            />
+          </>
         )}
-        <Pagination
-          currentPage={page}
-          totalPages={totalPages}
-          onPageChange={onPageChange}
-        />
       </div>
     </div>
   );

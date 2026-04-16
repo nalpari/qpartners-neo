@@ -202,7 +202,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
             <DataGrid<MassMailListItem>
               columnDefs={columnDefs}
               rowData={list}
-              maxHeight={600}
+              maxHeight={0}
               context={{ router }}
             />
             <Pagination
