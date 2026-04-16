@@ -241,15 +241,17 @@ QSP `updateUserDtlMng` 필수 9개 필드를 `preDetail` + request body + fallba
     "message": "会員情報を更新しました",
     "warning": "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。",
     "warnings": [
-      "secAuthYn が既定値で更新されました (元の値を取得できなかったため)",
-      "statCd が既定値で更新されました (元の値を取得できなかったため)"
+      "二段階認証設定が既定値で更新されました (元の値を取得できなかったため)",
+      "アカウント状態が既定値で更新されました (元の値を取得できなかったため)"
     ]
   }
 }
 ```
 
 - `warning` (단수): TOCTOU 사후 검증 실패/불일치 시에만 포함 (§1.5)
-- `warnings` (복수, v1.2 신규): preDetail null 경로에서 기본값이 주입된 QSP 필드 목록 (§1.4 Fallback 통보)
+- `warnings` (복수, v1.2 신규): preDetail null 경로에서 기본값이 주입된 QSP 필드의 **일본어 라벨 목록** (§1.4 Fallback 통보)
+  - 라벨 매핑: `secAuthYn`→`二段階認証設定`, `loginNotiYn`→`ログイン通知設定`, `attrChgYn`→`属性変更通知設定`, `newsRcptYn`→`ニュースレター受信設定`, `authCd`→`ユーザー権限`, `statCd`→`アカウント状態`
+  - 구현: `DEFAULTED_FIELD_LABELS_JA` (route.ts 모듈 상단). 매핑 누락 키는 방어적으로 원시 필드명 폴백.
 - 두 필드는 공존 가능하며 각각 독립적으로 세팅된다
 
 #### 에러 응답 매트릭스
