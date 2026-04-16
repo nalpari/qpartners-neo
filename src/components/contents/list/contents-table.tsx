@@ -153,7 +153,7 @@ function MobileAttachmentButton({ item }: { item: ContentListItem }) {
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    downloadAllAttachments(item.id);
+    void downloadAllAttachments(item.id);
   };
 
   return (

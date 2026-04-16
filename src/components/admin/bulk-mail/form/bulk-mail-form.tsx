@@ -43,12 +43,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   const editId = initialData?.id;
 
-  // Design Ref: §3.2 — useMutation (edit 모드: PUT, 그 외: POST)
+  // Design Ref: §3.2 — 공통 mutationFn (edit → PUT, 그 외 → POST)
+  const submitToApi = (fd: FormData) =>
+    mode === "edit" && editId
+      ? api.put<MassMailCreateResponse>(`/admin/mass-mails/${editId}`, fd, FORM_DATA_CONFIG)
+      : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG);
+
   const submitMutation = useMutation({
-    mutationFn: (fd: FormData) =>
-      mode === "edit" && editId
-        ? api.put<MassMailCreateResponse>(`/admin/mass-mails/${editId}`, fd, FORM_DATA_CONFIG)
-        : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
+    mutationFn: submitToApi,
     onSuccess: (res) => {
       const { id, message } = res.data.data;
       void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
@@ -63,6 +65,24 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     onError: (error: unknown) => {
       console.error("[BulkMailForm] 메일 등록 실패:", error);
       openAlert({ type: "alert", message: "メールの登録に失敗しました。" });
+    },
+  });
+
+  const draftMutation = useMutation({
+    mutationFn: submitToApi,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      openAlert({
+        type: "alert",
+        message: "下書き保存しました。",
+        onConfirm: () => {
+          router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+        },
+      });
+    },
+    onError: (error: unknown) => {
+      console.error("[BulkMailForm] 임시저장 실패:", error);
+      openAlert({ type: "alert", message: "下書き保存に失敗しました。" });
     },
   });
 
@@ -103,27 +123,6 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   };
 
   // Plan SC: 下書き保存 → status: draft (임시저장은 빈 필드 허용 — 의도적 미검증)
-  const draftMutation = useMutation({
-    mutationFn: (fd: FormData) =>
-      mode === "edit" && editId
-        ? api.put<MassMailCreateResponse>(`/admin/mass-mails/${editId}`, fd, FORM_DATA_CONFIG)
-        : api.post<MassMailCreateResponse>("/admin/mass-mails", fd, FORM_DATA_CONFIG),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
-      openAlert({
-        type: "alert",
-        message: "下書き保存しました。",
-        onConfirm: () => {
-          router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
-        },
-      });
-    },
-    onError: (error: unknown) => {
-      console.error("[BulkMailForm] 임시저장 실패:", error);
-      openAlert({ type: "alert", message: "下書き保存に失敗しました。" });
-    },
-  });
-
   const handleDraft = () => {
     const fd = buildFormData({
       senderName, targets, optOut, subject, body,
