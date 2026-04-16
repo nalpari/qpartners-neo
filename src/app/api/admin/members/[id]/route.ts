@@ -230,18 +230,27 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
         }
       } else {
-        // preDetail 없으면 canonical ID 비교 불가 → fail-closed (MF-4 보호)
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — self-target 판정 불가, critical 필드 변경 차단 (MF-4 보호)");
+        // MF-4 fail-closed: preDetail 없으면 canonical ID 비교 불가 → critical 변경 차단
+        console.warn("[PUT /api/admin/members/:id] preDetail null — critical 변경 차단:", {
+          adminUserId: maskEmail(user.userId),
+          targetRawId: maskEmail(rawId),
+        });
         return NextResponse.json(
-          { error: "会員情報を確認できないため、この変更は実行できません。しばらくしてから再度お試しください" },
-          { status: 503 },
+          { error: "会員情報を確認できないため、この変更は実行できません" },
+          { status: 409 },
         );
       }
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail 없는 경우 → 위의 modifiesSelfCritical 가드에서 이미 차단됨
-    if (result.data.userRole !== undefined && preDetail) {
+    if (result.data.userRole !== undefined) {
+      if (!preDetail) {
+        // preDetail null → userTp 확인 불가 → 안전하게 거부
+        return NextResponse.json(
+          { error: "会員情報を確認できないため、権限変更は実行できません" },
+          { status: 409 },
+        );
+      }
       if (preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
           { error: "ユーザー権限の変更は一般会員のみ可能です" },

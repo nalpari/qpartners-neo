@@ -18,13 +18,13 @@ export const createHomeNoticeSchema = z
     ...targetFields,
     startAt: z.coerce.date(),
     endAt: z.coerce.date(),
-    content: z.string().min(1, "content는 필수입니다"),
+    content: z.string().min(1, "内容は必須です"),
     url: z
       .string()
       .url()
       .max(500)
       .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
-        message: "HTTP(S) URL만 허용됩니다",
+        message: "HTTP(S) URLのみ許可されています",
       })
       .nullable()
       .default(null),
@@ -37,10 +37,10 @@ export const createHomeNoticeSchema = z
       data.targetSecondStore ||
       data.targetConstructor ||
       data.targetGeneral,
-    { message: "게시대상을 최소 1개 이상 선택하세요" },
+    { message: "掲載対象を1つ以上選択してください" },
   )
   .refine((data) => data.startAt < data.endAt, {
-    message: "시작일은 종료일보다 이전이어야 합니다",
+    message: "開始日は終了日より前に設定してください",
     path: ["startAt"],
   });
 
@@ -54,13 +54,13 @@ export const updateHomeNoticeSchema = z
     targetGeneral: z.boolean().optional(),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
-    content: z.string().min(1, "content는 필수입니다").optional(),
+    content: z.string().min(1, "内容は必須です").optional(),
     url: z
       .string()
       .url()
       .max(500)
       .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
-        message: "HTTP(S) URL만 허용됩니다",
+        message: "HTTP(S) URLのみ許可されています",
       })
       .nullable()
       .optional(),
@@ -82,14 +82,14 @@ export const updateHomeNoticeSchema = z
       if (!hasAnyTargetField) return true; // target 미전송 시 검증 스킵
       return targetKeys.some((k) => data[k] === true);
     },
-    { message: "게시대상을 최소 1개 이상 선택하세요" },
+    { message: "掲載対象を1つ以上選択してください" },
   )
   .refine(
     (data) => {
       if (data.startAt && data.endAt) return data.startAt < data.endAt;
       return true;
     },
-    { message: "시작일은 종료일보다 이전이어야 합니다", path: ["startAt"] },
+    { message: "開始日は終了日より前に設定してください", path: ["startAt"] },
   );
 
 // ─── Helpers ───

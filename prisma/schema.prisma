@@ -318,6 +318,7 @@ model MassMail {
 
   @@index([status], map: "idx_status")
   @@index([sentAt], map: "idx_sent_at")
+  @@index([status, createdAt(sort: Desc)], map: "idx_status_created_at")
   @@map("qp_mass_mails")
 }
 
