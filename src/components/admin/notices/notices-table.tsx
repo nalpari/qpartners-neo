@@ -243,11 +243,13 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           </div>
         ) : (
           <>
-            <DataGrid<NoticeListItem>
-              columnDefs={columnDefs}
-              rowData={filteredItems}
-              maxHeight={0}
-            />
+            <div style={{ maxHeight: 500, overflow: "auto" }}>
+              <DataGrid<NoticeListItem>
+                columnDefs={columnDefs}
+                rowData={filteredItems}
+                maxHeight={0}
+              />
+            </div>
             <Pagination
               currentPage={page}
               totalPages={totalPages}

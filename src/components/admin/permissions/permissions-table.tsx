@@ -280,13 +280,15 @@ export function PermissionsTable() {
           </p>
         </div>
       ) : (
-        <DataGrid<PermissionItem>
-          columnDefs={columnDefs}
-          rowData={filteredRows}
-          getRowClass={getRowClass}
-          maxHeight={0}
-          className="permissions-grid"
-        />
+        <div style={{ maxHeight: 500, overflow: "auto" }}>
+          <DataGrid<PermissionItem>
+            columnDefs={columnDefs}
+            rowData={filteredRows}
+            getRowClass={getRowClass}
+            maxHeight={0}
+            className="permissions-grid"
+          />
+        </div>
       )}
     </div>
   );

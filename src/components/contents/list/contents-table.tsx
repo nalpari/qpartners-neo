@@ -416,7 +416,7 @@ export function ContentsTable({
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              <div style={{ maxHeight: 800, overflow: "auto" }}>
+              <div style={{ maxHeight: 500, overflow: "auto" }}>
                 <DataGrid<ContentListItem>
                   columnDefs={columnDefs}
                   rowData={data}

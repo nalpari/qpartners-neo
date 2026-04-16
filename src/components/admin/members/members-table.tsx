@@ -136,11 +136,13 @@ export function MembersTable() {
           </div>
         ) : (
           <>
-            <DataGrid<MemberDetailItem>
-              columnDefs={columnDefs}
-              rowData={DUMMY_MEMBERS}
-              maxHeight={0}
-            />
+            <div style={{ maxHeight: 500, overflow: "auto" }}>
+              <DataGrid<MemberDetailItem>
+                columnDefs={columnDefs}
+                rowData={DUMMY_MEMBERS}
+                maxHeight={0}
+              />
+            </div>
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
