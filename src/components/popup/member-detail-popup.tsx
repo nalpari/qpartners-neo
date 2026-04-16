@@ -21,7 +21,7 @@ const CLOSE_ANIMATION_MS = 200;
 
 function TextValue({ value }: { value: string }) {
   return (
-    <p className="flex-1 font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#101010] overflow-hidden text-ellipsis whitespace-nowrap">
+    <p className="flex-1 font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#101010] break-all">
       {value || "-"}
     </p>
   );
@@ -39,7 +39,7 @@ function LabelCell({ label }: { label: string }) {
 
 function ValueCell({ children, hasBorder = true }: { children: React.ReactNode; hasBorder?: boolean }) {
   return (
-    <div className={`flex flex-1 items-center h-full rounded-[6px] pl-4 pr-2 py-2 ${
+    <div className={`flex flex-1 items-center h-full min-w-0 rounded-[6px] pl-4 pr-2 py-2 ${
       hasBorder ? "bg-white border border-[#EAF0F6]" : ""
     }`}>
       {children}
@@ -49,7 +49,7 @@ function ValueCell({ children, hasBorder = true }: { children: React.ReactNode; 
 
 function FormCell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-1 items-center h-full bg-white border border-[#EAF0F6] rounded-[6px] p-2">
+    <div className="flex flex-1 items-center h-full min-w-0 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
       {children}
     </div>
   );
@@ -68,13 +68,13 @@ function DetailRow({
   };
 
   return (
-    <div className="flex gap-1 items-start">
-      <div className="flex flex-1 gap-1 h-[58px] items-center">
+    <div className="flex gap-1 items-stretch min-h-[58px]">
+      <div className={`flex gap-1 items-stretch min-w-0 ${right ? "w-1/2" : "w-full"}`}>
         <LabelCell label={left.label} />
         {renderValue(left)}
       </div>
       {right && (
-        <div className="flex flex-1 gap-1 h-[58px] items-center">
+        <div className="flex w-1/2 gap-1 items-stretch min-w-0">
           <LabelCell label={right.label} />
           {renderValue(right)}
         </div>
@@ -389,11 +389,13 @@ export function MemberDetailPopup() {
                 <DetailRow
                   left={{
                     label: "会員状態",
-                    children: (
+                    children: isStatusEditable && !isReadOnly ? (
                       <div className="flex items-center gap-3">
-                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" disabled={isReadOnly || !isStatusEditable} />
-                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" disabled={isReadOnly || !isStatusEditable} />
+                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" />
+                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" />
                       </div>
+                    ) : (
+                      <TextValue value={memberStatus} />
                     ),
                   }}
                   right={{
