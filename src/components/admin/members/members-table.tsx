@@ -37,6 +37,7 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
       onClick={() => openPopup("member-detail", {
         userId: data.userId,
         userTp: USER_TYPE_REVERSE_MAP[data.userType] ?? "GENERAL",
+        listItem: data,
       })}
     >
       {data.userName}

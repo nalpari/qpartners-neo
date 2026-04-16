@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, SelectBox, Radio, Spinner } from "@/components/common";
-import type { MemberDetail, MemberUpdatePayload } from "@/components/admin/members/members-types";
+import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
   USER_TYPE_REVERSE_MAP,
   ROLE_OPTIONS_GENERAL,
@@ -89,13 +89,17 @@ export function MemberDetailPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
 
-  const { userId, userTp } = popupData as { userId?: string; userTp?: string };
+  const { userId, userTp, listItem } = popupData as {
+    userId?: string;
+    userTp?: string;
+    listItem?: MemberListItem;
+  };
 
   // Design Ref: §4.2 — 상세 조회
-  const { data: member, isLoading } = useQuery<MemberDetail>({
+  const { data: rawMember, isLoading } = useQuery<MemberDetail & { notFoundInQsp?: boolean }>({
     queryKey: ["admin", "member", userId, userTp],
     queryFn: async () => {
-      const res = await api.get<{ data: MemberDetail }>(
+      const res = await api.get<{ data: MemberDetail & { notFoundInQsp?: boolean } }>(
         `/admin/members/${encodeURIComponent(userId!)}`,
         { params: { userTp } },
       );
@@ -103,6 +107,24 @@ export function MemberDetailPopup() {
     },
     enabled: !!userId && !!userTp,
   });
+
+  // QSP 미조회 회원(notFoundInQsp)일 때 목록 데이터로 fallback
+  const member: MemberDetail | undefined = rawMember
+    ? rawMember.notFoundInQsp && listItem
+      ? {
+          ...rawMember,
+          userId: listItem.userId,
+          userName: listItem.userName,
+          userNameKana: listItem.userNameKana,
+          email: listItem.email,
+          userType: listItem.userType,
+          companyName: listItem.companyName,
+          status: listItem.status,
+          lastLoginAt: listItem.lastLoginAt,
+          createdAt: listItem.createdAt,
+        }
+      : rawMember
+    : undefined;
 
   // 편집 가능 필드 state (member 로드 후 초기화)
   const isGeneral = member ? (USER_TYPE_REVERSE_MAP[member.userType] === "GENERAL") : false;
