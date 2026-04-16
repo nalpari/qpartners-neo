@@ -127,7 +127,10 @@ export function MemberDetailPopup() {
     : undefined;
 
   // 편집 가능 필드 state (member 로드 후 초기화)
-  const isGeneral = member ? (USER_TYPE_REVERSE_MAP[member.userType] === "GENERAL") : false;
+  const memberTp = member ? (USER_TYPE_REVERSE_MAP[member.userType] ?? "") : "";
+  const isGeneral = memberTp === "GENERAL";
+  // 판매점(STORE)·관리자(ADMIN)는 회원상태 수정 불가
+  const isStatusEditable = isGeneral || memberTp === "SEKO";
   // GENERAL 회원의 권한 — 유효한 옵션에 없으면 "GENERAL" 디폴트
   const validRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
   const safeRole = (role: string | undefined) =>
@@ -223,9 +226,13 @@ export function MemberDetailPopup() {
       twoFactorEnabled,
       loginNotification,
       attributeChangeNotification: attributeNotify,
-      status: memberStatus === "Active" ? "active" : "deleted",
       newsRcptYn,
     };
+
+    // 판매점(STORE)·관리자(ADMIN)는 상태 수정 불가
+    if (isStatusEditable) {
+      payload.status = memberStatus === "Active" ? "active" : "deleted";
+    }
 
     // GENERAL만 userRole 포함
     if (isGeneral) {
@@ -384,8 +391,8 @@ export function MemberDetailPopup() {
                     label: "会員状態",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" disabled={isReadOnly} />
-                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" disabled={isReadOnly} />
+                        <Radio name="memberStatus" value="Active" checked={memberStatus === "Active"} onChange={() => setMemberStatus("Active")} label="Active" disabled={isReadOnly || !isStatusEditable} />
+                        <Radio name="memberStatus" value="Delete" checked={memberStatus === "Delete"} onChange={() => setMemberStatus("Delete")} label="Delete" disabled={isReadOnly || !isStatusEditable} />
                       </div>
                     ),
                   }}
@@ -401,7 +408,7 @@ export function MemberDetailPopup() {
                 />
                 {/* 8행: 退会日時 / ニュースレター */}
                 <DetailRow
-                  left={{ label: "退会日時", children: <TextValue value={member.withdrawnAt ? formatDateTime(member.withdrawnAt) : "-"} /> }}
+                  left={{ label: "退会日時", children: <TextValue value={isStatusEditable && member.withdrawnAt ? formatDateTime(member.withdrawnAt) : "-"} /> }}
                   right={{
                     label: "ニュースレター",
                     children: (
