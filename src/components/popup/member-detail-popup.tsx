@@ -124,34 +124,6 @@ export function MemberDetailPopup() {
       : rawMember
     : undefined;
 
-  // 편집 가능 필드 state (member 로드 후 초기화)
-  const memberTp = member ? (USER_TYPE_REVERSE_MAP[member.userType] ?? "") : "";
-  const isGeneral = memberTp === "GENERAL";
-  // 판매점(STORE)·관리자(ADMIN)는 회원상태 수정 불가
-  const isStatusEditable = isGeneral || memberTp === "SEKO";
-  // GENERAL 회원의 권한 — 유효한 옵션에 없으면 "GENERAL" 디폴트
-  const validRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
-  const safeRole = (role: string | undefined) =>
-    role && validRoleValues.includes(role) ? role : "GENERAL";
-  const [userRole, setUserRole] = useState(safeRole(member?.userRole));
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(member?.twoFactorEnabled ?? true);
-  const [loginNotification, setLoginNotification] = useState(member?.loginNotification ?? true);
-  const [memberStatus, setMemberStatus] = useState(API_TO_STATUS[member?.status ?? "active"] ?? "Active");
-  const [attributeNotify, setAttributeNotify] = useState(member?.attributeChangeNotification ?? true);
-  const [newsRcptYn, setNewsRcptYn] = useState(member?.newsRcptYn ?? "Y");
-
-  // member 로드 후 state 동기화 (첫 로드 시 한 번만)
-  const [initialized, setInitialized] = useState(false);
-  if (member && !initialized) {
-    setUserRole(safeRole(member.userRole));
-    setTwoFactorEnabled(member.twoFactorEnabled ?? true);
-    setLoginNotification(member.loginNotification);
-    setMemberStatus(API_TO_STATUS[member.status] ?? "Active");
-    setAttributeNotify(member.attributeChangeNotification);
-    setNewsRcptYn(member.newsRcptYn);
-    setInitialized(true);
-  }
-
   // Design Ref: §6 — API 에러 처리
   function handleApiError(err: unknown, context: string) {
     if (!isAxiosError(err) || !err.response) {
@@ -207,10 +179,6 @@ export function MemberDetailPopup() {
   });
 
   const isSaving = updateMutation.isPending || resetPasswordMutation.isPending;
-  // 탈퇴(withdrawn) 상태는 조회만 가능, 수정 불가
-  const isWithdrawn = member?.status === "withdrawn";
-  const isReadOnly = isWithdrawn;
-  // QSP 미조회 회원은 twoFactor/userRole 편집 불가 (백엔드 critical 변경 차단)
   const isQspNotFound = rawMember?.notFoundInQsp === true;
 
   const handleClose = () => {
@@ -221,30 +189,7 @@ export function MemberDetailPopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleSave = () => {
-    if (!member) return;
-
-    const payload: MemberUpdatePayload = {
-      loginNotification,
-      attributeChangeNotification: attributeNotify,
-      newsRcptYn,
-    };
-
-    // QSP 미조회(탈퇴/삭제) 회원은 twoFactorEnabled/userRole 제외 (백엔드 critical 변경 차단)
-    if (!isQspNotFound) {
-      payload.twoFactorEnabled = twoFactorEnabled;
-    }
-
-    // 판매점(STORE)·관리자(ADMIN)는 상태 수정 불가
-    if (isStatusEditable) {
-      payload.status = memberStatus === "Active" ? "active" : "deleted";
-    }
-
-    // GENERAL만 userRole 포함 (QSP 미조회 시 제외)
-    if (isGeneral && !isQspNotFound) {
-      payload.userRole = userRole;
-    }
-
+  const handleSave = (payload: MemberUpdatePayload) => {
     updateMutation.mutate(payload);
   };
 
@@ -295,6 +240,74 @@ export function MemberDetailPopup() {
               </p>
             </div>
           ) : (
+            <MemberEditForm
+              key={member.userId}
+              member={member}
+              isQspNotFound={isQspNotFound}
+              isSaving={isSaving}
+              onSave={handleSave}
+              onPasswordReset={handlePasswordReset}
+              onClose={handleClose}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 편집 state를 가진 내부 컴포넌트 — key prop으로 리마운트하여 state 초기화 */
+function MemberEditForm({
+  member,
+  isQspNotFound,
+  isSaving,
+  onSave,
+  onPasswordReset,
+  onClose,
+}: {
+  member: MemberDetail;
+  isQspNotFound: boolean;
+  isSaving: boolean;
+  onSave: (payload: MemberUpdatePayload) => void;
+  onPasswordReset: () => void;
+  onClose: () => void;
+}) {
+  const memberTp = USER_TYPE_REVERSE_MAP[member.userType] ?? "";
+  const isGeneral = memberTp === "GENERAL";
+  const isStatusEditable = isGeneral || memberTp === "SEKO";
+  const isWithdrawn = member.status === "withdrawn";
+  // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
+  const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
+
+  const validRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
+  const safeRole = (role: string | undefined) =>
+    role && validRoleValues.includes(role) ? role : "GENERAL";
+  const [userRole, setUserRole] = useState(safeRole(member.userRole));
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(member.twoFactorEnabled ?? true);
+  const [loginNotification, setLoginNotification] = useState(member.loginNotification);
+  const [memberStatus, setMemberStatus] = useState(API_TO_STATUS[member.status] ?? "Active");
+  const [attributeNotify, setAttributeNotify] = useState(member.attributeChangeNotification);
+  const [newsRcptYn, setNewsRcptYn] = useState(member.newsRcptYn);
+
+  const handleSave = () => {
+    const payload: MemberUpdatePayload = {
+      loginNotification,
+      attributeChangeNotification: attributeNotify,
+      newsRcptYn,
+    };
+    if (!isQspNotFound) {
+      payload.twoFactorEnabled = twoFactorEnabled;
+    }
+    if (isStatusEditable) {
+      payload.status = memberStatus === "Active" ? "active" : "deleted";
+    }
+    if (isGeneral && !isQspNotFound) {
+      payload.userRole = userRole;
+    }
+    onSave(payload);
+  };
+
+  return (
             <>
               {/* 등록일 / 갱신일 뱃지 */}
               <div className="flex items-center gap-3">
@@ -331,7 +344,7 @@ export function MemberDetailPopup() {
                     label: "PW初期化",
                     isForm: true,
                     children: (
-                      <Button variant="outline" onClick={handlePasswordReset} disabled={isSaving || isReadOnly} className="w-full">
+                      <Button variant="outline" onClick={onPasswordReset} disabled={isSaving || isReadOnly} className="w-full">
                         パスワード初期化
                       </Button>
                     ),
@@ -459,7 +472,7 @@ export function MemberDetailPopup() {
 
               {/* 하단 버튼 */}
               <div className="popup-buttons--inline">
-                <Button variant="secondary" onClick={handleClose}>
+                <Button variant="secondary" onClick={onClose}>
                   {isReadOnly ? "閉じる" : "キャンセル"}
                 </Button>
                 {!isReadOnly && (
@@ -469,9 +482,5 @@ export function MemberDetailPopup() {
                 )}
               </div>
             </>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }

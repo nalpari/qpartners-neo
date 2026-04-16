@@ -20,15 +20,21 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
 
   const openPopup = usePopupStore.getState().openPopup;
 
+  const userTp = USER_TYPE_REVERSE_MAP[data.userType];
+
+  const handleClick = () => {
+    if (!userTp) {
+      console.warn("[MembersTable] 매핑 불가 userType:", data.userType);
+      return;
+    }
+    openPopup("member-detail", { userId: data.userId, userTp, listItem: data });
+  };
+
   return (
     <button
       type="button"
       className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
-      onClick={() => openPopup("member-detail", {
-        userId: data.userId,
-        userTp: USER_TYPE_REVERSE_MAP[data.userType] ?? "GENERAL",
-        listItem: data,
-      })}
+      onClick={handleClick}
     >
       {data.userName}
     </button>
