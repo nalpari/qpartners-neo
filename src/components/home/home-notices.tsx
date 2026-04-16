@@ -49,9 +49,11 @@ export function HomeNotices() {
   );
 }
 
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
+
 function NoticeCard({ notice }: { notice: HomeNoticeItem }) {
   const date = notice.startAt ? formatDate(notice.startAt) : null;
-  const hasUrl = notice.url != null && notice.url.length > 0;
+  const hasUrl = notice.url != null && notice.url.length > 0 && isSafeUrl(notice.url);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[24px] px-[24px] pb-[32px] overflow-hidden">

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, Button, Spinner } from "@/components/common";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
@@ -70,6 +70,7 @@ function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
       openPopup("notice-form", { mode: "edit", notice: formData });
     } catch (error: unknown) {
       console.error("[NoticesTable] 공지 상세 조회 실패:", error);
+      useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
     }
   };
 

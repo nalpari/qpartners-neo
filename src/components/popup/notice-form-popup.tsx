@@ -87,8 +87,8 @@ export function NoticeFormPopup() {
       errs.dateRange = "開始日は終了日より前に設定してください";
     }
     if (!content.trim()) errs.content = "お知らせ内容を入力してください";
-    if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
-      errs.url = "URLはhttp://またはhttps://で始めてください";
+    if (url && !url.startsWith("https://")) {
+      errs.url = "URLはhttps://で始めてください";
     }
     return errs;
   }
@@ -106,8 +106,11 @@ export function NoticeFormPopup() {
     },
     onError: (error: unknown) => {
       if (isAxiosError(error) && error.response?.status === 400) {
-        const msg = (error.response.data as { error?: string })?.error;
-        if (msg?.includes("5")) {
+        const data = error.response.data;
+        const msg = typeof data === "object" && data !== null && "error" in data && typeof (data as Record<string, unknown>).error === "string"
+          ? (data as Record<string, unknown>).error as string
+          : "";
+        if (msg === "同一期間に掲載できるお知らせは5件までです") {
           openAlert({
             type: "alert",
             message: "活性(予定含む)のお知らせが5件を超えることはできません。",
@@ -131,7 +134,21 @@ export function NoticeFormPopup() {
       openAlert({ type: "alert", message: "保存しました。", confirmLabel: "確認" });
       closePopup();
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      if (isAxiosError(error) && error.response?.status === 400) {
+        const data = error.response.data;
+        const msg = typeof data === "object" && data !== null && "error" in data && typeof (data as Record<string, unknown>).error === "string"
+          ? (data as Record<string, unknown>).error as string
+          : "";
+        if (msg === "同一期間に掲載できるお知らせは5件までです") {
+          openAlert({
+            type: "alert",
+            message: "活性(予定含む)のお知らせが5件を超えることはできません。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
+      }
       openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     },
   });
