@@ -416,14 +416,11 @@ export function ContentsTable({
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              <div style={{ maxHeight: 800, overflow: "auto" }}>
-                <DataGrid<ContentListItem>
-                  columnDefs={columnDefs}
-                  rowData={data}
-                  className="contents-grid"
-                  maxHeight={0}
-                />
-              </div>
+              <DataGrid<ContentListItem>
+                columnDefs={columnDefs}
+                rowData={data}
+                className="contents-grid"
+              />
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
