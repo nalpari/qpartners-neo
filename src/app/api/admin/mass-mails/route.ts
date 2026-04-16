@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, unlink, rm } from "fs/promises";
-import { join, basename, relative, resolve } from "path";
+import { writeFile, mkdir, rm } from "fs/promises";
+import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -9,6 +9,8 @@ import { requireAdmin } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
+import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -32,27 +34,7 @@ function resolveUserType(user: UserInfo): "ADMIN" | "STORE" | "SEKO" | "GENERAL"
   throw new Error(`알 수 없는 userType: ${user.userType}`);
 }
 
-// ─── 파일 관련 타입/유틸 ───
-
-interface PersistedAttachment {
-  absolutePath: string;
-  file: File;
-  filePath: string;
-}
-
-/** 에러 발생 시 디스크에 기록된 첨부파일 + 업로드 디렉토리 롤백 */
-async function cleanupFiles(writtenFiles: PersistedAttachment[], uploadDir?: string): Promise<void> {
-  for (const w of writtenFiles) {
-    await unlink(w.absolutePath).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", relative(UPLOAD_DIR, w.absolutePath), e);
-    });
-  }
-  if (uploadDir) {
-    await rm(uploadDir, { recursive: true, force: true }).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 디렉토리 정리 실패:", relative(UPLOAD_DIR, uploadDir), e);
-    });
-  }
-}
+const LOG_TAG_POST = "POST /api/admin/mass-mails";
 
 // ─── POST 헬퍼: 요청 파싱/검증 ───
 
@@ -157,18 +139,8 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     }
   }
 
-  // 6. HTML body sanitization (stored XSS 방어 — 허용 태그/속성 화이트리스트 방식)
-  const sanitizedBody = DOMPurify.sanitize(data.body, {
-    ALLOWED_TAGS: [
-      "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
-      "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-      "table", "thead", "tbody", "tr", "th", "td",
-      "img", "span", "div", "hr",
-    ],
-    ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
-    ALLOWED_URI_REGEXP: /^https:\/\//i,
-    ALLOW_DATA_ATTR: false,
-  });
+  // 6. HTML body sanitization (stored XSS 방어 — 공통 화이트리스트 설정 사용)
+  const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
 
   // sanitize 후 빈 body 검증
   if (!sanitizedBody.trim()) {
@@ -244,7 +216,7 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
     const hasTraversalError = results.some((r) => r.error);
 
     if (hasTraversalError) {
-      await cleanupFiles(successes, uploadDir);
+      await cleanupAttachments(successes, LOG_TAG_POST, uploadDir);
       return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
     }
 
@@ -455,7 +427,7 @@ export async function POST(request: NextRequest) {
         user, data, sanitizedBody, userType, writtenFiles,
       });
     } catch (dbError: unknown) {
-      await cleanupFiles(writtenFiles, uploadDir);
+      await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
       writtenFiles = [];
       uploadDir = undefined;
       throw dbError;
@@ -472,7 +444,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error: unknown) {
-    await cleanupFiles(writtenFiles, uploadDir);
+    await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
     console.error("[POST /api/admin/mass-mails] 등록 실패:", error);
     return NextResponse.json(
       { error: "メールの登録に失敗しました" },

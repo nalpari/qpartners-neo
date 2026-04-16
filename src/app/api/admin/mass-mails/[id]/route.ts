@@ -1,13 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, unlink, rm } from "fs/promises";
-import { basename, resolve, join, relative } from "path";
+import { writeFile, mkdir, unlink } from "fs/promises";
+import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
 import { requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
+import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
+import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
@@ -156,29 +158,10 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 // ─── PUT /api/admin/mass-mails/:id — 대량메일 수정 (multipart/form-data) ───
 
 const MAX_FILES = 10;
-
-// PUT 용 첨부파일 정리
-interface WrittenFile {
-  absolutePath: string;
-  file: File;
-  filePath: string;
-}
-
-async function cleanupWrittenFiles(files: WrittenFile[], dir?: string): Promise<void> {
-  for (const w of files) {
-    await unlink(w.absolutePath).catch((e: unknown) => {
-      console.error("[PUT /api/admin/mass-mails/:id] 첨부파일 정리 실패:", relative(UPLOAD_DIR, w.absolutePath), e);
-    });
-  }
-  if (dir) {
-    await rm(dir, { recursive: true, force: true }).catch((e: unknown) => {
-      console.error("[PUT /api/admin/mass-mails/:id] 디렉토리 정리 실패:", relative(UPLOAD_DIR, dir), e);
-    });
-  }
-}
+const LOG_TAG_PUT = "PUT /api/admin/mass-mails/:id";
 
 export async function PUT(request: NextRequest, { params }: Params) {
-  let writtenFiles: WrittenFile[] = [];
+  let writtenFiles: PersistedAttachment[] = [];
   let uploadDir: string | undefined;
 
   try {
@@ -307,18 +290,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 6. HTML body sanitization
-    const sanitizedBody = DOMPurify.sanitize(data.body, {
-      ALLOWED_TAGS: [
-        "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
-        "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-        "table", "thead", "tbody", "tr", "th", "td",
-        "img", "span", "div", "hr",
-      ],
-      ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
-      ALLOWED_URI_REGEXP: /^https:\/\//i,
-      ALLOW_DATA_ATTR: false,
-    });
+    // 6. HTML body sanitization (공통 화이트리스트 설정 사용)
+    const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
 
     if (!sanitizedBody.trim()) {
       return NextResponse.json(
@@ -354,11 +327,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return { error: false as const, absolutePath, file, filePath };
       }));
 
-      const successes = writeResults.filter((r): r is WrittenFile & { error: false } => !r.error);
+      const successes = writeResults.filter((r): r is PersistedAttachment & { error: false } => !r.error);
       writtenFiles = successes;
 
       if (writeResults.some((r) => r.error)) {
-        await cleanupWrittenFiles(writtenFiles, uploadDir);
+        await cleanupAttachments(writtenFiles, LOG_TAG_PUT, uploadDir);
         return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
       }
     }
@@ -413,7 +386,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }
       });
     } catch (dbError: unknown) {
-      await cleanupWrittenFiles(writtenFiles, uploadDir);
+      await cleanupAttachments(writtenFiles, LOG_TAG_PUT, uploadDir);
       writtenFiles = [];
       uploadDir = undefined;
       throw dbError;
@@ -441,7 +414,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       data: { id: idResult.data, status: data.status, message: statusMsg },
     });
   } catch (error: unknown) {
-    await cleanupWrittenFiles(writtenFiles, uploadDir);
+    await cleanupAttachments(writtenFiles, LOG_TAG_PUT, uploadDir);
     if (error instanceof Error && error.message === "NOT_DRAFT_ANYMORE") {
       return NextResponse.json(
         { error: "このメールは既に下書き状態ではないため、編集できません" },

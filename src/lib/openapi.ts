@@ -2353,7 +2353,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "target", in: "query", schema: { type: "string", enum: ["super_admin", "admin", "first_store", "second_store", "seko", "general"] }, description: "발송대상 필터" },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
           { name: "authorSearchType", in: "query", schema: { type: "string", enum: ["name", "id"] }, description: "登録者 검색 대상 (이름/ID)" },
-          { name: "authorQuery", in: "query", schema: { type: "string" }, description: "登録者 검색어 (부분일치)" },
+          { name: "authorQuery", in: "query", schema: { type: "string", minLength: 2 }, description: "登録者 검색어 (부분일치, 2文字以上)" },
           { name: "startDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 시작 (YYYY-MM-DD, JST 기준)" },
           { name: "endDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 끝 (YYYY-MM-DD, JST 기준)" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
