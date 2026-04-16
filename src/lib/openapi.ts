@@ -1064,6 +1064,32 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
 
     "/home-notices/{id}": {
+      get: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 단건 조회",
+        description: "관리자 전용 — 공지 상세 정보 조회",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/HomeNoticeListItem" },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
       put: {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 수정",
@@ -2270,9 +2296,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("검증 실패 또는 권한 변경 불가"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "409": errorResponse("QSP 상태 미확인 — status 명시 또는 중요 항목 변경 불가"),
+          "409": errorResponse("QSP 상태 미확인 — status 또는 authCd 명시 필요"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
+          "503": errorResponse("회원 정보 확인 불가 — 일시적 서버 오류 (재시도)"),
         },
       },
     },
@@ -2446,6 +2473,36 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("메일 없음"),
+        },
+      },
+      delete: {
+        tags: ["MassMail"],
+        summary: "대량메일 단건 삭제",
+        description: "관리자 전용 — 대량메일 삭제 (첨부파일 포함)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { id: { type: "integer", example: 1 } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("메일 없음"),
+          "500": errorResponse("삭제 실패"),
         },
       },
     },
@@ -3151,6 +3208,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           id: { type: "integer" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
+          startAt: { type: "string", format: "date-time" },
         },
       },
       CreateHomeNotice: {

@@ -221,18 +221,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
       result.data.userRole !== undefined ||
       result.data.twoFactorEnabled !== undefined;
     if (modifiesSelfCritical) {
-      // preDetail 없으면 canonical ID 비교 불가 → 안전하게 차단
-      if (!preDetail) {
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — critical 필드 변경 차단 (MF-4 보호)");
+      if (preDetail) {
+        // canonical ID 비교로 self-target 판정
+        if (isSelfTarget(user.userId, preDetail)) {
+          return NextResponse.json(
+            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { status: 400 },
+          );
+        }
+      } else {
+        // preDetail 없으면 canonical ID 비교 불가 → fail-closed (MF-4 보호)
+        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — self-target 판정 불가, critical 필드 변경 차단 (MF-4 보호)");
         return NextResponse.json(
-          { error: "会員の詳細情報を確認できないため、重要項目の変更はできません" },
-          { status: 409 },
-        );
-      }
-      if (isSelfTarget(user.userId, preDetail)) {
-        return NextResponse.json(
-          { error: "自分自身のアカウントに対するこの変更は実行できません" },
-          { status: 400 },
+          { error: "会員情報を確認できないため、この変更は実行できません。しばらくしてから再度お試しください" },
+          { status: 503 },
         );
       }
     }

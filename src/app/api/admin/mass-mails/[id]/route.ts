@@ -1,7 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { unlink } from "fs/promises";
+import { join, resolve } from "path";
 
 import { requireAdmin } from "@/lib/auth";
+import { UPLOAD_DIR } from "@/lib/config";
+import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
   massMailIdParamSchema,
@@ -78,6 +82,67 @@ export async function GET(request: NextRequest, { params }: Params) {
     console.error("[GET /api/admin/mass-mails/:id] 상세 조회 실패:", error);
     return NextResponse.json(
       { error: "メール詳細の取得に失敗しました" },
+      { status: 500 },
+    );
+  }
+}
+
+// DELETE /api/admin/mass-mails/:id — 대량메일 단건 삭제
+export async function DELETE(request: NextRequest, { params }: Params) {
+  try {
+    // 1. 관리자 권한 확인
+    const authResult = requireAdmin(request.headers);
+    if (authResult instanceof NextResponse) return authResult;
+
+    // 2. ID 파라미터 검증
+    const { id: rawId } = await params;
+    const idResult = massMailIdParamSchema.safeParse(rawId);
+    if (!idResult.success) {
+      return NextResponse.json(
+        { error: "IDが正しくありません" },
+        { status: 400 },
+      );
+    }
+
+    // 3. 첨부파일 경로 조회 (디스크 정리용)
+    const mail = await prisma.massMail.findUnique({
+      where: { id: idResult.data },
+      select: {
+        id: true,
+        status: true,
+        attachments: { select: { filePath: true } },
+      },
+    });
+
+    if (!mail) {
+      return NextResponse.json(
+        { error: "メールが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    // 4. DB 삭제 (Cascade로 첨부파일 레코드도 삭제)
+    await prisma.massMail.delete({ where: { id: idResult.data } });
+
+    // 5. 첨부파일 디스크 정리 (DB 삭제 성공 후 — best-effort)
+    for (const att of mail.attachments) {
+      const absPath = resolve(UPLOAD_DIR, att.filePath);
+      if (!isInsideDir(absPath, UPLOAD_DIR)) {
+        console.error("[DELETE /api/admin/mass-mails/:id] Path Traversal 차단:", att.filePath);
+        continue;
+      }
+      await unlink(absPath).catch((e: unknown) => {
+        console.warn("[DELETE /api/admin/mass-mails/:id] 첨부파일 삭제 실패:", att.filePath, e);
+      });
+    }
+
+    console.log(`[DELETE /api/admin/mass-mails/:id] 대량메일 삭제 완료 — id: ${mail.id}, userId: ${authResult.user.userId}`);
+
+    return NextResponse.json({ data: { id: idResult.data } });
+  } catch (error: unknown) {
+    console.error("[DELETE /api/admin/mass-mails/:id] 삭제 실패:", error);
+    return NextResponse.json(
+      { error: "メールの削除に失敗しました" },
       { status: 500 },
     );
   }
