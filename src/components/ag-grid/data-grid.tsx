@@ -84,7 +84,7 @@ export function DataGrid<T>({
       suppressMovable: false,
       cellStyle: { display: "flex", alignItems: "center" },
     }),
-    []
+    [],
   );
 
   const getRowClass = (params: RowClassParams<T>) => {
