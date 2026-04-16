@@ -199,14 +199,12 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
           </div>
         ) : (
           <>
-            <div style={{ maxHeight: 600, overflowY: "auto" }}>
-              <DataGrid<MassMailListItem>
-                columnDefs={columnDefs}
-                rowData={list}
-                maxHeight={0}
-                context={{ router }}
-              />
-            </div>
+            <DataGrid<MassMailListItem>
+              columnDefs={columnDefs}
+              rowData={list}
+              maxHeight={600}
+              context={{ router }}
+            />
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}

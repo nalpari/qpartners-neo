@@ -22,21 +22,19 @@ function InfoField({ label, value }: InfoFieldProps) {
 
 interface BulkMailFormInfoProps {
   senderName: string;
-  authorName: string;
-  authorId: string;
+  createdBy: string;
   sentAt: string;
 }
 
 export function BulkMailFormInfo({
   senderName,
-  authorName,
-  authorId,
+  createdBy,
   sentAt,
 }: BulkMailFormInfoProps) {
   return (
     <div className="flex flex-wrap gap-[18px]">
       <InfoField label="差出人表示名" value={senderName} />
-      <InfoField label="登録者 名前(ID)" value={`${authorName}(${authorId})`} />
+      <InfoField label="登録者" value={createdBy} />
       <InfoField label="配信日" value={sentAt} />
     </div>
   );

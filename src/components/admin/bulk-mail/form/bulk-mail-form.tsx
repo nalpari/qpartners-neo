@@ -132,7 +132,10 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.delete(`/admin/mass-mails/${editId}`),
+    mutationFn: () => {
+      if (!editId) throw new Error("削除対象のIDがありません");
+      return api.delete(`/admin/mass-mails/${editId}`);
+    },
     onSuccess: () => {
       // 삭제된 상세 쿼리를 즉시 제거하여 404 refetch 방지
       queryClient.removeQueries({ queryKey: ["mass-mails", String(editId)] });
@@ -187,8 +190,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormInfo
           senderName={senderName}
-          authorName={initialData?.createdBy ?? ""}
-          authorId={initialData?.createdBy ?? ""}
+          createdBy={initialData?.createdBy ?? ""}
           sentAt={showSentAt && initialData?.sentAt ? formatMailDate(initialData.sentAt) : (showSentAt && initialData?.createdAt ? formatMailDate(initialData.createdAt) : "")}
         />
       </section>

@@ -47,7 +47,7 @@ export function useCommonCode(headerCode: string, fallback: SelectOption[] = [])
         label: d.codeName,
       }));
     },
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
   });
 
   return { options: data ?? fallback, isLoading };
