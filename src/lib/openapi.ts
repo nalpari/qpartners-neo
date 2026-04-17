@@ -1604,7 +1604,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Code"],
         summary: "공통코드 공개 조회 (headerCode 기반)",
         parameters: [
-          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (공개 허용: INQUIRY_TYPE, PAGE_SIZE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
         ],
         responses: {
           "200": {
