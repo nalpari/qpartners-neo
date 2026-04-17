@@ -246,6 +246,7 @@ async function collectAndQueueRecipients(
     where: { id: massMailId },
     select: {
       userId: true,
+      createdBy: true,
       targetSuperAdmin: true,
       targetAdmin: true,
       targetFirstStore: true,
@@ -305,6 +306,7 @@ async function collectAndQueueRecipients(
           email: r.email,
           userName: r.userName,
           authRole: r.authRole,
+          createdBy: mail.createdBy,
         })),
       });
     },
