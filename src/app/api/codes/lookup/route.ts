@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 // (middleware.ts의 PUBLIC_GET_PATTERNS와 짝을 이룸)
 const ALLOWED_PUBLIC_HEADER_CODES = new Set<string>([
   "INQUIRY_TYPE", // 문의하기 문의 유형
+  "PAGE_SIZE", // 목록 페이지 사이즈 옵션
 ]);
 
 // GET /api/codes/lookup?headerCode=INQUIRY_TYPE — 공통코드 공개 조회 (headerCode 기반)
