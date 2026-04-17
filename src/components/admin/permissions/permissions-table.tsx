@@ -177,7 +177,7 @@ function MenuRenderer(params: ICellRendererParams<PermissionItem>) {
   return (
     <Button
       variant="outline"
-      onClick={() => openPopup("permission-menu", { permissionName: data.roleName })}
+      onClick={() => openPopup("permission-menu", { roleCode: data.roleCode, roleName: data.roleName })}
       className="!h-[38px] !min-w-[80px] !px-4 !text-[13px]"
     >
       Menu

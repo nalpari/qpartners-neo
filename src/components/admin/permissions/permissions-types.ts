@@ -66,3 +66,84 @@ export function toUpdateRoleBody(item: PermissionItem) {
     isActive: ynToBool(item.isActive),
   };
 }
+
+// --- 메뉴별 권한 설정 (permission-menu-popup) ---
+
+/** GET /api/roles/{roleCode}/permissions — 메뉴 아이템 */
+export interface MenuPermApiItem {
+  menuCode: string;
+  menuName: string;
+  level: 1 | 2;
+  hasUrl: boolean;
+  canRead: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+}
+
+/** GET 응답 — 1-Level 메뉴 (children 포함) */
+export interface MenuPermTreeItem extends MenuPermApiItem {
+  children: MenuPermApiItem[];
+}
+
+/** GET 응답 전체 */
+export interface RolePermissionsResponse {
+  data: {
+    roleCode: string;
+    roleName: string;
+    menus: MenuPermTreeItem[];
+  };
+}
+
+/** UI flat 행 (팝업 테이블용) */
+export interface MenuPermissionRow {
+  menuCode: string;
+  level1: string;
+  level2: string;
+  pageUrl: "Y" | "";
+  read: boolean;
+  create: boolean;
+  update: boolean;
+  delete: boolean;
+}
+
+/** API 트리 → flat 행 변환 */
+export function flattenMenuTree(menus: MenuPermTreeItem[]): MenuPermissionRow[] {
+  const rows: MenuPermissionRow[] = [];
+  for (const menu of menus) {
+    rows.push({
+      menuCode: menu.menuCode,
+      level1: menu.menuName,
+      level2: "",
+      pageUrl: menu.hasUrl ? "Y" : "",
+      read: menu.canRead,
+      create: menu.canCreate,
+      update: menu.canUpdate,
+      delete: menu.canDelete,
+    });
+    for (const child of menu.children) {
+      rows.push({
+        menuCode: child.menuCode,
+        level1: "",
+        level2: child.menuName,
+        pageUrl: child.hasUrl ? "Y" : "",
+        read: child.canRead,
+        create: child.canCreate,
+        update: child.canUpdate,
+        delete: child.canDelete,
+      });
+    }
+  }
+  return rows;
+}
+
+/** flat 행 → API 저장 body 변환 */
+export function rowsToPermissions(rows: MenuPermissionRow[]) {
+  return rows.map((r) => ({
+    menuCode: r.menuCode,
+    canRead: r.read,
+    canCreate: r.create,
+    canUpdate: r.update,
+    canDelete: r.delete,
+  }));
+}
