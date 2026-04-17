@@ -104,6 +104,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 1. 관리자 권한 확인
     const authResult = requireAdmin(request.headers);
     if (authResult instanceof NextResponse) return authResult;
+    const { user } = authResult;
 
     // 2. ID 파라미터 검증
     const { id: rawId } = await params;
@@ -120,6 +121,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       where: { id: idResult.data },
       select: {
         id: true,
+        userId: true,
         status: true,
         attachments: { select: { filePath: true } },
       },
@@ -137,6 +139,14 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "下書き以外のメールは削除できません" },
         { status: 400 },
+      );
+    }
+
+    // 소유권 검증: 작성자만 삭제 가능
+    if (mail.userId !== user.userId) {
+      return NextResponse.json(
+        { error: "他のユーザーが作成したメールは削除できません" },
+        { status: 403 },
       );
     }
 
