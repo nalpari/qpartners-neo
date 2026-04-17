@@ -22,7 +22,11 @@ function toTabs(menuTree: MenuTreeItem[]) {
   const adminMenu = menuTree.find(
     (m) => m.menuCode === "ADMIN" || m.pageUrl === "/admin",
   );
-  if (!adminMenu || adminMenu.children.length === 0) return null;
+  if (!adminMenu) {
+    console.warn("[AdminTab] ADMIN 메뉴를 찾을 수 없습니다. fallback 탭을 표시합니다.");
+    return null;
+  }
+  if (adminMenu.children.length === 0) return null;
 
   return adminMenu.children
     .filter((c): c is MenuApiItem & { pageUrl: string } => c.isActive && c.pageUrl != null)
@@ -33,7 +37,7 @@ function toTabs(menuTree: MenuTreeItem[]) {
 export function AdminTab() {
   const pathname = usePathname();
 
-  const { data: menuTree } = useQuery<MenuTreeItem[]>({
+  const { data: menuTree, isError, error } = useQuery<MenuTreeItem[]>({
     queryKey: ["menus", true],
     queryFn: async () => {
       const res = await api.get<MenuTreeResponse>("/menus", {
@@ -43,6 +47,10 @@ export function AdminTab() {
     },
     staleTime: 5 * 60_000,
   });
+
+  if (isError) {
+    console.error("[AdminTab] 메뉴 API 조회 실패:", error);
+  }
 
   const tabs = (menuTree && toTabs(menuTree)) ?? FALLBACK_TABS;
 

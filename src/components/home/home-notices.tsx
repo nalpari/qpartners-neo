@@ -78,7 +78,7 @@ function NoticeCard({ notice }: { notice: HomeNoticeItem }) {
           {!date && <span className="flex-1" />}
           {hasUrl && (
             <a
-              href={notice.url!}
+              href={notice.url ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center size-[28px] shrink-0 hover:opacity-70 transition-opacity"

@@ -120,6 +120,7 @@ export function MenusInfoForm({
         <DetailRow
           left={{
             label: "Menu Name",
+            required: true,
             children: (
               <InputBox
                 value={form.menuName}

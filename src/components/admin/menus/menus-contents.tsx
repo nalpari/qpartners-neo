@@ -84,8 +84,13 @@ export function MenusContents() {
       queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     },
-    onError: () => {
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+    onError: (error: unknown) => {
+      console.error("[PUT /api/menus] 메뉴 수정 실패:", error);
+      if (isAxiosError(error) && error.response?.status === 404) {
+        openAlert({ type: "alert", message: "メニューが見つかりません。画面を更新してください。", confirmLabel: "確認" });
+      } else {
+        openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      }
     },
   });
 
@@ -100,7 +105,8 @@ export function MenusContents() {
       setSortValues({});
       openAlert({ type: "alert", message: "整列が保存されました。", confirmLabel: "確認" });
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      console.error("[PUT /api/menus/sort] 정렬 저장 실패:", error);
       openAlert({ type: "alert", message: "整列の保存に失敗しました。", confirmLabel: "確認" });
     },
   });
