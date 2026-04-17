@@ -34,7 +34,7 @@ export function AdminTab() {
   const pathname = usePathname();
 
   const { data: menuTree } = useQuery<MenuTreeItem[]>({
-    queryKey: ["menus", false],
+    queryKey: ["menus", true],
     queryFn: async () => {
       const res = await api.get<MenuTreeResponse>("/menus", {
         params: { activeOnly: "true" },
