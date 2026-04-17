@@ -286,26 +286,30 @@ async function collectAndQueueRecipients(
   // 중복 트리거 방어: status 전이를 createMany 이전에 실행 (낙관적 락).
   // - 동시 트리거 시 두번째 호출은 count=0 → 트랜잭션 롤백 → createMany 미실행
   // - @@unique([massMailId, email]) 제약과 함께 DB 레벨 이중 방어
-  await prisma.$transaction(async (tx) => {
-    const transitionResult = await tx.massMail.updateMany({
-      where: { id: massMailId, status: fromStatus },
-      data: { status: "sending", sentTotal: recipients.length },
-    });
-    if (transitionResult.count === 0) {
-      // 동시 트리거 또는 외부 상태 변경 — 롤백
-      throw new StatusTransitionLostError(
-        `massMailId=${massMailId}, expected=${fromStatus}`,
-      );
-    }
-    await tx.massMailRecipient.createMany({
-      data: recipients.map((r) => ({
-        massMailId,
-        email: r.email,
-        userName: r.userName,
-        authRole: r.authRole,
-      })),
-    });
-  });
+  // - timeout 30초: 대량 수신자(최대 maxPages×pageSize) createMany 시 기본 5초 초과 방지 (P2028 회피)
+  await prisma.$transaction(
+    async (tx) => {
+      const transitionResult = await tx.massMail.updateMany({
+        where: { id: massMailId, status: fromStatus },
+        data: { status: "sending", sentTotal: recipients.length },
+      });
+      if (transitionResult.count === 0) {
+        // 동시 트리거 또는 외부 상태 변경 — 롤백
+        throw new StatusTransitionLostError(
+          `massMailId=${massMailId}, expected=${fromStatus}`,
+        );
+      }
+      await tx.massMailRecipient.createMany({
+        data: recipients.map((r) => ({
+          massMailId,
+          email: r.email,
+          userName: r.userName,
+          authRole: r.authRole,
+        })),
+      });
+    },
+    { timeout: 30_000 },
+  );
 
   return recipients.length;
 }
