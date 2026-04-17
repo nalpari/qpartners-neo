@@ -12,11 +12,24 @@
 
 import { MASS_MAIL_DEFAULTS } from "@/lib/config";
 import { sendMail } from "@/lib/mailer";
+import { escapeHtml } from "@/lib/mail-templates/utils";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { prisma } from "@/lib/prisma";
 
 const LOG_TAG = "[mass-mail/send-processor]";
+
+/**
+ * 동시 트리거(또는 외부 status 변경)로 인해 낙관적 락이 풀려 status 전이를 못한 케이스.
+ * - 선행 호출이 이미 처리 중이므로 send_failed 로 마킹하지 않고 조용히 종료.
+ * - sentinel string 매칭 대신 instanceof 로 안전 식별.
+ */
+class StatusTransitionLostError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StatusTransitionLostError";
+  }
+}
 
 interface SendProcessorOptions {
   massMailId: number;
@@ -33,13 +46,16 @@ function sleep(ms: number): Promise<void> {
 }
 
 function buildMailHtml(body: string, senderName: string): string {
+  // body는 POST/PUT 단계에서 DOMPurify로 sanitize 완료된 HTML.
+  // senderName은 사용자 입력 평문 → 반드시 escape (stored XSS / 피싱 방어).
+  const safeSenderName = escapeHtml(senderName);
   return `
 <div style="font-family: sans-serif; max-width: 600px;">
 ${body}
 <hr />
 <p style="font-size: 12px; color: #888;">
 このメールはQ.PARTNERSから送信されています。<br/>
-送信者: ${senderName}
+送信者: ${safeSenderName}
 </p>
 </div>`;
 }
@@ -97,15 +113,20 @@ async function sendLoop(massMailId: number, throttleMs: number): Promise<void> {
     if (throttleMs > 0) await sleep(throttleMs);
   }
 
-  // 집계 컬럼 갱신
+  // 집계 컬럼 갱신 — updateMany + count 검사 (count=0 = 레코드 누락 → counter drift)
   if (successCount > 0 || failedCount > 0) {
-    await prisma.massMail.update({
+    const aggResult = await prisma.massMail.updateMany({
       where: { id: massMailId },
       data: {
         sentSuccess: { increment: successCount },
         sentFailed: { increment: failedCount },
       },
     });
+    if (aggResult.count === 0) {
+      console.error(
+        `${LOG_TAG} 집계 컬럼 갱신 실패 (count=0) — massMailId: ${massMailId} 레코드 누락. counter drift 가능 (success: ${successCount}, failed: ${failedCount})`,
+      );
+    }
   }
 
   console.log(
@@ -164,6 +185,13 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
     // 2. 발송 루프 — 실패 시 전체 재시도
     await runWithRetry(massMailId, throttleMs, maxRetries, retryDelayMs);
   } catch (error: unknown) {
+    // 중복 트리거로 인한 status 전이 실패는 정상 케이스 (선행 호출이 처리 중) — markSendFailed 스킵
+    if (error instanceof StatusTransitionLostError) {
+      console.warn(
+        `${LOG_TAG} 동시 트리거 감지 — 선행 처리 중으로 판단하고 종료 (${error.message})`,
+      );
+      return;
+    }
     console.error(`${LOG_TAG} processMassMailSend 최종 실패 — massMailId: ${massMailId}`, error);
     await markSendFailed(massMailId, error);
   }
@@ -191,6 +219,13 @@ export async function processMassMailRetry(massMailId: number): Promise<void> {
     }
     await runWithRetry(massMailId, throttleMs, maxRetries, retryDelayMs);
   } catch (error: unknown) {
+    // 동일하게 중복 트리거 케이스는 markSendFailed 스킵
+    if (error instanceof StatusTransitionLostError) {
+      console.warn(
+        `${LOG_TAG} 재발송 중 동시 트리거 감지 — 선행 처리 중으로 판단하고 종료 (${error.message})`,
+      );
+      return;
+    }
     console.error(`${LOG_TAG} processMassMailRetry 최종 실패 — massMailId: ${massMailId}`, error);
     await markSendFailed(massMailId, error);
   }
@@ -236,27 +271,41 @@ async function collectAndQueueRecipients(
 
   if (recipients.length === 0) {
     console.warn(`${LOG_TAG} 수집된 발송대상 없음 — massMailId: ${massMailId}`);
-    await prisma.massMail.updateMany({
+    const earlyResult = await prisma.massMail.updateMany({
       where: { id: massMailId, status: fromStatus },
       data: { status: "sent", sentAt: new Date(), sentTotal: 0 },
     });
+    if (earlyResult.count === 0) {
+      console.warn(
+        `${LOG_TAG} 0건 sent 전이 count=0 — status 이미 변경됨 (massMailId: ${massMailId})`,
+      );
+    }
     return 0;
   }
 
-  await prisma.$transaction([
-    prisma.massMailRecipient.createMany({
+  // 중복 트리거 방어: status 전이를 createMany 이전에 실행 (낙관적 락).
+  // - 동시 트리거 시 두번째 호출은 count=0 → 트랜잭션 롤백 → createMany 미실행
+  // - @@unique([massMailId, email]) 제약과 함께 DB 레벨 이중 방어
+  await prisma.$transaction(async (tx) => {
+    const transitionResult = await tx.massMail.updateMany({
+      where: { id: massMailId, status: fromStatus },
+      data: { status: "sending", sentTotal: recipients.length },
+    });
+    if (transitionResult.count === 0) {
+      // 동시 트리거 또는 외부 상태 변경 — 롤백
+      throw new StatusTransitionLostError(
+        `massMailId=${massMailId}, expected=${fromStatus}`,
+      );
+    }
+    await tx.massMailRecipient.createMany({
       data: recipients.map((r) => ({
         massMailId,
         email: r.email,
         userName: r.userName,
         authRole: r.authRole,
       })),
-    }),
-    prisma.massMail.updateMany({
-      where: { id: massMailId, status: fromStatus },
-      data: { status: "sending", sentTotal: recipients.length },
-    }),
-  ]);
+    });
+  });
 
   return recipients.length;
 }
@@ -277,10 +326,16 @@ async function runWithRetry(
       await sendLoop(massMailId, throttleMs);
       // 전원 완료 — 낙관적 락으로 status="sending" 에서만 "sent" 전이
       // (외부에서 send_failed 로 변경되었거나 이미 sent 인 경우 덮어쓰지 않음)
-      await prisma.massMail.updateMany({
+      const sentResult = await prisma.massMail.updateMany({
         where: { id: massMailId, status: "sending" },
         data: { status: "sent", sentAt: new Date() },
       });
+      if (sentResult.count === 0) {
+        // 외부에서 status 가 이미 변경됨 (sent/send_failed/draft 등)
+        console.warn(
+          `${LOG_TAG} status="sent" 전이 count=0 — sending 상태 아님 (외부 변경 가능성). massMailId: ${massMailId}`,
+        );
+      }
       if (attempt > 1) {
         console.log(`${LOG_TAG} 재시도 성공 — massMailId: ${massMailId}, attempt: ${attempt}/${totalAttempts}`);
       }
@@ -316,11 +371,21 @@ async function markSendFailed(massMailId: number, error: unknown): Promise<void>
 
   for (let attempt = 1; attempt <= MAX_TRANSITION_ATTEMPTS; attempt++) {
     try {
-      // 낙관적 락 — sending 에서만 전이 (sent/send_failed 등 다른 상태는 덮어쓰지 않음)
-      await prisma.massMail.updateMany({
-        where: { id: massMailId, status: "sending" },
+      // 낙관적 락 — pending/sending 에서만 전이.
+      // - "sending": 발송 루프 진입 후 실패 (정상 케이스)
+      // - "pending": collectAndQueueRecipients 자체 실패 (수집/QSP/SEKO 우회 등) — pending 좀비 방지
+      // sent/send_failed 등 다른 상태는 덮어쓰지 않음
+      const result = await prisma.massMail.updateMany({
+        where: { id: massMailId, status: { in: ["pending", "sending"] } },
         data: { status: "send_failed" },
       });
+      if (result.count === 0) {
+        // 이미 다른 상태(sent / send_failed / draft 등)로 전환된 케이스 — 재시도 무의미
+        console.warn(
+          `${LOG_TAG} status=send_failed 전이 count=0 — pending/sending 아닌 상태 (이미 처리됨). 재시도 중단. massMailId: ${massMailId}`,
+        );
+        return;
+      }
       return;
     } catch (updateError: unknown) {
       lastUpdateError = updateError;

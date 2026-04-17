@@ -48,16 +48,29 @@ interface CollectionContext {
   loginId: string;
 }
 
+/** SEKO 미지원 가드 — 라우트에서 사전 차단되지만 방어적으로 throw */
+export class SekoNotSupportedError extends Error {
+  constructor() {
+    super("SEKO_NOT_SUPPORTED");
+    this.name = "SekoNotSupportedError";
+  }
+}
+
 /** 화면 체크박스 조합 → QSP userTp 조회 대상 결정 */
 function resolveUserTypesToQuery(targets: CollectTargets): string[] {
+  // SEKO는 AS-IS API 미확보로 미지원 — 라우트에서 400으로 차단되어야 하나
+  // 우회 호출 방어 차원에서 명시적 에러 throw (조용한 스킵 금지)
+  if (targets.targetConstructor) {
+    console.error(
+      "[collect-recipients] 시공점(SEKO) 발송 대상 선택됨 — AS-IS API 미확보로 미지원 (라우트 단계 검증 누락 가능성)",
+    );
+    throw new SekoNotSupportedError();
+  }
+
   const userTypes: string[] = [];
   if (targets.targetSuperAdmin || targets.targetAdmin) userTypes.push("ADMIN");
   if (targets.targetFirstStore || targets.targetSecondStore) userTypes.push("STORE");
   if (targets.targetGeneral) userTypes.push("GENERAL");
-  // SEKO는 AS-IS API 미확보로 1차 제외 — 경고 로그만
-  if (targets.targetConstructor) {
-    console.warn("[collect-recipients] 施工店(SEKO) 発送対象は1次対象外 — AS-IS API未確保");
-  }
   return userTypes;
 }
 
