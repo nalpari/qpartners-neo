@@ -701,7 +701,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Menu"],
         summary: "메뉴 등록",
-        description: "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가.",
+        description:
+          "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가. sortOrder 미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여됩니다.",
         requestBody: {
           required: true,
           content: {
@@ -777,7 +778,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Menu"],
         summary: "정렬순서 일괄 저장",
-        description: "트랜잭션으로 여러 메뉴의 sortOrder를 일괄 업데이트.",
+        description:
+          "요청 items 의 parentId 그룹(들)에 속한 모든 형제 row 를 대상으로 sortOrder 오름차순 정렬 후 1..N 으로 재번호하여 저장합니다. 요청에 포함되지 않은 형제 row 는 현재 sortOrder 를 유지한 채 정렬에만 참여하여 부분 전송에서도 중복/공백이 발생하지 않습니다. 동일 sortOrder 충돌 시 이동 방향(위로 이동 앞, 아래로 이동 뒤) + 요청 row 우선 + 요청 배열 순서(stable) 로 결정합니다. 요청 parentId 그룹 밖의 row 는 건드리지 않습니다. 응답 updated 는 실제 sortOrder 가 변경된 row 수입니다.",
         requestBody: {
           required: true,
           content: {
@@ -1604,7 +1606,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Code"],
         summary: "공통코드 공개 조회 (headerCode 기반)",
         parameters: [
-          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (공개 허용: INQUIRY_TYPE, PAGE_SIZE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
         ],
         responses: {
           "200": {
@@ -3192,7 +3194,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           isActive: { type: "boolean", default: true },
           showInTopNav: { type: "boolean", default: true },
           showInMobile: { type: "boolean", default: true },
-          sortOrder: { type: "integer", default: 1 },
+          sortOrder: {
+            type: "integer",
+            minimum: 1,
+            description: "미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여",
+          },
         },
       },
       UpdateMenu: {

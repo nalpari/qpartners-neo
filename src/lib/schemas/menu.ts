@@ -12,7 +12,8 @@ export const createMenuSchema = z.object({
   isActive: z.boolean().default(true),
   showInTopNav: z.boolean().default(true),
   showInMobile: z.boolean().default(true),
-  sortOrder: z.number().int().positive().default(1),
+  // 미지정 시 서버가 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여
+  sortOrder: z.number().int().positive().optional(),
 });
 
 export const updateMenuSchema = z.object({
