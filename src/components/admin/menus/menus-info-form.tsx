@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, InputBox, SelectBox, Radio } from "@/components/common";
-import type { MenuFormState } from "./menus-dummy-data";
+import type { MenuFormState } from "./menus-types";
 
 // Design Ref: §5.2 — DetailRow 패턴 (member-detail-popup.tsx 로컬 재정의)
 
@@ -56,6 +56,7 @@ interface MenusInfoFormProps {
   form: MenuFormState;
   level1Options: SelectOption[];
   isEditing: boolean;
+  isSaving: boolean;
   onFormChange: (field: keyof MenuFormState, value: string) => void;
   onNew: () => void;
   onSave: () => void;
@@ -65,6 +66,7 @@ export function MenusInfoForm({
   form,
   level1Options,
   isEditing,
+  isSaving,
   onFormChange,
   onNew,
   onSave,
@@ -80,7 +82,7 @@ export function MenusInfoForm({
           <Button variant="outline" onClick={onNew}>
             新規
           </Button>
-          <Button variant="primary" onClick={onSave}>
+          <Button variant="primary" onClick={onSave} disabled={isSaving}>
             保存
           </Button>
         </div>
@@ -98,6 +100,7 @@ export function MenusInfoForm({
                 value={form.upperMenu}
                 onChange={(v) => onFormChange("upperMenu", v)}
                 placeholder="選択してください"
+                disabled={isEditing}
               />
             ),
           }}
@@ -119,6 +122,7 @@ export function MenusInfoForm({
         <DetailRow
           left={{
             label: "Menu Name",
+            required: true,
             children: (
               <InputBox
                 value={form.menuName}

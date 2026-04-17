@@ -4,7 +4,7 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
-import type { MenuItem } from "./menus-dummy-data";
+import type { MenuItem } from "./menus-types";
 
 // Design Ref: §5.3 — 1-Level + 2-Level 테이블
 
@@ -14,17 +14,45 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+// --- AG Grid Context 타입 (as 캐스팅 1회로 집약) ---
+interface MenusGridContext {
+  selectedLevel1Id?: string | null;
+  onLevel1Click?: (id: string) => void;
+  onLevel2Click?: (id: string) => void;
+  onSortValueChange?: (id: string, v: number) => void;
+  sortValues?: Record<string, number>;
+}
+
+function toCtx(context: unknown): MenusGridContext {
+  return (context ?? {}) as MenusGridContext;
+}
+
 // --- Cell Renderers (컴포넌트 바깥 정의 — AG Grid 리렌더링 최적화) ---
 
 function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
-  const onLevel1Click = params.context?.onLevel1Click as ((id: string) => void) | undefined;
+  const ctx = toCtx(params.context);
   return (
     <button
       type="button"
       className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
-      onClick={() => onLevel1Click?.(data.id)}
+      onClick={() => ctx.onLevel1Click?.(data.id)}
+    >
+      {data.menuName}
+    </button>
+  );
+}
+
+function Level2MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
+  const data = params.data;
+  if (!data) return null;
+  const ctx = toCtx(params.context);
+  return (
+    <button
+      type="button"
+      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
+      onClick={() => ctx.onLevel2Click?.(data.id)}
     >
       {data.menuName}
     </button>
@@ -42,12 +70,18 @@ function TextRenderer(params: ICellRendererParams<MenuItem>) {
 function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
+  const ctx = toCtx(params.context);
+  const currentValue = ctx.sortValues?.[data.id] ?? data.sortOrder;
   return (
     <input
       type="number"
       min={1}
-      defaultValue={data.sortOrder}
+      value={currentValue}
       onMouseDown={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const val = Number(e.target.value);
+        if (Number.isInteger(val) && val >= 1) ctx.onSortValueChange?.(data.id, val);
+      }}
       className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
     />
   );
@@ -61,7 +95,11 @@ interface MenusTablesProps {
   activeOnly: boolean;
   onActiveFilterChange: (checked: boolean) => void;
   onLevel1Click: (id: string) => void;
+  onLevel2Click: (id: string) => void;
   onSortSave: () => void;
+  onSortValueChange: (id: string, value: number) => void;
+  sortValues: Record<string, number>;
+  isSortSaving: boolean;
 }
 
 export function MenusTables({
@@ -72,7 +110,11 @@ export function MenusTables({
   activeOnly,
   onActiveFilterChange,
   onLevel1Click,
+  onLevel2Click,
   onSortSave,
+  onSortValueChange,
+  sortValues,
+  isSortSaving,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -125,7 +167,7 @@ export function MenusTables({
       headerName: "Menu Name",
       field: "menuName",
       flex: 2,
-      cellRenderer: TextRenderer,
+      cellRenderer: Level2MenuNameRenderer,
       headerClass: "ag-header-cell-center",
     },
     {
@@ -169,7 +211,7 @@ export function MenusTables({
         <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">
           メニュー目録
         </h2>
-        <Button variant="outline" onClick={onSortSave}>
+        <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
           整列保存
         </Button>
       </div>
@@ -194,7 +236,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={0}
-            context={{ selectedLevel1Id, onLevel1Click }}
+            context={{ selectedLevel1Id, onLevel1Click, onSortValueChange, sortValues }}
           />
         </div>
 
@@ -214,6 +256,7 @@ export function MenusTables({
             rowData={level2Data}
             className="menus-grid"
             maxHeight={0}
+            context={{ onLevel2Click, onSortValueChange, sortValues }}
           />
         </div>
       </div>
