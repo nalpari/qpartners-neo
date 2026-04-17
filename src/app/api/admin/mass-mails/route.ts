@@ -11,6 +11,7 @@ import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -117,6 +118,14 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
   if (!hasTarget) {
     return NextResponse.json(
       { error: "送信先を1つ以上選択してください" },
+      { status: 400 },
+    );
+  }
+
+  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
+  if (data.targetConstructor) {
+    return NextResponse.json(
+      { error: "施工店(SEKO)向け一括送信は現在対応していません" },
       { status: 400 },
     );
   }
@@ -434,10 +443,17 @@ export async function POST(request: NextRequest) {
     }
 
     const statusMsg = data.status === "pending"
-      ? "メールが送信予約されました。"
+      ? "メール送信を受け付けました。"
       : "下書きとして保存しました。";
 
     console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${data.status}`);
+
+    // 비동기 발송 트리거 (Fire-and-Forget) — 발송 결과는 status/recipients 로 추적
+    if (data.status === "pending") {
+      processMassMailSend({ massMailId }).catch((err: unknown) => {
+        console.error("[POST /api/admin/mass-mails] 비동기 발송 실패:", err);
+      });
+    }
 
     return NextResponse.json(
       { data: { id: massMailId, status: data.status, message: statusMsg } },

@@ -144,10 +144,14 @@ interface CollectedRecipient {
  * - storeLvl로 1차/2차 구분
  * - optOut=false면 newsRcptYn="N" 제외
  * - email 기준 중복 제거
+ *
+ * @param loginId QSP userListMng 호출 시 loginId 파라미터 — 발송 주체 admin userId 전달
+ *                (인터페이스 로그 추적성 향상, 전역 SYSTEM_USER_ID 미사용)
  */
 export async function collectRecipients(
   targets: CollectTargets,
   callerRoute: string,
+  loginId: string,
 ): Promise<CollectedRecipient[]>;
 ```
 
@@ -255,29 +259,36 @@ export async function processMassMailRetry(
 [Entry]
   1. massMail 레코드 조회 (status=pending 확인)
   2. 수신자 이미 있는지 확인 (중복 트리거 방지)
-     - recipients.count > 0 이면 processMassMailRetry로 전환
+     - recipients.count > 0 이면 _sendLoop 재실행 루트로 전환
   3. try:
-       a. collectRecipients(...) 호출
-       b. recipients bulk INSERT (createMany)
-       c. massMail.sent_total = recipients.length
-       d. massMail.status = "sending"
-       e. _sendLoop(massMailId) 호출
+       a. collectRecipients(targets, callerRoute, loginId) 호출
+          - 수집 결과 0건이면 status="sent" + sentTotal=0 으로 조기 종료
+       b. $transaction 로 다음 2개 작업을 원자적으로 실행:
+          - recipients bulk INSERT (createMany)
+          - massMail.updateMany(where: { id, status: "pending" }) —
+            sentTotal = recipients.length, status = "sending" (낙관적 락)
+       c. _sendLoop(massMailId) 호출
   4. catch:
-       a. 전체 장애 → retry 루프 (최대 3회, 30초 간격)
+       a. 전체 장애 → retry 루프 (최대 MASS_MAIL_DEFAULTS.maxRetries 회,
+          MASS_MAIL_DEFAULTS.retryDelayMs 간격)
        b. 재시도 진입: _sendLoop(massMailId) 재호출
           (이미 sent 처리된 건은 건너뜀)
-       c. 3회 실패 → massMail.status = "send_failed" + 실패 로그
+       c. 최대 재시도 초과 → massMail.status = "send_failed" + 실패 로그
 
 [_sendLoop(massMailId)]
   1. recipients WHERE status="pending" 조회
   2. for each recipient:
        a. await sendMail({ to, subject, html })
-       b. 성공: recipient.status="sent", sentAt=now, massMail.sent_success++
-       c. 실패(개별): recipient.status="failed", errorMessage=e.message, massMail.sent_failed++
-       d. throttle (200ms 대기)
-  3. 루프 완료:
+       b. 성공: recipient.status="sent", sentAt=now (counter는 루프 후 일괄 increment)
+       c. 실패(개별): recipient.status="failed", errorMessage=e.message
+       d. throttle (MASS_MAIL_DEFAULTS.throttleMs 대기)
+  3. 루프 종료 시점에 massMail.sent_success/sent_failed 를 한번에 increment
+  4. 루프 완료:
        - pending 수신자 0이면 massMail.status = "sent", sentAt = now
        - pending 수신자 남아있으면 throw (전체 장애로 간주 → retry 루프)
+
+※ bulk INSERT 와 status 전이를 원자적으로 묶어 중간 실패 시 "수신자만 남고
+   상태는 pending 그대로" 같은 정합성 깨짐을 방지한다.
 ```
 
 ### 3.3 processMassMailRetry 상세 흐름
@@ -590,3 +601,4 @@ prisma/
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-04-16 | Initial draft (Plan 0.3 기반) | CK |
+| 0.2 | 2026-04-17 | Gap 분석 반영 — §2.1 collectRecipients 시그니처에 loginId 파라미터 추가, §3.2 bulk INSERT + status 전이를 $transaction 원자화로 명시 | CK |
