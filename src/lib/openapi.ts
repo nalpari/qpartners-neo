@@ -2569,10 +2569,48 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("draft 이외 상태는 삭제 불가"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("메일 없음"),
           "500": errorResponse("삭제 실패"),
+        },
+      },
+    },
+    "/admin/mass-mails/{id}/retry": {
+      post: {
+        tags: ["MassMail"],
+        summary: "대량메일 재발송",
+        description: "관리자 전용 — send_failed 상태의 대량메일을 재발송한다. pending 수신자만 이어서 발송되며, 이미 sent 처리된 건은 건너뛴다. Fire-and-Forget 방식으로 즉시 응답.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "재발송 수락",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        message: { type: "string", example: "メール再送信を受け付けました。" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("send_failed 이외 상태에서 재발송 시도"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "404": errorResponse("메일 없음"),
+          "409": errorResponse("동시 재발송으로 상태 전이 실패"),
+          "500": errorResponse("재발송 실패"),
         },
       },
     },
@@ -3457,7 +3495,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          status: { type: "string", enum: ["draft", "pending", "sending", "sent", "send_failed"] },
           targets: {
             type: "object",
             properties: {
@@ -3498,8 +3536,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           optOut: { type: "boolean" },
           subject: { type: "string" },
           body: { type: "string" },
-          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          status: { type: "string", enum: ["draft", "pending", "sending", "sent", "send_failed"] },
           sentAt: { type: "string", format: "date-time", nullable: true },
+          sentTotal: { type: "integer", description: "발송 대상 총 건수 (수집 완료 후 확정)" },
+          sentSuccess: { type: "integer", description: "발송 성공 건수" },
+          sentFailed: { type: "integer", description: "발송 실패 건수" },
           attachments: {
             type: "array",
             items: {

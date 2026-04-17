@@ -71,3 +71,18 @@ export const SITE_DEFAULTS = {
   url: "https://dev.q-partners.q-cells.jp",
   accsSiteCd: "QPARTNERS",
 } as const;
+
+// ─── Mass Mail ───
+
+export const MASS_MAIL_DEFAULTS = {
+  /** 건별 발송 간격 (ms) — SMTP rate limit 대응 */
+  throttleMs: Number(process.env.MASS_MAIL_THROTTLE_MS ?? 200),
+  /** 전체 장애 자동 재시도 횟수 */
+  maxRetries: Number(process.env.MASS_MAIL_MAX_RETRIES ?? 3),
+  /** 전체 장애 재시도 간격 (ms) */
+  retryDelayMs: Number(process.env.MASS_MAIL_RETRY_DELAY_MS ?? 30_000),
+  /** QSP 목록 조회 페이지당 건수 */
+  pageSize: Number(process.env.MASS_MAIL_PAGE_SIZE ?? 100),
+  /** 페이징 안전장치 (1만건 상한) */
+  maxPages: Number(process.env.MASS_MAIL_MAX_PAGES ?? 100),
+} as const;
