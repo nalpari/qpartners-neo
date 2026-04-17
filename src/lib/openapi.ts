@@ -779,7 +779,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Menu"],
         summary: "정렬순서 일괄 저장",
         description:
-          "items를 같은 parentId 그룹 단위로 sortOrder 오름차순 정렬 후 1..N 으로 재번호하여 저장합니다. 동일 sortOrder 충돌 시 이동 방향(위로 이동 앞, 아래로 이동 뒤) + 요청 배열 순서로 결정합니다. 요청 items 범위 밖(다른 parentId 그룹)은 건드리지 않습니다.",
+          "요청 items 의 parentId 그룹(들)에 속한 모든 형제 row 를 대상으로 sortOrder 오름차순 정렬 후 1..N 으로 재번호하여 저장합니다. 요청에 포함되지 않은 형제 row 는 현재 sortOrder 를 유지한 채 정렬에만 참여하여 부분 전송에서도 중복/공백이 발생하지 않습니다. 동일 sortOrder 충돌 시 이동 방향(위로 이동 앞, 아래로 이동 뒤) + 요청 row 우선 + 요청 배열 순서(stable) 로 결정합니다. 요청 parentId 그룹 밖의 row 는 건드리지 않습니다. 응답 updated 는 실제 sortOrder 가 변경된 row 수입니다.",
         requestBody: {
           required: true,
           content: {
