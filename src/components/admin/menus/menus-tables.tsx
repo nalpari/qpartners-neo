@@ -4,7 +4,7 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
-import type { MenuItem } from "./menus-dummy-data";
+import type { MenuItem } from "./menus-types";
 
 // Design Ref: §5.3 — 1-Level + 2-Level 테이블
 
@@ -31,6 +31,21 @@ function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   );
 }
 
+function Level2MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
+  const data = params.data;
+  if (!data) return null;
+  const onLevel2Click = params.context?.onLevel2Click as ((id: string) => void) | undefined;
+  return (
+    <button
+      type="button"
+      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
+      onClick={() => onLevel2Click?.(data.id)}
+    >
+      {data.menuName}
+    </button>
+  );
+}
+
 function TextRenderer(params: ICellRendererParams<MenuItem>) {
   return (
     <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">
@@ -42,12 +57,18 @@ function TextRenderer(params: ICellRendererParams<MenuItem>) {
 function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
+  const onSortValueChange = params.context?.onSortValueChange as
+    ((id: string, value: number) => void) | undefined;
   return (
     <input
       type="number"
       min={1}
       defaultValue={data.sortOrder}
       onMouseDown={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const val = Number(e.target.value);
+        if (val >= 1) onSortValueChange?.(data.id, val);
+      }}
       className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
     />
   );
@@ -61,7 +82,9 @@ interface MenusTablesProps {
   activeOnly: boolean;
   onActiveFilterChange: (checked: boolean) => void;
   onLevel1Click: (id: string) => void;
+  onLevel2Click: (id: string) => void;
   onSortSave: () => void;
+  onSortValueChange: (id: string, value: number) => void;
 }
 
 export function MenusTables({
@@ -72,7 +95,9 @@ export function MenusTables({
   activeOnly,
   onActiveFilterChange,
   onLevel1Click,
+  onLevel2Click,
   onSortSave,
+  onSortValueChange,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -125,7 +150,7 @@ export function MenusTables({
       headerName: "Menu Name",
       field: "menuName",
       flex: 2,
-      cellRenderer: TextRenderer,
+      cellRenderer: Level2MenuNameRenderer,
       headerClass: "ag-header-cell-center",
     },
     {
@@ -194,7 +219,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={0}
-            context={{ selectedLevel1Id, onLevel1Click }}
+            context={{ selectedLevel1Id, onLevel1Click, onSortValueChange }}
           />
         </div>
 
@@ -214,6 +239,7 @@ export function MenusTables({
             rowData={level2Data}
             className="menus-grid"
             maxHeight={0}
+            context={{ onLevel2Click, onSortValueChange }}
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, InputBox, SelectBox, Radio } from "@/components/common";
-import type { MenuFormState } from "./menus-dummy-data";
+import type { MenuFormState } from "./menus-types";
 
 // Design Ref: §5.2 — DetailRow 패턴 (member-detail-popup.tsx 로컬 재정의)
 
@@ -98,6 +98,7 @@ export function MenusInfoForm({
                 value={form.upperMenu}
                 onChange={(v) => onFormChange("upperMenu", v)}
                 placeholder="選択してください"
+                disabled={isEditing}
               />
             ),
           }}
