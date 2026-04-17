@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
+import { useAuthStore } from "@/lib/auth-store";
 
 interface HomeNoticeItem {
   id: number;
@@ -17,6 +18,8 @@ interface ActiveNoticesResponse {
 }
 
 export function HomeNotices() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
   const { data: notices = [] } = useQuery<HomeNoticeItem[]>({
     queryKey: ["home-notices", "active"],
     queryFn: async () => {
@@ -26,9 +29,10 @@ export function HomeNotices() {
       return res.data.data;
     },
     staleTime: 60_000,
+    enabled: isAuthenticated,
   });
 
-  if (notices.length === 0) return null;
+  if (!isAuthenticated || notices.length === 0) return null;
 
   return (
     <>
