@@ -24,6 +24,7 @@ export interface PermissionItem {
   description: string;
   isActive: "Y" | "N";
   isNew?: boolean;
+  editingField?: string | null;
 }
 
 // --- 변환 유틸 ---

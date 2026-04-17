@@ -21,6 +21,8 @@ interface PermissionGridContext {
   newRowFieldsRef: React.RefObject<{ code: string; name: string; description: string }>;
   onNewRowFieldChange: (field: string, value: string) => void;
   onCommitField: (roleCode: string, field: string, value: string) => void;
+  onStartEdit: (roleCode: string, field: string) => void;
+  onFinishEdit: (roleCode: string, field: string, value: string) => void;
 }
 
 // --- CellInput (codes-header-table 패턴) ---
@@ -28,17 +30,23 @@ function CellInput({
   defaultValue,
   placeholder,
   onChange,
+  onBlur,
+  autoFocus,
 }: {
   defaultValue: string;
   placeholder: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
+  onBlur?: (value: string) => void;
+  autoFocus?: boolean;
 }) {
   return (
     <input
       type="text"
       defaultValue={defaultValue}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
       onMouseDown={(e) => e.stopPropagation()}
+      autoFocus={autoFocus}
       placeholder={placeholder}
       className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
     />
@@ -68,7 +76,7 @@ function CodeRenderer(params: ICellRendererParams<PermissionItem>) {
   );
 }
 
-// Design Ref: §6 — 신규: CellInput(ref), 기존: CellInput(commitField) 편집 가능
+// Design Ref: §6 — 신규: CellInput(ref/onChange), 기존: 텍스트 → 더블클릭 → input(onBlur 커밋)
 function NameRenderer(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
   if (!data) return null;
@@ -82,12 +90,23 @@ function NameRenderer(params: ICellRendererParams<PermissionItem>) {
       />
     );
   }
+  if (data.editingField === "roleName") {
+    return (
+      <CellInput
+        defaultValue={data.roleName}
+        placeholder="権限名入力"
+        autoFocus
+        onBlur={(v) => ctx.onFinishEdit(data.roleCode, "roleName", v)}
+      />
+    );
+  }
   return (
-    <CellInput
-      defaultValue={data.roleName}
-      placeholder="権限名入力"
-      onChange={(v) => ctx.onCommitField(data.roleCode, "roleName", v)}
-    />
+    <span
+      className="font-['Noto_Sans_JP'] text-[14px] text-[#555] cursor-pointer w-full block"
+      onDoubleClick={() => ctx.onStartEdit(data.roleCode, "roleName")}
+    >
+      {data.roleName || "\u00A0"}
+    </span>
   );
 }
 
@@ -104,12 +123,23 @@ function DescRenderer(params: ICellRendererParams<PermissionItem>) {
       />
     );
   }
+  if (data.editingField === "description") {
+    return (
+      <CellInput
+        defaultValue={data.description}
+        placeholder="説明入力"
+        autoFocus
+        onBlur={(v) => ctx.onFinishEdit(data.roleCode, "description", v)}
+      />
+    );
+  }
   return (
-    <CellInput
-      defaultValue={data.description}
-      placeholder="説明入力"
-      onChange={(v) => ctx.onCommitField(data.roleCode, "description", v)}
-    />
+    <span
+      className="font-['Noto_Sans_JP'] text-[14px] text-[#555] cursor-pointer w-full block"
+      onDoubleClick={() => ctx.onStartEdit(data.roleCode, "description")}
+    >
+      {data.description || "\u00A0"}
+    </span>
   );
 }
 
@@ -328,11 +358,27 @@ export function PermissionsTable() {
     return undefined;
   };
 
+  const onStartEdit = (roleCode: string, field: string) => {
+    setEditedRows((prev) => ({
+      ...prev,
+      [roleCode]: { ...prev[roleCode], editingField: field },
+    }));
+  };
+
+  const onFinishEdit = (roleCode: string, field: string, value: string) => {
+    setEditedRows((prev) => ({
+      ...prev,
+      [roleCode]: { ...prev[roleCode], [field]: value },
+    }));
+  };
+
   // --- context ---
   const gridContext: PermissionGridContext = {
     newRowFieldsRef,
     onNewRowFieldChange,
     onCommitField,
+    onStartEdit,
+    onFinishEdit,
   };
 
   return (
