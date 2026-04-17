@@ -134,19 +134,7 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
   try {
     const mail = await prisma.massMail.findUnique({
       where: { id: massMailId },
-      select: {
-        id: true,
-        status: true,
-        senderName: true,
-        userId: true,
-        targetSuperAdmin: true,
-        targetAdmin: true,
-        targetFirstStore: true,
-        targetSecondStore: true,
-        targetConstructor: true,
-        targetGeneral: true,
-        optOut: true,
-      },
+      select: { id: true, status: true },
     });
     if (!mail) {
       console.error(`${LOG_TAG} MassMail 레코드 없음 — massMailId: ${massMailId}`);
@@ -159,58 +147,21 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
       return;
     }
 
-    // 중복 트리거 방지 — 이미 수신자가 INSERT 되어 있으면 재발송 루트로 전환
+    // 중복 트리거 방지 — 이미 수신자가 INSERT 되어 있으면 발송 루프만 재실행
     const existingRecipients = await prisma.massMailRecipient.count({ where: { massMailId } });
     if (existingRecipients > 0) {
       console.warn(
-        `${LOG_TAG} 수신자 이미 존재 — 재발송 루트로 전환 (recipients=${existingRecipients})`,
+        `${LOG_TAG} 수신자 이미 존재 — 발송 루프만 재실행 (recipients=${existingRecipients})`,
       );
       await runWithRetry(massMailId, throttleMs, maxRetries, retryDelayMs);
       return;
     }
 
-    // 1. 이메일 수집
-    const targets: CollectTargets = {
-      targetSuperAdmin: mail.targetSuperAdmin,
-      targetAdmin: mail.targetAdmin,
-      targetFirstStore: mail.targetFirstStore,
-      targetSecondStore: mail.targetSecondStore,
-      targetConstructor: mail.targetConstructor,
-      targetGeneral: mail.targetGeneral,
-      optOut: mail.optOut,
-    };
+    // 1. 이메일 수집 + INSERT + status 전이
+    const collected = await collectAndQueueRecipients(massMailId, "pending");
+    if (collected === 0) return; // 수집 0건 — 이미 sent 처리됨
 
-    const recipients = await collectRecipients(targets, LOG_TAG, mail.userId);
-
-    if (recipients.length === 0) {
-      console.warn(`${LOG_TAG} 수집된 발송대상 없음 — massMailId: ${massMailId}`);
-      await prisma.massMail.update({
-        where: { id: massMailId },
-        data: { status: "sent", sentAt: new Date(), sentTotal: 0 },
-      });
-      return;
-    }
-
-    // 2. 수신자 bulk INSERT + sent_total 갱신 + status="sending" 전이 (낙관적 락)
-    await prisma.$transaction([
-      prisma.massMailRecipient.createMany({
-        data: recipients.map((r) => ({
-          massMailId,
-          email: r.email,
-          userName: r.userName,
-          authRole: r.authRole,
-        })),
-      }),
-      prisma.massMail.updateMany({
-        where: { id: massMailId, status: "pending" },
-        data: {
-          status: "sending",
-          sentTotal: recipients.length,
-        },
-      }),
-    ]);
-
-    // 3. 발송 루프 — 실패 시 전체 재시도
+    // 2. 발송 루프 — 실패 시 전체 재시도
     await runWithRetry(massMailId, throttleMs, maxRetries, retryDelayMs);
   } catch (error: unknown) {
     console.error(`${LOG_TAG} processMassMailSend 최종 실패 — massMailId: ${massMailId}`, error);
@@ -219,8 +170,9 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
 }
 
 /**
- * 재발송 엔트리 — send_failed 상태에서 pending 수신자만 이어서 발송.
- * 수집/INSERT 없이 sendLoop 만 재실행.
+ * 재발송 엔트리 — 재발송 라우트가 status="sending" 으로 전이한 후 호출됨.
+ * - recipients 가 있으면: sendLoop 만 재실행 (pending 수신자만 이어서 발송)
+ * - recipients 가 없으면: 수집 실패 후 재시도 케이스 → 수집부터 재실행
  */
 export async function processMassMailRetry(massMailId: number): Promise<void> {
   const throttleMs = MASS_MAIL_DEFAULTS.throttleMs;
@@ -228,11 +180,85 @@ export async function processMassMailRetry(massMailId: number): Promise<void> {
   const retryDelayMs = MASS_MAIL_DEFAULTS.retryDelayMs;
 
   try {
+    const existingRecipients = await prisma.massMailRecipient.count({ where: { massMailId } });
+    if (existingRecipients === 0) {
+      console.warn(
+        `${LOG_TAG} 재발송 진입 시 수신자 0건 — 수집 실패 복구 루트로 전환 (massMailId: ${massMailId})`,
+      );
+      // 수집 실패 복구: status="sending" 상태에서 수집 + INSERT 재실행
+      const collected = await collectAndQueueRecipients(massMailId, "sending");
+      if (collected === 0) return; // 수집 결과 0건이면 이미 sent 처리됨
+    }
     await runWithRetry(massMailId, throttleMs, maxRetries, retryDelayMs);
   } catch (error: unknown) {
     console.error(`${LOG_TAG} processMassMailRetry 최종 실패 — massMailId: ${massMailId}`, error);
     await markSendFailed(massMailId, error);
   }
+}
+
+/**
+ * 이메일 수집 + 수신자 bulk INSERT + sent_total 갱신 (status 전이 포함).
+ *
+ * @param massMailId  대상 메일 ID
+ * @param fromStatus  낙관적 락 조건 — 현재 status. "pending"(POST/PUT 경로) 또는 "sending"(retry 복구 경로)
+ * @returns 수집된 수신자 건수. 0 반환 시 status="sent" + sentTotal=0 으로 조기 종료된 상태
+ */
+async function collectAndQueueRecipients(
+  massMailId: number,
+  fromStatus: "pending" | "sending",
+): Promise<number> {
+  const mail = await prisma.massMail.findUnique({
+    where: { id: massMailId },
+    select: {
+      userId: true,
+      targetSuperAdmin: true,
+      targetAdmin: true,
+      targetFirstStore: true,
+      targetSecondStore: true,
+      targetConstructor: true,
+      targetGeneral: true,
+      optOut: true,
+    },
+  });
+  if (!mail) throw new Error(`MassMail not found: ${massMailId}`);
+
+  const targets: CollectTargets = {
+    targetSuperAdmin: mail.targetSuperAdmin,
+    targetAdmin: mail.targetAdmin,
+    targetFirstStore: mail.targetFirstStore,
+    targetSecondStore: mail.targetSecondStore,
+    targetConstructor: mail.targetConstructor,
+    targetGeneral: mail.targetGeneral,
+    optOut: mail.optOut,
+  };
+
+  const recipients = await collectRecipients(targets, LOG_TAG, mail.userId);
+
+  if (recipients.length === 0) {
+    console.warn(`${LOG_TAG} 수집된 발송대상 없음 — massMailId: ${massMailId}`);
+    await prisma.massMail.updateMany({
+      where: { id: massMailId, status: fromStatus },
+      data: { status: "sent", sentAt: new Date(), sentTotal: 0 },
+    });
+    return 0;
+  }
+
+  await prisma.$transaction([
+    prisma.massMailRecipient.createMany({
+      data: recipients.map((r) => ({
+        massMailId,
+        email: r.email,
+        userName: r.userName,
+        authRole: r.authRole,
+      })),
+    }),
+    prisma.massMail.updateMany({
+      where: { id: massMailId, status: fromStatus },
+      data: { status: "sending", sentTotal: recipients.length },
+    }),
+  ]);
+
+  return recipients.length;
 }
 
 /** sendLoop 을 최대 maxRetries 회 재시도 — 성공 시 status="sent" 로 최종 확정 */
@@ -242,53 +268,74 @@ async function runWithRetry(
   maxRetries: number,
   retryDelayMs: number,
 ): Promise<void> {
-  let attempt = 0;
+  // totalAttempts = 최초 시도 1회 + 재시도 maxRetries 회
+  const totalAttempts = 1 + Math.max(0, maxRetries);
   let lastError: unknown = null;
 
-  while (attempt <= maxRetries) {
+  for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     try {
       await sendLoop(massMailId, throttleMs);
-      // 전원 완료 — status=sent + sentAt
-      await prisma.massMail.update({
-        where: { id: massMailId },
+      // 전원 완료 — 낙관적 락으로 status="sending" 에서만 "sent" 전이
+      // (외부에서 send_failed 로 변경되었거나 이미 sent 인 경우 덮어쓰지 않음)
+      await prisma.massMail.updateMany({
+        where: { id: massMailId, status: "sending" },
         data: { status: "sent", sentAt: new Date() },
       });
-      if (attempt > 0) {
-        console.log(`${LOG_TAG} 재시도 성공 — massMailId: ${massMailId}, attempt: ${attempt}`);
+      if (attempt > 1) {
+        console.log(`${LOG_TAG} 재시도 성공 — massMailId: ${massMailId}, attempt: ${attempt}/${totalAttempts}`);
       }
       return;
     } catch (error: unknown) {
       lastError = error;
-      attempt++;
       const message = error instanceof Error ? error.message : String(error);
       console.error(
-        `${LOG_TAG} 발송 루프 실패 (attempt ${attempt}/${maxRetries}) — massMailId: ${massMailId}, error: ${message}`,
+        `${LOG_TAG} 발송 루프 실패 (attempt ${attempt}/${totalAttempts}) — massMailId: ${massMailId}, error: ${message}`,
       );
-      if (attempt > maxRetries) break;
-      await sleep(retryDelayMs);
+      if (attempt < totalAttempts) await sleep(retryDelayMs);
     }
   }
 
-  // 최대 재시도 초과 — 최종 실패
+  // 모든 시도 실패 — 최종 실패
   throw lastError instanceof Error
     ? lastError
-    : new Error(`재시도 ${maxRetries}회 초과`, { cause: lastError });
+    : new Error(`최초 시도 + 재시도 ${maxRetries}회 모두 실패`, { cause: lastError });
 }
 
-/** 최종 실패 시 status=send_failed 로 전이 (DB 업데이트 자체 실패는 로그만) */
+/**
+ * 최종 실패 시 status=send_failed 로 전이.
+ * DB 업데이트 자체 실패 시 최대 3회 재시도 (1초 간격) — 영구 "sending" 좀비 방지.
+ * 끝까지 실패하면 CRITICAL 로그를 남겨 운영자 수동 개입 유도.
+ */
 async function markSendFailed(massMailId: number, error: unknown): Promise<void> {
-  try {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`${LOG_TAG} status=send_failed 전이 — massMailId: ${massMailId}, reason: ${message}`);
-    await prisma.massMail.update({
-      where: { id: massMailId },
-      data: { status: "send_failed" },
-    });
-  } catch (updateError: unknown) {
-    console.error(
-      `${LOG_TAG} status=send_failed 전이 실패 — massMailId: ${massMailId}`,
-      updateError,
-    );
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`${LOG_TAG} status=send_failed 전이 — massMailId: ${massMailId}, reason: ${message}`);
+
+  const MAX_TRANSITION_ATTEMPTS = 3;
+  const TRANSITION_RETRY_MS = 1000;
+  let lastUpdateError: unknown = null;
+
+  for (let attempt = 1; attempt <= MAX_TRANSITION_ATTEMPTS; attempt++) {
+    try {
+      // 낙관적 락 — sending 에서만 전이 (sent/send_failed 등 다른 상태는 덮어쓰지 않음)
+      await prisma.massMail.updateMany({
+        where: { id: massMailId, status: "sending" },
+        data: { status: "send_failed" },
+      });
+      return;
+    } catch (updateError: unknown) {
+      lastUpdateError = updateError;
+      console.error(
+        `${LOG_TAG} status=send_failed 전이 실패 (attempt ${attempt}/${MAX_TRANSITION_ATTEMPTS}) — massMailId: ${massMailId}`,
+        updateError,
+      );
+      if (attempt < MAX_TRANSITION_ATTEMPTS) await sleep(TRANSITION_RETRY_MS);
+    }
   }
+
+  // 최종 실패 — status 가 sending 상태로 영구 잔존할 수 있음 (좀비 방지를 위한 CRITICAL 로그)
+  console.error(
+    `${LOG_TAG} CRITICAL — status=send_failed 전이 최종 실패, massMailId=${massMailId} 가 "sending" 상태로 잔존. 운영자 수동 개입 필요.`,
+    lastUpdateError,
+  );
 }
 
