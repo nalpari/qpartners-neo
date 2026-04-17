@@ -10,6 +10,7 @@ import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
@@ -73,6 +74,9 @@ export async function GET(request: NextRequest, { params }: Params) {
       body: mail.body,
       status: mail.status,
       sentAt: mail.sentAt?.toISOString() ?? null,
+      sentTotal: mail.sentTotal,
+      sentSuccess: mail.sentSuccess,
+      sentFailed: mail.sentFailed,
       attachments: mail.attachments.map((a) => ({
         id: a.id,
         fileName: a.fileName,
@@ -125,6 +129,14 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "メールが見つかりません" },
         { status: 404 },
+      );
+    }
+
+    // 발송된 메일은 삭제 불가 — 下書き(draft)만 허용
+    if (mail.status !== "draft") {
+      return NextResponse.json(
+        { error: "下書き以外のメールは削除できません" },
+        { status: 400 },
       );
     }
 
@@ -248,6 +260,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (!hasTarget) {
       return NextResponse.json(
         { error: "送信先を1つ以上選択してください" },
+        { status: 400 },
+      );
+    }
+
+    // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
+    if (data.targetConstructor) {
+      return NextResponse.json(
+        { error: "施工店(SEKO)向け一括送信は現在対応していません" },
         { status: 400 },
       );
     }
@@ -405,10 +425,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const statusMsg = data.status === "pending"
-      ? "メールが送信予約されました。"
+      ? "メール送信を受け付けました。"
       : "下書きとして保存しました。";
 
     console.log(`[PUT /api/admin/mass-mails/:id] 대량메일 수정 완료 — id: ${idResult.data}, status: ${data.status}`);
+
+    // 비동기 발송 트리거 (Fire-and-Forget) — draft→pending 전이 시
+    if (data.status === "pending") {
+      processMassMailSend({ massMailId: idResult.data }).catch((err: unknown) => {
+        console.error("[PUT /api/admin/mass-mails/:id] 비동기 발송 실패:", err);
+      });
+    }
 
     return NextResponse.json({
       data: { id: idResult.data, status: data.status, message: statusMsg },
