@@ -2,7 +2,7 @@
 
 // Design Ref: §5.1 — 메인 컨테이너 (useQuery + useMutation 3개)
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
@@ -37,20 +37,22 @@ export function MenusContents() {
     staleTime: 60_000,
   });
 
-  // --- 파생 데이터 (API 응답 → UI 변환) ---
-  // Design Ref: §5.1 — boolean → "Y"/"N" 변환
-  const level1Menus = menuTree.map(toMenuItem);
-  const level2Menus = selectedLevel1Id
-    ? (menuTree.find((m) => String(m.id) === selectedLevel1Id)?.children ?? []).map(toMenuItem)
-    : [];
+  // --- 파생 데이터 (API 응답 → UI 변환, useMemo로 안정화) ---
+  const level1Menus = useMemo(() => menuTree.map(toMenuItem), [menuTree]);
+  const level2Menus = useMemo(
+    () => selectedLevel1Id
+      ? (menuTree.find((m) => String(m.id) === selectedLevel1Id)?.children ?? []).map(toMenuItem)
+      : [],
+    [menuTree, selectedLevel1Id],
+  );
 
   const selectedLevel1Name =
     level1Menus.find((m) => m.id === selectedLevel1Id)?.menuName ?? "";
 
-  const level1Options = level1Menus.map((m) => ({
-    label: m.menuName,
-    value: m.id,
-  }));
+  const level1Options = useMemo(
+    () => level1Menus.map((m) => ({ label: m.menuName, value: m.id })),
+    [level1Menus],
+  );
 
   // --- Mutations ---
 
@@ -211,6 +213,7 @@ export function MenusContents() {
             onSortSave={handleSortSave}
             onSortValueChange={handleSortValueChange}
             sortValues={sortValues}
+            isSortSaving={sortMutation.isPending}
           />
         </section>
       </div>

@@ -14,17 +14,30 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+// --- AG Grid Context 타입 (as 캐스팅 1회로 집약) ---
+interface MenusGridContext {
+  selectedLevel1Id?: string | null;
+  onLevel1Click?: (id: string) => void;
+  onLevel2Click?: (id: string) => void;
+  onSortValueChange?: (id: string, v: number) => void;
+  sortValues?: Record<string, number>;
+}
+
+function toCtx(context: unknown): MenusGridContext {
+  return (context ?? {}) as MenusGridContext;
+}
+
 // --- Cell Renderers (컴포넌트 바깥 정의 — AG Grid 리렌더링 최적화) ---
 
 function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
-  const onLevel1Click = params.context?.onLevel1Click as ((id: string) => void) | undefined;
+  const ctx = toCtx(params.context);
   return (
     <button
       type="button"
       className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
-      onClick={() => onLevel1Click?.(data.id)}
+      onClick={() => ctx.onLevel1Click?.(data.id)}
     >
       {data.menuName}
     </button>
@@ -34,12 +47,12 @@ function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
 function Level2MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
-  const onLevel2Click = params.context?.onLevel2Click as ((id: string) => void) | undefined;
+  const ctx = toCtx(params.context);
   return (
     <button
       type="button"
       className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
-      onClick={() => onLevel2Click?.(data.id)}
+      onClick={() => ctx.onLevel2Click?.(data.id)}
     >
       {data.menuName}
     </button>
@@ -57,10 +70,8 @@ function TextRenderer(params: ICellRendererParams<MenuItem>) {
 function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
-  const onSortValueChange = params.context?.onSortValueChange as
-    ((id: string, value: number) => void) | undefined;
-  const sortValues = params.context?.sortValues as Record<string, number> | undefined;
-  const currentValue = sortValues?.[data.id] ?? data.sortOrder;
+  const ctx = toCtx(params.context);
+  const currentValue = ctx.sortValues?.[data.id] ?? data.sortOrder;
   return (
     <input
       type="number"
@@ -69,7 +80,7 @@ function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
       onMouseDown={(e) => e.stopPropagation()}
       onChange={(e) => {
         const val = Number(e.target.value);
-        if (Number.isInteger(val) && val >= 1) onSortValueChange?.(data.id, val);
+        if (Number.isInteger(val) && val >= 1) ctx.onSortValueChange?.(data.id, val);
       }}
       className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
     />
@@ -88,6 +99,7 @@ interface MenusTablesProps {
   onSortSave: () => void;
   onSortValueChange: (id: string, value: number) => void;
   sortValues: Record<string, number>;
+  isSortSaving: boolean;
 }
 
 export function MenusTables({
@@ -102,6 +114,7 @@ export function MenusTables({
   onSortSave,
   onSortValueChange,
   sortValues,
+  isSortSaving,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -198,7 +211,7 @@ export function MenusTables({
         <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">
           メニュー目録
         </h2>
-        <Button variant="outline" onClick={onSortSave}>
+        <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
           整列保存
         </Button>
       </div>
