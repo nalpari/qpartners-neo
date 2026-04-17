@@ -56,6 +56,7 @@ interface MenusInfoFormProps {
   form: MenuFormState;
   level1Options: SelectOption[];
   isEditing: boolean;
+  isSaving: boolean;
   onFormChange: (field: keyof MenuFormState, value: string) => void;
   onNew: () => void;
   onSave: () => void;
@@ -65,6 +66,7 @@ export function MenusInfoForm({
   form,
   level1Options,
   isEditing,
+  isSaving,
   onFormChange,
   onNew,
   onSave,
@@ -80,7 +82,7 @@ export function MenusInfoForm({
           <Button variant="outline" onClick={onNew}>
             新規
           </Button>
-          <Button variant="primary" onClick={onSave}>
+          <Button variant="primary" onClick={onSave} disabled={isSaving}>
             保存
           </Button>
         </div>

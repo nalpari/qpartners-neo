@@ -29,7 +29,10 @@ function toTabs(menuTree: MenuTreeItem[]) {
   if (adminMenu.children.length === 0) return null;
 
   return adminMenu.children
-    .filter((c): c is MenuApiItem & { pageUrl: string } => c.isActive && c.pageUrl != null)
+    .filter((c): c is MenuApiItem & { pageUrl: string } =>
+      c.isActive && typeof c.pageUrl === "string" && c.pageUrl.length > 0
+      && c.pageUrl.startsWith("/") && !c.pageUrl.startsWith("//")
+    )
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((c) => ({ label: c.menuName, href: c.pageUrl }));
 }

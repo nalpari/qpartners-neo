@@ -66,6 +66,7 @@ export function MenusContents() {
       handleNew();
     },
     onError: (error: unknown) => {
+      console.error("[POST /api/menus] 메뉴 등록 실패:", error);
       if (isAxiosError(error) && error.response?.status === 409) {
         openAlert({ type: "alert", message: "既に存在するMenu Codeです。", confirmLabel: "確認" });
       } else {
@@ -164,12 +165,11 @@ export function MenusContents() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Plan R-07: 정렬저장 — 입력값 그대로 API 전송
+  // Plan R-07: 정렬저장 — sortValues에 기록된 변경사항만 전송
   const handleSortSave = () => {
-    const allMenuItems = [...level1Menus, ...level2Menus];
-    const items = allMenuItems.map((m) => ({
-      id: Number(m.id),
-      sortOrder: sortValues[m.id] ?? m.sortOrder,
+    const items = Object.entries(sortValues).map(([id, sortOrder]) => ({
+      id: Number(id),
+      sortOrder,
     }));
 
     if (items.length === 0) return;
@@ -190,6 +190,7 @@ export function MenusContents() {
             form={formState}
             level1Options={level1Options}
             isEditing={isEditing}
+            isSaving={createMutation.isPending || updateMutation.isPending}
             onFormChange={handleFormChange}
             onNew={handleNew}
             onSave={handleSave}
@@ -209,6 +210,7 @@ export function MenusContents() {
             onLevel2Click={handleLevel2Click}
             onSortSave={handleSortSave}
             onSortValueChange={handleSortValueChange}
+            sortValues={sortValues}
           />
         </section>
       </div>

@@ -59,15 +59,17 @@ function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   if (!data) return null;
   const onSortValueChange = params.context?.onSortValueChange as
     ((id: string, value: number) => void) | undefined;
+  const sortValues = params.context?.sortValues as Record<string, number> | undefined;
+  const currentValue = sortValues?.[data.id] ?? data.sortOrder;
   return (
     <input
       type="number"
       min={1}
-      defaultValue={data.sortOrder}
+      value={currentValue}
       onMouseDown={(e) => e.stopPropagation()}
       onChange={(e) => {
         const val = Number(e.target.value);
-        if (val >= 1) onSortValueChange?.(data.id, val);
+        if (Number.isInteger(val) && val >= 1) onSortValueChange?.(data.id, val);
       }}
       className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
     />
@@ -85,6 +87,7 @@ interface MenusTablesProps {
   onLevel2Click: (id: string) => void;
   onSortSave: () => void;
   onSortValueChange: (id: string, value: number) => void;
+  sortValues: Record<string, number>;
 }
 
 export function MenusTables({
@@ -98,6 +101,7 @@ export function MenusTables({
   onLevel2Click,
   onSortSave,
   onSortValueChange,
+  sortValues,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -219,7 +223,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={0}
-            context={{ selectedLevel1Id, onLevel1Click, onSortValueChange }}
+            context={{ selectedLevel1Id, onLevel1Click, onSortValueChange, sortValues }}
           />
         </div>
 
@@ -239,7 +243,7 @@ export function MenusTables({
             rowData={level2Data}
             className="menus-grid"
             maxHeight={0}
-            context={{ onLevel2Click, onSortValueChange }}
+            context={{ onLevel2Click, onSortValueChange, sortValues }}
           />
         </div>
       </div>
