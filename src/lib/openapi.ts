@@ -1005,6 +1005,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
           { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
+          { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "page", in: "query", description: "페이지 번호 (1부터)", schema: { type: "integer", default: 1, minimum: 1 } },
@@ -1064,6 +1065,32 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
 
     "/home-notices/{id}": {
+      get: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 단건 조회",
+        description: "관리자 전용 — 공지 상세 정보 조회",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { $ref: "#/components/schemas/HomeNoticeListItem" },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
       put: {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 수정",
@@ -1092,8 +1119,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": validationErrorResponse,
-          "404": errorResponse("Not found"),
+          "400": errorResponse("검증 실패 또는 동일기간 5건 초과"),
+          "404": errorResponse("공지 없음"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -2234,7 +2261,12 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Member"],
         summary: "회원 상세정보 수정",
-        description: "관리자 전용 — userRole(일반회원만), 2차인증, 알림, 상태, 뉴스레터 수정",
+        description:
+          "관리자 전용 — 권한별 수정 제한 정책: GENERAL 은 전체 필드 수정 가능. " +
+          "STORE/SEKO/ADMIN 은 newsRcptYn 만 변경 가능 (비밀번호는 별도 /reset-password API). " +
+          "탈퇴/삭제된 STORE 회원은 storeLvl 확보 불가로 수정 차단(400). " +
+          "preDetail null (탈퇴/삭제 회원) 경로에서는 userRole/twoFactorEnabled 변경 불가(400), status 복구만 허용. " +
+          "preDetail null 시 QSP 필수 필드에 기본값이 주입된 경우 응답 warnings 배열로 통보.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "회원 userId" },
           { name: "userTp", in: "query", required: true, schema: { type: "string", enum: ["ADMIN", "STORE", "SEKO", "GENERAL"] }, description: "회원유형 (조회 키 결정용)" },
@@ -2260,6 +2292,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         message: { type: "string" },
                         warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
+                        warnings: {
+                          type: "array",
+                          items: { type: "string" },
+                          description:
+                            "preDetail null 경로에서 QSP 필수 필드에 기본값이 주입된 경우, 해당 필드별 통보 메시지 배열 (사일런트 상태 변경 방지)",
+                        },
                       },
                     },
                   },
@@ -2267,10 +2305,11 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("검증 실패 또는 권한 변경 불가"),
+          "400": errorResponse(
+            "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null + userRole·twoFactorEnabled 변경 차단",
+          ),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
-          "409": errorResponse("QSP 상태 미확인 — status 명시 또는 중요 항목 변경 불가"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2325,6 +2364,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
           { name: "target", in: "query", schema: { type: "string", enum: ["super_admin", "admin", "first_store", "second_store", "seko", "general"] }, description: "발송대상 필터" },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
+          { name: "authorSearchType", in: "query", schema: { type: "string", enum: ["name", "id"] }, description: "登録者 검색 대상 (이름/ID)" },
+          { name: "authorQuery", in: "query", schema: { type: "string", minLength: 2 }, description: "登録者 검색어 (부분일치, 2文字以上)" },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 시작 (YYYY-MM-DD, JST 기준)" },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 끝 (YYYY-MM-DD, JST 기준)" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
         ],
@@ -2446,6 +2489,128 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("인증 필요"),
           "403": errorResponse("관리자 권한 필요"),
           "404": errorResponse("메일 없음"),
+        },
+      },
+      put: {
+        tags: ["MassMail"],
+        summary: "대량메일 수정",
+        description: "관리자 전용 — 임시저장(draft) 상태의 메일만 수정 가능. multipart/form-data",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                allOf: [
+                  { $ref: "#/components/schemas/MassMailCreateRequest" },
+                  {
+                    type: "object",
+                    properties: {
+                      deleteAttachmentIds: { type: "string", description: "삭제할 기존 첨부파일 ID 배열 (JSON 문자열, 예: [1,2,3])" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "수정 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        status: { type: "string", enum: ["draft", "pending"] },
+                        message: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("검증 실패 또는 draft 이외 수정 시도"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "404": errorResponse("메일 없음"),
+          "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
+          "500": errorResponse("수정 실패"),
+        },
+      },
+      delete: {
+        tags: ["MassMail"],
+        summary: "대량메일 단건 삭제",
+        description: "관리자 전용 — 대량메일 삭제 (첨부파일 포함)",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { id: { type: "integer", example: 1 } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("draft 이외 상태는 삭제 불가"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요"),
+          "404": errorResponse("메일 없음"),
+          "500": errorResponse("삭제 실패"),
+        },
+      },
+    },
+    "/admin/mass-mails/{id}/retry": {
+      post: {
+        tags: ["MassMail"],
+        summary: "대량메일 재발송",
+        description: "관리자 전용 — send_failed 상태의 대량메일을 재발송한다. pending 수신자만 이어서 발송되며, 이미 sent 처리된 건은 건너뛴다. Fire-and-Forget 방식으로 즉시 응답.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "재발송 수락",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        message: { type: "string", example: "メール再送信を受け付けました。" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("send_failed 이외 상태에서 재발송 시도"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "404": errorResponse("메일 없음"),
+          "409": errorResponse("동시 재발송으로 상태 전이 실패"),
+          "500": errorResponse("재발송 실패"),
         },
       },
     },
@@ -3151,6 +3316,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           id: { type: "integer" },
           content: { type: "string" },
           url: { type: "string", nullable: true },
+          startAt: { type: "string", format: "date-time" },
         },
       },
       CreateHomeNotice: {
@@ -3329,7 +3495,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          status: { type: "string", enum: ["draft", "pending", "sending", "sent", "send_failed"] },
           targets: {
             type: "object",
             properties: {
@@ -3370,8 +3536,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           optOut: { type: "boolean" },
           subject: { type: "string" },
           body: { type: "string" },
-          status: { type: "string", enum: ["draft", "pending", "sent"] },
+          status: { type: "string", enum: ["draft", "pending", "sending", "sent", "send_failed"] },
           sentAt: { type: "string", format: "date-time", nullable: true },
+          sentTotal: { type: "integer", description: "발송 대상 총 건수 (수집 완료 후 확정)" },
+          sentSuccess: { type: "integer", description: "발송 성공 건수" },
+          sentFailed: { type: "integer", description: "발송 실패 건수" },
           attachments: {
             type: "array",
             items: {

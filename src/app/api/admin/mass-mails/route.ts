@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, unlink, rm } from "fs/promises";
-import { join, basename, relative, resolve } from "path";
+import { writeFile, mkdir, rm } from "fs/promises";
+import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -9,6 +9,9 @@ import { requireAdmin } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
+import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -32,27 +35,7 @@ function resolveUserType(user: UserInfo): "ADMIN" | "STORE" | "SEKO" | "GENERAL"
   throw new Error(`알 수 없는 userType: ${user.userType}`);
 }
 
-// ─── 파일 관련 타입/유틸 ───
-
-interface PersistedAttachment {
-  absolutePath: string;
-  file: File;
-  filePath: string;
-}
-
-/** 에러 발생 시 디스크에 기록된 첨부파일 + 업로드 디렉토리 롤백 */
-async function cleanupFiles(writtenFiles: PersistedAttachment[], uploadDir?: string): Promise<void> {
-  for (const w of writtenFiles) {
-    await unlink(w.absolutePath).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 첨부파일 정리 실패:", relative(UPLOAD_DIR, w.absolutePath), e);
-    });
-  }
-  if (uploadDir) {
-    await rm(uploadDir, { recursive: true, force: true }).catch((e: unknown) => {
-      console.error("[POST /api/admin/mass-mails] 디렉토리 정리 실패:", relative(UPLOAD_DIR, uploadDir), e);
-    });
-  }
-}
+const LOG_TAG_POST = "POST /api/admin/mass-mails";
 
 // ─── POST 헬퍼: 요청 파싱/검증 ───
 
@@ -139,6 +122,14 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
+  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
+  if (data.targetConstructor) {
+    return NextResponse.json(
+      { error: "施工店(SEKO)向け一括送信は現在対応していません" },
+      { status: 400 },
+    );
+  }
+
   // 5. 첨부파일 검증
   const rawFiles = formData.getAll("files");
   const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
@@ -157,18 +148,8 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     }
   }
 
-  // 6. HTML body sanitization (stored XSS 방어 — 허용 태그/속성 화이트리스트 방식)
-  const sanitizedBody = DOMPurify.sanitize(data.body, {
-    ALLOWED_TAGS: [
-      "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
-      "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-      "table", "thead", "tbody", "tr", "th", "td",
-      "img", "span", "div", "hr",
-    ],
-    ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
-    ALLOWED_URI_REGEXP: /^https:\/\//i,
-    ALLOW_DATA_ATTR: false,
-  });
+  // 6. HTML body sanitization (stored XSS 방어 — 공통 화이트리스트 설정 사용)
+  const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
 
   // sanitize 후 빈 body 검증
   if (!sanitizedBody.trim()) {
@@ -213,7 +194,10 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
   try {
     const writePromises = files.map(async (file) => {
       const sanitizedName = basename(file.name);
-      const ext = sanitizedName.split(".").pop() ?? "";
+      const lastDot = sanitizedName.lastIndexOf(".");
+      const ext = lastDot > 0
+        ? sanitizedName.slice(lastDot + 1).toLowerCase().replace(/[^a-z0-9]/g, "")
+        : "";
       const safeFileName = `${randomUUID()}${ext ? `.${ext}` : ""}`;
       const filePath = `mass-mails/${tempId}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
@@ -241,7 +225,7 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
     const hasTraversalError = results.some((r) => r.error);
 
     if (hasTraversalError) {
-      await cleanupFiles(successes, uploadDir);
+      await cleanupAttachments(successes, LOG_TAG_POST, uploadDir);
       return NextResponse.json({ error: "ファイル名が正しくありません" }, { status: 400 });
     }
 
@@ -321,6 +305,10 @@ export async function GET(request: NextRequest) {
       keyword: searchParams.get("keyword") ?? undefined,
       target: searchParams.get("target") ?? undefined,
       draftOnly: searchParams.get("draftOnly") ?? undefined,
+      authorSearchType: searchParams.get("authorSearchType") ?? undefined,
+      authorQuery: searchParams.get("authorQuery") ?? undefined,
+      startDate: searchParams.get("startDate") ?? undefined,
+      endDate: searchParams.get("endDate") ?? undefined,
       page: searchParams.get("page") ?? undefined,
       pageSize: searchParams.get("pageSize") ?? undefined,
     });
@@ -332,7 +320,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { keyword, target, draftOnly, page, pageSize } = queryResult.data;
+    const { keyword, target, draftOnly, authorSearchType, authorQuery, startDate, endDate, page, pageSize } = queryResult.data;
 
     // 3. 검색 조건 구성
     const where: Prisma.MassMailWhereInput = {};
@@ -355,6 +343,26 @@ export async function GET(request: NextRequest) {
         );
       }
       where[targetField] = true;
+    }
+
+    // 登録者 검색 (name → senderName, id → userId)
+    if (authorQuery && authorSearchType) {
+      if (authorSearchType === "name") {
+        where.senderName = { contains: authorQuery };
+      } else {
+        where.userId = { contains: authorQuery };
+      }
+    }
+
+    // 登録日 범위 검색 (JST 타임존 명시)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(`${startDate}T00:00:00+09:00`);
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(`${endDate}T23:59:59.999+09:00`);
+      }
     }
 
     // 4. 조회 (최근 등록순 정렬)
@@ -428,24 +436,31 @@ export async function POST(request: NextRequest) {
         user, data, sanitizedBody, userType, writtenFiles,
       });
     } catch (dbError: unknown) {
-      await cleanupFiles(writtenFiles, uploadDir);
+      await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
       writtenFiles = [];
       uploadDir = undefined;
       throw dbError;
     }
 
     const statusMsg = data.status === "pending"
-      ? "メールが送信予約されました。"
+      ? "メール送信を受け付けました。"
       : "下書きとして保存しました。";
 
     console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${data.status}`);
+
+    // 비동기 발송 트리거 (Fire-and-Forget) — 발송 결과는 status/recipients 로 추적
+    if (data.status === "pending") {
+      processMassMailSend({ massMailId }).catch((err: unknown) => {
+        console.error("[POST /api/admin/mass-mails] 비동기 발송 실패:", err);
+      });
+    }
 
     return NextResponse.json(
       { data: { id: massMailId, status: data.status, message: statusMsg } },
       { status: 201 },
     );
   } catch (error: unknown) {
-    await cleanupFiles(writtenFiles, uploadDir);
+    await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
     console.error("[POST /api/admin/mass-mails] 등록 실패:", error);
     return NextResponse.json(
       { error: "メールの登録に失敗しました" },

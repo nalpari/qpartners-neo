@@ -10,9 +10,27 @@ export const massMailListQuerySchema = z.object({
   target: z.string().optional(),
   // z.coerce.boolean은 "false"를 true로 변환하므로, 명시적 transform으로 처리
   draftOnly: z.string().optional().transform((v) => v === "true"),
+  // 登録者 검색
+  authorSearchType: z.enum(["name", "id"]).optional(),
+  authorQuery: z.string().min(2, "検索語は2文字以上入力してください").max(200).optional(),
+  // 登録日(createdAt) 범위 검색 — YYYY-MM-DD 포맷 + 実日付 検証 (タイムゾーン安全)
+  startDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "日付はYYYY-MM-DD形式で入力してください" })
+    .refine((v) => !isNaN(new Date(`${v}T00:00:00+09:00`).getTime()), { message: "有効な日付を入力してください" })
+    .optional(),
+  endDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "日付はYYYY-MM-DD形式で入力してください" })
+    .refine((v) => !isNaN(new Date(`${v}T00:00:00+09:00`).getTime()), { message: "有効な日付を入力してください" })
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-});
+}).refine(
+  (data) => {
+    if (data.startDate && data.endDate) return data.startDate <= data.endDate;
+    return true;
+  },
+  { message: "開始日は終了日以前に設定してください", path: ["startDate"] },
+);
 
 export type MassMailListQuery = z.infer<typeof massMailListQuerySchema>;
 

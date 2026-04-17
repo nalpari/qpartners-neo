@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QPartners Neo - Code Map</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: 1fr auto;
+    height: 100vh;
+  }
+  .sidebar {
+    grid-row: 1 / 3;
+    background: #1a1b23;
+    border-right: 1px solid #2a2b35;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .sidebar h1 {
+    font-size: 15px;
+    color: #a0a0b0;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #2a2b35;
+  }
+  .sidebar h2 {
+    font-size: 11px;
+    color: #7a7a8a;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 18px 0 8px;
+  }
+  .preset-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background: #252630;
+    border: 1px solid #333440;
+    border-radius: 6px;
+    color: #c0c0d0;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover { background: #2e2f3d; border-color: #4a4b5a; }
+  .preset-btn.active { background: #3b3c50; border-color: #6366f1; color: #fff; }
+  .layer-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .layer-toggle input { accent-color: #6366f1; }
+  .layer-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .conn-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .conn-toggle input { accent-color: #6366f1; }
+  .conn-line {
+    width: 20px;
+    height: 3px;
+    display: inline-block;
+    border-radius: 2px;
+  }
+  .comments-section {
+    margin-top: 20px;
+    border-top: 1px solid #2a2b35;
+    padding-top: 12px;
+  }
+  .comment-item {
+    background: #252630;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    position: relative;
+  }
+  .comment-item .target {
+    color: #818cf8;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .comment-item .text {
+    color: #b0b0c0;
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+  .comment-item .del-btn {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .comment-item .del-btn:hover { color: #ef4444; }
+  .canvas-area {
+    background: #13141c;
+    overflow: hidden;
+    position: relative;
+    cursor: grab;
+  }
+  .canvas-area:active { cursor: grabbing; }
+  .zoom-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 4px;
+    z-index: 10;
+  }
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+    background: #1a1b23;
+    border: 1px solid #333440;
+    border-radius: 6px;
+    color: #c0c0d0;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .zoom-btn:hover { background: #2e2f3d; }
+  .search-box {
+    width: 100%;
+    padding: 7px 10px;
+    background: #252630;
+    border: 1px solid #333440;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 12px;
+  }
+  .search-box:focus { border-color: #6366f1; }
+  .search-box::placeholder { color: #555; }
+  .prompt-area {
+    background: #1a1b23;
+    border-top: 1px solid #2a2b35;
+    padding: 12px 16px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    max-height: 160px;
+  }
+  .prompt-text {
+    flex: 1;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    color: #b0b0c0;
+    line-height: 1.5;
+    overflow-y: auto;
+    max-height: 130px;
+    white-space: pre-wrap;
+  }
+  .copy-btn {
+    padding: 8px 16px;
+    background: #6366f1;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: #5558e6; }
+  .copy-btn.copied { background: #10b981; }
+  .legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: rgba(26,27,35,0.92);
+    border: 1px solid #333440;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 11px;
+    z-index: 10;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    color: #999;
+  }
+  .legend-rect {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #1e1f2b;
+    border: 1px solid #333440;
+    border-radius: 12px;
+    padding: 20px;
+    width: 400px;
+    max-width: 90vw;
+  }
+  .modal h3 {
+    font-size: 15px;
+    color: #e0e0f0;
+    margin-bottom: 4px;
+  }
+  .modal .subtitle {
+    font-size: 12px;
+    color: #6b6b7b;
+    font-family: monospace;
+    margin-bottom: 12px;
+  }
+  .modal textarea {
+    width: 100%;
+    height: 80px;
+    background: #252630;
+    border: 1px solid #333440;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+  }
+  .modal textarea:focus { border-color: #6366f1; }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+  .modal-actions button {
+    padding: 7px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid #333440;
+  }
+  .modal-actions .cancel { background: #252630; color: #aaa; }
+  .modal-actions .save { background: #6366f1; color: #fff; border-color: #6366f1; }
+  .node-tooltip {
+    display: none;
+    position: absolute;
+    background: #1e1f2b;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #ccc;
+    z-index: 50;
+    pointer-events: none;
+    max-width: 280px;
+    line-height: 1.4;
+  }
+  .node-tooltip.show { display: block; }
+  .info-bar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(26,27,35,0.9);
+    border: 1px solid #333440;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: #888;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+    <h1>QPartners Neo</h1>
+    <input type="text" class="search-box" id="searchBox" placeholder="Search nodes...">
+    <h2>View Presets</h2>
+    <div id="presets"></div>
+    <h2>Layers</h2>
+    <div id="layerToggles"></div>
+    <h2>Connections</h2>
+    <div id="connToggles"></div>
+    <div class="comments-section">
+      <h2>Comments (<span id="commentCount">0</span>)</h2>
+      <div id="commentsList"></div>
+    </div>
+  </div>
+
+  <div class="canvas-area" id="canvasArea">
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="zoomIn()">+</button>
+      <button class="zoom-btn" onclick="zoomOut()">&minus;</button>
+      <button class="zoom-btn" onclick="zoomReset()" style="font-size:12px">1:1</button>
+      <button class="zoom-btn" onclick="fitToView()" style="font-size:11px">Fit</button>
+    </div>
+    <div class="info-bar" id="infoBar">Nodes: 0 | Connections: 0</div>
+    <svg id="svg" width="100%" height="100%"></svg>
+    <div class="legend" id="legend"></div>
+    <div class="node-tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="prompt-area">
+    <div class="prompt-text" id="promptOutput">Click nodes to add comments about the architecture.</div>
+    <button class="copy-btn" id="copyBtn" onclick="copyPrompt()">Copy Prompt</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <div class="subtitle" id="modalSubtitle"></div>
+    <textarea id="modalText" placeholder="Add your comment about this component..."></textarea>
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeModal()">Cancel</button>
+      <button class="save" onclick="saveComment()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// All data is hardcoded — no external/untrusted input enters the DOM.
+// ── Data ──────────────────────────────────────────────
+const LAYERS = {
+  pages:      { label: 'Pages',        color: '#3b82f6', fill: '#1e3a5f', textColor: '#93c5fd' },
+  components: { label: 'Components',   color: '#8b5cf6', fill: '#2d1f5e', textColor: '#c4b5fd' },
+  api:        { label: 'API Routes',   color: '#f59e0b', fill: '#4a3516', textColor: '#fcd34d' },
+  lib:        { label: 'Lib / Core',   color: '#10b981', fill: '#134136', textColor: '#6ee7b7' },
+  data:       { label: 'Data Models',  color: '#ec4899', fill: '#4c1635', textColor: '#f9a8d4' },
+  external:   { label: 'External',     color: '#ef4444', fill: '#4c1616', textColor: '#fca5a5' }
+};
+
+const CONN_TYPES = {
+  'uses':       { label: 'Uses / Renders',  color: '#6366f1', dash: '' },
+  'calls':      { label: 'API Call',        color: '#3b82f6', dash: '6,3' },
+  'queries':    { label: 'DB Query',        color: '#ec4899', dash: '' },
+  'imports':    { label: 'Imports',         color: '#555',    dash: '3,3' },
+  'integrates': { label: 'Integration',     color: '#ef4444', dash: '8,4' }
+};
+
+const nodes = [
+  // Pages
+  { id: 'p-home',      label: 'Home',            subtitle: 'src/app/page.tsx',                    layer: 'pages', x: 120, y: 50 },
+  { id: 'p-login',     label: 'Login',           subtitle: 'src/app/(auth)/login/page.tsx',       layer: 'pages', x: 320, y: 50 },
+  { id: 'p-signup',    label: 'Signup',          subtitle: 'src/app/(auth)/signup/page.tsx',      layer: 'pages', x: 490, y: 50 },
+  { id: 'p-pwreset',   label: 'Password Reset',  subtitle: 'src/app/(auth)/password-reset/',      layer: 'pages', x: 680, y: 50 },
+  { id: 'p-contents',  label: 'Contents',        subtitle: 'src/app/contents/',                   layer: 'pages', x: 900, y: 50 },
+  { id: 'p-inquiry',   label: 'Inquiry',         subtitle: 'src/app/inquiry/page.tsx',            layer: 'pages', x: 1100, y: 50 },
+  { id: 'p-mypage',    label: 'Mypage',          subtitle: 'src/app/mypage/page.tsx',             layer: 'pages', x: 1280, y: 50 },
+  { id: 'p-admin',     label: 'Admin',           subtitle: 'src/app/admin/',                      layer: 'pages', x: 1500, y: 50,
+    detail: 'members, categories, codes, menus, notices, permissions, bulk-mail' },
+
+  // Components
+  { id: 'c-layout',    label: 'Layout',          subtitle: 'src/components/layout/',    layer: 'components', x: 80,   y: 200,
+    detail: 'Header, Footer, Location, AdminTab, MypageTab' },
+  { id: 'c-common',    label: 'Common UI',       subtitle: 'src/components/common/',    layer: 'components', x: 280,  y: 200,
+    detail: 'Button, InputBox, SelectBox, Pagination, Spinner, Toggle, DatePicker, AlertDialog' },
+  { id: 'c-home',      label: 'Home Components', subtitle: 'src/components/home/',      layer: 'components', x: 120,  y: 300,
+    detail: 'HomeMain, HomeVisual, HomeSearch, HomeContents, HomeSidebar, HomeDownloads' },
+  { id: 'c-login',     label: 'Login Components',subtitle: 'src/components/login/',     layer: 'components', x: 350,  y: 300,
+    detail: 'LoginContents, LoginForm, LoginTabs, LoginLinks' },
+  { id: 'c-signup',    label: 'Signup Components',subtitle:'src/components/signup/',    layer: 'components', x: 550,  y: 300 },
+  { id: 'c-pwreset',   label: 'PW Reset Client', subtitle: 'src/components/password-reset/', layer: 'components', x: 730, y: 300 },
+  { id: 'c-contents',  label: 'Content Components', subtitle: 'src/components/contents/',layer: 'components', x: 940, y: 200,
+    detail: 'ContentsContents, ContentsDetail, ContentsForm, Search, Table, Attachment, Category, Target' },
+  { id: 'c-inquiry',   label: 'Inquiry Form',    subtitle: 'src/components/inquiry/',   layer: 'components', x: 1100, y: 300 },
+  { id: 'c-mypage',    label: 'Mypage Components',subtitle:'src/components/mypage/',    layer: 'components', x: 1280, y: 200,
+    detail: 'MypageContents, MypageInfo, DownloadHistory' },
+  { id: 'c-admin',     label: 'Admin Components',subtitle: 'src/components/admin/',     layer: 'components', x: 1500, y: 200,
+    detail: 'Members, Categories, Codes, Menus, Notices, Permissions, BulkMail (search, table, form)' },
+  { id: 'c-popup',     label: 'Popups',          subtitle: 'src/components/popup/',     layer: 'components', x: 500,  y: 200,
+    detail: 'PasswordReset, PasswordChange, PersonalInfo, TwoFactorAuth, ZipcodeSearch, MemberDetail, NoticeForm, PermissionMenu, Terms, Withdraw, SignupComplete' },
+  { id: 'c-datagrid',  label: 'DataGrid',        subtitle: 'src/components/ag-grid/',   layer: 'components', x: 720,  y: 200,
+    detail: 'AG-Grid wrapper component' },
+
+  // API Routes
+  { id: 'a-auth',      label: 'Auth APIs',       subtitle: '/api/auth/*',               layer: 'api', x: 200,  y: 470,
+    detail: 'login, signup, logout, login-user-info, email/check, password-init' },
+  { id: 'a-pwreset',   label: 'PW Reset APIs',   subtitle: '/api/auth/password-reset/*', layer: 'api', x: 420, y: 470,
+    detail: 'request, verify, confirm' },
+  { id: 'a-2fa',       label: '2FA APIs',        subtitle: '/api/auth/two-factor/*',    layer: 'api', x: 630,  y: 470 },
+  { id: 'a-contents',  label: 'Content APIs',    subtitle: '/api/contents/*',           layer: 'api', x: 850,  y: 470,
+    detail: 'CRUD + files upload/download' },
+  { id: 'a-category',  label: 'Category APIs',   subtitle: '/api/categories/*',         layer: 'api', x: 1060, y: 470 },
+  { id: 'a-codes',     label: 'Code APIs',       subtitle: '/api/codes/*',              layer: 'api', x: 1250, y: 470,
+    detail: 'headers + details CRUD, lookup' },
+  { id: 'a-menus',     label: 'Menu APIs',       subtitle: '/api/menus/*',              layer: 'api', x: 1440, y: 470 },
+  { id: 'a-roles',     label: 'Role/Permission', subtitle: '/api/roles/*',              layer: 'api', x: 1440, y: 560 },
+  { id: 'a-notices',   label: 'Notice APIs',     subtitle: '/api/home-notices/*',       layer: 'api', x: 200,  y: 560 },
+  { id: 'a-mail',      label: 'Bulk Mail APIs',  subtitle: '/api/admin/mass-mails/*',   layer: 'api', x: 420,  y: 560 },
+  { id: 'a-members',   label: 'Member APIs',     subtitle: '/api/admin/members/*',      layer: 'api', x: 630,  y: 560,
+    detail: 'list, detail, update, reset-pw' },
+  { id: 'a-mypage',    label: 'Mypage APIs',     subtitle: '/api/mypage/*',             layer: 'api', x: 850,  y: 560,
+    detail: 'profile, password-change, download-logs, withdraw, seko-info, seko-file' },
+  { id: 'a-inquiry',   label: 'Inquiry API',     subtitle: '/api/inquiry',              layer: 'api', x: 1060, y: 560 },
+  { id: 'a-iflog',     label: 'Interface Logs',  subtitle: '/api/admin/interface-logs/*',layer: 'api', x: 1250, y: 560 },
+
+  // Lib / Core
+  { id: 'l-auth',      label: 'Auth Utils',      subtitle: 'src/lib/auth.ts + jwt.ts',  layer: 'lib', x: 150,  y: 700,
+    detail: 'resolveAuthRole, JWT sign/verify, auth-utils, qsp-member mapping' },
+  { id: 'l-stores',    label: 'Zustand Stores',  subtitle: 'src/lib/store.ts + auth-store', layer: 'lib', x: 380, y: 700,
+    detail: 'useAppStore (sidebar, prefillEmail), usePopupStore (modal mgmt), useAlertStore (confirm dialogs), useAuthStore (user, isAuthenticated)' },
+  { id: 'l-schemas',   label: 'Zod Schemas',     subtitle: 'src/lib/schemas/*.ts',      layer: 'lib', x: 600,  y: 700,
+    detail: '17 schema files: auth, signup, content, category, code, menu, member, mypage, password-reset, two-factor, mass-mail, home-notice, inquiry, permission, interface-log, common' },
+  { id: 'l-config',    label: 'Config',          subtitle: 'src/lib/config.ts',         layer: 'lib', x: 800,  y: 700,
+    detail: 'QSP API endpoints, app configuration' },
+  { id: 'l-prisma',    label: 'Prisma Client',   subtitle: 'src/lib/prisma.ts',         layer: 'lib', x: 1000, y: 700,
+    detail: 'Singleton PrismaClient with MariaDB adapter' },
+  { id: 'l-mailer',    label: 'Mailer',          subtitle: 'src/lib/mailer.ts',         layer: 'lib', x: 1180, y: 700,
+    detail: 'SMTP email sender + mail-templates/' },
+  { id: 'l-ratelimit', label: 'Rate Limiter',    subtitle: 'src/lib/rate-limit.ts',     layer: 'lib', x: 1360, y: 700 },
+  { id: 'l-axios',     label: 'Axios Client',    subtitle: 'src/lib/axios.ts',          layer: 'lib', x: 1540, y: 700,
+    detail: 'baseURL: /api, shared HTTP client' },
+  { id: 'l-iflogger',  label: 'Interface Logger', subtitle: 'src/lib/interface-logger.ts', layer: 'lib', x: 1360, y: 780 },
+  { id: 'l-query',     label: 'Query Provider',  subtitle: 'src/lib/query-provider.tsx', layer: 'lib', x: 150, y: 780,
+    detail: 'TanStack Query wrapper, staleTime: 60s' },
+
+  // Data Models
+  { id: 'd-content',   label: 'Content Models',  subtitle: 'Content, Category, Attachment, Target', layer: 'data', x: 200, y: 900,
+    detail: 'Content, ContentCategory, ContentTarget, ContentAttachment, Category (tree structure)' },
+  { id: 'd-auth',      label: 'Auth Models',     subtitle: 'PasswordResetToken, TwoFactorCode',     layer: 'data', x: 500, y: 900 },
+  { id: 'd-admin',     label: 'Admin Models',    subtitle: 'Menu, QpRole, CodeHeader/Detail',       layer: 'data', x: 800, y: 900,
+    detail: 'Menu (tree), QpRole, QpRoleMenuPermission, CodeHeader, CodeDetail' },
+  { id: 'd-comm',      label: 'Communication',   subtitle: 'HomeNotice, MassMail, Inquiry',         layer: 'data', x: 1100, y: 900,
+    detail: 'HomeNotice (targetFlags), MassMail + MassMailAttachment, Inquiry' },
+  { id: 'd-tracking',  label: 'Tracking',        subtitle: 'DownloadLog, QpInterfaceLog',           layer: 'data', x: 1400, y: 900 },
+
+  // External
+  { id: 'e-qsp',       label: 'QSP API',         subtitle: 'External member management system',     layer: 'external', x: 400, y: 1040,
+    detail: 'Authentication, member CRUD, password management (HTTPS, JSON)' },
+  { id: 'e-smtp',      label: 'SMTP Server',     subtitle: 'Email delivery service',                layer: 'external', x: 800, y: 1040 },
+  { id: 'e-mariadb',   label: 'MariaDB 11',      subtitle: 'Docker container (db)',                 layer: 'external', x: 1200, y: 1040 },
+];
+
+const connections = [
+  // Pages -> Components
+  { from: 'p-home',     to: 'c-home',     type: 'uses' },
+  { from: 'p-home',     to: 'c-layout',   type: 'uses' },
+  { from: 'p-login',    to: 'c-login',    type: 'uses' },
+  { from: 'p-signup',   to: 'c-signup',   type: 'uses' },
+  { from: 'p-pwreset',  to: 'c-pwreset',  type: 'uses' },
+  { from: 'p-contents', to: 'c-contents', type: 'uses' },
+  { from: 'p-inquiry',  to: 'c-inquiry',  type: 'uses' },
+  { from: 'p-mypage',   to: 'c-mypage',   type: 'uses' },
+  { from: 'p-admin',    to: 'c-admin',    type: 'uses' },
+  { from: 'p-admin',    to: 'c-layout',   type: 'uses' },
+  // Components -> Common
+  { from: 'c-admin',    to: 'c-datagrid', type: 'uses' },
+  { from: 'c-contents', to: 'c-datagrid', type: 'uses' },
+  { from: 'c-contents', to: 'c-common',   type: 'uses' },
+  { from: 'c-admin',    to: 'c-common',   type: 'uses' },
+  { from: 'c-login',    to: 'c-common',   type: 'uses' },
+  { from: 'c-mypage',   to: 'c-common',   type: 'uses' },
+  { from: 'c-admin',    to: 'c-popup',    type: 'uses' },
+  { from: 'c-mypage',   to: 'c-popup',    type: 'uses' },
+  { from: 'c-login',    to: 'c-popup',    type: 'uses' },
+  // Components -> API
+  { from: 'c-login',    to: 'a-auth',     type: 'calls' },
+  { from: 'c-signup',   to: 'a-auth',     type: 'calls' },
+  { from: 'c-pwreset',  to: 'a-pwreset',  type: 'calls' },
+  { from: 'c-popup',    to: 'a-2fa',      type: 'calls' },
+  { from: 'c-popup',    to: 'a-pwreset',  type: 'calls' },
+  { from: 'c-contents', to: 'a-contents', type: 'calls' },
+  { from: 'c-contents', to: 'a-category', type: 'calls' },
+  { from: 'c-inquiry',  to: 'a-inquiry',  type: 'calls' },
+  { from: 'c-mypage',   to: 'a-mypage',   type: 'calls' },
+  { from: 'c-admin',    to: 'a-members',  type: 'calls' },
+  { from: 'c-admin',    to: 'a-category', type: 'calls' },
+  { from: 'c-admin',    to: 'a-codes',    type: 'calls' },
+  { from: 'c-admin',    to: 'a-menus',    type: 'calls' },
+  { from: 'c-admin',    to: 'a-roles',    type: 'calls' },
+  { from: 'c-admin',    to: 'a-notices',  type: 'calls' },
+  { from: 'c-admin',    to: 'a-mail',     type: 'calls' },
+  { from: 'c-admin',    to: 'a-iflog',    type: 'calls' },
+  { from: 'c-home',     to: 'a-contents', type: 'calls' },
+  { from: 'c-home',     to: 'a-notices',  type: 'calls' },
+  // Components -> Lib
+  { from: 'c-login',    to: 'l-stores',   type: 'imports' },
+  { from: 'c-layout',   to: 'l-stores',   type: 'imports' },
+  { from: 'c-popup',    to: 'l-stores',   type: 'imports' },
+  { from: 'c-home',     to: 'l-axios',    type: 'imports' },
+  { from: 'c-contents', to: 'l-axios',    type: 'imports' },
+  { from: 'c-admin',    to: 'l-axios',    type: 'imports' },
+  // API -> Lib
+  { from: 'a-auth',     to: 'l-auth',     type: 'imports' },
+  { from: 'a-auth',     to: 'l-schemas',  type: 'imports' },
+  { from: 'a-auth',     to: 'l-config',   type: 'imports' },
+  { from: 'a-auth',     to: 'l-ratelimit',type: 'imports' },
+  { from: 'a-pwreset',  to: 'l-auth',     type: 'imports' },
+  { from: 'a-pwreset',  to: 'l-mailer',   type: 'imports' },
+  { from: 'a-pwreset',  to: 'l-ratelimit',type: 'imports' },
+  { from: 'a-2fa',      to: 'l-mailer',   type: 'imports' },
+  { from: 'a-contents', to: 'l-schemas',  type: 'imports' },
+  { from: 'a-contents', to: 'l-prisma',   type: 'imports' },
+  { from: 'a-category', to: 'l-prisma',   type: 'imports' },
+  { from: 'a-codes',    to: 'l-prisma',   type: 'imports' },
+  { from: 'a-menus',    to: 'l-prisma',   type: 'imports' },
+  { from: 'a-roles',    to: 'l-prisma',   type: 'imports' },
+  { from: 'a-notices',  to: 'l-prisma',   type: 'imports' },
+  { from: 'a-mail',     to: 'l-prisma',   type: 'imports' },
+  { from: 'a-mail',     to: 'l-mailer',   type: 'imports' },
+  { from: 'a-inquiry',  to: 'l-prisma',   type: 'imports' },
+  { from: 'a-inquiry',  to: 'l-mailer',   type: 'imports' },
+  { from: 'a-mypage',   to: 'l-prisma',   type: 'imports' },
+  { from: 'a-mypage',   to: 'l-auth',     type: 'imports' },
+  { from: 'a-members',  to: 'l-config',   type: 'imports' },
+  { from: 'a-members',  to: 'l-auth',     type: 'imports' },
+  { from: 'a-iflog',    to: 'l-prisma',   type: 'imports' },
+  { from: 'a-auth',     to: 'l-iflogger', type: 'imports' },
+  { from: 'a-members',  to: 'l-iflogger', type: 'imports' },
+  // API -> Data
+  { from: 'a-contents', to: 'd-content',  type: 'queries' },
+  { from: 'a-category', to: 'd-content',  type: 'queries' },
+  { from: 'a-pwreset',  to: 'd-auth',     type: 'queries' },
+  { from: 'a-2fa',      to: 'd-auth',     type: 'queries' },
+  { from: 'a-codes',    to: 'd-admin',    type: 'queries' },
+  { from: 'a-menus',    to: 'd-admin',    type: 'queries' },
+  { from: 'a-roles',    to: 'd-admin',    type: 'queries' },
+  { from: 'a-notices',  to: 'd-comm',     type: 'queries' },
+  { from: 'a-mail',     to: 'd-comm',     type: 'queries' },
+  { from: 'a-inquiry',  to: 'd-comm',     type: 'queries' },
+  { from: 'a-mypage',   to: 'd-tracking', type: 'queries' },
+  { from: 'a-contents', to: 'd-tracking', type: 'queries' },
+  { from: 'a-iflog',    to: 'd-tracking', type: 'queries' },
+  // Lib -> External
+  { from: 'l-config',   to: 'e-qsp',      type: 'integrates' },
+  { from: 'l-mailer',   to: 'e-smtp',     type: 'integrates' },
+  { from: 'l-prisma',   to: 'e-mariadb',  type: 'integrates' },
+  { from: 'l-iflogger', to: 'd-tracking', type: 'queries' },
+  // API -> External
+  { from: 'a-auth',     to: 'e-qsp',      type: 'integrates' },
+  { from: 'a-members',  to: 'e-qsp',      type: 'integrates' },
+  { from: 'a-mypage',   to: 'e-qsp',      type: 'integrates' },
+];
+
+// ── State ──
+const state = {
+  layers: Object.fromEntries(Object.keys(LAYERS).map(k => [k, true])),
+  connTypes: Object.fromEntries(Object.keys(CONN_TYPES).map(k => [k, true])),
+  comments: [],
+  search: '',
+  zoom: 1,
+  panX: 0, panY: 0,
+  preset: 'full'
+};
+
+const NODE_W = 150, NODE_H = 50, NODE_R = 8;
+
+function getNodeCenter(n) {
+  return { x: n.x + NODE_W/2, y: n.y + NODE_H/2 };
+}
+
+function renderSVG() {
+  const svg = document.getElementById('svg');
+  const ns = 'http://www.w3.org/2000/svg';
+  // Clear existing content
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const area = document.getElementById('canvasArea');
+  const areaW = area.clientWidth || 800;
+  const areaH = area.clientHeight || 600;
+  const zoom = Math.max(state.zoom, 0.1);
+
+  const visibleNodes = nodes.filter(n =>
+    state.layers[n.layer] &&
+    (state.search === '' || n.label.toLowerCase().includes(state.search) || n.subtitle.toLowerCase().includes(state.search))
+  );
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleConns = connections.filter(c =>
+    state.connTypes[c.type] && visibleIds.has(c.from) && visibleIds.has(c.to)
+  );
+
+  // Defs (arrow markers)
+  const defs = document.createElementNS(ns, 'defs');
+  Object.entries(CONN_TYPES).forEach(([key, ct]) => {
+    const marker = document.createElementNS(ns, 'marker');
+    marker.setAttribute('id', 'arrow-' + key);
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('refX', '7');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    const poly = document.createElementNS(ns, 'polygon');
+    poly.setAttribute('points', '0 0, 8 3, 0 6');
+    poly.setAttribute('fill', ct.color);
+    poly.setAttribute('opacity', '0.8');
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
+  // Main group with transform
+  const mainG = document.createElementNS(ns, 'g');
+  mainG.setAttribute('transform', 'translate(' + (state.panX + areaW/2 - 850*zoom) + ',' + (state.panY + 20) + ') scale(' + zoom + ')');
+
+  // Layer bands
+  const bands = [
+    { y: 20,  h: 130, label: 'Pages',       layer: 'pages' },
+    { y: 160, h: 210, label: 'Components',   layer: 'components' },
+    { y: 420, h: 210, label: 'API Routes',   layer: 'api' },
+    { y: 660, h: 170, label: 'Lib / Core',   layer: 'lib' },
+    { y: 860, h: 100, label: 'Data Models',  layer: 'data' },
+    { y: 1000,h: 100, label: 'External',     layer: 'external' }
+  ];
+  bands.forEach(b => {
+    if (!state.layers[b.layer]) return;
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', '30'); r.setAttribute('y', b.y);
+    r.setAttribute('width', '1620'); r.setAttribute('height', b.h);
+    r.setAttribute('rx', '8'); r.setAttribute('fill', LAYERS[b.layer].fill);
+    r.setAttribute('opacity', '0.3'); r.setAttribute('stroke', LAYERS[b.layer].color);
+    r.setAttribute('stroke-opacity', '0.15');
+    mainG.appendChild(r);
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x', '45'); t.setAttribute('y', b.y + 18);
+    t.setAttribute('fill', LAYERS[b.layer].color); t.setAttribute('opacity', '0.4');
+    t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '600');
+    t.textContent = b.label;
+    mainG.appendChild(t);
+  });
+
+  // Connections
+  visibleConns.forEach(c => {
+    const fromN = nodes.find(n => n.id === c.from);
+    const toN = nodes.find(n => n.id === c.to);
+    if (!fromN || !toN) return;
+    const f = getNodeCenter(fromN);
+    const t = getNodeCenter(toN);
+    const ct = CONN_TYPES[c.type];
+    const dy = t.y - f.y;
+    const cp1y = f.y + dy * 0.4;
+    const cp2y = t.y - dy * 0.4;
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', 'M' + f.x + ',' + (f.y + NODE_H/2 - 5) + ' C' + f.x + ',' + cp1y + ' ' + t.x + ',' + cp2y + ' ' + t.x + ',' + (t.y - NODE_H/2 + 5));
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', ct.color);
+    path.setAttribute('stroke-width', '1.2');
+    path.setAttribute('opacity', '0.5');
+    if (ct.dash) path.setAttribute('stroke-dasharray', ct.dash);
+    path.setAttribute('marker-end', 'url(#arrow-' + c.type + ')');
+    mainG.appendChild(path);
+  });
+
+  // Nodes
+  const commentedIds = new Set(state.comments.map(c => c.target));
+  const highlightSearch = state.search.length > 0;
+
+  visibleNodes.forEach(n => {
+    const layer = LAYERS[n.layer];
+    const hasComment = commentedIds.has(n.id);
+    const dimmed = highlightSearch && !(n.label.toLowerCase().includes(state.search) || n.subtitle.toLowerCase().includes(state.search));
+    const opacity = dimmed ? 0.25 : 1;
+    const strokeColor = hasComment ? '#fbbf24' : layer.color;
+    const strokeWidth = hasComment ? 2.5 : 1.2;
+
+    const g = document.createElementNS(ns, 'g');
+    g.setAttribute('class', 'node');
+    g.setAttribute('data-id', n.id);
+    g.setAttribute('opacity', opacity);
+    g.style.cursor = 'pointer';
+
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', n.x); rect.setAttribute('y', n.y);
+    rect.setAttribute('width', NODE_W); rect.setAttribute('height', NODE_H);
+    rect.setAttribute('rx', NODE_R); rect.setAttribute('fill', layer.fill);
+    rect.setAttribute('stroke', strokeColor); rect.setAttribute('stroke-width', strokeWidth);
+    g.appendChild(rect);
+
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', n.x + NODE_W/2); label.setAttribute('y', n.y + 20);
+    label.setAttribute('text-anchor', 'middle'); label.setAttribute('fill', layer.textColor);
+    label.setAttribute('font-size', '12'); label.setAttribute('font-weight', '600');
+    label.textContent = n.label;
+    g.appendChild(label);
+
+    const sub = document.createElementNS(ns, 'text');
+    sub.setAttribute('x', n.x + NODE_W/2); sub.setAttribute('y', n.y + 36);
+    sub.setAttribute('text-anchor', 'middle'); sub.setAttribute('fill', layer.textColor);
+    sub.setAttribute('font-size', '9'); sub.setAttribute('opacity', '0.6');
+    sub.textContent = n.subtitle.length > 22 ? n.subtitle.slice(0, 20) + '...' : n.subtitle;
+    g.appendChild(sub);
+
+    if (hasComment) {
+      const count = state.comments.filter(c => c.target === n.id).length;
+      const circle = document.createElementNS(ns, 'circle');
+      circle.setAttribute('cx', n.x + NODE_W - 8); circle.setAttribute('cy', n.y + 8);
+      circle.setAttribute('r', '5'); circle.setAttribute('fill', '#fbbf24');
+      g.appendChild(circle);
+      const ct = document.createElementNS(ns, 'text');
+      ct.setAttribute('x', n.x + NODE_W - 8); ct.setAttribute('y', n.y + 11);
+      ct.setAttribute('text-anchor', 'middle'); ct.setAttribute('fill', '#000');
+      ct.setAttribute('font-size', '7'); ct.setAttribute('font-weight', '700');
+      ct.textContent = count;
+      g.appendChild(ct);
+    }
+
+    g.addEventListener('mouseenter', e => showTooltip(e, n.id));
+    g.addEventListener('mouseleave', () => hideTooltip());
+    g.addEventListener('click', () => openModal(n.id));
+    mainG.appendChild(g);
+  });
+
+  svg.appendChild(mainG);
+  document.getElementById('infoBar').textContent = 'Nodes: ' + visibleNodes.length + ' | Connections: ' + visibleConns.length;
+}
+
+function renderLegend() {
+  const el = document.getElementById('legend');
+  el.textContent = '';
+  Object.entries(LAYERS).forEach(([key, l]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const rect = document.createElement('div');
+    rect.className = 'legend-rect';
+    rect.style.background = l.fill;
+    rect.style.borderColor = l.color;
+    const span = document.createElement('span');
+    span.textContent = l.label;
+    item.appendChild(rect);
+    item.appendChild(span);
+    el.appendChild(item);
+  });
+}
+
+function renderControls() {
+  const presets = [
+    { id: 'full',      label: 'Full System' },
+    { id: 'frontend',  label: 'Frontend Only' },
+    { id: 'backend',   label: 'Backend Only' },
+    { id: 'dataflow',  label: 'Data Flow' },
+    { id: 'auth',      label: 'Auth Flow' },
+  ];
+
+  const presetsEl = document.getElementById('presets');
+  presetsEl.textContent = '';
+  presets.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn' + (state.preset === p.id ? ' active' : '');
+    btn.textContent = p.label;
+    btn.addEventListener('click', () => applyPreset(p.id));
+    presetsEl.appendChild(btn);
+  });
+
+  const layerEl = document.getElementById('layerToggles');
+  layerEl.textContent = '';
+  Object.entries(LAYERS).forEach(([key, l]) => {
+    const label = document.createElement('label');
+    label.className = 'layer-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = state.layers[key];
+    input.addEventListener('change', function() { toggleLayer(key, this.checked); });
+    const dot = document.createElement('span');
+    dot.className = 'layer-dot';
+    dot.style.background = l.color;
+    const text = document.createTextNode(' ' + l.label);
+    label.appendChild(input);
+    label.appendChild(dot);
+    label.appendChild(text);
+    layerEl.appendChild(label);
+  });
+
+  const connEl = document.getElementById('connToggles');
+  connEl.textContent = '';
+  Object.entries(CONN_TYPES).forEach(([key, ct]) => {
+    const label = document.createElement('label');
+    label.className = 'conn-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = state.connTypes[key];
+    input.addEventListener('change', function() { toggleConn(key, this.checked); });
+    const line = document.createElement('span');
+    line.className = 'conn-line';
+    if (ct.dash) {
+      line.style.borderTop = '3px dashed ' + ct.color;
+      line.style.background = 'none';
+      line.style.height = '0';
+    } else {
+      line.style.background = ct.color;
+    }
+    const text = document.createTextNode(' ' + ct.label);
+    label.appendChild(input);
+    label.appendChild(line);
+    label.appendChild(text);
+    connEl.appendChild(label);
+  });
+}
+
+function renderComments() {
+  document.getElementById('commentCount').textContent = state.comments.length;
+  const list = document.getElementById('commentsList');
+  list.textContent = '';
+  if (state.comments.length === 0) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#555;font-size:12px;padding:8px 0';
+    hint.textContent = 'Click a node to add comments';
+    list.appendChild(hint);
+    return;
+  }
+  state.comments.forEach((c, i) => {
+    const item = document.createElement('div');
+    item.className = 'comment-item';
+    const target = document.createElement('div');
+    target.className = 'target';
+    target.textContent = c.targetLabel;
+    const text = document.createElement('div');
+    text.className = 'text';
+    text.textContent = c.text;
+    const del = document.createElement('button');
+    del.className = 'del-btn';
+    del.textContent = '\u00d7';
+    del.addEventListener('click', () => deleteComment(i));
+    item.appendChild(target);
+    item.appendChild(text);
+    item.appendChild(del);
+    list.appendChild(item);
+  });
+}
+
+function updatePrompt() {
+  const el = document.getElementById('promptOutput');
+  if (state.comments.length === 0) {
+    el.textContent = 'Click nodes to add comments about the architecture.';
+    return;
+  }
+  const visibleLayers = Object.entries(state.layers)
+    .filter(([,v]) => v).map(([k]) => LAYERS[k].label);
+
+  let prompt = 'QPartners Neo architecture review (' + visibleLayers.join(', ') + ' layers visible):\n\n';
+  state.comments.forEach(c => {
+    prompt += '**' + c.targetLabel + '** (' + c.targetFile + '):\n' + c.text + '\n\n';
+  });
+  el.textContent = prompt.trim();
+}
+
+function updateAll() {
+  renderSVG();
+  renderComments();
+  updatePrompt();
+}
+
+// ── Interactions ──
+function toggleLayer(key, checked) {
+  state.layers[key] = checked;
+  state.preset = '';
+  renderControls();
+  updateAll();
+}
+function toggleConn(key, checked) {
+  state.connTypes[key] = checked;
+  updateAll();
+}
+function applyPreset(id) {
+  state.preset = id;
+  const all = k => state.layers[k] = true;
+  const off = k => state.layers[k] = false;
+  const allConn = v => Object.keys(state.connTypes).forEach(k => state.connTypes[k] = v);
+  Object.keys(LAYERS).forEach(all);
+  allConn(true);
+  switch(id) {
+    case 'frontend':
+      off('api'); off('lib'); off('data'); off('external');
+      state.connTypes.queries = false;
+      state.connTypes.integrates = false;
+      break;
+    case 'backend':
+      off('pages'); off('components');
+      state.connTypes.uses = false;
+      break;
+    case 'dataflow':
+      state.connTypes.uses = false;
+      state.connTypes.imports = false;
+      break;
+    case 'auth':
+      Object.keys(LAYERS).forEach(all);
+      allConn(true);
+      break;
+  }
+  renderControls();
+  updateAll();
+}
+
+function zoomIn()    { state.zoom = Math.min(state.zoom * 1.25, 3); updateAll(); }
+function zoomOut()   { state.zoom = Math.max(state.zoom / 1.25, 0.3); updateAll(); }
+function zoomReset() { state.zoom = 1; state.panX = 0; state.panY = 0; updateAll(); }
+function fitToView() {
+  const area = document.getElementById('canvasArea');
+  const targetW = 1700;
+  const targetH = 1100;
+  state.zoom = Math.min(area.clientWidth / targetW, (area.clientHeight - 40) / targetH, 1.5);
+  state.panX = 0;
+  state.panY = 0;
+  updateAll();
+}
+
+let isPanning = false, panStart = { x: 0, y: 0 };
+const canvasArea = document.getElementById('canvasArea');
+canvasArea.addEventListener('mousedown', e => {
+  if (e.target.closest('.node')) return;
+  isPanning = true;
+  panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
+});
+canvasArea.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  state.panX = e.clientX - panStart.x;
+  state.panY = e.clientY - panStart.y;
+  updateAll();
+});
+canvasArea.addEventListener('mouseup', () => isPanning = false);
+canvasArea.addEventListener('mouseleave', () => isPanning = false);
+canvasArea.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.92 : 1.08;
+  state.zoom = Math.max(0.3, Math.min(3, state.zoom * delta));
+  updateAll();
+}, { passive: false });
+
+function showTooltip(event, id) {
+  const n = nodes.find(n => n.id === id);
+  if (!n) return;
+  const tip = document.getElementById('tooltip');
+  tip.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = n.label;
+  tip.appendChild(strong);
+  tip.appendChild(document.createElement('br'));
+  const sub = document.createElement('span');
+  sub.style.cssText = 'color:#888;font-family:monospace;font-size:11px';
+  sub.textContent = n.subtitle;
+  tip.appendChild(sub);
+  if (n.detail) {
+    tip.appendChild(document.createElement('br'));
+    tip.appendChild(document.createElement('br'));
+    const detail = document.createElement('span');
+    detail.style.cssText = 'color:#aaa;white-space:pre-line';
+    detail.textContent = n.detail;
+    tip.appendChild(detail);
+  }
+  tip.classList.add('show');
+  const rect = canvasArea.getBoundingClientRect();
+  tip.style.left = (event.clientX - rect.left + 15) + 'px';
+  tip.style.top = (event.clientY - rect.top - 10) + 'px';
+}
+function hideTooltip() {
+  document.getElementById('tooltip').classList.remove('show');
+}
+
+let modalNodeId = null;
+function openModal(id) {
+  const n = nodes.find(n => n.id === id);
+  if (!n) return;
+  modalNodeId = id;
+  document.getElementById('modalTitle').textContent = n.label;
+  document.getElementById('modalSubtitle').textContent = n.subtitle;
+  document.getElementById('modalText').value = '';
+  document.getElementById('modalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('modalText').focus(), 100);
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+  modalNodeId = null;
+}
+function saveComment() {
+  const text = document.getElementById('modalText').value.trim();
+  if (!text || !modalNodeId) return;
+  const n = nodes.find(n => n.id === modalNodeId);
+  state.comments.push({
+    id: Date.now(),
+    target: modalNodeId,
+    targetLabel: n.label,
+    targetFile: n.subtitle,
+    text: text
+  });
+  closeModal();
+  updateAll();
+}
+function deleteComment(index) {
+  state.comments.splice(index, 1);
+  updateAll();
+}
+
+document.getElementById('searchBox').addEventListener('input', e => {
+  state.search = e.target.value.toLowerCase();
+  updateAll();
+});
+
+function copyPrompt() {
+  const text = document.getElementById('promptOutput').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy Prompt';
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && document.getElementById('modalOverlay').classList.contains('open')) {
+    if (e.metaKey || e.ctrlKey) saveComment();
+  }
+});
+
+// ── Init ──
+renderControls();
+renderLegend();
+fitToView();
+updateAll();
+window.addEventListener('resize', () => { fitToView(); updateAll(); });
+</script>
+</body>
+</html>

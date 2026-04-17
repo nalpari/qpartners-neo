@@ -3,34 +3,11 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createHomeNoticeSchema } from "@/lib/schemas/home-notice";
-
-/** status 동적 산출 (DB 컬럼 없음) */
-function computeStatus(startAt: Date, endAt: Date): string {
-  const now = new Date();
-  if (now < startAt) return "scheduled";
-  if (now > endAt) return "ended";
-  return "active";
-}
-
-/** target Boolean 필드를 배열로 변환 */
-function toTargetArray(row: {
-  targetSuperAdmin: boolean;
-  targetAdmin: boolean;
-  targetFirstStore: boolean;
-  targetSecondStore: boolean;
-  targetConstructor: boolean;
-  targetGeneral: boolean;
-}): string[] {
-  const targets: string[] = [];
-  if (row.targetSuperAdmin) targets.push("super_admin");
-  if (row.targetAdmin) targets.push("admin");
-  if (row.targetFirstStore) targets.push("first_store");
-  if (row.targetSecondStore) targets.push("second_store");
-  if (row.targetConstructor) targets.push("seko");
-  if (row.targetGeneral) targets.push("general");
-  return targets;
-}
+import {
+  createHomeNoticeSchema,
+  computeStatus,
+  toTargetArray,
+} from "@/lib/schemas/home-notice";
 
 // GET /api/home-notices — 공지 목록 (관리자용)
 export async function GET(request: NextRequest) {
@@ -42,6 +19,7 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get("keyword") ?? undefined;
     const statusFilter = searchParams.get("status") ?? undefined;
     const targetType = searchParams.get("targetType") ?? undefined;
+    const createdBy = searchParams.get("createdBy") ?? undefined;
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
@@ -59,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     if (targetType && !targetMap[targetType]) {
       return NextResponse.json(
-        { error: `Invalid targetType: ${targetType}` },
+        { error: "送信先フィルタの値が正しくありません" },
         { status: 400 },
       );
     }
@@ -76,7 +54,7 @@ export async function GET(request: NextRequest) {
       for (const s of statusSet) {
         if (!VALID_STATUSES.has(s)) {
           return NextResponse.json(
-            { error: `Invalid status value: ${s}` },
+            { error: "ステータスの値が正しくありません" },
             { status: 400 },
           );
         }
@@ -97,19 +75,20 @@ export async function GET(request: NextRequest) {
 
     // 날짜 파라미터 검증
     if (startDate && isNaN(new Date(startDate).getTime())) {
-      return NextResponse.json({ error: "Invalid startDate format" }, { status: 400 });
+      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
     if (endDate && isNaN(new Date(endDate).getTime())) {
-      return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
+      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
 
     const where = {
       ...(keyword && { content: { contains: keyword } }),
+      ...(createdBy && { createdBy: { contains: createdBy } }),
       ...(targetField && { [targetField]: true }),
       ...((startDate || endDate) && {
         createdAt: {
           ...(startDate && { gte: new Date(startDate) }),
-          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999Z`) }),
+          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999+09:00`) }),
         },
       }),
       ...statusWhere,
@@ -148,7 +127,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/home-notices]", error);
     return NextResponse.json(
-      { error: "Failed to fetch home notices" },
+      { error: "お知らせ一覧の取得に失敗しました" },
       { status: 500 },
     );
   }
@@ -165,7 +144,7 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch {
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -174,20 +153,22 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力内容に不備があります", issues: result.error.issues },
         { status: 400 },
       );
     }
 
-    // 활성(scheduled + active) 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
+    // 게시기간 겹치는 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
     const notice = await prisma.$transaction(
       async (tx) => {
-        const now = new Date();
-        const activeCount = await tx.homeNotice.count({
-          where: { endAt: { gte: now } },
+        const overlapCount = await tx.homeNotice.count({
+          where: {
+            startAt: { lte: result.data.endAt },
+            endAt: { gte: result.data.startAt },
+          },
         });
 
-        if (activeCount >= 5) {
+        if (overlapCount >= 5) {
           throw new Error("LIMIT_EXCEEDED");
         }
 
@@ -207,13 +188,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
       return NextResponse.json(
-        { error: "활성(예정 포함) 공지가 5개를 초과할 수 없습니다" },
+        { error: "同一期間に掲載できるお知らせは5件までです" },
         { status: 400 },
       );
     }
     console.error("[POST /api/home-notices]", error);
     return NextResponse.json(
-      { error: "Failed to create home notice" },
+      { error: "お知らせの登録に失敗しました" },
       { status: 500 },
     );
   }

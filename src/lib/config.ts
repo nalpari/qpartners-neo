@@ -71,3 +71,56 @@ export const SITE_DEFAULTS = {
   url: "https://dev.q-partners.q-cells.jp",
   accsSiteCd: "QPARTNERS",
 } as const;
+
+// ─── Mass Mail ───
+
+/**
+ * 정수형 환경변수를 안전하게 파싱.
+ * - 미설정/공백/NaN/비정수 → defaultValue 반환 + 경고 로그
+ * - min/max 범위 밖 → 범위 내로 clamp + 경고 로그
+ *
+ * 잘못된 env 값으로 throttle 무한대기 / retryDelay NaN 등 운영 장애 방지.
+ */
+function parseIntEnv(
+  name: string,
+  defaultValue: number,
+  opts?: { min?: number; max?: number },
+): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return defaultValue;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    console.warn(
+      `[config] env "${name}" 값이 정수가 아님 ("${raw}") — 기본값 ${defaultValue} 사용`,
+    );
+    return defaultValue;
+  }
+
+  if (opts?.min !== undefined && parsed < opts.min) {
+    console.warn(
+      `[config] env "${name}"=${parsed} 가 최소값 ${opts.min} 미만 — 최소값으로 보정`,
+    );
+    return opts.min;
+  }
+  if (opts?.max !== undefined && parsed > opts.max) {
+    console.warn(
+      `[config] env "${name}"=${parsed} 가 최대값 ${opts.max} 초과 — 최대값으로 보정`,
+    );
+    return opts.max;
+  }
+  return parsed;
+}
+
+export const MASS_MAIL_DEFAULTS = {
+  /** 건별 발송 간격 (ms) — SMTP rate limit / IP 블랙리스트 방지 (min:50 으로 burst 차단) */
+  throttleMs: parseIntEnv("MASS_MAIL_THROTTLE_MS", 200, { min: 50, max: 60_000 }),
+  /** 전체 장애 자동 재시도 횟수 (0 = 재시도 끄기) */
+  maxRetries: parseIntEnv("MASS_MAIL_MAX_RETRIES", 3, { min: 0, max: 10 }),
+  /** 전체 장애 재시도 간격 (ms) — min:1000 으로 일시 장애 시 즉시 재시도 폭주 방지 */
+  retryDelayMs: parseIntEnv("MASS_MAIL_RETRY_DELAY_MS", 30_000, { min: 1000, max: 600_000 }),
+  /** QSP 목록 조회 페이지당 건수 */
+  pageSize: parseIntEnv("MASS_MAIL_PAGE_SIZE", 100, { min: 1, max: 1000 }),
+  /** 페이징 안전장치 (1만건 상한) */
+  maxPages: parseIntEnv("MASS_MAIL_MAX_PAGES", 100, { min: 1, max: 10_000 }),
+} as const;

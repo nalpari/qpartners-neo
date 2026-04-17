@@ -11,6 +11,8 @@ import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { DimSpinner, Pagination, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
+import { useCommonCode } from "@/hooks/use-common-code";
 
 // Design Ref: §2 — API Response Type
 interface DownloadLogItem {
@@ -30,12 +32,6 @@ interface DownloadLogsData {
   keyword: string | null;
   list: DownloadLogItem[];
 }
-
-const PER_PAGE_OPTIONS = [
-  { value: "20", label: "20" },
-  { value: "50", label: "50" },
-  { value: "100", label: "100" },
-];
 
 const MOBILE_PAGE_SIZE = 5;
 
@@ -93,6 +89,7 @@ function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
 // Design Ref: §3 — 메인 컴포넌트
 export function DownloadHistory() {
   const { openAlert } = useAlertStore();
+  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
 
   // 검색/페이지네이션 상태
   const [keyword, setKeyword] = useState("");
@@ -366,7 +363,7 @@ export function DownloadHistory() {
           </p>
           <div className="w-[100px] ml-auto">
             <SelectBox
-              options={PER_PAGE_OPTIONS}
+              options={pageSizeOptions}
               value={String(pageSize)}
               onChange={handlePageSizeChange}
             />

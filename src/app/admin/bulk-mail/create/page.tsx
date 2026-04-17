@@ -1,6 +1,39 @@
+"use client";
+
+// Design Ref: §5.2 — 등록 페이지 (복사 데이터 로드)
+
+import { useState } from "react";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
-import { EMPTY_FORM_DATA } from "@/components/admin/bulk-mail/form/bulk-mail-form-dummy-data";
+import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
+
+function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
+  if (typeof window === "undefined") return { mode: "create" };
+
+  const stored = sessionStorage.getItem("mass-mail-copy");
+  if (!stored) return { mode: "create" };
+
+  sessionStorage.removeItem("mass-mail-copy");
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (typeof parsed !== "object" || parsed === null) return { mode: "create" };
+    const data = parsed as Record<string, unknown>;
+    const initialData: Partial<FormInitialData> = {
+      senderName: typeof data.senderName === "string" ? data.senderName : undefined,
+      targets: Array.isArray(data.targets) ? data.targets.filter((t): t is string => typeof t === "string") : undefined,
+      optOut: typeof data.optOut === "boolean" ? data.optOut : undefined,
+      subject: typeof data.subject === "string" ? data.subject : undefined,
+      body: typeof data.body === "string" ? data.body : undefined,
+      attachments: [],
+    };
+    return { mode: "copy", initialData };
+  } catch (error: unknown) {
+    console.warn("[BulkMailCreatePage] mass-mail-copy 데이터 파싱 실패:", error);
+    return { mode: "create" };
+  }
+}
 
 export default function AdminBulkMailCreatePage() {
-  return <BulkMailForm mode="create" initialData={EMPTY_FORM_DATA} />;
+  const [initial] = useState(loadCopyData);
+
+  return <BulkMailForm mode={initial.mode} initialData={initial.initialData} />;
 }
