@@ -449,8 +449,8 @@ enum RecipientStatus {
 enum RecipientAuthRole {
   SUPER_ADMIN
   ADMIN
-  FIRST_STORE
-  SECOND_STORE
+  FIRST_STORE  @map("1ST_STORE")
+  SECOND_STORE @map("2ND_STORE")
   SEKO
   GENERAL
 }
