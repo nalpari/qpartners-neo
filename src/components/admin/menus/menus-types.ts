@@ -105,3 +105,16 @@ export function toUpdateBody(form: MenuFormState) {
     showInMobile: ynToBool(form.showInMobile),
   };
 }
+
+/** API 메뉴 아이템 → 폼 상태 변환 */
+export function toFormState(api: MenuApiItem): MenuFormState {
+  return {
+    upperMenu: api.parentId != null ? String(api.parentId) : "",
+    menuCode: api.menuCode,
+    menuName: api.menuName,
+    pageUrl: api.pageUrl ?? "",
+    isActive: boolToYN(api.isActive),
+    showInTopNav: boolToYN(api.showInTopNav),
+    showInMobile: boolToYN(api.showInMobile),
+  };
+}

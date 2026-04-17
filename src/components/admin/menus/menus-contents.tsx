@@ -10,7 +10,7 @@ import { useAlertStore } from "@/lib/store";
 import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
 import type { MenuTreeItem, MenuTreeResponse, MenuFormState } from "./menus-types";
-import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody } from "./menus-types";
+import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from "./menus-types";
 
 export function MenusContents() {
   const { openAlert } = useAlertStore();
@@ -120,6 +120,10 @@ export function MenusContents() {
       openAlert({ type: "alert", message: "Menu Codeは必須です。", confirmLabel: "確認" });
       return;
     }
+    if (!formState.menuName.trim()) {
+      openAlert({ type: "alert", message: "Menu Nameは必須です。", confirmLabel: "確認" });
+      return;
+    }
 
     if (isEditing && editingId) {
       updateMutation.mutate({ id: editingId, body: toUpdateBody(formState) });
@@ -133,15 +137,7 @@ export function MenusContents() {
     setSelectedLevel1Id(id);
     const apiMenu = menuTree.find((m) => String(m.id) === id);
     if (apiMenu) {
-      setFormState({
-        upperMenu: apiMenu.parentId != null ? String(apiMenu.parentId) : "",
-        menuCode: apiMenu.menuCode,
-        menuName: apiMenu.menuName,
-        pageUrl: apiMenu.pageUrl ?? "",
-        isActive: apiMenu.isActive ? "Y" : "N",
-        showInTopNav: apiMenu.showInTopNav ? "Y" : "N",
-        showInMobile: apiMenu.showInMobile ? "Y" : "N",
-      });
+      setFormState(toFormState(apiMenu));
       setIsEditing(true);
       setEditingId(id);
     }
@@ -152,15 +148,7 @@ export function MenusContents() {
     const parent = menuTree.find((m) => String(m.id) === selectedLevel1Id);
     const apiMenu = parent?.children.find((c) => String(c.id) === id);
     if (apiMenu) {
-      setFormState({
-        upperMenu: apiMenu.parentId != null ? String(apiMenu.parentId) : "",
-        menuCode: apiMenu.menuCode,
-        menuName: apiMenu.menuName,
-        pageUrl: apiMenu.pageUrl ?? "",
-        isActive: apiMenu.isActive ? "Y" : "N",
-        showInTopNav: apiMenu.showInTopNav ? "Y" : "N",
-        showInMobile: apiMenu.showInMobile ? "Y" : "N",
-      });
+      setFormState(toFormState(apiMenu));
       setIsEditing(true);
       setEditingId(id);
     }

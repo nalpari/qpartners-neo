@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
-import type { MenuTreeItem, MenuTreeResponse } from "@/components/admin/menus/menus-types";
+import type { MenuApiItem, MenuTreeItem, MenuTreeResponse } from "@/components/admin/menus/menus-types";
 
 // 하드코딩 fallback — API 로딩 전 또는 실패 시 표시
 const FALLBACK_TABS = [
@@ -25,9 +25,9 @@ function toTabs(menuTree: MenuTreeItem[]) {
   if (!adminMenu || adminMenu.children.length === 0) return null;
 
   return adminMenu.children
-    .filter((c) => c.isActive && c.pageUrl)
+    .filter((c): c is MenuApiItem & { pageUrl: string } => c.isActive && c.pageUrl != null)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((c) => ({ label: c.menuName, href: c.pageUrl! }));
+    .map((c) => ({ label: c.menuName, href: c.pageUrl }));
 }
 
 export function AdminTab() {
