@@ -355,6 +355,7 @@ model MassMailRecipient {
   sentAt       DateTime?         @map("sent_at")
   errorMessage String?           @map("error_message") @db.VarChar(500)
   createdAt    DateTime          @default(now()) @map("created_at")
+  createdBy    String?           @map("created_by") @db.VarChar(255)
   massMail     MassMail          @relation(fields: [massMailId], references: [id], onDelete: Cascade)
 
   @@unique([massMailId, email], map: "uq_mass_mail_email")
