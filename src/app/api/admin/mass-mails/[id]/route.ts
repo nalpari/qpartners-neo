@@ -134,19 +134,20 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 소유권 검증: 작성자만 삭제 가능
+    // retry 핸들러와 동일하게 ownership → status 순서로 체크 — 타인 소유 메일의 상태 enumeration 차단
+    if (mail.userId !== user.userId) {
+      return NextResponse.json(
+        { error: "他のユーザーが作成したメールは削除できません" },
+        { status: 403 },
+      );
+    }
+
     // 발송된 메일은 삭제 불가 — 下書き(draft)만 허용
     if (mail.status !== "draft") {
       return NextResponse.json(
         { error: "下書き以外のメールは削除できません" },
         { status: 400 },
-      );
-    }
-
-    // 소유권 검증: 작성자만 삭제 가능
-    if (mail.userId !== user.userId) {
-      return NextResponse.json(
-        { error: "他のユーザーが作成したメールは削除できません" },
-        { status: 403 },
       );
     }
 

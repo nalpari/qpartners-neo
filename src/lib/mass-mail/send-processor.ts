@@ -306,7 +306,9 @@ async function collectAndQueueRecipients(
           email: r.email,
           userName: r.userName,
           authRole: r.authRole,
-          createdBy: mail.createdBy,
+          // 이전 버전에 생성돼 createdBy 가 null 인 legacy MassMail 재발송 시에도
+          // 감사 흔적을 남기기 위해 작성자 userId 로 fallback
+          createdBy: mail.createdBy ?? mail.userId,
         })),
       });
     },
