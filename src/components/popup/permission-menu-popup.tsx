@@ -32,7 +32,7 @@ export function PermissionMenuPopup() {
   const roleName = (popupData.roleName as string) ?? "";
 
   // --- API 조회 ---
-  const { data: apiData } = useQuery({
+  const { data: apiData, isLoading } = useQuery({
     queryKey: ["role-permissions", roleCode],
     queryFn: async () => {
       const res = await api.get<RolePermissionsResponse>(`/roles/${roleCode}/permissions`);
@@ -45,10 +45,18 @@ export function PermissionMenuPopup() {
   const baseRows = apiData ? flattenMenuTree(apiData.menus) : [];
   const [changes, setChanges] = useState<Record<string, Partial<MenuPermissionRow>>>({});
 
-  const displayRows = baseRows.map((row) => ({
-    ...row,
-    ...changes[row.menuCode],
-  }));
+  // changes를 baseRows에 병합 — baseRows에 존재하는 항목만 (타입 안전)
+  const displayRows: MenuPermissionRow[] = baseRows.map((row) => {
+    const change = changes[row.menuCode];
+    if (!change) return row;
+    return {
+      ...row,
+      read: change.read ?? row.read,
+      create: change.create ?? row.create,
+      update: change.update ?? row.update,
+      delete: change.delete ?? row.delete,
+    };
+  });
 
   // --- Mutation ---
   const saveMutation = useMutation({
@@ -58,7 +66,12 @@ export function PermissionMenuPopup() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["role-permissions", roleCode] });
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+      openAlert({
+        type: "alert",
+        message: "保存されました。",
+        confirmLabel: "確認",
+        onConfirm: () => closePopup(),
+      });
     },
     onError: (error: unknown) => {
       console.error("[PUT /api/roles/permissions] 권한 저장 실패:", error);
@@ -115,14 +128,14 @@ export function PermissionMenuPopup() {
   };
 
   return (
-    <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`} style={{ overflow: "hidden" }}>
+    <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}>
       <div
-        className="popup-container !w-[1200px] !max-w-[1200px]"
+        className="popup-container !w-[1200px] !max-w-[1200px] !overflow-clip"
         role="dialog"
         aria-modal="true"
         aria-label="Menu Setting"
       >
-        <div className="popup-container__inner !gap-[18px]">
+        <div className="popup-container__inner !gap-[18px] !overflow-y-hidden !max-h-none">
           {/* 타이틀 */}
           <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
             <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
@@ -167,6 +180,16 @@ export function PermissionMenuPopup() {
 
             {/* 바디 */}
             <div className="flex flex-col max-h-[400px] overflow-y-auto">
+              {isLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">読み込み中...</span>
+                </div>
+              )}
+              {!isLoading && displayRows.length === 0 && (
+                <div className="flex items-center justify-center py-8">
+                  <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">データがありません</span>
+                </div>
+              )}
               {displayRows.map((row, i) => (
                 <div
                   key={row.menuCode}
