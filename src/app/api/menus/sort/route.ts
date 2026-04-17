@@ -32,14 +32,14 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // ID 존재 여부 사전 검증
+    // ID 존재 여부 + parentId/sortOrder 사전 조회 (그룹 재번호에 사용)
     const ids = result.data.items.map((item) => item.id);
     const existing = await prisma.menu.findMany({
       where: { id: { in: ids } },
-      select: { id: true },
+      select: { id: true, parentId: true, sortOrder: true },
     });
-    const existingSet = new Set(existing.map((m) => m.id));
-    const missingIds = ids.filter((id) => !existingSet.has(id));
+    const existingMap = new Map(existing.map((m) => [m.id, m]));
+    const missingIds = ids.filter((id) => !existingMap.has(id));
 
     if (missingIds.length > 0) {
       return NextResponse.json(
@@ -48,17 +48,64 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 트랜잭션으로 일괄 업데이트
-    await prisma.$transaction(
-      result.data.items.map((item) =>
-        prisma.menu.update({
-          where: { id: item.id },
-          data: { sortOrder: item.sortOrder },
-        }),
-      ),
-    );
+    // 삽입 정렬 방식 재번호:
+    // 1) 같은 parentId 그룹으로 분리 (요청 items 범위 내 — 화면에 보이는 그룹만 재번호)
+    // 2) 그룹별로 newSort asc 정렬, 동일값이면 이동 방향(위→앞 / 아래→뒤) + 요청 배열 순서(stable) 유지
+    // 3) 1..N 으로 재번호하여 저장
+    type Entry = {
+      id: number;
+      newSort: number;
+      oldSort: number;
+      seq: number; // 요청 배열 내 등장 순서 (stable sort 보조)
+    };
 
-    return NextResponse.json({ data: { updated: result.data.items.length } });
+    const groups = new Map<number | null, Entry[]>();
+    result.data.items.forEach((item, index) => {
+      const prev = existingMap.get(item.id)!;
+      const entry: Entry = {
+        id: item.id,
+        newSort: item.sortOrder,
+        oldSort: prev.sortOrder,
+        seq: index,
+      };
+      const arr = groups.get(prev.parentId) ?? [];
+      arr.push(entry);
+      groups.set(prev.parentId, arr);
+    });
+
+    // 위로 이동(newSort < oldSort) 0, 유지 1, 아래로 이동 2
+    const directionRank = (e: Entry) =>
+      e.newSort < e.oldSort ? 0 : e.newSort > e.oldSort ? 2 : 1;
+
+    const updates: Array<{ id: number; sortOrder: number }> = [];
+    for (const arr of groups.values()) {
+      arr.sort(
+        (a, b) =>
+          a.newSort - b.newSort ||
+          directionRank(a) - directionRank(b) ||
+          a.seq - b.seq,
+      );
+      arr.forEach((e, idx) => {
+        const nextOrder = idx + 1;
+        if (nextOrder !== e.oldSort) {
+          updates.push({ id: e.id, sortOrder: nextOrder });
+        }
+      });
+    }
+
+    // 변경이 필요한 항목만 트랜잭션 업데이트
+    if (updates.length > 0) {
+      await prisma.$transaction(
+        updates.map((u) =>
+          prisma.menu.update({
+            where: { id: u.id },
+            data: { sortOrder: u.sortOrder },
+          }),
+        ),
+      );
+    }
+
+    return NextResponse.json({ data: { updated: updates.length } });
   } catch (error) {
     if (
       error instanceof PrismaClientKnownRequestError &&

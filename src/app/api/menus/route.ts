@@ -86,7 +86,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const menu = await prisma.menu.create({ data: result.data });
+    // sortOrder 미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여
+    let sortOrder = result.data.sortOrder;
+    if (sortOrder === undefined) {
+      const agg = await prisma.menu.aggregate({
+        where: { parentId: result.data.parentId },
+        _max: { sortOrder: true },
+      });
+      sortOrder = (agg._max.sortOrder ?? 0) + 1;
+    }
+
+    const menu = await prisma.menu.create({
+      data: { ...result.data, sortOrder },
+    });
     return NextResponse.json({ data: menu }, { status: 201 });
   } catch (error) {
     if (

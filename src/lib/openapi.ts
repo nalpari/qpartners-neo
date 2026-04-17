@@ -701,7 +701,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Menu"],
         summary: "메뉴 등록",
-        description: "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가.",
+        description:
+          "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가. sortOrder 미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여됩니다.",
         requestBody: {
           required: true,
           content: {
@@ -777,7 +778,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Menu"],
         summary: "정렬순서 일괄 저장",
-        description: "트랜잭션으로 여러 메뉴의 sortOrder를 일괄 업데이트.",
+        description:
+          "items를 같은 parentId 그룹 단위로 sortOrder 오름차순 정렬 후 1..N 으로 재번호하여 저장합니다. 동일 sortOrder 충돌 시 이동 방향(위로 이동 앞, 아래로 이동 뒤) + 요청 배열 순서로 결정합니다. 요청 items 범위 밖(다른 parentId 그룹)은 건드리지 않습니다.",
         requestBody: {
           required: true,
           content: {
@@ -3192,7 +3194,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           isActive: { type: "boolean", default: true },
           showInTopNav: { type: "boolean", default: true },
           showInMobile: { type: "boolean", default: true },
-          sortOrder: { type: "integer", default: 1 },
+          sortOrder: {
+            type: "integer",
+            minimum: 1,
+            description: "미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여",
+          },
         },
       },
       UpdateMenu: {
