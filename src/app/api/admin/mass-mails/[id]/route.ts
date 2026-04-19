@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 3. 조회 (첨부파일 + 실패 수신자 명단 포함 — 失敗確認 모달용, Plan v0.4 §7.4)
+    // 3. 조회 — 첨부파일 + 失敗確認 모달용 failed recipients 포함
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
       include: {

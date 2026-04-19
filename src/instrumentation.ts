@@ -15,6 +15,13 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
-  startAutoRetryBatch();
+  try {
+    const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
+    startAutoRetryBatch();
+  } catch (error: unknown) {
+    console.error(
+      "[instrumentation] CRITICAL — auto-retry-batch 등록 실패. 대량메일 자동 재시도 미가동 (pending 메일이 발송되지 않음).",
+      error,
+    );
+  }
 }

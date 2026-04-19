@@ -3524,11 +3524,29 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       MassMailDetail: {
         type: "object",
+        required: [
+          "id",
+          "senderName",
+          "targets",
+          "targetsLabel",
+          "optOut",
+          "subject",
+          "body",
+          "status",
+          "sentTotal",
+          "sentSuccess",
+          "sentFailed",
+          "attachments",
+          "failedRecipients",
+          "createdBy",
+          "createdAt",
+        ],
         properties: {
           id: { type: "integer" },
           senderName: { type: "string" },
           targets: {
             type: "object",
+            required: ["super_admin", "admin", "first_store", "second_store", "seko", "general"],
             properties: {
               super_admin: { type: "boolean" },
               admin: { type: "boolean" },
@@ -3551,6 +3569,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "array",
             items: {
               type: "object",
+              required: ["id", "fileName"],
               properties: {
                 id: { type: "integer" },
                 fileName: { type: "string" },
@@ -3563,6 +3582,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. sent_failed=0 이면 빈 배열.",
             items: {
               type: "object",
+              required: ["email", "authRole"],
               properties: {
                 email: { type: "string", format: "email" },
                 userName: { type: "string", nullable: true },
