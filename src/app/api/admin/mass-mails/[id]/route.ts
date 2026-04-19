@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 3. 조회 (첨부파일 포함)
+    // 3. 조회 (첨부파일 + 실패 수신자 명단 포함 — 失敗確認 모달용, Plan v0.4 §7.4)
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
       include: {
@@ -49,6 +49,17 @@ export async function GET(request: NextRequest, { params }: Params) {
             id: true,
             fileName: true,
             fileSize: true,
+          },
+          orderBy: { id: "asc" },
+        },
+        recipients: {
+          where: { status: "failed" },
+          select: {
+            email: true,
+            userName: true,
+            authRole: true,
+            errorMessage: true,
+            sentAt: true,
           },
           orderBy: { id: "asc" },
         },
@@ -81,6 +92,14 @@ export async function GET(request: NextRequest, { params }: Params) {
         id: a.id,
         fileName: a.fileName,
         fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
+      })),
+      // 失敗확인 모달용 — sent_failed=0 이면 빈 배열
+      failedRecipients: mail.recipients.map((r) => ({
+        email: r.email,
+        userName: r.userName,
+        authRole: r.authRole,
+        errorMessage: r.errorMessage,
+        lastAttemptAt: r.sentAt?.toISOString() ?? null,
       })),
       createdBy: mail.createdBy ?? "",
       createdAt: mail.createdAt.toISOString(),

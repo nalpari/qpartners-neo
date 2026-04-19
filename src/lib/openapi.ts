@@ -3558,6 +3558,20 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          failedRecipients: {
+            type: "array",
+            description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. sent_failed=0 이면 빈 배열.",
+            items: {
+              type: "object",
+              properties: {
+                email: { type: "string", format: "email" },
+                userName: { type: "string", nullable: true },
+                authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "FIRST_STORE", "SECOND_STORE", "SEKO", "GENERAL"] },
+                errorMessage: { type: "string", nullable: true, description: "마지막 SMTP 실패 사유 (최대 500자)" },
+                lastAttemptAt: { type: "string", format: "date-time", nullable: true, description: "마지막 시도 시각" },
+              },
+            },
+          },
           createdBy: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
         },
