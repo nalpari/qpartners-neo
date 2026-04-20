@@ -47,7 +47,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // 게시대상/기간 접근제어
     if (!canAccessContent(user, existing.targets)) {
-      return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
+      return NextResponse.json({ error: "アクセス権限がありません" }, { status: 403 });
     }
 
     // viewCount 증가: published 상태이고 사내 사용자가 아닌 경우만 (봇/프리패치 방어)
@@ -71,11 +71,20 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const now = Date.now();
 
-    // 프론트 수정/삭제 버튼 노출 판단용 — ADMIN 사용자가 SUPER_ADMIN 작성글을 구분할 수 있도록 제공
-    const authorIsSuperAdmin = await isAuthorSuperAdmin({
-      userType: content.userType,
-      userId: content.userId,
-    });
+    // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (일반 사용자에게 admin 메타데이터 노출 방지)
+    // 조회 실패 시 true 로 fail-closed → ADMIN 이 타인 글을 함부로 수정 못 하게 하는 쪽으로 판정
+    let authorIsSuperAdmin: boolean | undefined;
+    if (internal) {
+      try {
+        authorIsSuperAdmin = await isAuthorSuperAdmin({
+          userType: content.userType,
+          userId: content.userId,
+        });
+      } catch (err) {
+        console.error("[GET /api/contents/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
+        authorIsSuperAdmin = true;
+      }
+    }
 
     return NextResponse.json({
       data: {
@@ -130,7 +139,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "수정 권한이 없습니다" },
+        { error: "修正する権限がありません" },
         { status: 403 },
       );
     }
@@ -239,7 +248,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "삭제 권한이 없습니다" },
+        { error: "削除する権限がありません" },
         { status: 403 },
       );
     }

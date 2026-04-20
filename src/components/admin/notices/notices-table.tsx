@@ -7,6 +7,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, Button, Spinner } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
+import { canModifyClient } from "@/lib/auth-client";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
@@ -58,13 +59,7 @@ function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
 
       // 권한 체크: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
       const user = useAuthStore.getState().user;
-      const role = user?.authRole ?? "ADMIN";
-      const canModify = role === "SUPER_ADMIN"
-        ? true
-        : role === "ADMIN"
-          ? !d.authorIsSuperAdmin
-          : user?.userId === d.userId;
-      if (!canModify) {
+      if (!canModifyClient(user, d)) {
         useAlertStore.getState().openAlert({
           type: "alert",
           message: "このお知らせを編集する権限がありません。",

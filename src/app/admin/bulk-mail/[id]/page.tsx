@@ -10,6 +10,7 @@ import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { MassMailDetailResponse } from "@/components/admin/bulk-mail/bulk-mail-types";
 import { toFormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
 import { useAuthStore } from "@/lib/auth-store";
+import { canModifyClient } from "@/lib/auth-client";
 
 export default function AdminBulkMailDetailPage({
   params,
@@ -48,12 +49,7 @@ export default function AdminBulkMailDetailPage({
   const detail = data.data;
 
   // 수정/삭제 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
-  const role = user?.authRole ?? "ADMIN";
-  const canModify = role === "SUPER_ADMIN"
-    ? true
-    : role === "ADMIN"
-      ? !detail.authorIsSuperAdmin
-      : user?.userId === detail.userId;
+  const canModify = canModifyClient(user, detail);
 
   // Design Ref: §4.3 — draft → edit, sent/pending → detail
   // 권한 없으면 draft라도 detail 모드로 강등 (편집/삭제 UI 차단)

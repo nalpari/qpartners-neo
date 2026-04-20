@@ -40,10 +40,17 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    const authorIsSuperAdmin = await isAuthorSuperAdmin({
-      userType: notice.userType,
-      userId: notice.userId,
-    });
+    // 조회 실패해도 단건 조회 자체는 성공해야 함 — fail-closed(true) 로 처리해 ADMIN 수정 버튼 숨김
+    let authorIsSuperAdmin: boolean;
+    try {
+      authorIsSuperAdmin = await isAuthorSuperAdmin({
+        userType: notice.userType,
+        userId: notice.userId,
+      });
+    } catch (err) {
+      console.error("[GET /api/home-notices/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
+      authorIsSuperAdmin = true;
+    }
 
     const data = {
       id: notice.id,

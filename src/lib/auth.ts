@@ -134,20 +134,41 @@ export function canAccessContent(
 /**
  * 작성자가 슈퍼관리자인지 판별 — userType이 ADMIN이고 ADMIN_ROLE 공통코드에 등록된 사용자
  * canModifyResource 내부 + GET 응답의 authorIsSuperAdmin 노출에서 사용.
+ *
+ * Fail-closed 설계:
+ * - ADMIN_ROLE 공통코드 헤더 자체가 없거나 비활성화된 경우 true 반환 (→ ADMIN의 수정 차단)
+ * - DB 조회 실패 시에도 true 반환 (상위 canModifyResource에서 권한 거부 쪽으로 판정)
+ * - 정상 조회에서 code 미등록만 false (실제로 슈퍼관리자가 아닌 케이스)
  */
 export async function isAuthorSuperAdmin(
   resource: { userType: string; userId: string },
 ): Promise<boolean> {
   if (resource.userType !== "ADMIN") return false;
-  const entry = await prisma.codeDetail.findFirst({
-    where: {
-      header: { headerCode: "ADMIN_ROLE", isActive: true },
-      code: resource.userId,
-      isActive: true,
-    },
-    select: { id: true },
-  });
-  return entry !== null;
+  try {
+    // 1단계: ADMIN_ROLE 헤더 존재 확인 — 누락 시 권한체계 붕괴 방지용 fail-closed
+    const header = await prisma.codeHeader.findFirst({
+      where: { headerCode: "ADMIN_ROLE", isActive: true },
+      select: { id: true },
+    });
+    if (!header) {
+      console.error(
+        "[isAuthorSuperAdmin] ADMIN_ROLE 공통코드 헤더 누락 — fail-closed(true) 처리. seed 확인 필요",
+      );
+      return true;
+    }
+    // 2단계: 해당 userId가 SUPER_ADMIN으로 등록됐는지 확인
+    const entry = await prisma.codeDetail.findFirst({
+      where: { headerId: header.id, code: resource.userId, isActive: true },
+      select: { id: true },
+    });
+    return entry !== null;
+  } catch (error) {
+    console.error(
+      "[isAuthorSuperAdmin] ADMIN_ROLE 조회 실패 — fail-closed(true) 처리:",
+      error,
+    );
+    return true;
+  }
 }
 
 /**

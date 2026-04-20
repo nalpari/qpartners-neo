@@ -1082,7 +1082,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { $ref: "#/components/schemas/HomeNoticeListItem" },
+                    data: { $ref: "#/components/schemas/HomeNoticeDetail" },
                   },
                 },
               },
@@ -3090,7 +3090,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "authorIsSuperAdmin", "categories", "targets", "attachments",
+          "isNew", "isUpdated", "categories", "targets", "attachments",
         ],
         properties: {
           id: { type: "integer" },
@@ -3098,7 +3098,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           body: { type: "string", nullable: true },
           status: { type: "string", enum: ["draft", "published", "deleted"] },
           authorDepartment: { type: "string", nullable: true },
-          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (ADMIN 사용자 버튼 노출 판단용)" },
+          authorIsSuperAdmin: {
+            type: "boolean",
+            description: "작성자가 SUPER_ADMIN 여부 — 사내 사용자(ADMIN)에게만 노출, 일반 사용자는 필드 자체 누락",
+          },
           userType: { type: "string", nullable: true },
           userId: { type: "string", nullable: true },
           viewCount: { type: "integer" },
@@ -3311,12 +3314,26 @@ export const openApiSpec: OpenAPIV3.Document = {
           status: { type: "string", enum: ["scheduled", "active", "ended"] },
           userType: { type: "string" },
           userId: { type: "string" },
-          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (GET 단건 응답 전용, 목록 응답에는 없음)" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
           updatedBy: { type: "string", nullable: true },
         },
+      },
+      HomeNoticeDetail: {
+        description: "GET /home-notices/{id} 전용 — 목록 항목 + 작성자 권한 플래그",
+        allOf: [
+          { $ref: "#/components/schemas/HomeNoticeListItem" },
+          {
+            type: "object",
+            properties: {
+              authorIsSuperAdmin: {
+                type: "boolean",
+                description: "작성자가 SUPER_ADMIN 여부 (프론트 수정/삭제 버튼 노출 판단용)",
+              },
+            },
+          },
+        ],
       },
       ActiveHomeNotice: {
         type: "object",

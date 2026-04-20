@@ -87,10 +87,17 @@ export async function GET(request: NextRequest, { params }: Params) {
     const failedTruncated = failedTotal > mail.recipients.length;
 
     // 작성자가 SUPER_ADMIN 인지 — 프론트 수정/삭제 버튼 노출 판단용
-    const authorIsSuperAdmin = await isAuthorSuperAdmin({
-      userType: mail.userType,
-      userId: mail.userId,
-    });
+    // 조회 실패 시 fail-closed(true) — ADMIN 수정/삭제 버튼 숨김 쪽으로 동작
+    let authorIsSuperAdmin: boolean;
+    try {
+      authorIsSuperAdmin = await isAuthorSuperAdmin({
+        userType: mail.userType,
+        userId: mail.userId,
+      });
+    } catch (err) {
+      console.error("[GET /api/admin/mass-mails/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
+      authorIsSuperAdmin = true;
+    }
 
     // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑
