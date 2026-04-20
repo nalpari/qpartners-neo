@@ -3538,6 +3538,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           "sentFailed",
           "attachments",
           "failedRecipients",
+          "failedRecipientsTotal",
+          "failedRecipientsTruncated",
           "createdBy",
           "createdAt",
         ],
@@ -3579,18 +3581,30 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           failedRecipients: {
             type: "array",
-            description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. sent_failed=0 이면 빈 배열.",
+            description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. PII 보호를 위해 email 마스킹 + errorMessage 는 카테고리 코드로 치환. sent_failed=0 이면 빈 배열, 상한(500건) 초과 시 truncated=true.",
             items: {
               type: "object",
-              required: ["email", "authRole"],
+              required: ["email", "userName", "authRole", "errorCategory", "lastAttemptAt"],
               properties: {
-                email: { type: "string", format: "email" },
+                email: { type: "string", description: "마스킹된 이메일 (local-part 첫 1자만 노출)" },
                 userName: { type: "string", nullable: true },
                 authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "FIRST_STORE", "SECOND_STORE", "SEKO", "GENERAL"] },
-                errorMessage: { type: "string", nullable: true, description: "마지막 SMTP 실패 사유 (최대 500자)" },
+                errorCategory: {
+                  type: "string",
+                  enum: ["ORPHAN_SEND", "SMTP_TIMEOUT", "SMTP_REJECT", "UNKNOWN"],
+                  description: "분류된 실패 사유 — SMTP 원문 노출 금지 (인프라 지문/사용자 enumeration 방어)",
+                },
                 lastAttemptAt: { type: "string", format: "date-time", nullable: true, description: "마지막 시도 시각" },
               },
             },
+          },
+          failedRecipientsTotal: {
+            type: "integer",
+            description: "전체 영구 실패 건수 (응답 배열은 상한이 있으므로 별도 노출).",
+          },
+          failedRecipientsTruncated: {
+            type: "boolean",
+            description: "true 면 실패 명단이 상한(500건) 초과로 잘림.",
           },
           createdBy: { type: "string" },
           createdAt: { type: "string", format: "date-time" },

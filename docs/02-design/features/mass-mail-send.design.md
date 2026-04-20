@@ -453,59 +453,67 @@ export async function POST(request: NextRequest, { params }: Params) {
 }
 ```
 
-### 4.4 GET /api/admin/mass-mails/:id (상세 응답 확장 — v0.3 갱신)
+### 4.4 GET /api/admin/mass-mails/:id (상세 응답 확장 — v0.4 갱신)
+
+**v0.4 변경 (Chicago Code Review 대응)**
+- `take: FAILED_RECIPIENTS_RESPONSE_LIMIT` (500) — 무제한 배열 → 5000건 상한에서 응답 폭주 방지
+- `email` → `maskEmail()` 마스킹 — 세션 탈취 시 단일 GET 으로 주소록 덤프 risk 차단
+- `errorMessage` → `errorCategory` (4종 enum) — SMTP 원문(인프라 지문) 노출 금지, classifyFailure() 분류
+- `failedRecipientsTotal` / `failedRecipientsTruncated` 메타 추가 — 상한 초과 시 UI 안내
+- `Cache-Control: no-store` — 중간 캐시에 PII 적재 금지
 
 ```typescript
-// Prisma include 에 recipients (failed 만) 추가
+import { maskEmail } from "@/lib/interface-logger";
+import { classifyFailure, FAILED_RECIPIENTS_RESPONSE_LIMIT } from "@/lib/mass-mail/constants";
+
 const mail = await prisma.massMail.findUnique({
   where: { id: idResult.data },
   include: {
     attachments: { ... },
-    recipients: {                                   // (v0.3 신규)
+    recipients: {
       where: { status: "failed" },
-      select: {
-        email: true,
-        userName: true,
-        authRole: true,
-        errorMessage: true,
-        sentAt: true,
-      },
+      select: { email: true, userName: true, authRole: true, errorMessage: true, sentAt: true },
       orderBy: { id: "asc" },
+      take: FAILED_RECIPIENTS_RESPONSE_LIMIT,         // (v0.4) 응답 상한
     },
   },
 });
 
+const failedTotal = mail.sentFailed;
+const failedTruncated = failedTotal > mail.recipients.length;
+
 const mapped = {
   id: mail.id,
-  senderName: mail.senderName,
-  targets: buildTargetsObject(mail),
-  targetsLabel: buildTargetLabel(mail),
-  optOut: mail.optOut,
-  subject: mail.subject,
-  body: mail.body,
-  status: mail.status,
-  sentAt: mail.sentAt?.toISOString() ?? null,
-  sentTotal: mail.sentTotal,                        // 신규 (v0.2)
-  sentSuccess: mail.sentSuccess,                    // 신규 (v0.2)
-  sentFailed: mail.sentFailed,                      // 신규 (v0.2)
+  // ... 기존 필드
+  sentTotal: mail.sentTotal,
+  sentSuccess: mail.sentSuccess,
+  sentFailed: mail.sentFailed,
   attachments: mail.attachments.map(...),
-  createdBy: mail.createdBy ?? "",
-  createdAt: mail.createdAt.toISOString(),
-  failedRecipients: mail.recipients.map((r) => ({   // (v0.3 신규)
-    email: r.email,
+  failedRecipients: mail.recipients.map((r) => ({
+    email: maskEmail(r.email),                        // (v0.4) PII 마스킹
     userName: r.userName,
     authRole: r.authRole,
-    errorMessage: r.errorMessage,
+    errorCategory: classifyFailure(r.errorMessage),   // (v0.4) 카테고리 치환 — 원문 노출 금지
     lastAttemptAt: r.sentAt?.toISOString() ?? null,
   })),
+  failedRecipientsTotal: failedTotal,                 // (v0.4 신규)
+  failedRecipientsTruncated: failedTruncated,         // (v0.4 신규)
+  createdBy: mail.createdBy ?? "",
+  createdAt: mail.createdAt.toISOString(),
 };
+
+return NextResponse.json(
+  { data: mapped },
+  { headers: { "Cache-Control": "no-store" } },       // (v0.4) PII 캐시 금지
+);
 ```
 
 **프론트 사용 흐름**
 - 목록 화면에서 `sent_failed > 0` 인 row 에 [失敗確認] 버튼 노출
 - 클릭 시 GET `/api/admin/mass-mails/:id` 호출 → 응답에서 `failedRecipients` 배열 추출
-- 모달 팝업에 명단 표시 (이메일/이름/role/실패사유/마지막시도시각)
-- 신규 API 라우트 추가 없음 — 기존 GET 응답 확장만
+- 모달 팝업에 명단 표시 (마스킹 이메일/이름/role/카테고리/마지막시도시각)
+- `failedRecipientsTruncated=true` 인 경우 "전체 ${failedRecipientsTotal}건 중 ${배열크기}건 표시" 안내 문구 노출
+- 전수 export 가 필요해지면 감사로그 기반 별도 엔드포인트로 분리 (TODO)
 
 ### 4.5 DELETE /api/admin/mass-mails/:id (상태 체크 추가)
 
@@ -522,23 +530,31 @@ if (mail.status !== "draft") {
 
 ## 4.6 자동 배치 모듈 (v0.3 신규)
 
-### 4.6.1 `src/instrumentation.ts` (Next.js 기동 훅)
+### 4.6.1 `src/instrumentation.ts` (Next.js 기동 훅) — v0.4 갱신 (fail-closed)
 
-Next.js 15+ 의 `instrumentation.ts` 컨벤션을 활용하여 서버 기동 시 1회만 실행되는 setInterval 등록.
+Next.js 16 의 `instrumentation.ts` 컨벤션을 활용하여 서버 기동 시 1회만 실행되는 setInterval 등록.
+v0.4 부터 register catch 가 throw 하여 fail-closed (배치 미가동 상태로 서버가 기동되지 않음).
+이중 안전망으로 `/api/health` readiness probe 가 `__massMailBatchTimer` 존재를 검사하여 503 노출.
 
 ```typescript
 // src/instrumentation.ts
-export async function register() {
-  // Edge runtime 에서는 setInterval 동작 안 함 — Node.js runtime 만 가능
+export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  // 동적 import 로 cold-start 영향 최소화
-  const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
-  startAutoRetryBatch();
+  try {
+    const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
+    startAutoRetryBatch();
+  } catch (error: unknown) {
+    console.error(
+      "[instrumentation] CRITICAL — auto-retry-batch 등록 실패. 대량메일 자동 재시도 미가동.",
+      error,
+    );
+    throw error;  // (v0.4) fail-closed
+  }
 }
 ```
 
-`next.config.ts` 에 `experimental.instrumentationHook = true` 가 필요할 수 있음 (Next.js 버전 확인).
+Next.js 16 에서는 `instrumentation.ts` 가 stable 이라 `next.config.ts` 의 `experimental.instrumentationHook` 플래그가 불필요.
 
 ### 4.6.2 `src/lib/mass-mail/auto-retry-batch.ts`
 

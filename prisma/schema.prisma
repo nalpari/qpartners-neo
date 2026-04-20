@@ -323,6 +323,9 @@ model MassMail {
   @@index([status], map: "idx_status")
   @@index([sentAt], map: "idx_sent_at")
   @@index([status, createdAt(sort: Desc)], map: "idx_status_created_at")
+  /// 좀비 감지 핫 패스 — auto-retry-batch 가 3분마다 sending+updatedAt<cutoff 스캔.
+  /// 단일 status 인덱스만으론 sending 전체 read 후 메모리 필터 → 적체 시 비용 폭주.
+  @@index([status, updatedAt], map: "idx_status_updated_at")
   @@map("qp_mass_mails")
 }
 
@@ -362,6 +365,8 @@ model MassMailRecipient {
 
   @@unique([massMailId, email], map: "uq_mass_mail_email")
   @@index([massMailId, status], map: "idx_mass_mail_status")
+  /// sendLoop / batch cycle 의 pending+retryCount<max 핫 쿼리용 — retryCount 까지 인덱스화.
+  @@index([massMailId, status, retryCount], map: "idx_mm_status_retry")
   @@map("qp_mass_mail_recipients")
 }
 

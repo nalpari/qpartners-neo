@@ -1,7 +1,7 @@
 /**
  * 대량메일 자동 재시도 배치 (3분 cron)
  *
- * Plan v0.4 / Design v0.3 §4.6 — 3분 cron 자동 복구.
+ * Plan §4.6 / Design §4.6 (mass-mail-send) — 3분 cron 자동 복구.
  *
  * **목적**
  *   - 좀비 감지: status='sending' 인 채로 zombieThresholdMs 경과한 mass_mail → send_failed 자동 승격
@@ -12,7 +12,7 @@
  * **동작 모델**
  *   - Next.js 기동 시 `instrumentation.ts:register()` 가 startAutoRetryBatch() 호출
  *   - setInterval 로 BATCH_INTERVAL_MS (기본 3분) 마다 runBatchOnce() 실행
- *   - PM2 single instance 가정 — 인스턴스 다중화 시 분산 락 필요 (Design §4.6.5)
+ *   - PM2 single instance 가정 — 인스턴스 다중화 시 분산 락 필요 (Design §4.6 후속)
  *
  * **안전장치**
  *   - isRunning 플래그로 cycle 중첩 방지 (직전 cycle 가 아직 실행 중이면 skip)
@@ -36,10 +36,18 @@ const LOG_TAG = "[mass-mail/auto-retry-batch]";
 /** 한 cycle 에서 처리할 최대 mass_mail 건수 — 백로그가 커도 cycle 시간이 폭주하지 않도록 */
 const CYCLE_MAX_TARGETS = 200;
 
+/**
+ * cycle 전체가 throw 한 횟수가 이 값에 연속 도달하면 setInterval 타이머를 해제한다.
+ * 같은 원인이 무한 반복되는 사일런트 루프를 차단하고 /api/health 가 503 으로 노출되도록 fail-closed.
+ * 임계 도달 후 자동 복구는 process 재기동 (= instrumentation 재실행) 으로만 가능 — 운영자가 즉시 인지.
+ */
+const CYCLE_FAILURE_THRESHOLD = 5;
+
 // HMR dev 환경에서 모듈 재-import 시에도 단일 타이머 유지.
 type BatchGlobals = {
   __massMailBatchTimer?: NodeJS.Timeout | null;
   __massMailBatchRunning?: boolean;
+  __massMailBatchConsecutiveFailures?: number;
 };
 const g = globalThis as unknown as BatchGlobals;
 
@@ -179,8 +187,24 @@ export async function runBatchOnce(): Promise<void> {
 
     const elapsed = Date.now() - startedAt;
     console.log(`${LOG_TAG} cycle 완료 — 처리: ${processedCount}/${targets.length}건, 소요: ${elapsed}ms`);
+    // 정상 cycle 1회로 연속 실패 카운터 리셋 — 일시 장애 후 자가복구 정상 인정.
+    g.__massMailBatchConsecutiveFailures = 0;
   } catch (error: unknown) {
-    console.error(`${LOG_TAG} cycle 전체 실패:`, error);
+    const failures = (g.__massMailBatchConsecutiveFailures ?? 0) + 1;
+    g.__massMailBatchConsecutiveFailures = failures;
+    console.error(
+      `${LOG_TAG} cycle 전체 실패 (${failures}/${CYCLE_FAILURE_THRESHOLD}):`,
+      error,
+    );
+    if (failures >= CYCLE_FAILURE_THRESHOLD && g.__massMailBatchTimer) {
+      // 같은 원인이 반복 중이라고 판단 — 타이머 해제 + health probe 503 노출.
+      // 운영자 인지 후 process 재기동 (instrumentation 재실행) 으로만 복구.
+      clearInterval(g.__massMailBatchTimer);
+      g.__massMailBatchTimer = null;
+      console.error(
+        `${LOG_TAG} CRITICAL — cycle 연속 실패 ${failures}회 도달, 배치 타이머 해제. /api/health 503 으로 노출. 운영자 수동 개입 후 process 재기동 필요.`,
+      );
+    }
   } finally {
     g.__massMailBatchRunning = false;
   }
