@@ -15,6 +15,7 @@ import {
   ROLE_LABEL_MAP,
   API_TO_STATUS,
   formatDateTime,
+  formatDate,
 } from "@/components/admin/members/members-types";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -316,7 +317,7 @@ function MemberEditForm({
                     登録日
                   </span>
                   <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
-                    {member.createdAt ? formatDateTime(member.createdAt) : "-"}
+                    {member.createdAt ? formatDate(member.createdAt) : "-"}
                   </span>
                 </div>
                 <span className="text-[#ccc]">|</span>

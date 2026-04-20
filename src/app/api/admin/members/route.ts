@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { parseQspDate } from "@/lib/qsp-member";
 import {
   memberListQuerySchema,
   qspMemberListResponseSchema,
@@ -138,8 +139,10 @@ export async function GET(request: NextRequest) {
       userType: lookupUserTypeLabel(item.userTp) ?? "unknown",
       companyName: item.compNm ?? "",
       status: lookupStatCd(item.statCd) ?? "unknown",
-      lastLoginAt: item.loginDt ?? null,
-      createdAt: item.regDt ?? null,
+      // QSP loginDt(YYYY.MM.DD HH:mm:ss) / regDt(YYYY.MM.DD) 모두 ISO 8601 (+09:00) 로 정규화 —
+      // 상세조회 + 백엔드 공통 timestamp 컨벤션(ISO 8601 +09:00) 과 통일.
+      lastLoginAt: parseQspDate(item.loginDt),
+      createdAt: parseQspDate(item.regDt),
     }));
 
     console.log(`[GET /api/admin/members] 회원 목록 조회 완료 — ${totCnt}건 중 ${mappedList.length}건 반환`);
