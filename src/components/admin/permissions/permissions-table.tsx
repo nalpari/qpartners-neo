@@ -246,8 +246,11 @@ export function PermissionsTable() {
     staleTime: 60_000,
   });
 
-  // 변환 + editingField 주입
-  const items: PermissionItem[] = roles.map(toPermissionItem);
+  // 변환 + editingField 주입 — items 를 useMemo 로 안정화하여 rowData 캐싱 무효화 방지
+  const items: PermissionItem[] = useMemo(
+    () => roles.map(toPermissionItem),
+    [roles],
+  );
   const rowData: PermissionItem[] = useMemo(() => {
     const mapped = items.map((item) => {
       if (editingCell && item.id === editingCell.rowId) {
@@ -343,7 +346,9 @@ export function PermissionsTable() {
         body: toUpdateRoleBody(merged),
       });
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch {
+    } catch (error: unknown) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`[PermissionsTable] 활성 토글 실패: status=${status ?? "unknown"}`);
       openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     }
   }, [updateMutation, openAlert]);
@@ -354,7 +359,8 @@ export function PermissionsTable() {
   }, []);
 
   // 통합 저장 — 신규행 등록 OR 단일 셀 편집 commit
-  const handleSave = async () => {
+  // useCallback 으로 안정화하여 handleKeyDown deps 에 정상 포함 (stale closure 회피)
+  const handleSave = useCallback(async () => {
     // 신규행 저장
     if (newRow) {
       const fields = newRowFieldsRef.current;
@@ -398,12 +404,14 @@ export function PermissionsTable() {
       });
       handleEditCancel();
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch {
+    } catch (error: unknown) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
       openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     }
-  };
+  }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel]);
 
-  // 키보드 — Enter 저장 / Escape 취소
+  // 키보드 — Enter 저장 / Escape 취소 (handleSave useCallback 으로 stale closure 회피)
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -412,8 +420,7 @@ export function PermissionsTable() {
       e.preventDefault();
       handleEditCancel();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleEditCancel]);
+  }, [handleSave, handleEditCancel]);
 
   // --- AG Grid 이벤트 ---
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<PermissionItem>) => {
