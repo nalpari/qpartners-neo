@@ -142,11 +142,11 @@ export interface FormInitialData {
   createdBy: string;
   createdAt: string;
   /** 작성자 userType (edit/detail 권한 판별용) */
-  userType?: string;
+  userType: string;
   /** 작성자 userId (edit/detail 권한 판별용) */
-  userId?: string;
-  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 */
-  authorIsSuperAdmin?: boolean;
+  userId: string;
+  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 (MassMailDetail 에서 단일 출처로 전달) */
+  authorIsSuperAdmin: boolean;
   attachments: MassMailAttachment[];
 }
 

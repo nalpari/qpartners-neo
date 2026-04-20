@@ -11,6 +11,9 @@ import type { LoginUser } from "@/lib/schemas/auth";
  *
  * authRole 미설정 과도기 폴백: userTp="ADMIN" 이면 ADMIN 으로 간주,
  * 그 외에는 role 없음으로 처리해 본인 매칭 쪽으로 보수적 폴백 (STORE/GENERAL 잘못 ADMIN 처리 방지).
+ *
+ * authorIsSuperAdmin이 undefined 인 경우(일반 사용자 응답에서 누락)에는 boolean 명시 비교로
+ * `!undefined === true` 권한 우회를 차단 — 값이 확실히 false 로 내려왔을 때만 ADMIN 수정 허용.
  */
 export function canModifyClient(
   user: LoginUser | null | undefined,
@@ -19,7 +22,7 @@ export function canModifyClient(
   if (!user) return false;
   const role = user.authRole ?? (user.userTp === "ADMIN" ? "ADMIN" : null);
   if (role === "SUPER_ADMIN") return true;
-  if (role === "ADMIN") return !resource.authorIsSuperAdmin;
+  if (role === "ADMIN") return resource.authorIsSuperAdmin === false;
   return user.userId === resource.userId;
 }
 

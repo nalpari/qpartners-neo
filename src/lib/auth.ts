@@ -135,26 +135,32 @@ export function canAccessContent(
  * 작성자가 슈퍼관리자인지 판별 — userType이 ADMIN이고 ADMIN_ROLE 공통코드에 등록된 사용자
  * canModifyResource 내부 + GET 응답의 authorIsSuperAdmin 노출에서 사용.
  *
- * Fail-closed 설계:
- * - ADMIN_ROLE 공통코드 헤더 자체가 없거나 비활성화된 경우 true 반환 (→ ADMIN의 수정 차단)
- * - DB 조회 실패 시에도 true 반환 (상위 canModifyResource에서 권한 거부 쪽으로 판정)
+ * 분기 설계 (헤더 누락 vs 의도적 비활성화 구분):
+ * - 헤더 자체가 존재하지 않음 → seed 누락 사고로 간주, fail-closed(true) (→ ADMIN 수정 차단)
+ * - 헤더는 존재하나 `isActive=false` → 운영자의 의도적 비활성화로 간주, SUPER_ADMIN 개념 부재 처리(false)
+ *   · 의도 비활성화까지 fail-closed 하면 공통코드 플래그 한 줄로 모든 ADMIN이 수정 불가 → 내부 DoS 벡터
  * - 정상 조회에서 code 미등록만 false (실제로 슈퍼관리자가 아닌 케이스)
+ * - DB 조회 실패 시 fail-closed(true) (상위 canModifyResource 에서 권한 거부로 수렴)
  */
 export async function isAuthorSuperAdmin(
   resource: { userType: string; userId: string },
 ): Promise<boolean> {
   if (resource.userType !== "ADMIN") return false;
   try {
-    // 1단계: ADMIN_ROLE 헤더 존재 확인 — 누락 시 권한체계 붕괴 방지용 fail-closed
+    // 1단계: ADMIN_ROLE 헤더 존재 확인 — isActive 는 여기서 필터링하지 않고 분기로 처리
     const header = await prisma.codeHeader.findFirst({
-      where: { headerCode: "ADMIN_ROLE", isActive: true },
-      select: { id: true },
+      where: { headerCode: "ADMIN_ROLE" },
+      select: { id: true, isActive: true },
     });
     if (!header) {
       console.error(
         "[isAuthorSuperAdmin] ADMIN_ROLE 공통코드 헤더 누락 — fail-closed(true) 처리. seed 확인 필요",
       );
       return true;
+    }
+    if (!header.isActive) {
+      // 의도적 비활성화 — 운영자가 SUPER_ADMIN 체계를 끈 상태. 모두 일반 ADMIN 으로 취급.
+      return false;
     }
     // 2단계: 해당 userId가 SUPER_ADMIN으로 등록됐는지 확인
     const entry = await prisma.codeDetail.findFirst({

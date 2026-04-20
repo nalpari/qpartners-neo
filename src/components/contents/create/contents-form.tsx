@@ -8,8 +8,8 @@ import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useAuthStore } from "@/lib/auth-store";
 import { canModifyClient } from "@/lib/auth-client";
-import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsFormManagement } from "./contents-form-management";
 import {
@@ -97,18 +97,17 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
 
-  // 로그인 사용자 캐시 구독
-  const { data: loginUser } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
+  // 로그인 사용자 — 전역 단일 소스(useAuthStore)로 통일. useQuery 캐시 구독은 hydration 타이밍 이슈로 null 구독 가능성.
+  const loginUser = useAuthStore((s) => s.user);
 
   // edit 진입 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
   // 권한 없으면 안내 후 상세 페이지로 되돌림 (URL 직접 입력 시에도 차단)
   // useRef 가드: refetch 로 existingData 참조가 갱신돼도 alert 은 1회만 띄움
+  // contentId 가 바뀌면(SPA 전환: /contents/10/edit → /contents/11/edit) ref 를 초기화해 다음 콘텐츠에서 재평가
   const unauthorizedAlertFiredRef = useRef(false);
+  useEffect(() => {
+    unauthorizedAlertFiredRef.current = false;
+  }, [contentId]);
   useEffect(() => {
     if (mode !== "edit" || !existingData || !loginUser) return;
     if (canModifyClient(loginUser, existingData)) return;
