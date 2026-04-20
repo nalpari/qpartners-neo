@@ -22,6 +22,29 @@ const CRUD_KEYS: { key: CrudKey; label: string }[] = [
 
 const TH = "flex items-center justify-center bg-[#506273] py-3 px-3 overflow-hidden font-['Noto_Sans_JP'] font-semibold text-[14px] text-[#f5f5f5] whitespace-nowrap";
 
+/**
+ * Read↔CUD 무결성 제약 적용 (toggleCell / toggleColumn 공통)
+ *  - Read 해제 → CUD 도 OFF (최우선) — Read 없는 CUD 모순 차단
+ *  - CUD 체크 → Read 자동 ON
+ * 우선순위 주의: Read 해제 분기를 CUD→Read 자동 ON 분기보다 먼저 평가해야
+ *               "create=true 상태에서 Read 해제" 의도가 무시되지 않음.
+ */
+function applyReadCudConstraints(
+  current: MenuPermissionRow,
+  patch: Partial<MenuPermissionRow>,
+  toggledKey: CrudKey,
+  newValue: boolean,
+): Partial<MenuPermissionRow> {
+  if (toggledKey === "read" && newValue === false) {
+    return { ...patch, read: false, create: false, update: false, delete: false };
+  }
+  const merged = { ...current, ...patch };
+  if (merged.create || merged.update || merged.delete) {
+    return { ...patch, read: true };
+  }
+  return patch;
+}
+
 export function PermissionMenuPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
@@ -102,23 +125,13 @@ export function PermissionMenuPopup() {
     saveMutation.mutate(rowsToPermissions(displayRows));
   };
 
-  // Design Ref: §4.4 — CUD 체크 시 Read 자동 체크 + Read 해제 시 CUD 자동 해제 (논리 무결성)
+  // Design Ref: §4.4 — Read↔CUD 무결성은 applyReadCudConstraints 로 위임
   const toggleCell = (menuCode: string, key: CrudKey) => {
     const current = displayRows.find((r) => r.menuCode === menuCode);
     if (!current) return;
     const newValue = !current[key];
-    const patch: Partial<MenuPermissionRow> = { ...changes[menuCode], [key]: newValue };
-    const merged = { ...current, ...patch };
-    // CUD 체크 → Read 자동 ON
-    if (merged.create || merged.update || merged.delete) {
-      patch.read = true;
-    }
-    // Read 해제 → CUD 도 함께 OFF (Read 없이 CUD 가능한 모순 차단)
-    if (key === "read" && newValue === false) {
-      patch.create = false;
-      patch.update = false;
-      patch.delete = false;
-    }
+    const basePatch: Partial<MenuPermissionRow> = { ...changes[menuCode], [key]: newValue };
+    const patch = applyReadCudConstraints(current, basePatch, key, newValue);
     setChanges((prev) => ({ ...prev, [menuCode]: patch }));
   };
 
@@ -134,18 +147,8 @@ export function PermissionMenuPopup() {
     const newValue = state !== "all";
     const newChanges = { ...changes };
     for (const row of displayRows) {
-      const patch: Partial<MenuPermissionRow> = { ...newChanges[row.menuCode], [key]: newValue };
-      const merged = { ...row, ...patch };
-      if (merged.create || merged.update || merged.delete) {
-        patch.read = true;
-      }
-      // Read 컬럼 일괄 해제 → CUD 도 모두 OFF (단건과 동일 정책)
-      if (key === "read" && newValue === false) {
-        patch.create = false;
-        patch.update = false;
-        patch.delete = false;
-      }
-      newChanges[row.menuCode] = patch;
+      const basePatch: Partial<MenuPermissionRow> = { ...newChanges[row.menuCode], [key]: newValue };
+      newChanges[row.menuCode] = applyReadCudConstraints(row, basePatch, key, newValue);
     }
     setChanges(newChanges);
   };

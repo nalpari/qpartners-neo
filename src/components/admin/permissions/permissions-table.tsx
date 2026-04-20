@@ -2,7 +2,8 @@
 
 // Design Ref: §4, §5 — codes-header-table 인라인 편집 패턴 참조
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { flushSync } from "react-dom";
 import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -225,7 +226,9 @@ const columnDefs: ColDef<PermissionItem>[] = [
   },
   {
     headerName: "Available Menu Setting",
+    // field: "roleCode" 와 colId 충돌 회피 — 別 컬럼이 같은 field 를 사용하므로 colId 명시
     field: "roleCode",
+    colId: "menuSetting",
     flex: 1,
     cellRenderer: MenuRenderer,
     cellStyle: CENTER_CELL_STYLE,
@@ -243,8 +246,17 @@ export function PermissionsTable() {
   const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({ code: "", name: "", description: "" });
   const [editedRows, setEditedRows] = useState<Record<string, Partial<PermissionItem>>>({});
 
+  // editedRows 의 ref 미러 — handleSave 에서 blur(flushSync) 직후
+  // stale 클로저가 아닌 최신 값을 읽기 위함. flushSync 가 sync re-render 를 유발하므로
+  // 이 useEffect 가 동기적으로 실행되어 ref 가 갱신된 뒤 handleSave 가 ref 를 읽는다.
+  // (ref 할당은 setState 가 아니므로 react-hooks/set-state-in-effect 룰에 걸리지 않음)
+  const editedRowsRef = useRef(editedRows);
+  useEffect(() => {
+    editedRowsRef.current = editedRows;
+  }, [editedRows]);
+
   // --- API 조회 (Plan R-01) ---
-  const { data: roles = [] } = useQuery<RoleApiItem[]>({
+  const { data: roles = [], isError } = useQuery<RoleApiItem[]>({
     queryKey: ["roles", activeOnly],
     queryFn: async () => {
       const res = await api.get<RolesResponse>("/roles", {
@@ -340,12 +352,16 @@ export function PermissionsTable() {
 
     // CellInput 이 defaultValue + onBlur 패턴이라 입력 직후 Save 시 미커밋 위험
     // → 활성 input blur 강제로 onBlur 핸들러를 트리거하여 editedRows 에 반영
+    // flushSync 로 setEditedRows 즉시 commit + editedRowsRef 동기화 보장 (stale closure 회피)
     if (typeof document !== "undefined") {
       const active = document.activeElement;
-      if (active instanceof HTMLElement) active.blur();
+      if (active instanceof HTMLElement) {
+        flushSync(() => { active.blur(); });
+      }
     }
 
-    const entries = Object.entries(editedRows);
+    // editedRows 클로저 대신 ref 에서 최신값 읽기
+    const entries = Object.entries(editedRowsRef.current);
     if (entries.length === 0) return;
 
     const validEntries = entries.flatMap(([roleCode, changes]) => {
@@ -456,7 +472,13 @@ export function PermissionsTable() {
       </div>
 
       {/* AG Grid */}
-      {rowData.length === 0 ? (
+      {isError ? (
+        <div className="flex items-center justify-center min-h-[200px]">
+          <p className="font-['Noto_Sans_JP'] text-[14px] text-[#E97923]">
+            データの読み込みに失敗しました。
+          </p>
+        </div>
+      ) : rowData.length === 0 ? (
         <div className="flex items-center justify-center min-h-[200px]">
           <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
             データがありません
