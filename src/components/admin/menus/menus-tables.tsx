@@ -71,13 +71,19 @@ function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   const data = params.data;
   if (!data) return null;
   const ctx = toCtx(params.context);
-  const currentValue = ctx.sortValues?.[data.id] ?? data.sortOrder;
+  // AG Grid는 context 변경만으로 셀을 re-render하지 않으므로 controlled input을 쓰면
+  // 입력값이 화면에 반영되지 않는다. uncontrolled(defaultValue) + key로 처리:
+  //   - 평소엔 브라우저가 키 입력을 그대로 표시(타이핑 자유)
+  //   - 외부 값(data.sortOrder)이 바뀌면 key 변화로 input remount → defaultValue 갱신
+  //     (정렬저장 후 sortValues 리셋 + query invalidate로 새 sortOrder가 들어오는 케이스)
   return (
     <input
+      key={data.sortOrder}
       type="number"
       min={1}
-      value={currentValue}
+      defaultValue={data.sortOrder}
       onMouseDown={(e) => e.stopPropagation()}
+      onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => {
         const val = Number(e.target.value);
         if (Number.isInteger(val) && val >= 1) ctx.onSortValueChange?.(data.id, val);
