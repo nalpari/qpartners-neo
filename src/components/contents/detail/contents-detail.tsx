@@ -96,19 +96,15 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // Design Ref: §4.1 — 사내 사용자 판별
   const isAdmin = user?.userTp === "ADMIN";
   const isInternal = isAdmin;
-  // 삭제/수정 권한: 서버 canModifyContent 로직과 동기화
-  // SUPER_ADMIN → 동일 부문, ADMIN(또는 authRole 미설정) → 본인 등록
+  // 삭제/수정 권한
+  // - SUPER_ADMIN: 무조건 수정/삭제 가능 (부서/작성자 무관)
+  // - ADMIN(또는 authRole 미설정): 본인 등록 콘텐츠만
+  // - TODO: 그 외 사용자도 메뉴 CRUD 권한이 있으면 수정/삭제 노출 (별도 작업)
   const canModify = (() => {
-    if (!isAdmin || !data || !user) return false;
-    const role = user.authRole ?? "ADMIN"; // 과도기 JWT 폴백 (middleware와 동일)
-    if (role === "SUPER_ADMIN") {
-      // 양쪽 모두 부서 정보가 없으면 수정 불가 (fail-closed)
-      if (!user.deptNm || !data.authorDepartment) return false;
-      return user.deptNm === data.authorDepartment;
-    }
-    if (role === "ADMIN") {
-      return user.userId === data.userId;
-    }
+    if (!data || !user) return false;
+    const role = user.authRole ?? (isAdmin ? "ADMIN" : null);
+    if (role === "SUPER_ADMIN") return true;
+    if (role === "ADMIN") return user.userId === data.userId;
     return false;
   })();
 
