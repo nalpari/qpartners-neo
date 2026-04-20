@@ -241,7 +241,7 @@ export function MenusTables({
             rowData={level1Data}
             getRowClass={getLevel1RowClass}
             className="menus-grid"
-            maxHeight={0}
+            maxHeight={500}
             context={{ selectedLevel1Id, onLevel1Click, onSortValueChange, sortValues }}
           />
         </div>
@@ -261,7 +261,7 @@ export function MenusTables({
             columnDefs={level2Columns}
             rowData={level2Data}
             className="menus-grid"
-            maxHeight={0}
+            maxHeight={500}
             context={{ onLevel2Click, onSortValueChange, sortValues }}
           />
         </div>

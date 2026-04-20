@@ -268,20 +268,12 @@ export function PermissionsTable() {
       </div>
 
       {/* AG Grid */}
-      {filteredRows.length === 0 ? (
-        <div className="flex items-center justify-center min-h-[200px]">
-          <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-            データがありません
-          </p>
-        </div>
-      ) : (
-        <DataGrid<PermissionItem>
-          columnDefs={columnDefs}
-          rowData={filteredRows}
-          getRowClass={getRowClass}
-          className="permissions-grid"
-        />
-      )}
+      <DataGrid<PermissionItem>
+        columnDefs={columnDefs}
+        rowData={filteredRows}
+        getRowClass={getRowClass}
+        className="permissions-grid"
+      />
     </div>
   );
 }

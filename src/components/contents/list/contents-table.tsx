@@ -408,26 +408,21 @@ export function ContentsTable({
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
-          {data.length === 0 ? (
-            <div className="flex items-center justify-center min-h-[300px]">
-              <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
-                該当するコンテンツがありません。
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-6">
-              <DataGrid<ContentListItem>
-                columnDefs={columnDefs}
-                rowData={data}
-                className="contents-grid"
-              />
+          <div className="flex flex-col gap-6">
+            <DataGrid<ContentListItem>
+              columnDefs={columnDefs}
+              rowData={data}
+              className="contents-grid"
+              emptyMessage="該当するコンテンツがありません。"
+            />
+            {totalPages > 0 && (
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
                 onPageChange={onPageChange}
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 

@@ -86,7 +86,6 @@ interface CodesDetailTableProps {
   selectedHeaderCode: string;
   hasNewRow: boolean;
   isLoading?: boolean;
-  isError?: boolean;
   editingCell: { rowId: string; field: string } | null;
   onAdd: () => void;
   onCancelAdd: () => void;
@@ -107,7 +106,6 @@ export function CodesDetailTable({
   selectedHeaderCode,
   hasNewRow,
   isLoading,
-  isError,
   editingCell,
   onAdd,
   onCancelAdd,
@@ -190,25 +188,18 @@ export function CodesDetailTable({
           )}
         </div>
       </div>
-      {isError ? (
-        <div className="flex items-center justify-center h-[57px] font-['Noto_Sans_JP'] text-[14px] text-[#E97923]">
-          データの読み込みに失敗しました。
-        </div>
-      ) : (
-        <DataGrid<DetailGridRow>
-          columnDefs={columnDefs}
-          rowData={rows}
-          getRowClass={getRowClass}
-          getRowId={(p) => p.data.id}
-          context={gridContext}
-          className="codes-detail-grid"
-          maxHeight={0}
-          loading={isLoading}
-          emptyMessage="値がありません"
-          onCellDoubleClicked={handleCellDoubleClicked}
-          onCellClicked={handleCellClicked}
-        />
-      )}
+      <DataGrid<DetailGridRow>
+        columnDefs={columnDefs}
+        rowData={rows}
+        getRowClass={getRowClass}
+        getRowId={(p) => p.data.id}
+        context={gridContext}
+        className="codes-detail-grid"
+        maxHeight={500}
+        loading={isLoading}
+        onCellDoubleClicked={handleCellDoubleClicked}
+        onCellClicked={handleCellClicked}
+      />
     </div>
   );
 }

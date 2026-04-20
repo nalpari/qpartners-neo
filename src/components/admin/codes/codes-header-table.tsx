@@ -125,7 +125,6 @@ interface CodesHeaderTableProps {
   rows: HeaderGridRow[];
   hasNewRow: boolean;
   isLoading?: boolean;
-  isError?: boolean;
   onAdd: () => void;
   onCancelAdd: () => void;
   onSave: () => void;
@@ -141,7 +140,6 @@ export function CodesHeaderTable({
   rows,
   hasNewRow,
   isLoading,
-  isError,
   onAdd,
   onCancelAdd,
   onSave,
@@ -194,23 +192,16 @@ export function CodesHeaderTable({
           <Button variant="primary" onClick={onSave} disabled={isSaving}>保存</Button>
         </div>
       </div>
-      {isError ? (
-        <div className="flex items-center justify-center h-[57px] font-['Noto_Sans_JP'] text-[14px] text-[#E97923]">
-          データの読み込みに失敗しました。
-        </div>
-      ) : (
-        <DataGrid<HeaderGridRow>
-          columnDefs={columnDefs}
-          rowData={rows}
-          getRowClass={getRowClass}
-          getRowId={(p) => p.data.id}
-          context={gridContext}
-          className="codes-header-grid"
-          maxHeight={0}
-          loading={isLoading}
-          emptyMessage="値がありません"
-        />
-      )}
+      <DataGrid<HeaderGridRow>
+        columnDefs={columnDefs}
+        rowData={rows}
+        getRowClass={getRowClass}
+        getRowId={(p) => p.data.id}
+        context={gridContext}
+        className="codes-header-grid"
+        maxHeight={500}
+        loading={isLoading}
+      />
     </div>
   );
 }

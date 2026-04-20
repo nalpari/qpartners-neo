@@ -214,7 +214,6 @@ export function CodesContents() {
         rows={headerRows}
         hasNewRow={!!headerNewRow}
         isLoading={headers.headersLoading}
-        isError={headers.headersError}
         onAdd={headers.handleHeaderAdd}
         onCancelAdd={headers.handleHeaderCancelAdd}
         onSave={handleSave}
@@ -231,7 +230,6 @@ export function CodesContents() {
         selectedHeaderCode={selectedHeaderCode}
         hasNewRow={!!detailNewRow}
         isLoading={details.detailsLoading}
-        isError={details.detailsError}
         editingCell={editingCell}
         onAdd={details.handleDetailAdd}
         onCancelAdd={details.handleDetailCancelAdd}
