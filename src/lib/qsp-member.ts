@@ -82,3 +82,40 @@ export async function fetchQspUserDetail(
   }
   return { ok: true, detail: parsed.data.data };
 }
+
+/**
+ * QSP date 문자열 → ISO 8601 (JST +09:00) 정규화.
+ *
+ * QSP `userDetail` 의 `regDt` 는 "YYYY.MM.DD" (시각 없음), `uptDt` 는 "YYYY.MM.DD HH:mm:ss".
+ * 둘 다 JST 가정 — 동일 ISO datetime 으로 통일하여 프론트 정렬/비교/포맷 변환을 단순화.
+ *
+ * - 시각 없는 날짜는 자정(00:00:00) 으로 채움 — 정보 없음 의미.
+ * - 입력이 null/undefined/공백/포맷 불일치면 null 반환 (silent — caller 가 null 체크).
+ *
+ * 예시:
+ *   "2022.04.20"          → "2022-04-20T00:00:00+09:00"
+ *   "2026.04.14 15:32:45" → "2026-04-14T15:32:45+09:00"
+ *   null / "" / "invalid" → null
+ */
+export function parseQspDate(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // YYYY.MM.DD HH:mm:ss 또는 YYYY.MM.DD 만 허용 — 그 외 포맷은 null (silent).
+  const match = /^(\d{4})\.(\d{2})\.(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/.exec(trimmed);
+  if (!match) return null;
+
+  const [, yyyy, mm, dd, hh = "00", min = "00", ss = "00"] = match;
+  // 유효 날짜인지 검증 — JS Date 는 "2026.02.30" 을 "3월 2일" 로 자동 rollover 하므로
+  // getTime NaN 만으로는 부족. JST(+09:00) 기준 입력값과 결과의 연/월/일이 일치하는지 cross-check.
+  const probe = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`);
+  if (Number.isNaN(probe.getTime())) return null;
+  // toLocaleString 으로 JST 기준 분해 (toISOString 은 UTC 라 +09:00 입력과 어긋남).
+  // sv-SE locale 은 ISO 와 유사한 "YYYY-MM-DD HH:mm:ss" 형태 보장.
+  const jstParts = probe.toLocaleString("sv-SE", { timeZone: "Asia/Tokyo" });
+  const expected = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+  if (jstParts !== expected) return null;
+
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`;
+}
