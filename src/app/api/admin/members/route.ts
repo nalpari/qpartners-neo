@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
       companyName: item.compNm ?? "",
       status: lookupStatCd(item.statCd) ?? "unknown",
       // QSP loginDt(YYYY.MM.DD HH:mm:ss) / regDt(YYYY.MM.DD) 모두 ISO 8601 (+09:00) 로 정규화 —
-      // 상세조회 / 다른 백엔드 timestamp(massmail.sentAt 등) 와 컨벤션 통일.
+      // 상세조회 + 백엔드 공통 timestamp 컨벤션(ISO 8601 +09:00) 과 통일.
       lastLoginAt: parseQspDate(item.loginDt),
       createdAt: parseQspDate(item.regDt),
     }));

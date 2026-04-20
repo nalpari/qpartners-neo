@@ -126,7 +126,7 @@ export async function GET(request: NextRequest, { params }: Params) {
           // openapi 도 nullable: true 로 동기화. 다른 string 필드는 기존 컨벤션 유지(빈 문자열).
           createdAt: null,
           updatedAt: null,
-          updatedByName: null,
+          updatedBy: null,
           notFoundInQsp: true,
         },
       });
@@ -162,12 +162,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       status: lookupStatCd(d.statCd) ?? "unknown",
       newsRcptYn: d.newsRcptYn ?? "N",
       // QSP regDt(YYYY.MM.DD) / uptDt(YYYY.MM.DD HH:mm:ss) 를 ISO 8601 (+09:00) 로 정규화.
-      // 백엔드 timestamp 컨벤션과 통일 (massmail.sentAt 등) — 프론트 정렬·비교·dayjs 포맷 변환 일관 처리.
+      // 백엔드 timestamp 컨벤션(ISO 8601 +09:00)과 통일 — 프론트 정렬·비교·dayjs 포맷 변환 일관 처리.
       // regDt 는 시각 미보유라 자정으로 채움 — 정보 없음 의미.
       createdAt: parseQspDate(d.regDt),
       updatedAt: parseQspDate(d.uptDt),
       // uptNm 도 nullable — QSP 가 null 전송하면 그대로 노출 (빈 문자열로 변환 안 함).
-      updatedByName: d.uptNm ?? null,
+      // 응답 키는 `updatedBy` — 프론트 members-types.ts 의 `updatedBy?: string | null` 과 일치.
+      // (값은 userNm 형태이지만 키 네이밍은 프론트 호환성 우선)
+      updatedBy: d.uptNm ?? null,
       notFoundInQsp: false,
     };
 
@@ -372,10 +374,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 5. QSP 회원정보 수정 API 호출
     //
-    // QSP updateUserDtlMng 는 full-replace 방식(전송하지 않은 필드를 null 로 덮어씀).
+    // QSP updateUserDtlMng 는 full-replace 방식(전송하지 않은 필드를 null 로 덮어씀, 2026-04-20 확인 / Design §1.4).
     // 성명·회사·주소 등 mutable 스키마에 없는 필드가 null 로 날아가는 사고를 막기 위해
-    // preDetail 의 보존 필드를 페이로드 기본값으로 깔고, mutable 6개 필드(authCd /
-    // secAuthYn / loginNotiYn / attrChgYn / newsRcptYn / statCd)만 request body 로 덮어쓴다.
+    // preDetail 의 보존 필드를 페이로드 기본값으로 깔고, mutable 필드
+    // (authCd / secAuthYn / loginNotiYn / attrChgYn / newsRcptYn / statCd — memberUpdateSchema 매핑 대상)만
+    // request body 로 덮어쓴다.
     //
     // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 보존할 값이 없으므로
     // mutable 필드 + 필수 메타만 전송하고, 누락 필드는 fallback 기본값으로 통보한다.

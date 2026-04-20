@@ -102,20 +102,33 @@ export function parseQspDate(input: string | null | undefined): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  // YYYY.MM.DD HH:mm:ss 또는 YYYY.MM.DD 만 허용 — 그 외 포맷은 null (silent).
+  // YYYY.MM.DD HH:mm:ss 또는 YYYY.MM.DD 만 허용.
+  // 포맷 미일치는 null 반환 + 샘플 warn — QSP 가 포맷을 바꿨을 때 전 회원 timestamp
+  // 가 일제히 null 되는 모니터링 사각지대를 제거하기 위한 드리프트 감지용.
+  // 샘플은 최대 30자만 노출 (timestamp 는 PII 아님).
   const match = /^(\d{4})\.(\d{2})\.(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/.exec(trimmed);
-  if (!match) return null;
+  if (!match) {
+    console.warn(`[parseQspDate] QSP 날짜 포맷 불일치 — drift 가능성, sample="${trimmed.slice(0, 30)}"`);
+    return null;
+  }
 
   const [, yyyy, mm, dd, hh = "00", min = "00", ss = "00"] = match;
   // 유효 날짜인지 검증 — JS Date 는 "2026.02.30" 을 "3월 2일" 로 자동 rollover 하므로
   // getTime NaN 만으로는 부족. JST(+09:00) 기준 입력값과 결과의 연/월/일이 일치하는지 cross-check.
   const probe = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`);
-  if (Number.isNaN(probe.getTime())) return null;
+  if (Number.isNaN(probe.getTime())) {
+    console.warn(`[parseQspDate] 유효하지 않은 날짜, sample="${trimmed.slice(0, 30)}"`);
+    return null;
+  }
   // toLocaleString 으로 JST 기준 분해 (toISOString 은 UTC 라 +09:00 입력과 어긋남).
   // sv-SE locale 은 ISO 와 유사한 "YYYY-MM-DD HH:mm:ss" 형태 보장.
   const jstParts = probe.toLocaleString("sv-SE", { timeZone: "Asia/Tokyo" });
   const expected = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-  if (jstParts !== expected) return null;
+  if (jstParts !== expected) {
+    // rollover 되어 날짜가 보정된 케이스 (예: 2026.02.30 → 3월 2일)
+    console.warn(`[parseQspDate] rollover 감지 — 입력값="${trimmed.slice(0, 30)}", JST 변환 결과="${jstParts}"`);
+    return null;
+  }
 
   return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`;
 }
