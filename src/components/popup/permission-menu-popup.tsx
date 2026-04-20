@@ -1,36 +1,16 @@
 "use client";
 
+// Design Ref: §4 — 메뉴별 권한 설정 팝업 API 연동
+
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox } from "@/components/common";
+import type { RolePermissionsResponse, MenuPermissionRow } from "@/components/admin/permissions/permissions-types";
+import { flattenMenuTree, rowsToPermissions } from "@/components/admin/permissions/permissions-types";
 
 const CLOSE_ANIMATION_MS = 200;
-
-interface MenuPermissionItem {
-  id: string;
-  level1: string;
-  level2: string;
-  pageUrl: "Y" | null;
-  read: boolean;
-  create: boolean;
-  update: boolean;
-  delete: boolean;
-}
-
-const DUMMY_MENU_PERMISSIONS: MenuPermissionItem[] = [
-  { id: "M01", level1: "会員管理", level2: "", pageUrl: "Y", read: true, create: true, update: true, delete: true },
-  { id: "M02", level1: "", level2: "会員一覧", pageUrl: "Y", read: true, create: false, update: true, delete: false },
-  { id: "M03", level1: "", level2: "会員詳細", pageUrl: "Y", read: true, create: false, update: false, delete: false },
-  { id: "M04", level1: "バルクメール", level2: "", pageUrl: "Y", read: true, create: true, update: false, delete: false },
-  { id: "M05", level1: "", level2: "メール一覧", pageUrl: "Y", read: true, create: false, update: false, delete: false },
-  { id: "M06", level1: "", level2: "メール登録", pageUrl: "Y", read: true, create: true, update: false, delete: false },
-  { id: "M07", level1: "ホーム画面公知", level2: "", pageUrl: "Y", read: true, create: true, update: true, delete: true },
-  { id: "M08", level1: "カテゴリ管理", level2: "", pageUrl: null, read: true, create: false, update: false, delete: false },
-  { id: "M09", level1: "権限管理", level2: "", pageUrl: "Y", read: true, create: true, update: true, delete: true },
-  { id: "M10", level1: "", level2: "権限設定", pageUrl: "Y", read: true, create: false, update: true, delete: false },
-  { id: "M11", level1: "メニュー管理", level2: "", pageUrl: "Y", read: true, create: true, update: true, delete: false },
-  { id: "M12", level1: "コード管理", level2: "", pageUrl: "Y", read: true, create: true, update: true, delete: true },
-];
 
 type CrudKey = "read" | "create" | "update" | "delete";
 const CRUD_KEYS: { key: CrudKey; label: string }[] = [
@@ -40,16 +20,98 @@ const CRUD_KEYS: { key: CrudKey; label: string }[] = [
   { key: "delete", label: "Delete" },
 ];
 
-/** 헤더 셀 스타일 */
 const TH = "flex items-center justify-center bg-[#506273] py-3 px-3 overflow-hidden font-['Noto_Sans_JP'] font-semibold text-[14px] text-[#f5f5f5] whitespace-nowrap";
+
+/**
+ * Read↔CUD 무결성 제약 적용 (toggleCell / toggleColumn 공통)
+ *  - Read 해제 → CUD 도 OFF (최우선) — Read 없는 CUD 모순 차단
+ *  - CUD 체크 → Read 자동 ON
+ * 우선순위 주의: Read 해제 분기를 CUD→Read 자동 ON 분기보다 먼저 평가해야
+ *               "create=true 상태에서 Read 해제" 의도가 무시되지 않음.
+ */
+function applyReadCudConstraints(
+  current: MenuPermissionRow,
+  patch: Partial<MenuPermissionRow>,
+  toggledKey: CrudKey,
+  newValue: boolean,
+): Partial<MenuPermissionRow> {
+  if (toggledKey === "read" && newValue === false) {
+    return { ...patch, read: false, create: false, update: false, delete: false };
+  }
+  const merged = { ...current, ...patch };
+  if (merged.create || merged.update || merged.delete) {
+    return { ...patch, read: true };
+  }
+  return patch;
+}
 
 export function PermissionMenuPopup() {
   const { popupData, closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
+  const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
-  const [rows, setRows] = useState<MenuPermissionItem[]>(DUMMY_MENU_PERMISSIONS);
 
-  const permissionName = (popupData.permissionName as string) ?? "";
+  // roleCode 런타임 검증 — popupData 가 unknown 이므로 string + non-empty 가드
+  const rawRoleCode = popupData.roleCode;
+  const roleCode = typeof rawRoleCode === "string" && rawRoleCode.length > 0 ? rawRoleCode : null;
+  const rawRoleName = popupData.roleName;
+  const roleName = typeof rawRoleName === "string" ? rawRoleName : "";
+
+  // --- API 조회 ---
+  const { data: apiData, isLoading } = useQuery({
+    queryKey: ["role-permissions", roleCode],
+    queryFn: async () => {
+      // enabled 가드로 roleCode null 시 호출 안 됨, 방어적으로 한번 더 체크 + path 인코딩
+      if (!roleCode) throw new Error("roleCode is required");
+      const res = await api.get<RolePermissionsResponse>(
+        `/roles/${encodeURIComponent(roleCode)}/permissions`,
+      );
+      return res.data.data;
+    },
+    enabled: !!roleCode,
+  });
+
+  // apiData를 source of truth로 사용, 변경사항만 overlay
+  const baseRows = apiData ? flattenMenuTree(apiData.menus) : [];
+  const [changes, setChanges] = useState<Record<string, Partial<MenuPermissionRow>>>({});
+
+  // changes를 baseRows에 병합 — baseRows에 존재하는 항목만 (타입 안전)
+  const displayRows: MenuPermissionRow[] = baseRows.map((row) => {
+    const change = changes[row.menuCode];
+    if (!change) return row;
+    return {
+      ...row,
+      read: change.read ?? row.read,
+      create: change.create ?? row.create,
+      update: change.update ?? row.update,
+      delete: change.delete ?? row.delete,
+    };
+  });
+
+  // --- Mutation ---
+  const saveMutation = useMutation({
+    mutationFn: async (permissions: ReturnType<typeof rowsToPermissions>) => {
+      if (!roleCode) throw new Error("roleCode is required");
+      const res = await api.put(
+        `/roles/${encodeURIComponent(roleCode)}/permissions`,
+        { permissions },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-permissions", roleCode] });
+      openAlert({
+        type: "alert",
+        message: "保存されました。",
+        confirmLabel: "確認",
+        onConfirm: () => closePopup(),
+      });
+    },
+    onError: (error: unknown) => {
+      console.error("[PUT /api/roles/permissions] 권한 저장 실패:", error);
+      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+    },
+  });
 
   const handleClose = () => {
     setIsClosing(true);
@@ -60,42 +122,50 @@ export function PermissionMenuPopup() {
   };
 
   const handleSave = () => {
-    openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+    saveMutation.mutate(rowsToPermissions(displayRows));
   };
 
-  const toggleCell = (id: string, key: CrudKey) => {
-    setRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [key]: !r[key] } : r))
-    );
+  // Design Ref: §4.4 — Read↔CUD 무결성은 applyReadCudConstraints 로 위임
+  const toggleCell = (menuCode: string, key: CrudKey) => {
+    const current = displayRows.find((r) => r.menuCode === menuCode);
+    if (!current) return;
+    const newValue = !current[key];
+    const basePatch: Partial<MenuPermissionRow> = { ...changes[menuCode], [key]: newValue };
+    const patch = applyReadCudConstraints(current, basePatch, key, newValue);
+    setChanges((prev) => ({ ...prev, [menuCode]: patch }));
   };
 
-  /** 컬럼별 전체/부분 체크 상태 계산 */
   const getColumnState = (key: CrudKey) => {
-    const checked = rows.filter((r) => r[key]).length;
+    const checked = displayRows.filter((r) => r[key]).length;
     if (checked === 0) return "none";
-    if (checked === rows.length) return "all";
+    if (checked === displayRows.length) return "all";
     return "some";
   };
 
   const toggleColumn = (key: CrudKey) => {
     const state = getColumnState(key);
     const newValue = state !== "all";
-    setRows((prev) => prev.map((r) => ({ ...r, [key]: newValue })));
+    const newChanges = { ...changes };
+    for (const row of displayRows) {
+      const basePatch: Partial<MenuPermissionRow> = { ...newChanges[row.menuCode], [key]: newValue };
+      newChanges[row.menuCode] = applyReadCudConstraints(row, basePatch, key, newValue);
+    }
+    setChanges(newChanges);
   };
 
   return (
     <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}>
       <div
-        className="popup-container !w-[1200px] !max-w-[1200px]"
+        className="popup-container !w-[1200px] !max-w-[1200px] !overflow-clip"
         role="dialog"
         aria-modal="true"
         aria-label="Menu Setting"
       >
-        <div className="popup-container__inner !gap-[18px]">
+        <div className="popup-container__inner !gap-[18px] !overflow-y-hidden !max-h-none">
           {/* 타이틀 */}
           <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
             <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
-              [{permissionName}] Menu Setting
+              [{roleName}] Menu Setting
             </h2>
             <button
               type="button"
@@ -136,9 +206,19 @@ export function PermissionMenuPopup() {
 
             {/* 바디 */}
             <div className="flex flex-col max-h-[400px] overflow-y-auto">
-              {rows.map((row, i) => (
+              {isLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">読み込み中...</span>
+                </div>
+              )}
+              {!isLoading && displayRows.length === 0 && (
+                <div className="flex items-center justify-center py-8">
+                  <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">データがありません</span>
+                </div>
+              )}
+              {displayRows.map((row, i) => (
                 <div
-                  key={row.id}
+                  key={row.menuCode}
                   className={`flex items-stretch ${i % 2 !== 0 ? "bg-[#fcfdff]" : "bg-white"}`}
                 >
                   <div className="w-[180px] min-w-[180px] flex items-center justify-center py-2 px-3 border-b border-r border-[#e6eef6]">
@@ -163,7 +243,7 @@ export function PermissionMenuPopup() {
                     >
                       <Checkbox
                         checked={row[col.key]}
-                        onChange={() => toggleCell(row.id, col.key)}
+                        onChange={() => toggleCell(row.menuCode, col.key)}
                       />
                     </div>
                   ))}
@@ -174,11 +254,15 @@ export function PermissionMenuPopup() {
 
           {/* 버튼 */}
           <div className="popup-buttons--inline">
-            <Button variant="secondary" onClick={handleClose}>
+            <Button variant="secondary" onClick={handleClose} disabled={saveMutation.isPending}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSave}>
-              保存
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isLoading || saveMutation.isPending || !roleCode}
+            >
+              {saveMutation.isPending ? "保存中..." : "保存"}
             </Button>
           </div>
         </div>
