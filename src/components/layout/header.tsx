@@ -33,21 +33,28 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
   }
 }
 
-const ALL_RELATED_SITES = [
-  { label: "QSP", value: "qsp", href: "https://jp-dev.qsalesplatform.com" },
+// 표시 순서 = ORDER → MUSUBI → DESIGN → WARRANTY (역할별 노출은 SITE_ACCESS_MAP 으로 필터)
+// note: Q.WARRANTY 만 자동 로그인 미연동 → 단순 사이트 이동임을 명시.
+type SiteValue = "qorder" | "qmusubi" | "hanasys" | "qwarranty";
+interface RelatedSite {
+  label: string;
+  value: SiteValue;
+  href: string;
+  note?: string;
+}
+const ALL_RELATED_SITES: readonly RelatedSite[] = [
+  { label: "HANASYS ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
+  { label: "HANASYS MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
   { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
-  { label: "Q.ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
-  { label: "Q.MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp" },
-] as const;
+  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp", note: "(別途ログインが必要)" },
+];
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
 type SiteAccessKey = "ADMIN" | "1ST_STORE" | "2ND_STORE";
-type SiteValue = (typeof ALL_RELATED_SITES)[number]["value"];
 const SITE_ACCESS_MAP: Record<SiteAccessKey, SiteValue[]> = {
-  ADMIN: ["qsp", "qorder", "qmusubi", "qwarranty", "hanasys"],
-  "1ST_STORE": ["qorder", "qwarranty", "hanasys"],
-  "2ND_STORE": ["qmusubi", "qwarranty", "hanasys"],
+  ADMIN: ["qorder", "qmusubi", "hanasys", "qwarranty"],
+  "1ST_STORE": ["qorder", "hanasys", "qwarranty"],
+  "2ND_STORE": ["qmusubi", "hanasys", "qwarranty"],
 };
 
 function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
@@ -241,10 +248,17 @@ export function Gnb() {
                         <li key={site.value}>
                           <a
                             href={site.href}
-                            className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-normal overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
                             onClick={() => setIsDropdownOpen(false)}
                           >
-                            {site.label}
+                            <span className="block text-[13px] whitespace-nowrap">{site.label}</span>
+                            {site.note && (
+                              <span className="block text-[11px] text-[#888] whitespace-nowrap">
+                                {site.note}
+                              </span>
+                            )}
                           </a>
                         </li>
                       ))}
@@ -328,7 +342,7 @@ export function Gnb() {
                   href="/login"
                   className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                 >
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap ">
                     ログイン
                   </span>
                 </Link>
@@ -336,7 +350,7 @@ export function Gnb() {
                   href="/signup"
                   className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                 >
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap flex-1 text-center">
                     会員登録
                   </span>
                 </Link>
@@ -547,10 +561,17 @@ export function Gnb() {
                     <li key={site.value}>
                       <a
                         href={site.href}
-                        className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
-                        {site.label}
+                        <span className="text-[13px]">{site.label}</span>
+                        {site.note && (
+                          <span className="text-[11px] text-[#666]">
+                            {site.note}
+                          </span>
+                        )}
                       </a>
                     </li>
                   ))}
@@ -585,7 +606,7 @@ export function Gnb() {
               <div className="flex items-center justify-center gap-4 px-7">
                 <Link
                   href="/login"
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap"
+                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap flex-1 text-center"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   ログイン
@@ -593,7 +614,7 @@ export function Gnb() {
                 <span className="w-px h-[10px] bg-[#5b5b5b]" />
                 <Link
                   href="/signup"
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap"
+                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap flex-1 text-center"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   会員登録

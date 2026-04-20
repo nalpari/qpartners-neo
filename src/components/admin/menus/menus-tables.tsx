@@ -239,6 +239,7 @@ export function MenusTables({
           <DataGrid<MenuItem>
             columnDefs={level1Columns}
             rowData={level1Data}
+            getRowId={(p) => p.data.id}
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={500}
@@ -260,6 +261,7 @@ export function MenusTables({
           <DataGrid<MenuItem>
             columnDefs={level2Columns}
             rowData={level2Data}
+            getRowId={(p) => p.data.id}
             className="menus-grid"
             maxHeight={500}
             context={{ onLevel2Click, onSortValueChange, sortValues }}
