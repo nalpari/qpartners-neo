@@ -121,7 +121,7 @@ export function flattenMenuTree(menus: MenuPermTreeItem[]): MenuPermissionRow[] 
       update: menu.canUpdate,
       delete: menu.canDelete,
     });
-    for (const child of menu.children) {
+    for (const child of menu.children ?? []) {
       rows.push({
         menuCode: child.menuCode,
         level1: "",

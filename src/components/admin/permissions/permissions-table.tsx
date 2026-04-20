@@ -25,6 +25,9 @@ interface PermissionGridContext {
   onFinishEdit: (roleCode: string, field: string, value: string) => void;
 }
 
+// AG Grid row 매칭 안정화 — id 기반 매칭으로 activeOnly 토글/refetch 시 row identity 유지
+const getRowIdFn = (p: { data: PermissionItem }) => p.data.id;
+
 // --- CellInput (codes-header-table 패턴) ---
 function CellInput({
   defaultValue,
@@ -287,19 +290,21 @@ export function PermissionsTable() {
   });
 
   // Plan R-05: PUT /api/roles/{roleCode} — 권한 수정
+  // 다건 저장은 handleSave 에서 Promise.allSettled 로 일괄 처리하므로
+  // 개별 mutation 의 onSuccess 는 invalidate 만, 알림/setEditedRows 는 호출측 책임.
   const updateMutation = useMutation({
     mutationFn: async ({ roleCode, body }: { roleCode: string; body: ReturnType<typeof toUpdateRoleBody> }) => {
-      const res = await api.put(`/roles/${roleCode}`, body);
+      // path 안전성 — 호출측에서 검증된 roleCode 도 인코딩하여 path 왜곡 방어
+      const res = await api.put(`/roles/${encodeURIComponent(roleCode)}`, body);
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
-      setEditedRows({});
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
-      console.error("[PUT /api/roles] 권한 수정 실패:", error);
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      // 단일 alert 은 handleSave 에서 집계 — 여기서는 로깅만 (axios 객체 전체 노출 방지)
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`[PUT /api/roles] 권한 수정 실패: status=${status ?? "unknown"}`);
     },
   });
 
@@ -317,7 +322,8 @@ export function PermissionsTable() {
   };
 
   // Design Ref: §5.4 — 신규/수정 분기
-  const handleSave = () => {
+  // CRITICAL: 다건 수정은 Promise.allSettled 로 일괄 처리 + 단일 alert + 실패 건만 editedRows 유지
+  const handleSave = async () => {
     if (newRow) {
       const fields = newRowFieldsRef.current;
       if (!fields.code.trim()) {
@@ -329,15 +335,47 @@ export function PermissionsTable() {
         return;
       }
       createMutation.mutate(toCreateRoleBody(fields));
+      return;
+    }
+
+    // CellInput 이 defaultValue + onBlur 패턴이라 입력 직후 Save 시 미커밋 위험
+    // → 활성 input blur 강제로 onBlur 핸들러를 트리거하여 editedRows 에 반영
+    if (typeof document !== "undefined") {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+    }
+
+    const entries = Object.entries(editedRows);
+    if (entries.length === 0) return;
+
+    const validEntries = entries.flatMap(([roleCode, changes]) => {
+      const original = items.find((i) => i.roleCode === roleCode);
+      if (!original) return [];
+      const merged = { ...original, ...changes } as PermissionItem;
+      return [{ roleCode, body: toUpdateRoleBody(merged) }];
+    });
+    if (validEntries.length === 0) return;
+
+    const results = await Promise.allSettled(
+      validEntries.map((e) => updateMutation.mutateAsync({ roleCode: e.roleCode, body: e.body })),
+    );
+    const failedRoleCodes = results
+      .map((r, i) => (r.status === "rejected" ? validEntries[i].roleCode : null))
+      .filter((x): x is string => x !== null);
+
+    if (failedRoleCodes.length === 0) {
+      setEditedRows({});
+      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     } else {
-      const entries = Object.entries(editedRows);
-      if (entries.length === 0) return;
-      for (const [roleCode, changes] of entries) {
-        const original = items.find((i) => i.roleCode === roleCode);
-        if (!original) continue;
-        const merged = { ...original, ...changes } as PermissionItem;
-        updateMutation.mutate({ roleCode, body: toUpdateRoleBody(merged) });
-      }
+      // 실패 건만 editedRows 에 유지 — 사용자가 재시도 가능
+      setEditedRows((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([k]) => failedRoleCodes.includes(k))),
+      );
+      openAlert({
+        type: "alert",
+        message: `${failedRoleCodes.length}件の保存に失敗しました。`,
+        confirmLabel: "確認",
+      });
     }
   };
 
@@ -346,11 +384,20 @@ export function PermissionsTable() {
     ref[field] = value;
   };
 
+  // 통합 commit 핸들러 — onCommitField(select)/onFinishEdit(text blur) 모두 사용
+  // editingField 를 항상 undefined 로 리셋하여 편집 모드 종료 보장
   const onCommitField = (roleCode: string, field: string, value: string) => {
-    setEditedRows((prev) => ({
-      ...prev,
-      [roleCode]: { ...prev[roleCode], [field]: value },
-    }));
+    setEditedRows((prev) => {
+      const existing = prev[roleCode] ?? {};
+      return {
+        ...prev,
+        [roleCode]: {
+          ...existing,
+          editingField: undefined,
+          [field]: value,
+        },
+      };
+    });
   };
 
   const getRowClass = (params: RowClassParams<PermissionItem>) => {
@@ -361,15 +408,13 @@ export function PermissionsTable() {
   const onStartEdit = (roleCode: string, field: string) => {
     setEditedRows((prev) => ({
       ...prev,
-      [roleCode]: { ...prev[roleCode], editingField: field },
+      [roleCode]: { ...prev[roleCode], editingField: field as "roleName" | "description" },
     }));
   };
 
+  // 텍스트 편집 blur 후 commit — 통합 핸들러로 위임
   const onFinishEdit = (roleCode: string, field: string, value: string) => {
-    setEditedRows((prev) => ({
-      ...prev,
-      [roleCode]: { ...prev[roleCode], [field]: value },
-    }));
+    onCommitField(roleCode, field, value);
   };
 
   // --- context ---
@@ -400,7 +445,11 @@ export function PermissionsTable() {
               追加
             </Button>
           )}
-          <Button variant="primary" onClick={handleSave}>
+          <Button
+            variant="primary"
+            onClick={() => { void handleSave(); }}
+            disabled={createMutation.isPending || updateMutation.isPending}
+          >
             保存
           </Button>
         </div>
@@ -418,6 +467,7 @@ export function PermissionsTable() {
           columnDefs={columnDefs}
           rowData={rowData}
           getRowClass={getRowClass}
+          getRowId={getRowIdFn}
           className="permissions-grid"
           context={gridContext}
         />

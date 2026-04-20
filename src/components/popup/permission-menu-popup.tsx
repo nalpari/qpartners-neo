@@ -28,14 +28,21 @@ export function PermissionMenuPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
 
-  const roleCode = popupData.roleCode as string;
-  const roleName = (popupData.roleName as string) ?? "";
+  // roleCode 런타임 검증 — popupData 가 unknown 이므로 string + non-empty 가드
+  const rawRoleCode = popupData.roleCode;
+  const roleCode = typeof rawRoleCode === "string" && rawRoleCode.length > 0 ? rawRoleCode : null;
+  const rawRoleName = popupData.roleName;
+  const roleName = typeof rawRoleName === "string" ? rawRoleName : "";
 
   // --- API 조회 ---
   const { data: apiData, isLoading } = useQuery({
     queryKey: ["role-permissions", roleCode],
     queryFn: async () => {
-      const res = await api.get<RolePermissionsResponse>(`/roles/${roleCode}/permissions`);
+      // enabled 가드로 roleCode null 시 호출 안 됨, 방어적으로 한번 더 체크 + path 인코딩
+      if (!roleCode) throw new Error("roleCode is required");
+      const res = await api.get<RolePermissionsResponse>(
+        `/roles/${encodeURIComponent(roleCode)}/permissions`,
+      );
       return res.data.data;
     },
     enabled: !!roleCode,
@@ -61,7 +68,11 @@ export function PermissionMenuPopup() {
   // --- Mutation ---
   const saveMutation = useMutation({
     mutationFn: async (permissions: ReturnType<typeof rowsToPermissions>) => {
-      const res = await api.put(`/roles/${roleCode}/permissions`, { permissions });
+      if (!roleCode) throw new Error("roleCode is required");
+      const res = await api.put(
+        `/roles/${encodeURIComponent(roleCode)}/permissions`,
+        { permissions },
+      );
       return res.data;
     },
     onSuccess: () => {
@@ -91,16 +102,22 @@ export function PermissionMenuPopup() {
     saveMutation.mutate(rowsToPermissions(displayRows));
   };
 
-  // Design Ref: §4.4 — CUD 체크 시 Read 자동 체크
+  // Design Ref: §4.4 — CUD 체크 시 Read 자동 체크 + Read 해제 시 CUD 자동 해제 (논리 무결성)
   const toggleCell = (menuCode: string, key: CrudKey) => {
     const current = displayRows.find((r) => r.menuCode === menuCode);
     if (!current) return;
     const newValue = !current[key];
     const patch: Partial<MenuPermissionRow> = { ...changes[menuCode], [key]: newValue };
-    // CUD 체크 시 Read 자동 체크
     const merged = { ...current, ...patch };
+    // CUD 체크 → Read 자동 ON
     if (merged.create || merged.update || merged.delete) {
       patch.read = true;
+    }
+    // Read 해제 → CUD 도 함께 OFF (Read 없이 CUD 가능한 모순 차단)
+    if (key === "read" && newValue === false) {
+      patch.create = false;
+      patch.update = false;
+      patch.delete = false;
     }
     setChanges((prev) => ({ ...prev, [menuCode]: patch }));
   };
@@ -121,6 +138,12 @@ export function PermissionMenuPopup() {
       const merged = { ...row, ...patch };
       if (merged.create || merged.update || merged.delete) {
         patch.read = true;
+      }
+      // Read 컬럼 일괄 해제 → CUD 도 모두 OFF (단건과 동일 정책)
+      if (key === "read" && newValue === false) {
+        patch.create = false;
+        patch.update = false;
+        patch.delete = false;
       }
       newChanges[row.menuCode] = patch;
     }
@@ -228,11 +251,15 @@ export function PermissionMenuPopup() {
 
           {/* 버튼 */}
           <div className="popup-buttons--inline">
-            <Button variant="secondary" onClick={handleClose}>
+            <Button variant="secondary" onClick={handleClose} disabled={saveMutation.isPending}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={handleSave}>
-              保存
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isLoading || saveMutation.isPending || !roleCode}
+            >
+              {saveMutation.isPending ? "保存中..." : "保存"}
             </Button>
           </div>
         </div>
