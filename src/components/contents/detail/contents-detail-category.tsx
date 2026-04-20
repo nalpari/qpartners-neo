@@ -76,6 +76,7 @@ export function ContentsDetailCategory({
             </p>
           ) : (
             <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+              -
             </p>
           )}
         </div>

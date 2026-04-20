@@ -21,16 +21,21 @@ import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
 import { useCommonCode } from "@/hooks/use-common-code";
 
-/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 */
+/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
 function renderCategoryCell(
   item: ContentListItem,
   parentCategoryCode: string,
   inlineStyle?: boolean,
 ): React.ReactNode {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
-  if (!matched || matched.children.length === 0) return null;
+  if (!matched || matched.children.length === 0) {
+    return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
+  }
   const normal = matched.children.filter((c) => !c.isInternalOnly);
   const internal = matched.children.filter((c) => c.isInternalOnly);
+  if (normal.length === 0 && internal.length === 0) {
+    return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
+  }
   return (
     <span style={inlineStyle ? { fontSize: "12px" } : undefined}>
       {normal.map((c) => c.name).join(", ")}
@@ -44,6 +49,13 @@ function renderCategoryCell(
       )}
     </span>
   );
+}
+
+/** 빈값 정규화 — null/undefined/공백문자열 → "-" */
+function orDash(v: unknown): string {
+  if (v == null) return "-";
+  const s = String(v);
+  return s.trim() === "" ? "-" : s;
 }
 
 function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
@@ -255,7 +267,7 @@ export function ContentsTable({
         minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueFormatter: (params) => formatDate(params.value),
+        valueFormatter: (params) => params.value ? formatDate(params.value) : "-",
       },
       {
         headerName: "更新日",
@@ -264,7 +276,7 @@ export function ContentsTable({
         minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueFormatter: (params) => params.value ? formatDate(params.value) : "",
+        valueFormatter: (params) => params.value ? formatDate(params.value) : "-",
       },
     ];
 
@@ -273,9 +285,11 @@ export function ContentsTable({
         {
           headerName: "掲示対象",
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+            const targets = params.data?.targets ?? [];
+            if (targets.length === 0) return <span>-</span>;
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
-                {params.data?.targets.map((t, i) => (
+                {targets.map((t, i) => (
                   <span key={i} className="text-xs">{TARGET_TYPE_LABELS[t.targetType] ?? t.targetType}</span>
                 ))}
               </div>
@@ -294,7 +308,7 @@ export function ContentsTable({
           minWidth: 110,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-          valueFormatter: (params) => params.value ?? "",
+          valueFormatter: (params) => orDash(params.value),
         },
         {
           headerName: "最終確認者",
@@ -303,8 +317,8 @@ export function ContentsTable({
           minWidth: 110,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-          valueFormatter: () => "",
-          // TODO: 공통코드 매핑 필요 — 백엔드에서 approverLevel 목록 API 응답에 추가 후 구현
+          // TODO: 공통코드 매핑 필요 — 현재는 빈값 표시
+          valueFormatter: () => "-",
         },
       );
     }
@@ -316,7 +330,7 @@ export function ContentsTable({
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
       label: parent.name,
       key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode) ?? "",
+      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode),
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));
 
@@ -330,12 +344,12 @@ export function ContentsTable({
       {
         label: "登録日",
         key: "createdAt",
-        render: (item) => formatDate(item.createdAt),
+        render: (item) => item.createdAt ? formatDate(item.createdAt) : "-",
       },
       {
         label: "更新日",
         key: "updatedAt",
-        render: (item) => item.updatedAt ? formatDate(item.updatedAt) : "",
+        render: (item) => item.updatedAt ? formatDate(item.updatedAt) : "-",
       },
     ];
 
@@ -344,17 +358,20 @@ export function ContentsTable({
         {
           label: "掲示対象",
           key: "targets" as keyof ContentListItem,
-          render: (item) => item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", "),
+          render: (item) => {
+            if (item.targets.length === 0) return "-";
+            return item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", ");
+          },
         },
         {
           label: "担当部門",
           key: "authorDepartment",
-          render: (item) => item.authorDepartment ?? "",
+          render: (item) => orDash(item.authorDepartment),
         },
         {
           label: "最終確認者",
           key: "id" as keyof ContentListItem,
-          render: () => "", // TODO: 공통코드 매핑
+          render: () => "-", // TODO: 공통코드 매핑
         },
       );
     }
