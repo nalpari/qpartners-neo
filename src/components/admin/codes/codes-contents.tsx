@@ -7,7 +7,7 @@ import { CodesSearch } from "./codes-search";
 import { CodesHeaderTable } from "./codes-header-table";
 import { CodesDetailTable } from "./codes-detail-table";
 import type { HeaderGridRow, DetailGridRow } from "./codes-types";
-import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS } from "./codes-types";
+import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS, HEADER_NULLABLE_FIELDS } from "./codes-types";
 import { useCodeHeaders } from "./hooks/use-code-headers";
 import { useCodeDetails } from "./hooks/use-code-details";
 import { useCellEdit } from "./hooks/use-cell-edit";
@@ -61,7 +61,9 @@ export function CodesContents() {
 
   // 관심사별 훅 분리
   const headers = useCodeHeaders();
-  const edit = useCellEdit({ openAlert });
+  // 두 테이블 각각 독립된 편집 state — useCellEdit 의 두 인스턴스
+  const detailEdit = useCellEdit({ openAlert });
+  const headerEdit = useCellEdit({ openAlert });
 
   const selectedHeader = headers.headersRaw.find((h) => h.id === selectedHeaderId);
   const selectedHeaderCode = selectedHeader?.headerCode ?? "";
@@ -73,6 +75,7 @@ export function CodesContents() {
     headerNewRow,
     headerNewRowRef,
     headerCreateMutation,
+    headerUpdateMutation,
   } = headers;
   const {
     detailNewRow,
@@ -86,12 +89,25 @@ export function CodesContents() {
     detailEditRef,
     handleEditCancel,
     handleRequestEditCancel,
-  } = edit;
+  } = detailEdit;
+  const {
+    editingCell: headerEditingCell,
+    detailEditRef: headerEditRef,
+    handleCellEditStart: handleHeaderCellEditStart,
+    handleEditCancel: handleHeaderEditCancel,
+    handleEditFieldChange: handleHeaderEditFieldChange,
+  } = headerEdit;
 
-  // Grid 표시용 데이터 (spread로 immutable 처리)
+  // Grid 표시용 데이터 (spread로 immutable 처리, editingField 주입)
   const headerRows: HeaderGridRow[] = [
     ...(headerNewRow ? [headerNewRow] : []),
-    ...headers.headersRaw.map(toHeaderGridRow),
+    ...headers.headersRaw.map((h) => {
+      const row = toHeaderGridRow(h);
+      if (headerEditingCell && row.id === headerEditingCell.rowId) {
+        return { ...row, editingField: headerEditingCell.field };
+      }
+      return row;
+    }),
   ];
 
   const detailRows: DetailGridRow[] = [
@@ -145,6 +161,30 @@ export function CodesContents() {
           throwWithStage(err, "Detail登録");
         }
       }
+      // Header 편집행 저장 (modal save 트리거)
+      if (headerEditingCell && !headerEditingCell.rowId.startsWith("new-")) {
+        const editValues = headerEditRef.current;
+        const field = headerEditingCell.field;
+        const data: Record<string, unknown> = {};
+        if (editValues[field] !== undefined) {
+          if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
+            data[field] = editValues[field] || null;
+          } else {
+            data[field] = editValues[field];
+          }
+        }
+        if (Object.keys(data).length > 0) {
+          try {
+            await headerUpdateMutation.mutateAsync({
+              headerId: Number(headerEditingCell.rowId),
+              data,
+            });
+            handleHeaderEditCancel();
+          } catch (err: unknown) {
+            throwWithStage(err, "Header修正");
+          }
+        }
+      }
       // Detail 편집행 저장 (NaN 가드)
       if (editingCell && !editingCell.rowId.startsWith("new-")) {
         const editValues = detailEditRef.current;
@@ -190,6 +230,10 @@ export function CodesContents() {
     headerNewRow,
     headerNewRowRef,
     headerCreateMutation,
+    headerEditingCell,
+    headerEditRef,
+    headerUpdateMutation,
+    handleHeaderEditCancel,
     detailNewRow,
     detailNewRowRef,
     detailCreateMutation,
@@ -214,11 +258,15 @@ export function CodesContents() {
         rows={headerRows}
         hasNewRow={!!headerNewRow}
         isLoading={headers.headersLoading}
+        editingCell={headerEditingCell}
         onAdd={headers.handleHeaderAdd}
         onCancelAdd={headers.handleHeaderCancelAdd}
         onSave={handleSave}
         isSaving={isSaving}
         onHeaderClick={handleHeaderClick}
+        onCellEditStart={handleHeaderCellEditStart}
+        onEditFieldChange={handleHeaderEditFieldChange}
+        onEditCancel={handleHeaderEditCancel}
         onNewRowFieldChange={headers.handleHeaderNewRowFieldChange}
         newRowFieldsRef={headers.headerNewRowRef}
         activeOnly={headers.headerActiveOnly}
@@ -233,12 +281,11 @@ export function CodesContents() {
         editingCell={editingCell}
         onAdd={details.handleDetailAdd}
         onCancelAdd={details.handleDetailCancelAdd}
-        onCellEditStart={edit.handleCellEditStart}
+        onCellEditStart={detailEdit.handleCellEditStart}
         onEditCancel={handleEditCancel}
-        onRequestEditCancel={handleRequestEditCancel}
         onSave={handleSave}
         onNewRowFieldChange={details.handleDetailNewRowFieldChange}
-        onEditFieldChange={edit.handleEditFieldChange}
+        onEditFieldChange={detailEdit.handleEditFieldChange}
         newRowFieldsRef={details.detailNewRowRef}
         activeOnly={details.detailActiveOnly}
         onActiveOnlyChange={details.setDetailActiveOnly}

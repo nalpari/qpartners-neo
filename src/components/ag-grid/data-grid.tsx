@@ -6,6 +6,7 @@ import {
   ClientSideRowModelModule,
   DragAndDropModule,
   ModuleRegistry,
+  RenderApiModule,
   RowAutoHeightModule,
   RowStyleModule,
   themeQuartz,
@@ -14,10 +15,18 @@ import {
   type RowDoubleClickedEvent,
   type CellDoubleClickedEvent,
   type CellClickedEvent,
+  type GridReadyEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
-ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowAutoHeightModule, RowStyleModule, DragAndDropModule]);
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  CellStyleModule,
+  RowAutoHeightModule,
+  RowStyleModule,
+  DragAndDropModule,
+  RenderApiModule,
+]);
 
 const customTheme = themeQuartz.withParams({
   backgroundColor: "transparent",
@@ -57,6 +66,7 @@ interface DataGridProps<T> {
   onRowDoubleClicked?: (event: RowDoubleClickedEvent<T>) => void;
   onCellDoubleClicked?: (event: CellDoubleClickedEvent<T>) => void;
   onCellClicked?: (event: CellClickedEvent<T>) => void;
+  onGridReady?: (event: GridReadyEvent<T>) => void;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -74,6 +84,7 @@ export function DataGrid<T>({
   onRowDoubleClicked,
   onCellDoubleClicked,
   onCellClicked,
+  onGridReady,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -131,6 +142,7 @@ export function DataGrid<T>({
         onRowDoubleClicked={onRowDoubleClicked}
         onCellDoubleClicked={onCellDoubleClicked}
         onCellClicked={onCellClicked}
+        onGridReady={onGridReady}
       />
     </div>
   );
