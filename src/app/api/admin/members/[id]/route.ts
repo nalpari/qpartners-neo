@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
-import { fetchQspUserDetail } from "@/lib/qsp-member";
+import { fetchQspUserDetail, parseQspDate, buildQspPreservedFields } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
   memberIdParamSchema,
@@ -122,6 +122,11 @@ export async function GET(request: NextRequest, { params }: Params) {
           attributeChangeNotification: false,
           status: "unknown",
           newsRcptYn: "N",
+          // Timestamp 필드는 의미상 null 이 정확 — "값 없음" ≠ "빈 시각".
+          // openapi 도 nullable: true 로 동기화. 다른 string 필드는 기존 컨벤션 유지(빈 문자열).
+          createdAt: null,
+          updatedAt: null,
+          updatedBy: null,
           notFoundInQsp: true,
         },
       });
@@ -156,6 +161,15 @@ export async function GET(request: NextRequest, { params }: Params) {
       attributeChangeNotification: d.attrChgYn === "Y",
       status: lookupStatCd(d.statCd) ?? "unknown",
       newsRcptYn: d.newsRcptYn ?? "N",
+      // QSP regDt(YYYY.MM.DD) / uptDt(YYYY.MM.DD HH:mm:ss) 를 ISO 8601 (+09:00) 로 정규화.
+      // 백엔드 timestamp 컨벤션(ISO 8601 +09:00)과 통일 — 프론트 정렬·비교·dayjs 포맷 변환 일관 처리.
+      // regDt 는 시각 미보유라 자정으로 채움 — 정보 없음 의미.
+      createdAt: parseQspDate(d.regDt),
+      updatedAt: parseQspDate(d.uptDt),
+      // uptNm 도 nullable — QSP 가 null 전송하면 그대로 노출 (빈 문자열로 변환 안 함).
+      // 응답 키는 `updatedBy` — 프론트 members-types.ts 의 `updatedBy?: string | null` 과 일치.
+      // (값은 userNm 형태이지만 키 네이밍은 프론트 호환성 우선)
+      updatedBy: d.uptNm ?? null,
       notFoundInQsp: false,
     };
 
@@ -359,9 +373,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 불일치 발견 시 CRITICAL 로그를 남겨 사후 탐지 가능하도록 한다.
 
     // 5. QSP 회원정보 수정 API 호출
-    // 필수 9개 필드: loginId, accsSiteCd, userTp, userId, secAuthYn, loginNotiYn, attrChgYn, newsRcptYn, statCd
-    // 기존 값(preDetail)을 기본으로 채우고, 변경 요청 필드만 덮어쓰기
-    // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 status 미지정이면 기본값 "D"로 완화
+    //
+    // QSP updateUserDtlMng 는 full-replace 방식(전송하지 않은 필드를 null 로 덮어씀, 2026-04-20 확인 / Design §1.4).
+    // 성명·회사·주소 등 mutable 스키마에 없는 필드가 null 로 날아가는 사고를 막기 위해
+    // preDetail 의 보존 필드를 페이로드 기본값으로 깔고, mutable 필드
+    // (authCd / secAuthYn / loginNotiYn / attrChgYn / newsRcptYn / statCd — memberUpdateSchema 매핑 대상)만
+    // request body 로 덮어쓴다.
+    //
+    // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 보존할 값이 없으므로
+    // mutable 필드 + 필수 메타만 전송하고, 누락 필드는 fallback 기본값으로 통보한다.
     // STORE 는 storeLvl 로 1ST/2ND 를 구분하지만 userListMng 에 storeLvl 미포함이라
     // preDetail null + STORE 는 위 4-0-b 에서 이미 차단됨. 여기서는 GENERAL/ADMIN/SEKO 만 처리.
     const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
@@ -382,7 +402,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
         console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
       }
     }
+
+    // preDetail 존재 시 보존할 비-mutable 필드 (성명/회사/주소/조직 정보).
+    // QSP full-replace 방어 — 전송 안 하면 null 로 덮어써짐.
+    // 키 목록·타입·조립 로직은 qsp-member.ts 의 QSP_PRESERVED_KEYS / buildQspPreservedFields 에서 관리.
+    const preservedFields = buildQspPreservedFields(preDetail);
+
     const updatePayload: Record<string, unknown> = {
+      ...preservedFields,
       loginId: user.userId,
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userTp,

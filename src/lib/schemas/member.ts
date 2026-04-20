@@ -198,6 +198,12 @@ const qspMemberDetailSchema = z.object({
   pwdChgDt: z.string().nullable(),
   pwdInitYn: z.string().nullable(),
   storeLvl: z.string().nullable(),
+  /** 등록일 — QSP 응답 포맷 "YYYY.MM.DD" (시각 없음) */
+  regDt: z.string().nullable().optional(),
+  /** 갱신일 — QSP 응답 포맷 "YYYY.MM.DD HH:mm:ss" */
+  uptDt: z.string().nullable().optional(),
+  /** 갱신자 성명 (userNm 형태, userId 아님) */
+  uptNm: z.string().nullable().optional(),
 });
 
 export const qspMemberDetailResponseSchema = z.object({

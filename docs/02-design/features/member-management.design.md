@@ -197,9 +197,24 @@
   - 이 경로는 위 제약에 의해 `status` 복구 요청에만 도달 가능
 - 자기 자신이면 400 반환: `"自分自身のアカウントに対するこの変更は実行できません"`
 
-#### 1.4 QSP 업데이트 필수 필드 매핑
+#### 1.4 QSP 업데이트 필드 매핑 (full-replace 방어)
 
-QSP `updateUserDtlMng` 필수 9개 필드를 `preDetail` + request body + fallback 조합으로 결정.
+QSP `updateUserDtlMng` 는 **전송하지 않은 필드를 null 로 덮어쓰는 full-replace 방식**으로 동작한다(2026-04-20 확인). 따라서 status 만 변경해도 성명·회사·주소 필드가 모두 null 이 되는 데이터 손실이 발생한다.
+
+**대응 전략**: `preDetail` 의 보존 필드를 페이로드 기본값으로 깔고, request body 의 mutable 필드만 덮어쓴다. `preDetail` null(F_NOT_USER) 경로는 보존할 값이 없으므로 mutable 필드 + 필수 메타만 전송(기존 동작).
+
+**① 보존 필드 (preDetail 존재 시 mirror)** — QSP 가 null 로 덮어쓰지 않도록 현재 값 그대로 재전송
+
+| QSP 필드 | 출처 |
+|----------|------|
+| `userNm`, `userNmKana` | `preDetail.userNm` / `userNmKana` ?? "" |
+| `user1stNm`, `user2ndNm`, `user1stNmKana`, `user2ndNmKana` | `preDetail` 동명 필드 ?? "" |
+| `email` | `preDetail.email` ?? "" |
+| `compNm`, `compNmKana`, `compPostCd`, `compAddr`, `compAddr2`, `compTelNo`, `compFaxNo`, `compCd` | `preDetail` 동명 필드 ?? "" |
+| `deptNm`, `pstnNm` | `preDetail` 동명 필드 ?? "" |
+| `storeLvl` | `preDetail.storeLvl` ?? "" (STORE 구분) |
+
+**② Mutable + 메타 필드** — request body ↔ preDetail ↔ fallback 순 결정
 
 | QSP 필드 | 결정 우선순위 |
 |----------|--------------|
@@ -336,3 +351,4 @@ src/lib/
 | 0.1 | 2026-03-28 | Initial draft | CK |
 | 1.1 | 2026-04-16 | 권한별 수정 제한 정책(2026-03-30, 04-13), 탈퇴·삭제 회원 수정 허용(04-15), STORE storeLvl 의존성(04-16), self-lockout 가드, TOCTOU 사후 검증, QSP 필수 9필드 매핑, 에러 응답 매트릭스, userTp query parameter, F_NOT_USER 처리 반영 | CK |
 | 1.2 | 2026-04-16 | PR #53 코드 리뷰 반영: §1.3 preDetail null + userRole/twoFactorEnabled fail-closed 차단(에러매트릭스 ⑦), self-target 비교 NFKC 정규화, §1.4 Fallback 통보(warnings 배열) 추가, Response 예시 업데이트 | CK |
+| 1.3 | 2026-04-20 | QSP `updateUserDtlMng` full-replace 방어 — §1.4 "필수 9필드" → "보존 필드 + mutable" 이원화. status 변경 시 성명·회사·주소 등이 null 로 덮어써지는 데이터 손실 수정 | CK |
