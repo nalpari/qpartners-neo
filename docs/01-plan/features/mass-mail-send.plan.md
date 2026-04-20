@@ -150,6 +150,7 @@ draft ──[発送]──→ pending ──[수집 시작]──→ sending ─
 2. `recipient.retry_count == 3 → recipient.status ∈ {sent, failed}` (pending 아님)
 3. `mass_mail.status == 'sent' ⇔ 모든 recipients.status ∈ {sent, failed}`
 4. SMTP 시도 횟수 == retry_count (불변)
+5. **SMTP 성공 → recipient.status ∈ {sent, failed}** (v0.5 신규) — DB 갱신 실패 시에도 중복 발송 방지 위해 `failed` 강제 마킹 (`errorMessage=ORPHAN_SEND...`)
 
 ### 3.3 장애 복구 (3단계 안전망)
 
@@ -177,6 +178,37 @@ draft ──[発送]──→ pending ──[수집 시작]──→ sending ─
 - 일시 장애: 1단계 in-process 30초 × 3회 + 2단계 배치 9분 윈도우 → 자동 복구
 - 영구 장애: retry_count == 3 으로 자동 마킹 → 무한 루프 없음
 - 운영자 수동 개입: 거의 불필요 (필요 시 3단계 사용)
+
+### 3.4 동시성 보호 (v0.5 신규)
+
+1단계(API Fire-and-Forget) 와 2단계(배치 cycle) 가 같은 mass_mail 을 **동시 처리**할 수 있는 경합 구간 존재:
+- 수집 단계(QSP 수십초 소요) 진입과 배치 cycle 발동이 교차
+- 좀비 threshold(10분) 내 heartbeat 갱신이 없으면 정상 발송 중인 mail 을 좀비로 오판정
+- Next.js dev HMR 로 모듈 재-import 시 인-메모리 마커 우회 가능
+
+이를 차단하기 위해 **3단 방어** 를 둔다:
+
+**L1: `inFlightMassMails` 인-메모리 마커** (프로세스 단위, `globalThis` 보관)
+- `runWithInFlightGuard(id, work)` helper 로 `processMassMailSend` / `processMassMailRetry` / 배치 cycle 각 mail 전체를 감쌈
+- 이미 처리 중인 mass_mail 은 `has(id)` 확인 후 조용히 skip (log)
+- 좀비 감지 단계에서도 in-flight 인 mail 은 제외 (소규모 발송 오판 방지)
+- HMR 재-import 안전 — `globalThis.__inFlightMassMails` 로 모듈 인스턴스와 분리 보관
+- 전제: **PM2 single instance**. 다중 인스턴스 시 분산 락(pg_advisory_lock / Redis) 필요
+
+**L2: `collectAndQueueRecipients` $transaction 낙관적 락**
+- `updateMany(where: status=fromStatus)` 로 status 전이 선행
+- count=0 이면 `StatusTransitionLostError` throw → tx 롤백 → `createMany` 미실행
+- 두 번째 진입자는 `processMassMailSend` 의 catch 가 `StatusTransitionLostError` 로 인식해 조용히 종결 (`markSendFailed` 스킵)
+
+**L3: DB `@@unique([massMailId, email])` 제약**
+- 이중 `createMany` 최종 방어 (L1/L2 우회 가정 시 마지막 가드)
+
+**heartbeat** (v0.5 신규): sendLoop 실행 중 마지막 갱신 이후 60초 경과 시 `mass_mail.updatedAt` 을 touch. 소규모 발송(<50건) 이 좀비 threshold 를 초과하며 오판정되는 것을 방지.
+
+**핵심 동시성 불변량**
+- 같은 massMailId 에 대해 동일 시점에 하나의 "수집+sendLoop+promote" 파이프라인만 실행됨 (L1)
+- 파이프라인이 끝날 때 `inFlightMassMails` 에서 반드시 제거됨 (try/finally)
+- SMTP 발송은 정확히 1회만 실행됨 (L1 + L2 + L3 조합)
 
 ---
 
@@ -417,3 +449,4 @@ src/
 | 0.2 | 2026-04-16 | 장애 복구 이중 안전망, 発送/再送信 차이, 수집 2단계(목록→상세), email null/중복 제거, 삭제 정책, 중복 트리거 차단 추가 | CK |
 | 0.3 | 2026-04-16 | QSP 목록 API에 storeLvl + newsRcptYn 추가 확정 → 수집을 1단계로 단순화 | CK |
 | 0.4 | 2026-04-19 | **3분 배치 도입 결정 번복 (v0.3 의 "배치 불필요" → "배치 도입")**. recipient.retry_count 컬럼 추가 (30초 룰 누적, 상한 3). mass_mail.status 자동 전이 (recipients 모두 종결 시 sent). 失敗確認 UI 추가 (기존 GET 응답 확장, 신규 API 없음). Design §9 #4 "자동 복구 검토" 항목 해결. | CK |
+| 0.5 | 2026-04-19 | **PR #62 리뷰 대응 + 동시성 보호 강화**. 핵심 불변량 #5 추가 (SMTP 성공 시 status ∈ {sent, failed}). §3.4 동시성 보호 섹션 신규 (inFlightMassMails 3단 방어 + heartbeat 시간 기반). 상세 설계 변경은 Design v0.4 §3.5 / §4.6 참고. | CK |

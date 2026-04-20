@@ -64,9 +64,12 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     console.log(`[POST /api/admin/mass-mails/:id/retry] 재발송 수락 — id: ${idResult.data}, userId: ${user.userId}`);
 
-    // 5. Fire-and-Forget
+    // 5. Fire-and-Forget — processMassMailRetry 가 자체 외부 안전망을 가지므로 이 catch 는 catastrophic 케이스 전용.
     processMassMailRetry(idResult.data).catch((err: unknown) => {
-      console.error("[POST /api/admin/mass-mails/:id/retry] 비동기 재발송 실패:", err);
+      console.error(
+        `[POST /api/admin/mass-mails/:id/retry] CRITICAL — 비동기 재발송 fire-and-forget 새어남. 좀비 감지 의존. massMailId: ${idResult.data}`,
+        err,
+      );
     });
 
     return NextResponse.json({
