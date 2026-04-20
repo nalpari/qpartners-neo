@@ -248,6 +248,8 @@ export function Gnb() {
                         <li key={site.value}>
                           <a
                             href={site.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
                             onClick={() => setIsDropdownOpen(false)}
                           >
@@ -559,6 +561,8 @@ export function Gnb() {
                     <li key={site.value}>
                       <a
                         href={site.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
