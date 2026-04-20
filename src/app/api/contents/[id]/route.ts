@@ -5,8 +5,9 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import {
   canAccessContent,
-  canModifyContent,
+  canModifyResource,
   getUserFromHeaders,
+  isAuthorSuperAdmin,
   isInternalUser,
   requireAdmin,
 } from "@/lib/auth";
@@ -70,9 +71,16 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const now = Date.now();
 
+    // 프론트 수정/삭제 버튼 노출 판단용 — ADMIN 사용자가 SUPER_ADMIN 작성글을 구분할 수 있도록 제공
+    const authorIsSuperAdmin = await isAuthorSuperAdmin({
+      userType: content.userType,
+      userId: content.userId,
+    });
+
     return NextResponse.json({
       data: {
         ...content,
+        authorIsSuperAdmin,
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: buildCategoryTree(content.categories, { includeInternal: internal }),
@@ -110,17 +118,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: 슈퍼관리자=동일부문, 관리자=본인등록만
+    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { userId: true, authorDepartment: true },
+      select: { userType: true, userId: true },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, existing)) {
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
         { error: "수정 권한이 없습니다" },
         { status: 403 },
@@ -219,17 +227,17 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: 슈퍼관리자=동일부문, 관리자=본인등록만
+    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { userId: true, authorDepartment: true },
+      select: { userType: true, userId: true },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, existing)) {
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
         { error: "삭제 권한이 없습니다" },
         { status: 403 },

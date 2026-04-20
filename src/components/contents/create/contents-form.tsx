@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -32,6 +32,7 @@ interface ContentDetailResponse {
   status: string;
   approverLevel: number | null;
   authorDepartment: string | null;
+  authorIsSuperAdmin: boolean;
   viewCount: number;
   userId: string;
   createdBy: string;
@@ -101,6 +102,25 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     staleTime: Infinity,
     enabled: false,
   });
+
+  // edit 진입 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+  // 권한 없으면 안내 후 상세 페이지로 되돌림 (URL 직접 입력 시에도 차단)
+  useEffect(() => {
+    if (mode !== "edit" || !existingData || !loginUser) return;
+    const role = loginUser.authRole ?? "ADMIN";
+    const canModify = role === "SUPER_ADMIN"
+      ? true
+      : role === "ADMIN"
+        ? !existingData.authorIsSuperAdmin
+        : loginUser.userId === existingData.userId;
+    if (!canModify) {
+      openAlert({
+        type: "alert",
+        message: "このコンテンツを編集する権限がありません。",
+        onConfirm: () => router.push(`/contents/${contentId}`),
+      });
+    }
+  }, [mode, existingData, loginUser, contentId, openAlert, router]);
 
   // 카테고리 조회
   const { data: categories = [] } = useQuery({

@@ -5,7 +5,7 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { requireAdmin } from "@/lib/auth";
+import { canModifyResource, isAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
@@ -86,6 +86,12 @@ export async function GET(request: NextRequest, { params }: Params) {
     const failedTotal = mail.sentFailed;
     const failedTruncated = failedTotal > mail.recipients.length;
 
+    // 작성자가 SUPER_ADMIN 인지 — 프론트 수정/삭제 버튼 노출 판단용
+    const authorIsSuperAdmin = await isAuthorSuperAdmin({
+      userType: mail.userType,
+      userId: mail.userId,
+    });
+
     // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑
     const mapped = {
@@ -101,6 +107,9 @@ export async function GET(request: NextRequest, { params }: Params) {
       sentTotal: mail.sentTotal,
       sentSuccess: mail.sentSuccess,
       sentFailed: mail.sentFailed,
+      userType: mail.userType,
+      userId: mail.userId,
+      authorIsSuperAdmin,
       attachments: mail.attachments.map((a) => ({
         id: a.id,
         fileName: a.fileName,
@@ -159,6 +168,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       where: { id: idResult.data },
       select: {
         id: true,
+        userType: true,
         userId: true,
         status: true,
         attachments: { select: { filePath: true } },
@@ -172,11 +182,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 소유권 검증: 작성자만 삭제 가능
+    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
     // retry 핸들러와 동일하게 ownership → status 순서로 체크 — 타인 소유 메일의 상태 enumeration 차단
-    if (mail.userId !== user.userId) {
+    if (!(await canModifyResource(user, mail))) {
       return NextResponse.json(
-        { error: "他のユーザーが作成したメールは削除できません" },
+        { error: "このメールを削除する権限がありません" },
         { status: 403 },
       );
     }
@@ -263,10 +273,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 소유권 검증: 작성자만 수정 가능
-    if (existing.userId !== user.userId) {
+    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "他のユーザーが作成したメールは編集できません" },
+        { error: "このメールを編集する権限がありません" },
         { status: 403 },
       );
     }

@@ -131,18 +131,40 @@ export function canAccessContent(
   });
 }
 
-/** 콘텐츠 수정 권한 — 슈퍼관리자=동일부문, 관리자=본인등록만 */
-export function canModifyContent(
+/**
+ * 작성자가 슈퍼관리자인지 판별 — userType이 ADMIN이고 ADMIN_ROLE 공통코드에 등록된 사용자
+ * canModifyResource 내부 + GET 응답의 authorIsSuperAdmin 노출에서 사용.
+ */
+export async function isAuthorSuperAdmin(
+  resource: { userType: string; userId: string },
+): Promise<boolean> {
+  if (resource.userType !== "ADMIN") return false;
+  const entry = await prisma.codeDetail.findFirst({
+    where: {
+      header: { headerCode: "ADMIN_ROLE", isActive: true },
+      code: resource.userId,
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  return entry !== null;
+}
+
+/**
+ * 게시글/콘텐츠 수정/삭제 권한 — 작성자가 있는 모든 리소스 공용
+ * - SUPER_ADMIN: 모든 글
+ * - ADMIN: 슈퍼관리자 작성글 제외 모든 글
+ * - 그 외: 본인 작성글만
+ *
+ * 적용 대상: Content, HomeNotice, MassMail 등 `{ userType, userId }` 를 가진 리소스
+ */
+export async function canModifyResource(
   user: UserInfo,
-  content: { userId: string; authorDepartment: string | null },
-): boolean {
-  if (user.role === "SUPER_ADMIN") {
-    // 부문이 양쪽 다 미지정이면 매칭하지 않음 (명시적 부문 필요)
-    if (!user.department || !content.authorDepartment) return false;
-    return user.department === content.authorDepartment;
-  }
+  resource: { userType: string; userId: string },
+): Promise<boolean> {
+  if (user.role === "SUPER_ADMIN") return true;
   if (user.role === "ADMIN") {
-    return user.userId === content.userId;
+    return !(await isAuthorSuperAdmin(resource));
   }
-  return false;
+  return user.userId === resource.userId;
 }

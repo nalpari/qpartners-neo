@@ -3090,7 +3090,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "categories", "targets", "attachments",
+          "isNew", "isUpdated", "authorIsSuperAdmin", "categories", "targets", "attachments",
         ],
         properties: {
           id: { type: "integer" },
@@ -3098,6 +3098,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           body: { type: "string", nullable: true },
           status: { type: "string", enum: ["draft", "published", "deleted"] },
           authorDepartment: { type: "string", nullable: true },
+          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (ADMIN 사용자 버튼 노출 판단용)" },
           userType: { type: "string", nullable: true },
           userId: { type: "string", nullable: true },
           viewCount: { type: "integer" },
@@ -3310,6 +3311,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           status: { type: "string", enum: ["scheduled", "active", "ended"] },
           userType: { type: "string" },
           userId: { type: "string" },
+          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (GET 단건 응답 전용, 목록 응답에는 없음)" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
@@ -3563,6 +3565,9 @@ export const openApiSpec: OpenAPIV3.Document = {
           "sentTotal",
           "sentSuccess",
           "sentFailed",
+          "userType",
+          "userId",
+          "authorIsSuperAdmin",
           "attachments",
           "failedRecipients",
           "failedRecipientsTotal",
@@ -3573,6 +3578,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "integer" },
           senderName: { type: "string" },
+          userType: { type: "string", description: "작성자 userType" },
+          userId: { type: "string", description: "작성자 userId" },
+          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (프론트 수정/삭제 버튼 노출 판단용)" },
           targets: {
             type: "object",
             required: ["super_admin", "admin", "first_store", "second_store", "seko", "general"],

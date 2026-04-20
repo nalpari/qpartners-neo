@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { canModifyResource, isAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -40,6 +40,11 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
+    const authorIsSuperAdmin = await isAuthorSuperAdmin({
+      userType: notice.userType,
+      userId: notice.userId,
+    });
+
     const data = {
       id: notice.id,
       targets: toTargetArray(notice),
@@ -50,6 +55,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       status: computeStatus(notice.startAt, notice.endAt),
       userType: notice.userType,
       userId: notice.userId,
+      authorIsSuperAdmin,
       createdAt: notice.createdAt,
       createdBy: notice.createdBy,
       updatedAt: notice.updatedAt,
@@ -102,11 +108,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // startAt 또는 endAt 한쪽만 보낸 경우, 기존 레코드와 cross-validation
     const existing = await prisma.homeNotice.findUnique({
       where: { id: parsed.data },
-      select: { startAt: true, endAt: true },
+      select: { startAt: true, endAt: true, userType: true, userId: true },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
+    }
+
+    // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    if (!(await canModifyResource(auth.user, existing))) {
+      return NextResponse.json(
+        { error: "修正する権限がありません" },
+        { status: 403 },
+      );
     }
 
     const finalStartAt = result.data.startAt ?? existing.startAt;
@@ -174,6 +188,22 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
       return NextResponse.json({ error: "IDが正しくありません" }, { status: 400 });
+    }
+
+    const existing = await prisma.homeNotice.findUnique({
+      where: { id: parsed.data },
+      select: { userType: true, userId: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
+    }
+
+    if (!(await canModifyResource(auth.user, existing))) {
+      return NextResponse.json(
+        { error: "削除する権限がありません" },
+        { status: 403 },
+      );
     }
 
     await prisma.homeNotice.delete({ where: { id: parsed.data } });
