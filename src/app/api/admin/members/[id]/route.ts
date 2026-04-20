@@ -405,7 +405,22 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // preDetail 존재 시 보존할 비-mutable 필드 (성명/회사/주소/조직 정보).
     // QSP full-replace 방어 — 전송 안 하면 null 로 덮어써짐.
-    const preservedFields: Record<string, unknown> = preDetail
+    //
+    // 타입을 `Pick<QspMemberDetail, ...>` 로 고정하여:
+    //   1) 허용 필드 집합을 컴파일타임에 강제 (mutable 필드인 authCd/statCd 등이
+    //      실수로 추가되어 spread 순서에 따라 권한값을 덮어쓰는 silent privilege
+    //      escalation 경로를 차단)
+    //   2) QSP 스키마의 필드명이 바뀌면 타입 에러로 감지
+    // 값은 `?? ""` 로 null → 빈 문자열 변환(QSP full-replace 가 null 로 덮어쓰지
+    // 않도록), Partial 로 preDetail null 케이스({})도 수용.
+    type QspPreservedFieldKeys =
+      | "userNm" | "userNmKana"
+      | "user1stNm" | "user2ndNm" | "user1stNmKana" | "user2ndNmKana"
+      | "email"
+      | "compNm" | "compNmKana"
+      | "compPostCd" | "compAddr" | "compAddr2" | "compTelNo" | "compFaxNo"
+      | "compCd" | "deptNm" | "pstnNm" | "storeLvl";
+    const preservedFields: Partial<Pick<QspMemberDetail, QspPreservedFieldKeys>> = preDetail
       ? {
           userNm: preDetail.userNm ?? "",
           userNmKana: preDetail.userNmKana ?? "",
