@@ -15,6 +15,41 @@ export type QspFetchError = {
 };
 
 /**
+ * QSP full-replace 방어용 보존 필드 키 목록.
+ * 이 배열이 single source of truth — 타입(`QspPreservedFieldKeys`)과
+ * `buildQspPreservedFields()` 헬퍼가 이 배열을 참조한다.
+ *
+ * ⚠️  mutable 필드(authCd, statCd, secAuthYn 등)는 절대 추가 금지
+ *     — spread 순서에 따라 권한값을 덮어쓰는 silent privilege escalation 위험.
+ */
+const QSP_PRESERVED_KEYS = [
+  "userNm", "userNmKana",
+  "user1stNm", "user2ndNm", "user1stNmKana", "user2ndNmKana",
+  "email",
+  "compNm", "compNmKana",
+  "compPostCd", "compAddr", "compAddr2", "compTelNo", "compFaxNo",
+  "compCd", "deptNm", "pstnNm", "storeLvl",
+] as const satisfies ReadonlyArray<keyof QspMemberDetail>;
+
+export type QspPreservedFieldKeys = (typeof QSP_PRESERVED_KEYS)[number];
+
+/**
+ * preDetail 존재 시 보존 필드를 QSP 페이로드용 객체로 조립.
+ * null 값은 빈 문자열로 변환 — QSP full-replace 가 null 로 덮어쓰지 않도록.
+ * preDetail null(F_NOT_USER) 이면 빈 객체 반환.
+ */
+export function buildQspPreservedFields(
+  preDetail: QspMemberDetail | null,
+): Partial<Pick<QspMemberDetail, QspPreservedFieldKeys>> {
+  if (!preDetail) return {};
+  const result: Record<string, string> = {};
+  for (const key of QSP_PRESERVED_KEYS) {
+    result[key] = preDetail[key] ?? "";
+  }
+  return result as Partial<Pick<QspMemberDetail, QspPreservedFieldKeys>>;
+}
+
+/**
  * QSP 유저 정보 조회 공통 헬퍼 (사양서 No.13 userDetail).
  * userTp에 따라 조회 키가 다름: GENERAL → email, ADMIN/STORE/SEKO → loginId
  *
@@ -83,6 +118,9 @@ export async function fetchQspUserDetail(
   return { ok: true, detail: parsed.data.data };
 }
 
+/** YYYY.MM.DD 또는 YYYY.MM.DD HH:mm:ss 매칭 — parseQspDate 에서 사용. */
+const QSP_DATE_RE = /^(\d{4})\.(\d{2})\.(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/;
+
 /**
  * QSP date 문자열 → ISO 8601 (JST +09:00) 정규화.
  *
@@ -106,7 +144,7 @@ export function parseQspDate(input: string | null | undefined): string | null {
   // 포맷 미일치는 null 반환 + 길이 warn — QSP 가 포맷을 바꿨을 때 전 회원 timestamp
   // 가 일제히 null 되는 모니터링 사각지대를 제거하기 위한 드리프트 감지용.
   // 원문 노출은 회피(QSP 버그로 PII 혼입 시 로그 유출 방지).
-  const match = /^(\d{4})\.(\d{2})\.(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/.exec(trimmed);
+  const match = QSP_DATE_RE.exec(trimmed);
   if (!match) {
     console.warn(`[parseQspDate] QSP 날짜 포맷 불일치 — drift 가능성, length=${trimmed.length}`);
     return null;
