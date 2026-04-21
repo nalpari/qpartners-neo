@@ -38,7 +38,7 @@ interface NoticeDetailResponse {
     status: string;
     userType: string;
     userId: string;
-    authorIsSuperAdmin: boolean;
+    authorIsSuperAdmin?: boolean;
     createdAt: string;
     createdBy: string | null;
     updatedAt: string;

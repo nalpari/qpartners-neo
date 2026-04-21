@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { canModifyResource, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
+import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -40,11 +40,15 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (Contents API와 동일 패턴)
     // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴 — ADMIN 수정 버튼 숨김
-    const authorIsSuperAdmin = (await resolveAuthorSuperAdmin({
-      userType: notice.userType,
-      userId: notice.userId,
-    })).isSuperAdmin;
+    const internal = isInternalUser(auth.user.role);
+    const authorIsSuperAdmin = internal
+      ? (await resolveAuthorSuperAdmin({
+          userType: notice.userType,
+          userId: notice.userId,
+        })).isSuperAdmin
+      : undefined;
 
     const data = {
       id: notice.id,

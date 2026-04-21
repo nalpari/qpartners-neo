@@ -3329,7 +3329,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             properties: {
               authorIsSuperAdmin: {
                 type: "boolean",
-                description: "작성자가 SUPER_ADMIN 여부 (프론트 수정/삭제 버튼 노출 판단용)",
+                description: "작성자가 SUPER_ADMIN 여부 — 사내 사용자(ADMIN)에게만 노출, 일반 사용자는 필드 자체 누락 (Contents API와 동일 패턴)",
               },
             },
           },
