@@ -41,6 +41,8 @@ pipeline {
 
         stage('Prepare Env') {
             steps {
+                // 이전 빌드에서 남은 env 파일 제거 (root 소유 파일 대비)
+                sh "rm -f .env.${APP_ENV}"
                 // Jenkins Credentials에서 .env 파일 복사
                 withCredentials([file(credentialsId: "${ENV_CREDENTIALS}", variable: 'ENV_FILE')]) {
                     sh "cp \$ENV_FILE .env.${APP_ENV}"
