@@ -184,7 +184,6 @@ export function MemberDetailPopup() {
           message: string;
           member?: MemberDetail;
           warning?: string;
-          warnings?: string[];
         };
       }>(
         `/admin/members/${encodeURIComponent(userId)}`,
@@ -212,19 +211,11 @@ export function MemberDetailPopup() {
         // fallback 으로 기본 필드를 채우므로 공백 화면이 재발하지 않는다.
         await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       }
-      // 서버가 내려주는 경고(warning/warnings)는 운영자 인지가 필요한 상태 —
-      // TOCTOU 사후 검증 실패나 기본값 주입 통보가 사일런트로 묻히지 않도록 alert 에 반영.
-      // warning(단수, TOCTOU) 과 warnings(복수, 기본값 주입 통보) 는 OpenAPI 계약상 동시 존재 가능 —
-      // `??` 로 결합하면 한쪽이 사일런트 누락되므로 둘 다 합쳐서 노출.
-      const warningParts: string[] = [];
-      if (result.warning) warningParts.push(result.warning);
-      if (result.warnings && result.warnings.length > 0) warningParts.push(...result.warnings);
-      const warningMsg = warningParts.length > 0 ? warningParts.join("\n") : undefined;
-      // 경고가 존재하면(member snapshot 유무와 무관) 재확인 안내를 노출.
-      // TOCTOU 감지 경로(member snapshot 포함)에서도 운영자가 목록에서 재확인하도록 유도.
-      const needsListReselect = !!warningMsg;
+      // TOCTOU 사후 검증 실패/불일치 경고만 노출 (userRole 변경 경로에서만 발생).
+      // 경고 발생 시 운영자가 목록에서 재확인하도록 안내 문구 부가.
+      const warningMsg = result.warning;
       const message = warningMsg
-        ? `保存しました。\n\n注意:\n${warningMsg}${needsListReselect ? "\n\n一覧から再度ご確認ください。" : ""}`
+        ? `保存しました。\n\n注意:\n${warningMsg}\n\n一覧から再度ご確認ください。`
         : "保存しました。";
       openAlert({
         type: "alert",
@@ -385,19 +376,26 @@ function MemberEditForm({
   const [attributeNotify, setAttributeNotify] = useState(member.attributeChangeNotification);
   const [newsRcptYn, setNewsRcptYn] = useState(member.newsRcptYn);
 
+  // 삭제/탈퇴 회원(isQspNotFound) 복구 경로 — status=Active 로 전환.
+  // 백엔드는 이 경로에서 userRole + twoFactorEnabled 명시 필수(복구 후 QSP 잔존 값 silent 부활 방어).
+  const isRestoringToActive = isQspNotFound && isStatusEditable && memberStatus === "Active";
+
   const handleSave = () => {
     const payload: MemberUpdatePayload = {
       loginNotification,
       attributeChangeNotification: attributeNotify,
       newsRcptYn,
     };
-    if (!isQspNotFound) {
+    // 일반 경로(preDetail 존재) 또는 복구 경로에서만 2FA 전송.
+    // 비복구 + preDetail null(삭제 상태 유지) 경로에서는 백엔드가 변경 차단(400).
+    if (!isQspNotFound || isRestoringToActive) {
       payload.twoFactorEnabled = twoFactorEnabled;
     }
     if (isStatusEditable) {
       payload.status = memberStatus === "Active" ? "active" : "deleted";
     }
-    if (isGeneral && !isQspNotFound) {
+    // userRole 은 GENERAL 회원에게만 적용. 복구 경로에서도 userTp=GENERAL 한정으로 전송.
+    if (isGeneral && (!isQspNotFound || isRestoringToActive)) {
       payload.userRole = userRole;
     }
     onSave(payload);
@@ -456,8 +454,10 @@ function MemberEditForm({
                   left={{ label: "氏名ひらがな", children: <TextValue value={member.userNameKana} /> }}
                   right={{
                     label: "ユーザー権限",
-                    isForm: isGeneral && !isReadOnly && !isQspNotFound,
-                    children: isGeneral && !isReadOnly && !isQspNotFound ? (
+                    // GENERAL 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
+                    // 복구 시 백엔드가 userRole 명시 필수 — UI 에서 선택 UX 제공.
+                    isForm: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive),
+                    children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
                         value={userRole}
@@ -501,8 +501,8 @@ function MemberEditForm({
                     label: "二次認証",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly || isQspNotFound} />
-                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly || isQspNotFound} />
+                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly || (isQspNotFound && !isRestoringToActive)} />
+                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly || (isQspNotFound && !isRestoringToActive)} />
                       </div>
                     ),
                   }}

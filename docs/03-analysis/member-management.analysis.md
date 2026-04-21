@@ -87,24 +87,17 @@
 | userRole | 400 차단 | route.ts:285, 287-300 | O |
 | twoFactorEnabled | 400 차단 | route.ts:286, 287-300 | O |
 | status=active | 허용 (복구) | route.ts:283 (조건 제외) | O |
-| newsRcptYn/loginNotification/attributeChangeNotification | 허용 + warnings 통보 | route.ts:375-380 | O |
+| newsRcptYn/loginNotification/attributeChangeNotification | request 로 명시된 필드만 전송 (누락 필드는 QSP 가 기존값 보존) | route.ts mutablePayload `!preDetail` 분기 | O |
 
-### 2.5 Fallback 통보 (warnings 배열, v1.2)
+### 2.5 preDetail null 경로 payload 정책 (2026-04-21 정정)
 
-| QSP 필드 | 설계 통보 대상 | 일본어 라벨 (클라이언트 노출) | 구현 위치 | 일치 |
-|----------|---------------|------------------------------|----------|:----:|
-| secAuthYn | O | 二段階認証設定 | route.ts:375 | O |
-| loginNotiYn | O | ログイン通知設定 | route.ts:376 | O |
-| attrChgYn | O | 属性変更通知設定 | route.ts:377 | O |
-| newsRcptYn | O | ニュースレター受信設定 | route.ts:378 | O |
-| authCd | O | ユーザー権限 | route.ts:379 | O |
-| statCd | O | アカウント状態 | route.ts:380 | O |
+| 시나리오 | 전송 규칙 |
+|---------|----------|
+| preDetail 존재 | 보존 필드 + mutable 을 현재값/변경값으로 overlay 후 전송 |
+| preDetail null + request 에 필드 있음 | 해당 필드만 전송 |
+| preDetail null + request 에 필드 없음 | **페이로드에서 생략** (QSP 가 기존값 보존) |
 
-**라벨 매핑 (Chicago 리뷰 반영, 2026-04-16):**
-- `DEFAULTED_FIELD_LABELS_JA: Record<string, string>` 상수 (route.ts:42-49) 로 QSP 내부 필드명을 일본어 라벨로 치환
-- 응답 생성: `${DEFAULTED_FIELD_LABELS_JA[f] ?? f}が既定値で更新されました (元の値を取得できなかったため)` (route.ts:511-517)
-- 매핑 누락 시 원시 필드명 폴백(defensive). 현재 6개 defaulted 키와 매핑 키는 1:1 완전 일치
-- 이유: 클라이언트 응답에서 QSP 내부 필드명 노출 방지. 일본어 환경에 맞춘 표현 일관성 확보. 내부 `console.warn` / `changedFields` 감사 로그는 개발자 디버깅용이므로 원시 키 유지.
+**배경**: v1.2 시점의 fallback "N" 강제 주입·`warnings` 통보 로직은 "QSP 가 full-replace 다" 라는 가설에 기반했으나 2026-04-21 실측으로 부정됨(id 54→55/56 로그 대조). 해당 로직이 오히려 mutable 필드를 Y→N 으로 덮어쓰는 데이터 파괴 원인이었으므로 제거. `DEFAULTED_FIELD_LABELS_JA` 상수·`warnings` 응답 필드·`defaultedFields` 수집 로직은 전부 삭제됨.
 
 ### 2.6 TOCTOU 사후 검증 — MF-6 (v1.1)
 
@@ -130,11 +123,11 @@
 
 ### 3.1 Response 200 필드 (PUT)
 
-| 필드 | 설계 v1.2 | 구현 | 일치 |
+| 필드 | 설계 v1.4 | 구현 | 일치 |
 |------|----------|------|:----:|
-| data.message | 필수 | 항상 포함 (route.ts:521) | O |
-| data.warning | TOCTOU 실패/불일치 시만 | 조건부 spread (route.ts:522) | O |
-| data.warnings | defaulted 필드 있을 시만 | 조건부 spread (route.ts:523) | O |
+| data.message | 필수 | 항상 포함 | O |
+| data.warning | TOCTOU 실패/불일치 시만 (userRole 변경 경로 전용) | 조건부 spread | O |
+| ~~data.warnings~~ | **v1.4 에서 제거** (full-replace 가설 철회와 함께 fallback 통보 로직 삭제) | — | — |
 
 ### 3.2 에러 응답 매트릭스
 
@@ -156,12 +149,12 @@
 
 ## 4. OpenAPI 스펙 동기화
 
-| 항목 | 설계 v1.2 | openapi.ts | 일치 |
+| 항목 | 설계 v1.4 | openapi.ts | 일치 |
 |------|----------|-----------|:----:|
-| PUT description | v1.2 정책 반영 | openapi.ts:2263-2268 | O |
-| 200 warning 필드 | 존재 | openapi.ts:2291 | O |
-| 200 warnings 배열 필드 (v1.2) | 존재 | openapi.ts:2294-2299 | O |
-| 400 사유 설명 (⑦ 추가) | 존재 | openapi.ts:2307-2309 | O |
+| PUT description | v1.4 정책 반영 (실측 기반 "누락 필드 보존" 문구) | O | O |
+| 200 warning 필드 | 존재 (TOCTOU 경로 전용) | O | O |
+| ~~200 warnings 배열 필드~~ | **v1.4 에서 제거** | 제거됨 | — |
+| 400 사유 설명 (⑦ 포함) | 존재 | O | O |
 
 ---
 

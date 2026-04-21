@@ -187,7 +187,7 @@
 | `userRole` | **400 차단** — canonical `userTp` 미확인 상태에서 권한 부여 시 권한 상승 위험. 복구 후 재요청 필요 |
 | `twoFactorEnabled` | **400 차단** — 기존 2FA 설정 확인 불가 상태에서 변경 시 사일런트 downgrade 위험 |
 | `status=active` | 허용 (복구 목적) |
-| `newsRcptYn` / `loginNotification` / `attributeChangeNotification` | 허용 (단 기본값 "N" 강제 주입 시 §1.4 warnings 로 통보) |
+| `newsRcptYn` / `loginNotification` / `attributeChangeNotification` | 허용 — request 로 명시된 값만 전송, 누락 필드는 QSP 기존값 유지 (§1.4) |
 
 **self-target 비교 로직:**
 
@@ -197,13 +197,15 @@
   - 이 경로는 위 제약에 의해 `status` 복구 요청에만 도달 가능
 - 자기 자신이면 400 반환: `"自分自身のアカウントに対するこの変更は実行できません"`
 
-#### 1.4 QSP 업데이트 필드 매핑 (full-replace 방어)
+#### 1.4 QSP 업데이트 필드 매핑
 
-QSP `updateUserDtlMng` 는 **전송하지 않은 필드를 null 로 덮어쓰는 full-replace 방식**으로 동작한다(2026-04-20 확인). 따라서 status 만 변경해도 성명·회사·주소 필드가 모두 null 이 되는 데이터 손실이 발생한다.
+**QSP 동작 실측 (2026-04-21 확인)**: `updateUserDtlMng` 는 **전송한 필드만 갱신하고 누락 필드는 기존 값을 보존**한다. 과거 v1.3 에서 "full-replace 로 추정"(2026-04-20) 한 가설은 실측(id 54 → id 55/56 로그 대조)과 불일치하여 철회. 당시 가설 기반의 fallback "N" 강제 주입·`warnings` 통보 로직은 preDetail null 경로에서 mutable 필드를 Y→N 으로 덮어쓰는 **데이터 파괴 원인**으로 확인되어 제거됨.
 
-**대응 전략**: `preDetail` 의 보존 필드를 페이로드 기본값으로 깔고, request body 의 mutable 필드만 덮어쓴다. `preDetail` null(F_NOT_USER) 경로는 보존할 값이 없으므로 mutable 필드 + 필수 메타만 전송(기존 동작).
+**전략**:
+- `preDetail` 존재 → 보존 필드(성명·회사·주소 등)를 현재값으로 재전송 + mutable 은 request/preDetail 순으로 결정. (혹시 QSP 가 조건에 따라 다르게 동작할 가능성 대비한 안전판)
+- `preDetail` null (F_NOT_USER — 삭제(D) 회원) → request 로 **명시된 mutable 필드만** 전송. 누락 필드는 QSP 가 기존 값을 보존하므로 건드리지 않는다.
 
-**① 보존 필드 (preDetail 존재 시 mirror)** — QSP 가 null 로 덮어쓰지 않도록 현재 값 그대로 재전송
+**① 보존 필드 (preDetail 존재 시 mirror)**
 
 | QSP 필드 | 출처 |
 |----------|------|
@@ -214,25 +216,28 @@ QSP `updateUserDtlMng` 는 **전송하지 않은 필드를 null 로 덮어쓰는
 | `deptNm`, `pstnNm` | `preDetail` 동명 필드 ?? "" |
 | `storeLvl` | `preDetail.storeLvl` ?? "" (STORE 구분) |
 
-**② Mutable + 메타 필드** — request body ↔ preDetail ↔ fallback 순 결정
+**② Mutable + 메타 필드**
 
-| QSP 필드 | 결정 우선순위 |
-|----------|--------------|
-| `loginId` | 관리자 userId |
-| `accsSiteCd` | `SITE_DEFAULTS.accsSiteCd` 고정 |
-| `userTp` | query parameter |
-| `userId` | path `id` (rawId) |
-| `authCd` | `request.userRole` ?? `preDetail.authCd` ?? `defaultAuthCdFromUserTp(userTp)` (STORE 는 null 반환 → 위 6번에서 이미 차단 / preDetail null + userRole 조합은 §1.3 에서 차단) |
-| `secAuthYn` | `request.twoFactorEnabled` Y/N ?? `preDetail.secAuthYn` ?? "N" (preDetail null + twoFactorEnabled 조합은 §1.3 에서 차단) |
-| `loginNotiYn` | `request.loginNotification` ?? `preDetail.loginNotiYn` ?? "N" |
-| `attrChgYn` | `request.attributeChangeNotification` ?? `preDetail.attrChgYn` ?? "N" |
-| `newsRcptYn` | `request.newsRcptYn` ?? `preDetail.newsRcptYn` ?? "N" |
-| `statCd` | `STATUS_TO_STAT_CD[request.status]` ?? `preDetail.statCd` ?? "D" |
-| `updBy` | 관리자 userId |
+| QSP 필드 | preDetail 있음 | preDetail 없음 |
+|----------|---------------|---------------|
+| `loginId` | 관리자 userId | 동일 |
+| `accsSiteCd` | `SITE_DEFAULTS.accsSiteCd` | 동일 |
+| `userTp` | query parameter | 동일 |
+| `userId` | path `id` | 동일 |
+| `authCd` | `request.userRole` ?? `preDetail.authCd` | request 에 있으면 전송, 없으면 **생략** |
+| `secAuthYn` | `request.twoFactorEnabled` Y/N ?? `preDetail.secAuthYn` ?? "N" | request 에 있으면 전송, 없으면 **생략** |
+| `loginNotiYn` | `request.loginNotification` ?? `preDetail.loginNotiYn` ?? "N" | 동상 |
+| `attrChgYn` | `request.attributeChangeNotification` ?? `preDetail.attrChgYn` ?? "N" | 동상 |
+| `newsRcptYn` | `request.newsRcptYn` ?? `preDetail.newsRcptYn` ?? "N" | 동상 |
+| `statCd` | `STATUS_TO_STAT_CD[request.status]` ?? `preDetail.statCd` | request 에 있으면 전송, 없으면 **생략** |
+| `updBy` | 관리자 userId | 동일 |
 
-**Fallback 원칙**: `preDetail` null 시 보수적 기본값("N", "D") 적용. STORE 는 storeLvl 의존이라 차단 (§1.2 6번). userRole/twoFactorEnabled 조합은 §1.3 에서 차단.
+- preDetail null 경로에서 request 에 없는 mutable 필드는 **페이로드에서 완전히 생략**. QSP 는 이 필드들의 기존 값을 그대로 유지한다.
+- STORE + preDetail null 은 §1.2 6번(storeLvl 확보 불가)에서, `userRole`/`twoFactorEnabled` + preDetail null 조합은 §1.3 에서 사전 차단되어 이 경로에 도달하지 않는다.
 
-**Fallback 통보 (v1.2, 리뷰 반영)**: preDetail null 경로에서 기본값이 주입된 QSP 필드 목록을 응답 `warnings` 배열로 클라이언트에 통보하여 사일런트 상태 변경을 방지한다. 통보 대상: `secAuthYn` / `loginNotiYn` / `attrChgYn` / `newsRcptYn` / `authCd` / `statCd` 중 request 에서 대응 필드가 undefined 인 것. (예: `{status:"active"}` 만 보낸 복구 요청 → 나머지 5개 필드가 모두 warnings 에 포함)
+**향후 QSP 공식 답변 확보 후 조치**:
+- QSP `userDetail` 이 삭제(D)/탈퇴(R) 회원도 `data` 를 반환하게 되면 `preDetail null` 분기 자체가 사라지고, STORE/critical 차단도 해제 가능.
+- `updateUserDtlMng` 의 "누락 필드 = 기존값 유지" 가 QSP 측 공식 명문화되면 preDetail 있는 경로의 보존 필드 재전송 로직도 제거 가능.
 
 #### 1.5 TOCTOU 사후 검증 (MF-6)
 
@@ -254,20 +259,12 @@ QSP `updateUserDtlMng` 는 **전송하지 않은 필드를 null 로 덮어쓰는
 {
   "data": {
     "message": "会員情報を更新しました",
-    "warning": "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。",
-    "warnings": [
-      "二段階認証設定が既定値で更新されました (元の値を取得できなかったため)",
-      "アカウント状態が既定値で更新されました (元の値を取得できなかったため)"
-    ]
+    "warning": "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。"
   }
 }
 ```
 
-- `warning` (단수): TOCTOU 사후 검증 실패/불일치 시에만 포함 (§1.5)
-- `warnings` (복수, v1.2 신규): preDetail null 경로에서 기본값이 주입된 QSP 필드의 **일본어 라벨 목록** (§1.4 Fallback 통보)
-  - 라벨 매핑: `secAuthYn`→`二段階認証設定`, `loginNotiYn`→`ログイン通知設定`, `attrChgYn`→`属性変更通知設定`, `newsRcptYn`→`ニュースレター受信設定`, `authCd`→`ユーザー権限`, `statCd`→`アカウント状態`
-  - 구현: `DEFAULTED_FIELD_LABELS_JA` (route.ts 모듈 상단). 매핑 누락 키는 방어적으로 원시 필드명 폴백.
-- 두 필드는 공존 가능하며 각각 독립적으로 세팅된다
+- `warning` (옵션): TOCTOU 사후 검증 실패/불일치 시에만 포함 (§1.5). `userRole` 미변경 경로에서는 필드 자체가 없음.
 
 #### 에러 응답 매트릭스
 
@@ -327,8 +324,10 @@ src/lib/
 
 | 항목 | 현 상태 | 영향 |
 |------|---------|------|
-| `userListMng` 응답에 `storeLvl` 필드 부재 | QSP 담당자에 추가 요청 (2026-04-16) | 회신 전까지 탈퇴·삭제 STORE 회원 수정 차단(400) |
+| `userDetail` 가 삭제(D) 회원에 `F_NOT_USER` + `data:null` 반환 | QSP 담당자에 개선 요청 (2026-04-21) | 삭제 회원 조회/편집 시 성명·회사·주소 등 전부 공란. preDetail null 분기·STORE 차단·critical 차단이 전부 이 제약 우회용 |
+| `userListMng` 응답에 `storeLvl` 필드 부재 | QSP 담당자에 추가 요청 (2026-04-16) | 회신 전까지 삭제 STORE 회원 수정 차단(400) |
 | `userListMng` 응답에 `newsRcptYn` 필드 부재 | 위와 동일 요청에 포함 | 목록 화면 뉴스레터 표시·필터 불가 |
+| `updateUserDtlMng` 의 "누락 필드 = 기존값 유지" 공식 명문화 부재 | 2026-04-21 실측으로 동작 확인, 공식 답변 요청 대상 | 현재 preDetail null 경로는 이 동작에 의존 중. QSP 가 full-replace 로 변경하면 즉시 데이터 파괴 |
 | `updateUserDtlMng` 원자적 조건(`expectedUserTp=GENERAL`) 미지원 | 차후 요청 예정 | 현재는 사후 재조회 + CRITICAL 로그로 탐지 |
 
 ---
@@ -352,3 +351,4 @@ src/lib/
 | 1.1 | 2026-04-16 | 권한별 수정 제한 정책(2026-03-30, 04-13), 탈퇴·삭제 회원 수정 허용(04-15), STORE storeLvl 의존성(04-16), self-lockout 가드, TOCTOU 사후 검증, QSP 필수 9필드 매핑, 에러 응답 매트릭스, userTp query parameter, F_NOT_USER 처리 반영 | CK |
 | 1.2 | 2026-04-16 | PR #53 코드 리뷰 반영: §1.3 preDetail null + userRole/twoFactorEnabled fail-closed 차단(에러매트릭스 ⑦), self-target 비교 NFKC 정규화, §1.4 Fallback 통보(warnings 배열) 추가, Response 예시 업데이트 | CK |
 | 1.3 | 2026-04-20 | QSP `updateUserDtlMng` full-replace 방어 — §1.4 "필수 9필드" → "보존 필드 + mutable" 이원화. status 변경 시 성명·회사·주소 등이 null 로 덮어써지는 데이터 손실 수정 | CK |
+| 1.4 | 2026-04-21 | v1.3 의 "full-replace" 가설이 실측(id 54→55/56)과 불일치해 철회. preDetail null 경로 fallback "N" 강제 주입이 mutable 필드(2FA·통지·뉴스레터)를 덮어쓰는 데이터 파괴 원인으로 확인되어 제거. 이 경로는 request 로 명시된 필드만 전송하도록 수정. `warnings` 통보·`DEFAULTED_FIELD_LABELS_JA` 동반 제거. 근본 원인은 QSP `userDetail` 이 삭제(D) 회원에 data 미반환하는 I/F 제약이며 별도 개선 요청 중 | CK |
