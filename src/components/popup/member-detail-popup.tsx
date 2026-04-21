@@ -176,16 +176,23 @@ export function MemberDetailPopup() {
           ["admin", "member", userId, userTp],
           result.member,
         );
+      } else if (result.warning) {
+        // post-check 실패 등 서버가 경고를 내려준 경로 — 재조회하면 QSP F_NOT_USER 로
+        // 공백이 재발할 가능성이 높으므로 invalidate 를 생략한다. 기존 캐시를 유지한
+        // 채로 alert 로 상황을 통보하고 팝업을 닫아 공백 화면 노출을 방지하며,
+        // 다음 상세 진입 시 fresh refetch 로 최신 상태를 확인하도록 유도한다.
       } else {
-        // fallback: preDetail null(탈퇴/삭제 회원 복구 등) 경로는 기존대로 재조회
+        // preDetail null(탈퇴/삭제 회원 복구 등) 경로는 복구 후 정상 데이터 기대되므로 재조회
         await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       }
       // 서버가 내려주는 경고(warning/warnings)는 운영자 인지가 필요한 상태 —
       // TOCTOU 사후 검증 실패나 기본값 주입 통보가 사일런트로 묻히지 않도록 alert 에 반영.
       const warningMsg =
         result.warning ?? (result.warnings && result.warnings.length > 0 ? result.warnings.join("\n") : undefined);
+      // 재조회 공백이 예상되는 경로에서는 목록 재확인 안내를 함께 노출
+      const needsListReselect = !result.member && !!result.warning;
       const message = warningMsg
-        ? `保存しました。\n\n注意:\n${warningMsg}`
+        ? `保存しました。\n\n注意:\n${warningMsg}${needsListReselect ? "\n\n一覧から再度ご確認ください。" : ""}`
         : "保存しました。";
       openAlert({
         type: "alert",
