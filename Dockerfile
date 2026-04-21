@@ -14,7 +14,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN npx prisma generate && npx next build --webpack
 
 # --- Runner ---
 FROM node:22-alpine AS runner
