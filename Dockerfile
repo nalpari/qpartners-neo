@@ -12,6 +12,7 @@ RUN pnpm install --frozen-lockfile
 # --- Build ---
 FROM base AS builder
 WORKDIR /app
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npx next build --webpack
