@@ -2,13 +2,17 @@ pipeline {
     agent any
 
     environment {
-        REPO_URL       = 'https://github.com/nalpari/qpartners-neo.git'
-        BRANCH         = 'development'
-        APP_NAME       = 'qpartners-neo'
-        IMAGE_TAG      = "${env.BUILD_NUMBER}"
-        COMPOSE_FILE   = 'docker-compose.yml'
-        // GitHub credentials ID (Jenkins > Credentials 에서 등록한 ID)
+        REPO_URL        = 'https://github.com/nalpari/qpartners-neo.git'
+        BRANCH          = 'development'
+        APP_NAME        = 'qpartners-neo'
+        APP_ENV         = 'development'
+        APP_PORT        = '5010'
+        APP_ROOT        = '/home/development/apps/qpartners-neo'
+        IMAGE_TAG       = "${env.BUILD_NUMBER}"
+        COMPOSE_FILE    = 'docker-compose.yml'
+        // Jenkins > Credentials 에서 등록한 ID
         GIT_CREDENTIALS = 'github-app-credential'
+        ENV_CREDENTIALS = 'dev-env'
     }
 
     options {
@@ -35,30 +39,49 @@ pipeline {
             }
         }
 
+        stage('Prepare Env') {
+            steps {
+                // Jenkins Credentials에서 .env 파일 복사
+                withCredentials([file(credentialsId: "${ENV_CREDENTIALS}", variable: 'ENV_FILE')]) {
+                    sh "cp \$ENV_FILE .env.${APP_ENV}"
+                }
+                // 업로드 디렉토리 생성
+                sh "mkdir -p ${APP_ROOT}/uploads_data"
+            }
+        }
+
         stage('Docker Build') {
             steps {
                 sh """
-                    docker build \\
-                        -t ${APP_NAME}:${IMAGE_TAG} \\
-                        -t ${APP_NAME}:latest \\
-                        --build-arg GIT_COMMIT=${env.GIT_COMMIT_SHORT} \\
+                    docker build \
+                        -t ${APP_NAME}:${IMAGE_TAG} \
+                        -t ${APP_NAME}:latest \
+                        --build-arg PORT=${APP_PORT} \
                         .
                 """
             }
         }
 
-        stage('Stop Existing Containers') {
+        stage('Stop Existing') {
             steps {
                 sh """
+                    APP_PORT=${APP_PORT} \
+                    APP_ENV=${APP_ENV} \
+                    APP_ROOT=${APP_ROOT} \
+                    IMAGE_TAG=${IMAGE_TAG} \
                     docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
                 """
             }
         }
 
-        stage('Deploy with Docker Compose') {
+        stage('Deploy') {
             steps {
                 sh """
-                    IMAGE_TAG=${IMAGE_TAG} docker compose -f ${COMPOSE_FILE} up -d
+                    IMAGE_TAG=${IMAGE_TAG} \
+                    APP_PORT=${APP_PORT} \
+                    APP_ENV=${APP_ENV} \
+                    APP_ROOT=${APP_ROOT} \
+                    docker compose -f ${COMPOSE_FILE} up -d
                 """
             }
         }
@@ -67,7 +90,13 @@ pipeline {
             steps {
                 script {
                     sleep(time: 10, unit: 'SECONDS')
-                    sh "docker compose -f ${COMPOSE_FILE} ps"
+                    sh """
+                        APP_PORT=${APP_PORT} \
+                        APP_ENV=${APP_ENV} \
+                        APP_ROOT=${APP_ROOT} \
+                        IMAGE_TAG=${IMAGE_TAG} \
+                        docker compose -f ${COMPOSE_FILE} ps
+                    """
                 }
             }
         }
@@ -75,17 +104,23 @@ pipeline {
 
     post {
         success {
-            echo "✅ Build #${BUILD_NUMBER} 배포 성공 (commit: ${env.GIT_COMMIT_SHORT})"
+            echo "Build #${BUILD_NUMBER} 배포 성공 (commit: ${env.GIT_COMMIT_SHORT})"
             // 오래된 이미지 정리 (최근 3개만 유지)
             sh """
-                docker images ${APP_NAME} --format '{{.Tag}}' | \\
-                grep -v latest | sort -rn | tail -n +4 | \\
+                docker images ${APP_NAME} --format '{{.Tag}}' | \
+                grep -v latest | sort -rn | tail -n +4 | \
                 xargs -I {} docker rmi ${APP_NAME}:{} || true
             """
         }
         failure {
-            echo "❌ Build #${BUILD_NUMBER} 실패 - 롤백 검토 필요"
-            sh "docker compose -f ${COMPOSE_FILE} logs --tail=100 || true"
+            echo "Build #${BUILD_NUMBER} 실패 - 롤백 검토 필요"
+            sh """
+                APP_PORT=${APP_PORT} \
+                APP_ENV=${APP_ENV} \
+                APP_ROOT=${APP_ROOT} \
+                IMAGE_TAG=${IMAGE_TAG} \
+                docker compose -f ${COMPOSE_FILE} logs --tail=100 || true
+            """
         }
         always {
             sh 'docker image prune -f || true'
