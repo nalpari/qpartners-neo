@@ -180,9 +180,16 @@ export function MemberDetailPopup() {
         // fallback: preDetail null(탈퇴/삭제 회원 복구 등) 경로는 기존대로 재조회
         await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       }
+      // 서버가 내려주는 경고(warning/warnings)는 운영자 인지가 필요한 상태 —
+      // TOCTOU 사후 검증 실패나 기본값 주입 통보가 사일런트로 묻히지 않도록 alert 에 반영.
+      const warningMsg =
+        result.warning ?? (result.warnings && result.warnings.length > 0 ? result.warnings.join("\n") : undefined);
+      const message = warningMsg
+        ? `保存しました。\n\n注意:\n${warningMsg}`
+        : "保存しました。";
       openAlert({
         type: "alert",
-        message: "保存しました。",
+        message,
         onConfirm: () => closePopup(),
       });
     },

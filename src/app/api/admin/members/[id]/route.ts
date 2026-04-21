@@ -557,10 +557,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 빈 값이 되는 문제를 방지 (삭제 상태 전환 케이스).
     // 우선순위: postDetail(userRole 변경 경로 재조회) → preDetail + 변경 필드 overlay.
     // preDetail null 경로는 snapshot 생략 → 프론트는 기존 fallback(재조회) 로 처리.
+    //
+    // [보안 가드] userRole 변경 경로에서 postDetail 확보에 실패한 경우(TOCTOU 사후 검증
+    // 불가) snapshot 을 생략해 프론트가 강제 재조회하도록 한다. preDetail overlay 로
+    // 내려보내면 검증되지 않은 권한 변경이 캐시에 "성공" 으로 남아 운영자가 오인할
+    // 위험이 있으므로 명시적으로 차단.
+    const userRolePostCheckFailed =
+      result.data.userRole !== undefined && !postDetail;
     let memberSnapshot: ReturnType<typeof mapQspDetailToResponse> | undefined;
     if (postDetail) {
       memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data);
-    } else if (preDetail) {
+    } else if (preDetail && !userRolePostCheckFailed) {
       const base = mapQspDetailToResponse(preDetail, idResult.data);
       memberSnapshot = {
         ...base,
@@ -577,7 +584,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
         ...(result.data.newsRcptYn !== undefined && { newsRcptYn: result.data.newsRcptYn }),
         ...(result.data.status !== undefined && { status: result.data.status }),
         // 방금 저장 시점으로 updatedAt 교체 — 프론트 "갱신일" 즉시 반영.
-        // 다음 GET 에서 QSP 정확한 uptDt 로 재동기화됨.
+        // 다음 GET 에서 QSP 가 대상을 반환하면 실제 uptDt 로 재동기화되지만,
+        // F_NOT_USER 경로(statCd="D"/"R" 회원)에서는 updatedAt 이 null 로 돌아올 수 있음.
         updatedAt: new Date().toISOString(),
         updatedBy: user.userId,
       };
