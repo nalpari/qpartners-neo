@@ -177,11 +177,22 @@ export function CodesHeaderTable({
   // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
   //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
   const apiRef = useRef<GridApi<HeaderGridRow> | null>(null);
+  const prevEditingRowIdRef = useRef<string | null>(null);
   const handleGridReady = useCallback((event: GridReadyEvent<HeaderGridRow>) => {
     apiRef.current = event.api;
   }, []);
   useEffect(() => {
-    apiRef.current?.refreshCells({ force: true });
+    const api = apiRef.current;
+    if (!api) return;
+    // 편집 셀 전환 시 이전 행 + 현재 행만 refresh — 전체 그리드 재렌더 회피
+    const ids = new Set<string>();
+    if (prevEditingRowIdRef.current) ids.add(prevEditingRowIdRef.current);
+    if (editingCell?.rowId) ids.add(editingCell.rowId);
+    const rowNodes = Array.from(ids)
+      .map((id) => api.getRowNode(id))
+      .filter((node): node is NonNullable<typeof node> => node != null);
+    if (rowNodes.length) api.refreshCells({ rowNodes, force: true });
+    prevEditingRowIdRef.current = editingCell?.rowId ?? null;
   }, [editingCell]);
 
   // 키보드 — Enter 저장 / Escape 취소

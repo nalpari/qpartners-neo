@@ -96,13 +96,13 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // Design Ref: §4.1 — 사내 사용자 판별
   const isAdmin = user?.userTp === "ADMIN";
   const isInternal = isAdmin;
-  // 삭제/수정 권한
+  // 삭제/수정 권한 (fail-closed: ADMIN userTp 가 아니면 무조건 차단)
   // - SUPER_ADMIN: 무조건 수정/삭제 가능 (부서/작성자 무관)
   // - ADMIN(또는 authRole 미설정): 본인 등록 콘텐츠만
   // - TODO: 그 외 사용자도 메뉴 CRUD 권한이 있으면 수정/삭제 노출 (별도 작업)
   const canModify = (() => {
-    if (!data || !user) return false;
-    const role = user.authRole ?? (isAdmin ? "ADMIN" : null);
+    if (!isAdmin || !data || !user) return false;
+    const role = user.authRole ?? "ADMIN";
     if (role === "SUPER_ADMIN") return true;
     if (role === "ADMIN") return user.userId === data.userId;
     return false;

@@ -7,7 +7,7 @@ import { CodesSearch } from "./codes-search";
 import { CodesHeaderTable } from "./codes-header-table";
 import { CodesDetailTable } from "./codes-detail-table";
 import type { HeaderGridRow, DetailGridRow } from "./codes-types";
-import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS, HEADER_NULLABLE_FIELDS } from "./codes-types";
+import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS, HEADER_NULLABLE_FIELDS, HEADER_NUMERIC_FIELDS } from "./codes-types";
 import { useCodeHeaders } from "./hooks/use-code-headers";
 import { useCodeDetails } from "./hooks/use-code-details";
 import { useCellEdit } from "./hooks/use-cell-edit";
@@ -167,7 +167,16 @@ export function CodesContents() {
         const field = headerEditingCell.field;
         const data: Record<string, unknown> = {};
         if (editValues[field] !== undefined) {
-          if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
+          // 숫자 필드는 nullable 분기보다 먼저 처리 — 빈값·NaN은 null, 유효 숫자는 Number 변환
+          if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
+            const raw = editValues[field];
+            if (raw === "" || raw === undefined) {
+              data[field] = null;
+            } else {
+              const n = Number(raw);
+              data[field] = Number.isFinite(n) ? n : null;
+            }
+          } else if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
             data[field] = editValues[field] || null;
           } else {
             data[field] = editValues[field];
