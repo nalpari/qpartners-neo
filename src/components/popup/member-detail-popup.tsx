@@ -381,7 +381,7 @@ function MemberEditForm({
                 />
                 {/* 5행: 最近アクセス / 役職 */}
                 <DetailRow
-                  left={{ label: "最近アクセス", children: <TextValue value={member.lastLoginAt ? formatDateTime(member.lastLoginAt) : "-"} /> }}
+                  left={{ label: "最近アクセス", children: <TextValue value={member.updatedAt ? formatDateTime(member.updatedAt) : "-"} /> }}
                   right={{ label: "役職", children: <TextValue value={member.jobTitle} /> }}
                 />
                 {/* 6행: 二次認証 / ログイン通知 */}

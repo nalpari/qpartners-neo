@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,15 +11,14 @@ import {
   Button,
   Spinner,
   Pagination,
-  SelectBox,
+  PageSizeSelect,
   MobileCardList,
 } from "@/components/common";
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
-import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
-import { useCommonCode } from "@/hooks/use-common-code";
+import { usePageSize } from "@/hooks/use-page-size";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
 function renderCategoryCell(
@@ -216,16 +215,15 @@ export function ContentsTable({
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
-  const [perPage, setPerPage] = useState("20");
+  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
 
   const totalCount = meta?.total ?? 0;
   const currentPage = meta?.page ?? 1;
   const totalPages = meta?.totalPages ?? 1;
 
-  const handlePerPageChange = (value: string) => {
+  const handlePerPageChange = (value: number) => {
     setPerPage(value);
-    onPageSizeChange(Number(value));
+    onPageSizeChange(value);
   };
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
@@ -400,12 +398,7 @@ export function ContentsTable({
             </Button>
           </Link>
         )}
-        <SelectBox
-          options={pageSizeOptions}
-          value={perPage}
-          onChange={handlePerPageChange}
-          className="w-[80px]"
-        />
+        <PageSizeSelect value={perPage} onChange={handlePerPageChange} />
       </div>
     </div>
   );
