@@ -132,20 +132,33 @@ export function canAccessContent(
 }
 
 /**
- * 작성자가 슈퍼관리자인지 판별 — userType이 ADMIN이고 ADMIN_ROLE 공통코드에 등록된 사용자
- * canModifyResource 내부 + GET 응답의 authorIsSuperAdmin 노출에서 사용.
+ * 작성자 SUPER_ADMIN 판정 Result 타입 — 판정값과 신뢰도를 분리 표현.
+ * - `known`: ADMIN_ROLE 조회가 정상적으로 끝나 `isSuperAdmin` 값이 실제 상태를 반영
+ * - `unknown`: 헤더 누락(seed 사고) 또는 DB 에러로 조회 실패 — fail-closed 로 `isSuperAdmin=true` 세팅
+ *   (상위 canModifyResource 에서 ADMIN 수정 차단 / GET 응답 필드로는 프론트 버튼 숨김으로 수렴)
+ */
+export type AuthorSuperAdminResult = {
+  isSuperAdmin: boolean;
+  status: "known" | "unknown";
+};
+
+/**
+ * 작성자가 슈퍼관리자인지 조회 — 신뢰도(status)와 판정값(isSuperAdmin)을 분리 반환.
+ * 에러는 내부에서 흡수하고 `status: "unknown"` + fail-closed 판정값으로 수렴 — 호출부 try/catch 불필요.
  *
  * 분기 설계 (헤더 누락 vs 의도적 비활성화 구분):
- * - 헤더 자체가 존재하지 않음 → seed 누락 사고로 간주, fail-closed(true) (→ ADMIN 수정 차단)
- * - 헤더는 존재하나 `isActive=false` → 운영자의 의도적 비활성화로 간주, SUPER_ADMIN 개념 부재 처리(false)
+ * - 헤더 자체가 존재하지 않음 → seed 누락 사고로 간주, status=unknown + isSuperAdmin=true (→ ADMIN 수정 차단)
+ * - 헤더는 존재하나 `isActive=false` → 운영자의 의도적 비활성화로 간주, status=known + isSuperAdmin=false
  *   · 의도 비활성화까지 fail-closed 하면 공통코드 플래그 한 줄로 모든 ADMIN이 수정 불가 → 내부 DoS 벡터
- * - 정상 조회에서 code 미등록만 false (실제로 슈퍼관리자가 아닌 케이스)
- * - DB 조회 실패 시 fail-closed(true) (상위 canModifyResource 에서 권한 거부로 수렴)
+ * - 정상 조회에서 code 미등록만 status=known + isSuperAdmin=false (실제로 슈퍼관리자가 아닌 케이스)
+ * - DB 조회 실패 시 status=unknown + isSuperAdmin=true (fail-closed)
  */
-export async function isAuthorSuperAdmin(
+export async function resolveAuthorSuperAdmin(
   resource: { userType: string; userId: string },
-): Promise<boolean> {
-  if (resource.userType !== "ADMIN") return false;
+): Promise<AuthorSuperAdminResult> {
+  if (resource.userType !== "ADMIN") {
+    return { isSuperAdmin: false, status: "known" };
+  }
   try {
     // 1단계: ADMIN_ROLE 헤더 존재 확인 — isActive 는 여기서 필터링하지 않고 분기로 처리
     const header = await prisma.codeHeader.findFirst({
@@ -154,34 +167,47 @@ export async function isAuthorSuperAdmin(
     });
     if (!header) {
       console.error(
-        "[isAuthorSuperAdmin] ADMIN_ROLE 공통코드 헤더 누락 — fail-closed(true) 처리. seed 확인 필요",
+        "[resolveAuthorSuperAdmin] ADMIN_ROLE 공통코드 헤더 누락 — status=unknown, fail-closed(true). seed 확인 필요",
       );
-      return true;
+      return { isSuperAdmin: true, status: "unknown" };
     }
     if (!header.isActive) {
       // 의도적 비활성화 — 운영자가 SUPER_ADMIN 체계를 끈 상태. 모두 일반 ADMIN 으로 취급.
-      return false;
+      return { isSuperAdmin: false, status: "known" };
     }
     // 2단계: 해당 userId가 SUPER_ADMIN으로 등록됐는지 확인
     const entry = await prisma.codeDetail.findFirst({
       where: { headerId: header.id, code: resource.userId, isActive: true },
       select: { id: true },
     });
-    return entry !== null;
+    return { isSuperAdmin: entry !== null, status: "known" };
   } catch (error) {
     console.error(
-      "[isAuthorSuperAdmin] ADMIN_ROLE 조회 실패 — fail-closed(true) 처리:",
+      "[resolveAuthorSuperAdmin] ADMIN_ROLE 조회 실패 — status=unknown, fail-closed(true):",
       error,
     );
-    return true;
+    return { isSuperAdmin: true, status: "unknown" };
   }
+}
+
+/**
+ * 권한 판정용 boolean wrapper — canModifyResource 내부에서만 사용.
+ * GET 응답 필드 세팅에는 {@link resolveAuthorSuperAdmin} 을 직접 사용해 status 도 함께 확인할 수 있게 한다.
+ */
+export async function isAuthorSuperAdmin(
+  resource: { userType: string; userId: string },
+): Promise<boolean> {
+  const result = await resolveAuthorSuperAdmin(resource);
+  return result.isSuperAdmin;
 }
 
 /**
  * 게시글/콘텐츠 수정/삭제 권한 — 작성자가 있는 모든 리소스 공용
  * - SUPER_ADMIN: 모든 글
  * - ADMIN: 슈퍼관리자 작성글 제외 모든 글
- * - 그 외: 본인 작성글만
+ * - 그 외: `{ userType, userId }` 동시 일치 시에만(본인 작성글)
+ *   · userType 미비교 시 Prisma `@@index([userType, userId])` 복합키 기반이라 타입 간 userId 중복 → IDOR 여지
+ *   · 공용 유틸이므로 호출 경로 의존 없이 방어적 계약 유지
  *
  * 적용 대상: Content, HomeNotice, MassMail 등 `{ userType, userId }` 를 가진 리소스
  */
@@ -193,5 +219,5 @@ export async function canModifyResource(
   if (user.role === "ADMIN") {
     return !(await isAuthorSuperAdmin(resource));
   }
-  return user.userId === resource.userId;
+  return user.userType === resource.userType && user.userId === resource.userId;
 }

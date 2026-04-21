@@ -8,7 +8,7 @@ import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
-import { useAuthStore } from "@/lib/auth-store";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsFormManagement } from "./contents-form-management";
@@ -97,8 +97,14 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
 
-  // 로그인 사용자 — 전역 단일 소스(useAuthStore)로 통일. useQuery 캐시 구독은 hydration 타이밍 이슈로 null 구독 가능성.
-  const loginUser = useAuthStore((s) => s.user);
+  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
+  // enabled:false + staleTime:Infinity 로 구독만 하고 fetch 는 Gnb 에 위임.
+  const { data: loginUser = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   // edit 진입 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
   // 권한 없으면 안내 후 상세 페이지로 되돌림 (URL 직접 입력 시에도 차단)

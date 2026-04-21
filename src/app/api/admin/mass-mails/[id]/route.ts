@@ -5,7 +5,7 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { canModifyResource, isAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
+import { canModifyResource, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
@@ -87,17 +87,12 @@ export async function GET(request: NextRequest, { params }: Params) {
     const failedTruncated = failedTotal > mail.recipients.length;
 
     // 작성자가 SUPER_ADMIN 인지 — 프론트 수정/삭제 버튼 노출 판단용
-    // 조회 실패 시 fail-closed(true) — ADMIN 수정/삭제 버튼 숨김 쪽으로 동작
-    let authorIsSuperAdmin: boolean;
-    try {
-      authorIsSuperAdmin = await isAuthorSuperAdmin({
-        userType: mail.userType,
-        userId: mail.userId,
-      });
-    } catch (err) {
-      console.error("[GET /api/admin/mass-mails/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
-      authorIsSuperAdmin = true;
-    }
+    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴 — 호출부 try/catch 불필요
+    const authorResult = await resolveAuthorSuperAdmin({
+      userType: mail.userType,
+      userId: mail.userId,
+    });
+    const authorIsSuperAdmin = authorResult.isSuperAdmin;
 
     // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑

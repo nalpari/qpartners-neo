@@ -9,7 +9,7 @@ import { Spinner, Button } from "@/components/common";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { MassMailDetailResponse } from "@/components/admin/bulk-mail/bulk-mail-types";
 import { toFormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
-import { useAuthStore } from "@/lib/auth-store";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
 
 export default function AdminBulkMailDetailPage({
@@ -18,7 +18,14 @@ export default function AdminBulkMailDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const user = useAuthStore((s) => s.user);
+
+  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입)
+  const { data: user = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   const { data, isLoading, isError } = useQuery<MassMailDetailResponse>({
     queryKey: ["mass-mails", id],

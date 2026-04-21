@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { canModifyResource, isAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
+import { canModifyResource, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -40,17 +40,11 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 조회 실패해도 단건 조회 자체는 성공해야 함 — fail-closed(true) 로 처리해 ADMIN 수정 버튼 숨김
-    let authorIsSuperAdmin: boolean;
-    try {
-      authorIsSuperAdmin = await isAuthorSuperAdmin({
-        userType: notice.userType,
-        userId: notice.userId,
-      });
-    } catch (err) {
-      console.error("[GET /api/home-notices/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
-      authorIsSuperAdmin = true;
-    }
+    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴 — ADMIN 수정 버튼 숨김
+    const authorIsSuperAdmin = (await resolveAuthorSuperAdmin({
+      userType: notice.userType,
+      userId: notice.userId,
+    })).isSuperAdmin;
 
     const data = {
       id: notice.id,

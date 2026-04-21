@@ -7,9 +7,9 @@ import {
   canAccessContent,
   canModifyResource,
   getUserFromHeaders,
-  isAuthorSuperAdmin,
   isInternalUser,
   requireAdmin,
+  resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
@@ -72,19 +72,13 @@ export async function GET(request: NextRequest, { params }: Params) {
     const now = Date.now();
 
     // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (일반 사용자에게 admin 메타데이터 노출 방지)
-    // 조회 실패 시 true 로 fail-closed → ADMIN 이 타인 글을 함부로 수정 못 하게 하는 쪽으로 판정
-    let authorIsSuperAdmin: boolean | undefined;
-    if (internal) {
-      try {
-        authorIsSuperAdmin = await isAuthorSuperAdmin({
+    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴
+    const authorIsSuperAdmin = internal
+      ? (await resolveAuthorSuperAdmin({
           userType: content.userType,
           userId: content.userId,
-        });
-      } catch (err) {
-        console.error("[GET /api/contents/:id] authorIsSuperAdmin 조회 실패 — fail-closed(true):", err);
-        authorIsSuperAdmin = true;
-      }
-    }
+        })).isSuperAdmin
+      : undefined;
 
     return NextResponse.json({
       data: {
