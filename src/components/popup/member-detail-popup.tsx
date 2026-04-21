@@ -151,13 +151,35 @@ export function MemberDetailPopup() {
 
   // Design Ref: §4.2 — 수정 mutation
   const updateMutation = useMutation({
-    mutationFn: (payload: MemberUpdatePayload) =>
-      api.put(`/admin/members/${encodeURIComponent(userId!)}`, payload, {
-        params: { userTp },
-      }),
-    onSuccess: async () => {
+    mutationFn: async (payload: MemberUpdatePayload) => {
+      const res = await api.put<{
+        data: {
+          message: string;
+          member?: MemberDetail & { notFoundInQsp?: boolean };
+          warning?: string;
+          warnings?: string[];
+        };
+      }>(
+        `/admin/members/${encodeURIComponent(userId!)}`,
+        payload,
+        { params: { userTp } },
+      );
+      return res.data.data;
+    },
+    onSuccess: async (result) => {
+      // 목록은 상태 뱃지/정렬 반영 위해 invalidate 유지
       await queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
-      await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      if (result.member) {
+        // 서버가 member 스냅샷을 준 경우 캐시 직접 갱신 —
+        // Delete 전환 시 QSP F_NOT_USER 재조회로 필드가 비어버리는 문제 방지.
+        queryClient.setQueryData(
+          ["admin", "member", userId, userTp],
+          result.member,
+        );
+      } else {
+        // fallback: preDetail null(탈퇴/삭제 회원 복구 등) 경로는 기존대로 재조회
+        await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      }
       openAlert({
         type: "alert",
         message: "保存しました。",

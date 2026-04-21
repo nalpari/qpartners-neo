@@ -58,6 +58,49 @@ function isSelfTarget(adminUserId: string, detail: QspMemberDetail): boolean {
   return detail.userId.trim().toLowerCase() === admin;
 }
 
+/**
+ * QSP userDetail 응답을 TO-BE MemberDetail 응답 shape 로 매핑.
+ * GET / PUT 양쪽에서 동일 매핑을 사용해 DRY 유지.
+ * openapi MemberDetail 스키마와 필드 일치 필수.
+ */
+function mapQspDetailToResponse(d: QspMemberDetail, id: string) {
+  return {
+    id,
+    userId: d.userId,
+    userName: d.userNm ?? "",
+    userNameKana: d.userNmKana ?? "",
+    firstName: d.user1stNm ?? "",
+    lastName: d.user2ndNm ?? "",
+    firstNameKana: d.user1stNmKana ?? "",
+    lastNameKana: d.user2ndNmKana ?? "",
+    email: d.email ?? "",
+    userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
+    userRole: d.authCd ?? "",
+    companyName: d.compNm ?? "",
+    companyNameKana: d.compNmKana ?? "",
+    zipcode: d.compPostCd ?? "",
+    address: d.compAddr ?? "",
+    address2: d.compAddr2 ?? "",
+    telNo: d.compTelNo ?? "",
+    faxNo: d.compFaxNo ?? "",
+    department: d.deptNm ?? "",
+    jobTitle: d.pstnNm ?? "",
+    twoFactorEnabled:
+      d.secAuthYn === "Y" ? true : d.secAuthYn === "N" ? false : null,
+    loginNotification: d.loginNotiYn === "Y",
+    attributeChangeNotification: d.attrChgYn === "Y",
+    status: lookupStatCd(d.statCd) ?? "unknown",
+    newsRcptYn: d.newsRcptYn ?? "N",
+    // QSP regDt(YYYY.MM.DD) / uptDt(YYYY.MM.DD HH:mm:ss) 를 ISO 8601 (+09:00) 로 정규화.
+    // 백엔드 timestamp 컨벤션과 통일 — 정렬·비교·dayjs 일관 처리.
+    createdAt: parseQspDate(d.regDt),
+    updatedAt: parseQspDate(d.uptDt),
+    // uptNm 은 nullable — QSP null 시 그대로 노출 (userNm 형태, 프론트 호환성 우선).
+    updatedBy: d.uptNm ?? null,
+    notFoundInQsp: false,
+  };
+}
+
 // GET /api/admin/members/:id — 회원 상세정보
 export async function GET(request: NextRequest, { params }: Params) {
   try {
@@ -133,45 +176,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 4. 응답 매핑 (QSP → TO-BE)
-    const d = detailResult.detail;
-    const mapped = {
-      id: idResult.data,
-      userId: d.userId,
-      userName: d.userNm ?? "",
-      userNameKana: d.userNmKana ?? "",
-      firstName: d.user1stNm ?? "",
-      lastName: d.user2ndNm ?? "",
-      firstNameKana: d.user1stNmKana ?? "",
-      lastNameKana: d.user2ndNmKana ?? "",
-      email: d.email ?? "",
-      userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
-      userRole: d.authCd ?? "",
-      companyName: d.compNm ?? "",
-      companyNameKana: d.compNmKana ?? "",
-      zipcode: d.compPostCd ?? "",
-      address: d.compAddr ?? "",
-      address2: d.compAddr2 ?? "",
-      telNo: d.compTelNo ?? "",
-      faxNo: d.compFaxNo ?? "",
-      department: d.deptNm ?? "",
-      jobTitle: d.pstnNm ?? "",
-      twoFactorEnabled:
-        d.secAuthYn === "Y" ? true : d.secAuthYn === "N" ? false : null,
-      loginNotification: d.loginNotiYn === "Y",
-      attributeChangeNotification: d.attrChgYn === "Y",
-      status: lookupStatCd(d.statCd) ?? "unknown",
-      newsRcptYn: d.newsRcptYn ?? "N",
-      // QSP regDt(YYYY.MM.DD) / uptDt(YYYY.MM.DD HH:mm:ss) 를 ISO 8601 (+09:00) 로 정규화.
-      // 백엔드 timestamp 컨벤션(ISO 8601 +09:00)과 통일 — 프론트 정렬·비교·dayjs 포맷 변환 일관 처리.
-      // regDt 는 시각 미보유라 자정으로 채움 — 정보 없음 의미.
-      createdAt: parseQspDate(d.regDt),
-      updatedAt: parseQspDate(d.uptDt),
-      // uptNm 도 nullable — QSP 가 null 전송하면 그대로 노출 (빈 문자열로 변환 안 함).
-      // 응답 키는 `updatedBy` — 프론트 members-types.ts 의 `updatedBy?: string | null` 과 일치.
-      // (값은 userNm 형태이지만 키 네이밍은 프론트 호환성 우선)
-      updatedBy: d.uptNm ?? null,
-      notFoundInQsp: false,
-    };
+    const mapped = mapQspDetailToResponse(detailResult.detail, idResult.data);
 
     console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
 
@@ -505,7 +510,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
     //      사전 검증 이후 userTp 가 변하지 않았는지 확인한다. 롤백은 불가하지만
     //      CRITICAL 감사 로그로 탐지 가능하게 한다.
+    //      postDetail 은 응답 member snapshot 의 최신 소스로도 재사용된다.
     let warning: string | undefined;
+    let postDetail: QspMemberDetail | null = null;
     if (result.data.userRole !== undefined) {
       const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
       if (!postDetailResult.ok) {
@@ -514,12 +521,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
           { byAdmin: user.userId },
         );
         warning = "更新は完了しましたが、事後検証ができませんでした";
-      } else if (postDetailResult.detail.userTp !== "GENERAL") {
-        console.error(
-          "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
-          { postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
-        );
-        warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
+      } else {
+        postDetail = postDetailResult.detail;
+        if (postDetailResult.detail.userTp !== "GENERAL") {
+          console.error(
+            "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
+            { postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
+          );
+          warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
+        }
       }
     }
 
@@ -543,9 +553,40 @@ export async function PUT(request: NextRequest, { params }: Params) {
           })
         : undefined;
 
+    // 응답용 member snapshot — 저장 직후 팝업 재조회가 QSP F_NOT_USER 로
+    // 빈 값이 되는 문제를 방지 (삭제 상태 전환 케이스).
+    // 우선순위: postDetail(userRole 변경 경로 재조회) → preDetail + 변경 필드 overlay.
+    // preDetail null 경로는 snapshot 생략 → 프론트는 기존 fallback(재조회) 로 처리.
+    let memberSnapshot: ReturnType<typeof mapQspDetailToResponse> | undefined;
+    if (postDetail) {
+      memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data);
+    } else if (preDetail) {
+      const base = mapQspDetailToResponse(preDetail, idResult.data);
+      memberSnapshot = {
+        ...base,
+        ...(result.data.userRole !== undefined && { userRole: result.data.userRole }),
+        ...(result.data.twoFactorEnabled !== undefined && {
+          twoFactorEnabled: result.data.twoFactorEnabled,
+        }),
+        ...(result.data.loginNotification !== undefined && {
+          loginNotification: result.data.loginNotification,
+        }),
+        ...(result.data.attributeChangeNotification !== undefined && {
+          attributeChangeNotification: result.data.attributeChangeNotification,
+        }),
+        ...(result.data.newsRcptYn !== undefined && { newsRcptYn: result.data.newsRcptYn }),
+        ...(result.data.status !== undefined && { status: result.data.status }),
+        // 방금 저장 시점으로 updatedAt 교체 — 프론트 "갱신일" 즉시 반영.
+        // 다음 GET 에서 QSP 정확한 uptDt 로 재동기화됨.
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.userId,
+      };
+    }
+
     return NextResponse.json({
       data: {
         message: "会員情報を更新しました",
+        ...(memberSnapshot !== undefined && { member: memberSnapshot }),
         ...(warning !== undefined && { warning }),
         ...(warnings !== undefined && { warnings }),
       },
