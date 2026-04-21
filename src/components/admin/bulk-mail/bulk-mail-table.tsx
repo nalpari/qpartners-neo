@@ -8,11 +8,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox, Checkbox, Button } from "@/components/common";
+import { Pagination, PageSizeSelect, Checkbox, Button } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
-import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
-import { useCommonCode } from "@/hooks/use-common-code";
+import { CENTER_CELL_STYLE } from "@/lib/constants";
+import { usePageSize } from "@/hooks/use-page-size";
 
 /** Design Ref: §3.4 — 제목 클릭 시 상세화면 이동 */
 function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
@@ -39,9 +39,9 @@ interface BulkMailTableProps {
 
 export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const router = useRouter();
-  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
+  // 대량메일 목록은 기본 100건 (기존 useState("100") 동작 유지)
+  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize(100);
   const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState("100");
   const [draftOnly, setDraftOnly] = useState(false);
 
   // Design Ref: §3.4 — useQuery API 호출
@@ -54,24 +54,26 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
     endDate: searchParams.endDate || undefined,
     draftOnly: draftOnly ? "true" : undefined,
     page: String(currentPage),
-    pageSize: perPage,
+    pageSize: String(perPage),
   };
 
   const { data, isLoading } = useQuery<MassMailListResponse>({
     queryKey: ["mass-mails", queryParams],
     queryFn: () => api.get("/admin/mass-mails", { params: queryParams }).then((r) => r.data),
+    // 발송 상태(pending→sending→sent/send_failed) 감사성 — 전역 false 설정을 override
+    refetchOnWindowFocus: true,
   });
 
   const list = data?.data.list ?? [];
   const totalCount = data?.data.totalCount ?? 0;
-  const totalPages = Math.ceil(totalCount / Number(perPage));
+  const totalPages = Math.ceil(totalCount / perPage);
 
   const handleSendMail = () => {
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 
   // Design Ref: §5 — perPage 변경 시 1페이지 리셋
-  const handlePerPageChange = (val: string) => {
+  const handlePerPageChange = (val: number) => {
     setPerPage(val);
     setCurrentPage(1);
   };
@@ -163,13 +165,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
           <Button variant="primary" onClick={handleSendMail}>
             メール発送
           </Button>
-          <div className="w-[100px]">
-            <SelectBox
-              options={pageSizeOptions}
-              value={perPage}
-              onChange={handlePerPageChange}
-            />
-          </div>
+          <PageSizeSelect value={perPage} onChange={handlePerPageChange} />
         </div>
       </div>
 

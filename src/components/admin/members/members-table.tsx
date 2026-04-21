@@ -7,12 +7,11 @@ import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox } from "@/components/common";
+import { Pagination, PageSizeSelect } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
-import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
-import { useCommonCode } from "@/hooks/use-common-code";
+import { CENTER_CELL_STYLE } from "@/lib/constants";
 
 function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   const data = params.data;
@@ -56,8 +55,6 @@ export function MembersTable({
   onPageChange,
   onPageSizeChange,
 }: MembersTableProps) {
-  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
-
   // Design Ref: §4.3 — useQuery
   const { data, isLoading } = useQuery<MemberListResponse["data"]>({
     queryKey: ["admin", "members", filters, page, pageSize],
@@ -165,13 +162,7 @@ export function MembersTable({
           </span>
           件
         </p>
-        <div className="w-[100px]">
-          <SelectBox
-            options={pageSizeOptions}
-            value={String(pageSize)}
-            onChange={(val) => onPageSizeChange(Number(val))}
-          />
-        </div>
+        <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
       </div>
 
       {/* AG Grid + Pagination */}

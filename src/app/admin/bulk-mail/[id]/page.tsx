@@ -30,6 +30,8 @@ export default function AdminBulkMailDetailPage({
   const { data, isLoading, isError } = useQuery<MassMailDetailResponse>({
     queryKey: ["mass-mails", id],
     queryFn: () => api.get(`/admin/mass-mails/${id}`).then((r) => r.data),
+    // 발송 상태 전이(pending→sending→sent/send_failed) 감사성 — 전역 false 설정을 override
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) {

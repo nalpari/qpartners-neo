@@ -475,8 +475,24 @@ function MemberEditForm({
                   right={{ label: "部署名", children: <TextValue value={member.department} /> }}
                 />
                 {/* 5행: 最近アクセス / 役職 */}
+                {/* 最近アクセス: 1순위 lastLoginAt(로그인 시각), 2순위 updatedAt(레코드 갱신 시각).
+                    현재 백엔드 GET /api/admin/members/:id 응답에 lastLoginAt 매핑 미반영 상태 →
+                    사실상 updatedAt 로 fallback. 백엔드 매핑 추가되면 자동으로 로그인 시각 표시. */}
                 <DetailRow
-                  left={{ label: "最近アクセス", children: <TextValue value={member.lastLoginAt ? formatDateTime(member.lastLoginAt) : "-"} /> }}
+                  left={{
+                    label: "最近アクセス",
+                    children: (
+                      <TextValue
+                        value={
+                          member.lastLoginAt
+                            ? formatDateTime(member.lastLoginAt)
+                            : member.updatedAt
+                              ? formatDateTime(member.updatedAt)
+                              : "-"
+                        }
+                      />
+                    ),
+                  }}
                   right={{ label: "役職", children: <TextValue value={member.jobTitle} /> }}
                 />
                 {/* 6행: 二次認証 / ログイン通知 */}

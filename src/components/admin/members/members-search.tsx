@@ -55,19 +55,23 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
     });
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
+  };
+
   return (
     <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]">
       <div className="flex flex-col gap-1">
         {/* 1행: ID / 氏名 / Email */}
         <div className="flex gap-1 items-start">
           <SearchField label="ID">
-            <InputBox value={local.id} onChange={updateLocal("id")} placeholder="" className="w-full" />
+            <InputBox value={local.id} onChange={updateLocal("id")} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
           </SearchField>
           <SearchField label="氏名" width="w-[461px]">
-            <InputBox value={local.name} onChange={updateLocal("name")} placeholder="" className="w-full" />
+            <InputBox value={local.name} onChange={updateLocal("name")} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
           </SearchField>
           <SearchField label="Email" width="w-[461px]">
-            <InputBox value={local.email} onChange={updateLocal("email")} placeholder="" className="w-full" />
+            <InputBox value={local.email} onChange={updateLocal("email")} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
           </SearchField>
         </div>
 
@@ -90,7 +94,7 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
             />
           </SearchField>
           <SearchField label="会社名" width="w-[461px]">
-            <InputBox value={local.companyName} onChange={updateLocal("companyName")} placeholder="" className="w-full" />
+            <InputBox value={local.companyName} onChange={updateLocal("companyName")} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
           </SearchField>
         </div>
       </div>

@@ -7,6 +7,7 @@ interface InputBoxProps {
   value?: string;
   onChange?: (value: string) => void;
   onClear?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   placeholder?: string;
   disabled?: boolean;
   readOnly?: boolean;
@@ -19,6 +20,7 @@ export function InputBox({
   value,
   onChange,
   onClear,
+  onKeyDown,
   placeholder = "",
   disabled = false,
   readOnly = false,
@@ -43,6 +45,7 @@ export function InputBox({
         type={type}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={disabled}
         readOnly={readOnly}

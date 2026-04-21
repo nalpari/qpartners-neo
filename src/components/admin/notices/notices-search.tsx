@@ -50,6 +50,10 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
     });
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
+  };
+
   const handleReset = () => {
     setContent("");
     setStatuses([]);
@@ -72,7 +76,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={content} onChange={setContent} placeholder="" className="w-full" />
+              <InputBox value={content} onChange={setContent} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
             </div>
           </div>
 
@@ -104,7 +108,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={author} onChange={setAuthor} placeholder="" className="w-full" />
+              <InputBox value={author} onChange={setAuthor} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
             </div>
           </div>
 

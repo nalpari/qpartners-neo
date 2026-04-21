@@ -9,10 +9,9 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid";
 import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
-import { DimSpinner, Pagination, SelectBox } from "@/components/common";
+import { DimSpinner, Pagination, PageSizeSelect } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
-import { PAGE_SIZE_OPTIONS_FALLBACK } from "@/lib/constants";
-import { useCommonCode } from "@/hooks/use-common-code";
+import { usePageSize } from "@/hooks/use-page-size";
 
 // Design Ref: §2 — API Response Type
 interface DownloadLogItem {
@@ -89,13 +88,12 @@ function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
 // Design Ref: §3 — 메인 컴포넌트
 export function DownloadHistory() {
   const { openAlert } = useAlertStore();
-  const { options: pageSizeOptions } = useCommonCode("PAGE_SIZE", PAGE_SIZE_OPTIONS_FALLBACK);
+  const { pageSize, setPageSize } = usePageSize();
 
   // 검색/페이지네이션 상태
   const [keyword, setKeyword] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
 
   // 모바일 누적 로드
   const [mobileItems, setMobileItems] = useState<DownloadLogItem[]>([]);
@@ -138,15 +136,15 @@ export function DownloadHistory() {
     setMobileItems([]);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
   };
 
   // 페이지 변경
   const handlePageChange = (p: number) => setPage(p);
 
-  const handlePageSizeChange = (value: string) => {
-    setPageSize(Number(value));
+  const handlePageSizeChange = (value: number) => {
+    setPageSize(value);
     setPage(1);
     setMobilePage(1);
     setMobileItems([]);
@@ -361,13 +359,11 @@ export function DownloadHistory() {
             </span>
             件
           </p>
-          <div className="w-[100px] ml-auto">
-            <SelectBox
-              options={pageSizeOptions}
-              value={String(pageSize)}
-              onChange={handlePageSizeChange}
-            />
-          </div>
+          <PageSizeSelect
+            value={pageSize}
+            onChange={handlePageSizeChange}
+            className="ml-auto"
+          />
         </div>
 
         {/* PC: DataGrid + Pagination */}

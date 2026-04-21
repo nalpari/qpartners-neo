@@ -13,7 +13,9 @@ export function HomeSearchMobile() {
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
+        }}
         placeholder="検索語を入力してください"
         className="flex-1 h-full pl-[20px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] placeholder:text-[#aaaaaa] outline-none"
       />
