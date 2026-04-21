@@ -137,7 +137,7 @@ export function DownloadHistory() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
   };
 
   // 페이지 변경

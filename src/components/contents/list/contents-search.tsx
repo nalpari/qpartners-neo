@@ -81,7 +81,7 @@ export function ContentsSearch({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
   };
 
   return (

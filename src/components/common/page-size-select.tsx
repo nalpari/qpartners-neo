@@ -11,7 +11,7 @@ interface PageSizeSelectProps {
 }
 
 /**
- * 페이지 사이즈 선택 SelectBox — 전역 통일 width 100px.
+ * 페이지 사이즈 선택 SelectBox — 전역 통일 width 110px.
  * 옵션 소스는 PAGE_SIZE 공통코드 (/api/codes/lookup).
  * state는 소비 측이 관리 (value / onChange).
  */
