@@ -47,8 +47,6 @@ pipeline {
                 withCredentials([file(credentialsId: "${ENV_CREDENTIALS}", variable: 'ENV_FILE')]) {
                     sh "cp \$ENV_FILE .env.${APP_ENV}"
                 }
-                // 업로드 디렉토리 생성
-                sh "mkdir -p ${APP_ROOT}/uploads_data"
             }
         }
 
