@@ -15,7 +15,9 @@ WORKDIR /app
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate && npx next build --webpack
+# 빌드 시 페이지 데이터 수집용 더미 환경변수 (런타임 값은 docker-compose env_file로 주입)
+RUN DB_HOST=localhost DB_PORT=3306 DB_USER=build DB_PASSWORD=build DB_NAME=build \
+    npx prisma generate && npx next build --webpack
 
 # --- Runner ---
 FROM node:22-alpine AS runner
