@@ -567,9 +567,9 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/auto-login/decrypt": {
       get: {
         tags: ["Auth"],
-        summary: "자동로그인 복호화 (EOS 호출용)",
+        summary: "자동로그인 복호화 (QSP 역호출용)",
         description:
-          "외부 시스템(Q.Order/Q.Musubi EOS)이 수신한 autoLoginParam1을 복호화하여 평문 userId를 반환. 가이드 4.2 `autoLoginDecryptData` 역할. Q.Partners가 AES-256-CBC(YYYYMMDD+AUTO_LOGIN_AES_KEY)로 암호화한 값만 복호화 가능. 자정 경계 시 전일 키로 재시도.",
+          "QSP가 qOrder/qMusubi 자동로그인 처리 중 Q.Partners를 역호출하여 cipher를 userId로 복원하는 M2M 엔드포인트. Q.Partners encryptSelf가 생성한 cipher 전용이며 hanasys 경로는 대상 아님. 자정 경계(KST) 시 당일 키 → 전일 키 순으로 최대 2회 시도 후 모두 실패하면 500.",
         parameters: [
           {
             name: "autoLoginParam1",
@@ -581,7 +581,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         ],
         responses: {
           "200": {
-            description: "복호화 성공 (사용자 미조회 시에도 userId=null 형태 반환)",
+            description: "복호화 성공 — data.userId는 복호화된 평문 로그인 ID(항상 문자열). 사용자 존재 여부는 검증하지 않음.",
             content: {
               "application/json": {
                 schema: {
@@ -590,7 +590,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        userId: { type: "string", nullable: true, example: "T01" },
+                        userId: { type: "string", example: "T01" },
                       },
                     },
                     resultCode: { type: "integer", example: 200 },
@@ -615,6 +615,26 @@ export const openApiSpec: OpenAPIV3.Document = {
                     },
                     resultCode: { type: "integer", example: 400 },
                     resultMessage: { type: "string", example: "autoLoginParam1 is required" },
+                  },
+                },
+              },
+            },
+          },
+          "429": {
+            description: "rate limit 초과 (IP 기준 분당 60회, IP 헤더 없을 시 분당 20회)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 429 },
+                    resultMessage: { type: "string", example: "too many requests" },
                   },
                 },
               },

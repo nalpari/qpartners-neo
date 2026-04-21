@@ -40,7 +40,7 @@ export const QSP_API = {
   userListMng: `${QSP_BASE_URL}/api/qpartners/userMng/userListMng`,
   /** No.12 Q.Partners 회원관리 정보 수정 — 부가 정보 수정 (2차인증, 뉴스레터, 로그인 알림, 뉴스 수신) */
   updateUserDtlMng: `${QSP_BASE_URL}/api/qpartners/userMng/updateUserDtlMng`,
-  /** 자동로그인 암호화 — userId를 AES256 암호화 (Q.Order/Q.Musubi 자동로그인용) */
+  /** 자동로그인 암호화 — HANASYS DESIGN target 전용 (QSP가 cipher + 진입 URL 생성하여 반환) */
   autoLoginEncrypt: `${QSP_BASE_URL}/login/autoLoginEncryptData`,
 } as const;
 

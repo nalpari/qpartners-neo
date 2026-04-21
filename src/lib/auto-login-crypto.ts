@@ -92,11 +92,24 @@ export function decryptAutoLogin(cipherText: string): string {
   const secret = getAesSecret();
   try {
     return decryptWithKey(cipherText, getTodayKST() + secret);
-  } catch (error: unknown) {
-    // 당일 키 복호화 실패는 자정 경계 케이스의 정상 경로 — 디버깅용 debug 로그만 남기고 전일 키로 재시도
-    if (process.env.NODE_ENV !== "production") {
-      console.debug("[auto-login-crypto] 당일 키 복호화 실패, 전일 키로 재시도:", error);
+  } catch (todayError: unknown) {
+    // 자정 직후(KST) 전일 키로 암호화된 cipher 유입은 정상 경로지만, cipher 포맷 오류·
+    // 키 교체 실수·패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름. 프로덕션에서도 컨텍스트 유지.
+    console.warn("[auto-login-crypto] 당일 키 복호화 실패 — 전일 키로 재시도:", {
+      errorName: todayError instanceof Error ? todayError.name : typeof todayError,
+      errorMessage: todayError instanceof Error ? todayError.message : String(todayError),
+    });
+    try {
+      return decryptWithKey(cipherText, getYesterdayKST() + secret);
+    } catch (yesterdayError: unknown) {
+      // 당일·전일 키 모두 실패 — 두 에러 모두 기록해 원인 추적 가능하게 유지
+      console.error("[auto-login-crypto] 당일·전일 키 모두 복호화 실패:", {
+        todayErrorName: todayError instanceof Error ? todayError.name : typeof todayError,
+        todayErrorMessage: todayError instanceof Error ? todayError.message : String(todayError),
+        yesterdayErrorName: yesterdayError instanceof Error ? yesterdayError.name : typeof yesterdayError,
+        yesterdayErrorMessage: yesterdayError instanceof Error ? yesterdayError.message : String(yesterdayError),
+      });
+      throw yesterdayError;
     }
-    return decryptWithKey(cipherText, getYesterdayKST() + secret);
   }
 }

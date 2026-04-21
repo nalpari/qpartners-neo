@@ -28,15 +28,18 @@ function isAllowedQspRedirectUrl(raw: string): boolean {
     return ALLOWED_QSP_REDIRECT_HOSTS.some(
       (allowed) => host === allowed || host.endsWith(`.${allowed}`),
     );
-  } catch {
+  } catch (error: unknown) {
+    console.warn("[auto-login] QSP redirect URL 파싱 실패:", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
 
-/** QSP autoLoginEncryptData 응답 — data.userId: 암호문, data.url: 이동 base URL (HANASYS용) */
+/** QSP autoLoginEncryptData 응답 — data.userId: 암호문(non-empty), data.url: 이동 base URL (HANASYS용) */
 const qspEncryptResponseSchema = z.object({
   data: z.object({
-    userId: z.string(),
+    userId: z.string().min(1, "QSP 암호문이 비어있습니다"),
     url: z
       .string()
       .url()
