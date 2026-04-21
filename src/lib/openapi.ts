@@ -557,7 +557,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": validationErrorResponse,
+          "400": errorResponse("リクエスト形式または target 파라미터 오류"),
           "401": errorResponse("인증 필요"),
           "500": errorResponse("암호화 처리 오류"),
           "502": errorResponse("외부 암호화 서버 오류 (hanasys target 한정)"),
@@ -615,6 +615,26 @@ export const openApiSpec: OpenAPIV3.Document = {
                     },
                     resultCode: { type: "integer", example: 400 },
                     resultMessage: { type: "string", example: "autoLoginParam1 is required" },
+                  },
+                },
+              },
+            },
+          },
+          "401": {
+            description: "호출자 검증 실패 — AUTO_LOGIN_DECRYPT_SECRET 설정 시 X-QSP-Auth 헤더 불일치",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 401 },
+                    resultMessage: { type: "string", example: "caller verification failed" },
                   },
                 },
               },

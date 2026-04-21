@@ -16,12 +16,7 @@
 
 import crypto from "node:crypto";
 
-class ConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ConfigError";
-  }
-}
+import { ConfigError } from "@/lib/errors";
 
 const ALGORITHM = "aes-256-cbc";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;

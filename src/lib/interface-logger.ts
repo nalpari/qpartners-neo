@@ -110,17 +110,32 @@ function maskSensitiveFields(body: string | null | undefined): string | null {
   }
 }
 
-function maskEmailInUrl(url: string): string {
-  return url.replace(
-    /email=([^&]+)/gi,
-    (_match, email: string) => {
-      const decoded = decodeURIComponent(email);
-      const atIdx = decoded.indexOf("@");
-      if (atIdx <= 0) return `email=${email}`;
-      const masked = decoded[0] + "***" + decoded.slice(atIdx);
-      return `email=${encodeURIComponent(masked)}`;
-    },
-  );
+/**
+ * URL 쿼리스트링에서 민감 파라미터 값을 마스킹.
+ *
+ * - `email=` → `maskEmail`
+ * - `autoLoginParam1=` → `maskUserId` (QSP 자동로그인 평문 userId 방지, api.md PII 규칙)
+ *
+ * 파싱 실패한 값은 원본 유지 — 로그가 비어 버리는 것보다 마스킹 없이 기록하는 편이 안전 (매우 드뭄).
+ */
+function maskUrlSensitiveParams(url: string): string {
+  return url
+    .replace(/email=([^&]+)/gi, (_match, value: string) => {
+      try {
+        const decoded = decodeURIComponent(value);
+        return `email=${encodeURIComponent(maskEmail(decoded))}`;
+      } catch {
+        return `email=${value}`;
+      }
+    })
+    .replace(/autoLoginParam1=([^&]+)/gi, (_match, value: string) => {
+      try {
+        const decoded = decodeURIComponent(value);
+        return `autoLoginParam1=${encodeURIComponent(maskUserId(decoded))}`;
+      } catch {
+        return `autoLoginParam1=${value}`;
+      }
+    });
 }
 
 function extractResultCode(responseBody: string | null): string | null {
@@ -164,7 +179,7 @@ export async function fetchWithLog(
     direction: params.direction,
     apiName: params.apiName,
     method,
-    requestUrl: maskEmailInUrl(url),
+    requestUrl: maskUrlSensitiveParams(url),
     requestBody: maskSensitiveFields(requestBody),
     callerRoute: params.callerRoute,
     userId: params.userId ?? null,

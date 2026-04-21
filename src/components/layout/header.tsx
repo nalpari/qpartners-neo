@@ -10,6 +10,7 @@ import api from "@/lib/axios";
 import { performLogout } from "@/lib/auth-client";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
+import type { AutoLoginTarget } from "@/lib/schemas/auto-login";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
@@ -35,10 +36,6 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
 
 // 표시 순서 = ORDER → MUSUBI → DESIGN → WARRANTY (역할별 노출은 SITE_ACCESS_MAP 으로 필터)
 // note: Q.WARRANTY 만 자동 로그인 미연동 → 단순 사이트 이동임을 명시.
-// URL: 2026-04-16 회신 도메인(q-cells.jp / www.hanasys.jp) 반영.
-
-/** 자동로그인 target 키 — 서버 API와 일치 */
-type AutoLoginTarget = "hanasys" | "qOrder" | "qMusubi";
 
 type SiteValue = "qorder" | "qmusubi" | "hanasys" | "qwarranty";
 interface RelatedSite {
@@ -79,12 +76,20 @@ function getRelatedSites(user: LoginUser) {
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
 }
 
-/** 자동로그인: target별 암호화 API 호출 후 이동, 실패 시 직접 이동 폴백 */
+/** 자동로그인: target별 암호화 API 호출 후 이동, 실패 시 직접 이동 폴백 (비로그인 상태 진입) */
 async function navigateWithAutoLogin(target: AutoLoginTarget, fallbackHref: string) {
   try {
     const res = await api.post<{ data: { url: string } }>("/auth/auto-login/encrypt", { target });
     window.location.href = res.data.data.url;
-  } catch {
+  } catch (error: unknown) {
+    // bare catch 금지(api.md) — 실패 컨텍스트 최소 로깅 후 폴백 이동. 세션 만료/401 분기 등 UX 개선은 후속 티켓.
+    const status =
+      error instanceof AxiosError ? error.response?.status : undefined;
+    console.error("[navigateWithAutoLogin] 자동로그인 실패 — 원본 이동:", {
+      target,
+      status,
+      message: error instanceof Error ? error.message : String(error),
+    });
     window.location.href = fallbackHref;
   }
 }

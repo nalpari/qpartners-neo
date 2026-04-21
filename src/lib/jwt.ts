@@ -1,14 +1,8 @@
 import { SignJWT, jwtVerify, errors as joseErrors } from "jose";
 
+import { ConfigError } from "@/lib/errors";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
-
-class ConfigError extends Error {
-  constructor(msg: string) {
-    super(msg);
-    this.name = "ConfigError";
-  }
-}
 
 const getSecret = () => {
   const secret = process.env.JWT_SECRET;

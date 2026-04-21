@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 
 /** 인증 없이 접근 가능한 API 경로 (matcher 범위 내 경로만 등록) */
@@ -91,7 +92,7 @@ export async function middleware(request: NextRequest) {
           }
         } catch (error) {
           // ConfigError(JWT_SECRET 미설정) = 서버 설정 문제 → protected path와 동일하게 500 반환
-          if (error instanceof Error && error.name === "ConfigError") {
+          if (error instanceof ConfigError) {
             console.error("[middleware] CRITICAL 설정 에러 (public GET):", error);
             return NextResponse.json(
               { error: "サーバー設定エラーが発生しました" },

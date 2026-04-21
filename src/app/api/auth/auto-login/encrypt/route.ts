@@ -4,15 +4,10 @@ import { z } from "zod";
 
 import { AUTO_LOGIN_URL, QSP_API } from "@/lib/config";
 import { encryptAutoLogin } from "@/lib/auto-login-crypto";
+import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
-
-/** 자동로그인 대상 시스템 */
-const AUTO_LOGIN_TARGETS = ["qOrder", "qMusubi", "hanasys"] as const;
-type AutoLoginTarget = (typeof AUTO_LOGIN_TARGETS)[number];
-
-const requestSchema = z.object({
-  target: z.enum(AUTO_LOGIN_TARGETS),
-});
+import { encryptRequestSchema } from "@/lib/schemas/auto-login";
+import type { AutoLoginTarget } from "@/lib/schemas/auto-login";
 
 /**
  * QSP 응답 `data.url` 허용 호스트 — Open Redirect 방어.
@@ -85,8 +80,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsedBody = requestSchema.safeParse(body);
+    const parsedBody = encryptRequestSchema.safeParse(body);
     if (!parsedBody.success) {
+      // 스키마 세부(issues)는 서버 로그에만 기록 — 다른 route(signup/inquiry)와 동일하게 클라이언트 노출 금지
+      console.warn(
+        "[POST /api/auth/auto-login/encrypt] target 검증 실패:",
+        parsedBody.error.issues,
+      );
       return NextResponse.json(
         { error: "targetパラメータが正しくありません" },
         { status: 400 },
@@ -99,8 +99,21 @@ export async function POST(request: NextRequest) {
     }
 
     return encryptSelf(userId, SELF_ENCRYPT_TARGET_URL[target]);
-  } catch (error) {
-    console.error("[POST /api/auth/auto-login/encrypt]", error);
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) {
+      console.error(
+        "[POST /api/auth/auto-login/encrypt] 설정 에러:",
+        error.message,
+      );
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+    console.error("[POST /api/auth/auto-login/encrypt] 예상치 못한 에러:", {
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
       { error: "サーバーエラーが発生しました" },
       { status: 500 },
