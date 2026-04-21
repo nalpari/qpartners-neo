@@ -25,13 +25,17 @@ function toPositiveInt(value: string | undefined | null): number | null {
 /**
  * PAGE_SIZE 공통코드 조회 + 선택 state 관리 훅.
  * - 옵션 소스: `/api/codes/lookup?headerCode=PAGE_SIZE`
- *   (응답 매핑: `value = code` 숫자 문자열, `label = codeName` 예 "20件")
- * - 실패 시 fallback 20/50/100 (회원관리 기준)
- * - 최초 디폴트: fallback 첫번째 값(20) — lazy init 으로 마운트 시점 1회만 평가,
- *   이후 API 옵션이 비동기 도착해도 pageSize 가 자동으로 바뀌지 않음(flicker 방지).
- * - setPageSize 는 양의 정수만 수용 (NaN·음수·0 차단).
+ *   - 매핑: `value = code`, `label = codeName` (예 `"20件"`)
+ *   - DB 계약 방어: `code` 가 양의 정수로 파싱되지 않는 항목은 옵션에서 제외
+ *     (운영자가 비숫자 코드를 등록하거나 스키마 계약이 바뀌어도 placeholder 유출 차단)
+ * - 옵션 fallback: 회원관리 기준 20/50/100 (공통코드 조회 실패·빈 응답 시)
+ * - 초기 pageSize: `initial` 파라미터 (기본 20) — 화면별 기본 표시량 커스터마이즈 가능
+ *   (예: 대량메일 목록은 `usePageSize(100)` 으로 100건 기본)
+ * - Value-options 정합성: 현재 pageSize 가 options 에 없으면 options 첫번째로 보정하여
+ *   SelectBox placeholder 노출 방지 (state 는 그대로, 렌더값만 보정)
+ * - setPageSize: 양의 정수만 수용 (NaN·음수·0 차단)
  */
-export function usePageSize() {
+export function usePageSize(initial: number = 20) {
   const { data, isLoading } = useQuery({
     queryKey: ["common-code", "PAGE_SIZE"],
     queryFn: async (): Promise<SelectOption[]> => {
@@ -40,19 +44,29 @@ export function usePageSize() {
       });
       const details = res.data?.data;
       if (!Array.isArray(details)) return [];
-      return details.map((d) => ({
-        value: d.code,
-        label: d.codeName,
-      }));
+      return details
+        .filter((d) => toPositiveInt(d.code) !== null)
+        .map((d) => ({
+          value: d.code,
+          label: d.codeName,
+        }));
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  const options = data ?? PAGE_SIZE_OPTIONS_FALLBACK;
+  const options = data && data.length > 0 ? data : PAGE_SIZE_OPTIONS_FALLBACK;
 
   const [pageSize, setPageSizeRaw] = useState<number>(() => {
-    return toPositiveInt(PAGE_SIZE_OPTIONS_FALLBACK[0]?.value) ?? 20;
+    return Number.isFinite(initial) && Number.isInteger(initial) && initial > 0
+      ? initial
+      : 20;
   });
+
+  // options 갱신 후 현재 pageSize 가 범위 밖이면 options 첫번째로 보정하여 렌더
+  // (state 원값은 유지 — options 가 나중에 복구되면 원값 다시 유효)
+  const effectivePageSize = options.some((o) => Number(o.value) === pageSize)
+    ? pageSize
+    : toPositiveInt(options[0]?.value) ?? pageSize;
 
   const setPageSize = useCallback((next: number) => {
     if (Number.isFinite(next) && Number.isInteger(next) && next > 0) {
@@ -60,5 +74,5 @@ export function usePageSize() {
     }
   }, []);
 
-  return { options, pageSize, setPageSize, isLoading };
+  return { options, pageSize: effectivePageSize, setPageSize, isLoading };
 }

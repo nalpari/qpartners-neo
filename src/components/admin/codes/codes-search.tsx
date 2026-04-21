@@ -15,6 +15,10 @@ export function CodesSearch({
   onSearch,
   onReset,
 }: CodesSearchProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) onSearch();
+  };
+
   return (
     <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]">
       <div className="flex gap-1 items-start">
@@ -26,15 +30,7 @@ export function CodesSearch({
             </span>
           </div>
           <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-            <InputBox
-              value={keyword}
-              onChange={onKeywordChange}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) onSearch();
-              }}
-              placeholder=""
-              className="w-full"
-            />
+            <InputBox value={keyword} onChange={onKeywordChange} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
           </div>
         </div>
       </div>

@@ -39,7 +39,8 @@ interface BulkMailTableProps {
 
 export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const router = useRouter();
-  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
+  // 대량메일 목록은 기본 100건 (기존 useState("100") 동작 유지)
+  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [draftOnly, setDraftOnly] = useState(false);
 
@@ -59,6 +60,8 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const { data, isLoading } = useQuery<MassMailListResponse>({
     queryKey: ["mass-mails", queryParams],
     queryFn: () => api.get("/admin/mass-mails", { params: queryParams }).then((r) => r.data),
+    // 발송 상태(pending→sending→sent/send_failed) 감사성 — 전역 false 설정을 override
+    refetchOnWindowFocus: true,
   });
 
   const list = data?.data.list ?? [];
