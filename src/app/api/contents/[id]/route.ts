@@ -5,10 +5,11 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import {
   canAccessContent,
-  canModifyContent,
+  canModifyResource,
   getUserFromHeaders,
   isInternalUser,
   requireAdmin,
+  resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // 게시대상/기간 접근제어
     if (!canAccessContent(user, existing.targets)) {
-      return NextResponse.json({ error: "접근 권한이 없습니다" }, { status: 403 });
+      return NextResponse.json({ error: "アクセス権限がありません" }, { status: 403 });
     }
 
     // viewCount 증가: published 상태이고 사내 사용자가 아닌 경우만 (봇/프리패치 방어)
@@ -70,9 +71,19 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const now = Date.now();
 
+    // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (일반 사용자에게 admin 메타데이터 노출 방지)
+    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴
+    const authorIsSuperAdmin = internal
+      ? (await resolveAuthorSuperAdmin({
+          userType: content.userType,
+          userId: content.userId,
+        })).isSuperAdmin
+      : undefined;
+
     return NextResponse.json({
       data: {
         ...content,
+        authorIsSuperAdmin,
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: buildCategoryTree(content.categories, { includeInternal: internal }),
@@ -110,19 +121,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: 슈퍼관리자=동일부문, 관리자=본인등록만
+    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { userId: true, authorDepartment: true },
+      select: { userType: true, userId: true },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, existing)) {
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "수정 권한이 없습니다" },
+        { error: "修正する権限がありません" },
         { status: 403 },
       );
     }
@@ -219,19 +230,19 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: 슈퍼관리자=동일부문, 관리자=본인등록만
+    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { userId: true, authorDepartment: true },
+      select: { userType: true, userId: true },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, existing)) {
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "삭제 권한이 없습니다" },
+        { error: "削除する権限がありません" },
         { status: 403 },
       );
     }

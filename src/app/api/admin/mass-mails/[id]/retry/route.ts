@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireAdmin } from "@/lib/auth";
 import { processMassMailRetry } from "@/lib/mass-mail/send-processor";
 import { prisma } from "@/lib/prisma";
 import { massMailIdParamSchema } from "@/lib/schemas/mass-mail";
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     // 3. 레코드 조회 — 소유권 + 상태 체크
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
-      select: { userId: true, status: true },
+      select: { userType: true, userId: true, status: true },
     });
     if (!mail) {
       return NextResponse.json(
@@ -37,9 +37,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         { status: 404 },
       );
     }
-    if (mail.userId !== user.userId) {
+    // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    if (!(await canModifyResource(user, mail))) {
       return NextResponse.json(
-        { error: "他のユーザーが作成したメールは再送信できません" },
+        { error: "このメールを再送信する権限がありません" },
         { status: 403 },
       );
     }

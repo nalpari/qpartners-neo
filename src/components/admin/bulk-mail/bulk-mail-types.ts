@@ -96,6 +96,12 @@ export interface MassMailDetail {
   sentSuccess: number;
   /** 발송 실패 건수 */
   sentFailed: number;
+  /** 작성자 userType */
+  userType: string;
+  /** 작성자 userId */
+  userId: string;
+  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 */
+  authorIsSuperAdmin: boolean;
   attachments: MassMailAttachment[];
   /** 영구 실패 수신자 (상한 500건). PII 보호: email 마스킹, errorMessage → errorCategory 치환. */
   failedRecipients: FailedRecipient[];
@@ -135,6 +141,12 @@ export interface FormInitialData {
   sentAt: string | null;
   createdBy: string;
   createdAt: string;
+  /** 작성자 userType (edit/detail 권한 판별용) */
+  userType: string;
+  /** 작성자 userId (edit/detail 권한 판별용) */
+  userId: string;
+  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 (MassMailDetail 에서 단일 출처로 전달) */
+  authorIsSuperAdmin: boolean;
   attachments: MassMailAttachment[];
 }
 
@@ -179,6 +191,9 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
     sentAt: detail.sentAt,
     createdBy: detail.createdBy,
     createdAt: detail.createdAt,
+    userType: detail.userType,
+    userId: detail.userId,
+    authorIsSuperAdmin: detail.authorIsSuperAdmin,
     attachments: detail.attachments,
   };
 }

@@ -6,6 +6,8 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, Button } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
+import type { LoginUser } from "@/lib/schemas/auth";
+import { canModifyClient } from "@/lib/auth-client";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
@@ -36,53 +38,12 @@ interface NoticeDetailResponse {
     status: string;
     userType: string;
     userId: string;
+    authorIsSuperAdmin?: boolean;
     createdAt: string;
     createdBy: string | null;
     updatedAt: string;
     updatedBy: string | null;
   };
-}
-
-function ContentCellRenderer(params: ICellRendererParams<NoticeListItem>) {
-  const data = params.data;
-  if (!data) return null;
-
-  const openPopup = usePopupStore.getState().openPopup;
-
-  const handleClick = async () => {
-    try {
-      const res = await api.get<NoticeDetailResponse>(`/home-notices/${data.id}`);
-      const d = res.data.data;
-      const formData: NoticeFormData = {
-        id: d.id,
-        targets: d.targets,
-        startDate: d.startAt,
-        endDate: d.endAt,
-        content: d.content,
-        url: d.url ?? "",
-        author: d.createdBy ?? "",
-        authorId: d.userId,
-        createdAt: d.createdAt,
-        updater: d.updatedBy ?? "",
-        updaterId: "",
-        updatedAt: d.updatedAt,
-      };
-      openPopup("notice-form", { mode: "edit", notice: formData });
-    } catch (error: unknown) {
-      console.error("[NoticesTable] 공지 상세 조회 실패:", error);
-      useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-      onClick={handleClick}
-    >
-      {data.content}
-    </button>
-  );
 }
 
 interface NoticesTableProps {
@@ -93,6 +54,15 @@ interface NoticesTableProps {
 
 export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps) {
   const { openPopup } = usePopupStore();
+
+  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
+  // canModifyClient 권한 판정에 사용 — user 변경 시 renderer 가 재생성돼 클로저가 최신 사용자 참조.
+  const { data: user = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   const { data, isLoading } = useQuery<NoticeListResponse>({
     queryKey: [
@@ -130,6 +100,60 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
 
   const items = data?.data ?? [];
   const totalPages = data?.meta.totalPages ?? 1;
+
+  // user·openPopup 을 클로저로 바인딩한 renderer — useMemo 로 reference 안정화 (user 변경 시 재생성)
+  const ContentCellRenderer = useMemo(() => {
+    const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
+      const rowData = params.data;
+      if (!rowData) return null;
+
+      const handleClick = async () => {
+        try {
+          const res = await api.get<NoticeDetailResponse>(`/home-notices/${rowData.id}`);
+          const d = res.data.data;
+
+          // 권한 체크: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+          if (!canModifyClient(user, d)) {
+            useAlertStore.getState().openAlert({
+              type: "alert",
+              message: "このお知らせを編集する権限がありません。",
+            });
+            return;
+          }
+
+          const formData: NoticeFormData = {
+            id: d.id,
+            targets: d.targets,
+            startDate: d.startAt,
+            endDate: d.endAt,
+            content: d.content,
+            url: d.url ?? "",
+            author: d.createdBy ?? "",
+            authorId: d.userId,
+            createdAt: d.createdAt,
+            updater: d.updatedBy ?? "",
+            updaterId: "",
+            updatedAt: d.updatedAt,
+          };
+          openPopup("notice-form", { mode: "edit", notice: formData });
+        } catch (error: unknown) {
+          console.error("[NoticesTable] 공지 상세 조회 실패:", error);
+          useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
+        }
+      };
+
+      return (
+        <button
+          type="button"
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
+          onClick={handleClick}
+        >
+          {rowData.content}
+        </button>
+      );
+    };
+    return Renderer;
+  }, [user, openPopup]);
 
   const handleRegister = () => {
     const emptyForm: NoticeFormData = {
@@ -211,7 +235,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
     ],
-    [],
+    [ContentCellRenderer],
   );
 
   return (
