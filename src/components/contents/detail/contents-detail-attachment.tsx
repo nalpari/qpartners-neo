@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
+import { getFileIconByMime } from "@/lib/file-icon";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
 
@@ -22,15 +23,6 @@ interface ContentsDetailAttachmentProps {
 
 function isImageFile(mimeType: string | null): boolean {
   return mimeType != null && mimeType.startsWith("image/");
-}
-
-function isPdfFile(mimeType: string | null): boolean {
-  return mimeType === "application/pdf";
-}
-
-function getFileIconSrc(mimeType: string | null): string {
-  if (isPdfFile(mimeType)) return "/asset/images/contents/pdfIcon.svg";
-  return "/asset/images/contents/zip_icon.svg";
 }
 
 /** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
@@ -145,7 +137,7 @@ export function ContentsDetailAttachment({
                 />
               ) : (
                 <Image
-                  src={getFileIconSrc(file.mimeType)}
+                  src={getFileIconByMime(file.mimeType, file.fileName)}
                   alt=""
                   width={48}
                   height={48}

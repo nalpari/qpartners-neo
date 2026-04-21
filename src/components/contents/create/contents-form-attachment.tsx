@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
+import { getFileIconByName } from "@/lib/file-icon";
 
 export interface AttachmentFile {
   id: string;
@@ -32,13 +33,6 @@ interface ContentsFormAttachmentProps {
   contentId?: string;
 }
 
-function getFileIconSrc(fileName: string): string {
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "pdf") return "/asset/images/contents/pdfIcon.svg";
-  if (["zip", "rar", "7z"].includes(ext))
-    return "/asset/images/contents/zip_icon.svg";
-  return "/asset/images/contents/pdfIcon.svg";
-}
 
 export function ContentsFormAttachment({
   attachments,
@@ -184,7 +178,7 @@ export function ContentsFormAttachment({
               <div key={`saved-${file.id}`} className="flex items-center gap-3">
                 <div className="flex items-center gap-[10px]">
                   <Image
-                    src={getFileIconSrc(file.fileName)}
+                    src={getFileIconByName(file.fileName)}
                     alt=""
                     width={24}
                     height={24}
@@ -219,7 +213,7 @@ export function ContentsFormAttachment({
               <div key={file.id} className="flex items-center gap-3">
                 <div className="flex items-center gap-[10px]">
                   <Image
-                    src={getFileIconSrc(file.name)}
+                    src={getFileIconByName(file.name)}
                     alt=""
                     width={24}
                     height={24}
