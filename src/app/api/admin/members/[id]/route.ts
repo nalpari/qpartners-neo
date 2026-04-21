@@ -13,7 +13,6 @@ import {
   STATUS_TO_STAT_CD,
   lookupStatCd,
   lookupUserTypeLabel,
-  defaultAuthCdFromUserTp,
 } from "@/lib/schemas/member";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -34,20 +33,6 @@ const QSP_LOG_MSG_MAX_LEN = 200;
 const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set([
   "newsRcptYn",
 ]);
-
-/**
- * preDetail null 경로에서 QSP 필수 필드 제약으로 기본값이 강제 주입되는 필드의
- * 클라이언트 노출용 일본어 라벨. 내부 필드명(secAuthYn 등)이 응답에 새어나가지
- * 않도록 하기 위한 매핑.
- */
-const DEFAULTED_FIELD_LABELS_JA: Record<string, string> = {
-  secAuthYn: "二段階認証設定",
-  loginNotiYn: "ログイン通知設定",
-  attrChgYn: "属性変更通知設定",
-  newsRcptYn: "ニュースレター受信設定",
-  authCd: "ユーザー権限",
-  statCd: "アカウント状態",
-};
 
 /**
  * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
@@ -381,39 +366,51 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 5. QSP 회원정보 수정 API 호출
     //
-    // QSP updateUserDtlMng 는 full-replace 방식(전송하지 않은 필드를 null 로 덮어씀, 2026-04-20 확인 / Design §1.4).
-    // 성명·회사·주소 등 mutable 스키마에 없는 필드가 null 로 날아가는 사고를 막기 위해
-    // preDetail 의 보존 필드를 페이로드 기본값으로 깔고, mutable 필드
-    // (authCd / secAuthYn / loginNotiYn / attrChgYn / newsRcptYn / statCd — memberUpdateSchema 매핑 대상)만
-    // request body 로 덮어쓴다.
+    // QSP updateUserDtlMng 는 전송한 필드만 갱신하고 누락 필드는 기존 값을 보존한다
+    // (실측: id 54 → id 55/56 로그 대조, 2026-04-21 확인).
+    // 과거 "full-replace 로 추정" 에 기반한 fallback "N" 강제 주입·warnings 통보 로직은
+    // 실제로는 mutable 필드를 의도치 않게 Y→N 으로 덮어쓰는 데이터 파괴 원인이었으므로 제거.
     //
-    // preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 보존할 값이 없으므로
-    // mutable 필드 + 필수 메타만 전송하고, 누락 필드는 fallback 기본값으로 통보한다.
-    // STORE 는 storeLvl 로 1ST/2ND 를 구분하지만 userListMng 에 storeLvl 미포함이라
-    // preDetail null + STORE 는 위 4-0-b 에서 이미 차단됨. 여기서는 GENERAL/ADMIN/SEKO 만 처리.
-    const fallbackAuthCd = preDetail ? null : defaultAuthCdFromUserTp(userTp);
-
-    // preDetail null 시 fallback 기본값이 주입된 필드 목록을 수집하여
-    // 응답 `warnings` 로 클라이언트에 통보한다 (사일런트 상태 변경 방지).
-    // 4-0-c 에 의해 userRole/twoFactorEnabled 변경 요청 자체는 차단되지만,
-    // QSP 필수 필드 제약으로 secAuthYn 등은 "N" 이 강제 주입되므로 통보 대상.
-    const defaultedFields: string[] = [];
-    if (!preDetail) {
-      if (result.data.twoFactorEnabled === undefined) defaultedFields.push("secAuthYn");
-      if (result.data.loginNotification === undefined) defaultedFields.push("loginNotiYn");
-      if (result.data.attributeChangeNotification === undefined) defaultedFields.push("attrChgYn");
-      if (result.data.newsRcptYn === undefined) defaultedFields.push("newsRcptYn");
-      if (result.data.userRole === undefined) defaultedFields.push("authCd");
-      if (result.data.status === undefined) defaultedFields.push("statCd");
-      if (defaultedFields.length > 0) {
-        console.warn("[PUT /api/admin/members/:id] preDetail 없음 — 기본값 적용 필드:", defaultedFields);
-      }
-    }
-
-    // preDetail 존재 시 보존할 비-mutable 필드 (성명/회사/주소/조직 정보).
-    // QSP full-replace 방어 — 전송 안 하면 null 로 덮어써짐.
-    // 키 목록·타입·조립 로직은 qsp-member.ts 의 QSP_PRESERVED_KEYS / buildQspPreservedFields 에서 관리.
+    // 동작:
+    //   - preDetail 존재 → preservedFields(성명/회사/주소 등)를 현재값으로 재전송 + mutable 을 request/preDetail 순으로 덮어쓰기
+    //   - preDetail null (F_NOT_USER — 삭제(D) 회원 등) → request 로 명시된 mutable 필드만 전송. 누락 필드는 QSP 기존값 유지.
+    // STORE + preDetail null 은 4-0-b 에서, critical(userRole/2FA) + preDetail null 은 4-0-c 에서 이미 차단됨.
     const preservedFields = buildQspPreservedFields(preDetail);
+
+    const mutablePayload: Record<string, unknown> = preDetail
+      ? {
+          authCd: result.data.userRole ?? preDetail.authCd,
+          secAuthYn: result.data.twoFactorEnabled !== undefined
+            ? (result.data.twoFactorEnabled ? "Y" : "N")
+            : (preDetail.secAuthYn ?? "N"),
+          loginNotiYn: result.data.loginNotification !== undefined
+            ? (result.data.loginNotification ? "Y" : "N")
+            : (preDetail.loginNotiYn ?? "N"),
+          attrChgYn: result.data.attributeChangeNotification !== undefined
+            ? (result.data.attributeChangeNotification ? "Y" : "N")
+            : (preDetail.attrChgYn ?? "N"),
+          newsRcptYn: result.data.newsRcptYn ?? preDetail.newsRcptYn ?? "N",
+          statCd: result.data.status !== undefined
+            ? STATUS_TO_STAT_CD[result.data.status]
+            : preDetail.statCd,
+        }
+      : {
+          // preDetail null — 명시된 필드만. QSP 가 누락 필드는 보존한다.
+          ...(result.data.userRole !== undefined && { authCd: result.data.userRole }),
+          ...(result.data.twoFactorEnabled !== undefined && {
+            secAuthYn: result.data.twoFactorEnabled ? "Y" : "N",
+          }),
+          ...(result.data.loginNotification !== undefined && {
+            loginNotiYn: result.data.loginNotification ? "Y" : "N",
+          }),
+          ...(result.data.attributeChangeNotification !== undefined && {
+            attrChgYn: result.data.attributeChangeNotification ? "Y" : "N",
+          }),
+          ...(result.data.newsRcptYn !== undefined && { newsRcptYn: result.data.newsRcptYn }),
+          ...(result.data.status !== undefined && {
+            statCd: STATUS_TO_STAT_CD[result.data.status],
+          }),
+        };
 
     const updatePayload: Record<string, unknown> = {
       ...preservedFields,
@@ -421,20 +418,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       accsSiteCd: SITE_DEFAULTS.accsSiteCd,
       userTp,
       userId: rawId,
-      authCd: result.data.userRole ?? preDetail?.authCd ?? fallbackAuthCd,
-      secAuthYn: result.data.twoFactorEnabled !== undefined
-        ? (result.data.twoFactorEnabled ? "Y" : "N")
-        : (preDetail?.secAuthYn ?? "N"),
-      loginNotiYn: result.data.loginNotification !== undefined
-        ? (result.data.loginNotification ? "Y" : "N")
-        : (preDetail?.loginNotiYn ?? "N"),
-      attrChgYn: result.data.attributeChangeNotification !== undefined
-        ? (result.data.attributeChangeNotification ? "Y" : "N")
-        : (preDetail?.attrChgYn ?? "N"),
-      newsRcptYn: result.data.newsRcptYn ?? preDetail?.newsRcptYn ?? "N",
-      statCd: result.data.status !== undefined
-        ? STATUS_TO_STAT_CD[result.data.status]
-        : (preDetail?.statCd ?? "D"),
+      ...mutablePayload,
       updBy: user.userId,
     };
 
@@ -541,29 +525,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
       byAdmin: maskEmail(user.userId),
       changedFields: Object.keys(result.data),
       preDetailPresent: preDetail !== null,
-      defaultedFields,
       warning: warning ?? null,
     });
-
-    // QSP 내부 필드명이 클라이언트 응답에 노출되지 않도록 일본어 라벨로 치환.
-    // 매핑에 없는 키(신규 필드 추가 누락 등)는 방어적으로 원시 키로 폴백.
-    const warningsList: string[] = [];
-    if (defaultedFields.length > 0) {
-      for (const f of defaultedFields) {
-        const label = DEFAULTED_FIELD_LABELS_JA[f] ?? f;
-        warningsList.push(`${label}が既定値で更新されました (元の値を取得できなかったため)`);
-      }
-    }
-    // preDetail null 경로(F_NOT_USER — 탈퇴/삭제 회원) 는 "사전 상태 미확보" 자체가
-    // 운영자 인지 대상이다. defaultedFields 가 비더라도(= 클라가 모든 mutable 필드를
-    // 명시적으로 보낸 드문 케이스) 관리자에게 "조회 불가 상태였음" 을 명시 통보해야
-    // 사일런트 성공을 피한다.
-    if (!preDetail) {
-      warningsList.push(
-        "対象会員の更新前の状態を取得できませんでした。一覧で再度ご確認ください。",
-      );
-    }
-    const warnings = warningsList.length > 0 ? warningsList : undefined;
 
     // 응답용 member snapshot — 저장 직후 팝업 재조회가 QSP F_NOT_USER 로
     // 빈 값이 되는 문제를 방지 (삭제 상태 전환 케이스).
@@ -612,7 +575,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
         message: "会員情報を更新しました",
         ...(memberSnapshot !== undefined && { member: memberSnapshot }),
         ...(warning !== undefined && { warning }),
-        ...(warnings !== undefined && { warnings }),
       },
     });
   } catch (error: unknown) {
