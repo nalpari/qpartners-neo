@@ -5,6 +5,7 @@ export { InputBox } from "./input-box";
 export { Radio } from "./radio";
 export { SelectBox } from "./select-box";
 export { PageSizeSelect } from "./page-size-select";
+export { PermissionGate } from "./permission-gate";
 export { Toggle } from "./toggle";
 export { Pagination } from "./pagination";
 export { MobileCardList } from "./mobile-card-list";
