@@ -17,6 +17,7 @@ import {
 } from "@/lib/schemas/member";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
+import type { MemberDetail } from "@/components/admin/members/members-types";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -61,9 +62,10 @@ function isSelfTarget(adminUserId: string, detail: QspMemberDetail): boolean {
 /**
  * QSP userDetail 응답을 TO-BE MemberDetail 응답 shape 로 매핑.
  * GET / PUT 양쪽에서 동일 매핑을 사용해 DRY 유지.
- * openapi MemberDetail 스키마와 필드 일치 필수.
+ * 반환타입을 MemberDetail 로 명시 — 필드 drift 발생 시 컴파일 시점 탐지.
+ * (openapi MemberDetail 스키마와도 필드 정렬 유지 필수)
  */
-function mapQspDetailToResponse(d: QspMemberDetail, id: string) {
+function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
   return {
     id,
     userId: d.userId,
@@ -518,7 +520,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       if (!postDetailResult.ok) {
         console.error(
           "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
-          { byAdmin: user.userId },
+          { byAdmin: maskEmail(user.userId) },
         );
         warning = "更新は完了しましたが、事後検証ができませんでした";
       } else {
@@ -526,7 +528,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         if (postDetailResult.detail.userTp !== "GENERAL") {
           console.error(
             "[PUT /api/admin/members/:id] CRITICAL: TOCTOU 감지 — 업데이트 후 userTp 가 GENERAL 이 아님",
-            { postUserTp: postDetailResult.detail.userTp, byAdmin: user.userId },
+            { postUserTp: postDetailResult.detail.userTp, byAdmin: maskEmail(user.userId) },
           );
           warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
         }
@@ -545,13 +547,23 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // QSP 내부 필드명이 클라이언트 응답에 노출되지 않도록 일본어 라벨로 치환.
     // 매핑에 없는 키(신규 필드 추가 누락 등)는 방어적으로 원시 키로 폴백.
-    const warnings =
-      defaultedFields.length > 0
-        ? defaultedFields.map((f) => {
-            const label = DEFAULTED_FIELD_LABELS_JA[f] ?? f;
-            return `${label}が既定値で更新されました (元の値を取得できなかったため)`;
-          })
-        : undefined;
+    const warningsList: string[] = [];
+    if (defaultedFields.length > 0) {
+      for (const f of defaultedFields) {
+        const label = DEFAULTED_FIELD_LABELS_JA[f] ?? f;
+        warningsList.push(`${label}が既定値で更新されました (元の値を取得できなかったため)`);
+      }
+    }
+    // preDetail null 경로(F_NOT_USER — 탈퇴/삭제 회원) 는 "사전 상태 미확보" 자체가
+    // 운영자 인지 대상이다. defaultedFields 가 비더라도(= 클라가 모든 mutable 필드를
+    // 명시적으로 보낸 드문 케이스) 관리자에게 "조회 불가 상태였음" 을 명시 통보해야
+    // 사일런트 성공을 피한다.
+    if (!preDetail) {
+      warningsList.push(
+        "対象会員の更新前の状態を取得できませんでした。一覧で再度ご確認ください。",
+      );
+    }
+    const warnings = warningsList.length > 0 ? warningsList : undefined;
 
     // 응답용 member snapshot — 저장 직후 팝업 재조회가 QSP F_NOT_USER 로
     // 빈 값이 되는 문제를 방지 (삭제 상태 전환 케이스).
@@ -564,7 +576,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 위험이 있으므로 명시적으로 차단.
     const userRolePostCheckFailed =
       result.data.userRole !== undefined && !postDetail;
-    let memberSnapshot: ReturnType<typeof mapQspDetailToResponse> | undefined;
+    // 타입은 mapper 반환에 의존하는 구조가 아니라 "응답 계약" 에 의존하도록 MemberDetail 로
+    // 직접 명시 — drift 시 컴파일 실패로 변경을 강제한다 (mapper 시그니처 변경만 따라가지 않음).
+    let memberSnapshot: MemberDetail | undefined;
     if (postDetail) {
       memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data);
     } else if (preDetail && !userRolePostCheckFailed) {
@@ -583,11 +597,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }),
         ...(result.data.newsRcptYn !== undefined && { newsRcptYn: result.data.newsRcptYn }),
         ...(result.data.status !== undefined && { status: result.data.status }),
-        // 방금 저장 시점으로 updatedAt 교체 — 프론트 "갱신일" 즉시 반영.
-        // 다음 GET 에서 QSP 가 대상을 반환하면 실제 uptDt 로 재동기화되지만,
-        // F_NOT_USER 경로(statCd="D"/"R" 회원)에서는 updatedAt 이 null 로 돌아올 수 있음.
-        updatedAt: new Date().toISOString(),
-        updatedBy: user.userId,
+        // updatedAt / updatedBy 는 overlay 하지 않는다 — 권위 있는 값은 QSP 가 보유(uptDt/uptNm).
+        // 클라이언트 시계 기반 new Date() 는 시계 스큐/정렬 불일치 및 "실제 저장 시각" 위조 위험이 있고,
+        // user.userId(이메일) 를 updatedBy 에 넣으면 base 컨벤션(사람 이름, userNm 포맷) 위반 + PII 노출.
+        // base(preDetail.uptDt/uptNm) 를 그대로 내려보내 직전 재조회 시점의 값을 유지하고,
+        // 다음 GET 에서 QSP 가 반환하면 실제 최신값으로 자연 재동기화된다.
+        // F_NOT_USER 경로(statCd="D"/"R") 에서는 재조회도 null 이므로, 이 overlay 에 최신시각을
+        // 억지로 주입하는 것은 "데이터가 살아있다" 는 착시를 유발해 오히려 해롭다.
       };
     }
 

@@ -20,6 +20,18 @@ import {
 
 const CLOSE_ANIMATION_MS = 200;
 
+/**
+ * mutationFn 실행 시점에 팝업 컨텍스트(userId/userTp) 가 이미 유실된 경우 던지는 센티널 에러.
+ * onError 에서 `instanceof` 로 판별해 handleApiError 의 일반화 "サーバーエラー" 덮어쓰기를 방지.
+ * 문자열 prefix 매칭보다 견고 — AxiosError 등 다른 에러와 명확히 구분된다.
+ */
+class MemberDetailContextLost extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MemberDetailContextLost";
+  }
+}
+
 function TextValue({ value }: { value: string }) {
   return (
     <p className="flex-1 font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#101010] break-all">
@@ -152,15 +164,30 @@ export function MemberDetailPopup() {
   // Design Ref: §4.2 — 수정 mutation
   const updateMutation = useMutation({
     mutationFn: async (payload: MemberUpdatePayload) => {
+      // handleSave 에서 이미 userId/userTp 가드 후 호출된다 (도달 불가 경로 안전망).
+      // 혹여 도달 시 "undefined" 문자열이 URL 에 주입되어 엉뚱한 회원이 대상이 되는 버그를
+      // 막는다 (encodeURIComponent(undefined) → "undefined").
+      if (!userId || !userTp) {
+        console.error("[MemberDetailPopup] mutationFn 도달 시점에 userId/userTp 미확정 — race 가능성");
+        // 유저 메시지는 handleSave 에서 이미 노출됐을 가능성이 높지만, 직접 mutate 경로도
+        // 차단되도록 alert 로 안내 후 중단. onError(handleApiError) 의 "サーバーエラー"
+        // 일반화 메시지로 본질이 뭉개지지 않도록 명시적 알림.
+        openAlert({
+          type: "alert",
+          message: "会員情報が読み込まれていません。再度開き直してください。",
+          onConfirm: () => closePopup(),
+        });
+        throw new MemberDetailContextLost("userId/userTp missing");
+      }
       const res = await api.put<{
         data: {
           message: string;
-          member?: MemberDetail & { notFoundInQsp?: boolean };
+          member?: MemberDetail;
           warning?: string;
           warnings?: string[];
         };
       }>(
-        `/admin/members/${encodeURIComponent(userId!)}`,
+        `/admin/members/${encodeURIComponent(userId)}`,
         payload,
         { params: { userTp } },
       );
@@ -176,31 +203,48 @@ export function MemberDetailPopup() {
           ["admin", "member", userId, userTp],
           result.member,
         );
-      } else if (result.warning) {
-        // post-check 실패 등 서버가 경고를 내려준 경로 — 재조회하면 QSP F_NOT_USER 로
-        // 공백이 재발할 가능성이 높으므로 invalidate 를 생략한다. 기존 캐시를 유지한
-        // 채로 alert 로 상황을 통보하고 팝업을 닫아 공백 화면 노출을 방지하며,
-        // 다음 상세 진입 시 fresh refetch 로 최신 상태를 확인하도록 유도한다.
       } else {
-        // preDetail null(탈퇴/삭제 회원 복구 등) 경로는 복구 후 정상 데이터 기대되므로 재조회
+        // snapshot 미반환(preDetail null 복구 경로 / userRolePostCheckFailed 로 서버가
+        // 의도적으로 snapshot drop 한 경로 포함) — invalidateQueries 로 강제 재조회한다.
+        // 서버의 "사후 검증 불가 → 강제 재조회" 의도와 프론트 캐시 정책을 일치시켜,
+        // stale userRole 이 캐시에 남아 운영자가 "반영 안 됨" 으로 오인하는 상황을 방지.
+        // F_NOT_USER 응답은 백엔드가 notFoundInQsp=true 로 내려주고, 프론트는 listItem
+        // fallback 으로 기본 필드를 채우므로 공백 화면이 재발하지 않는다.
         await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       }
       // 서버가 내려주는 경고(warning/warnings)는 운영자 인지가 필요한 상태 —
       // TOCTOU 사후 검증 실패나 기본값 주입 통보가 사일런트로 묻히지 않도록 alert 에 반영.
-      const warningMsg =
-        result.warning ?? (result.warnings && result.warnings.length > 0 ? result.warnings.join("\n") : undefined);
-      // 재조회 공백이 예상되는 경로에서는 목록 재확인 안내를 함께 노출
-      const needsListReselect = !result.member && !!result.warning;
+      // warning(단수, TOCTOU) 과 warnings(복수, 기본값 주입 통보) 는 OpenAPI 계약상 동시 존재 가능 —
+      // `??` 로 결합하면 한쪽이 사일런트 누락되므로 둘 다 합쳐서 노출.
+      const warningParts: string[] = [];
+      if (result.warning) warningParts.push(result.warning);
+      if (result.warnings && result.warnings.length > 0) warningParts.push(...result.warnings);
+      const warningMsg = warningParts.length > 0 ? warningParts.join("\n") : undefined;
+      // 경고가 존재하면(member snapshot 유무와 무관) 재확인 안내를 노출.
+      // TOCTOU 감지 경로(member snapshot 포함)에서도 운영자가 목록에서 재확인하도록 유도.
+      const needsListReselect = !!warningMsg;
       const message = warningMsg
         ? `保存しました。\n\n注意:\n${warningMsg}${needsListReselect ? "\n\n一覧から再度ご確認ください。" : ""}`
         : "保存しました。";
       openAlert({
         type: "alert",
         message,
-        onConfirm: () => closePopup(),
+        // TOCTOU 감지·기본값 주입 등 warning 경로에서는 팝업을 자동으로 닫지 않는다.
+        // 운영자가 확인 직후 회원 상세 화면에서 현재 상태를 다시 검토할 수 있도록
+        // 컨텍스트를 유지한다 (닫기는 유저가 명시적으로 수행). 경고가 없는 정상 저장
+        // 경로에서만 기존 UX 대로 자동 닫기.
+        onConfirm: warningMsg ? undefined : () => closePopup(),
       });
     },
-    onError: (err: unknown) => handleApiError(err, "会員情報の更新"),
+    onError: (err: unknown) => {
+      // mutationFn 자체 가드(컨텍스트 유실) 경로는 이미 전용 alert 를 띄웠으므로
+      // handleApiError 의 일반화 메시지로 덮지 않는다. 전용 에러 클래스로 판별해
+      // 문자열 계약 취약성을 제거한다.
+      if (err instanceof MemberDetailContextLost) {
+        return;
+      }
+      handleApiError(err, "会員情報の更新");
+    },
   });
 
   // Design Ref: §4.2 — 비밀번호 초기화 mutation
@@ -227,6 +271,21 @@ export function MemberDetailPopup() {
   };
 
   const handleSave = (payload: MemberUpdatePayload) => {
+    // 요청 직전 컨텍스트 유실(팝업 닫힘 중 저장·스토어 초기화 등) 방어.
+    // mutate 전 early-return 으로 "サーバーエラー" 뭉개짐을 피하고, 운영자에게
+    // 본질적 원인을 명확히 안내한다.
+    if (!userId || !userTp) {
+      console.error("[MemberDetailPopup] 업데이트 전 userId/userTp 미확정 — 요청 중단", {
+        hasUserId: !!userId,
+        hasUserTp: !!userTp,
+      });
+      openAlert({
+        type: "alert",
+        message: "会員情報が読み込まれていません。再度開き直してください。",
+        onConfirm: () => closePopup(),
+      });
+      return;
+    }
     updateMutation.mutate(payload);
   };
 
