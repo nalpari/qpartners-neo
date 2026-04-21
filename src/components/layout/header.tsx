@@ -35,18 +35,24 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
 
 // 표시 순서 = ORDER → MUSUBI → DESIGN → WARRANTY (역할별 노출은 SITE_ACCESS_MAP 으로 필터)
 // note: Q.WARRANTY 만 자동 로그인 미연동 → 단순 사이트 이동임을 명시.
+// URL: 2026-04-16 회신 도메인(q-cells.jp / www.hanasys.jp) 반영.
+
+/** 자동로그인 target 키 — 서버 API와 일치 */
+type AutoLoginTarget = "hanasys" | "qOrder" | "qMusubi";
+
 type SiteValue = "qorder" | "qmusubi" | "hanasys" | "qwarranty";
 interface RelatedSite {
   label: string;
   value: SiteValue;
   href: string;
+  autoLoginTarget: AutoLoginTarget | null;
   note?: string;
 }
 const ALL_RELATED_SITES: readonly RelatedSite[] = [
-  { label: "HANASYS ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
-  { label: "HANASYS MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
-  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp", note: "(別途ログインが必要)" },
+  { label: "Q.ORDER", value: "qorder", href: "https://q-order.q-cells.jp", autoLoginTarget: "qOrder" },
+  { label: "Q.MUSUBI", value: "qmusubi", href: "https://q-musubi.q-cells.jp", autoLoginTarget: "qMusubi" },
+  { label: "HANASYS DESIGN", value: "hanasys", href: "https://www.hanasys.jp", autoLoginTarget: "hanasys" },
+  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp", autoLoginTarget: null, note: "(別途ログインが必要)" },
 ];
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
@@ -71,6 +77,16 @@ function getRelatedSites(user: LoginUser) {
   if (!key) return [];
   const allowed = SITE_ACCESS_MAP[key];
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
+}
+
+/** 자동로그인: target별 암호화 API 호출 후 이동, 실패 시 직접 이동 폴백 */
+async function navigateWithAutoLogin(target: AutoLoginTarget, fallbackHref: string) {
+  try {
+    const res = await api.post<{ data: { url: string } }>("/auth/auto-login/encrypt", { target });
+    window.location.href = res.data.data.url;
+  } catch {
+    window.location.href = fallbackHref;
+  }
 }
 
 function subscribeAuthFlag(callback: () => void) {
@@ -251,7 +267,14 @@ export function Gnb() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
-                            onClick={() => setIsDropdownOpen(false)}
+                            onClick={(e) => {
+                              setIsDropdownOpen(false);
+                              if (site.autoLoginTarget) {
+                                // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
+                                e.preventDefault();
+                                void navigateWithAutoLogin(site.autoLoginTarget, site.href);
+                              }
+                            }}
                           >
                             <span className="block text-[13px] whitespace-nowrap">{site.label}</span>
                             {site.note && (
@@ -564,7 +587,14 @@ export function Gnb() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
-                        onClick={() => setIsMobileMenuOpen(false)}
+                        onClick={(e) => {
+                          setIsMobileMenuOpen(false);
+                          if (site.autoLoginTarget) {
+                            // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
+                            e.preventDefault();
+                            void navigateWithAutoLogin(site.autoLoginTarget, site.href);
+                          }
+                        }}
                       >
                         <span className="text-[13px]">{site.label}</span>
                         {site.note && (

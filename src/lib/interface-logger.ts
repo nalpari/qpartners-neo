@@ -43,6 +43,17 @@ export function maskEmail(value: string): string {
   return value[0] + "***" + value.slice(atIdx);
 }
 
+/**
+ * userId 범용 마스킹 — 이메일/로그인ID(STORE 등)/임의 식별자 모두 대응.
+ * 이메일 형식은 maskEmail 적용, 나머지는 앞 2자 + "***" 로 축약.
+ */
+export function maskUserId(value: string): string {
+  if (!value) return value;
+  if (value.includes("@")) return maskEmail(value);
+  if (value.length <= 2) return "***";
+  return value.slice(0, 2) + "***";
+}
+
 function truncateBody(text: string | null): string | null {
   if (!text) return null;
   if (text.length <= MAX_BODY_LENGTH) return text;

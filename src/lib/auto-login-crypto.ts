@@ -1,48 +1,69 @@
 /**
  * 자동로그인 AES-256 암복호화 유틸리티
  *
- * Q.Order / Q.Musubi 자동로그인용.
- * QSP EncryptUtil.encryptAes256 호환 — AES/CBC/PKCS5Padding, SHA-256 키 파생.
+ * 가이드 사양:
+ *   plainUserId -> AES256 암호화(키: YYYYMMDD + AUTO_LOGIN_AES_KEY) -> cipherText
+ *   encodeURIComponent(cipherText) -> URL_ENCODED_CIPHERTEXT
  *
- * 키 조합: YYYYMMDD(KST) + AUTO_LOGIN_AES_KEY 환경변수
+ * 구현 세부:
+ *   - AES-256-CBC, PKCS5Padding(Node 기본)
+ *   - 키: SHA-256(keyString) → 32바이트
+ *   - IV : SHA-256(keyString)의 앞 16바이트
+ *   - keyString = YYYYMMDD(KST) + process.env.AUTO_LOGIN_AES_KEY
+ *
+ * 자정 경계: 복호화 실패 시 전일 키로 재시도하여 KST 00:00 전후 오차를 흡수한다.
  */
 
 import crypto from "node:crypto";
 
-const ALGORITHM = "aes-256-cbc";
+class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
 
-/** KST(UTC+9) 기준 YYYYMMDD 문자열 */
-function getTodayKST(): string {
-  const now = new Date();
-  // KST = UTC + 9시간
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+const ALGORITHM = "aes-256-cbc";
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/** KST(UTC+9) 기준 YYYYMMDD */
+function formatKstDate(date: Date): string {
+  const kst = new Date(date.getTime() + KST_OFFSET_MS);
   const y = kst.getUTCFullYear();
   const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
   const d = String(kst.getUTCDate()).padStart(2, "0");
   return `${y}${m}${d}`;
 }
 
-/** 키 문자열 → SHA-256 → 32바이트 AES 키 */
+function getTodayKST(): string {
+  return formatKstDate(new Date());
+}
+
+function getYesterdayKST(): string {
+  return formatKstDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
 function deriveKey(keyString: string): Buffer {
   return crypto.createHash("sha256").update(keyString, "utf8").digest();
 }
 
-/** SHA-256 해시의 앞 16바이트를 IV로 사용 */
 function deriveIv(keyString: string): Buffer {
   return deriveKey(keyString).subarray(0, 16);
 }
 
-function getAesKey(): string {
+function getAesSecret(): string {
   const envKey = process.env.AUTO_LOGIN_AES_KEY;
   if (!envKey) {
-    throw new Error("AUTO_LOGIN_AES_KEY 환경변수가 설정되지 않았습니다");
+    throw new ConfigError("AUTO_LOGIN_AES_KEY 환경변수가 설정되지 않았습니다");
   }
+  // NOTE: 키 길이 검증은 두지 않음 — AUTO_LOGIN_AES_KEY는 QSP와 합의된 고정 시크릿이며,
+  // 실제 AES 키는 SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)로 32바이트 확보됨.
   return envKey;
 }
 
-/** userId를 AES-256-CBC로 암호화 (Base64 출력) */
+/** userId를 AES-256-CBC로 암호화 — Base64 출력 (URL 인코딩은 호출측 책임) */
 export function encryptAutoLogin(userId: string): string {
-  const keyString = getTodayKST() + getAesKey();
+  const keyString = getTodayKST() + getAesSecret();
   const key = deriveKey(keyString);
   const iv = deriveIv(keyString);
 
@@ -52,28 +73,6 @@ export function encryptAutoLogin(userId: string): string {
     cipher.final(),
   ]);
   return encrypted.toString("base64");
-}
-
-/**
- * AES-256-CBC 복호화 (자정 경계 대응: 당일 키 실패 시 전일 키로 재시도)
- * 수신 측 구현 시 사용 — 현재는 발신(encrypt)만 사용
- */
-export function decryptAutoLogin(cipherText: string): string {
-  const aesKey = getAesKey();
-
-  // 1차: 당일 키로 시도
-  const todayKey = getTodayKST() + aesKey;
-  try {
-    return decryptWithKey(cipherText, todayKey);
-  } catch {
-    // 2차: 전일 키로 재시도 (자정 경계 대응)
-    const yesterday = new Date(Date.now() + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
-    const y = yesterday.getUTCFullYear();
-    const m = String(yesterday.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(yesterday.getUTCDate()).padStart(2, "0");
-    const yesterdayKey = `${y}${m}${d}` + aesKey;
-    return decryptWithKey(cipherText, yesterdayKey);
-  }
 }
 
 function decryptWithKey(cipherText: string, keyString: string): string {
@@ -86,4 +85,18 @@ function decryptWithKey(cipherText: string, keyString: string): string {
     decipher.final(),
   ]);
   return decrypted.toString("utf8");
+}
+
+/** AES-256-CBC 복호화 — 자정 경계 대응: 당일 키 실패 시 전일 키로 재시도 */
+export function decryptAutoLogin(cipherText: string): string {
+  const secret = getAesSecret();
+  try {
+    return decryptWithKey(cipherText, getTodayKST() + secret);
+  } catch (error: unknown) {
+    // 당일 키 복호화 실패는 자정 경계 케이스의 정상 경로 — 디버깅용 debug 로그만 남기고 전일 키로 재시도
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[auto-login-crypto] 당일 키 복호화 실패, 전일 키로 재시도:", error);
+    }
+    return decryptWithKey(cipherText, getYesterdayKST() + secret);
+  }
 }

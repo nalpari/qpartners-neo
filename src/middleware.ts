@@ -17,6 +17,8 @@ const PUBLIC_PATHS = [
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
   // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
   "/api/inquiry",
+  // 자동로그인 복호화 — 외부 시스템(EOS/Q.Order/Q.Musubi)이 호출, 사용자 세션 없음
+  "/api/auth/auto-login/decrypt",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
