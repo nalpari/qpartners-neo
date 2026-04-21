@@ -7,7 +7,7 @@ pipeline {
         APP_NAME        = 'qpartners-neo'
         APP_ENV         = 'development'
         APP_PORT        = '5010'
-        APP_ROOT        = '/home/development/apps/qpartners-neo'
+        APP_ROOT        = "/home/interplug/qpartners/${APP_ENV}"
         IMAGE_TAG       = "${env.BUILD_NUMBER}"
         COMPOSE_FILE    = 'docker-compose.yml'
         // Jenkins > Credentials 에서 등록한 ID

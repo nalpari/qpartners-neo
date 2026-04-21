@@ -23,4 +23,4 @@ services:
     environment:
       UPLOAD_DIR: /data/uploads
     volumes:
-      - ${APP_ROOT:-/home/development/apps/qpartners-neo}/uploads_data:/data/uploads
+      - ${APP_ROOT:-/home/interplug/qpartners/development}/uploads_data:/data/uploads
