@@ -23,6 +23,59 @@ type Params = { params: Promise<{ id: string }> };
 const QSP_LOG_MSG_MAX_LEN = 200;
 
 /**
+ * QSP full-replace 회귀 감지 canary 샘플링 비율 (0~1).
+ * preDetail 존재 경로에서 userRole 를 건드리지 않은 요청에 대해 이 비율만큼
+ * postDetail 재조회 + 보존 필드 비교를 수행하여 QSP 가 "누락 필드 보존" 에서
+ * "full-replace" 동작으로 회귀했는지 상시 탐지한다. 모니터링은 CRITICAL 로그로.
+ * 기본 0.01(1%) — 부하와 탐지 속도의 트레이드오프.
+ */
+const QSP_SHADOW_CHECK_RATIO = (() => {
+  const raw = process.env.QSP_SHADOW_CHECK_RATIO;
+  if (raw === undefined) return 0.01;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return 0.01;
+  return parsed;
+})();
+
+/**
+ * QSP full-replace 회귀 감지용 보존 필드 비교.
+ * PII 값은 로그에 싣지 않고 불일치 필드명만 반환한다.
+ */
+const SHADOW_COMPARE_FIELDS = [
+  "userNm",
+  "userNmKana",
+  "user1stNm",
+  "user2ndNm",
+  "user1stNmKana",
+  "user2ndNmKana",
+  "email",
+  "compNm",
+  "compNmKana",
+  "compPostCd",
+  "compAddr",
+  "compAddr2",
+  "compTelNo",
+  "compFaxNo",
+  "deptNm",
+  "pstnNm",
+] as const satisfies ReadonlyArray<keyof QspMemberDetail>;
+
+function diffPreservedFields(
+  pre: QspMemberDetail,
+  post: QspMemberDetail,
+): string[] {
+  const mismatches: string[] = [];
+  for (const key of SHADOW_COMPARE_FIELDS) {
+    // QSP 가 null 을 "" 로 정규화하는 경우와 실제 파괴(값→null) 를 구분:
+    // null↔"" 는 변동으로 취급하지 않음 (보존 필드 canonicalization 차이).
+    const preVal = pre[key] ?? "";
+    const postVal = post[key] ?? "";
+    if (preVal !== postVal) mismatches.push(key);
+  }
+  return mismatches;
+}
+
+/**
  * 4-0: GENERAL 외 회원(STORE/SEKO/ADMIN)이 수정 가능한 필드 화이트리스트.
  *      화면설계서 v1.1(2026-03-30) — 이들 회원은 ニュースレター受信設定만 변경 가능.
  *
@@ -283,16 +336,49 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4-0-c. preDetail null (F_NOT_USER — 탈퇴/삭제 회원) 시 critical 변경 제한
-    // userRole/twoFactorEnabled 는 canonical userTp 확인 불가 상태에서 바꾸면
-    // 권한 상승 / 2FA 무력화 위험이 있으므로 fail-closed. status(복구) 만 허용.
-    // 회원 복구 완료 후 재요청하면 preDetail 이 확보되므로 정상 경로로 처리됨.
+    // canonical userTp 확인 불가 상태에서 권한(authCd)/2FA 를 자유롭게 바꾸면
+    // 권한 상승 / 2FA 무력화 위험이 있으므로 기본은 fail-closed.
+    //
+    // 단, status: "active" (복구) 경로는 **userRole + twoFactorEnabled 을 명시 필수**로 허용한다:
+    //   - QSP 내부에 삭제 회원의 과거 값(authCd/secAuthYn) 이 남아있을 수 있으므로,
+    //     복구 시 명시하지 않으면 고권한 또는 과거 2FA 상태가 silent 부활할 위험.
+    //   - 관리자가 권한/2FA 를 명시 확정한 경우에만 복구 진행하도록 강제.
+    //   - QSP updateUserDtlMng 도 secAuthYn 을 필수로 요구하는 제약이 있어
+    //     구조적으로도 2FA 명시가 불가피 (실측 2026-04-21).
     if (!preDetail) {
+      const isRestoringToActive = result.data.status === "active";
       const blockedCriticalFields: string[] = [];
-      if (result.data.userRole !== undefined) blockedCriticalFields.push("userRole");
-      if (result.data.twoFactorEnabled !== undefined) blockedCriticalFields.push("twoFactorEnabled");
+
+      if (isRestoringToActive) {
+        // 복구 경로: userRole + twoFactorEnabled 둘 다 필수.
+        // `result.data.userRole` 은 `z.enum(assignableRoleValues).optional()` 이므로
+        // `undefined` 또는 유효 enum 값 — 빈 문자열("") 우회는 구조적으로 불가.
+        const missingRequired: string[] = [];
+        if (result.data.userRole === undefined) missingRequired.push("userRole");
+        if (result.data.twoFactorEnabled === undefined) missingRequired.push("twoFactorEnabled");
+        if (missingRequired.length > 0) {
+          console.warn(
+            "[PUT /api/admin/members/:id] 復元経路 — 必須フィールド미명시 차단:",
+            { targetRawId: maskEmail(rawId), missingRequired },
+          );
+          return NextResponse.json(
+            {
+              error:
+                "復元時は権限(userRole)と二段階認証(twoFactorEnabled)を明示的に指定してください。QSP に残存する過去の値が復活する可能性があります",
+              details: missingRequired.map((field) => ({ field, message: "復元時必須" })),
+            },
+            { status: 400 },
+          );
+        }
+      } else {
+        // 비복구 경로(status 미변경 또는 deleted 전환): 권한/2FA 변경 차단
+        if (result.data.userRole !== undefined) blockedCriticalFields.push("userRole");
+        if (result.data.twoFactorEnabled !== undefined) blockedCriticalFields.push("twoFactorEnabled");
+      }
+
       if (blockedCriticalFields.length > 0) {
         console.warn(
-          "[PUT /api/admin/members/:id] preDetail null — critical 변경 차단 (권한/2FA 는 복구 후 재요청):",
+          "[PUT /api/admin/members/:id] preDetail null — critical 변경 차단 (복구 경로에서만 userRole/2FA 명시 허용):",
           { targetRawId: maskEmail(rawId), blockedCriticalFields },
         );
         return NextResponse.json(
@@ -349,7 +435,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
-    // preDetail null 경로는 이미 4-0-c 에서 차단됨 → 여기 도달 시 preDetail 존재 확정
+    // preDetail null + userRole 경로는 4-0-c 에서 **복구(status: "active")** 한정으로 허용됨.
+    //   복구 경로는 상단 disallowedFields 가드(L254)에서 userTp !== GENERAL 일 경우
+    //   status 변경을 이미 차단하므로 여기 도달 시 userTp 는 GENERAL 확정.
+    // preDetail 존재 시엔 canonical userTp 로 검증한다.
     if (result.data.userRole !== undefined) {
       if (preDetail && preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
@@ -372,27 +461,53 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 실제로는 mutable 필드를 의도치 않게 Y→N 으로 덮어쓰는 데이터 파괴 원인이었으므로 제거.
     //
     // 동작:
-    //   - preDetail 존재 → preservedFields(성명/회사/주소 등)를 현재값으로 재전송 + mutable 을 request/preDetail 순으로 덮어쓰기
-    //   - preDetail null (F_NOT_USER — 삭제(D) 회원 등) → request 로 명시된 mutable 필드만 전송. 누락 필드는 QSP 기존값 유지.
-    // STORE + preDetail null 은 4-0-b 에서, critical(userRole/2FA) + preDetail null 은 4-0-c 에서 이미 차단됨.
+    //   - preDetail 존재 → preservedFields(성명/회사/주소 등)를 현재값으로 재전송.
+    //     mutable 은 "request 명시 → preDetail 값(단, null 이면 키 omit)" 순으로 처리.
+    //     preDetail.X === null 인 필드에 `?? "N"` 으로 기본값을 박아넣으면 과거 버그 재현(Y→N 파괴)
+    //     이 되므로, null 시 payload 에서 키 자체를 omit 해 QSP 의 "누락 필드 보존" 특성을 그대로 활용.
+    //   - preDetail null (F_NOT_USER — 삭제(D) 회원 등) → request 로 명시된 mutable 필드만 전송.
+    //     누락 필드는 QSP 기존값 유지.
+    // STORE + preDetail null 은 4-0-b 에서, 2FA + preDetail null 은 4-0-c 에서 차단됨.
+    // userRole + preDetail null 은 status=active 복구 경로 한정으로 허용 (4-0-c).
     const preservedFields = buildQspPreservedFields(preDetail);
 
+    // 필드별 정책: string/enum → `??` + null 시 키 omit, boolean → `!== undefined` 로 false 처리 보장
+    // (Zod 스키마에서 string/enum 은 빈 문자열을 enum 단계에서 차단하므로 `??` 안전)
     const mutablePayload: Record<string, unknown> = preDetail
       ? {
-          authCd: result.data.userRole ?? preDetail.authCd,
-          secAuthYn: result.data.twoFactorEnabled !== undefined
-            ? (result.data.twoFactorEnabled ? "Y" : "N")
-            : (preDetail.secAuthYn ?? "N"),
-          loginNotiYn: result.data.loginNotification !== undefined
-            ? (result.data.loginNotification ? "Y" : "N")
-            : (preDetail.loginNotiYn ?? "N"),
-          attrChgYn: result.data.attributeChangeNotification !== undefined
-            ? (result.data.attributeChangeNotification ? "Y" : "N")
-            : (preDetail.attrChgYn ?? "N"),
-          newsRcptYn: result.data.newsRcptYn ?? preDetail.newsRcptYn ?? "N",
-          statCd: result.data.status !== undefined
-            ? STATUS_TO_STAT_CD[result.data.status]
-            : preDetail.statCd,
+          // authCd (string/enum) — request 명시 → preDetail 값 → (null 이면 omit)
+          ...(result.data.userRole !== undefined
+            ? { authCd: result.data.userRole }
+            : preDetail.authCd !== null
+              ? { authCd: preDetail.authCd }
+              : {}),
+          // secAuthYn (enum "Y"|"N") — boolean 필드는 !== undefined 로 false 보존
+          ...(result.data.twoFactorEnabled !== undefined
+            ? { secAuthYn: result.data.twoFactorEnabled ? "Y" : "N" }
+            : preDetail.secAuthYn !== null
+              ? { secAuthYn: preDetail.secAuthYn }
+              : {}),
+          ...(result.data.loginNotification !== undefined
+            ? { loginNotiYn: result.data.loginNotification ? "Y" : "N" }
+            : preDetail.loginNotiYn !== null
+              ? { loginNotiYn: preDetail.loginNotiYn }
+              : {}),
+          ...(result.data.attributeChangeNotification !== undefined
+            ? { attrChgYn: result.data.attributeChangeNotification ? "Y" : "N" }
+            : preDetail.attrChgYn !== null
+              ? { attrChgYn: preDetail.attrChgYn }
+              : {}),
+          ...(result.data.newsRcptYn !== undefined
+            ? { newsRcptYn: result.data.newsRcptYn }
+            : preDetail.newsRcptYn !== null
+              ? { newsRcptYn: preDetail.newsRcptYn }
+              : {}),
+          // statCd (enum) — request 명시 → preDetail 값 → (null 이면 omit)
+          ...(result.data.status !== undefined
+            ? { statCd: STATUS_TO_STAT_CD[result.data.status] }
+            : preDetail.statCd !== null
+              ? { statCd: preDetail.statCd }
+              : {}),
         }
       : {
           // preDetail null — 명시된 필드만. QSP 가 누락 필드는 보존한다.
@@ -493,14 +608,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 4-b. MF-6 사후 검증: userRole 변경 경로에서만 동일 회원을 재조회하여
-    //      사전 검증 이후 userTp 가 변하지 않았는지 확인한다. 롤백은 불가하지만
-    //      CRITICAL 감사 로그로 탐지 가능하게 한다.
-    //      postDetail 은 응답 member snapshot 의 최신 소스로도 재사용된다.
+    // 4-b. MF-6 사후 검증 + QSP 회귀 감지 canary
+    //   (1) userRole 변경 경로: 항상 재조회하여 사전 검증 이후 userTp 가 변하지
+    //       않았는지 확인 (TOCTOU). 불일치 시 CRITICAL 감사 로그.
+    //   (2) preDetail 존재 + userRole 미변경 경로: QSP_SHADOW_CHECK_RATIO 확률로
+    //       재조회하여 preservedFields(성명/회사/주소 등 PII) 불일치 탐지.
+    //       QSP 가 "누락 필드 보존" → "full-replace" 로 회귀할 경우 상시 탐지 가능.
+    //   postDetail 은 응답 member snapshot 의 최신 소스로도 재사용된다.
     let warning: string | undefined;
     let postDetail: QspMemberDetail | null = null;
+    let postDetailSource: "post-check" | "shadow-check" | null = null;
+
     if (result.data.userRole !== undefined) {
       const postDetailResult = await fetchQspUserDetail(rawId, userTp, "[PUT /api/admin/members/:id] POST-CHECK");
+      postDetailSource = "post-check";
       if (!postDetailResult.ok) {
         console.error(
           "[PUT /api/admin/members/:id] TOCTOU 사후 검증 실패 — QSP 재조회 불가:",
@@ -516,7 +637,96 @@ export async function PUT(request: NextRequest, { params }: Params) {
           );
           warning = "更新は完了しましたが、対象会員の状態が想定と異なります。確認してください。";
         }
+        // preservedFields 회귀도 함께 검사 (postDetail 이미 확보됨, 추가 호출 없음)
+        if (preDetail) {
+          const mismatches = diffPreservedFields(preDetail, postDetail);
+          if (mismatches.length > 0) {
+            console.error(
+              "[PUT /api/admin/members/:id] CRITICAL: QSP full-replace regression — 보존 필드 불일치",
+              {
+                mismatches,
+                byAdmin: maskEmail(user.userId),
+                targetUserId: maskEmail(rawId),
+                source: "post-check",
+              },
+            );
+          }
+        }
       }
+    } else if (
+      preDetail &&
+      QSP_SHADOW_CHECK_RATIO > 0 &&
+      Math.random() < QSP_SHADOW_CHECK_RATIO
+    ) {
+      const postDetailResult = await fetchQspUserDetail(
+        rawId,
+        userTp,
+        "[PUT /api/admin/members/:id] SHADOW-CHECK",
+      );
+      postDetailSource = "shadow-check";
+      if (postDetailResult.ok) {
+        postDetail = postDetailResult.detail;
+        const mismatches = diffPreservedFields(preDetail, postDetail);
+        if (mismatches.length > 0) {
+          console.error(
+            "[PUT /api/admin/members/:id] CRITICAL: QSP full-replace regression — 보존 필드 불일치",
+            {
+              mismatches,
+              byAdmin: maskEmail(user.userId),
+              targetUserId: maskEmail(rawId),
+              source: "shadow-check",
+            },
+          );
+        }
+      }
+      // shadow-check 실패는 canary 의 best-effort 성격상 무시 (경고 없음)
+    }
+
+    // 삭제 회원 복구(preDetail null + status 변경) 경로 안내.
+    // 운영자가 "사전 상태 미확보" 상태였음을 인지하도록 warning 단수 메시지 복원.
+    // userRole TOCTOU 경고와는 경로가 상호배타적이므로 warning 단수로 충분.
+    if (!preDetail && warning === undefined) {
+      warning =
+        "削除済み会員の更新です。事前の会員情報を取得できなかったため、保存後に一覧で内容をご確認ください。";
+    }
+
+    // 완료 로그: mutable 필드별 pre/request 대조 (PII 아닌 enum/boolean/statCd 만).
+    // "Y→N 이 request 명시인지 QSP 회귀인지" 사후 감사에서 구분 가능하게 한다.
+    // preDetail null 경로(복구 포함) 에서도 `pre: null` 고정으로 `req` 값을 기록해
+    // 복구 경로의 감사 가치를 유지한다 (critical 액션이므로 로그 보존 중요).
+    const mutableDiff: Record<string, { pre: unknown; req: unknown }> = {};
+    if (result.data.userRole !== undefined) {
+      mutableDiff.authCd = { pre: preDetail?.authCd ?? null, req: result.data.userRole };
+    }
+    if (result.data.twoFactorEnabled !== undefined) {
+      mutableDiff.secAuthYn = {
+        pre: preDetail?.secAuthYn ?? null,
+        req: result.data.twoFactorEnabled ? "Y" : "N",
+      };
+    }
+    if (result.data.loginNotification !== undefined) {
+      mutableDiff.loginNotiYn = {
+        pre: preDetail?.loginNotiYn ?? null,
+        req: result.data.loginNotification ? "Y" : "N",
+      };
+    }
+    if (result.data.attributeChangeNotification !== undefined) {
+      mutableDiff.attrChgYn = {
+        pre: preDetail?.attrChgYn ?? null,
+        req: result.data.attributeChangeNotification ? "Y" : "N",
+      };
+    }
+    if (result.data.newsRcptYn !== undefined) {
+      mutableDiff.newsRcptYn = {
+        pre: preDetail?.newsRcptYn ?? null,
+        req: result.data.newsRcptYn,
+      };
+    }
+    if (result.data.status !== undefined) {
+      mutableDiff.statCd = {
+        pre: preDetail?.statCd ?? null,
+        req: STATUS_TO_STAT_CD[result.data.status],
+      };
     }
 
     console.log("[PUT /api/admin/members/:id] 회원 정보 수정 완료", {
@@ -525,6 +735,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
       byAdmin: maskEmail(user.userId),
       changedFields: Object.keys(result.data),
       preDetailPresent: preDetail !== null,
+      postDetailSource,
+      mutableDiff: Object.keys(mutableDiff).length > 0 ? mutableDiff : null,
       warning: warning ?? null,
     });
 
