@@ -1,7 +1,31 @@
-// Design Ref: §2 — API 응답 타입 + 검색 파라미터 + 상태 라벨
+// Design Ref: mass-mail.design.md §2 — API 응답 타입 + 검색 파라미터 + 상태 라벨
 
-/** 메일 상태 */
-export type MassMailStatus = "draft" | "pending" | "sent";
+// DB enum 단일 출처 — Prisma 가 schema.prisma 로부터 생성. 수동 string union 으로 중복 선언 시
+// schema 가 바뀌어도 컴파일러가 잡지 못해 silent drift 발생. 타입 전용 import 라 런타임 영향 없음.
+import type { MailStatus, RecipientAuthRole as PrismaRecipientAuthRole } from "@/generated/prisma/client";
+
+/** 메일 상태 — Prisma MailStatus 와 단일 출처. sending/send_failed 는 자동 처리 / 운영자 화면 노출. */
+export type MassMailStatus = MailStatus;
+
+/** 失敗確認 모달용 — 권한 코드 (Prisma RecipientAuthRole 과 단일 출처) */
+export type RecipientAuthRole = PrismaRecipientAuthRole;
+
+/** 失敗確認 모달용 — 실패 사유 카테고리 (SMTP 원문 노출 금지) */
+export type FailureCategory =
+  | "ORPHAN_SEND"
+  | "SMTP_TIMEOUT"
+  | "SMTP_REJECT"
+  | "UNKNOWN";
+
+/** 失敗확인 모달용 — 영구 실패 수신자 1건 */
+export interface FailedRecipient {
+  /** 마스킹된 이메일 (local-part 첫 1자만 노출) */
+  email: string;
+  userName: string | null;
+  authRole: RecipientAuthRole;
+  errorCategory: FailureCategory;
+  lastAttemptAt: string | null;
+}
 
 /** GET /api/admin/mass-mails 응답의 각 목록 항목 */
 export interface MassMailListItem {
@@ -41,7 +65,9 @@ export interface MassMailSearchParams {
 export const STATUS_LABEL_MAP: Record<MassMailStatus, string> = {
   draft: "下書き",
   pending: "配信待ち",
+  sending: "配信中",
   sent: "配信完了",
+  send_failed: "送信失敗",
 };
 
 // ─── 상세/등록 관련 타입 (Design Ref: §2) ───
@@ -64,7 +90,25 @@ export interface MassMailDetail {
   body: string;
   status: MassMailStatus;
   sentAt: string | null;
+  /** 발송 대상 총 건수 (수집 완료 후 확정) */
+  sentTotal: number;
+  /** 발송 성공 건수 */
+  sentSuccess: number;
+  /** 발송 실패 건수 */
+  sentFailed: number;
+  /** 작성자 userType */
+  userType: string;
+  /** 작성자 userId */
+  userId: string;
+  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 */
+  authorIsSuperAdmin: boolean;
   attachments: MassMailAttachment[];
+  /** 영구 실패 수신자 (상한 500건). PII 보호: email 마스킹, errorMessage → errorCategory 치환. */
+  failedRecipients: FailedRecipient[];
+  /** 전체 영구 실패 건수 (응답 배열은 상한이 있으므로 별도 노출) */
+  failedRecipientsTotal: number;
+  /** true 면 실패 명단이 상한 초과로 잘림 — UI 에서 안내 필요 */
+  failedRecipientsTruncated: boolean;
   createdBy: string;
   createdAt: string;
 }
@@ -97,6 +141,12 @@ export interface FormInitialData {
   sentAt: string | null;
   createdBy: string;
   createdAt: string;
+  /** 작성자 userType (edit/detail 권한 판별용) */
+  userType: string;
+  /** 작성자 userId (edit/detail 권한 판별용) */
+  userId: string;
+  /** 작성자가 SUPER_ADMIN 여부 — 프론트 수정/삭제 버튼 노출 판단용 (MassMailDetail 에서 단일 출처로 전달) */
+  authorIsSuperAdmin: boolean;
   attachments: MassMailAttachment[];
 }
 
@@ -141,6 +191,9 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
     sentAt: detail.sentAt,
     createdBy: detail.createdBy,
     createdAt: detail.createdAt,
+    userType: detail.userType,
+    userId: detail.userId,
+    authorIsSuperAdmin: detail.authorIsSuperAdmin,
     attachments: detail.attachments,
   };
 }

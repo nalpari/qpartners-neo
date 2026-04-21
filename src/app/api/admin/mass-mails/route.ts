@@ -448,10 +448,14 @@ export async function POST(request: NextRequest) {
 
     console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${data.status}`);
 
-    // 비동기 발송 트리거 (Fire-and-Forget) — 발송 결과는 status/recipients 로 추적
+    // 비동기 발송 트리거 (Fire-and-Forget) — 발송 결과는 status/recipients 로 추적.
+    // processMassMailSend 가 자체 외부 안전망을 가지므로 이 catch 는 catastrophic 케이스 전용.
     if (data.status === "pending") {
       processMassMailSend({ massMailId }).catch((err: unknown) => {
-        console.error("[POST /api/admin/mass-mails] 비동기 발송 실패:", err);
+        console.error(
+          `[POST /api/admin/mass-mails] CRITICAL — 비동기 발송 fire-and-forget 새어남. 좀비 감지 의존. massMailId: ${massMailId}`,
+          err,
+        );
       });
     }
 

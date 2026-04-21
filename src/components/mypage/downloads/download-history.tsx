@@ -370,60 +370,61 @@ export function DownloadHistory() {
           </div>
         </div>
 
-        {totalCount === 0 ? (
-          <div className="flex items-center justify-center py-[80px] px-[24px] lg:px-[42px]">
-            <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#999] text-center">
-              ダウンロードしたデータがありません。
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* PC: DataGrid + Pagination */}
-            <div className="hidden lg:block px-[42px] pb-[42px]">
-              <DataGrid
-                columnDefs={columnDefs}
-                rowData={data?.list ?? []}
-                maxHeight={0}
-                context={{ onDownload: (item: DownloadLogItem) => { void handleDownload(item); } }}
+        {/* PC: DataGrid + Pagination */}
+        <div className="hidden lg:block px-[42px] pb-[42px]">
+          <DataGrid
+            columnDefs={columnDefs}
+            rowData={data?.list ?? []}
+            maxHeight={500}
+            context={{ onDownload: (item: DownloadLogItem) => { void handleDownload(item); } }}
+            emptyMessage="ダウンロードしたデータがありません。"
+          />
+          {totalPages > 0 && (
+            <div className="mt-[24px]">
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
               />
-              <div className="mt-[24px]">
-                <Pagination
-                  currentPage={page}
-                  totalPages={totalPages}
-                  onPageChange={handlePageChange}
-                />
-              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
 
         {/* 모바일: MobileCardList + もっと見る */}
-        {totalCount > 0 && (
-          <div className="lg:hidden bg-[#F7F9FB] pb-[10px] pt-[10px]">
-            <MobileCardList
-              data={mobileData}
-              fields={mobileFields}
-              keyExtractor={(item) => String(item.id)}
-            />
-            {mobileHasMore && (
-              <button
-                type="button"
-                onClick={() => { void handleLoadMore(); }}
-                disabled={isMobileLoading}
-                className="flex items-center justify-center gap-[8px] w-full bg-[#45576f] px-[24px] py-[18px] mt-[10px] disabled:opacity-50"
-              >
-                <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-white">
-                  {isMobileLoading ? "読み込み中..." : "もっと見る"}
-                </span>
-                {!isMobileLoading && (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M6 9L12 15L18 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
-        )}
+        <div className="lg:hidden bg-[#F7F9FB] pb-[10px] pt-[10px]">
+          {totalCount > 0 ? (
+            <>
+              <MobileCardList
+                data={mobileData}
+                fields={mobileFields}
+                keyExtractor={(item) => String(item.id)}
+              />
+              {mobileHasMore && (
+                <button
+                  type="button"
+                  onClick={() => { void handleLoadMore(); }}
+                  disabled={isMobileLoading}
+                  className="flex items-center justify-center gap-[8px] w-full bg-[#45576f] px-[24px] py-[18px] mt-[10px] disabled:opacity-50"
+                >
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-white">
+                    {isMobileLoading ? "読み込み中..." : "もっと見る"}
+                  </span>
+                  {!isMobileLoading && (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M6 9L12 15L18 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center justify-center py-[80px] px-[24px] bg-white">
+              <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#999] text-center">
+                ダウンロードしたデータがありません。
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

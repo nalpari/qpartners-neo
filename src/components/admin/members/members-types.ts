@@ -54,28 +54,25 @@ export const MEMBER_TYPE_OPTIONS = [
   { value: "GENERAL", label: "一般" },
 ] as const;
 
-/** 날짜+시간 포맷 (ISO 8601 → YYYY.MM.DD HH:mm) */
+// ISO 문자열의 wall-clock을 직접 슬라이싱 — SSR/UTC 환경에서도 동일 결과 보장
+// (new Date(iso).getDate() 는 로컬 타임존 의존이라 JST 오프셋 ISO가 UTC로 해석되면 하루 밀림)
+const ISO_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+/** 날짜+시간 포맷 (ISO 8601 → YYYY.MM.DD HH:mm, 타임존 무관) */
 export function formatDateTime(value: string | null): string {
   if (!value) return "-";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}.${m}.${day} ${h}:${min}`;
+  const m = ISO_DATETIME_RE.exec(value);
+  if (!m) return "-";
+  return `${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}`;
 }
 
-/** 날짜 포맷 (ISO 8601 → YYYY.MM.DD) */
+/** 날짜 포맷 (ISO 8601 → YYYY.MM.DD, 타임존 무관) */
 export function formatDate(value: string | null): string {
   if (!value) return "-";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}.${m}.${day}`;
+  const m = ISO_DATE_RE.exec(value);
+  if (!m) return "-";
+  return `${m[1]}.${m[2]}.${m[3]}`;
 }
 
 export const INITIAL_FILTERS: MemberSearchFilters = {
@@ -121,6 +118,9 @@ export interface MemberDetail {
   withdrawReason?: string | null;
   newsRcptDate?: string | null;
   lastLoginAt?: string | null;
+  // QSP userDetail 이 F_NOT_USER 반환(탈퇴/삭제 회원)으로 빈 데이터를 응답한 경우 true.
+  // 프론트는 이 플래그로 "QSP 미조회 안내" 분기를 결정한다.
+  notFoundInQsp?: boolean;
 }
 
 /** 수정 요청 body */

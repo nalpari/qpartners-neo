@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFile } from "@/lib/file-validation";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
@@ -44,14 +44,14 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 콘텐츠 존재 + 수정 권한 확인
     const content = await prisma.content.findUnique({
       where: { id: parsedId.data },
-      select: { id: true, status: true, userId: true, authorDepartment: true },
+      select: { id: true, status: true, userType: true, userId: true },
     });
 
     if (!content || content.status === "deleted") {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, content)) {
+    if (!(await canModifyResource(user, content))) {
       return NextResponse.json(
         { error: "削除する権限がありません" },
         { status: 403 },
@@ -199,14 +199,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 콘텐츠 + 기존 첨부파일 조회
     const content = await prisma.content.findUnique({
       where: { id: parsedId.data },
-      select: { id: true, status: true, userId: true, authorDepartment: true },
+      select: { id: true, status: true, userType: true, userId: true },
     });
 
     if (!content || content.status === "deleted") {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, content)) {
+    if (!(await canModifyResource(user, content))) {
       return NextResponse.json(
         { error: "編集する権限がありません" },
         { status: 403 },

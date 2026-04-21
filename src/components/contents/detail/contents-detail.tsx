@@ -7,6 +7,7 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { canModifyClient } from "@/lib/auth-client";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsDetailInfo } from "./contents-detail-info";
@@ -21,6 +22,8 @@ interface ContentDetailData {
   userType: string;
   userId: string;
   authorDepartment: string | null;
+  /** 사내 사용자(ADMIN userTp)에게만 내려옴. 일반 사용자는 undefined — admin 메타데이터 노출 방지 */
+  authorIsSuperAdmin?: boolean;
   approverLevel: number | null;
   title: string;
   body: string | null;
@@ -96,21 +99,9 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // Design Ref: §4.1 — 사내 사용자 판별
   const isAdmin = user?.userTp === "ADMIN";
   const isInternal = isAdmin;
-  // 삭제/수정 권한: 서버 canModifyContent 로직과 동기화
-  // SUPER_ADMIN → 동일 부문, ADMIN(또는 authRole 미설정) → 본인 등록
-  const canModify = (() => {
-    if (!isAdmin || !data || !user) return false;
-    const role = user.authRole ?? "ADMIN"; // 과도기 JWT 폴백 (middleware와 동일)
-    if (role === "SUPER_ADMIN") {
-      // 양쪽 모두 부서 정보가 없으면 수정 불가 (fail-closed)
-      if (!user.deptNm || !data.authorDepartment) return false;
-      return user.deptNm === data.authorDepartment;
-    }
-    if (role === "ADMIN") {
-      return user.userId === data.userId;
-    }
-    return false;
-  })();
+  // 삭제/수정 권한: 서버 canModifyResource 로직과 동기화
+  // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
+  const canModify = data ? canModifyClient(user, data) : false;
 
   const handleDelete = () => {
     openAlert({

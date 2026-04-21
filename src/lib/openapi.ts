@@ -701,7 +701,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Menu"],
         summary: "메뉴 등록",
-        description: "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가.",
+        description:
+          "parentId=null이면 1-Level, parentId 지정 시 2-Level. 3레벨 이상 불가. sortOrder 미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여됩니다.",
         requestBody: {
           required: true,
           content: {
@@ -777,7 +778,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Menu"],
         summary: "정렬순서 일괄 저장",
-        description: "트랜잭션으로 여러 메뉴의 sortOrder를 일괄 업데이트.",
+        description:
+          "요청 items 의 parentId 그룹(들)에 속한 모든 형제 row 를 대상으로 sortOrder 오름차순 정렬 후 1..N 으로 재번호하여 저장합니다. 요청에 포함되지 않은 형제 row 는 현재 sortOrder 를 유지한 채 정렬에만 참여하여 부분 전송에서도 중복/공백이 발생하지 않습니다. 동일 sortOrder 충돌 시 이동 방향(위로 이동 앞, 아래로 이동 뒤) + 요청 row 우선 + 요청 배열 순서(stable) 로 결정합니다. 요청 parentId 그룹 밖의 row 는 건드리지 않습니다. 응답 updated 는 실제 sortOrder 가 변경된 row 수입니다.",
         requestBody: {
           required: true,
           content: {
@@ -1080,7 +1082,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    data: { $ref: "#/components/schemas/HomeNoticeListItem" },
+                    data: { $ref: "#/components/schemas/HomeNoticeDetail" },
                   },
                 },
               },
@@ -1604,7 +1606,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Code"],
         summary: "공통코드 공개 조회 (headerCode 기반)",
         parameters: [
-          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (예: INQUIRY_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (공개 허용: INQUIRY_TYPE, PAGE_SIZE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
         ],
         responses: {
           "200": {
@@ -2291,6 +2293,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         message: { type: "string" },
+                        member: {
+                          allOf: [{ $ref: "#/components/schemas/MemberDetail" }],
+                          description:
+                            "업데이트 직후 회원 스냅샷. preDetail 존재 시에만 포함 (postDetail 또는 preDetail+변경필드 overlay). " +
+                            "프론트는 이 값으로 queryClient.setQueryData 캐시 갱신 가능 — QSP F_NOT_USER 경로의 재조회 공백 방지.",
+                        },
                         warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
                         warnings: {
                           type: "array",
@@ -3096,6 +3104,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           body: { type: "string", nullable: true },
           status: { type: "string", enum: ["draft", "published", "deleted"] },
           authorDepartment: { type: "string", nullable: true },
+          authorIsSuperAdmin: {
+            type: "boolean",
+            description: "작성자가 SUPER_ADMIN 여부 — 사내 사용자(ADMIN)에게만 노출, 일반 사용자는 필드 자체 누락",
+          },
           userType: { type: "string", nullable: true },
           userId: { type: "string", nullable: true },
           viewCount: { type: "integer" },
@@ -3192,7 +3204,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           isActive: { type: "boolean", default: true },
           showInTopNav: { type: "boolean", default: true },
           showInMobile: { type: "boolean", default: true },
-          sortOrder: { type: "integer", default: 1 },
+          sortOrder: {
+            type: "integer",
+            minimum: 1,
+            description: "미지정 시 같은 parentId 그룹의 max(sortOrder)+1 로 자동 부여",
+          },
         },
       },
       UpdateMenu: {
@@ -3309,6 +3325,21 @@ export const openApiSpec: OpenAPIV3.Document = {
           updatedAt: { type: "string", format: "date-time" },
           updatedBy: { type: "string", nullable: true },
         },
+      },
+      HomeNoticeDetail: {
+        description: "GET /home-notices/{id} 전용 — 목록 항목 + 작성자 권한 플래그",
+        allOf: [
+          { $ref: "#/components/schemas/HomeNoticeListItem" },
+          {
+            type: "object",
+            properties: {
+              authorIsSuperAdmin: {
+                type: "boolean",
+                description: "작성자가 SUPER_ADMIN 여부 — 사내 사용자(ADMIN)에게만 노출, 일반 사용자는 필드 자체 누락 (Contents API와 동일 패턴)",
+              },
+            },
+          },
+        ],
       },
       ActiveHomeNotice: {
         type: "object",
@@ -3444,8 +3475,18 @@ export const openApiSpec: OpenAPIV3.Document = {
           userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
           companyName: { type: "string" },
           status: { type: "string", enum: ["active", "deleted", "withdrawn", "unknown"] },
-          lastLoginAt: { type: "string", format: "date-time", nullable: true },
-          createdAt: { type: "string", format: "date-time", nullable: true },
+          lastLoginAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description: "최종 로그인 시각 (ISO 8601 +09:00 JST). QSP loginDt 정규화 결과. null 은 미로그인/미반환.",
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description: "등록일 (ISO 8601 +09:00 JST). QSP regDt(YYYY.MM.DD) 정규화 — 시각 미보유로 자정. null 은 미반환.",
+          },
         },
       },
       MemberDetail: {
@@ -3476,6 +3517,23 @@ export const openApiSpec: OpenAPIV3.Document = {
           attributeChangeNotification: { type: "boolean" },
           status: { type: "string", enum: ["active", "deleted", "withdrawn", "unknown"] },
           newsRcptYn: { type: "string", enum: ["Y", "N"] },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description: "등록일 (ISO 8601 +09:00 JST). QSP regDt(YYYY.MM.DD) 정규화 결과 — 시각 정보가 없어 자정으로 채움. null 은 미조회/미반환.",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description: "갱신일 (ISO 8601 +09:00 JST). QSP uptDt(YYYY.MM.DD HH:mm:ss) 정규화 결과. null 은 미조회/미반환.",
+          },
+          updatedBy: {
+            type: "string",
+            nullable: true,
+            description: "갱신자 성명 (QSP uptNm 원문 — userId 가 아닌 userNm 형태). 키 네이밍은 프론트 호환성 우선 (members-types.ts 의 updatedBy 와 일치). null 가능.",
+          },
           notFoundInQsp: { type: "boolean", description: "QSP에서 조회 불가(삭제/탈퇴 등)일 때 true" },
         },
       },
@@ -3518,11 +3576,37 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       MassMailDetail: {
         type: "object",
+        required: [
+          "id",
+          "senderName",
+          "targets",
+          "targetsLabel",
+          "optOut",
+          "subject",
+          "body",
+          "status",
+          "sentTotal",
+          "sentSuccess",
+          "sentFailed",
+          "userType",
+          "userId",
+          "authorIsSuperAdmin",
+          "attachments",
+          "failedRecipients",
+          "failedRecipientsTotal",
+          "failedRecipientsTruncated",
+          "createdBy",
+          "createdAt",
+        ],
         properties: {
           id: { type: "integer" },
           senderName: { type: "string" },
+          userType: { type: "string", description: "작성자 userType" },
+          userId: { type: "string", description: "작성자 userId" },
+          authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (프론트 수정/삭제 버튼 노출 판단용)" },
           targets: {
             type: "object",
+            required: ["super_admin", "admin", "first_store", "second_store", "seko", "general"],
             properties: {
               super_admin: { type: "boolean" },
               admin: { type: "boolean" },
@@ -3545,12 +3629,40 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "array",
             items: {
               type: "object",
+              required: ["id", "fileName"],
               properties: {
                 id: { type: "integer" },
                 fileName: { type: "string" },
                 fileSize: { type: "integer", nullable: true },
               },
             },
+          },
+          failedRecipients: {
+            type: "array",
+            description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. PII 보호를 위해 email 마스킹 + errorMessage 는 카테고리 코드로 치환. sent_failed=0 이면 빈 배열, 상한(500건) 초과 시 truncated=true.",
+            items: {
+              type: "object",
+              required: ["email", "userName", "authRole", "errorCategory", "lastAttemptAt"],
+              properties: {
+                email: { type: "string", description: "마스킹된 이메일 (local-part 첫 1자만 노출)" },
+                userName: { type: "string", nullable: true },
+                authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "FIRST_STORE", "SECOND_STORE", "SEKO", "GENERAL"] },
+                errorCategory: {
+                  type: "string",
+                  enum: ["ORPHAN_SEND", "SMTP_TIMEOUT", "SMTP_REJECT", "UNKNOWN"],
+                  description: "분류된 실패 사유 — SMTP 원문 노출 금지 (인프라 지문/사용자 enumeration 방어)",
+                },
+                lastAttemptAt: { type: "string", format: "date-time", nullable: true, description: "마지막 시도 시각" },
+              },
+            },
+          },
+          failedRecipientsTotal: {
+            type: "integer",
+            description: "전체 영구 실패 건수 (응답 배열은 상한이 있으므로 별도 노출).",
+          },
+          failedRecipientsTruncated: {
+            type: "boolean",
+            description: "true 면 실패 명단이 상한(500건) 초과로 잘림.",
           },
           createdBy: { type: "string" },
           createdAt: { type: "string", format: "date-time" },

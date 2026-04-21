@@ -5,11 +5,16 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { requireAdmin } from "@/lib/auth";
+import { canModifyResource, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
+import { maskEmail } from "@/lib/interface-logger";
 import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import {
+  classifyFailure,
+  FAILED_RECIPIENTS_RESPONSE_LIMIT,
+} from "@/lib/mass-mail/constants";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -40,7 +45,11 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 3. 조회 (첨부파일 포함)
+    // 3. 조회 — 첨부파일 + 失敗確認 모달용 failed recipients 포함.
+    //    PII / 응답크기 보호:
+    //    - failed recipients 는 take: FAILED_RECIPIENTS_RESPONSE_LIMIT (500) 으로 상한.
+    //    - 전수 export 가 필요하면 감사로그 기반 별도 엔드포인트로 분리해야 함 (TODO).
+    //    - email 은 마스킹, errorMessage 는 분류 코드로 치환 — 인프라 지문/주소록 덤프 risk 완화.
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
       include: {
@@ -52,6 +61,18 @@ export async function GET(request: NextRequest, { params }: Params) {
           },
           orderBy: { id: "asc" },
         },
+        recipients: {
+          where: { status: "failed" },
+          select: {
+            email: true,
+            userName: true,
+            authRole: true,
+            errorMessage: true,
+            sentAt: true,
+          },
+          orderBy: { id: "asc" },
+          take: FAILED_RECIPIENTS_RESPONSE_LIMIT,
+        },
       },
     });
 
@@ -61,6 +82,17 @@ export async function GET(request: NextRequest, { params }: Params) {
         { status: 404 },
       );
     }
+
+    const failedTotal = mail.sentFailed;
+    const failedTruncated = failedTotal > mail.recipients.length;
+
+    // 작성자가 SUPER_ADMIN 인지 — 프론트 수정/삭제 버튼 노출 판단용
+    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴 — 호출부 try/catch 불필요
+    const authorResult = await resolveAuthorSuperAdmin({
+      userType: mail.userType,
+      userId: mail.userId,
+    });
+    const authorIsSuperAdmin = authorResult.isSuperAdmin;
 
     // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑
@@ -77,18 +109,35 @@ export async function GET(request: NextRequest, { params }: Params) {
       sentTotal: mail.sentTotal,
       sentSuccess: mail.sentSuccess,
       sentFailed: mail.sentFailed,
+      userType: mail.userType,
+      userId: mail.userId,
+      authorIsSuperAdmin,
       attachments: mail.attachments.map((a) => ({
         id: a.id,
         fileName: a.fileName,
         fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
       })),
+      // 失敗확인 모달용 — sent_failed=0 이면 빈 배열, 상한 초과 시 truncated=true.
+      // email 마스킹 + errorCategory 로 PII / 인프라 지문 노출 차단.
+      failedRecipients: mail.recipients.map((r) => ({
+        email: maskEmail(r.email),
+        userName: r.userName,
+        authRole: r.authRole,
+        errorCategory: classifyFailure(r.errorMessage),
+        lastAttemptAt: r.sentAt?.toISOString() ?? null,
+      })),
+      failedRecipientsTotal: failedTotal,
+      failedRecipientsTruncated: failedTruncated,
       createdBy: mail.createdBy ?? "",
       createdAt: mail.createdAt.toISOString(),
     };
 
     console.log(`[GET /api/admin/mass-mails/:id] 대량메일 상세 조회 — id: ${mail.id}, userId: ${authResult.user.userId}`);
 
-    return NextResponse.json({ data: mapped });
+    return NextResponse.json(
+      { data: mapped },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error: unknown) {
     console.error("[GET /api/admin/mass-mails/:id] 상세 조회 실패:", error);
     return NextResponse.json(
@@ -104,6 +153,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 1. 관리자 권한 확인
     const authResult = requireAdmin(request.headers);
     if (authResult instanceof NextResponse) return authResult;
+    const { user } = authResult;
 
     // 2. ID 파라미터 검증
     const { id: rawId } = await params;
@@ -120,6 +170,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       where: { id: idResult.data },
       select: {
         id: true,
+        userType: true,
+        userId: true,
         status: true,
         attachments: { select: { filePath: true } },
       },
@@ -129,6 +181,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "メールが見つかりません" },
         { status: 404 },
+      );
+    }
+
+    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // retry 핸들러와 동일하게 ownership → status 순서로 체크 — 타인 소유 메일의 상태 enumeration 차단
+    if (!(await canModifyResource(user, mail))) {
+      return NextResponse.json(
+        { error: "このメールを削除する権限がありません" },
+        { status: 403 },
       );
     }
 
@@ -214,10 +275,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 소유권 검증: 작성자만 수정 가능
-    if (existing.userId !== user.userId) {
+    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
-        { error: "他のユーザーが作成したメールは編集できません" },
+        { error: "このメールを編集する権限がありません" },
         { status: 403 },
       );
     }
@@ -430,10 +491,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     console.log(`[PUT /api/admin/mass-mails/:id] 대량메일 수정 완료 — id: ${idResult.data}, status: ${data.status}`);
 
-    // 비동기 발송 트리거 (Fire-and-Forget) — draft→pending 전이 시
+    // 비동기 발송 트리거 (Fire-and-Forget) — draft→pending 전이 시.
+    // processMassMailSend 가 자체 외부 안전망(markSendFailed best-effort) 을 가지므로 이 catch
+    // 는 그조차 새어나온 catastrophic 케이스 전용 — CRITICAL 마커로 알람 가능성 표시.
     if (data.status === "pending") {
       processMassMailSend({ massMailId: idResult.data }).catch((err: unknown) => {
-        console.error("[PUT /api/admin/mass-mails/:id] 비동기 발송 실패:", err);
+        console.error(
+          `[PUT /api/admin/mass-mails/:id] CRITICAL — 비동기 발송 fire-and-forget 새어남 (markSendFailed 마저 실패). 좀비 감지 의존. massMailId: ${idResult.data}`,
+          err,
+        );
       });
     }
 

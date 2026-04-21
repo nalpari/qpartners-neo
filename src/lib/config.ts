@@ -123,4 +123,12 @@ export const MASS_MAIL_DEFAULTS = {
   pageSize: parseIntEnv("MASS_MAIL_PAGE_SIZE", 100, { min: 1, max: 1000 }),
   /** 페이징 안전장치 (1만건 상한) */
   maxPages: parseIntEnv("MASS_MAIL_MAX_PAGES", 100, { min: 1, max: 10_000 }),
+  /** 자동 배치 cycle 간격 (ms) — 기본 3분. 0 = 배치 비활성 (테스트용). */
+  batchIntervalMs: parseIntEnv("MASS_MAIL_BATCH_INTERVAL_MS", 3 * 60 * 1000, { min: 0, max: 60 * 60 * 1000 }),
+  /** 좀비 감지 임계 (ms) — sending 상태가 이 시간 넘게 지속되면 send_failed 로 자동 승격 */
+  zombieThresholdMs: parseIntEnv("MASS_MAIL_ZOMBIE_THRESHOLD_MS", 10 * 60 * 1000, { min: 60 * 1000, max: 24 * 60 * 60 * 1000 }),
+  /** recipient 단위 30초 룰 상한 — retry_count 가 이 값에 도달하면 status='failed' */
+  recipientMaxRetry: parseIntEnv("MASS_MAIL_RECIPIENT_MAX_RETRY", 3, { min: 1, max: 10 }),
+  /** recipient 30초 룰 in-batch 간격 (ms) — SMTP 일시 거부 시 같은 recipient 재시도 전 대기 */
+  recipientRetryDelayMs: parseIntEnv("MASS_MAIL_RECIPIENT_RETRY_DELAY_MS", 30_000, { min: 1000, max: 600_000 }),
 } as const;

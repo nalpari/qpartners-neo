@@ -4,7 +4,7 @@ import { writeFile, mkdir, unlink } from "fs/promises";
 import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 
-import { canModifyContent, requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireAdmin } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { isInsideDir } from "@/lib/path-safety";
@@ -58,14 +58,14 @@ export async function POST(request: NextRequest, { params }: Params) {
     // 콘텐츠 존재 + 수정 권한 확인
     const content = await prisma.content.findUnique({
       where: { id: parsed.data },
-      select: { id: true, status: true, userId: true, authorDepartment: true },
+      select: { id: true, status: true, userType: true, userId: true },
     });
 
     if (!content || content.status === "deleted") {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!canModifyContent(user, content)) {
+    if (!(await canModifyResource(user, content))) {
       return NextResponse.json(
         { error: "ファイルアップロードの権限がありません" },
         { status: 403 },

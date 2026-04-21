@@ -39,10 +39,12 @@ export function ContentsDetailInfo({
     }
   };
 
+  // 빈값(null/undefined/"") → "-" 표시
+  const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : "-");
   const fields = [
-    { label: "担当部門", value: authorDepartment ?? "-" },
-    { label: "掲載担当者", value: createdBy },
-    { label: "更新担当者", value: updatedBy ?? "-" },
+    { label: "担当部門", value: orDash(authorDepartment) },
+    { label: "掲載担当者", value: orDash(createdBy) },
+    { label: "更新担当者", value: orDash(updatedBy) },
     { label: "最終承認者", value: approverLevel != null ? (APPROVER_LABELS[approverLevel] ?? `Lv.${approverLevel}`) : "-" },
   ];
 

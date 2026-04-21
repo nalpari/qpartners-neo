@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -150,7 +151,11 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     },
     onError: (error: unknown) => {
       console.error("[BulkMailForm] 메일 삭제 실패:", error);
-      openAlert({ type: "alert", message: "削除に失敗しました。" });
+      // 백엔드가 돌려준 사유(소유권/상태 등)를 그대로 노출해 IDOR 방어 메시지가
+      // 관리자에게 정확히 전달되도록 함
+      const backendMessage =
+        isAxiosError<{ error?: string }>(error) ? error.response?.data?.error : undefined;
+      openAlert({ type: "alert", message: backendMessage ?? "削除に失敗しました。" });
     },
   });
 

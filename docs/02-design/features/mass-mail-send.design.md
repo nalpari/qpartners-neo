@@ -13,51 +13,20 @@
 
 ## 1. Prisma Schema 변경
 
-### 1.1 신규 테이블: MassMailRecipient
+### 1.1 enum 명 이슈 — 의사결정 기록 (참고용)
 
-```prisma
-/// 대량메일 수신자 (발송 대상 개별 추적)
-model MassMailRecipient {
-  id           Int                         @id @default(autoincrement())
-  massMailId   Int                         @map("mass_mail_id")
-  email        String                      @db.VarChar(255)
-  userName     String?                     @map("user_name") @db.VarChar(255)
-  authRole     qp_mass_mail_recipients_auth_role @map("auth_role")
-  status       RecipientStatus             @default(pending)
-  sentAt       DateTime?                   @map("sent_at")
-  errorMessage String?                     @map("error_message") @db.VarChar(500)
-  createdAt    DateTime                    @default(now()) @map("created_at")
-  massMail     MassMail                    @relation(fields: [massMailId], references: [id], onDelete: Cascade)
+> **⚠ 폐기 — 실제 스키마는 §1.2 참조.** 이 섹션은 의사결정 history 만 남깁니다.
 
-  @@index([massMailId, status], map: "idx_mass_mail_status")
-  @@map("qp_mass_mail_recipients")
-}
+Prisma enum 은 첫 문자가 숫자일 수 없어 `1ST_STORE` 같은 값을 직접 사용 불가.
+3가지 옵션 중 **옵션 A** 채택:
 
-enum RecipientStatus {
-  pending
-  sent
-  failed
-}
+1. **옵션 A (채택)**: enum 값을 `FIRST_STORE`, `SECOND_STORE`로 변경 (DB 컬럼값도 동일)
+2. ~~옵션 B~~: DB 컬럼 타입을 VARCHAR로 하고 enum 대신 문자열 허용 — 폐기
+3. ~~옵션 C~~: enum 값을 `STORE_1ST`, `STORE_2ND` 등으로 prefix — 폐기
 
-enum qp_mass_mail_recipients_auth_role {
-  SUPER_ADMIN
-  ADMIN
-  @@map("1ST_STORE") // Prisma는 숫자 시작 enum 불가 → @@map 사용
-  // 실제 컬럼값: 1ST_STORE, 2ND_STORE
-  // 대안: enum 명 재검토 필요 — 아래 주석 참고
-}
-```
+→ 기존 `common.ts`의 `authRoleValues`는 화면 용도이므로 유지하고, DB enum 은 별도(`RecipientAuthRole`)로 관리.
 
-**⚠ enum 명 이슈**:
-Prisma enum은 첫 문자가 숫자일 수 없다. 3가지 옵션 중 택1:
-
-1. **옵션 A (권장)**: enum 값을 `FIRST_STORE`, `SECOND_STORE`로 변경 (DB 컬럼값도 동일)
-2. **옵션 B**: DB 컬럼 타입을 VARCHAR로 하고 enum 대신 문자열 허용
-3. **옵션 C**: enum 값을 `STORE_1ST`, `STORE_2ND` 등으로 prefix
-
-→ **옵션 A 채택**: `FIRST_STORE`, `SECOND_STORE`. 기존 `common.ts`의 `authRoleValues`는 화면 용도이므로 유지하고, DB enum은 별도로 관리.
-
-### 1.2 수정된 스키마 (최종)
+### 1.2 수정된 스키마 (최종, v0.3 갱신)
 
 ```prisma
 model MassMailRecipient {
@@ -70,6 +39,8 @@ model MassMailRecipient {
   sentAt       DateTime?       @map("sent_at")
   errorMessage String?         @map("error_message") @db.VarChar(500)
   createdAt    DateTime        @default(now()) @map("created_at")
+  createdBy    String?         @map("created_by") @db.VarChar(255)  // PR #60: 발송 트리거 관리자 추적
+  retryCount   Int             @default(0) @map("retry_count")      // (v0.3 신규) 30초 룰 누적, 상한 3
   massMail     MassMail        @relation(fields: [massMailId], references: [id], onDelete: Cascade)
 
   @@index([massMailId, status], map: "idx_mass_mail_status")
@@ -275,20 +246,34 @@ export async function processMassMailRetry(
           (이미 sent 처리된 건은 건너뜀)
        c. 최대 재시도 초과 → massMail.status = "send_failed" + 실패 로그
 
-[_sendLoop(massMailId)]
-  1. recipients WHERE status="pending" 조회
+[_sendLoop(massMailId)]  ★ v0.3 변경 — 30초 룰 + retry_count
+  1. recipients WHERE status="pending" AND retry_count < 3 조회
   2. for each recipient:
-       a. await sendMail({ to, subject, html })
-       b. 성공: recipient.status="sent", sentAt=now (counter는 루프 후 일괄 increment)
-       c. 실패(개별): recipient.status="failed", errorMessage=e.message
-       d. throttle (MASS_MAIL_DEFAULTS.throttleMs 대기)
+       a. tryOnce: await sendMail({ to, subject, html })
+       b. 성공:
+          - recipient.status="sent", sentAt=now
+          (counter 는 루프 후 일괄 increment)
+       c. 실패(개별):
+          - retry_count++
+          - retry_count == 3 → recipient.status="failed", errorMessage=e.message (영구실패)
+          - retry_count <  3 → recipient.status="pending" 유지 + 30초 대기 후 같은 recipient 재시도
+            (in-batch 30초 룰 — 같은 recipient 에 대해 한 배치 안에서 최대 3회까지)
+       d. throttle (MASS_MAIL_DEFAULTS.throttleMs 대기) — 다음 recipient 로 이동
   3. 루프 종료 시점에 massMail.sent_success/sent_failed 를 한번에 increment
   4. 루프 완료:
-       - pending 수신자 0이면 massMail.status = "sent", sentAt = now
-       - pending 수신자 남아있으면 throw (전체 장애로 간주 → retry 루프)
+       - 모든 recipients ∈ {sent, failed} (pending 0건) 이면
+         massMail.status = "sent", sentAt = now (자동 전이 — 핵심 불변량 #3)
+       - pending 잔존 (3분 배치가 다음 cycle 에서 이어받음)
+         · 정상 케이스 — throw 안 함
 
 ※ bulk INSERT 와 status 전이를 원자적으로 묶어 중간 실패 시 "수신자만 남고
    상태는 pending 그대로" 같은 정합성 깨짐을 방지한다.
+
+※ 핵심 불변량 (코드 + 스키마 모두에서 보장)
+  ① recipient.retry_count ≤ 3
+  ② recipient.retry_count == 3  ⇒  status ∈ {sent, failed} (pending 아님)
+  ③ mass_mail.status == "sent"  ⇔  모든 recipients.status ∈ {sent, failed}
+  ④ SMTP 시도 실제 횟수 == retry_count
 ```
 
 ### 3.3 processMassMailRetry 상세 흐름
@@ -322,20 +307,71 @@ await sendMail({
 });
 ```
 
-### 3.5 동시성 / 중복 트리거 차단
+### 3.5 동시성 / 중복 트리거 차단 (v0.4 확장)
+
+API Fire-and-Forget(1단계)과 3분 배치 cycle(2단계)이 같은 mass_mail 을 동시 처리할 수 있어 **3단 방어** 로 막는다.
+
+#### L1: `inFlightMassMails` 인-메모리 마커 (v0.4 신규)
 
 ```typescript
-// massMail.status 업데이트는 낙관적 락 사용
-const updated = await prisma.massMail.updateMany({
-  where: { id: massMailId, status: "pending" },
-  data: { status: "sending" },
-});
-if (updated.count === 0) {
-  // 이미 다른 요청이 sending 으로 전환 → 중복 호출 방지
-  console.warn("[send-processor] 이미 발송 중인 메일:", massMailId);
-  return;
+// HMR 재-import 시에도 동일 Set 유지 — globalThis 에 보관
+type SendProcessorGlobals = { __inFlightMassMails?: Set<number> };
+const gp = globalThis as unknown as SendProcessorGlobals;
+export const inFlightMassMails: Set<number> =
+  gp.__inFlightMassMails ?? (gp.__inFlightMassMails = new Set<number>());
+
+/** 발송 파이프라인 중복 진입 차단 guard. */
+export async function runWithInFlightGuard(
+  massMailId: number,
+  work: () => Promise<void>,
+): Promise<void> {
+  if (inFlightMassMails.has(massMailId)) {
+    console.warn(`[mass-mail/send-processor] massMailId ${massMailId} 이미 진행 중 — skip`);
+    return;
+  }
+  inFlightMassMails.add(massMailId);
+  try {
+    await work();
+  } finally {
+    inFlightMassMails.delete(massMailId);
+  }
 }
 ```
+
+모든 "수집+sendLoop+promote" 파이프라인 진입부를 이 guard 로 감싼다:
+- `processMassMailSend(options)` 최상단
+- `processMassMailRetry(massMailId)` 최상단
+- `auto-retry-batch` cycle 내 각 mail 처리
+
+`sendLoop` 자체는 guard 없음 — 호출자 책임(JSDoc 경고로 명시). 외부 직접 호출 시 가드 우회 가능하나 실 콜사이트는 위 3경로뿐이며 모두 guard 래핑됨.
+
+**좀비 감지도 in-flight 제외** — `auto-retry-batch` 의 좀비 감지 단계에서 `inFlightMassMails.has(id)` 인 후보는 `send_failed` 자동 승격에서 제외 (소규모 발송이 좀비 threshold 초과해 오판정되는 이슈 방지).
+
+#### L2: `collectAndQueueRecipients` $transaction 낙관적 락 (기존)
+
+```typescript
+await prisma.$transaction(async (tx) => {
+  const transitionResult = await tx.massMail.updateMany({
+    where: { id: massMailId, status: fromStatus },
+    data: { status: "sending", sentTotal: recipients.length },
+  });
+  if (transitionResult.count === 0) {
+    throw new StatusTransitionLostError(`massMailId=${massMailId}, expected=${fromStatus}`);
+  }
+  await tx.massMailRecipient.createMany({ data: ... });
+}, { timeout: 30_000 });
+```
+
+두 번째 진입자는 count=0 → `StatusTransitionLostError` → tx 롤백 → `createMany` 미실행. `processMassMailSend` 의 catch 가 이 에러를 인식해 조용히 종결(`markSendFailed` 스킵).
+
+#### L3: DB `@@unique([massMailId, email])` 제약
+
+Prisma schema 레벨에서 이중 INSERT 최종 방어. L1/L2 우회 가정 시 마지막 가드.
+
+#### 전제
+
+- **PM2 single instance**. 다중 인스턴스 시 L1(인-메모리 마커)이 각 프로세스에만 적용되므로 분산 락(pg_advisory_lock / Redis SETNX 등) 필요.
+- `instrumentation.ts` 는 Node runtime 에서만 등록(`NEXT_RUNTIME === "nodejs"` 가드). Edge runtime 번들 컴파일 이슈는 `next.config.ts` `webpack.IgnorePlugin` 으로 배제.
 
 ---
 
@@ -417,27 +453,67 @@ export async function POST(request: NextRequest, { params }: Params) {
 }
 ```
 
-### 4.4 GET /api/admin/mass-mails/:id (상세 응답 확장)
+### 4.4 GET /api/admin/mass-mails/:id (상세 응답 확장 — v0.4 갱신)
+
+**v0.4 변경 (Chicago Code Review 대응)**
+- `take: FAILED_RECIPIENTS_RESPONSE_LIMIT` (500) — 무제한 배열 → 5000건 상한에서 응답 폭주 방지
+- `email` → `maskEmail()` 마스킹 — 세션 탈취 시 단일 GET 으로 주소록 덤프 risk 차단
+- `errorMessage` → `errorCategory` (4종 enum) — SMTP 원문(인프라 지문) 노출 금지, classifyFailure() 분류
+- `failedRecipientsTotal` / `failedRecipientsTruncated` 메타 추가 — 상한 초과 시 UI 안내
+- `Cache-Control: no-store` — 중간 캐시에 PII 적재 금지
 
 ```typescript
+import { maskEmail } from "@/lib/interface-logger";
+import { classifyFailure, FAILED_RECIPIENTS_RESPONSE_LIMIT } from "@/lib/mass-mail/constants";
+
+const mail = await prisma.massMail.findUnique({
+  where: { id: idResult.data },
+  include: {
+    attachments: { ... },
+    recipients: {
+      where: { status: "failed" },
+      select: { email: true, userName: true, authRole: true, errorMessage: true, sentAt: true },
+      orderBy: { id: "asc" },
+      take: FAILED_RECIPIENTS_RESPONSE_LIMIT,         // (v0.4) 응답 상한
+    },
+  },
+});
+
+const failedTotal = mail.sentFailed;
+const failedTruncated = failedTotal > mail.recipients.length;
+
 const mapped = {
   id: mail.id,
-  senderName: mail.senderName,
-  targets: buildTargetsObject(mail),
-  targetsLabel: buildTargetLabel(mail),
-  optOut: mail.optOut,
-  subject: mail.subject,
-  body: mail.body,
-  status: mail.status,
-  sentAt: mail.sentAt?.toISOString() ?? null,
-  sentTotal: mail.sentTotal,     // 신규
-  sentSuccess: mail.sentSuccess, // 신규
-  sentFailed: mail.sentFailed,   // 신규
+  // ... 기존 필드
+  sentTotal: mail.sentTotal,
+  sentSuccess: mail.sentSuccess,
+  sentFailed: mail.sentFailed,
   attachments: mail.attachments.map(...),
+  failedRecipients: mail.recipients.map((r) => ({
+    email: maskEmail(r.email),                        // (v0.4) PII 마스킹
+    userName: r.userName,
+    authRole: r.authRole,
+    errorCategory: classifyFailure(r.errorMessage),   // (v0.4) 카테고리 치환 — 원문 노출 금지
+    lastAttemptAt: r.sentAt?.toISOString() ?? null,
+  })),
+  failedRecipientsTotal: failedTotal,                 // (v0.4 신규)
+  failedRecipientsTruncated: failedTruncated,         // (v0.4 신규)
   createdBy: mail.createdBy ?? "",
   createdAt: mail.createdAt.toISOString(),
 };
+
+return NextResponse.json(
+  { data: mapped },
+  { headers: { "Cache-Control": "no-store" } },       // (v0.4) PII 캐시 금지
+);
 ```
+
+**프론트 사용 흐름**
+- 목록 화면에서 `sent_failed > 0` 인 row 에 [失敗確認] 버튼 노출
+- 클릭 시 GET `/api/admin/mass-mails/:id` 호출 → 응답에서 `failedRecipients` 배열 추출
+- 모달 팝업에 명단 표시 (마스킹 이메일/이름/role/카테고리/마지막시도시각)
+- `failedRecipientsTruncated=true` 인 경우 "전체 ${failedRecipientsTotal}건 중 ${배열크기}건 표시" 안내 문구 노출
+- 전수 export 가 필요해지면 감사로그 기반 별도 엔드포인트로 분리 (TODO)
 
 ### 4.5 DELETE /api/admin/mass-mails/:id (상태 체크 추가)
 
@@ -449,6 +525,272 @@ if (mail.status !== "draft") {
   );
 }
 ```
+
+---
+
+## 4.6 자동 배치 모듈 (v0.3 신규)
+
+### 4.6.1 `src/instrumentation.ts` (Next.js 기동 훅) — v0.4 갱신 (fail-closed)
+
+Next.js 16 의 `instrumentation.ts` 컨벤션을 활용하여 서버 기동 시 1회만 실행되는 setInterval 등록.
+v0.4 부터 register catch 가 throw 하여 fail-closed (배치 미가동 상태로 서버가 기동되지 않음).
+이중 안전망으로 `/api/health` readiness probe 가 `__massMailBatchTimer` 존재를 검사하여 503 노출.
+
+```typescript
+// src/instrumentation.ts
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  try {
+    const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
+    startAutoRetryBatch();
+  } catch (error: unknown) {
+    console.error(
+      "[instrumentation] CRITICAL — auto-retry-batch 등록 실패. 대량메일 자동 재시도 미가동.",
+      error,
+    );
+    throw error;  // (v0.4) fail-closed
+  }
+}
+```
+
+Next.js 16 에서는 `instrumentation.ts` 가 stable 이라 `next.config.ts` 의 `experimental.instrumentationHook` 플래그가 불필요.
+
+### 4.6.2 `src/lib/mass-mail/auto-retry-batch.ts`
+
+```typescript
+const BATCH_INTERVAL_MS = Number(process.env.MASS_MAIL_BATCH_INTERVAL_MS ?? 3 * 60 * 1000);
+const ZOMBIE_THRESHOLD_MS = Number(process.env.MASS_MAIL_ZOMBIE_THRESHOLD_MS ?? 10 * 60 * 1000);
+const LOG_TAG = "[mass-mail/auto-retry-batch]";
+
+let batchTimer: NodeJS.Timeout | null = null;
+let isRunning = false; // 단일 인스턴스 락 (PM2 single instance 가정)
+
+export function startAutoRetryBatch(): void {
+  if (batchTimer) return; // 중복 등록 방어
+  console.log(`${LOG_TAG} 자동 재시도 배치 등록 — interval=${BATCH_INTERVAL_MS}ms`);
+  batchTimer = setInterval(runBatchOnce, BATCH_INTERVAL_MS);
+}
+
+async function runBatchOnce(): Promise<void> {
+  if (isRunning) {
+    console.warn(`${LOG_TAG} 직전 batch 가 아직 실행 중 — 이번 cycle 건너뜀`);
+    return;
+  }
+  isRunning = true;
+  const startedAt = Date.now();
+
+  try {
+    // 1. 좀비 감지 (sending + updated_at < NOW - 10min → send_failed 로 승격)
+    const zombieCutoff = new Date(Date.now() - ZOMBIE_THRESHOLD_MS);
+    const zombieResult = await prisma.massMail.updateMany({
+      where: { status: "sending", updatedAt: { lt: zombieCutoff } },
+      data: { status: "send_failed" },
+    });
+    if (zombieResult.count > 0) {
+      console.warn(`${LOG_TAG} 좀비 감지 — ${zombieResult.count}건 sending → send_failed 승격`);
+    }
+
+    // 2. 처리 대상 mass_mail SELECT (pending recipients 가 있거나, recipients 가 0건인 pending mail)
+    const targets = await prisma.massMail.findMany({
+      where: {
+        status: { in: ["pending", "sending"] },
+      },
+      select: { id: true, status: true },
+    });
+
+    for (const mail of targets) {
+      try {
+        // 2-a. recipients 가 0건이면 수집부터 (collectAndQueueRecipients 재호출)
+        const existingCount = await prisma.massMailRecipient.count({ where: { massMailId: mail.id } });
+        if (existingCount === 0) {
+          await collectAndQueueRecipients(mail.id, mail.status === "pending" ? "pending" : "sending");
+        }
+
+        // 2-b. pending recipient 가 있으면 sendLoop (30초 룰 + retry_count 적용)
+        const pendingCount = await prisma.massMailRecipient.count({
+          where: { massMailId: mail.id, status: "pending", retryCount: { lt: 3 } },
+        });
+        if (pendingCount > 0) {
+          await sendLoop(mail.id, MASS_MAIL_DEFAULTS.throttleMs);
+        }
+
+        // 2-c. mass_mail.status 자동 갱신 — 모든 recipients 가 sent/failed 면 sent
+        await maybePromoteToSent(mail.id);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`${LOG_TAG} mass_mail ${mail.id} 처리 실패:`, message);
+        // 다음 mail 로 계속 진행 (한 건 실패가 batch 전체 죽이지 않음)
+      }
+    }
+
+    const elapsed = Date.now() - startedAt;
+    console.log(`${LOG_TAG} 배치 cycle 완료 — 처리: ${targets.length}건, 소요: ${elapsed}ms`);
+  } catch (error: unknown) {
+    console.error(`${LOG_TAG} 배치 cycle 전체 실패:`, error);
+  } finally {
+    isRunning = false;
+  }
+}
+
+/**
+ * mass_mail.status 자동 갱신.
+ * recipients 모두 sent 또는 failed 이면 mass_mail.status='sent' 로 전이.
+ * (불변량 #3 보장)
+ *
+ * v0.4: sentAt TOCTOU 방어 — 2-step updateMany 로 원자적 처리.
+ *   - 이미 sentAt 이 세팅된 행은 status 만 업데이트 (최초 기록 시점 보존)
+ *   - sentAt 이 null 인 행만 새 시각 세팅
+ *   - `findUnique` → `updateMany` 사이 race 로 sentAt 덮어쓰기되는 현상 제거
+ */
+async function maybePromoteToSent(massMailId: number): Promise<boolean> {
+  const stillPending = await prisma.massMailRecipient.count({
+    where: { massMailId, status: "pending" },
+  });
+  if (stillPending > 0) return false;
+
+  const keepSentAt = await prisma.massMail.updateMany({
+    where: { id: massMailId, status: { in: ["pending", "sending"] }, sentAt: { not: null } },
+    data: { status: "sent" },
+  });
+  const seedSentAt = await prisma.massMail.updateMany({
+    where: { id: massMailId, status: { in: ["pending", "sending"] }, sentAt: null },
+    data: { status: "sent", sentAt: new Date() },
+  });
+  return keepSentAt.count + seedSentAt.count > 0;
+}
+```
+
+### 4.6.3 sendLoop 변경 — 30초 룰 + retry_count
+
+기존 `_sendLoop` 의 개별 SMTP 실패 처리 부분을 다음과 같이 확장:
+
+```typescript
+// before — 즉시 failed 마킹 (한 번만 시도)
+catch (error: unknown) {
+  await prisma.massMailRecipient.update({
+    where: { id: recipient.id },
+    data: { status: "failed", errorMessage: e.message },
+  });
+}
+
+// after — 30초 룰 + retry_count + SMTP/DB 분리 try/catch (v0.4)
+let smtpOk = false;
+try {
+  await sendMail({ to: recipient.email, subject, html });
+  smtpOk = true;
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const newRetryCount = recipient.retryCount + 1;
+  if (newRetryCount >= 3) {
+    try {
+      // 영구 실패
+      await prisma.massMailRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "failed", retryCount: newRetryCount, errorMessage: message.slice(0, 500) },
+      });
+    } catch (dbErr) {
+      // v0.4: DB 갱신 실패 시 현 recipient 포기, outer for 는 계속 (다음 cycle 복구)
+      console.error("CRITICAL — retry_count 증분 DB 갱신 실패", dbErr);
+      break;
+    }
+  } else {
+    try {
+      await prisma.massMailRecipient.update({
+        where: { id: recipient.id },
+        data: { retryCount: newRetryCount, errorMessage: message.slice(0, 500) },
+      });
+    } catch (dbErr) { break; }
+    await sleep(MASS_MAIL_DEFAULTS.recipientRetryDelayMs);
+  }
+}
+
+// SMTP 성공 경로 — DB 갱신은 별도 try/catch 로 분리 (v0.4 — 중복 발송 방지)
+if (smtpOk) {
+  try {
+    await prisma.massMailRecipient.update({
+      where: { id: recipient.id },
+      data: { status: "sent", sentAt: new Date(), retryCount: currentRetryCount + 1 },
+    });
+  } catch (dbError) {
+    // 1차 성공 update 실패 시 pending 유지되면 다음 cycle SMTP 재호출 → 중복 발송 위험.
+    // 2차 update 로 status='failed' 강제 마킹 (orphan_send 식별, 실 메일은 나갔으나 집계상 실패).
+    console.error("CRITICAL — SMTP 성공/DB 갱신 실패. orphan 마킹 시도.", dbError);
+    try {
+      await prisma.massMailRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "failed",
+          retryCount: MASS_MAIL_DEFAULTS.recipientMaxRetry,
+          errorMessage: "ORPHAN_SEND: SMTP 성공 후 DB 갱신 실패로 인한 중복 발송 차단",
+          sentAt: new Date(),
+        },
+      });
+    } catch (secondError) {
+      // 2차도 실패 = DB 자체 불가 상황. 로그만 남기고 다음 recipient 로.
+      console.error("CRITICAL — orphan 차단 2차 실패. 운영자 수동 개입 필요.", secondError);
+    }
+  }
+}
+
+// heartbeat (v0.4 신규) — 마지막 갱신 이후 60초 경과 시 mass_mail.updatedAt touch.
+// 소규모 발송(<50건)이 좀비 threshold 초과해 오판정되는 것 방지.
+if (Date.now() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+  lastHeartbeatAt = Date.now();
+  await prisma.massMail.updateMany({
+    where: { id: massMailId, status: "sending" },
+    data: { sentTotal: { increment: 0 } }, // no-op increment 로 @updatedAt 자동 갱신
+  }).catch((e) => console.warn("heartbeat 실패", e));
+}
+```
+
+(상세 코드 패턴은 구현 단계에서 sendLoop 내부 for 루프 구조에 맞춰 조정)
+
+### 4.6.4 동작 흐름 정리
+
+```
+서버 기동 (Next.js 시작)
+   ↓
+instrumentation.ts:register() 자동 실행  (try/catch + CRITICAL 로그 — v0.4)
+   ↓
+startAutoRetryBatch() 호출
+   ↓
+setInterval 등록 (3분 주기, globalThis 보관으로 HMR 안전 — v0.4)
+   ↓
+[3분마다 반복] runBatchOnce()
+   ├─ 좀비 감지 (sending + 10분 경과):
+   │    • 후보 findMany → inFlightMassMails.has 제외 → send_failed 승격 (v0.4)
+   ├─ pending/sending mass_mail SELECT (take:200 상한 — v0.4)
+   ├─ 각 mail — runWithInFlightGuard 로 감쌈 (v0.4):
+   │    ├─ recipients 0건 → collectAndQueueRecipients (L2 낙관적 락)
+   │    ├─ pending recipient 있음 → sendLoop (30초 룰 + heartbeat)
+   │    └─ 모두 종결 → maybePromoteToSent (2-step updateMany)
+   └─ 다음 cycle 대기 (__massMailBatchRunning 플래그로 중첩 방지)
+```
+
+```typescript
+// 좀비 감지에 in-flight 제외 (v0.4 신규)
+const zombieCandidates = await prisma.massMail.findMany({
+  where: { status: "sending", updatedAt: { lt: zombieCutoff } },
+  select: { id: true, updatedAt: true },
+});
+const realZombieIds = zombieCandidates
+  .map((z) => z.id)
+  .filter((id) => !inFlightMassMails.has(id));
+if (realZombieIds.length > 0) {
+  await prisma.massMail.updateMany({
+    where: { id: { in: realZombieIds }, status: "sending" },
+    data: { status: "send_failed" },
+  });
+}
+```
+
+### 4.6.5 인스턴스 다중화 시 주의 (현재는 single instance 가정)
+
+- PM2 `qpartners-neo-dev` 가 single instance 인 한 `isRunning` flag 로 중복 실행 방지 충분
+- 향후 cluster mode 또는 K8s 다중 replica 도입 시:
+  - `pg_advisory_lock` / Redis SETNX / DB UPDATE WHERE 조건절 같은 분산 락 도입 필요
+  - 또는 cron-job 을 별도 워커 프로세스로 분리
 
 ---
 
@@ -465,12 +807,18 @@ SMTP_PASS=...
 SMTP_FROM=noreply@qpartners.jp
 SMTP_USE_ETHEREAL=false
 
-# 신규
+# 신규 (v0.2 까지)
 MASS_MAIL_THROTTLE_MS=200          # 건별 발송 간격
-MASS_MAIL_MAX_RETRIES=3             # 전체 장애 자동 재시도 횟수
-MASS_MAIL_RETRY_DELAY_MS=30000      # 재시도 간격
+MASS_MAIL_MAX_RETRIES=3             # 전체 장애 자동 재시도 횟수 (in-process)
+MASS_MAIL_RETRY_DELAY_MS=30000      # in-process 재시도 간격
 MASS_MAIL_PAGE_SIZE=100             # QSP 목록 페이지당 건수
 MASS_MAIL_MAX_PAGES=100             # 페이징 안전장치 (1만건 상한)
+
+# v0.3 신규 (3분 배치)
+MASS_MAIL_BATCH_INTERVAL_MS=180000        # 3분 = 180000 ms
+MASS_MAIL_ZOMBIE_THRESHOLD_MS=600000      # 좀비 감지 임계 — 10분
+MASS_MAIL_RECIPIENT_MAX_RETRY=3           # recipient 단위 30초 룰 상한
+MASS_MAIL_RECIPIENT_RETRY_DELAY_MS=30000  # 30초 룰 간격
 ```
 
 ### 5.2 src/lib/config.ts 추가
@@ -482,55 +830,78 @@ export const MASS_MAIL_DEFAULTS = {
   retryDelayMs: Number(process.env.MASS_MAIL_RETRY_DELAY_MS ?? 30_000),
   pageSize: Number(process.env.MASS_MAIL_PAGE_SIZE ?? 100),
   maxPages: Number(process.env.MASS_MAIL_MAX_PAGES ?? 100),
+  // v0.3 — 자동 배치 관련
+  batchIntervalMs: Number(process.env.MASS_MAIL_BATCH_INTERVAL_MS ?? 3 * 60 * 1000),
+  zombieThresholdMs: Number(process.env.MASS_MAIL_ZOMBIE_THRESHOLD_MS ?? 10 * 60 * 1000),
+  recipientMaxRetry: Number(process.env.MASS_MAIL_RECIPIENT_MAX_RETRY ?? 3),
+  recipientRetryDelayMs: Number(process.env.MASS_MAIL_RECIPIENT_RETRY_DELAY_MS ?? 30_000),
 } as const;
 ```
 
 ---
 
-## 6. File Structure (최종)
+## 6. File Structure (최종, v0.3)
 
 ```
 src/
+├── instrumentation.ts                  # (v0.3 신규) Next.js 기동 훅
 ├── app/api/admin/mass-mails/
-│   ├── route.ts                        # 기존 — POST 트리거 추가
+│   ├── route.ts                        # 기존 — POST 트리거
 │   └── [id]/
-│       ├── route.ts                    # 기존 — PUT 트리거, GET 응답 확장, DELETE 상태 체크
+│       ├── route.ts                    # 기존 — PUT 트리거, GET 응답 확장(failedRecipients), DELETE 상태 체크
 │       └── retry/
-│           └── route.ts                # 신규
+│           └── route.ts                # 기존
 ├── lib/
 │   ├── mailer.ts                       # 기존
-│   ├── config.ts                       # 기존 — MASS_MAIL_DEFAULTS 추가
+│   ├── config.ts                       # 기존 — MASS_MAIL_DEFAULTS 확장 (batch 항목 추가)
 │   ├── mass-mail/
-│   │   ├── collect-recipients.ts       # 신규
-│   │   └── send-processor.ts           # 신규
-│   ├── openapi.ts                      # 기존 — 스펙 동기화
+│   │   ├── collect-recipients.ts       # 기존
+│   │   ├── send-processor.ts           # 기존 — sendLoop 에 30초 룰 + retry_count 추가
+│   │   └── auto-retry-batch.ts         # (v0.3 신규) 3분 배치 본체
+│   ├── openapi.ts                      # 기존 — 스펙 동기화 (failedRecipients 필드 추가)
 │   └── schemas/
 │       ├── mass-mail.ts                # 기존
-│       └── member.ts                   # 기존 — qspMemberItemSchema 확장
+│       └── member.ts                   # 기존
 └── generated/prisma/                   # 자동 생성
 prisma/
-└── schema.prisma                       # 기존 — MassMailRecipient + enum + 컬럼 추가
+└── schema.prisma                       # 기존 — MassMailRecipient.retry_count 컬럼 1개 추가 (v0.3)
 ```
 
 ---
 
 ## 7. Implementation Order
 
+**Phase 1 — 기반 (이미 구현 완료, v0.2 까지)**
+
 | # | 작업 | 파일 | 예상 규모 |
 |---|------|------|-----------|
-| 1 | Prisma 스키마 변경 | prisma/schema.prisma | 소 |
+| 1 | Prisma 스키마 변경 (테이블+enum+컬럼) | prisma/schema.prisma | 소 |
 | 2 | prisma db push + generate | - | 소 |
 | 3 | QSP 응답 스키마 확장 | src/lib/schemas/member.ts | 소 |
 | 4 | MASS_MAIL_DEFAULTS 추가 | src/lib/config.ts | 소 |
 | 5 | collect-recipients.ts | src/lib/mass-mail/collect-recipients.ts | 중 (150줄) |
 | 6 | send-processor.ts | src/lib/mass-mail/send-processor.ts | 중 (200줄) |
 | 7 | POST/PUT 트리거 연결 | mass-mails/route.ts, [id]/route.ts | 소 |
-| 8 | GET 응답 확장 | mass-mails/[id]/route.ts | 소 |
+| 8 | GET 응답 확장 (sentTotal/Success/Failed) | mass-mails/[id]/route.ts | 소 |
 | 9 | DELETE 상태 체크 | mass-mails/[id]/route.ts | 소 |
 | 10 | retry API | mass-mails/[id]/retry/route.ts | 소 (80줄) |
 | 11 | openapi.ts 동기화 | src/lib/openapi.ts | 소 |
 
-**총 예상 규모**: 신규 파일 3개(약 450줄) + 기존 파일 수정 5개 (약 100줄)
+**Phase 2 — v0.3 추가 (자동 배치 + 失敗確認 UI)**
+
+| # | 작업 | 파일 | 예상 규모 |
+|---|------|------|-----------|
+| 12 | retry_count 컬럼 추가 + db push + generate | prisma/schema.prisma | 소 (1줄) |
+| 13 | MASS_MAIL_DEFAULTS 에 batch 관련 4개 추가 | src/lib/config.ts | 소 |
+| 14 | sendLoop 에 30초 룰 + retry_count 증분 | src/lib/mass-mail/send-processor.ts | 소 (20~30줄) |
+| 15 | maybePromoteToSent 헬퍼 (mass_mail.status 자동 갱신) | src/lib/mass-mail/send-processor.ts | 소 (20줄) |
+| 16 | auto-retry-batch.ts (배치 본체) | src/lib/mass-mail/auto-retry-batch.ts | 중 (100~120줄) |
+| 17 | instrumentation.ts (Next.js 기동 훅) | src/instrumentation.ts | 소 (15~30줄) |
+| 18 | GET 응답에 failedRecipients 포함 | mass-mails/[id]/route.ts | 소 (15~20줄) |
+| 19 | openapi.ts — failedRecipients 필드 추가 | src/lib/openapi.ts | 소 (10줄) |
+| 20 | (프론트) 목록 [失敗確認] 버튼 + 모달 팝업 | components/admin/bulk-mail/* | 별도 PR |
+
+**총 v0.3 추가 규모**: 신규 파일 2개(약 130줄) + 기존 파일 수정 5개 (약 70줄)
 
 ---
 
@@ -583,6 +954,52 @@ prisma/
 4. draft 상태만 DELETE 성공
 ```
 
+### 8.6 (v0.3 신규) 30초 룰 + 배치 자동 복구 통합 시나리오
+
+```
+1. POST 발송 — 100명 대상
+2. 비동기 1회 시도 (Fire-and-Forget)
+   - 95명 성공 → status="sent"
+   - 5명 SMTP 일시 거부 → retry_count=1, status="pending"
+3. 1분 후 mass_mail.status="sending" (recipients 5건 pending)
+4. 3분 배치 cycle 진입
+   - SELECT pending recipient 5건
+   - 각 recipient 30초 룰 적용 (시도 → 실패 시 30초 대기 → 재시도)
+   - 시도 결과 분기:
+     · 메일함 복구된 4명 → status="sent"
+     · 진짜 무효 1명 → 30초 룰로 retry_count 3 도달 → status="failed", errorMessage 기록
+5. 모든 recipients 종결 (pending 0건)
+   → maybePromoteToSent 가 mass_mail.status="sent" 로 자동 전이
+6. 검증
+   - mass_mail.sent_success = 99
+   - mass_mail.sent_failed  = 1
+   - DB: failed recipient 1건 (status='failed', error_message='550 mailbox not found')
+```
+
+### 8.7 (v0.3 신규) 좀비 자동 복구
+
+```
+1. mass_mail.status="sending" 상태에서 PM2 process kill
+2. 서버 재시작 (instrumentation.ts 자동 실행)
+3. 배치 cycle 진입 (3분 후 또는 즉시 다음 cycle)
+4. 좀비 감지: status='sending' AND updated_at < NOW - 10min
+   → status='send_failed' 로 승격
+5. 다음 cycle 에서 send_failed → 어떻게? (현 설계에선 send_failed 는 수동 retry 대상)
+   ※ 이 부분은 v0.3 에서는 좀비 감지까지만 자동화. 운영자가 [再送信] 클릭 필요.
+   ※ 향후 enhancement: send_failed 도 retry_count 기반 자동 재시도 가능.
+```
+
+### 8.8 (v0.3 신규) 失敗確認 UI 흐름
+
+```
+1. 대량메일 목록 화면 진입
+2. row #13 의 sent_failed=5 → [失敗確認] 버튼 노출
+3. 버튼 클릭 → GET /api/admin/mass-mails/13 호출
+4. 응답 mapped.failedRecipients[5건] 추출
+5. 모달 팝업 렌더링 — 표 형태로 5건 표시
+6. 각 row: 이메일 / 이름 / role / 실패사유(errorMessage) / 마지막시도시각
+```
+
 ---
 
 ## 9. 미결 사항 & 대응
@@ -592,7 +1009,11 @@ prisma/
 | 1 | SUPER_ADMIN/ADMIN 구분 | 둘 다 ADMIN으로 통합 발송 | QSP 측 authCd 추가 후 분리 |
 | 2 | 첨부파일 발송 | 미포함 (본문만) | PO 확정 후 직접 첨부 or 링크 |
 | 3 | 시공점 발송 | 스킵 + 경고 로그 | Seko API 확보 후 추가 |
-| 4 | 서버 기동 시 sending 잔존 | 수동 대응 (관리자 retry) | 자동 복구 검토 |
+| ~~4~~ | ~~서버 기동 시 sending 잔존~~ | ~~수동 대응 (관리자 retry)~~ | **✅ v0.3 자동 배치로 해결 (좀비 감지 + 자동 승격)** |
+| 5 | (v0.3 신규) 인스턴스 다중화 | PM2 single instance + isRunning flag | cluster/K8s 시 분산 락 (pg_advisory_lock 등) 도입 |
+| 6 | (v0.3 신규) send_failed 자동 재시도 | 현재는 수동 [再送信] 만 | 운영 데이터 보고 retry_count 기반 자동화 검토 |
+| 7 | (v0.3 신규) 失敗者 CSV 출력 | 모달 표시만 | 운영 피드백 후 CSV 다운로드 추가 |
+| 8 | (v0.3 신규) 失敗理由 일본어 매핑 | 원문 errorMessage 그대로 노출 | 운영자 친화 매핑 테이블 도입 검토 |
 
 ---
 
@@ -602,3 +1023,5 @@ prisma/
 |---------|------|---------|--------|
 | 0.1 | 2026-04-16 | Initial draft (Plan 0.3 기반) | CK |
 | 0.2 | 2026-04-17 | Gap 분석 반영 — §2.1 collectRecipients 시그니처에 loginId 파라미터 추가, §3.2 bulk INSERT + status 전이를 $transaction 원자화로 명시 | CK |
+| 0.3 | 2026-04-19 | **Plan v0.4 반영 — 3분 배치 자동 복구 + retry_count 컬럼 + 失敗確認 UI**. §1.2 retry_count 컬럼 추가. §3.2 sendLoop 에 30초 룰 + retry_count 증분 명세. §4.4 GET 응답에 failedRecipients 배열 추가 (신규 API 라우트 없음). §4.6 자동 배치 모듈 신규 섹션 추가 (instrumentation.ts + auto-retry-batch.ts). §5 환경변수 4개 추가 (BATCH_INTERVAL_MS, ZOMBIE_THRESHOLD_MS 등). §6 file structure 갱신. §7 Phase 1/2 구분. §8.6~8.8 테스트 시나리오 3개 추가. §9 미결사항 #4 해결 표시 + #5~#8 신규. | CK |
+| 0.4 | 2026-04-19 | **PR #62 리뷰 대응 + 동시성 보호 강화 (Plan v0.5 연동)**. §3.5 동시성 3단 방어 구조 확장 (inFlightMassMails + runWithInFlightGuard + globalThis HMR 안전). §4.6.2 maybePromoteToSent 2-step updateMany (sentAt TOCTOU 제거). §4.6.3 sendLoop SMTP/DB 분리 try/catch + orphan_send 마킹 + heartbeat 시간 기반 60초. §4.6.4 좀비 감지에 in-flight 가드 + take:200 상한. next.config.ts Edge runtime webpack IgnorePlugin 추가 (instrumentation.ts → auto-retry-batch → prisma/mariadb 체인 Edge 번들 resolve 실패 해결). | CK |
