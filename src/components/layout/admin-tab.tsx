@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/axios";
-import type { MenuApiItem, MenuTreeItem, MenuTreeResponse } from "@/components/admin/menus/menus-types";
+import { useMenuTree } from "@/hooks/use-menu-tree";
+import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
 // 하드코딩 fallback — API 로딩 전 또는 실패 시 표시
 const FALLBACK_TABS = [
@@ -40,16 +39,7 @@ function toTabs(menuTree: MenuTreeItem[]) {
 export function AdminTab() {
   const pathname = usePathname();
 
-  const { data: menuTree, isError, error } = useQuery<MenuTreeItem[]>({
-    queryKey: ["menus", true],
-    queryFn: async () => {
-      const res = await api.get<MenuTreeResponse>("/menus", {
-        params: { activeOnly: "true" },
-      });
-      return res.data.data;
-    },
-    staleTime: 5 * 60_000,
-  });
+  const { data: menuTree, isError, error } = useMenuTree();
 
   if (isError) {
     console.error("[AdminTab] 메뉴 API 조회 실패:", error);

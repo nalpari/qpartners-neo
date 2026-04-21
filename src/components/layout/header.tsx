@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useSyncExternalStore } from "react";
+import { useMemo, useState, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,35 @@ import { performLogout } from "@/lib/auth-client";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
+import { useMenuTree } from "@/hooks/use-menu-tree";
+import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
+
+/** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
+const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+  { menuCode: "CONTENT", menuName: "コンテンツ", pageUrl: "/contents" },
+  { menuCode: "INQUIRY", menuName: "お問い合わせ", pageUrl: "/inquiry" },
+];
+
+/** 1-Level 메뉴에서 Gnb 노출 후보만 필터 (ADMIN 은 admin-tab 이 담당) */
+function filterGnbMenus(
+  tree: MenuTreeItem[] | undefined,
+  mode: "pc" | "mobile",
+): { menuCode: string; menuName: string; pageUrl: string }[] {
+  if (!tree || tree.length === 0) return [];
+  const visibleKey = mode === "pc" ? "showInTopNav" : "showInMobile";
+  return tree
+    .filter((m): m is MenuTreeItem & { pageUrl: string } =>
+      m.isActive
+      && m[visibleKey]
+      && m.menuCode !== "ADMIN"
+      && typeof m.pageUrl === "string"
+      && m.pageUrl.length > 0
+      && m.pageUrl.startsWith("/")
+      && !m.pageUrl.startsWith("//"),
+    )
+    .sort((a: MenuApiItem, b: MenuApiItem) => a.sortOrder - b.sortOrder)
+    .map((m) => ({ menuCode: m.menuCode, menuName: m.menuName, pageUrl: m.pageUrl }));
+}
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
@@ -109,6 +138,17 @@ export function Gnb() {
   const showRelatedSites = relatedSites.length > 0;
   const isLoggingOut = useRef(false);
 
+  // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
+  const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
+  const pcMenus = useMemo(() => {
+    const filtered = filterGnbMenus(menuTree, "pc");
+    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
+  }, [menuTree]);
+  const mobileMenus = useMemo(() => {
+    const filtered = filterGnbMenus(menuTree, "mobile");
+    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
+  }, [menuTree]);
+
   const handleLogout = async () => {
     if (isLoggingOut.current) return;
     isLoggingOut.current = true;
@@ -157,24 +197,17 @@ export function Gnb() {
           {/* PC 메뉴 영역 */}
           <nav className="hidden lg:flex flex-1 items-center self-stretch">
             <ul className="flex items-center gap-[54px] pl-[60px]">
-              <li>
-                <Link
-                  href="/contents"
-                  transitionTypes={["fade"]}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
-                >
-                  コンテンツ
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/inquiry"
-                  transitionTypes={["fade"]}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
-                >
-                  お問い合わせ
-                </Link>
-              </li>
+              {pcMenus.map((menu) => (
+                <li key={menu.menuCode}>
+                  <Link
+                    href={menu.pageUrl}
+                    transitionTypes={["fade"]}
+                    className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
+                  >
+                    {menu.menuName}
+                  </Link>
+                </li>
+              ))}
               {showRelatedSites && (
                 <li className="relative">
                   <button
@@ -465,59 +498,35 @@ export function Gnb() {
 
           {/* 네비게이션 */}
           <nav className="flex flex-col flex-1">
-            {/* コンテンツ */}
-            <Link
-              href="/contents"
-              transitionTypes={["fade"]}
-              className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
-                コンテンツ
-              </span>
-              <svg
-                width="6"
-                height="10"
-                viewBox="0 0 6 10"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+            {/* 동적 메뉴 (API 기반, fallback 포함) */}
+            {mobileMenus.map((menu) => (
+              <Link
+                key={menu.menuCode}
+                href={menu.pageUrl}
+                transitionTypes={["fade"]}
+                className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
+                onClick={() => setIsMobileMenuOpen(false)}
               >
-                <path
-                  d="M1 9L5 5L1 1"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
-
-            {/* お問い合わせ */}
-            <Link
-              href="/inquiry"
-              transitionTypes={["fade"]}
-              className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
-                お問い合わせ
-              </span>
-              <svg
-                width="6"
-                height="10"
-                viewBox="0 0 6 10"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M1 9L5 5L1 1"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
+                <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
+                  {menu.menuName}
+                </span>
+                <svg
+                  width="6"
+                  height="10"
+                  viewBox="0 0 6 10"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M1 9L5 5L1 1"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </Link>
+            ))}
 
             {/* 関連サイト — 토글 (회원유형별 노출) */}
             {showRelatedSites && (
