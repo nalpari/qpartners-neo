@@ -8,6 +8,8 @@ import api from "@/lib/axios";
 import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { canModifyClient } from "@/lib/auth-client";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsDetailInfo } from "./contents-detail-info";
@@ -103,7 +105,16 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
   const canModify = data ? canModifyClient(user, data) : false;
 
+  // RBAC Phase 3 §버튼 정책: 작성자 가드(canModify) 통과한 버튼에 한해 메뉴 권한 alert 가드.
+  // CONTENT menuCode 의 canUpdate/canDelete 가 false 면 클릭 시 "権限がありません。"
+  // (현재 IS_STUB=true 동안 모두 true 반환 → 동작 변화 없음. BE 연결 시 자동 활성)
+  const { canUpdate, canDelete } = useMenuPermission(MENU.CONTENT);
+
   const handleDelete = () => {
+    if (!canDelete) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "本当に削除しますか？",
@@ -131,6 +142,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   };
 
   const handleEdit = () => {
+    if (!canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     router.push(`/contents/${contentId}/edit`);
   };
 

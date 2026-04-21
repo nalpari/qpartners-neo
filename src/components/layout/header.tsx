@@ -12,12 +12,13 @@ import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 import { useMenuTree } from "@/hooks/use-menu-tree";
+import { MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
 /** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
 const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
-  { menuCode: "CONTENT", menuName: "コンテンツ", pageUrl: "/contents" },
-  { menuCode: "INQUIRY", menuName: "お問い合わせ", pageUrl: "/inquiry" },
+  { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
+  { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
 ];
 
 /** 1-Level 메뉴에서 Gnb 노출 후보만 필터 (ADMIN 은 admin-tab 이 담당) */
@@ -31,7 +32,7 @@ function filterGnbMenus(
     .filter((m): m is MenuTreeItem & { pageUrl: string } =>
       m.isActive
       && m[visibleKey]
-      && m.menuCode !== "ADMIN"
+      && m.menuCode !== MENU.ADMIN
       && typeof m.pageUrl === "string"
       && m.pageUrl.length > 0
       && m.pageUrl.startsWith("/")

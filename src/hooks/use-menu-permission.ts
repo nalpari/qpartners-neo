@@ -97,3 +97,42 @@ export function canPerform(perm: MenuPermission, action: PermissionAction): bool
       return perm.canDelete;
   }
 }
+
+/**
+ * 여러 menuCode 를 동적으로 체크해야 할 때 사용 — 단일 useQuery 캐시를 공유.
+ * React hooks rule 상 loop 로 `useMenuPermission` 여러 번 호출 불가 → 이 훅으로 해결.
+ *
+ * 사용 예 (AdminTab 권한 기반 필터링):
+ * ```tsx
+ * const { has } = useMenuPermissionMap();
+ * const visibleTabs = tabs.filter((t) => has(t.menuCode));
+ * ```
+ *
+ * IS_STUB 상태: 항상 true. BE 연결 시: 응답에 없는 menuCode 는 false (fail-closed).
+ */
+export function useMenuPermissionMap() {
+  const { data, isLoading } = useQuery<MePermissionsData>({
+    queryKey: ["me", "permissions"],
+    queryFn: fetchMyPermissions,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const has = (menuCode: string, action: PermissionAction = "read"): boolean => {
+    if (IS_STUB) return true;
+    const entry = data?.menus.find((m) => m.menuCode === menuCode);
+    if (!entry) return false;
+    switch (action) {
+      case "read":
+        return entry.canRead;
+      case "create":
+        return entry.canCreate;
+      case "update":
+        return entry.canUpdate;
+      case "delete":
+        return entry.canDelete;
+    }
+  };
+
+  return { has, isLoading };
+}
