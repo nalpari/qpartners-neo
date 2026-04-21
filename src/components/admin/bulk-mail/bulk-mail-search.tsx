@@ -40,6 +40,10 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
     });
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
+  };
+
   const handleReset = () => {
     setTitle("");
     setAuthorSearchType("name");
@@ -62,7 +66,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={title} onChange={setTitle} placeholder="" className="w-full" />
+              <InputBox value={title} onChange={setTitle} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
             </div>
           </div>
 
@@ -91,6 +95,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
                 <InputBox
                   value={authorQuery}
                   onChange={setAuthorQuery}
+                  onKeyDown={handleKeyDown}
                   placeholder=""
                   className="flex-1 min-w-[120px]"
                 />

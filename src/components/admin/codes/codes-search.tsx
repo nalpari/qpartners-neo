@@ -26,7 +26,15 @@ export function CodesSearch({
             </span>
           </div>
           <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-            <InputBox value={keyword} onChange={onKeywordChange} placeholder="" className="w-full" />
+            <InputBox
+              value={keyword}
+              onChange={onKeywordChange}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) onSearch();
+              }}
+              placeholder=""
+              className="w-full"
+            />
           </div>
         </div>
       </div>
