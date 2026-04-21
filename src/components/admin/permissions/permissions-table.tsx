@@ -1,13 +1,25 @@
 "use client";
 
-// Design Ref: §4, §5 — codes-header-table 인라인 편집 패턴 참조
+// Design Ref: codes-header-table 인라인 편집 패턴 그대로 적용
+//   - 더블클릭 → 셀이 input 으로 전환
+//   - 다른 영역 클릭 → 편집 취소·원복
+//   - 다른 셀 더블클릭 → 이전 편집 취소 + 새 셀 편집 시작
+//   - 상단 保存 → 현재 편집 중인 셀 단건 저장
+//   - input 입력 시 focus 유지 (uncontrolled defaultValue + ref)
 
-import { useState, useRef, useEffect } from "react";
-import { flushSync } from "react-dom";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import type { ColDef, ICellRendererParams, RowClassParams } from "ag-grid-community";
+import type {
+  ColDef,
+  ICellRendererParams,
+  RowClassParams,
+  CellDoubleClickedEvent,
+  CellClickedEvent,
+  GridApi,
+  GridReadyEvent,
+} from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
@@ -16,50 +28,78 @@ import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type { RoleApiItem, RolesResponse, PermissionItem } from "./permissions-types";
 import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody } from "./permissions-types";
 
-// --- AG Grid Context 타입 (Design §4.1) ---
-interface PermissionGridContext {
-  [key: string]: unknown;
-  newRowFieldsRef: React.RefObject<{ code: string; name: string; description: string }>;
-  onNewRowFieldChange: (field: string, value: string) => void;
-  onCommitField: (roleCode: string, field: string, value: string) => void;
-  onStartEdit: (roleCode: string, field: string) => void;
-  onFinishEdit: (roleCode: string, field: string, value: string) => void;
-}
+// 편집 불가 필드 — roleCode(첫번째 컬럼) + isActive(별도 select 흐름) + Available Menu Setting
+const NON_EDITABLE_FIELDS = new Set(["roleCode", "isActive"]);
+
+const centerCellStyle = CENTER_CELL_STYLE;
 
 // AG Grid row 매칭 안정화 — id 기반 매칭으로 activeOnly 토글/refetch 시 row identity 유지
 const getRowIdFn = (p: { data: PermissionItem }) => p.data.id;
 
-// --- CellInput (codes-header-table 패턴) ---
+// AG Grid 셀 키보드 네비게이션이 input 타이핑(화살표/Home/End 등)을 가로채지 않도록
+// 편집 가능 컬럼에 적용. input/textarea focus 시에는 모든 키를 input 이 처리.
+function suppressKeyboardWhenEditing(params: { event: KeyboardEvent }) {
+  const target = params.event.target as HTMLElement | null;
+  if (!target) return false;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+}
+
+/**
+ * 셀 인라인 편집용 input — defaultValue(uncontrolled) + ref 기반 변경 추적으로
+ * 부모 setState 재렌더 차단(focus 유지). autoFocus + select 로 진입 시 전체 선택.
+ */
 function CellInput({
   defaultValue,
   placeholder,
   onChange,
-  onBlur,
-  autoFocus,
+  onKeyDown,
 }: {
   defaultValue: string;
   placeholder: string;
-  onChange?: (value: string) => void;
-  onBlur?: (value: string) => void;
-  autoFocus?: boolean;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
 }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
   return (
     <input
+      ref={ref}
       type="text"
       defaultValue={defaultValue}
-      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-      onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        // 화살표/Home/End 등 커서 이동 키는 AG Grid 셀 네비게이션이 가로채지 않도록 차단
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+          e.stopPropagation();
+          return;
+        }
+        onKeyDown?.(e);
+      }}
       onMouseDown={(e) => e.stopPropagation()}
-      autoFocus={autoFocus}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       placeholder={placeholder}
-      className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
+      className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
     />
   );
 }
 
+// --- AG Grid Context 타입 ---
+interface PermissionGridContext {
+  [key: string]: unknown;
+  newRowFieldsRef: React.RefObject<{ code: string; name: string; description: string }>;
+  onNewRowFieldChange: (field: string, value: string) => void;
+  onEditFieldChange: (field: string, value: string) => void;
+  onActiveChange: (item: PermissionItem, value: "Y" | "N") => void;
+}
+
 // --- Cell Renderers (파일 스코프 — AG Grid 리렌더링 최적화) ---
 
-// Design Ref: §5.6 — 신규: CellInput, 기존: Read-only 텍스트
+// 첫번째 컬럼 — 신규: input, 기존: 텍스트 (편집 불가)
 function CodeRenderer(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
   if (!data) return null;
@@ -80,83 +120,54 @@ function CodeRenderer(params: ICellRendererParams<PermissionItem>) {
   );
 }
 
-// Design Ref: §6 — 신규: CellInput(ref/onChange), 기존: 텍스트 → 더블클릭 → input(onBlur 커밋)
-function NameRenderer(params: ICellRendererParams<PermissionItem>) {
+// 일반 편집 가능 컬럼 — 신규: input(newRowRef), 편집중: input(editValuesRef), 그외: 텍스트
+function EditableTextRendererFn(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
-  if (!data) return null;
+  const field = params.colDef?.field;
+  if (!data || !field) return null;
   const ctx = params.context as PermissionGridContext;
   if (data.isNew) {
+    // 신규행 필드 키 매핑: roleName → name, description → description
+    const refKey = field === "roleName" ? "name" : field === "description" ? "description" : null;
+    if (!refKey) return null;
     return (
       <CellInput
-        defaultValue={ctx.newRowFieldsRef.current.name ?? ""}
-        placeholder="権限名入力"
-        onChange={(v) => ctx.onNewRowFieldChange("name", v)}
+        defaultValue={ctx.newRowFieldsRef.current[refKey] ?? ""}
+        placeholder={refKey === "name" ? "権限名入力" : "説明入力"}
+        onChange={(v) => ctx.onNewRowFieldChange(refKey, v)}
       />
     );
   }
-  if (data.editingField === "roleName") {
+  if (data.editingField === field) {
     return (
       <CellInput
-        defaultValue={data.roleName}
-        placeholder="権限名入力"
-        autoFocus
-        onBlur={(v) => ctx.onFinishEdit(data.roleCode, "roleName", v)}
+        defaultValue={String(params.value ?? "")}
+        placeholder=""
+        onChange={(v) => ctx.onEditFieldChange(field, v)}
       />
     );
   }
   return (
-    <span
-      className="font-['Noto_Sans_JP'] text-[14px] text-[#555] cursor-pointer w-full block"
-      onDoubleClick={() => ctx.onStartEdit(data.roleCode, "roleName")}
-    >
-      {data.roleName || "\u00A0"}
+    <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">
+      {String(params.value ?? "") || "\u00A0"}
     </span>
   );
 }
 
-function DescRenderer(params: ICellRendererParams<PermissionItem>) {
-  const data = params.data;
-  if (!data) return null;
-  const ctx = params.context as PermissionGridContext;
-  if (data.isNew) {
-    return (
-      <CellInput
-        defaultValue={ctx.newRowFieldsRef.current.description ?? ""}
-        placeholder="説明入力"
-        onChange={(v) => ctx.onNewRowFieldChange("description", v)}
-      />
-    );
-  }
-  if (data.editingField === "description") {
-    return (
-      <CellInput
-        defaultValue={data.description}
-        placeholder="説明入力"
-        autoFocus
-        onBlur={(v) => ctx.onFinishEdit(data.roleCode, "description", v)}
-      />
-    );
-  }
-  return (
-    <span
-      className="font-['Noto_Sans_JP'] text-[14px] text-[#555] cursor-pointer w-full block"
-      onDoubleClick={() => ctx.onStartEdit(data.roleCode, "description")}
-    >
-      {data.description || "\u00A0"}
-    </span>
-  );
-}
-
-// Design Ref: §6 — 신규: 미표시, 기존: select Y/N
+// 신규: 미표시 / 기존: select Y/N (즉시 commit, 별도 흐름)
 function ActiveRenderer(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
   if (!data || data.isNew) return null;
   const ctx = params.context as PermissionGridContext;
   return (
-    <div className="relative w-[100px]">
+    <div
+      className="relative w-[100px]"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <select
         value={data.isActive}
-        onChange={(e) => ctx.onCommitField(data.roleCode, "isActive", e.target.value)}
+        onChange={(e) => ctx.onActiveChange(data, e.target.value as "Y" | "N")}
         className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010]"
       >
         <option value="Y">Y</option>
@@ -173,68 +184,26 @@ function ActiveRenderer(params: ICellRendererParams<PermissionItem>) {
   );
 }
 
-// Design Ref: §6 — 신규: 미표시, 기존: Menu 버튼
+// 신규: 미표시 / 기존: Menu 버튼
 function MenuRenderer(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
   if (!data || data.isNew) return null;
   const openPopup = usePopupStore.getState().openPopup;
   return (
-    <Button
-      variant="outline"
-      onClick={() => openPopup("permission-menu", { roleCode: data.roleCode, roleName: data.roleName })}
-      className="!h-[38px] !min-w-[80px] !px-4 !text-[13px]"
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
-      Menu
-    </Button>
+      <Button
+        variant="outline"
+        onClick={() => openPopup("permission-menu", { roleCode: data.roleCode, roleName: data.roleName })}
+        className="!h-[38px] !min-w-[80px] !px-4 !text-[13px]"
+      >
+        Menu
+      </Button>
+    </div>
   );
 }
-
-// --- 컬럼 정의 ---
-const columnDefs: ColDef<PermissionItem>[] = [
-  {
-    headerName: "権限コード",
-    field: "roleCode",
-    flex: 1,
-    cellRenderer: CodeRenderer,
-    cellStyle: CENTER_CELL_STYLE,
-    headerClass: "ag-header-cell-center",
-    suppressKeyboardEvent: () => true,
-  },
-  {
-    headerName: "権限名",
-    field: "roleName",
-    flex: 1.5,
-    cellRenderer: NameRenderer,
-    headerClass: "ag-header-cell-center",
-    suppressKeyboardEvent: () => true,
-  },
-  {
-    headerName: "権限説明",
-    field: "description",
-    flex: 2,
-    cellRenderer: DescRenderer,
-    headerClass: "ag-header-cell-center",
-    suppressKeyboardEvent: () => true,
-  },
-  {
-    headerName: "使用可否",
-    field: "isActive",
-    flex: 0.8,
-    cellRenderer: ActiveRenderer,
-    cellStyle: CENTER_CELL_STYLE,
-    headerClass: "ag-header-cell-center",
-  },
-  {
-    headerName: "Available Menu Setting",
-    // field: "roleCode" 와 colId 충돌 회피 — 別 컬럼이 같은 field 를 사용하므로 colId 명시
-    field: "roleCode",
-    colId: "menuSetting",
-    flex: 1,
-    cellRenderer: MenuRenderer,
-    cellStyle: CENTER_CELL_STYLE,
-    headerClass: "ag-header-cell-center",
-  },
-];
 
 // --- 메인 컴포넌트 ---
 export function PermissionsTable() {
@@ -243,17 +212,38 @@ export function PermissionsTable() {
 
   const [activeOnly, setActiveOnly] = useState(false);
   const [newRow, setNewRow] = useState(false);
-  const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({ code: "", name: "", description: "" });
-  const [editedRows, setEditedRows] = useState<Record<string, Partial<PermissionItem>>>({});
+  const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({
+    code: "",
+    name: "",
+    description: "",
+  });
 
-  // editedRows 의 ref 미러 — handleSave 에서 blur(flushSync) 직후
-  // stale 클로저가 아닌 최신 값을 읽기 위함. flushSync 가 sync re-render 를 유발하므로
-  // 이 useEffect 가 동기적으로 실행되어 ref 가 갱신된 뒤 handleSave 가 ref 를 읽는다.
-  // (ref 할당은 setState 가 아니므로 react-hooks/set-state-in-effect 룰에 걸리지 않음)
-  const editedRowsRef = useRef(editedRows);
+  // codes-header-table 패턴: 단일 cell 편집 state + 임시 입력값 ref
+  // 입력 중 부모 setState 미발생 → focus 유지 (저장 시점에만 ref 에서 읽어감)
+  const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
+  const editValuesRef = useRef<Record<string, string>>({});
+
+  // AG Grid API ref + editingCell 변화 시 강제 cell refresh
+  // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
+  //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
+  const apiRef = useRef<GridApi<PermissionItem> | null>(null);
+  const prevEditingRowIdRef = useRef<string | null>(null);
+  const handleGridReady = useCallback((event: GridReadyEvent<PermissionItem>) => {
+    apiRef.current = event.api;
+  }, []);
   useEffect(() => {
-    editedRowsRef.current = editedRows;
-  }, [editedRows]);
+    const api = apiRef.current;
+    if (!api) return;
+    // 편집 셀 전환 시 이전 행 + 현재 행만 refresh — 전체 그리드 재렌더 회피
+    const ids = new Set<string>();
+    if (prevEditingRowIdRef.current) ids.add(prevEditingRowIdRef.current);
+    if (editingCell?.rowId) ids.add(editingCell.rowId);
+    const rowNodes = Array.from(ids)
+      .map((id) => api.getRowNode(id))
+      .filter((node): node is NonNullable<typeof node> => node != null);
+    if (rowNodes.length) api.refreshCells({ rowNodes, force: true });
+    prevEditingRowIdRef.current = editingCell?.rowId ?? null;
+  }, [editingCell]);
 
   // --- API 조회 (Plan R-01) ---
   const { data: roles = [], isError } = useQuery<RoleApiItem[]>({
@@ -267,19 +257,29 @@ export function PermissionsTable() {
     staleTime: 60_000,
   });
 
-  // 변환 + 수정값 병합
-  const items: PermissionItem[] = roles.map(toPermissionItem);
-  const mergedItems = items.map((item) => ({
-    ...item,
-    ...editedRows[item.roleCode],
-  }));
-  const rowData: PermissionItem[] = newRow
-    ? [{ id: "new", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true }, ...mergedItems]
-    : mergedItems;
+  // 변환 + editingField 주입 — items 를 useMemo 로 안정화하여 rowData 캐싱 무효화 방지
+  const items: PermissionItem[] = useMemo(
+    () => roles.map(toPermissionItem),
+    [roles],
+  );
+  const rowData: PermissionItem[] = useMemo(() => {
+    const mapped = items.map((item) => {
+      if (editingCell && item.id === editingCell.rowId) {
+        return { ...item, editingField: editingCell.field as "roleName" | "description" };
+      }
+      return item;
+    });
+    return newRow
+      ? [
+          { id: "new", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
+          ...mapped,
+        ]
+      : mapped;
+  }, [items, editingCell, newRow]);
 
   // --- Mutations ---
 
-  // Plan R-04: POST /api/roles — 권한 추가
+  // 권한 추가
   const createMutation = useMutation({
     mutationFn: async (body: ReturnType<typeof toCreateRoleBody>) => {
       const res = await api.post("/roles", body);
@@ -301,12 +301,9 @@ export function PermissionsTable() {
     },
   });
 
-  // Plan R-05: PUT /api/roles/{roleCode} — 권한 수정
-  // 다건 저장은 handleSave 에서 Promise.allSettled 로 일괄 처리하므로
-  // 개별 mutation 의 onSuccess 는 invalidate 만, 알림/setEditedRows 는 호출측 책임.
+  // 권한 수정 (단건)
   const updateMutation = useMutation({
     mutationFn: async ({ roleCode, body }: { roleCode: string; body: ReturnType<typeof toUpdateRoleBody> }) => {
-      // path 안전성 — 호출측에서 검증된 roleCode 도 인코딩하여 path 왜곡 방어
       const res = await api.put(`/roles/${encodeURIComponent(roleCode)}`, body);
       return res.data;
     },
@@ -314,16 +311,33 @@ export function PermissionsTable() {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
     },
     onError: (error: unknown) => {
-      // 단일 alert 은 handleSave 에서 집계 — 여기서는 로깅만 (axios 객체 전체 노출 방지)
       const status = isAxiosError(error) ? error.response?.status : undefined;
       console.error(`[PUT /api/roles] 권한 수정 실패: status=${status ?? "unknown"}`);
     },
   });
 
-  // --- 핸들러 ---
+  // --- 편집 state 핸들러 ---
+
+  const handleCellEditStart = useCallback((rowId: string, field: string) => {
+    if (rowId.startsWith("new")) return;
+    editValuesRef.current = {};
+    setEditingCell({ rowId, field });
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    setEditingCell(null);
+    editValuesRef.current = {};
+  }, []);
+
+  const handleEditFieldChange = useCallback((field: string, value: string) => {
+    editValuesRef.current[field] = value;
+  }, []);
+
+  // --- 신규행/저장 핸들러 ---
 
   const handleAdd = () => {
     if (newRow) return;
+    handleEditCancel();
     newRowFieldsRef.current = { code: "", name: "", description: "" };
     setNewRow(true);
   };
@@ -333,9 +347,32 @@ export function PermissionsTable() {
     newRowFieldsRef.current = { code: "", name: "", description: "" };
   };
 
-  // Design Ref: §5.4 — 신규/수정 분기
-  // CRITICAL: 다건 수정은 Promise.allSettled 로 일괄 처리 + 단일 alert + 실패 건만 editedRows 유지
-  const handleSave = async () => {
+  // 활성 토글 — 즉시 PUT (편집 모드 무관)
+  const handleActiveChange = useCallback(async (item: PermissionItem, value: "Y" | "N") => {
+    if (item.isNew) return;
+    const merged: PermissionItem = { ...item, isActive: value };
+    try {
+      await updateMutation.mutateAsync({
+        roleCode: item.roleCode,
+        body: toUpdateRoleBody(merged),
+      });
+      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+    } catch (error: unknown) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`[PermissionsTable] 활성 토글 실패: status=${status ?? "unknown"}`);
+      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+    }
+  }, [updateMutation, openAlert]);
+
+  const onNewRowFieldChange = useCallback((field: string, value: string) => {
+    const ref = newRowFieldsRef.current as Record<string, string>;
+    ref[field] = value;
+  }, []);
+
+  // 통합 저장 — 신규행 등록 OR 단일 셀 편집 commit
+  // useCallback 으로 안정화하여 handleKeyDown deps 에 정상 포함 (stale closure 회피)
+  const handleSave = useCallback(async () => {
+    // 신규행 저장
     if (newRow) {
       const fields = newRowFieldsRef.current;
       if (!fields.code.trim()) {
@@ -350,97 +387,129 @@ export function PermissionsTable() {
       return;
     }
 
-    // CellInput 이 defaultValue + onBlur 패턴이라 입력 직후 Save 시 미커밋 위험
-    // → 활성 input blur 강제로 onBlur 핸들러를 트리거하여 editedRows 에 반영
-    // flushSync 로 setEditedRows 즉시 commit + editedRowsRef 동기화 보장 (stale closure 회피)
-    if (typeof document !== "undefined") {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) {
-        flushSync(() => { active.blur(); });
-      }
+    // 편집 중인 셀 저장
+    if (!editingCell) return;
+    const editValues = editValuesRef.current;
+    const field = editingCell.field;
+    if (editValues[field] === undefined) {
+      // 변경 없음 → 편집만 종료
+      handleEditCancel();
+      return;
     }
 
-    // editedRows 클로저 대신 ref 에서 최신값 읽기
-    const entries = Object.entries(editedRowsRef.current);
-    if (entries.length === 0) return;
+    const original = items.find((i) => i.id === editingCell.rowId);
+    if (!original) {
+      handleEditCancel();
+      return;
+    }
 
-    const validEntries = entries.flatMap(([roleCode, changes]) => {
-      const original = items.find((i) => i.roleCode === roleCode);
-      if (!original) return [];
-      const merged = { ...original, ...changes } as PermissionItem;
-      return [{ roleCode, body: toUpdateRoleBody(merged) }];
-    });
-    if (validEntries.length === 0) return;
+    const merged: PermissionItem = {
+      ...original,
+      [field]: editValues[field],
+    };
 
-    const results = await Promise.allSettled(
-      validEntries.map((e) => updateMutation.mutateAsync({ roleCode: e.roleCode, body: e.body })),
-    );
-    const failedRoleCodes = results
-      .map((r, i) => (r.status === "rejected" ? validEntries[i].roleCode : null))
-      .filter((x): x is string => x !== null);
-
-    if (failedRoleCodes.length === 0) {
-      setEditedRows({});
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } else {
-      // 실패 건만 editedRows 에 유지 — 사용자가 재시도 가능
-      setEditedRows((prev) =>
-        Object.fromEntries(Object.entries(prev).filter(([k]) => failedRoleCodes.includes(k))),
-      );
-      openAlert({
-        type: "alert",
-        message: `${failedRoleCodes.length}件の保存に失敗しました。`,
-        confirmLabel: "確認",
+    try {
+      await updateMutation.mutateAsync({
+        roleCode: original.roleCode,
+        body: toUpdateRoleBody(merged),
       });
+      handleEditCancel();
+      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+    } catch (error: unknown) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
+      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     }
-  };
+  }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel]);
 
-  const onNewRowFieldChange = (field: string, value: string) => {
-    const ref = newRowFieldsRef.current as Record<string, string>;
-    ref[field] = value;
-  };
+  // 키보드 — Enter 저장 / Escape 취소 (handleSave useCallback 으로 stale closure 회피)
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleSave();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleEditCancel();
+    }
+  }, [handleSave, handleEditCancel]);
 
-  // 통합 commit 핸들러 — onCommitField(select)/onFinishEdit(text blur) 모두 사용
-  // editingField 를 항상 undefined 로 리셋하여 편집 모드 종료 보장
-  const onCommitField = (roleCode: string, field: string, value: string) => {
-    setEditedRows((prev) => {
-      const existing = prev[roleCode] ?? {};
-      return {
-        ...prev,
-        [roleCode]: {
-          ...existing,
-          editingField: undefined,
-          [field]: value,
-        },
-      };
-    });
-  };
+  // --- AG Grid 이벤트 ---
+  const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<PermissionItem>) => {
+    const data = event.data;
+    const field = event.colDef.field;
+    const colId = event.colDef.colId;
+    if (!data || data.isNew || !field) return;
+    if (NON_EDITABLE_FIELDS.has(field)) return;
+    if (colId === "menuSetting") return; // Available Menu Setting 컬럼 제외
+    handleCellEditStart(data.id, field);
+  }, [handleCellEditStart]);
 
-  const getRowClass = (params: RowClassParams<PermissionItem>) => {
+  const handleCellClicked = useCallback((event: CellClickedEvent<PermissionItem>) => {
+    if (!editingCell) return;
+    const data = event.data;
+    const field = event.colDef.field;
+    if (data?.id === editingCell.rowId && field === editingCell.field) return;
+    handleEditCancel();
+  }, [editingCell, handleEditCancel]);
+
+  const getRowClass = useCallback((params: RowClassParams<PermissionItem>) => {
     if (params.data?.isNew) return "ag-row-new";
     return undefined;
-  };
+  }, []);
 
-  const onStartEdit = (roleCode: string, field: string) => {
-    setEditedRows((prev) => ({
-      ...prev,
-      [roleCode]: { ...prev[roleCode], editingField: field as "roleName" | "description" },
-    }));
-  };
-
-  // 텍스트 편집 blur 후 commit — 통합 핸들러로 위임
-  const onFinishEdit = (roleCode: string, field: string, value: string) => {
-    onCommitField(roleCode, field, value);
-  };
-
-  // --- context ---
-  const gridContext: PermissionGridContext = {
+  // --- context (useMemo 로 매 렌더 새 객체 방지) ---
+  const gridContext = useMemo<PermissionGridContext>(() => ({
     newRowFieldsRef,
     onNewRowFieldChange,
-    onCommitField,
-    onStartEdit,
-    onFinishEdit,
-  };
+    onEditFieldChange: handleEditFieldChange,
+    onActiveChange: (item, value) => { void handleActiveChange(item, value); },
+    onKeyDown: handleKeyDown,
+  }), [onNewRowFieldChange, handleEditFieldChange, handleActiveChange, handleKeyDown]);
+
+  // --- 컬럼 정의 ---
+  const columnDefs = useMemo<ColDef<PermissionItem>[]>(() => [
+    {
+      headerName: "権限コード",
+      field: "roleCode",
+      flex: 1,
+      cellRenderer: CodeRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "権限名",
+      field: "roleName",
+      flex: 1.5,
+      cellRenderer: EditableTextRendererFn,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: suppressKeyboardWhenEditing,
+    },
+    {
+      headerName: "権限説明",
+      field: "description",
+      flex: 2,
+      cellRenderer: EditableTextRendererFn,
+      headerClass: "ag-header-cell-center",
+      suppressKeyboardEvent: suppressKeyboardWhenEditing,
+    },
+    {
+      headerName: "使用可否",
+      field: "isActive",
+      flex: 0.8,
+      cellRenderer: ActiveRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+    {
+      headerName: "Available Menu Setting",
+      field: "roleCode",
+      colId: "menuSetting",
+      flex: 1,
+      cellRenderer: MenuRenderer,
+      cellStyle: centerCellStyle,
+      headerClass: "ag-header-cell-center",
+    },
+  ], []);
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
@@ -478,12 +547,6 @@ export function PermissionsTable() {
             データの読み込みに失敗しました。
           </p>
         </div>
-      ) : rowData.length === 0 ? (
-        <div className="flex items-center justify-center min-h-[200px]">
-          <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-            データがありません
-          </p>
-        </div>
       ) : (
         <DataGrid<PermissionItem>
           columnDefs={columnDefs}
@@ -492,6 +555,9 @@ export function PermissionsTable() {
           getRowId={getRowIdFn}
           className="permissions-grid"
           context={gridContext}
+          onCellDoubleClicked={handleCellDoubleClicked}
+          onCellClicked={handleCellClicked}
+          onGridReady={handleGridReady}
         />
       )}
     </div>

@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, SelectBox, Checkbox, Button, Spinner } from "@/components/common";
+import { Pagination, SelectBox, Checkbox, Button } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { PAGE_SIZE_OPTIONS_FALLBACK, CENTER_CELL_STYLE } from "@/lib/constants";
@@ -57,7 +57,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
     pageSize: perPage,
   };
 
-  const { data, isLoading, isError } = useQuery<MassMailListResponse>({
+  const { data, isLoading } = useQuery<MassMailListResponse>({
     queryKey: ["mass-mails", queryParams],
     queryFn: () => api.get("/admin/mass-mails", { params: queryParams }).then((r) => r.data),
   });
@@ -175,35 +175,18 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-[400px]">
-            <Spinner size={48} />
-          </div>
-        ) : isError ? (
-          <div className="flex items-center justify-center h-[400px]">
-            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-              メール一覧の取得に失敗しました。ページを更新してください。
-            </p>
-          </div>
-        ) : list.length === 0 ? (
-          <div className="flex items-center justify-center min-h-[200px]">
-            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-              データがありません
-            </p>
-          </div>
-        ) : (
-          <>
-            <DataGrid<MassMailListItem>
-              columnDefs={columnDefs}
-              rowData={list}
-              context={{ router }}
-            />
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-            />
-          </>
+        <DataGrid<MassMailListItem>
+          columnDefs={columnDefs}
+          rowData={list}
+          context={{ router }}
+          loading={isLoading}
+        />
+        {totalPages > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         )}
       </div>
     </div>
