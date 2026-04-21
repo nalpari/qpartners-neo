@@ -72,6 +72,17 @@ export function useCodeHeaders() {
     },
   });
 
+  // Header 수정 mutation
+  // PUT /codes/:id — headerCode 는 서버에서도 수정 불가
+  const headerUpdateMutation = useMutation({
+    mutationFn: async ({ headerId, data }: { headerId: number; data: Record<string, unknown> }) => {
+      return api.put(`/codes/${headerId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["codes", "headers"] });
+    },
+  });
+
   const handleSearch = useCallback(() => setAppliedKeyword(searchKeyword), [searchKeyword]);
 
   const handleReset = useCallback(() => {
@@ -128,5 +139,6 @@ export function useCodeHeaders() {
     handleHeaderNewRowFieldChange,
     // mutation (handleSave에서 사용)
     headerCreateMutation,
+    headerUpdateMutation,
   };
 }

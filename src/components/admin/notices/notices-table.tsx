@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, Button, Spinner } from "@/components/common";
+import { Pagination, Button } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
@@ -249,28 +249,17 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
 
       {/* AG Grid + Pagination */}
       <div className="flex flex-col gap-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-[400px]">
-            <Spinner size={48} />
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex items-center justify-center min-h-[200px]">
-            <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-              データがありません
-            </p>
-          </div>
-        ) : (
-          <>
-            <DataGrid<NoticeListItem>
-              columnDefs={columnDefs}
-              rowData={items}
-            />
-            <Pagination
-              currentPage={page}
-              totalPages={totalPages}
-              onPageChange={onPageChange}
-            />
-          </>
+        <DataGrid<NoticeListItem>
+          columnDefs={columnDefs}
+          rowData={items}
+          loading={isLoading}
+        />
+        {totalPages > 0 && (
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={onPageChange}
+          />
         )}
       </div>
     </div>

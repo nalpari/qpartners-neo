@@ -1,12 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useMemo } from "react";
 import {
   CellStyleModule,
   ClientSideRowModelModule,
   DragAndDropModule,
   ModuleRegistry,
+  RenderApiModule,
   RowAutoHeightModule,
   RowStyleModule,
   themeQuartz,
@@ -15,10 +15,18 @@ import {
   type RowDoubleClickedEvent,
   type CellDoubleClickedEvent,
   type CellClickedEvent,
+  type GridReadyEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
-ModuleRegistry.registerModules([ClientSideRowModelModule, CellStyleModule, RowAutoHeightModule, RowStyleModule, DragAndDropModule]);
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  CellStyleModule,
+  RowAutoHeightModule,
+  RowStyleModule,
+  DragAndDropModule,
+  RenderApiModule,
+]);
 
 const customTheme = themeQuartz.withParams({
   backgroundColor: "transparent",
@@ -54,10 +62,11 @@ interface DataGridProps<T> {
   getRowId?: (params: { data: T }) => string;
   context?: Record<string, unknown>;
   loading?: boolean;
-  emptyMessage?: ReactNode;
+  emptyMessage?: string;
   onRowDoubleClicked?: (event: RowDoubleClickedEvent<T>) => void;
   onCellDoubleClicked?: (event: CellDoubleClickedEvent<T>) => void;
   onCellClicked?: (event: CellClickedEvent<T>) => void;
+  onGridReady?: (event: GridReadyEvent<T>) => void;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -71,10 +80,11 @@ export function DataGrid<T>({
   getRowId,
   context,
   loading,
-  emptyMessage,
+  emptyMessage = "データがありません",
   onRowDoubleClicked,
   onCellDoubleClicked,
   onCellClicked,
+  onGridReady,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -97,6 +107,18 @@ export function DataGrid<T>({
       : undefined;
   };
 
+  // AG Grid 본체의 noRowsOverlay 안에서 메시지를 표시한다.
+  // (sibling div fallback 은 그리드 외부에 추가 row 가 생겨 높이/border 가 어긋났음)
+  const noRowsTemplate = useMemo(() => {
+    const escaped = emptyMessage
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+    return `<span class="font-['Noto_Sans_JP'] text-[14px] text-[#AAAAAA]">${escaped}</span>`;
+  }, [emptyMessage]);
+
   return (
     <div
       className={`w-full ${className}`}
@@ -115,17 +137,13 @@ export function DataGrid<T>({
         suppressRowHoverHighlight={false}
         headerHeight={57}
         rowHeight={57}
-        suppressNoRowsOverlay={!!emptyMessage}
+        overlayNoRowsTemplate={noRowsTemplate}
         loading={loading}
         onRowDoubleClicked={onRowDoubleClicked}
         onCellDoubleClicked={onCellDoubleClicked}
         onCellClicked={onCellClicked}
+        onGridReady={onGridReady}
       />
-      {emptyMessage && rowData.length === 0 && !loading && (
-        <div className="flex items-center justify-center h-[57px] border-b border-[#E6EEF6] font-['Noto_Sans_JP'] text-[14px] text-[#AAAAAA]">
-          {emptyMessage}
-        </div>
-      )}
     </div>
   );
 }
