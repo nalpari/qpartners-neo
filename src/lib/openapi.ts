@@ -2293,6 +2293,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         message: { type: "string" },
+                        member: {
+                          allOf: [{ $ref: "#/components/schemas/MemberDetail" }],
+                          description:
+                            "업데이트 직후 회원 스냅샷. preDetail 존재 시에만 포함 (postDetail 또는 preDetail+변경필드 overlay). " +
+                            "프론트는 이 값으로 queryClient.setQueryData 캐시 갱신 가능 — QSP F_NOT_USER 경로의 재조회 공백 방지.",
+                        },
                         warning: { type: "string", description: "TOCTOU 사후 검증 실패/불일치 시 경고 메시지" },
                         warnings: {
                           type: "array",

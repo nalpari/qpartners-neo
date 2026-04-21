@@ -118,6 +118,9 @@ export interface MemberDetail {
   withdrawReason?: string | null;
   newsRcptDate?: string | null;
   lastLoginAt?: string | null;
+  // QSP userDetail 이 F_NOT_USER 반환(탈퇴/삭제 회원)으로 빈 데이터를 응답한 경우 true.
+  // 프론트는 이 플래그로 "QSP 미조회 안내" 분기를 결정한다.
+  notFoundInQsp?: boolean;
 }
 
 /** 수정 요청 body */
