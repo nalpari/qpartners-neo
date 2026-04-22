@@ -11,7 +11,9 @@ import { prisma } from "@/lib/prisma";
  * - `authRole` ↔ `roleCode` 1:1 매핑 (메모리 §4) — X-User-Role 을 roleCode 로 그대로 사용.
  * - `SUPER_ADMIN`: QpRoleMenuPermission 조회 스킵, 활성 메뉴 전체 CRUD true 로 합성 반환 (fail-open).
  * - 그 외: 활성 메뉴에 한해 조회. 시드에 미등록인 메뉴는 응답에서 제외 (fail-closed).
- * - 응답 캐싱: `private, max-age=60` — 개인별 권한이므로 private.
+ * - 응답 캐싱: `private, no-store` — 권한 회수 즉시성 확보 (SUPER_ADMIN 이 PUT /roles/../permissions 로
+ *   권한을 회수해도 브라우저/중간 캐시가 옛 응답을 보관하면 UI 에는 보이는데 서버는 403 하는 UX 가 발생.
+ *   권한 1회 조회 비용은 인덱스 포함 JOIN 1건(수 ms)으로 무시 가능).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -71,7 +73,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json({
       data: { roleCode, menus },
     });
-    response.headers.set("Cache-Control", "private, max-age=60");
+    response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
     console.error("[GET /api/auth/me/permissions]", error);

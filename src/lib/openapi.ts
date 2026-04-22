@@ -160,14 +160,14 @@ export const openApiSpec: OpenAPIV3.Document = {
 - \`authRole\` ↔ \`roleCode\` 1:1 매핑이므로 JWT authRole 값을 그대로 roleCode 로 사용
 - \`SUPER_ADMIN\`: 활성 메뉴 전체에 모든 CRUD \`true\` 합성 반환 (QpRoleMenuPermission 조회 스킵, fail-open)
 - 그 외: 활성 메뉴에 한해 \`QpRoleMenuPermission\` 조회. 시드 미등록 메뉴는 응답에서 제외 (fail-closed)
-- 응답 헤더: \`Cache-Control: private, max-age=60\``,
+- 응답 헤더: \`Cache-Control: private, no-store\` (권한 회수 즉시성 보장)`,
         responses: {
           "200": {
             description: "조회 성공",
             headers: {
               "Cache-Control": {
-                description: "개인별 권한이므로 private, 60초 캐싱",
-                schema: { type: "string", example: "private, max-age=60" },
+                description: "개인별 권한 + 즉시성 확보를 위한 no-store",
+                schema: { type: "string", example: "private, no-store" },
               },
             },
             content: {
@@ -947,7 +947,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "roleCode",
             in: "path",
             required: true,
-            schema: { type: "string", maxLength: 50 },
+            schema: {
+              type: "string",
+              enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
+            },
           },
         ],
         requestBody: {
@@ -989,7 +992,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "roleCode",
             in: "path",
             required: true,
-            schema: { type: "string", maxLength: 50 },
+            schema: {
+              type: "string",
+              enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
+            },
           },
         ],
         responses: {
@@ -1013,20 +1019,26 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       put: {
         tags: ["Permission"],
-        summary: "메뉴별 권한 일괄 저장",
-        description: `기존 권한 전부 삭제 후 새로 생성 (replace). 트랜잭션 처리.
+        summary: "메뉴별 권한 일괄 저장 (SUPER_ADMIN 전용)",
+        description: `payload 에 포함된 menuCode 만 upsert (replace 아님). 나머지 menuCode 는 기존 값 유지.
+트랜잭션으로 묶여 부분 실패 시 전체 롤백. \`created_at\` / \`created_by\` 는 기존 행에서 보존.
+
+**권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
 
 **Lockout 방어 (2중화)**:
-1. 비 \`SUPER_ADMIN\` target 에 \`PERMISSIONS.canUpdate: true\` 로 세팅 요청 → 400 거부
-2. SUPER_ADMIN target 에 비-SUPER_ADMIN 요청자가 접근 → 403 거부 (자기 권한 무력화 우회 경로 차단)
+1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "PERMISSIONS", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
+2. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
-두 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조로 반환.`,
+두 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조.`,
         parameters: [
           {
             name: "roleCode",
             in: "path",
             required: true,
-            schema: { type: "string", maxLength: 50 },
+            schema: {
+              type: "string",
+              enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
+            },
           },
         ],
         requestBody: {
@@ -1058,7 +1070,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "Validation failed 또는 Lockout 가드 거부 (PERMISSIONS.canUpdate 상승 시도)",
+            description: "バリデーションエラー 또는 Lockout 가드 거부",
             content: {
               "application/json": {
                 schema: {
@@ -1070,12 +1082,16 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         error: {
                           type: "string",
-                          example: "「権限管理」の更新権限はスーパー管理者にのみ付与できます",
+                          example: "「PERMISSIONS」のupdate権限はスーパー管理者にのみ付与できます",
                         },
-                        menuCode: { type: "string", example: "PERMISSIONS" },
+                        menuCode: {
+                          type: "string",
+                          enum: ["PERMISSIONS", "MENUS", "CODES"],
+                          example: "PERMISSIONS",
+                        },
                         action: {
                           type: "string",
-                          enum: ["read", "create", "update", "delete"],
+                          enum: ["create", "update", "delete"],
                           example: "update",
                         },
                       },
@@ -1085,29 +1101,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "403": {
-            description: "SUPER_ADMIN target lockout (비-SUPER_ADMIN 요청자 차단)",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  required: ["error", "menuCode", "action"],
-                  properties: {
-                    error: {
-                      type: "string",
-                      example: "スーパー管理者の権限はスーパー管理者のみ変更できます",
-                    },
-                    menuCode: { type: "string", example: "PERMISSIONS" },
-                    action: {
-                      type: "string",
-                      enum: ["read", "create", "update", "delete"],
-                      example: "update",
-                    },
-                  },
-                },
-              },
-            },
-          },
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("スーパー管理者権限が必要です"),
           "404": errorResponse("指定された権限が見つかりません"),
           "500": errorResponse("権限の更新に失敗しました"),
         },
@@ -3363,9 +3358,14 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: ["roleCode", "roleName"],
         properties: {
-          roleCode: { type: "string", maxLength: 50, example: "Cus6" },
-          roleName: { type: "string", maxLength: 100, example: "특수회원" },
-          description: { type: "string", maxLength: 500, nullable: true, example: "특수 파트너사" },
+          roleCode: {
+            type: "string",
+            enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
+            description: "authRole ↔ roleCode 1:1. enum 외 생성 불가 (후속 GET/PUT 경로가 path param enum 에서 400 이 되어 좀비 row 가 되는 것을 방지).",
+            example: "ADMIN",
+          },
+          roleName: { type: "string", maxLength: 100, example: "特殊会員" },
+          description: { type: "string", maxLength: 500, nullable: true, example: "特殊パートナー" },
           isActive: { type: "boolean", default: true },
         },
       },
@@ -3507,6 +3507,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       UpdatePermissions: {
         type: "object",
         required: ["permissions"],
+        description:
+          "payload 에 포함된 menuCode 만 upsert. 포함되지 않은 menuCode 는 기존 값 그대로 유지된다 (replace 아님).",
         properties: {
           permissions: {
             type: "array",
@@ -3514,7 +3516,15 @@ export const openApiSpec: OpenAPIV3.Document = {
               type: "object",
               required: ["menuCode"],
               properties: {
-                menuCode: { type: "string", maxLength: 50, example: "SEARCH" },
+                menuCode: {
+                  type: "string",
+                  enum: [
+                    "HOME", "CONTENT", "INQUIRY", "MYPAGE", "ADMIN",
+                    "MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES",
+                    "PERMISSIONS", "MENUS", "CODES",
+                  ],
+                  example: "MEMBERS",
+                },
                 canRead: { type: "boolean", default: false },
                 canCreate: { type: "boolean", default: false },
                 canUpdate: { type: "boolean", default: false },

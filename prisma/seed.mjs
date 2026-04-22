@@ -7,21 +7,23 @@
 // 반복 실행 가능 (upsert). created_at / created_by 는 보존, updated_at 만 갱신.
 
 import * as mariadb from "mariadb";
-import fs from "node:fs";
+import dotenv from "dotenv";
 
-function loadEnv(path) {
-  if (!fs.existsSync(path)) return;
-  for (const line of fs.readFileSync(path, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"?([^"\r\n#]*)"?\s*$/i);
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
-  }
-}
-loadEnv(".env.local");
-loadEnv(".env.development");
-loadEnv(".env");
+/**
+ * .env 로딩 — `dotenv` 사용.
+ * 수동 정규식 파서는 `DB_PASSWORD=P@ss#word` 처럼 값 내 `#` 이 포함되면 silent 잘림, 따옴표 내부
+ * escape 처리 실패 등 인증 실패를 유발하므로 표준 라이브러리로 일원화.
+ * 우선순위는 .env.local > .env.development > .env 로 유지 — 이미 세팅된 키는 override 하지 않음
+ * (dotenv 기본 동작).
+ */
+dotenv.config({ path: ".env.local" });
+dotenv.config({ path: ".env.development" });
+dotenv.config({ path: ".env" });
 
 const REQUIRED = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"];
-const missing = REQUIRED.filter((k) => !process.env[k]);
+// 빈 문자열("")도 미설정 취급 — CI 가 실수로 빈 값을 export 했을 때 .env 로 fallback 하지 못해
+// 접속 정보가 영구 무시되는 사고를 방지.
+const missing = REQUIRED.filter((k) => !process.env[k] || process.env[k].trim() === "");
 if (missing.length > 0) {
   console.error(`[seed] DB 환경변수 누락: ${missing.join(", ")}`);
   process.exit(1);
@@ -184,32 +186,33 @@ try {
     );
   }
 
-  console.log("[seed] 권한 매트릭스 upsert");
-  let permCount = 0;
-  for (const r of roles) {
-    for (const p of buildPermissions(r.roleCode)) {
-      await conn.query(
-        `INSERT INTO qp_role_menu_permissions
-           (role_code, menu_code, can_read, can_create, can_update, can_delete, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3), 'SYSTEM')
-         ON DUPLICATE KEY UPDATE
-           can_read = VALUES(can_read),
-           can_create = VALUES(can_create),
-           can_update = VALUES(can_update),
-           can_delete = VALUES(can_delete),
-           updated_at = NOW(3)`,
-        [
-          r.roleCode,
-          p.menuCode,
-          p.canRead ? 1 : 0,
-          p.canCreate ? 1 : 0,
-          p.canUpdate ? 1 : 0,
-          p.canDelete ? 1 : 0,
-        ],
-      );
-      permCount++;
-    }
-  }
+  console.log("[seed] 권한 매트릭스 upsert (batch)");
+  // mariadb 드라이버의 `conn.batch()` 는 한 번의 PREPARE + execute stream 으로 모든 행을 전송.
+  // Promise.all + conn.query 는 connectionLimit 내 다른 커넥션으로 분기되어 현재 트랜잭션 밖에서
+  // 실행될 위험이 있으므로 반드시 batch 사용.
+  const permissionRows = roles.flatMap((r) =>
+    buildPermissions(r.roleCode).map((p) => [
+      r.roleCode,
+      p.menuCode,
+      p.canRead ? 1 : 0,
+      p.canCreate ? 1 : 0,
+      p.canUpdate ? 1 : 0,
+      p.canDelete ? 1 : 0,
+    ]),
+  );
+  await conn.batch(
+    `INSERT INTO qp_role_menu_permissions
+       (role_code, menu_code, can_read, can_create, can_update, can_delete, created_at, updated_at, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3), 'SYSTEM')
+     ON DUPLICATE KEY UPDATE
+       can_read = VALUES(can_read),
+       can_create = VALUES(can_create),
+       can_update = VALUES(can_update),
+       can_delete = VALUES(can_delete),
+       updated_at = NOW(3)`,
+    permissionRows,
+  );
+  const permCount = permissionRows.length;
 
   await conn.commit();
   console.log(

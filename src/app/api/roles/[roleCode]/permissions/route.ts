@@ -1,14 +1,24 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { restrictedMenuCodeSet } from "@/lib/schemas/common";
 import {
   roleCodeParamSchema,
   updatePermissionsSchema,
 } from "@/lib/schemas/permission";
 
 type Params = { params: Promise<{ roleCode: string }> };
+
+/**
+ * PII 보호 — byUserId 는 ADMIN 계열에서 이메일/로그인 ID 인 경우가 많아 평문 로깅 금지
+ * (`.claude/rules/api.md`). 앞 4자만 보존하여 운영상 추적은 가능하게 유지한다.
+ */
+function maskUserId(id: string): string {
+  if (id.length <= 4) return "***";
+  return `${id.slice(0, 4)}***`;
+}
 
 // GET /api/roles/:roleCode/permissions — 메뉴별 권한 조회
 export async function GET(request: NextRequest, { params }: Params) {
@@ -99,9 +109,29 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
+/**
+ * PUT /api/roles/:roleCode/permissions — 메뉴별 권한 일괄 저장.
+ *
+ * 권한: SUPER_ADMIN 전용 (requireSuperAdmin). ADMIN 은 조회만 가능.
+ *   · 과거 requireAdmin 허용 시 ADMIN 이 1ST_STORE/SEKO 등 하위 역할의 매트릭스를 임의 조작하여
+ *     MEMBERS.canDelete / BULK_MAIL.canCreate 등을 부여할 수 있었음 (CRITICAL #1).
+ *
+ * 저장 전략: upsert (replace 아님).
+ *   · 과거 `deleteMany + create` 는 payload 에 PERMISSIONS 행이 누락되면 PERMISSIONS 행까지
+ *     일괄 삭제되어 lockout 가드를 우회할 수 있었음 (CRITICAL #2).
+ *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지 → 우회 경로 차단 +
+ *     `created_at` / `created_by` 감사 추적 보존 (HIGH #7).
+ *
+ * Lockout 가드 2단:
+ *   1. target === "SUPER_ADMIN" — payload 에 `PERMISSIONS.canUpdate === false` 가 있으면 거부.
+ *      SUPER_ADMIN 이 자신의 권한관리 update 권한을 내리면 시스템 전체 lockout (CRITICAL #4).
+ *   2. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(PERMISSIONS/MENUS/CODES)
+ *      중 CUD true 가 있으면 거부. 매트릭스 의도(ADMIN = read only, 비관리자 = 접근 없음)
+ *      를 API 단에서 강제 (HIGH #6).
+ */
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = requireSuperAdmin(request.headers);
     if (auth instanceof NextResponse) return auth;
 
     const { roleCode } = await params;
@@ -125,28 +155,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Lockout 방지 (SUPER_ADMIN target 가드) —
-    // 타 관리자가 PUT /roles/SUPER_ADMIN/permissions 로 SUPER_ADMIN 권한을 뒤집어
-    // 자신을 포함 아무도 권한관리를 못 하게 만드는 우회 경로를 차단한다.
-    if (parsedCode.data === "SUPER_ADMIN" && auth.user.role !== "SUPER_ADMIN") {
-      console.warn(
-        "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN 권한 변경 시도 차단",
-        {
-          byUserType: auth.user.userType,
-          byUserId: auth.user.userId,
-          byRole: auth.user.role,
-        },
-      );
-      return NextResponse.json(
-        {
-          error: "スーパー管理者の権限はスーパー管理者のみ変更できます",
-          menuCode: "PERMISSIONS",
-          action: "update",
-        },
-        { status: 403 },
-      );
-    }
-
     let body: unknown;
     try {
       body = await request.json();
@@ -162,7 +170,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const result = updatePermissionsSchema.safeParse(body);
-
     if (!result.success) {
       return NextResponse.json(
         { error: "バリデーションエラー", issues: result.error.issues },
@@ -170,26 +177,23 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Lockout 방지 (PERMISSIONS.canUpdate 상승 가드) —
-    // 비 SUPER_ADMIN role 에 canUpdate:true 로 세팅하려는 시도를 차단.
-    // 초기 seed 기준으로도 동일한 제약이 적용되지만 API 경로의 런타임 보증이 우선이다.
-    if (parsedCode.data !== "SUPER_ADMIN") {
-      const elevating = result.data.permissions.some(
-        (p) => p.menuCode === "PERMISSIONS" && p.canUpdate === true,
+    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단.
+    if (parsedCode.data === "SUPER_ADMIN") {
+      const permRow = result.data.permissions.find(
+        (p) => p.menuCode === "PERMISSIONS",
       );
-      if (elevating) {
+      if (permRow && permRow.canUpdate === false) {
         console.warn(
-          "[PUT /api/roles/:roleCode/permissions] 권한 상승 시도 차단",
+          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN self-lockout 시도 차단",
           {
-            targetRoleCode: parsedCode.data,
             byUserType: auth.user.userType,
-            byUserId: auth.user.userId,
+            byUserIdMasked: maskUserId(auth.user.userId),
             byRole: auth.user.role,
           },
         );
         return NextResponse.json(
           {
-            error: "「権限管理」の更新権限はスーパー管理者にのみ付与できます",
+            error: "スーパー管理者の「権限管理」更新権限は無効化できません",
             menuCode: "PERMISSIONS",
             action: "update",
           },
@@ -198,26 +202,79 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    await prisma.$transaction([
-      prisma.qpRoleMenuPermission.deleteMany({
-        where: { roleCode: parsedCode.data },
-      }),
-      ...result.data.permissions.map((perm) =>
-        prisma.qpRoleMenuPermission.create({
-          data: {
+    // Lockout 가드 #2 — 비 SUPER_ADMIN 역할에 RESTRICTED 메뉴 CUD 부여 차단.
+    if (parsedCode.data !== "SUPER_ADMIN") {
+      const violation = result.data.permissions.find(
+        (p) =>
+          restrictedMenuCodeSet.has(p.menuCode) &&
+          (p.canCreate || p.canUpdate || p.canDelete),
+      );
+      if (violation) {
+        const action = violation.canCreate
+          ? "create"
+          : violation.canUpdate
+            ? "update"
+            : "delete";
+        console.warn(
+          "[PUT /api/roles/:roleCode/permissions] RESTRICTED 메뉴 권한 상승 시도 차단",
+          {
+            targetRoleCode: parsedCode.data,
+            violatedMenuCode: violation.menuCode,
+            violatedAction: action,
+            byUserType: auth.user.userType,
+            byUserIdMasked: maskUserId(auth.user.userId),
+            byRole: auth.user.role,
+          },
+        );
+        return NextResponse.json(
+          {
+            error: `「${violation.menuCode}」の${action}権限はスーパー管理者にのみ付与できます`,
+            menuCode: violation.menuCode,
+            action,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    // upsert — payload 에 포함된 행만 갱신, 나머지는 기존 값 유지.
+    // 트랜잭션으로 묶어 부분 실패 시 전체 롤백.
+    const updatedBy = auth.user.userId;
+    await prisma.$transaction(
+      result.data.permissions.map((perm) =>
+        prisma.qpRoleMenuPermission.upsert({
+          where: {
+            roleCode_menuCode: {
+              roleCode: parsedCode.data,
+              menuCode: perm.menuCode,
+            },
+          },
+          update: {
+            canRead: perm.canRead,
+            canCreate: perm.canCreate,
+            canUpdate: perm.canUpdate,
+            canDelete: perm.canDelete,
+            updatedBy,
+          },
+          create: {
             roleCode: parsedCode.data,
             menuCode: perm.menuCode,
             canRead: perm.canRead,
             canCreate: perm.canCreate,
             canUpdate: perm.canUpdate,
             canDelete: perm.canDelete,
+            createdBy: updatedBy,
+            updatedBy,
           },
         }),
       ),
-    ]);
+    );
 
     return NextResponse.json({
-      data: { roleCode: parsedCode.data, updated: result.data.permissions.length },
+      data: {
+        roleCode: parsedCode.data,
+        updated: result.data.permissions.length,
+      },
     });
   } catch (error) {
     console.error("[PUT /api/roles/:roleCode/permissions]", error);
