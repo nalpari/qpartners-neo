@@ -13,6 +13,9 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
+  // 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
+  // cipher 복호화 후 내부 /api/auth/login 을 호출하여 세션 발급 → 홈 리다이렉트.
+  "/api/auth/auto-login/inbound",
   "/api/openapi",
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
   // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
