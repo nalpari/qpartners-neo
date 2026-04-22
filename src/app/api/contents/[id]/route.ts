@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
-import { resolveAdminName } from "@/lib/admin-name";
+import { resolveUserName } from "@/lib/admin-name";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
 
@@ -75,16 +75,18 @@ export async function GET(request: NextRequest, { params }: Params) {
     // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (일반 사용자에게 admin 메타데이터 노출 방지)
     // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴
     // 담당자 이름(createdByName/updatedByName)은 사내 사용자 관리정보 영역 표시용 — 외부 노출 방지.
+    // content.userType 을 명시 전달 (requireAdmin 전제 변경에 대비한 방어적 설계).
     // QSP 장애 시 null → 프론트에서 userId 로 폴백.
+    const logTag = "[GET /api/contents/:id]";
     const [authorIsSuperAdminResult, createdByName, updatedByName] = internal
       ? await Promise.all([
           resolveAuthorSuperAdmin({
             userType: content.userType,
             userId: content.userId,
           }),
-          resolveAdminName(content.createdBy ?? content.userId, "[GET /api/contents/:id]"),
+          resolveUserName(content.userType, content.createdBy ?? content.userId, logTag),
           content.updatedBy
-            ? resolveAdminName(content.updatedBy, "[GET /api/contents/:id]")
+            ? resolveUserName(content.userType, content.updatedBy, logTag)
             : Promise.resolve<string | null>(null),
         ])
       : [undefined, undefined, undefined] as const;

@@ -64,6 +64,8 @@ export function DatePicker({
    */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Enter") return;
+    // IME(한글/일본어 등) 조합 중 Enter 는 조합 확정으로 처리 — 날짜 파싱/적용 건너뜀
+    if (e.nativeEvent.isComposing) return;
     const target = e.target as HTMLInputElement;
     const parsed = parseYyyymmdd(target.value ?? "");
     if (!parsed) return;
