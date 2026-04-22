@@ -69,11 +69,17 @@ const ALL_MENU_CODES = [
 ];
 
 /**
- * 역할별 메뉴 권한 매트릭스 생성
- * - SUPER_ADMIN: 전체 CRUD
- * - ADMIN: 관리 메뉴 전체 CRUD, PERMISSIONS/MENUS/CODES 는 update/delete 제외
- *          (lockout 방지 — PERMISSIONS.canUpdate 는 SUPER_ADMIN 전용)
- * - 그 외 (1ST_STORE/2ND_STORE/SEKO/GENERAL): 일반 메뉴 read only, 관리 메뉴 전부 false
+ * 역할별 메뉴 권한 매트릭스 생성.
+ * - SUPER_ADMIN: 전체 메뉴 CRUD (fail-open)
+ * - ADMIN:
+ *   · MEMBERS / BULK_MAIL / NOTICES / CATEGORIES / CONTENT — 전체 CRUD (ADMIN_FULL_MENUS)
+ *   · PERMISSIONS / MENUS / CODES — read only, create/update/delete 전부 false (ADMIN_RESTRICTED_MENUS)
+ *   · HOME / INQUIRY / MYPAGE / ADMIN(parent) — 네비게이션용 read
+ * - 1ST_STORE / 2ND_STORE / SEKO / GENERAL:
+ *   · HOME / CONTENT / INQUIRY / MYPAGE — read only (GENERAL_MENUS)
+ *   · 관리 메뉴 전체 — 모든 플래그 false
+ * - Lockout: PERMISSIONS.canUpdate 는 SUPER_ADMIN 만 true. API (PUT /api/roles/:rc/permissions) 에서도
+ *   상승 시도 차단하여 이중화.
  */
 function buildPermissions(roleCode) {
   return ALL_MENU_CODES.map((menuCode) => {
@@ -109,7 +115,17 @@ const pool = mariadb.createPool({
   connectionLimit: 2,
 });
 
-const conn = await pool.getConnection();
+// pool.getConnection() 자체 실패 (DB down, 인증 오류, 네트워크 등) 경로를 분리.
+// 실패 시 pool.end() 후 조기 종료 — 이후 transaction 블록은 실행되지 않는다.
+let conn;
+try {
+  conn = await pool.getConnection();
+} catch (err) {
+  console.error("[seed] 커넥션 취득 실패:", err);
+  await pool.end().catch(() => {});
+  process.exit(1);
+}
+
 try {
   await conn.beginTransaction();
 
@@ -200,8 +216,11 @@ try {
     `[seed] 완료 — 메뉴 ${menus1.length + menus2UnderAdmin.length}건, 역할 ${roles.length}건, 권한 ${permCount}건`,
   );
 } catch (err) {
-  await conn.rollback();
-  console.error("[seed] 실패 (rollback):", err);
+  // rollback 자체가 throw 할 수 있으므로 (connection dead 등) 방어하여 원본 err 보존.
+  await conn.rollback().catch((rollbackErr) => {
+    console.error("[seed] rollback 실패:", rollbackErr);
+  });
+  console.error("[seed] 실패 (rollback 시도 완료):", err);
   process.exitCode = 1;
 } finally {
   conn.release();

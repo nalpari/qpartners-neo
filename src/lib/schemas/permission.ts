@@ -1,11 +1,15 @@
 import { z } from "zod";
 
+import { authRoleValues } from "@/lib/schemas/common";
+
 // ─── Role ───
 
-export const roleCodeParamSchema = z
-  .string()
-  .min(1, "roleCode는 필수입니다")
-  .max(50);
+/**
+ * roleCode path parameter 검증.
+ * authRole ↔ QpRole.roleCode 는 1:1 동일 (authRoleValues 6개).
+ * enum 으로 좁혀 알 수 없는 roleCode 는 path param 파싱 단계에서 400 거부.
+ */
+export const roleCodeParamSchema = z.enum(authRoleValues);
 
 export const createRoleSchema = z.object({
   roleCode: z.string().min(1, "roleCode는 필수입니다").max(50),

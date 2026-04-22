@@ -20,23 +20,25 @@ export async function GET(request: NextRequest, { params }: Params) {
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
       return NextResponse.json(
-        { error: "Invalid roleCode" },
+        { error: "無効な権限コードです" },
         { status: 400 },
       );
     }
 
-    // Role 존재 확인
     const role = await prisma.qpRole.findUnique({
       where: { roleCode: parsedCode.data },
       select: { roleCode: true, roleName: true },
     });
 
     if (!role) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "指定された権限が見つかりません" },
+        { status: 404 },
+      );
     }
 
-    // 전체 메뉴(1-Level + children) + 해당 roleCode의 권한 매핑 (nested include로 1-query)
-    // M-1: 비활성화된 메뉴는 권한 팝업에 노출되지 않도록 parent/children 모두 isActive 필터 적용
+    // nested include 로 parent + children + permissions 를 1-query 로 조회.
+    // 비활성화된 메뉴는 권한 팝업에 노출되지 않도록 parent/children 양쪽에 isActive 필터 적용.
     const menus = await prisma.menu.findMany({
       where: { parentId: null, isActive: true },
       include: {
@@ -91,13 +93,12 @@ export async function GET(request: NextRequest, { params }: Params) {
   } catch (error) {
     console.error("[GET /api/roles/:roleCode/permissions]", error);
     return NextResponse.json(
-      { error: "Failed to fetch permissions" },
+      { error: "権限の取得に失敗しました" },
       { status: 500 },
     );
   }
 }
 
-// PUT /api/roles/:roleCode/permissions — 메뉴별 권한 일괄 저장
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const auth = requireAdmin(request.headers);
@@ -107,27 +108,55 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
       return NextResponse.json(
-        { error: "Invalid roleCode" },
+        { error: "無効な権限コードです" },
         { status: 400 },
       );
     }
 
-    // Role 존재 확인
     const role = await prisma.qpRole.findUnique({
       where: { roleCode: parsedCode.data },
       select: { roleCode: true },
     });
 
     if (!role) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "指定された権限が見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    // Lockout 방지 (SUPER_ADMIN target 가드) —
+    // 타 관리자가 PUT /roles/SUPER_ADMIN/permissions 로 SUPER_ADMIN 권한을 뒤집어
+    // 자신을 포함 아무도 권한관리를 못 하게 만드는 우회 경로를 차단한다.
+    if (parsedCode.data === "SUPER_ADMIN" && auth.user.role !== "SUPER_ADMIN") {
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN 권한 변경 시도 차단",
+        {
+          byUserType: auth.user.userType,
+          byUserId: auth.user.userId,
+          byRole: auth.user.role,
+        },
+      );
+      return NextResponse.json(
+        {
+          error: "スーパー管理者の権限はスーパー管理者のみ変更できます",
+          menuCode: "PERMISSIONS",
+          action: "update",
+        },
+        { status: 403 },
+      );
     }
 
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] Request body 파싱 실패:",
+        { roleCode: parsedCode.data, error },
+      );
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "無効なJSON本文です" },
         { status: 400 },
       );
     }
@@ -136,19 +165,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "バリデーションエラー", issues: result.error.issues },
         { status: 400 },
       );
     }
 
-    // Lockout 방지: PERMISSIONS.canUpdate 는 SUPER_ADMIN 전용 고정.
-    // 비 SUPER_ADMIN role 에 canUpdate:true 로 세팅하려는 시도를 차단한다.
-    // 시드에서도 이중화되어 있으나, 런타임에 타 관리자가 API 로 우회하는 경로를 막기 위함.
+    // Lockout 방지 (PERMISSIONS.canUpdate 상승 가드) —
+    // 비 SUPER_ADMIN role 에 canUpdate:true 로 세팅하려는 시도를 차단.
+    // 초기 seed 기준으로도 동일한 제약이 적용되지만 API 경로의 런타임 보증이 우선이다.
     if (parsedCode.data !== "SUPER_ADMIN") {
       const elevating = result.data.permissions.some(
         (p) => p.menuCode === "PERMISSIONS" && p.canUpdate === true,
       );
       if (elevating) {
+        console.warn(
+          "[PUT /api/roles/:roleCode/permissions] 권한 상승 시도 차단",
+          {
+            targetRoleCode: parsedCode.data,
+            byUserType: auth.user.userType,
+            byUserId: auth.user.userId,
+            byRole: auth.user.role,
+          },
+        );
         return NextResponse.json(
           {
             error: "「権限管理」の更新権限はスーパー管理者にのみ付与できます",
@@ -160,7 +198,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 기존 권한 전부 삭제 후 새로 생성 (replace) — 트랜잭션
     await prisma.$transaction([
       prisma.qpRoleMenuPermission.deleteMany({
         where: { roleCode: parsedCode.data },
@@ -185,7 +222,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   } catch (error) {
     console.error("[PUT /api/roles/:roleCode/permissions]", error);
     return NextResponse.json(
-      { error: "Failed to update permissions" },
+      { error: "権限の更新に失敗しました" },
       { status: 500 },
     );
   }
