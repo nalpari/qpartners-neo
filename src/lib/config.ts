@@ -20,7 +20,7 @@ if (isProduction && !isBuildPhase && !rawQspBaseUrl) {
   throw new Error("QSP_BASE_URL is required in production");
 }
 
-const QSP_BASE_URL = rawQspBaseUrl || "https://jp-dev.qsalesplatform.com";
+const QSP_BASE_URL = rawQspBaseUrl;
 
 if (isProduction && !QSP_BASE_URL.startsWith("https://")) {
   throw new Error("QSP_BASE_URL must use HTTPS in production");
