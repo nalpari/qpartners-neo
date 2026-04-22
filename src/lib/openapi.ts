@@ -206,6 +206,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("認証が必要です"),
+          "403": errorResponse("2段階認証が必要です"),
           "500": errorResponse("権限の取得に失敗しました"),
         },
       },
@@ -1013,6 +1014,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("無効な権限コードです"),
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("2段階認証が必要です"),
           "404": errorResponse("指定された権限が見つかりません"),
           "500": errorResponse("権限の取得に失敗しました"),
         },
@@ -1025,11 +1028,12 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 **권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
 
-**Lockout 방어 (2중화)**:
+**Lockout 방어 (3중화)**:
 1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "PERMISSIONS", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
-2. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
+2. target = \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
+3. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
-두 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조.`,
+세 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
         parameters: [
           {
             name: "roleCode",
@@ -1091,7 +1095,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                         },
                         action: {
                           type: "string",
-                          enum: ["create", "update", "delete"],
+                          enum: ["read", "create", "update", "delete"],
                           example: "update",
                         },
                       },

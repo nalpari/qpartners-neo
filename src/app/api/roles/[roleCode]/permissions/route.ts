@@ -13,11 +13,12 @@ type Params = { params: Promise<{ roleCode: string }> };
 
 /**
  * PII 보호 — byUserId 는 ADMIN 계열에서 이메일/로그인 ID 인 경우가 많아 평문 로깅 금지
- * (`.claude/rules/api.md`). 앞 4자만 보존하여 운영상 추적은 가능하게 유지한다.
+ * (`.claude/rules/api.md`). 관리자 풀이 작아 prefix 4자만으로도 재식별 위험이 크므로
+ * 8자 미만은 전체 마스킹, 8자 이상은 앞 2자만 노출 (운영 추적 최소치 확보).
  */
 function maskUserId(id: string): string {
-  if (id.length <= 4) return "***";
-  return `${id.slice(0, 4)}***`;
+  if (id.length < 8) return "***";
+  return `${id.slice(0, 2)}***`;
 }
 
 // GET /api/roles/:roleCode/permissions — 메뉴별 권한 조회
@@ -122,10 +123,13 @@ export async function GET(request: NextRequest, { params }: Params) {
  *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지 → 우회 경로 차단 +
  *     `created_at` / `created_by` 감사 추적 보존 (HIGH #7).
  *
- * Lockout 가드 2단:
+ * Lockout 가드 3단:
  *   1. target === "SUPER_ADMIN" — payload 에 `PERMISSIONS.canUpdate === false` 가 있으면 거부.
  *      SUPER_ADMIN 이 자신의 권한관리 update 권한을 내리면 시스템 전체 lockout (CRITICAL #4).
- *   2. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(PERMISSIONS/MENUS/CODES)
+ *   2. target === "SUPER_ADMIN" — payload 에 RESTRICTED 메뉴(PERMISSIONS/MENUS/CODES) 의
+ *      `canRead === false` 가 있으면 거부. read 가 막히면 해당 관리 페이지 자체가 열리지 않아
+ *      복구가 DB 직접 수정 없이 불가능해진다 (CRITICAL #5).
+ *   3. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(PERMISSIONS/MENUS/CODES)
  *      중 CUD true 가 있으면 거부. 매트릭스 의도(ADMIN = read only, 비관리자 = 접근 없음)
  *      를 API 단에서 강제 (HIGH #6).
  */
@@ -177,7 +181,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단.
+    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단 (PERMISSIONS.canUpdate).
     if (parsedCode.data === "SUPER_ADMIN") {
       const permRow = result.data.permissions.find(
         (p) => p.menuCode === "PERMISSIONS",
@@ -200,9 +204,35 @@ export async function PUT(request: NextRequest, { params }: Params) {
           { status: 400 },
         );
       }
+
+      // Lockout 가드 #2 — SUPER_ADMIN 이 RESTRICTED 메뉴의 canRead 를 회수하면
+      //                  해당 관리 페이지 자체가 열리지 않아 복구 불가.
+      const readRevocation = result.data.permissions.find(
+        (p) => restrictedMenuCodeSet.has(p.menuCode) && p.canRead === false,
+      );
+      if (readRevocation) {
+        console.warn(
+          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN RESTRICTED canRead 회수 시도 차단",
+          {
+            targetRoleCode: parsedCode.data,
+            menuCode: readRevocation.menuCode,
+            byUserType: auth.user.userType,
+            byUserIdMasked: maskUserId(auth.user.userId),
+            byRole: auth.user.role,
+          },
+        );
+        return NextResponse.json(
+          {
+            error: `スーパー管理者の「${readRevocation.menuCode}」閲覧権限は無効化できません`,
+            menuCode: readRevocation.menuCode,
+            action: "read",
+          },
+          { status: 400 },
+        );
+      }
     }
 
-    // Lockout 가드 #2 — 비 SUPER_ADMIN 역할에 RESTRICTED 메뉴 CUD 부여 차단.
+    // Lockout 가드 #3 — 비 SUPER_ADMIN 역할에 RESTRICTED 메뉴 CUD 부여 차단.
     if (parsedCode.data !== "SUPER_ADMIN") {
       const violation = result.data.permissions.find(
         (p) =>
