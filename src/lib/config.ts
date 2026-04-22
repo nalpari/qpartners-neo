@@ -12,8 +12,11 @@ import { join, resolve } from "path";
 
 const rawQspBaseUrl = process.env.QSP_BASE_URL?.trim();
 const isProduction = process.env.NODE_ENV === "production";
+// next build는 NODE_ENV=production 으로 각 route를 로드하여 page data를 수집한다.
+// 빌드 시점엔 운영 env가 주입되지 않는 것이 정상이므로, 검증은 런타임에만 수행한다.
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
-if (isProduction && !rawQspBaseUrl) {
+if (isProduction && !isBuildPhase && !rawQspBaseUrl) {
   throw new Error("QSP_BASE_URL is required in production");
 }
 
@@ -45,7 +48,7 @@ export const QSP_API = {
 // ─── Upload Storage ───
 
 const rawUploadDir = process.env.UPLOAD_DIR?.trim();
-if (isProduction && !rawUploadDir) {
+if (isProduction && !isBuildPhase && !rawUploadDir) {
   throw new Error("UPLOAD_DIR is required in production");
 }
 
