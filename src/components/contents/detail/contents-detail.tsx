@@ -15,6 +15,7 @@ import { ContentsDetailTarget } from "./contents-detail-target";
 import { ContentsDetailCategory } from "./contents-detail-category";
 import { ContentsDetailBody } from "./contents-detail-body";
 import { ContentsDetailAttachment } from "./contents-detail-attachment";
+import { ContentsDetailActions } from "./contents-detail-actions";
 
 // Design Ref: §2 — API Response Type
 interface ContentDetailData {
@@ -172,6 +173,15 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           createdBy={data.createdBy}
           updatedBy={data.updatedBy}
           approverLevel={data.approverLevel}
+          showManagement={isInternal}
+          actions={
+            <ContentsDetailActions
+              canModify={canModify}
+              onDelete={handleDelete}
+              onEdit={handleEdit}
+              onList={handleList}
+            />
+          }
         />
 
         {isInternal && (
@@ -196,34 +206,14 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           attachments={data.attachments}
         />
 
-        {/* 하단 버튼 */}
-        <div className="flex items-center gap-2 w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end">
-          {canModify && (
-            <>
-              <Button
-                variant="secondary"
-                onClick={handleDelete}
-                className="flex-1 lg:flex-none lg:w-[68px]"
-              >
-                削除
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={handleEdit}
-                className="!hidden lg:!inline-flex lg:w-[68px]"
-              >
-                修正
-              </Button>
-            </>
-          )}
-          <Button
-            variant="primary"
-            onClick={handleList}
-            className="flex-1 lg:flex-none lg:w-[71px]"
-          >
-            リスト
-          </Button>
-        </div>
+        {/* 하단 기능 버튼 */}
+        <ContentsDetailActions
+          canModify={canModify}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+          onList={handleList}
+          className="w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end"
+        />
       </main>
     </>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useAlertStore } from "@/lib/store";
 
 // Design Ref: §4.2 — approverLevel 라벨 변환
@@ -17,6 +17,10 @@ interface ContentsDetailInfoProps {
   createdBy: string;
   updatedBy: string | null;
   approverLevel: number | null;
+  /** 관리정보 테이블 노출 여부 — 사내직원(ADMIN)만 true */
+  showManagement: boolean;
+  /** 상단 메타 우측에 표시할 기능 버튼 슬롯 (PC 전용) */
+  actions?: ReactNode;
 }
 
 export function ContentsDetailInfo({
@@ -25,6 +29,8 @@ export function ContentsDetailInfo({
   createdBy,
   updatedBy,
   approverLevel,
+  showManagement,
+  actions,
 }: ContentsDetailInfoProps) {
   const { openAlert } = useAlertStore();
   const [infoOpen, setInfoOpen] = useState(true);
@@ -50,35 +56,45 @@ export function ContentsDetailInfo({
 
   return (
     <>
-      {/* 상단 메타 */}
+      {/* 상단 메타 + 우측 기능 버튼 (PC) */}
       <div className="pt-6 lg:pt-0 pb-2 lg:pb-0 px-6 lg:px-0 w-full lg:w-[1440px]">
-        <div className="flex items-center gap-3 pl-1">
-          <p className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">
-            景色{" "}
-            <span className="font-semibold text-[#E97923]">
-              {viewCount.toLocaleString()}
-            </span>
-            件
-          </p>
-          <div className="bg-[#DDE3E8] w-px h-3" />
-          <button
-            type="button"
-            onClick={handleCopyUrl}
-            className="flex items-center gap-[6px] cursor-pointer"
-          >
-            <Image
-              src="/asset/images/contents/copy_link_icon.svg"
-              alt=""
-              width={20}
-              height={20}
-            />
-            <span className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">
-              URLコピー
-            </span>
-          </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 pl-1">
+            <p className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">
+              景色{" "}
+              <span className="font-semibold text-[#E97923]">
+                {viewCount.toLocaleString()}
+              </span>
+              件
+            </p>
+            <div className="bg-[#DDE3E8] w-px h-3" />
+            <button
+              type="button"
+              onClick={handleCopyUrl}
+              className="flex items-center gap-[6px] cursor-pointer"
+            >
+              <Image
+                src="/asset/images/contents/copy_link_icon.svg"
+                alt=""
+                width={20}
+                height={20}
+              />
+              <span className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">
+                URLコピー
+              </span>
+            </button>
+          </div>
+          {actions && (
+            <div className="hidden lg:flex items-center gap-2 shrink-0">
+              {actions}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* 관리정보 (사내직원만 노출) */}
+      {showManagement && (
+        <>
       {/* PC: 관리정보 4열 테이블 */}
       <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[1440px]">
         <div className="flex gap-1">
@@ -147,6 +163,8 @@ export function ContentsDetailInfo({
           </div>
         </div>
       </div>
+        </>
+      )}
     </>
   );
 }
