@@ -47,15 +47,18 @@ export async function GET(request: NextRequest) {
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
     const andConditions: Prisma.ContentWhereInput[] = [];
 
-    // 카테고리 필터 — 사용자가 지정한 categoryIds 로 some 매칭
+    // 카테고리 필터 — 사용자가 지정한 categoryIds 로 some 매칭.
+    // Number("")==0, !isNaN(0)==true 로 0 이 통과되는 것을 막기 위해 양의 정수만 허용.
     if (categoryIds) {
-      andConditions.push({
-        categories: {
-          some: {
-            categoryId: { in: categoryIds.split(",").map(Number).filter((n) => !isNaN(n)) },
-          },
-        },
-      });
+      const parsedIds = categoryIds
+        .split(",")
+        .map(Number)
+        .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n > 0);
+      if (parsedIds.length > 0) {
+        andConditions.push({
+          categories: { some: { categoryId: { in: parsedIds } } },
+        });
+      }
     }
 
     if (internal) {

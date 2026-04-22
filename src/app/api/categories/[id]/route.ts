@@ -156,18 +156,23 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     // 하위 카테고리 존재 여부만 확인 후 삭제. 콘텐츠 연결(ContentCategory)은
     // Prisma 스키마의 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체는 영향 없음, 링크만 제거).
-    const deleted = await prisma.$transaction(async (tx) => {
-      const childCount = await tx.category.count({
-        where: { parentId: parsed.data },
-      });
+    // isolationLevel: Serializable — count 체크와 delete 사이에 다른 세션이 child 를 추가하는
+    // TOCTOU race 차단 (PUT 핸들러와 동일 기준).
+    const deleted = await prisma.$transaction(
+      async (tx) => {
+        const childCount = await tx.category.count({
+          where: { parentId: parsed.data },
+        });
 
-      if (childCount > 0) {
-        throw new Error("HAS_CHILDREN");
-      }
+        if (childCount > 0) {
+          throw new Error("HAS_CHILDREN");
+        }
 
-      await tx.category.delete({ where: { id: parsed.data } });
-      return { id: parsed.data };
-    });
+        await tx.category.delete({ where: { id: parsed.data } });
+        return { id: parsed.data };
+      },
+      { isolationLevel: "Serializable" },
+    );
 
     return NextResponse.json({ data: deleted });
   } catch (error) {
