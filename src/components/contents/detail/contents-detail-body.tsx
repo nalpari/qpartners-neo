@@ -10,6 +10,8 @@ interface ContentsDetailBodyProps {
   title: string;
   createdAt: string;
   updatedAt: string;
+  /** 서버 단일 출처 — 최초 등록 이후 1회 이상 갱신 여부 */
+  hasBeenUpdated: boolean;
   body: string | null;
 }
 
@@ -30,6 +32,7 @@ export function ContentsDetailBody({
   title,
   createdAt,
   updatedAt,
+  hasBeenUpdated,
   body,
 }: ContentsDetailBodyProps) {
   const formattedCreated = formatDate(createdAt);
@@ -46,7 +49,7 @@ export function ContentsDetailBody({
           </h1>
           <div className="flex items-center gap-3 shrink-0">
             <DateBadge label="登録日" date={formattedCreated} />
-            <DateBadge label="更新日" date={formattedUpdated} />
+            {hasBeenUpdated && <DateBadge label="更新日" date={formattedUpdated} />}
           </div>
         </div>
 
@@ -54,7 +57,7 @@ export function ContentsDetailBody({
         <div className="flex lg:hidden flex-col gap-[18px]">
           <div className="flex items-center gap-3">
             <DateBadge label="登録日" date={formattedCreated} />
-            <DateBadge label="更新日" date={formattedUpdated} />
+            {hasBeenUpdated && <DateBadge label="更新日" date={formattedUpdated} />}
           </div>
           <h1 className="font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
             {title}

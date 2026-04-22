@@ -17,10 +17,12 @@ services:
         PORT: ${APP_PORT:-5010}
     container_name: qpartners-app
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-5010}:${APP_PORT:-5010}"
+    network_mode: host
+    # ports:
+    #   - "${APP_PORT:-5010}:${APP_PORT:-5010}"
     env_file: .env.${APP_ENV:-development}
     environment:
+      APP_ENV: ${APP_ENV:-development}
       UPLOAD_DIR: /data/uploads
     volumes:
       - ${APP_ROOT:-/home/interplug/qpartners/development}/uploads_data:/data/uploads

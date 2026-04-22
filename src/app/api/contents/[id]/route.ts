@@ -13,6 +13,7 @@ import {
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
+import { resolveUserName } from "@/lib/admin-name";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
 
@@ -73,17 +74,53 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (일반 사용자에게 admin 메타데이터 노출 방지)
     // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴
-    const authorIsSuperAdmin = internal
-      ? (await resolveAuthorSuperAdmin({
-          userType: content.userType,
-          userId: content.userId,
-        })).isSuperAdmin
-      : undefined;
+    // 담당자 이름(createdByName/updatedByName)은 사내 사용자 관리정보 영역 표시용 — 외부 노출 방지.
+    // content.userType 을 명시 전달 (requireAdmin 전제 변경에 대비한 방어적 설계).
+    // QSP 장애 시 null → 프론트에서 userId 로 폴백.
+    //
+    // 아키텍처 노트:
+    // - Promise.allSettled: DB(resolveAuthorSuperAdmin) vs 외부 QSP(resolveUserName) 실패 도메인이 다름.
+    //   하나가 throw 해도 나머지 결과를 보존 — GET 전체 500 방지
+    // - QSP dedup: createdBy === updatedBy 인 일반 케이스에서 외부 HTTP 10s 호출을 1회로 축소
+    const logTag = "[GET /api/contents/:id]";
+    let authorIsSuperAdmin: boolean | undefined;
+    let createdByName: string | null | undefined;
+    let updatedByName: string | null | undefined;
+    if (internal) {
+      const createdById = content.createdBy ?? content.userId;
+      const sameUser = content.updatedBy && content.updatedBy === createdById;
+      const [superAdminSettled, createdNameSettled, updatedNameSettled] = await Promise.allSettled([
+        resolveAuthorSuperAdmin({ userType: content.userType, userId: content.userId }),
+        resolveUserName(content.userType, createdById, logTag),
+        content.updatedBy && !sameUser
+          ? resolveUserName(content.userType, content.updatedBy, logTag)
+          : Promise.resolve<string | null>(null),
+      ]);
+      authorIsSuperAdmin =
+        superAdminSettled.status === "fulfilled" ? superAdminSettled.value.isSuperAdmin : undefined;
+      createdByName = createdNameSettled.status === "fulfilled" ? createdNameSettled.value : null;
+      // createdBy === updatedBy 면 조회 결과 재사용
+      if (!content.updatedBy) {
+        updatedByName = null;
+      } else if (sameUser) {
+        updatedByName = createdByName;
+      } else {
+        updatedByName = updatedNameSettled.status === "fulfilled" ? updatedNameSettled.value : null;
+      }
+    }
+
+    // 갱신 이력 판별을 서버에서 단일 출처로 계산 (클라이언트 Date 비교 중복 제거).
+    // DB precision 한계로 updatedAt===createdAt 가 초 단위에서 동일할 수 있으나
+    // 비교 로직을 클라이언트 여러 곳에서 반복하면 드리프트 위험 → 서버 한 군데로 집중.
+    const hasBeenUpdated = content.updatedAt.getTime() !== content.createdAt.getTime();
 
     return NextResponse.json({
       data: {
         ...content,
         authorIsSuperAdmin,
+        createdByName,
+        updatedByName,
+        hasBeenUpdated,
         isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: buildCategoryTree(content.categories, { includeInternal: internal }),

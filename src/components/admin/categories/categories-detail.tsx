@@ -72,7 +72,8 @@ export function CategoriesDetail({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Design Ref: §4.3 — parentId 변경 시 자동채번 + 사내전용 연동
+  // Design Ref: §4.3 — parentId 변경 시 자동채번
+  // (이전 버전: 부모의 isInternalOnly 를 자동 전파했으나, 운영 요구에 따라 사용자 선택 유지)
   const handleParentChange = (parentId: number | null) => {
     if (parentId === null) {
       setForm((prev) => ({ ...prev, parentId, categoryCode: "" }));
@@ -80,21 +81,16 @@ export function CategoriesDetail({
       const parent = treeData.find((p) => p.id === parentId);
       if (parent) {
         const autoCode = generateChildCode(parent.categoryCode, parent.children);
-        // 2Depth는 부모의 사내전용 값을 따라감
         setForm((prev) => ({
           ...prev,
           parentId,
           categoryCode: autoCode,
-          isInternalOnly: parent.isInternalOnly,
         }));
       } else {
         setForm((prev) => ({ ...prev, parentId }));
       }
     }
   };
-
-  // 2Depth일 때 사내전용은 부모를 따라가므로 비활성화
-  const isInternalOnlyDisabled = form.parentId !== null;
 
   return (
     <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[24px] pb-[24px] overflow-hidden self-stretch">
@@ -129,22 +125,20 @@ export function CategoriesDetail({
 
       {/* Form Rows */}
       <div className="flex flex-col gap-[4px]">
-        {/* Row 1: 社内会員専用 */}
+        {/* Row 1: 社内会員専用 — 제약 없이 항상 편집 가능 (2Depth/수정모드 모두) */}
         <FormRow label="社内会員専用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
               checked={form.isInternalOnly}
-              onChange={() => !isInternalOnlyDisabled && updateField("isInternalOnly", true)}
+              onChange={() => updateField("isInternalOnly", true)}
               label="Y"
               name="isInternalOnly"
-              disabled={isInternalOnlyDisabled}
             />
             <Radio
               checked={!form.isInternalOnly}
-              onChange={() => !isInternalOnlyDisabled && updateField("isInternalOnly", false)}
+              onChange={() => updateField("isInternalOnly", false)}
               label="N"
               name="isInternalOnly"
-              disabled={isInternalOnlyDisabled}
             />
           </div>
         </FormRow>

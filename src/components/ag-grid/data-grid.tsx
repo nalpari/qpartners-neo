@@ -135,6 +135,10 @@ export function DataGrid<T>({
         context={context}
         suppressCellFocus
         suppressRowHoverHighlight={false}
+        // 셀 텍스트 드래그 선택·복사 허용 (기본은 AG Grid range selection 때문에 막혀 있음)
+        // ensureDomOrder 는 드래그 선택 시 DOM 순서와 화면 순서 일치 보장 → 복사 결과가 올바르게 정렬됨
+        enableCellTextSelection
+        ensureDomOrder
         headerHeight={57}
         rowHeight={57}
         overlayNoRowsTemplate={noRowsTemplate}

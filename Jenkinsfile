@@ -22,6 +22,11 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
+    triggers {
+        // 매일 08시, 12시, 17시에 SCM 폴링 → 새 커밋 존재 시에만 빌드
+        pollSCM('0 8,12,17 * * *')
+    }
+
     stages {
         stage('Checkout') {
             steps {

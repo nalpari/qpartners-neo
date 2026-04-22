@@ -28,6 +28,11 @@ button{cursor: pointer;}
   overflow: hidden;
 }
 
+/* 팝퍼 z-index 10 — 주변 요소(그리드 셀 등) 위로 살짝 띄움 */
+.react-datepicker-popper {
+  z-index: 10 !important;
+}
+
 .react-datepicker__header {
   background-color: #fff !important;
   border-bottom: 1px solid #EBEBEB !important;

@@ -133,7 +133,6 @@ export function ContentsFormAttachment({
       {/* 타이틀 */}
       <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
         ファイル添付
-        <span className="text-[#FF1A1A]">*</span>
       </h2>
 
       {/* 파일 그룹: 드롭존 + 파일목록 */}

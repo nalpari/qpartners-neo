@@ -203,10 +203,6 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       openAlert({ type: "alert", message: "内容は必須入力項目です。" });
       return;
     }
-    if (attachments.length === 0 && mode === "create") {
-      openAlert({ type: "alert", message: "ファイル添付は必須入力項目です。" });
-      return;
-    }
 
     // 게시대상 배열 구성
     const targets = postTargets.targets
