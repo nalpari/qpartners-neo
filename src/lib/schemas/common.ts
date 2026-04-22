@@ -42,7 +42,8 @@ export type MenuCode = z.infer<typeof menuCodeSchema>;
  * seed 의 `ADMIN_RESTRICTED_MENUS` 와 PUT /roles/:rc/permissions 의 lockout 가드 공용.
  */
 export const restrictedMenuCodes = ["PERMISSIONS", "MENUS", "CODES"] as const;
-export const restrictedMenuCodeSet: ReadonlySet<string> = new Set(restrictedMenuCodes);
+export type RestrictedMenuCode = (typeof restrictedMenuCodes)[number];
+export const restrictedMenuCodeSet: ReadonlySet<MenuCode> = new Set(restrictedMenuCodes);
 
 /** URL path parameter ID 검증 — 공통 */
 export const idParamSchema = z.coerce
