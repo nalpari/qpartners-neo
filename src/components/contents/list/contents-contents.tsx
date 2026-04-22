@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
-import type { LoginUser } from "@/lib/schemas/auth";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -77,13 +77,8 @@ export function ContentsContents() {
     [router],
   );
 
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
-  const isInternal = user?.userTp === "ADMIN";
+  // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
+  const isInternal = useIsInternal();
 
   // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
@@ -156,10 +151,14 @@ export interface ContentListItem {
   title: string;
   status: string;
   authorDepartment: string | null;
+  /** 사내 사용자에게만 내려옴 — 목록 최종확인자 컬럼용 */
+  approverLevel?: number | null;
   viewCount: number;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** 서버 단일 출처 — updatedAt !== createdAt (최초 등록 이후 1회 이상 갱신 여부) */
+  hasBeenUpdated: boolean;
   isNew: boolean;
   isUpdated: boolean;
   categories: {

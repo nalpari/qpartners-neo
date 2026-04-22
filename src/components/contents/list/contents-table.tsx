@@ -19,6 +19,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { usePageSize } from "@/hooks/use-page-size";
+import { useApprover } from "@/hooks/use-approver";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
 function renderCategoryCell(
@@ -194,6 +195,24 @@ const TARGET_TYPE_LABELS: Record<string, string> = {
   non_member: "非会員",
 };
 
+/** 게시대상 표시 순서 — 1차 → 2차 → 시공점 → 일반 → 비회원 */
+const TARGET_TYPE_ORDER: Record<string, number> = {
+  first_store: 1,
+  second_store: 2,
+  seko: 3,
+  general: 4,
+  non_member: 5,
+};
+
+/** 고정 순서로 정렬된 targets 반환 (원본 불변) */
+function sortTargets<T extends { targetType: string }>(targets: readonly T[]): T[] {
+  return [...targets].sort(
+    (a, b) =>
+      (TARGET_TYPE_ORDER[a.targetType] ?? 99) -
+      (TARGET_TYPE_ORDER[b.targetType] ?? 99),
+  );
+}
+
 interface ContentsTableProps {
   isInternal?: boolean;
   categories?: CategoryNode[];
@@ -216,6 +235,16 @@ export function ContentsTable({
   const router = useRouter();
   const isMobile = useIsMobile();
   const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
+  // APPROVER 공통코드는 사내 사용자에게만 최종확인자 컬럼 표시 — 비사내 fetch 생략
+  const { labelMap: approverLabelMap, isLoading: isLoadingApprover } = useApprover({
+    enabled: isInternal,
+  });
+
+  // 행 데이터에 정렬된 targets 를 미리 계산 (cellRenderer 매 호출마다 sort 비용 회피)
+  const rowData = useMemo<ContentListItem[]>(
+    () => data.map((item) => ({ ...item, targets: sortTargets(item.targets) })),
+    [data],
+  );
 
   const totalCount = meta?.total ?? 0;
   const currentPage = meta?.page ?? 1;
@@ -274,7 +303,12 @@ export function ContentsTable({
         minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueFormatter: (params) => params.value ? formatDate(params.value) : "-",
+        // 서버 hasBeenUpdated 단일 출처 — 최초 등록 시 "-", 갱신 이력 있으면 날짜
+        valueFormatter: (params) => {
+          const row = params.data;
+          if (!row || !row.hasBeenUpdated || !params.value) return "-";
+          return formatDate(params.value);
+        },
       },
     ];
 
@@ -283,6 +317,7 @@ export function ContentsTable({
         {
           headerName: "掲示対象",
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
+            // rowData 에서 이미 정렬된 targets 를 사용 (cellRenderer sort 비용 회피)
             const targets = params.data?.targets ?? [];
             if (targets.length === 0) return <span>-</span>;
             return (
@@ -310,19 +345,24 @@ export function ContentsTable({
         },
         {
           headerName: "最終確認者",
-          field: "approverLevel" as keyof ContentListItem,
+          field: "approverLevel",
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
           cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-          // TODO: 공통코드 매핑 필요 — 현재는 빈값 표시
-          valueFormatter: () => "-",
+          // APPROVER 공통코드 → 표시 라벨. 조회 중엔 "…", 미매핑 level 은 "Lv.N" 폴백, null 은 "-"
+          valueFormatter: (params) => {
+            const lv = params.value;
+            if (lv == null) return "-";
+            if (isLoadingApprover) return "…";
+            return approverLabelMap[lv] ?? `Lv.${lv}`;
+          },
         },
       );
     }
 
     return baseCols;
-  }, [isInternal, categories]);
+  }, [isInternal, categories, approverLabelMap, isLoadingApprover]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
@@ -347,7 +387,11 @@ export function ContentsTable({
       {
         label: "更新日",
         key: "updatedAt",
-        render: (item) => item.updatedAt ? formatDate(item.updatedAt) : "-",
+        // 서버 hasBeenUpdated 단일 출처
+        render: (item) => {
+          if (!item.hasBeenUpdated || !item.updatedAt) return "-";
+          return formatDate(item.updatedAt);
+        },
       },
     ];
 
@@ -357,6 +401,7 @@ export function ContentsTable({
           label: "掲示対象",
           key: "targets" as keyof ContentListItem,
           render: (item) => {
+            // rowData 에서 이미 정렬된 targets 사용
             if (item.targets.length === 0) return "-";
             return item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", ");
           },
@@ -368,14 +413,19 @@ export function ContentsTable({
         },
         {
           label: "最終確認者",
-          key: "id" as keyof ContentListItem,
-          render: () => "-", // TODO: 공통코드 매핑
+          key: "approverLevel",
+          render: (item) => {
+            const lv = item.approverLevel;
+            if (lv == null) return "-";
+            if (isLoadingApprover) return "…";
+            return approverLabelMap[lv] ?? `Lv.${lv}`;
+          },
         },
       );
     }
 
     return base;
-  }, [isInternal, categories]);
+  }, [isInternal, categories, approverLabelMap, isLoadingApprover]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
@@ -421,7 +471,7 @@ export function ContentsTable({
           <div className="flex flex-col gap-6">
             <DataGrid<ContentListItem>
               columnDefs={columnDefs}
-              rowData={data}
+              rowData={rowData}
               className="contents-grid"
               emptyMessage="該当するコンテンツがありません。"
             />
@@ -451,7 +501,7 @@ export function ContentsTable({
             </div>
           ) : (
             <MobileCardList<ContentListItem>
-              data={data}
+              data={rowData}
               fields={mobileFields}
               keyExtractor={(item) => String(item.id)}
               onItemClick={handleMobileItemClick}

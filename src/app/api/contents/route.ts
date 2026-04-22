@@ -127,10 +127,14 @@ export async function GET(request: NextRequest) {
       title: c.title,
       status: c.status,
       authorDepartment: c.authorDepartment,
+      // 사내 사용자에게만 approverLevel 제공 — 목록 화면 최종확인자 컬럼용
+      approverLevel: internal ? c.approverLevel : undefined,
       viewCount: c.viewCount,
       publishedAt: c.publishedAt,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+      // 갱신 이력 판별 서버 단일 출처 — 클라이언트 Date 비교 제거용
+      hasBeenUpdated: c.updatedAt.getTime() !== c.createdAt.getTime(),
       isNew: now - c.createdAt.getTime() < FIVE_DAYS_MS,
       isUpdated: now - c.updatedAt.getTime() < FIVE_DAYS_MS,
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
