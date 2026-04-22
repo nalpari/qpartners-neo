@@ -15,7 +15,10 @@ WORKDIR /app
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate && npx next build --webpack
+# .next/cache 를 BuildKit cache mount 로 유지 — 재빌드 시 증분 컴파일로 단축.
+# Turbopack 사용 (Next.js 16 기본) — webpack 대비 빌드 시간 단축.
+RUN --mount=type=cache,target=/app/.next/cache \
+    npx prisma generate && npx next build
 
 # --- Runner ---
 FROM node:22-alpine AS runner
