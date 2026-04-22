@@ -72,11 +72,26 @@ interface RelatedSite {
   href: string;
   note?: string;
 }
+// 환경별 URL 분기 — NODE_ENV 는 Next.js 빌드 시 클라이언트 번들에 인라인됨
+const IS_PROD = process.env.NODE_ENV === "production";
+
+const RELATED_SITE_URLS = {
+  qorder: IS_PROD ? "https://q-order.q-cells.jp/" : "https://q-order-dev.q-cells.jp/",
+  qmusubi: IS_PROD ? "https://q-musubi.q-cells.jp/" : "https://q-musubi-dev.q-cells.jp/",
+  hanasys: IS_PROD ? "https://www.hanasys.jp/" : "https://dev.hanasys.jp/",
+} as const;
+
+// Q.WARRANTY 는 역할별 로그인 URL 분리 (ADMIN → admin_login, STORE → seller_login)
+const QWARRANTY_URLS = {
+  ADMIN: "https://q-warranty.q-cells.jp/admin_login",
+  STORE: "https://q-warranty.q-cells.jp/seller_login",
+} as const;
+
 const ALL_RELATED_SITES: readonly RelatedSite[] = [
-  { label: "HANASYS ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
-  { label: "HANASYS MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
-  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp", note: "(別途ログインが必要)" },
+  { label: "HANASYS ORDER", value: "qorder", href: RELATED_SITE_URLS.qorder },
+  { label: "HANASYS MUSUBI", value: "qmusubi", href: RELATED_SITE_URLS.qmusubi },
+  { label: "HANASYS DESIGN", value: "hanasys", href: RELATED_SITE_URLS.hanasys },
+  { label: "Q.WARRANTY", value: "qwarranty", href: QWARRANTY_URLS.STORE, note: "(別途ログインが必要)" },
 ];
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
@@ -100,7 +115,10 @@ function getRelatedSites(user: LoginUser) {
   const key = getUserSiteKey(user);
   if (!key) return [];
   const allowed = SITE_ACCESS_MAP[key];
-  return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
+  const qwarrantyHref = key === "ADMIN" ? QWARRANTY_URLS.ADMIN : QWARRANTY_URLS.STORE;
+  return ALL_RELATED_SITES
+    .filter((site) => allowed.includes(site.value))
+    .map((site) => site.value === "qwarranty" ? { ...site, href: qwarrantyHref } : site);
 }
 
 function subscribeAuthFlag(callback: () => void) {
