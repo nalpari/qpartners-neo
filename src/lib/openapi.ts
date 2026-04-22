@@ -1196,7 +1196,13 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "targetType", in: "query", schema: { type: "string" } },
           { name: "department", in: "query", schema: { type: "string" } },
-          { name: "internalOnly", in: "query", schema: { type: "boolean", default: false } },
+          {
+            name: "internalOnly",
+            in: "query",
+            description:
+              "사내회원 전용 게시글만 조회 여부.\n- 사내 사용자(ADMIN): true 시 외부 게시대상이 없는(사내회원 전용) 게시글만 반환. targetType 파라미터는 무시됨.\n- 비사내 사용자: 파라미터 값과 무관하게 사내전용 카테고리는 항상 제외 (bypass 불가).",
+            schema: { type: "boolean", default: false },
+          },
           { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "oldest", "views", "updated"], default: "newest" } },
         ],
         responses: {

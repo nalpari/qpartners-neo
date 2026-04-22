@@ -160,21 +160,43 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // TOCTOU race 차단 (PUT 핸들러와 동일 기준).
     const deleted = await prisma.$transaction(
       async (tx) => {
-        const childCount = await tx.category.count({
+        const childExists = await tx.category.findFirst({
           where: { parentId: parsed.data },
+          select: { id: true },
         });
 
-        if (childCount > 0) {
+        if (childExists) {
           throw new Error("HAS_CHILDREN");
         }
 
+        // Cascade 로 해제될 ContentCategory 링크 선조회 — 감사 로그·응답에 카운트 포함.
+        // 실제 cascade 삭제는 category.delete() 호출 시 DB 엔진이 처리.
+        const affectedLinks = await tx.contentCategory.findMany({
+          where: { categoryId: parsed.data },
+          select: { contentId: true },
+        });
+
         await tx.category.delete({ where: { id: parsed.data } });
-        return { id: parsed.data };
+        return { id: parsed.data, cascadedContentIds: affectedLinks.map((l) => l.contentId) };
       },
       { isolationLevel: "Serializable" },
     );
 
-    return NextResponse.json({ data: deleted });
+    // 구조적 감사 로그 — PII 없음(ID만). 운영 복구/추적용.
+    if (deleted.cascadedContentIds.length > 0) {
+      console.info("[DELETE /api/categories/:id] cascade removed", {
+        categoryId: deleted.id,
+        cascadedContentCount: deleted.cascadedContentIds.length,
+        cascadedContentIds: deleted.cascadedContentIds,
+      });
+    }
+
+    return NextResponse.json({
+      data: {
+        id: deleted.id,
+        cascadedContentCount: deleted.cascadedContentIds.length,
+      },
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "HAS_CHILDREN") {
       return NextResponse.json(

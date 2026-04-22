@@ -125,11 +125,14 @@ export function CategoriesContents() {
   };
 
   // Plan SC: SC-06 — 삭제
+  // 연결된 콘텐츠 링크(ContentCategory)는 Cascade 로 자동 해제됨을 사용자에게 고지.
+  // 콘텐츠 본체는 보존되며 카테고리 매핑만 해제됨.
   const handleDelete = () => {
     if (selectedId === null) return;
     openAlert({
       type: "confirm",
-      message: "削除してもよろしいですか？",
+      message:
+        "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。\n削除してもよろしいですか？",
       onConfirm: () => deleteMutation.mutate(selectedId),
     });
   };
