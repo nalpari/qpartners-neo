@@ -19,22 +19,36 @@ const M2M_SECRET_HEADER = "x-qsp-auth";
 
 /**
  * 호출자(QSP) 검증 결과.
- * - `authorized` : shared secret 일치 또는 env 미설정(dev 점진 배포)
+ * - `authorized` : shared secret 일치 또는 명시적 dev 점진 배포 모드
  * - `unauthorized`: 헤더 누락 / 불일치
- * env 미설정 시 프로덕션이면 ConfigError throw (배포 누락 방지).
+ *
+ * 시크릿 필수 여부 판정:
+ *   1. `AUTO_LOGIN_REQUIRE_CALLER_SECRET=false` 이면 강제 비활성 (로컬 dev 전용)
+ *   2. 그 외에는 모든 환경(dev/stg/prd)에서 시크릿 필수 — 미설정 시 ConfigError throw
+ *
+ * 배경: `NODE_ENV` 기반 분기는 staging이 production 빌드 아닌 경우 decrypt API가
+ * 무인증으로 열려 cipher↔userId Oracle이 되는 문제가 있음. 명시적 opt-out 플래그로 강제화.
  */
 type CallerVerdict = "authorized" | "unauthorized";
+
+function isCallerSecretRequired(): boolean {
+  // 기본값: true (모든 환경에서 시크릿 필수). "false"/"0" 만 강제 비활성으로 인정.
+  const raw = process.env.AUTO_LOGIN_REQUIRE_CALLER_SECRET?.trim().toLowerCase();
+  if (raw === "false" || raw === "0") return false;
+  return true;
+}
 
 function verifyCallerSecret(request: NextRequest): CallerVerdict {
   const expected = process.env.AUTO_LOGIN_DECRYPT_SECRET;
   if (!expected) {
-    if (process.env.NODE_ENV === "production") {
+    if (isCallerSecretRequired()) {
       throw new ConfigError(
-        "AUTO_LOGIN_DECRYPT_SECRET 환경변수가 설정되지 않았습니다 (프로덕션 필수)",
+        "AUTO_LOGIN_DECRYPT_SECRET 환경변수가 설정되지 않았습니다 " +
+          "(기본 필수 — 로컬 dev 에서만 AUTO_LOGIN_REQUIRE_CALLER_SECRET=false 로 비활성화 가능)",
       );
     }
     console.warn(
-      "[GET /api/auth/auto-login/decrypt] AUTO_LOGIN_DECRYPT_SECRET 미설정 — 호출자 검증 skip (dev 전용)",
+      "[GET /api/auth/auto-login/decrypt] AUTO_LOGIN_DECRYPT_SECRET 미설정 — 호출자 검증 skip (AUTO_LOGIN_REQUIRE_CALLER_SECRET=false, dev 전용)",
     );
     return "authorized";
   }
@@ -42,7 +56,12 @@ function verifyCallerSecret(request: NextRequest): CallerVerdict {
   if (!provided) return "unauthorized";
   const expectedBuf = Buffer.from(expected, "utf8");
   const providedBuf = Buffer.from(provided, "utf8");
-  if (expectedBuf.length !== providedBuf.length) return "unauthorized";
+  if (expectedBuf.length !== providedBuf.length) {
+    // timing leak 방지: 길이가 달라도 dummy 비교 수행 후 결과 무시
+    const dummy = Buffer.alloc(expectedBuf.length);
+    timingSafeEqual(expectedBuf, dummy);
+    return "unauthorized";
+  }
   return timingSafeEqual(expectedBuf, providedBuf) ? "authorized" : "unauthorized";
 }
 
@@ -145,7 +164,7 @@ export async function GET(request: NextRequest) {
       });
     } catch (error: unknown) {
       console.error("[GET /api/auth/auto-login/decrypt] 복호화 실패:", {
-        cipherPrefix: autoLoginParam1.slice(0, 8),
+        // cipher 평문 prefix 로깅 금지 — 길이만 기록 (CBC 첫 블록 노출 방어)
         cipherLength: autoLoginParam1.length,
         errorName: error instanceof Error ? error.name : typeof error,
         errorMessage: error instanceof Error ? error.message : String(error),

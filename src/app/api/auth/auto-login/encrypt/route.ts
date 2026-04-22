@@ -12,17 +12,42 @@ import type { AutoLoginTarget } from "@/lib/schemas/auto-login";
 /**
  * QSP 응답 `data.url` 허용 호스트 — Open Redirect 방어.
  * 정확 일치 또는 서브도메인(*.hanasys.jp 등) 허용.
+ *
+ * 기본 목록은 하드코딩된 fallback이며, 환경에 따라 QSP가 반환하는 호스트가 다를 수 있으므로
+ * `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS` env(콤마 구분)로 덮어쓸 수 있음.
+ * 예) `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS="hanasys.jp,hanasys.co.jp,q-cells.jp,qsalesplatform.com"`
  */
-const ALLOWED_QSP_REDIRECT_HOSTS = ["hanasys.jp", "hanasys.co.jp", "q-cells.jp"];
+const DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS = [
+  "hanasys.jp",
+  "hanasys.co.jp",
+  "q-cells.jp",
+] as const;
+
+function getAllowedQspRedirectHosts(): readonly string[] {
+  const raw = process.env.AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS?.trim();
+  if (!raw) return DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS;
+  const parsed = raw
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0);
+  if (parsed.length === 0) return DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS;
+  return parsed;
+}
 
 function isAllowedQspRedirectUrl(raw: string): boolean {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "https:") return false;
-    const host = parsed.hostname;
-    return ALLOWED_QSP_REDIRECT_HOSTS.some(
-      (allowed) => host === allowed || host.endsWith(`.${allowed}`),
-    );
+    const host = parsed.hostname.toLowerCase();
+    const allowedHosts = getAllowedQspRedirectHosts();
+    return allowedHosts.some((allowed) => {
+      if (host === allowed) return true;
+      // 서브도메인 허용 — `foo.hanasys.jp` OK, `evilhanasys.jp` 차단
+      return (
+        host.length > allowed.length + 1 &&
+        host.endsWith(`.${allowed}`)
+      );
+    });
   } catch (error: unknown) {
     console.warn("[auto-login] QSP redirect URL 파싱 실패:", {
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -31,8 +56,15 @@ function isAllowedQspRedirectUrl(raw: string): boolean {
   }
 }
 
-/** QSP autoLoginEncryptData 응답 — data.userId: 암호문(non-empty), data.url: 이동 base URL (HANASYS용) */
+/**
+ * QSP autoLoginEncryptData 응답.
+ * - data.userId: 암호문(non-empty)
+ * - data.url: 이동 base URL (HANASYS용)
+ * - resultCode / resultMessage: 공통 응답 메타 — 200 이외는 상위 로직에서 502로 반환
+ */
 const qspEncryptResponseSchema = z.object({
+  resultCode: z.number().int().optional(),
+  resultMessage: z.string().optional(),
   data: z.object({
     userId: z.string().min(1, "QSP 암호문이 비어있습니다"),
     url: z
@@ -175,8 +207,35 @@ async function encryptViaQsp(userId: string) {
     );
   }
 
+  // QSP 계약상 성공은 resultCode=200. 스키마가 optional이지만 값이 있으면 반드시 200이어야 함.
+  if (parsed.data.resultCode !== undefined && parsed.data.resultCode !== 200) {
+    console.error("[POST /api/auth/auto-login/encrypt] QSP resultCode 비정상:", {
+      resultCode: parsed.data.resultCode,
+      resultMessage: parsed.data.resultMessage,
+    });
+    return NextResponse.json(
+      { error: "暗号化サーバーの応答に失敗しました" },
+      { status: 502 },
+    );
+  }
+
   const { userId: cipherText, url: qspUrl } = parsed.data.data;
-  const redirectUrl = `${qspUrl}${encodeURIComponent(cipherText)}`;
+  // 문자열 연결 대신 URL 객체 사용 — QSP가 반환하는 url에 ?가 포함/미포함 어느 쪽이든 안전.
+  // searchParams.set은 값을 자동으로 인코딩하므로 encodeURIComponent 불필요.
+  let redirectUrl: string;
+  try {
+    const target = new URL(qspUrl);
+    target.searchParams.set("autoLoginParam1", cipherText);
+    redirectUrl = target.toString();
+  } catch (error: unknown) {
+    console.error("[POST /api/auth/auto-login/encrypt] QSP url 조립 실패:", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json(
+      { error: "暗号化サーバーの応答形式が正しくありません" },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({ data: { url: redirectUrl } });
 }
@@ -194,6 +253,19 @@ function encryptSelf(userId: string, baseUrl: string) {
     );
   }
 
-  const redirectUrl = `${baseUrl}?autoLoginParam1=${encodeURIComponent(cipherText)}`;
+  let redirectUrl: string;
+  try {
+    const target = new URL(baseUrl);
+    target.searchParams.set("autoLoginParam1", cipherText);
+    redirectUrl = target.toString();
+  } catch (error: unknown) {
+    console.error("[POST /api/auth/auto-login/encrypt] 자체 AES256 URL 조립 실패:", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json(
+      { error: "暗号化処理に失敗しました" },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ data: { url: redirectUrl } });
 }

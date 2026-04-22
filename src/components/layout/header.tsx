@@ -76,21 +76,41 @@ function getRelatedSites(user: LoginUser) {
   return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
 }
 
-/** 자동로그인: target별 암호화 API 호출 후 이동, 실패 시 직접 이동 폴백 (비로그인 상태 진입) */
-async function navigateWithAutoLogin(target: AutoLoginTarget, fallbackHref: string) {
+/**
+ * 자동로그인 네비게이션 결과.
+ * - `redirected`: 암호화 URL 수신 후 이동 시작 (호출측은 추가 조치 불필요)
+ * - `unauthenticated`: 401 — 세션 만료로 간주, 호출측에서 로그인 유도
+ * - `fallback`: 5xx/네트워크 등 — 호출측에서 원본 href로 폴백 이동
+ */
+type AutoLoginOutcome = "redirected" | "unauthenticated" | "fallback";
+
+/** 자동로그인: target별 암호화 API 호출 후 이동. 401은 세션 유도, 기타 실패는 폴백 분기. */
+async function navigateWithAutoLogin(
+  target: AutoLoginTarget,
+): Promise<AutoLoginOutcome> {
   try {
     const res = await api.post<{ data: { url: string } }>("/auth/auto-login/encrypt", { target });
     window.location.href = res.data.data.url;
+    return "redirected";
   } catch (error: unknown) {
-    // bare catch 금지(api.md) — 실패 컨텍스트 최소 로깅 후 폴백 이동. 세션 만료/401 분기 등 UX 개선은 후속 티켓.
     const status =
       error instanceof AxiosError ? error.response?.status : undefined;
-    console.error("[navigateWithAutoLogin] 자동로그인 실패 — 원본 이동:", {
+    console.error("[navigateWithAutoLogin] 자동로그인 실패:", {
       target,
       status,
       message: error instanceof Error ? error.message : String(error),
     });
-    window.location.href = fallbackHref;
+    if (status === 401) {
+      // 세션 만료 — 플래그 정리 + 인증 상태 변경 통지. 이동은 호출측에서 UX 분기.
+      try {
+        localStorage.removeItem(AUTH_FLAG_KEY);
+      } catch (e) {
+        console.warn("[navigateWithAutoLogin] localStorage.removeItem 실패:", e);
+      }
+      dispatchAuthChange();
+      return "unauthenticated";
+    }
+    return "fallback";
   }
 }
 
@@ -141,6 +161,35 @@ export function Gnb() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSitesOpen, setIsMobileSitesOpen] = useState(false);
+  // 자동로그인 진행 중인 target (중복 클릭 방어 + 버튼 UX). null 이면 idle.
+  const [autoLoginLoading, setAutoLoginLoading] = useState<AutoLoginTarget | null>(null);
+
+  /** 드롭다운/모바일 메뉴 공용 자동로그인 클릭 핸들러 — 중복 방어 + 결과에 따른 UX 분기 */
+  const handleAutoLoginClick = (
+    target: AutoLoginTarget,
+    fallbackHref: string,
+  ) => {
+    if (autoLoginLoading) return; // 이미 진행 중이면 무시
+    setAutoLoginLoading(target);
+    navigateWithAutoLogin(target)
+      .then((outcome) => {
+        if (outcome === "unauthenticated") {
+          // 세션 만료 — 관련사이트 드롭다운 닫고 로그인 화면으로 유도
+          setIsDropdownOpen(false);
+          setIsMobileMenuOpen(false);
+          setIsMobileSitesOpen(false);
+          router.replace("/login");
+          return;
+        }
+        if (outcome === "fallback") {
+          window.location.href = fallbackHref;
+        }
+        // "redirected" 는 이미 window.location.href 가 이동 중 — 추가 조치 없음
+      })
+      .finally(() => {
+        setAutoLoginLoading(null);
+      });
+  };
 
   return (
     <div className="relative h-[68px] lg:h-[78px]">
@@ -265,31 +314,55 @@ export function Gnb() {
                       </button>
                     </div>
                     <ul className="flex flex-col gap-[13px]">
-                      {relatedSites.map((site) => (
-                        <li key={site.value}>
-                          <a
-                            href={site.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
-                            onClick={(e) => {
-                              setIsDropdownOpen(false);
-                              if (site.autoLoginTarget) {
-                                // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
-                                e.preventDefault();
-                                void navigateWithAutoLogin(site.autoLoginTarget, site.href);
-                              }
-                            }}
-                          >
-                            <span className="block text-[13px] whitespace-nowrap">{site.label}</span>
-                            {site.note && (
-                              <span className="block text-[11px] text-[#888] whitespace-nowrap">
-                                {site.note}
+                      {relatedSites.map((site) => {
+                        const isLoading =
+                          site.autoLoginTarget !== null &&
+                          autoLoginLoading === site.autoLoginTarget;
+                        const isDisabled =
+                          autoLoginLoading !== null && !isLoading;
+                        return (
+                          <li key={site.value}>
+                            <a
+                              href={site.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-busy={isLoading || undefined}
+                              aria-disabled={isDisabled || undefined}
+                              className={`block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923] ${
+                                isDisabled ? "pointer-events-none opacity-50" : ""
+                              }`}
+                              onClick={(e) => {
+                                if (isDisabled) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                if (site.autoLoginTarget) {
+                                  // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
+                                  e.preventDefault();
+                                  handleAutoLoginClick(site.autoLoginTarget, site.href);
+                                  return;
+                                }
+                                setIsDropdownOpen(false);
+                              }}
+                            >
+                              <span className="flex items-center gap-1 text-[13px] whitespace-nowrap">
+                                {site.label}
+                                {isLoading && (
+                                  <span
+                                    aria-label="読み込み中"
+                                    className="inline-block size-3 border-2 border-[#e97923] border-t-transparent rounded-full animate-spin"
+                                  />
+                                )}
                               </span>
-                            )}
-                          </a>
-                        </li>
-                      ))}
+                              {site.note && (
+                                <span className="block text-[11px] text-[#888] whitespace-nowrap">
+                                  {site.note}
+                                </span>
+                              )}
+                            </a>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 </li>
@@ -585,31 +658,55 @@ export function Gnb() {
                 }`}
               >
                 <ul className="flex flex-col gap-3 pl-6 pr-3">
-                  {relatedSites.map((site) => (
-                    <li key={site.value}>
-                      <a
-                        href={site.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
-                        onClick={(e) => {
-                          setIsMobileMenuOpen(false);
-                          if (site.autoLoginTarget) {
-                            // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
-                            e.preventDefault();
-                            void navigateWithAutoLogin(site.autoLoginTarget, site.href);
-                          }
-                        }}
-                      >
-                        <span className="text-[13px]">{site.label}</span>
-                        {site.note && (
-                          <span className="text-[11px] text-[#666]">
-                            {site.note}
+                  {relatedSites.map((site) => {
+                    const isLoading =
+                      site.autoLoginTarget !== null &&
+                      autoLoginLoading === site.autoLoginTarget;
+                    const isDisabled =
+                      autoLoginLoading !== null && !isLoading;
+                    return (
+                      <li key={site.value}>
+                        <a
+                          href={site.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-busy={isLoading || undefined}
+                          aria-disabled={isDisabled || undefined}
+                          className={`flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal ${
+                            isDisabled ? "pointer-events-none opacity-50" : ""
+                          }`}
+                          onClick={(e) => {
+                            if (isDisabled) {
+                              e.preventDefault();
+                              return;
+                            }
+                            if (site.autoLoginTarget) {
+                              // 자동로그인 대상은 암호화 URL 받아 현재 탭에서 이동 (target=_blank 무시)
+                              e.preventDefault();
+                              handleAutoLoginClick(site.autoLoginTarget, site.href);
+                              return;
+                            }
+                            setIsMobileMenuOpen(false);
+                          }}
+                        >
+                          <span className="flex items-center gap-1 text-[13px]">
+                            {site.label}
+                            {isLoading && (
+                              <span
+                                aria-label="読み込み中"
+                                className="inline-block size-3 border-2 border-[#e97923] border-t-transparent rounded-full animate-spin"
+                              />
+                            )}
                           </span>
-                        )}
-                      </a>
-                    </li>
-                  ))}
+                          {site.note && (
+                            <span className="text-[11px] text-[#666]">
+                              {site.note}
+                            </span>
+                          )}
+                        </a>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </div>
