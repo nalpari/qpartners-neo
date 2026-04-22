@@ -11,18 +11,21 @@ import { join, resolve } from "path";
 // NOTE: Node.js runtime 전용 — Edge Runtime에서는 함수 내부에서 env를 읽어야 함
 
 const rawQspBaseUrl = process.env.QSP_BASE_URL?.trim();
-const isProduction = process.env.NODE_ENV === "production";
+// 검증 기준은 Next.js 런타임 모드(NODE_ENV)가 아닌 **배포 환경**(APP_ENV) 이다.
+// Jenkinsfile / docker-compose 에서 APP_ENV 로 환경을 구분 (development | production).
+// dev 배포는 APP_ENV=development 로 HTTPS 강제 우회 가능 (QSP dev 엔드포인트가 http 인 경우 대응).
+const isProductionDeploy = process.env.APP_ENV === "production";
 // next build는 NODE_ENV=production 으로 각 route를 로드하여 page data를 수집한다.
 // 빌드 시점엔 운영 env가 주입되지 않는 것이 정상이므로, 검증은 런타임에만 수행한다.
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
-if (isProduction && !isBuildPhase && !rawQspBaseUrl) {
+if (isProductionDeploy && !isBuildPhase && !rawQspBaseUrl) {
   throw new Error("QSP_BASE_URL is required in production");
 }
 
 const QSP_BASE_URL = rawQspBaseUrl || "https://jp-dev.qsalesplatform.com";
 
-if (isProduction && !QSP_BASE_URL.startsWith("https://")) {
+if (isProductionDeploy && !QSP_BASE_URL.startsWith("https://")) {
   throw new Error("QSP_BASE_URL must use HTTPS in production");
 }
 
@@ -48,7 +51,7 @@ export const QSP_API = {
 // ─── Upload Storage ───
 
 const rawUploadDir = process.env.UPLOAD_DIR?.trim();
-if (isProduction && !isBuildPhase && !rawUploadDir) {
+if (isProductionDeploy && !isBuildPhase && !rawUploadDir) {
   throw new Error("UPLOAD_DIR is required in production");
 }
 
