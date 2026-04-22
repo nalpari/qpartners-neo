@@ -43,6 +43,52 @@ export async function GET(request: NextRequest) {
     // 비사내 사용자는 published만 조회 가능
     const effectiveStatus = internal ? status : "published";
 
+    // AND 조건 배열로 중복 relation(categories/targets) 필터를 안전하게 조합.
+    // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
+    const andConditions: Prisma.ContentWhereInput[] = [];
+
+    // 카테고리 필터 — 사용자가 지정한 categoryIds 로 some 매칭
+    if (categoryIds) {
+      andConditions.push({
+        categories: {
+          some: {
+            categoryId: { in: categoryIds.split(",").map(Number).filter((n) => !isNaN(n)) },
+          },
+        },
+      });
+    }
+
+    if (internal) {
+      // 사내 사용자:
+      // - internalOnly=true → 외부 게시대상이 없는(사내회원 전용) 게시글만
+      //   (internalOnly 체크 시 targetType 파라미터는 무시 — UI 에서도 disabled)
+      // - internalOnly=false && targetType 지정 → 해당 targetType 필터
+      // - 둘 다 미지정 → 전체 열람
+      if (internalOnly) {
+        andConditions.push({ targets: { none: {} } });
+      } else if (targetType) {
+        andConditions.push({ targets: { some: { targetType } } });
+      }
+    } else {
+      // 비사내 사용자:
+      // - 사내전용 카테고리 제외 (internalOnly 파라미터와 무관하게 강제 — 이전 bypass 차단)
+      // - 역할 기반으로 targetType 서버 강제 (쿼리 파라미터 무시)
+      andConditions.push({
+        categories: { none: { category: { isInternalOnly: true } } },
+      });
+      andConditions.push({
+        targets: {
+          some: {
+            targetType: user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member",
+            AND: [
+              { OR: [{ startAt: null }, { startAt: { lte: new Date() } }] },
+              { OR: [{ endAt: null }, { endAt: { gte: new Date() } }] },
+            ],
+          },
+        },
+      });
+    }
+
     const where: Prisma.ContentWhereInput = {
       status: effectiveStatus as "draft" | "published" | "deleted",
       ...(keyword && {
@@ -52,43 +98,7 @@ export async function GET(request: NextRequest) {
         ],
       }),
       ...(department && { authorDepartment: department }),
-      // 카테고리 필터: categoryIds 지정 + 비사내 사용자의 사내전용 제외를 AND로 조합
-      ...((categoryIds || (!internal && internalOnly === false)) && {
-        AND: [
-          ...(categoryIds
-            ? [{ categories: { some: { categoryId: { in: categoryIds.split(",").map(Number).filter((n) => !isNaN(n)) } } } }]
-            : []),
-          ...(!internal && internalOnly === false
-            ? [{ categories: { none: { category: { isInternalOnly: true } } } }]
-            : []),
-        ],
-      }),
-      // 사내 사용자: targetType 쿼리 파라미터로 선택 필터링 (관리 목적)
-      ...(internal && targetType && {
-        targets: { some: { targetType } },
-      }),
-      // 비사내 사용자: 서버 측에서 역할 기반으로 targetType 강제 결정 (쿼리 파라미터 무시)
-      ...(!internal && {
-        targets: {
-          some: {
-            targetType: user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member",
-            AND: [
-              {
-                OR: [
-                  { startAt: null },
-                  { startAt: { lte: new Date() } },
-                ],
-              },
-              {
-                OR: [
-                  { endAt: null },
-                  { endAt: { gte: new Date() } },
-                ],
-              },
-            ],
-          },
-        },
-      }),
+      ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
     const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
