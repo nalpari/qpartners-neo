@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 
 /** 인증 없이 접근 가능한 API 경로 (matcher 범위 내 경로만 등록) */
@@ -14,7 +15,8 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
   // 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
-  // cipher 복호화 후 내부 /api/auth/login 을 호출하여 세션 발급 → 홈 리다이렉트.
+  // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
+  // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)
   "/api/auth/auto-login/inbound",
   "/api/openapi",
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
@@ -92,7 +94,7 @@ export async function middleware(request: NextRequest) {
           }
         } catch (error) {
           // ConfigError(JWT_SECRET 미설정) = 서버 설정 문제 → protected path와 동일하게 500 반환
-          if (error instanceof Error && error.name === "ConfigError") {
+          if (error instanceof ConfigError) {
             console.error("[middleware] CRITICAL 설정 에러 (public GET):", error);
             return NextResponse.json(
               { error: "サーバー設定エラーが発生しました" },

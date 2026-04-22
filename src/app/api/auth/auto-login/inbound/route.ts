@@ -122,10 +122,19 @@ export async function GET(request: NextRequest) {
     };
 
     // 5. JWT 서명
+    //    - ConfigError(JWT_SECRET 미설정) 는 redirect 대신 500 — 운영자가 설정 누락을 즉시 인지해야 함
+    //      (redirect 폴백으로 흡수하면 "사용자 자동로그인이 그냥 실패" 로만 보고되어 추적이 늦어짐)
     let token: string;
     try {
       token = await signToken(user);
-    } catch (error) {
+    } catch (error: unknown) {
+      if (error instanceof ConfigError) {
+        console.error(LOG, "JWT 설정 에러:", error.message);
+        return NextResponse.json(
+          { error: "サーバー設定エラーが発生しました" },
+          { status: 500 },
+        );
+      }
       console.error(LOG, "JWT 생성 실패:", error);
       return failRedirect("jwt_sign_failed");
     }
