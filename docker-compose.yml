@@ -17,8 +17,9 @@ services:
         PORT: ${APP_PORT:-5010}
     container_name: qpartners-app
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-5010}:${APP_PORT:-5010}"
+    network_mode: host
+    # ports:
+    #   - "${APP_PORT:-5010}:${APP_PORT:-5010}"
     env_file: .env.${APP_ENV:-development}
     environment:
       UPLOAD_DIR: /data/uploads
