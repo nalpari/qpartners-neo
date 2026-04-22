@@ -69,6 +69,31 @@ export function requireAdmin(headers: Headers): { user: UserInfo } | NextRespons
   return { user };
 }
 
+/**
+ * SUPER_ADMIN 전용 가드. 미인증 401, ADMIN 포함 SUPER_ADMIN 이외 403.
+ *
+ * 용도: 권한 매트릭스 변경과 같이 ADMIN 조차 수행해서는 안 되는 상위 운영 동작.
+ * `requireAdmin` 은 SUPER_ADMIN || ADMIN 둘 다 통과시키므로 이 경로 전용으로 분리한다.
+ */
+export function requireSuperAdmin(
+  headers: Headers,
+): { user: UserInfo } | NextResponse {
+  const user = getUserFromHeaders(headers);
+  if (!user) {
+    return NextResponse.json(
+      { error: "認証が必要です" },
+      { status: 401 },
+    );
+  }
+  if (user.role !== "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "スーパー管理者権限が必要です" },
+      { status: 403 },
+    );
+  }
+  return { user };
+}
+
 /** QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용 */
 export async function resolveAuthRole(
   userTp: UserTp,
