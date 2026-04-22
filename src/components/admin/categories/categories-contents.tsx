@@ -21,6 +21,9 @@ export function CategoriesContents() {
   const [isNewMode, setIsNewMode] = useState(false);
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
   const [hasUserToggled, setHasUserToggled] = useState(false);
+  // CategoriesDetail 내부 form state 를 리마운트로 재초기화하기 위한 토큰.
+  // 초기화 버튼 클릭 시 증가 → key 변경 → CategoriesDetail 이 selectedCategory/INITIAL_FORM 으로 재생성.
+  const [resetToken, setResetToken] = useState(0);
 
   // ─── Server State ───
   const { data: treeData = [], isLoading, isError } = useCategoryQuery();
@@ -67,9 +70,17 @@ export function CategoriesContents() {
   };
 
   const handleToggle = (id: number) => {
-    setHasUserToggled(true);
+    // 첫 토글 시점: expandedIds 는 {} 이지만 expandedWithDefaults 파생값이 전체 1Depth 를
+    // true 로 노출. 이 상태를 실제 state 로 동기화한 뒤 target 만 토글해야
+    // hasUserToggled=true 전환 시 다른 카테고리까지 함께 접히는 현상 방지.
     setExpandedIds((prev) => {
-      const next = { ...prev };
+      const base = hasUserToggled
+        ? prev
+        : treeData.reduce<Record<number, true>>((acc, node) => {
+            acc[node.id] = true;
+            return acc;
+          }, {});
+      const next = { ...base };
       if (next[id]) {
         delete next[id];
       } else {
@@ -77,6 +88,7 @@ export function CategoriesContents() {
       }
       return next;
     });
+    setHasUserToggled(true);
   };
 
   // Plan SC: SC-04, SC-05 — 신규 등록 / 수정
@@ -127,9 +139,12 @@ export function CategoriesContents() {
     setSelectedId(null);
   };
 
+  // 선택/신규 상태는 유지한 채 상세 폼만 원본으로 되돌림:
+  // - 카테고리 선택 중: selectedCategory 데이터로 재초기화
+  // - 신규 모드: INITIAL_FORM(빈 값) 으로 재초기화
+  // resetToken 증가 → key 변경 → CategoriesDetail 리마운트 (useState 초기값 재평가)
   const handleReset = () => {
-    setSelectedId(null);
-    setIsNewMode(false);
+    setResetToken((v) => v + 1);
   };
 
   // ─── 사용자 토글 전까지 전체 1Depth 펼침 ───
@@ -173,7 +188,7 @@ export function CategoriesContents() {
         onFilterChange={setFilterInternalOnly}
       />
       <CategoriesDetail
-        key={isNewMode ? "new" : String(selectedId)}
+        key={`${isNewMode ? "new" : String(selectedId)}-${resetToken}`}
         selectedCategory={selectedCategory}
         parentOptions={parentOptions}
         treeData={treeData}

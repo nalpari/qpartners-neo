@@ -1842,7 +1842,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       delete: {
         tags: ["Category"],
         summary: "카테고리 삭제 (물리 삭제)",
-        description: "하위 카테고리 또는 연결된 콘텐츠가 있으면 삭제 불가.",
+        description: "하위 카테고리가 있으면 삭제 불가. 연결된 콘텐츠(ContentCategory)는 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체 영향 없음).",
         parameters: [
           {
             name: "id",
@@ -1870,7 +1870,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("하위 카테고리 또는 연결된 콘텐츠 존재"),
+          "400": errorResponse("하위 카테고리 존재"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },

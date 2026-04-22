@@ -154,7 +154,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 하위 카테고리/콘텐츠 존재 확인 + 삭제를 트랜잭션으로 원자적 처리
+    // 하위 카테고리 존재 여부만 확인 후 삭제. 콘텐츠 연결(ContentCategory)은
+    // Prisma 스키마의 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체는 영향 없음, 링크만 제거).
     const deleted = await prisma.$transaction(async (tx) => {
       const childCount = await tx.category.count({
         where: { parentId: parsed.data },
@@ -164,33 +165,17 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         throw new Error("HAS_CHILDREN");
       }
 
-      const contentCount = await tx.contentCategory.count({
-        where: { categoryId: parsed.data },
-      });
-
-      if (contentCount > 0) {
-        throw new Error("HAS_CONTENTS");
-      }
-
       await tx.category.delete({ where: { id: parsed.data } });
       return { id: parsed.data };
     });
 
     return NextResponse.json({ data: deleted });
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "HAS_CHILDREN") {
-        return NextResponse.json(
-          { error: "하위 카테고리가 존재하여 삭제할 수 없습니다" },
-          { status: 400 },
-        );
-      }
-      if (error.message === "HAS_CONTENTS") {
-        return NextResponse.json(
-          { error: "연결된 콘텐츠가 존재하여 삭제할 수 없습니다" },
-          { status: 400 },
-        );
-      }
+    if (error instanceof Error && error.message === "HAS_CHILDREN") {
+      return NextResponse.json(
+        { error: "하위 카테고리가 존재하여 삭제할 수 없습니다" },
+        { status: 400 },
+      );
     }
     if (
       error instanceof PrismaClientKnownRequestError &&
