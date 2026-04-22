@@ -133,6 +133,8 @@ export async function GET(request: NextRequest) {
       publishedAt: c.publishedAt,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+      // 갱신 이력 판별 서버 단일 출처 — 클라이언트 Date 비교 제거용
+      hasBeenUpdated: c.updatedAt.getTime() !== c.createdAt.getTime(),
       isNew: now - c.createdAt.getTime() < FIVE_DAYS_MS,
       isUpdated: now - c.updatedAt.getTime() < FIVE_DAYS_MS,
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),

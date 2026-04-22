@@ -40,6 +40,8 @@ interface ContentDetailData {
   updatedBy: string | null;
   /** 사내 사용자에게만 내려옴. QSP 조회 실패·비사내 요청 시 undefined */
   updatedByName?: string | null;
+  /** 서버 단일 출처 — 최초 등록 이후 1회 이상 갱신 여부 */
+  hasBeenUpdated: boolean;
   targets: {
     id: number;
     targetType: string;
@@ -103,10 +105,12 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Design Ref: §4.1 — 사내 사용자 판별
+  // Design Ref: §4.1 — 사내 사용자 판별 (UI hint 전용)
+  // ⚠️ 서버 truth source: PUT/DELETE 는 requireAdmin + canModifyResource 로 재검증됨.
+  //    본 플래그는 버튼/라벨 노출 제어만 담당. 클라이언트 조작으로 버튼을 강제 노출해도 서버가 거부.
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
-  // 삭제/수정 권한: 서버 canModifyResource 로직과 동기화
+  // 삭제/수정 버튼 노출: 서버 canModifyResource 로직을 UI 에 반영 (서버 재검증 보장 전제)
   // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
   const canModify = data ? canModifyClient(user, data) : false;
 
@@ -119,8 +123,15 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         try {
           await api.delete(`/contents/${contentId}`);
           setIsDeleting(false);
-          // 삭제된 콘텐츠가 목록에 잔존하지 않도록 캐시 무효화 — 목록 페이지 진입 시 재조회
-          await queryClient.invalidateQueries({ queryKey: ["contents"] });
+          // 삭제된 콘텐츠가 목록에 잔존하지 않도록 캐시 무효화 — 목록 페이지 진입 시 재조회.
+          // predicate 로 ["contents", <listParams...>] 패턴만 선택 (상세 단건 쿼리 불필요 invalidate 회피).
+          await queryClient.invalidateQueries({
+            predicate: (q) => {
+              const [root, second] = q.queryKey;
+              // 상세 쿼리(["contents", contentId:string]) 는 제외 — 직후 페이지 이탈로 무의미
+              return root === "contents" && typeof second !== "string";
+            },
+          });
           openAlert({
             type: "alert",
             message: "削除されました。",
@@ -208,6 +219,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           title={data.title}
           createdAt={data.createdAt}
           updatedAt={data.updatedAt}
+          hasBeenUpdated={data.hasBeenUpdated}
           body={data.body}
         />
 

@@ -157,6 +157,8 @@ export interface ContentListItem {
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** 서버 단일 출처 — updatedAt !== createdAt (최초 등록 이후 1회 이상 갱신 여부) */
+  hasBeenUpdated: boolean;
   isNew: boolean;
   isUpdated: boolean;
   categories: {

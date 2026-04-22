@@ -34,7 +34,10 @@ export function ContentsDetailInfo({
 }: ContentsDetailInfoProps) {
   const { openAlert } = useAlertStore();
   const [infoOpen, setInfoOpen] = useState(true);
-  const { labelMap: approverLabelMap } = useApprover();
+  // 관리정보 테이블은 사내직원만 노출되므로 비사내는 조회 생략
+  const { labelMap: approverLabelMap, isLoading: isLoadingApprover } = useApprover({
+    enabled: showManagement,
+  });
 
   const handleCopyUrl = async () => {
     try {
@@ -54,7 +57,14 @@ export function ContentsDetailInfo({
     { label: "担当部門", value: orDash(authorDepartment) },
     { label: "掲載担当者", value: preferName(createdByName, createdBy) },
     { label: "更新担当者", value: preferName(updatedByName, updatedBy) },
-    { label: "最終承認者", value: approverLevel != null ? (approverLabelMap[approverLevel] ?? `Lv.${approverLevel}`) : "-" },
+    {
+      label: "最終承認者",
+      value: approverLevel == null
+        ? "-"
+        : isLoadingApprover
+          ? "…"
+          : (approverLabelMap[approverLevel] ?? `Lv.${approverLevel}`),
+    },
   ];
 
   return (

@@ -23,7 +23,7 @@ export function ContentsFormManagement({
   approver,
   onApproverChange,
 }: ContentsFormManagementProps) {
-  const { options: approverOptions } = useApprover();
+  const { options: approverOptions, isLoading: isLoadingApprover } = useApprover();
   // SelectBox placeholder 노출용 선두 옵션 "選択" prepend
   const selectOptions = useMemo(
     () => [{ value: "", label: "選択" }, ...approverOptions],
@@ -104,6 +104,7 @@ export function ContentsFormManagement({
                 value={approver}
                 onChange={onApproverChange}
                 placeholder="選択"
+                disabled={isLoadingApprover}
               />
             </div>
           </div>
