@@ -12,15 +12,21 @@ RUN pnpm install --frozen-lockfile
 # --- Build ---
 FROM base AS builder
 WORKDIR /app
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate
-RUN pnpm build
+# 빌드 시 페이지 데이터 수집용 더미 환경변수 (런타임 값은 docker-compose env_file로 주입)
+RUN DB_HOST=localhost DB_PORT=3306 DB_USER=build DB_PASSWORD=build DB_NAME=build \
+    npx prisma generate && npx next build --webpack
 
-# --- Production ---
+# --- Runner ---
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+
+ARG PORT=3000
+ENV PORT=${PORT}
+ENV HOSTNAME="0.0.0.0"
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -30,8 +36,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
-EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+EXPOSE ${PORT}
 
 CMD ["node", "server.js"]

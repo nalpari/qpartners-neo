@@ -12,10 +12,18 @@ export const STAT_CD_TO_STATUS = {
 export type QspStatCd = keyof typeof STAT_CD_TO_STATUS;
 export type MemberStatus = (typeof STAT_CD_TO_STATUS)[QspStatCd];
 
-/** 수정 가능한 상태값 (withdrawn は読み取り専用のため除外) */
-export type WritableStatus = "active" | "deleted";
+/**
+ * 수정 가능한 상태값 (withdrawn は読み取り専用のため除外).
+ * SSoT — `memberUpdateSchema.status` 의 enum 도 이 배열을 참조해 동기화된다.
+ */
+export const WRITABLE_STATUSES = ["active", "deleted"] as const;
+export type WritableStatus = (typeof WRITABLE_STATUSES)[number];
 
-/** TO-BE status → QSP statCd (수정 가능한 상태만) */
+/**
+ * TO-BE status → QSP statCd (수정 가능한 상태만).
+ * 키 집합이 `WritableStatus` 로 고정되어 있어 `memberUpdateSchema.status` 확장 시
+ * 여기 매핑도 컴파일 타임에 강제 갱신된다 (SSoT 보장).
+ */
 export const STATUS_TO_STAT_CD: Record<WritableStatus, QspStatCd> = {
   active: "A",
   deleted: "D",
@@ -116,12 +124,22 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
  */
 const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"] as const;
 
+/**
+ * 회원 수정 요청 스키마.
+ *
+ * ※ string/enum 필드(userRole, newsRcptYn, status)는 모두 `z.enum(...)` 으로 제약되어
+ *   빈 문자열("") 이 입력값으로 통과되지 않는다 — route.ts 의 `??` 체인이 의도치 않게
+ *   빈 값을 QSP 로 전송할 가능성은 enum 단계에서 차단된다.
+ * ※ boolean 필드는 `.optional()` 로 `undefined` 판별 가능 — route.ts 에서 `!== undefined`
+ *   검사로 `false` 를 정상 처리(??로 쓰면 false 가 폴백으로 빠짐).
+ * ※ `status` 의 enum 은 `WRITABLE_STATUSES` 를 참조해 `STATUS_TO_STAT_CD` 와 SSoT 동기.
+ */
 export const memberUpdateSchema = z.object({
   userRole: z.enum(assignableRoleValues).optional(),
   twoFactorEnabled: z.boolean().optional(),
   loginNotification: z.boolean().optional(),
   attributeChangeNotification: z.boolean().optional(),
-  status: z.enum(["active", "deleted"]).optional(),
+  status: z.enum(WRITABLE_STATUSES).optional(),
   newsRcptYn: z.enum(["Y", "N"]).optional(),
 });
 
