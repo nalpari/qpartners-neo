@@ -48,6 +48,21 @@
   user-select: text;
 }
 
+/* 셀 텍스트 overflow·말줄임 처리
+   defaultColDef cellStyle: { display: flex } 에서 .ag-cell-value 가 flex item 이 되는데
+   min-width:0 가 없으면 내용보다 줄어들지 못해 밖으로 삐져나감 → 말줄임도 작동 안 함.
+   cellRenderer 사용 컬럼은 내부 JSX 에서 자체 overflow 처리 필요 (본 룰은 .ag-cell-value 만 타겟). */
+.ag-cell {
+  overflow: hidden;
+}
+.ag-cell-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 루트 래퍼 border 제거 */
 .ag-root-wrapper {
   border: none !important;
