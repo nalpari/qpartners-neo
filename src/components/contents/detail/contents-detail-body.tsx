@@ -34,6 +34,9 @@ export function ContentsDetailBody({
 }: ContentsDetailBodyProps) {
   const formattedCreated = formatDate(createdAt);
   const formattedUpdated = formatDate(updatedAt);
+  // 최초 등록 시 updatedAt 은 createdAt 과 동일 → 갱신 이력 없음, 更新日 미표시
+  const hasBeenUpdated =
+    new Date(updatedAt).getTime() !== new Date(createdAt).getTime();
 
   return (
     <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[18px] px-6 py-[34px] lg:py-[48px] w-full lg:w-[1440px]">
@@ -46,7 +49,7 @@ export function ContentsDetailBody({
           </h1>
           <div className="flex items-center gap-3 shrink-0">
             <DateBadge label="登録日" date={formattedCreated} />
-            <DateBadge label="更新日" date={formattedUpdated} />
+            {hasBeenUpdated && <DateBadge label="更新日" date={formattedUpdated} />}
           </div>
         </div>
 
@@ -54,7 +57,7 @@ export function ContentsDetailBody({
         <div className="flex lg:hidden flex-col gap-[18px]">
           <div className="flex items-center gap-3">
             <DateBadge label="登録日" date={formattedCreated} />
-            <DateBadge label="更新日" date={formattedUpdated} />
+            {hasBeenUpdated && <DateBadge label="更新日" date={formattedUpdated} />}
           </div>
           <h1 className="font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
             {title}

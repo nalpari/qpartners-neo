@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button, DimSpinner } from "@/components/common";
@@ -72,6 +72,7 @@ export type { ContentDetailData };
 
 export function ContentsDetail({ contentId }: ContentsDetailProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { openAlert } = useAlertStore();
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -118,6 +119,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         try {
           await api.delete(`/contents/${contentId}`);
           setIsDeleting(false);
+          // 삭제된 콘텐츠가 목록에 잔존하지 않도록 캐시 무효화 — 목록 페이지 진입 시 재조회
+          await queryClient.invalidateQueries({ queryKey: ["contents"] });
           openAlert({
             type: "alert",
             message: "削除されました。",

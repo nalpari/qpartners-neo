@@ -151,6 +151,8 @@ export interface ContentListItem {
   title: string;
   status: string;
   authorDepartment: string | null;
+  /** 사내 사용자에게만 내려옴 — 목록 최종확인자 컬럼용 */
+  approverLevel?: number | null;
   viewCount: number;
   publishedAt: string | null;
   createdAt: string;

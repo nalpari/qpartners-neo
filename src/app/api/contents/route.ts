@@ -127,6 +127,8 @@ export async function GET(request: NextRequest) {
       title: c.title,
       status: c.status,
       authorDepartment: c.authorDepartment,
+      // 사내 사용자에게만 approverLevel 제공 — 목록 화면 최종확인자 컬럼용
+      approverLevel: internal ? c.approverLevel : undefined,
       viewCount: c.viewCount,
       publishedAt: c.publishedAt,
       createdAt: c.createdAt,
