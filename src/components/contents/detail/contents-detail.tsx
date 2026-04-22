@@ -33,8 +33,12 @@ interface ContentDetailData {
   viewCount: number;
   createdAt: string;
   createdBy: string;
+  /** 사내 사용자에게만 내려옴. QSP 조회 실패·비사내 요청 시 undefined */
+  createdByName?: string | null;
   updatedAt: string;
   updatedBy: string | null;
+  /** 사내 사용자에게만 내려옴. QSP 조회 실패·비사내 요청 시 undefined */
+  updatedByName?: string | null;
   targets: {
     id: number;
     targetType: string;
@@ -171,7 +175,9 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           viewCount={data.viewCount}
           authorDepartment={data.authorDepartment}
           createdBy={data.createdBy}
+          createdByName={data.createdByName ?? null}
           updatedBy={data.updatedBy}
+          updatedByName={data.updatedByName ?? null}
           approverLevel={data.approverLevel}
           showManagement={isInternal}
           actions={

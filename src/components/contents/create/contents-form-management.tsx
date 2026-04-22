@@ -1,15 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { SelectBox } from "@/components/common";
-
-// 최종승인자 옵션 (추후 공통코드)
-const APPROVER_OPTIONS = [
-  { value: "", label: "選択" },
-  { value: "1", label: "実務担当者" },
-  { value: "2", label: "所属長" },
-  { value: "3", label: "事業部長" },
-  { value: "4", label: "社長" },
-];
+import { useApprover } from "@/hooks/use-approver";
 
 interface ContentsFormManagementProps {
   distributor: string;
@@ -30,6 +23,13 @@ export function ContentsFormManagement({
   approver,
   onApproverChange,
 }: ContentsFormManagementProps) {
+  const { options: approverOptions } = useApprover();
+  // SelectBox placeholder 노출용 선두 옵션 "選択" prepend
+  const selectOptions = useMemo(
+    () => [{ value: "", label: "選択" }, ...approverOptions],
+    [approverOptions],
+  );
+
   return (
     <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-4 pt-[34px] pb-6 px-6 w-[1440px]">
       <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
@@ -112,7 +112,7 @@ export function ContentsFormManagement({
             </div>
             <div className="flex-1 flex items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
               <SelectBox
-                options={APPROVER_OPTIONS}
+                options={selectOptions}
                 value={approver}
                 onChange={onApproverChange}
                 placeholder="選択"

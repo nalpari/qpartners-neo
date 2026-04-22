@@ -3,19 +3,17 @@
 import Image from "next/image";
 import { useState, type ReactNode } from "react";
 import { useAlertStore } from "@/lib/store";
-
-// Design Ref: §4.2 — approverLevel 라벨 변환
-const APPROVER_LABELS: Record<number, string> = {
-  1: "担当者",
-  2: "課長",
-  3: "事業部長",
-};
+import { useApprover } from "@/hooks/use-approver";
 
 interface ContentsDetailInfoProps {
   viewCount: number;
   authorDepartment: string | null;
   createdBy: string;
+  /** QSP 조회된 게재담당자 이름 — null/미제공 시 createdBy(userId) 폴백 */
+  createdByName: string | null;
   updatedBy: string | null;
+  /** QSP 조회된 갱신담당자 이름 — null/미제공 시 updatedBy(userId) 폴백 */
+  updatedByName: string | null;
   approverLevel: number | null;
   /** 관리정보 테이블 노출 여부 — 사내직원(ADMIN)만 true */
   showManagement: boolean;
@@ -27,13 +25,16 @@ export function ContentsDetailInfo({
   viewCount,
   authorDepartment,
   createdBy,
+  createdByName,
   updatedBy,
+  updatedByName,
   approverLevel,
   showManagement,
   actions,
 }: ContentsDetailInfoProps) {
   const { openAlert } = useAlertStore();
   const [infoOpen, setInfoOpen] = useState(true);
+  const { labelMap: approverLabelMap } = useApprover();
 
   const handleCopyUrl = async () => {
     try {
@@ -47,11 +48,13 @@ export function ContentsDetailInfo({
 
   // 빈값(null/undefined/"") → "-" 표시
   const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : "-");
+  // 이름 우선 표시, 없으면 userId 폴백 (QSP 조회 실패 시 안전 네트워크)
+  const preferName = (name: string | null, id: string | null) => orDash(name ?? id);
   const fields = [
     { label: "担当部門", value: orDash(authorDepartment) },
-    { label: "掲載担当者", value: orDash(createdBy) },
-    { label: "更新担当者", value: orDash(updatedBy) },
-    { label: "最終承認者", value: approverLevel != null ? (APPROVER_LABELS[approverLevel] ?? `Lv.${approverLevel}`) : "-" },
+    { label: "掲載担当者", value: preferName(createdByName, createdBy) },
+    { label: "更新担当者", value: preferName(updatedByName, updatedBy) },
+    { label: "最終承認者", value: approverLevel != null ? (approverLabelMap[approverLevel] ?? `Lv.${approverLevel}`) : "-" },
   ];
 
   return (

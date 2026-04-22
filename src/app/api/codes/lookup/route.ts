@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 const ALLOWED_PUBLIC_HEADER_CODES = new Set<string>([
   "INQUIRY_TYPE", // 문의하기 문의 유형
   "PAGE_SIZE", // 목록 페이지 사이즈 옵션
+  "APPROVER", // 컨텐츠 상세 최종승인자 라벨 (비회원 접근 가능)
 ]);
 
 // GET /api/codes/lookup?headerCode=INQUIRY_TYPE — 공통코드 공개 조회 (headerCode 기반)
