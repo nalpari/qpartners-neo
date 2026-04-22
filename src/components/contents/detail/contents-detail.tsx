@@ -9,6 +9,7 @@ import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { canModifyClient } from "@/lib/auth-client";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsDetailInfo } from "./contents-detail-info";
 import { ContentsDetailTarget } from "./contents-detail-target";
@@ -102,8 +103,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   });
 
   // Design Ref: §4.1 — 사내 사용자 판별
-  const isAdmin = user?.userTp === "ADMIN";
-  const isInternal = isAdmin;
+  // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
+  const isInternal = useIsInternal();
   // 삭제/수정 권한: 서버 canModifyResource 로직과 동기화
   // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
   const canModify = data ? canModifyClient(user, data) : false;

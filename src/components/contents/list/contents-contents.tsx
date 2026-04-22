@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
-import type { LoginUser } from "@/lib/schemas/auth";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -77,13 +77,8 @@ export function ContentsContents() {
     [router],
   );
 
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
-  const isInternal = user?.userTp === "ADMIN";
+  // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
+  const isInternal = useIsInternal();
 
   // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
