@@ -38,6 +38,16 @@
   background-color: transparent !important;
 }
 
+/* 셀 텍스트 드래그 선택·복사 허용 (enableCellTextSelection 과 짝) */
+.ag-cell,
+.ag-cell-value,
+.ag-header-cell-text {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 /* 루트 래퍼 border 제거 */
 .ag-root-wrapper {
   border: none !important;
