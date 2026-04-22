@@ -12,7 +12,7 @@ pipeline {
         COMPOSE_FILE    = 'docker-compose.yml'
         // Jenkins > Credentials 에서 등록한 ID
         GIT_CREDENTIALS = 'github-app-credential'
-        ENV_CREDENTIALS = 'env-dev'
+        ENV_CREDENTIALS = 'dev-env'
     }
 
     options {
