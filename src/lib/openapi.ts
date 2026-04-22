@@ -1311,7 +1311,13 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "targetType", in: "query", schema: { type: "string" } },
           { name: "department", in: "query", schema: { type: "string" } },
-          { name: "internalOnly", in: "query", schema: { type: "boolean", default: false } },
+          {
+            name: "internalOnly",
+            in: "query",
+            description:
+              "사내회원 전용 게시글만 조회 여부.\n- 사내 사용자(ADMIN): true 시 외부 게시대상이 없는(사내회원 전용) 게시글만 반환. targetType 파라미터는 무시됨.\n- 비사내 사용자: 파라미터 값과 무관하게 사내전용 카테고리는 항상 제외 (bypass 불가).",
+            schema: { type: "boolean", default: false },
+          },
           { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "oldest", "views", "updated"], default: "newest" } },
         ],
         responses: {
@@ -1957,7 +1963,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       delete: {
         tags: ["Category"],
         summary: "카테고리 삭제 (물리 삭제)",
-        description: "하위 카테고리 또는 연결된 콘텐츠가 있으면 삭제 불가.",
+        description: "하위 카테고리가 있으면 삭제 불가. 연결된 콘텐츠(ContentCategory)는 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체 영향 없음).",
         parameters: [
           {
             name: "id",
@@ -1985,7 +1991,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("하위 카테고리 또는 연결된 콘텐츠 존재"),
+          "400": errorResponse("하위 카테고리 존재"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
