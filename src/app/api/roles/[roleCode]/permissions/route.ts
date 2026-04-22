@@ -36,10 +36,12 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 전체 메뉴(1-Level + children) + 해당 roleCode의 권한 매핑 (nested include로 1-query)
+    // M-1: 비활성화된 메뉴는 권한 팝업에 노출되지 않도록 parent/children 모두 isActive 필터 적용
     const menus = await prisma.menu.findMany({
-      where: { parentId: null },
+      where: { parentId: null, isActive: true },
       include: {
         children: {
+          where: { isActive: true },
           orderBy: { sortOrder: "asc" },
           include: {
             permissions: { where: { roleCode: parsedCode.data } },
@@ -137,6 +139,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: "Validation failed", issues: result.error.issues },
         { status: 400 },
       );
+    }
+
+    // Lockout 방지: PERMISSIONS.canUpdate 는 SUPER_ADMIN 전용 고정.
+    // 비 SUPER_ADMIN role 에 canUpdate:true 로 세팅하려는 시도를 차단한다.
+    // 시드에서도 이중화되어 있으나, 런타임에 타 관리자가 API 로 우회하는 경로를 막기 위함.
+    if (parsedCode.data !== "SUPER_ADMIN") {
+      const elevating = result.data.permissions.some(
+        (p) => p.menuCode === "PERMISSIONS" && p.canUpdate === true,
+      );
+      if (elevating) {
+        return NextResponse.json(
+          {
+            error: "「権限管理」の更新権限はスーパー管理者にのみ付与できます",
+            menuCode: "PERMISSIONS",
+            action: "update",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // 기존 권한 전부 삭제 후 새로 생성 (replace) — 트랜잭션

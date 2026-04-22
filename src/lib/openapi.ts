@@ -150,6 +150,66 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/auth/me/permissions": {
+      get: {
+        tags: ["Auth"],
+        summary: "현재 로그인 사용자의 메뉴별 권한 목록",
+        description: `현재 로그인 사용자의 menuCode 별 CRUD 권한을 반환. FE의 \`useMenuPermission(menuCode)\` 훅 소비용.
+
+- 인증 필요 (미인증 시 401)
+- \`authRole\` ↔ \`roleCode\` 1:1 매핑이므로 JWT authRole 값을 그대로 roleCode 로 사용
+- \`SUPER_ADMIN\`: 활성 메뉴 전체에 모든 CRUD \`true\` 합성 반환 (QpRoleMenuPermission 조회 스킵, fail-open)
+- 그 외: 활성 메뉴에 한해 \`QpRoleMenuPermission\` 조회. 시드 미등록 메뉴는 응답에서 제외 (fail-closed)
+- 응답 헤더: \`Cache-Control: private, max-age=60\``,
+        responses: {
+          "200": {
+            description: "조회 성공",
+            headers: {
+              "Cache-Control": {
+                description: "개인별 권한이므로 private, 60초 캐싱",
+                schema: { type: "string", example: "private, max-age=60" },
+              },
+            },
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["roleCode", "menus"],
+                      properties: {
+                        roleCode: {
+                          type: "string",
+                          enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
+                          example: "ADMIN",
+                        },
+                        menus: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            required: ["menuCode", "canRead", "canCreate", "canUpdate", "canDelete"],
+                            properties: {
+                              menuCode: { type: "string", example: "MEMBERS" },
+                              canRead: { type: "boolean" },
+                              canCreate: { type: "boolean" },
+                              canUpdate: { type: "boolean" },
+                              canDelete: { type: "boolean" },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("認証が必要です"),
+          "500": errorResponse("権限の取得に失敗しました"),
+        },
+      },
+    },
 
     "/auth/signup": {
       post: {
@@ -954,7 +1014,11 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["Permission"],
         summary: "메뉴별 권한 일괄 저장",
-        description: "기존 권한 전부 삭제 후 새로 생성 (replace). 트랜잭션 처리.",
+        description: `기존 권한 전부 삭제 후 새로 생성 (replace). 트랜잭션 처리.
+
+**Lockout 방어**: 비 \`SUPER_ADMIN\` roleCode 에 \`PERMISSIONS.canUpdate: true\` 로 세팅하려는 요청은 400 거부.
+SUPER_ADMIN 만 권한관리 업데이트 권한을 가지며, 다른 관리자가 이 엔드포인트로 우회하는 경로를 차단한다.
+거부 응답 바디 예: \`{ "error": "「権限管理」の更新権限は...", "menuCode": "PERMISSIONS", "action": "update" }\``,
         parameters: [
           {
             name: "roleCode",
