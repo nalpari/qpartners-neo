@@ -8,6 +8,8 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { useMenuTree } from "@/hooks/use-menu-tree";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
 import type { MenuFormState } from "./menus-types";
@@ -16,6 +18,9 @@ import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from 
 export function MenusContents() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
+
+  // RBAC Phase 3 — MENUS canCreate/canUpdate 로 신규/저장/정렬저장 가드.
+  const menusPerm = useMenuPermission(ADMIN_MENU.MENUS);
 
   // --- 로컬 state ---
   const [selectedLevel1Id, setSelectedLevel1Id] = useState<string | null>(null);
@@ -110,6 +115,10 @@ export function MenusContents() {
 
   // Plan R-05: 신규 버튼 → 폼 초기화
   const handleNew = () => {
+    if (!menusPerm.isLoading && !menusPerm.canCreate) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     setFormState(EMPTY_FORM);
     setIsEditing(false);
     setEditingId(null);
@@ -117,6 +126,11 @@ export function MenusContents() {
 
   // Plan R-06: 저장 버튼 → 등록 또는 수정
   const handleSave = () => {
+    const needPerm = isEditing ? menusPerm.canUpdate : menusPerm.canCreate;
+    if (!menusPerm.isLoading && !needPerm) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (!formState.menuCode.trim()) {
       openAlert({ type: "alert", message: "Menu Codeは必須です。", confirmLabel: "確認" });
       return;
@@ -161,6 +175,10 @@ export function MenusContents() {
 
   // Plan R-07: 정렬저장 — sortValues에 기록된 변경사항만 전송
   const handleSortSave = () => {
+    if (!menusPerm.isLoading && !menusPerm.canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     const items = Object.entries(sortValues).map(([id, sortOrder]) => ({
       id: Number(id),
       sortOrder,

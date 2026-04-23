@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { isAxiosError } from "axios";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { CodesSearch } from "./codes-search";
 import { CodesHeaderTable } from "./codes-header-table";
 import { CodesDetailTable } from "./codes-detail-table";
@@ -54,6 +56,9 @@ function getApiErrorMessage(err: unknown, stage?: string): string {
 
 export function CodesContents() {
   const { openAlert } = useAlertStore();
+
+  // RBAC Phase 3 — CODES canCreate/canUpdate 로 신규/저장 가드.
+  const codesPerm = useMenuPermission(ADMIN_MENU.CODES);
 
   // 공유 state — 두 훅의 연결점
   const [selectedHeaderId, setSelectedHeaderId] = useState<number | null>(null);
@@ -135,6 +140,13 @@ export function CodesContents() {
   // 통합 저장 — 중복 호출 가드 + validation → ValidationError, API 실패 → _stage 부착 throw
   const handleSave = useCallback(async () => {
     if (isSaving) return;
+    // 저장 시점에 존재하는 액션(신규행/편집셀)에 맞는 권한 확인.
+    // 어떤 액션이 포함되는지는 실행 흐름상 나중에 결정되므로, 여기서는 canCreate 또는 canUpdate 중 하나라도 없으면 차단.
+    // 세부 액션별 권한은 서버 최종 검증 (403) 에 위임.
+    if (!codesPerm.isLoading && !codesPerm.canCreate && !codesPerm.canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     setIsSaving(true);
     try {
       // Header 신규행 저장
@@ -252,6 +264,9 @@ export function CodesContents() {
     handleEditCancel,
     openAlert,
     selectedHeaderId,
+    codesPerm.isLoading,
+    codesPerm.canCreate,
+    codesPerm.canUpdate,
   ]);
 
   return (

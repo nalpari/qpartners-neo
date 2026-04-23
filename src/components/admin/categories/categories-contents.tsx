@@ -5,6 +5,8 @@
 import { useState, useMemo } from "react";
 import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
 import type { CategoryFormState } from "./categories-types";
@@ -14,6 +16,9 @@ import { useCategoryMutations } from "./use-category-mutations";
 
 export function CategoriesContents() {
   const { openAlert } = useAlertStore();
+
+  // RBAC Phase 3 — CATEGORIES canCreate/canUpdate/canDelete 로 각 버튼 가드.
+  const categoriesPerm = useMenuPermission(ADMIN_MENU.CATEGORIES);
 
   // ─── Local State ───
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -93,6 +98,11 @@ export function CategoriesContents() {
 
   // Plan SC: SC-04, SC-05 — 신규 등록 / 수정
   const handleSave = (form: CategoryFormState) => {
+    const needPerm = isNewMode ? categoriesPerm.canCreate : categoriesPerm.canUpdate;
+    if (!categoriesPerm.isLoading && !needPerm) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     if (!form.categoryCode.trim()) {
       openAlert({ type: "alert", message: "カテゴリコードは必須入力項目です。" });
       return;
@@ -128,6 +138,10 @@ export function CategoriesContents() {
   // 연결된 콘텐츠 링크(ContentCategory)는 Cascade 로 자동 해제됨을 사용자에게 고지.
   // 콘텐츠 본체는 보존되며 카테고리 매핑만 해제됨.
   const handleDelete = () => {
+    if (!categoriesPerm.isLoading && !categoriesPerm.canDelete) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     if (selectedId === null) return;
     openAlert({
       type: "confirm",
@@ -138,6 +152,10 @@ export function CategoriesContents() {
   };
 
   const handleNew = () => {
+    if (!categoriesPerm.isLoading && !categoriesPerm.canCreate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     setIsNewMode(true);
     setSelectedId(null);
   };
