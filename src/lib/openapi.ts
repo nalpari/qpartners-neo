@@ -10,30 +10,6 @@ const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   },
 });
 
-/**
- * RBAC 메뉴 권한 403 응답 helper — Phase 2 requireMenuPermission 가드 반환값과 1:1.
- * 보안 정책: 403 응답에는 일반화된 에러만 반환 (menuCode/action 미포함 — RBAC 매트릭스 열거 방지).
- * 디버깅 정보는 서버 로그에만 기록.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const menuPermissionForbidden = (
-  menuCode: string,
-  action: "read" | "create" | "update" | "delete",
-): OpenAPIV3.ResponseObject => ({
-  description: `メニュー権限がありません (RBAC: ${menuCode}.${action})`,
-  content: {
-    "application/json": {
-      schema: {
-        type: "object",
-        required: ["error"],
-        properties: {
-          error: { type: "string", example: "権限がありません" },
-        },
-      },
-    },
-  },
-});
-
 const validationErrorResponse: OpenAPIV3.ResponseObject = {
   description: "Validation failed",
   content: {
@@ -246,6 +222,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 - \`authRole\` ↔ \`roleCode\` 1:1 매핑이므로 JWT authRole 값을 그대로 roleCode 로 사용
 - \`SUPER_ADMIN\`: 활성 메뉴 전체에 모든 CRUD \`true\` 합성 반환 (QpRoleMenuPermission 조회 스킵, fail-open)
 - 그 외: 활성 메뉴에 한해 \`QpRoleMenuPermission\` 조회. 시드 미등록 메뉴는 응답에서 제외 (fail-closed)
+- 응답 body 는 \`{ data: { menus } }\` 만 포함 — \`roleCode\` 등 RBAC 내부 식별자는 노출하지 않음 (정찰 차단)
 - 응답 헤더: \`Cache-Control: private, no-store\` (권한 회수 즉시성 보장)`,
         responses: {
           "200": {
@@ -263,13 +240,8 @@ export const openApiSpec: OpenAPIV3.Document = {
                   properties: {
                     data: {
                       type: "object",
-                      required: ["roleCode", "menus"],
+                      required: ["menus"],
                       properties: {
-                        roleCode: {
-                          type: "string",
-                          enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
-                          example: "ADMIN",
-                        },
                         menus: {
                           type: "array",
                           items: {

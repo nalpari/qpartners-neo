@@ -15,6 +15,8 @@ import { menuCodeSchema } from "@/lib/schemas/common";
  * - 그 외: 단일 `findMany` 배치 쿼리로 해당 roleCode 의 활성 메뉴 권한 조회 (fail-closed).
  *   · resolveMenuPermission(단건 가드)과 동일 매핑 로직이나 쿼리 패턴만 배치 최적화.
  * - 시드 외 menuCode 가 DB 에 존재하면 응답에서 제외 (MenuCode 리터럴 유니온 검증 실패 시).
+ * - 응답 body 는 `{ data: { menus } }` 만 포함 — `roleCode` 등 RBAC 내부 식별자는 응답에 노출하지 않음
+ *   (자기 세션으로 RBAC 계층 정찰 차단, fail-closed 보안 원칙).
  * - 응답 캐싱: `private, no-store` — 권한 회수 즉시성 확보.
  */
 export async function GET(request: NextRequest) {
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
     }
 
     const response = NextResponse.json({
-      data: { roleCode, menus },
+      data: { menus },
     });
     response.headers.set("Cache-Control", "private, no-store");
     return response;
