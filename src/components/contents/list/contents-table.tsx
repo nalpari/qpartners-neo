@@ -17,6 +17,8 @@ import {
 import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { usePageSize } from "@/hooks/use-page-size";
 import { useApprover } from "@/hooks/use-approver";
@@ -239,6 +241,9 @@ export function ContentsTable({
   const { labelMap: approverLabelMap, isLoading: isLoadingApprover } = useApprover({
     enabled: isInternal,
   });
+  // CONTENT.canCreate 매트릭스 가드 — 관리자가 권한관리 UI 에서 토글한 결과를 등록 버튼에 즉시 반영.
+  // 서버 POST /api/contents 도 requireMenuPermission(CONTENT, create) 로 최종 검증하므로 FE 는 UX 전용.
+  const { canCreate: canCreateContent } = useMenuPermission(MENU.CONTENT);
 
   // 행 데이터에 정렬된 targets 를 미리 계산 (cellRenderer 매 호출마다 sort 비용 회피)
   const rowData = useMemo<ContentListItem[]>(
@@ -441,7 +446,7 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isInternal && (
+        {isInternal && canCreateContent && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
             <Button variant="primary" className="w-[90px]">
               新規登録
