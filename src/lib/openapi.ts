@@ -3684,7 +3684,11 @@ export const openApiSpec: OpenAPIV3.Document = {
       MemberUpdateRequest: {
         type: "object",
         properties: {
-          userRole: { type: "string", description: "일반회원만 변경 가능" },
+          userRole: {
+            type: "string",
+            enum: ["1ST_STORE", "2ND_STORE", "GENERAL"],
+            description: "일반회원만 변경 가능. SEKO(施工店) 부여 불가 (2026-04-23 정책)",
+          },
           twoFactorEnabled: { type: "boolean" },
           loginNotification: { type: "boolean" },
           attributeChangeNotification: { type: "boolean" },

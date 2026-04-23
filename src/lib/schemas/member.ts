@@ -120,13 +120,11 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
 
 // ─── 회원 수정 요청 ───
 
-/** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3)
- *  주의: 여기서의 SEKO 는 `authCd`(권한코드) 값이며, 위 `memberTypeValues` 의
- *  `userTp`(회원유형)와는 다른 개념이다. 즉 일반회원(userTp=GENERAL)에게
- *  시공점 권한(authCd=SEKO)을 부여할 수 있다는 의미로, userTp 가 SEKO 로
- *  바뀌는 것은 아니다.
+/** 관리자가 일반회원에게 부여 가능한 권한 코드.
+ *  시공점(SEKO) 제외 — 일반회원 수정 시 시공점 권한 부여 불가 정책 (2026-04-23).
+ *  FE `ROLE_OPTIONS_GENERAL` 와 SSoT 동기. UI 에서 옵션이 숨겨져도 서버에서 재검증.
  */
-const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"] as const;
+const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "GENERAL"] as const;
 
 /**
  * 회원 수정 요청 스키마.
