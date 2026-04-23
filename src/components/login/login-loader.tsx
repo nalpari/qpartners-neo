@@ -7,7 +7,12 @@ import type { TabType } from "@/components/login/types";
 
 const noopSubscribe = () => () => {};
 
-export function LoginLoader() {
+interface LoginLoaderProps {
+  /** 서버에서 파싱한 자동로그인/SSO 실패 메시지 — 초기 error 상태로 주입 */
+  initialError?: string | null;
+}
+
+export function LoginLoader({ initialError = null }: LoginLoaderProps) {
   const isMounted = useSyncExternalStore(
     noopSubscribe,
     () => true,
@@ -15,7 +20,7 @@ export function LoginLoader() {
   );
 
   if (!isMounted) {
-    return <LoginContents />;
+    return <LoginContents initialError={initialError} />;
   }
 
   const savedId = localStorage.getItem(SAVED_ID_KEY) ?? "";
@@ -29,6 +34,7 @@ export function LoginLoader() {
       key={`${savedTab}-${savedId}`}
       initialSavedId={savedId}
       initialSavedTab={savedTab}
+      initialError={initialError}
     />
   );
 }

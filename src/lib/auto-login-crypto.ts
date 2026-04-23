@@ -70,7 +70,9 @@ function getAesSecret(): string {
       `AUTO_LOGIN_AES_KEY 길이가 최소 기준(${MIN_AES_SECRET_LENGTH}자) 미만입니다`,
     );
   }
-  return envKey;
+  // 반드시 trimmed 반환 — env 값에 우연히 공백/개행이 섞이면 외부 3사와 SHA-256 결과가 달라져
+  // 간헐적 복호화 실패가 발생한다. 유효성 검사에 사용한 값으로 일관되게 내보낸다.
+  return trimmed;
 }
 
 /**

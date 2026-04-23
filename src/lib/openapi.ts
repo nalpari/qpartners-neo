@@ -146,9 +146,15 @@ export const openApiSpec: OpenAPIV3.Document = {
 - 자정 경계: 서버는 당일 키 실패 시 전일 키로 재시도
 
 **응답:**
-- 성공: \`307\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵)
-- 실패: \`307\` → \`/login?error=auto_login_failed\` (쿼리 검증·복호화·QSP userDetail·JWT 서명 중 하나라도 실패)
-- 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 등)`,
+- 성공: \`302\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵. SUPER_ADMIN 은 거부)
+- 실패: \`302\` → \`/login?error=auto_login_failed\` (쿼리 검증·Rate Limit·복호화·QSP userDetail·계정상태·authRole·JWT 중 실패)
+- 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 등)
+
+**보안 방어:**
+- Rate Limit: IP 기반 20/분, IP 미식별 시 userTp 기반 10/분
+- Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`SITE_URL\` env / \`SITE_DEFAULTS.url\` 을 base 로 고정
+- 계정 상태: \`statCd === "A"\` 만 허용 (삭제/탈퇴 차단)
+- 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용`,
         parameters: [
           {
             name: "autoLoginParam1",
@@ -166,12 +172,12 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         ],
         responses: {
-          "307": {
-            description: "자동로그인 성공 시 홈(/) 또는 실패 시 /login?error=auto_login_failed 로 리다이렉트 (NextResponse.redirect 기본값)",
+          "302": {
+            description: "자동로그인 성공 시 홈(/) 또는 실패 시 /login?error=auto_login_failed 로 리다이렉트 (302 Found, SSO 폴백 의도)",
             headers: {
               Location: {
                 schema: { type: "string" },
-                description: "리다이렉트 대상 URL",
+                description: "리다이렉트 대상 URL (SITE_URL/SITE_DEFAULTS.url base — Host 헤더 조작 방어)",
               },
               "Set-Cookie": {
                 schema: { type: "string" },

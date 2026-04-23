@@ -24,9 +24,11 @@ const STATUS_ERROR_MAP: Record<number, string> = {
 interface LoginContentsProps {
   initialSavedId?: string;
   initialSavedTab?: TabType;
+  /** 서버에서 전달된 초기 error 메시지 (자동로그인 실패 등 외부 유입 안내) */
+  initialError?: string | null;
 }
 
-export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
+export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null }: LoginContentsProps) {
   // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
   const prefillRef = useRef(useAppStore.getState().prefillEmail);
 
@@ -45,7 +47,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const router = useRouter();
   const queryClient = useQueryClient();
   const openPopup = usePopupStore((s) => s.openPopup);
