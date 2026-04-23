@@ -117,9 +117,16 @@ export function WithdrawPopup() {
             },
           });
         } else if (status === 429) {
-          openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
+          openAlert({ type: "alert", message: errorMsg ?? "しばらくしてからお試しください。" });
+        } else if (status === 502) {
+          // BE 는 QSP 장애 / 탈퇴 실패 / 결과 불명 상황을 502 로 반환하며 쿠키를 유지함 (재시도 가능).
+          // BE 의 안내 메시지를 그대로 표시해 사용자가 재시도 경로를 잃지 않도록 한다.
+          openAlert({
+            type: "alert",
+            message: errorMsg ?? "退会処理に失敗しました。しばらくしてから再度お試しください。",
+          });
         } else {
-          openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+          openAlert({ type: "alert", message: errorMsg ?? "サーバーエラーが発生しました。しばらくしてからお試しください。" });
         }
       } else {
         console.error("[Withdraw] 탈퇴 처리 실패:", err);
