@@ -48,16 +48,18 @@ export function AdminTab() {
   const pathname = usePathname();
 
   const { data: menuTree, isError, error } = useMenuTree();
-  // 현재 사용자의 menuCode 별 canRead 체크 — IS_STUB 동안은 항상 true 로 탭 전부 노출.
-  // BE 연결 후에는 canRead=false 탭은 자동 숨김 (fail-closed).
-  const { has } = useMenuPermissionMap();
+  // canRead 기반 탭 필터링. 권한 로딩 중에는 플래시 of empty nav 방지를 위해
+  // rawTabs 그대로 노출하고, 응답 도착 후에만 숨김 처리 (서버가 실제 차단 담당).
+  const { has, isLoading: isPermLoading } = useMenuPermissionMap();
 
   if (isError) {
     console.error("[AdminTab] 메뉴 API 조회 실패:", error);
   }
 
   const rawTabs = (menuTree && toTabs(menuTree)) ?? FALLBACK_TABS;
-  const tabs = rawTabs.filter((t) => !t.menuCode || has(t.menuCode, "read"));
+  const tabs = isPermLoading
+    ? rawTabs
+    : rawTabs.filter((t) => !t.menuCode || has(t.menuCode, "read"));
 
   return (
     <nav className="flex gap-1 w-full max-w-[1440px] pb-[32px]">

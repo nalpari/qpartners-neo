@@ -118,11 +118,11 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
 
   // RBAC Phase 3 §버튼 정책: 작성자 가드(canModify) 통과한 버튼에 한해 메뉴 권한 alert 가드.
   // CONTENT menuCode 의 canUpdate/canDelete 가 false 면 클릭 시 "権限がありません。"
-  // (현재 IS_STUB=true 동안 모두 true 반환 → 동작 변화 없음. BE 연결 시 자동 활성)
-  const { canUpdate, canDelete } = useMenuPermission(MENU.CONTENT);
+  // 권한 로딩 중에는 서버 재검증이 최종 장벽이므로 진행 허용 (로딩 플래시 차단).
+  const { canUpdate, canDelete, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
 
   const handleDelete = () => {
-    if (!canDelete) {
+    if (!isPermLoading && !canDelete) {
       openAlert({ type: "alert", message: "権限がありません。" });
       return;
     }
@@ -162,7 +162,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   };
 
   const handleEdit = () => {
-    if (!canUpdate) {
+    if (!isPermLoading && !canUpdate) {
       openAlert({ type: "alert", message: "権限がありません。" });
       return;
     }

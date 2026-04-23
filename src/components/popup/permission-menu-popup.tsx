@@ -4,11 +4,27 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox } from "@/components/common";
 import type { RolePermissionsResponse, MenuPermissionRow } from "@/components/admin/permissions/permissions-types";
 import { flattenMenuTree, rowsToPermissions } from "@/components/admin/permissions/permissions-types";
+
+/**
+ * 서버 400 응답의 `error` 필드(일본어) 를 사용자에게 노출.
+ * lockout 가드/Zod refine 실패 등 구체 원인을 숨기지 않고 전달.
+ * response.data 가 예상과 다르면 기본 메시지로 폴백.
+ */
+function extractServerError(err: unknown): string {
+  if (!isAxiosError(err)) return "保存に失敗しました。";
+  const data = err.response?.data;
+  if (data && typeof data === "object" && "error" in data) {
+    const msg = (data as { error: unknown }).error;
+    if (typeof msg === "string" && msg.length > 0) return msg;
+  }
+  return "保存に失敗しました。";
+}
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -109,7 +125,8 @@ export function PermissionMenuPopup() {
     },
     onError: (error: unknown) => {
       console.error("[PUT /api/roles/permissions] 권한 저장 실패:", error);
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      // 서버 400 의 lockout 가드/Zod 검증 실패 메시지(일본어) 를 그대로 노출
+      openAlert({ type: "alert", message: extractServerError(error), confirmLabel: "確認" });
     },
   });
 

@@ -7,17 +7,13 @@ import api from "@/lib/axios";
  * 로그인 사용자의 역할별 메뉴 CRUD 권한 훅.
  * 참조: `docs/ref/01-plan/rbac-menu-access-frontend.plan.md` §B
  *
- * ⚠️ 현재 STUB 상태 — BE `GET /api/auth/me/permissions` (§A) 미구현.
- *   `IS_STUB=true` 동안 모든 menuCode 에 대해 4 플래그 전부 true 반환 (UI 회귀 방지).
- *
- * TODO(RBAC Phase 3): BE 엔드포인트 준비되면 `IS_STUB = false` 로 변경.
- *   queryFn / 응답 shape 는 이미 BE 계약과 일치하므로 추가 수정 불필요.
- *   - 운영 시 menus 배열에 없는 menuCode → 모두 false (fail-closed)
- *   - SUPER_ADMIN 전체 true 합성은 BE 담당
+ * BE `GET /api/auth/me/permissions` (§A) 소비.
+ * - SUPER_ADMIN: BE 가 활성 메뉴 전체 true 합성 반환
+ * - 그 외: 시드 매트릭스(QpRoleMenuPermission) 기반, 응답에 없는 menuCode 는 fail-closed(false)
  */
 
-/** Phase 3 BE 엔드포인트가 붙기 전까지 true. 붙으면 false 로 전환 */
-const IS_STUB = true;
+/** BE 엔드포인트 연결 완료 — STUB 모드 종료 (2026-04-23) */
+const IS_STUB = false;
 
 export type PermissionAction = "read" | "create" | "update" | "delete";
 
