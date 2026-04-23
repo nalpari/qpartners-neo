@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { logError } from "@/lib/log-error";
 import { fetchQspUserDetail, parseQspDate, buildQspPreservedFields } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
@@ -144,8 +145,8 @@ function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
 // GET /api/admin/members/:id — 회원 상세정보
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — MEMBERS.read 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. ID/userTp 파라미터 검증
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: mapped });
   } catch (error: unknown) {
-    console.error("[GET /api/admin/members/:id] 회원 상세 조회 실패:", error);
+    logError("GET /api/admin/members/:id", error);
     return NextResponse.json(
       { error: "会員情報の取得に失敗しました" },
       { status: 500 },
@@ -233,8 +234,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 // PUT /api/admin/members/:id — 회원 상세정보 수정
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — MEMBERS.update 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -790,7 +791,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       },
     });
   } catch (error: unknown) {
-    console.error("[PUT /api/admin/members/:id] 회원 정보 수정 실패:", error);
+    logError("PUT /api/admin/members/:id", error);
     return NextResponse.json(
       { error: "会員情報の更新に失敗しました" },
       { status: 500 },

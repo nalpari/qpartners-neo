@@ -5,10 +5,11 @@ import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { logError } from "@/lib/log-error";
 import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
@@ -48,8 +49,8 @@ interface ParsedRequest {
 }
 
 async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequest | NextResponse> {
-  // 1. 관리자 권한 확인
-  const authResult = requireAdmin(request.headers);
+  // 1. 관리자 권한 확인 — BULK_MAIL.create 매트릭스 기반 (POST 전용 헬퍼)
+  const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "create");
   if (authResult instanceof NextResponse) return authResult;
   const { user } = authResult;
 
@@ -295,8 +296,8 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
 // GET /api/admin/mass-mails — 대량메일 목록
 export async function GET(request: NextRequest) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — BULK_MAIL.read 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. 쿼리 파라미터 파싱
@@ -404,7 +405,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error("[GET /api/admin/mass-mails] 목록 조회 실패:", error);
+    logError("GET /api/admin/mass-mails", error);
     return NextResponse.json(
       { error: "メール一覧の取得に失敗しました" },
       { status: 500 },
@@ -465,7 +466,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: unknown) {
     await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
-    console.error("[POST /api/admin/mass-mails] 등록 실패:", error);
+    logError("POST /api/admin/mass-mails", error);
     return NextResponse.json(
       { error: "メールの登録に失敗しました" },
       { status: 500 },

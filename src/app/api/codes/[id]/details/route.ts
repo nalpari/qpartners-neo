@@ -3,16 +3,17 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { createCodeDetailSchema, idParamSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/codes/:id/details — Detail 목록 (관리자 전용)
+// GET /api/codes/:id/details — Detail 목록 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: details });
   } catch (error) {
-    console.error("[GET /api/codes/:id/details]", error);
+    logError("GET /api/codes/:id/details", error);
     return NextResponse.json(
       { error: "コード詳細の取得に失敗しました" },
       { status: 500 },
@@ -51,10 +52,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-// POST /api/codes/:id/details — Detail 등록 (관리자 전용)
+// POST /api/codes/:id/details — Detail 등록 (CODES.create — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "create");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         );
       }
     }
-    console.error("[POST /api/codes/:id/details]", error);
+    logError("POST /api/codes/:id/details", error);
     return NextResponse.json(
       { error: "コード詳細の作成に失敗しました" },
       { status: 500 },

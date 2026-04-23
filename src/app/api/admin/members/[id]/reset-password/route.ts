@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { SITE_DEFAULTS } from "@/lib/config";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendMail } from "@/lib/mailer";
@@ -23,8 +24,9 @@ type Params = { params: Promise<{ id: string }> };
 // POST /api/admin/members/:id/reset-password — 관리자 비밀번호 초기화
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — MEMBERS.update 매트릭스 기반
+    //    (비밀번호 초기화는 대상 회원 리소스의 상태 변경이므로 update 로 분류)
+    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user: admin } = authResult;
 
@@ -213,7 +215,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       data: { message: "パスワード変更リンクをメールで送信しました。" },
     });
   } catch (error: unknown) {
-    console.error("[POST /api/admin/members/:id/reset-password] 비밀번호 초기화 실패:", error);
+    logError("POST /api/admin/members/:id/reset-password", error);
     return NextResponse.json(
       { error: "パスワード初期化処理中にエラーが発生しました" },
       { status: 500 },

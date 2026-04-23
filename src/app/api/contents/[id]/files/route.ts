@@ -4,9 +4,10 @@ import { writeFile, mkdir, unlink } from "fs/promises";
 import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 
-import { canModifyResource, requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { logError } from "@/lib/log-error";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
@@ -16,7 +17,7 @@ type Params = { params: Promise<{ id: string }> };
 // POST /api/contents/:id/files — 첨부파일 업로드
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CONTENT", "create");
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
@@ -171,7 +172,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       throw dbError;
     }
   } catch (error: unknown) {
-    console.error("[POST /api/contents/:id/files] 첨부파일 업로드 실패:", error);
+    logError("POST /api/contents/:id/files", error);
     return NextResponse.json(
       { error: "添付ファイルのアップロードに失敗しました" },
       { status: 500 },

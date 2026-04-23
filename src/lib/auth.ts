@@ -8,12 +8,21 @@
 
 import { NextResponse } from "next/server";
 
+import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues, authRoleValues, targetTypeValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
 
 export type AuthRole = (typeof authRoleValues)[number];
 export type TargetType = (typeof targetTypeValues)[number];
 type UserTp = (typeof userTpValues)[number];
+
+/** QpRoleMenuPermission 의 CRUD boolean 필드 묶음. resolveMenuPermission 반환 타입. */
+export type MenuPermission = {
+  canRead: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+};
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
 const VALID_ROLES = new Set<string>(authRoleValues);
@@ -88,6 +97,92 @@ export function requireSuperAdmin(
   if (user.role !== "SUPER_ADMIN") {
     return NextResponse.json(
       { error: "スーパー管理者権限が必要です" },
+      { status: 403 },
+    );
+  }
+  return { user };
+}
+
+/**
+ * 사용자·메뉴에 대한 CRUD 권한 해석 — Phase 2 RBAC 단일 진실 (Single Source).
+ *
+ * - `SUPER_ADMIN`: DB 조회 스킵, 전부 true (fail-open — /auth/me/permissions 와 동일 정책)
+ * - 그 외:
+ *   · 시드에 미등록인 (roleCode, menuCode) 조합 → 전부 false (fail-closed)
+ *   · 연결된 Menu 의 `isActive=false` → 전부 false (fail-closed)
+ *   · 정상 조회: QpRoleMenuPermission 의 canRead/canCreate/canUpdate/canDelete 반환
+ *
+ * `requireMenuPermission` 가드와 `GET /api/auth/me/permissions` 양쪽에서 호출되어
+ * FE/BE 권한 판정 divergence 를 원천 차단한다.
+ */
+export async function resolveMenuPermission(
+  user: UserInfo,
+  menuCode: MenuCode,
+): Promise<MenuPermission> {
+  if (user.role === "SUPER_ADMIN") {
+    return { canRead: true, canCreate: true, canUpdate: true, canDelete: true };
+  }
+
+  const row = await prisma.qpRoleMenuPermission.findFirst({
+    where: {
+      roleCode: user.role,
+      menuCode,
+      menu: { isActive: true },
+    },
+    select: {
+      canRead: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+    },
+  });
+
+  if (!row) {
+    return { canRead: false, canCreate: false, canUpdate: false, canDelete: false };
+  }
+  return row;
+}
+
+const MENU_ACTION_TO_KEY: Readonly<Record<MenuAction, keyof MenuPermission>> = {
+  read: "canRead",
+  create: "canCreate",
+  update: "canUpdate",
+  delete: "canDelete",
+};
+
+/**
+ * 메뉴 권한 매트릭스 기반 가드 — `requireAdmin` 의 RBAC 교체판.
+ *
+ * 성공: `{ user }` 반환 — 호출부에서 그대로 `const { user } = auth;` 로 소비.
+ * 실패:
+ *   · 401 `認証が必要です` — 헤더 인증 실패
+ *   · 403 `{ error }` — 매트릭스 상 해당 action 불허 (menuCode/action 은 서버 로그에만 기록)
+ *
+ * @example
+ * const auth = await requireMenuPermission(request.headers, "CONTENT", "create");
+ * if (auth instanceof NextResponse) return auth;
+ * const { user } = auth;
+ */
+export async function requireMenuPermission(
+  headers: Headers,
+  menuCode: MenuCode,
+  action: MenuAction,
+): Promise<{ user: UserInfo } | NextResponse> {
+  const user = getUserFromHeaders(headers);
+  if (!user) {
+    return NextResponse.json(
+      { error: "認証が必要です" },
+      { status: 401 },
+    );
+  }
+
+  const perm = await resolveMenuPermission(user, menuCode);
+  if (!perm[MENU_ACTION_TO_KEY[action]]) {
+    console.warn(
+      `[requireMenuPermission] 권한 거부 — role=${user.role}, menuCode=${menuCode}, action=${action}`,
+    );
+    return NextResponse.json(
+      { error: "権限がありません" },
       { status: 403 },
     );
   }
