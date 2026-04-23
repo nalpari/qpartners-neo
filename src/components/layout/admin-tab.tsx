@@ -46,7 +46,10 @@ function toTabs(menuTree: MenuTreeItem[]) {
     }
     deduped.set(tab.href, tab);
   }
-  return Array.from(deduped.values());
+  // 빈 배열은 truthy 라 호출부의 `?? FALLBACK_TABS` 가 발동하지 않아 관리자 UI 가 완전히 공백이 됨.
+  // null 로 명시 반환해 fallback 경로를 확실히 활성화.
+  const result = Array.from(deduped.values());
+  return result.length > 0 ? result : null;
 }
 
 export function AdminTab() {

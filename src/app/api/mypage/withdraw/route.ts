@@ -11,6 +11,15 @@ import { fetchQspUserDetail } from "@/lib/qsp-member";
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
 
+/** JWT 쿠키 삭제용 공통 옵션 — 로그인 경로(`/api/auth/login`)와 속성 일치 유지. */
+const CLEAR_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/",
+  maxAge: 0,
+} as const;
+
 /**
  * POST /api/mypage/withdraw — 회원탈퇴 (일반회원만)
  *
@@ -93,10 +102,13 @@ export async function POST(request: NextRequest) {
 
     // 이미 탈퇴 처리된 회원은 멱등성 보장을 위해 409 (재실행 안전장치).
     if (current.statCd === "R") {
-      return NextResponse.json(
+      // 이미 탈퇴된 계정의 JWT 는 즉시 무효화 — 쿠키 탈취로 세션이 만료될 때까지 유효하게 잔존하는 것을 차단.
+      const resp = NextResponse.json(
         { error: "既に退会済みの会員です" },
         { status: 409 },
       );
+      resp.cookies.set(COOKIE_NAME, "", CLEAR_COOKIE_OPTIONS);
+      return resp;
     }
 
     // 2. QSP updateUserDtl 호출 — statCd="R" 로 전환.
@@ -188,6 +200,24 @@ export async function POST(request: NextRequest) {
         resultCode,
         resultMsg: truncatedMsg,
       });
+
+      // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 updateUserDtl 호출 사이에
+      // 다른 경로(다른 탭/기기) 로 이미 탈퇴 처리가 완료되었을 가능성을 재확인.
+      // 실패 직후 userDetail 재조회 → statCd === "R" 이면 409 로 매핑 + 쿠키 삭제.
+      const recheck = await fetchQspUserDetail(
+        user.userId,
+        user.userTp,
+        "[POST /api/mypage/withdraw][recheck]",
+      );
+      if (recheck.ok && recheck.detail.statCd === "R") {
+        const resp = NextResponse.json(
+          { error: "既に退会済みの会員です" },
+          { status: 409 },
+        );
+        resp.cookies.set(COOKIE_NAME, "", CLEAR_COOKIE_OPTIONS);
+        return resp;
+      }
+
       return NextResponse.json(
         { error: "退会処理に失敗しました" },
         { status: 502 },
@@ -196,15 +226,9 @@ export async function POST(request: NextRequest) {
 
     // 3. JWT 쿠키 삭제 — 즉시 로그아웃. 탈퇴된 계정의 세션이 잔존해 permission/2FA 캐시로 오작동하는 것 방지.
     const response = NextResponse.json({
-      data: { message: "会員退会が完了されました。" },
+      data: { message: "会員退会が完了しました。" },
     });
-    response.cookies.set(COOKIE_NAME, "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 0,
-    });
+    response.cookies.set(COOKIE_NAME, "", CLEAR_COOKIE_OPTIONS);
     return response;
   } catch (error) {
     console.error("[POST /api/mypage/withdraw]", error);

@@ -78,7 +78,7 @@ export function WithdrawPopup() {
       // Plan SC: 성공 → alert → 로그아웃 → 홈 이동
       openAlert({
         type: "alert",
-        message: "会員退会が完了されました。ご利用ありがとうございます。",
+        message: "会員退会が完了しました。ご利用ありがとうございます。",
         onConfirm: () => {
           logout();
           closePopup();
@@ -220,6 +220,8 @@ export function WithdrawPopup() {
                   setError("");
                 }}
                 placeholder="退会理由を入力してください"
+                // BE withdrawSchema.reason.max(1000) 과 일치 — 초과 입력 후 제출 실패 UX 방지.
+                maxLength={1000}
                 className={`w-full h-[120px] px-[16px] py-[12px] bg-white border rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none transition-colors duration-150 ${
                   error
                     ? "border-[#ff1a1a]"
