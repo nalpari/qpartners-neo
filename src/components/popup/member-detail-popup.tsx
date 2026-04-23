@@ -472,7 +472,10 @@ function MemberEditForm({
                     children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
-                        value={userRole}
+                        // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
+                        // "선택 없음" 상태를 명시적으로 표시 → 관리자가 반드시 재선택하게 유도.
+                        // 실제 state(userRole) 는 그대로 보존되어 저장 시 서버 검증(400) 과 조합됨.
+                        value={editableRoleValues.includes(userRole) ? userRole : ""}
                         onChange={setUserRole}
                         className="w-full"
                       />

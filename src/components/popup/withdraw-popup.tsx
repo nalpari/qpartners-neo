@@ -118,8 +118,6 @@ export function WithdrawPopup() {
           });
         } else if (status === 429) {
           openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
-        } else if (status === 501) {
-          openAlert({ type: "alert", message: "退会機能は現在準備中です。しばらくお待ちください。" });
         } else {
           openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
         }

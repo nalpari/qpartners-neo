@@ -87,18 +87,34 @@ export async function POST(request: NextRequest) {
     const { reason } = result.data;
 
     // 1. QSP userDetail 로 현재값 조회 — updateUserDtl 는 성명/회사/주소 등 필수 필드 요구.
+    //    GENERAL 회원은 QSP 내부 조회 키가 email(위 !user.email 체크로 null 제외). userId 대신 email 을 명시 전달해
+    //    fetchQspUserDetail 내부 userTp 분기를 우회하지 않도록 의도를 명확히 함.
     const detailResult = await fetchQspUserDetail(
-      user.userId,
+      user.email,
       user.userTp,
       "[POST /api/mypage/withdraw]",
     );
     if (!detailResult.ok) {
+      // QSP 내부 오류 메시지(SQL 등)가 클라이언트로 직접 전달되지 않도록 일반화된 문구로 대체.
+      console.error("[POST /api/mypage/withdraw] QSP userDetail 조회 실패:", {
+        status: detailResult.error.status,
+        msg: detailResult.error.error,
+      });
       return NextResponse.json(
-        { error: detailResult.error.error },
+        { error: "退会処理中にエラーが発生しました" },
         { status: detailResult.error.status },
       );
     }
     const current = detailResult.detail;
+
+    // QSP statCd 가 null 이면 회원 상태 불명 — 탈퇴 가능 여부 판단 불가하므로 안전하게 502 로 중단.
+    if (!current.statCd) {
+      console.error("[POST /api/mypage/withdraw] QSP statCd null — 회원 상태 확인 불가");
+      return NextResponse.json(
+        { error: "退会処理に失敗しました" },
+        { status: 502 },
+      );
+    }
 
     // 이미 탈퇴 처리된 회원은 멱등성 보장을 위해 409 (재실행 안전장치).
     if (current.statCd === "R") {
@@ -205,7 +221,7 @@ export async function POST(request: NextRequest) {
       // 다른 경로(다른 탭/기기) 로 이미 탈퇴 처리가 완료되었을 가능성을 재확인.
       // 실패 직후 userDetail 재조회 → statCd === "R" 이면 409 로 매핑 + 쿠키 삭제.
       const recheck = await fetchQspUserDetail(
-        user.userId,
+        user.email,
         user.userTp,
         "[POST /api/mypage/withdraw][recheck]",
       );
@@ -218,10 +234,14 @@ export async function POST(request: NextRequest) {
         return resp;
       }
 
-      return NextResponse.json(
-        { error: "退会処理に失敗しました" },
+      // recheck 실패 또는 statCd !== "R" — QSP 내부에서 부분 처리가 완료됐을 가능성 배제 불가.
+      // 보수적 조치: 쿠키 삭제 후 재로그인 유도. 탈퇴 실패 시 재로그인 비용은 보안 대비 허용 가능.
+      const errResp = NextResponse.json(
+        { error: "退会処理の結果が不明です。再ログインして確認してください" },
         { status: 502 },
       );
+      errResp.cookies.set(COOKIE_NAME, "", CLEAR_COOKIE_OPTIONS);
+      return errResp;
     }
 
     // 3. JWT 쿠키 삭제 — 즉시 로그아웃. 탈퇴된 계정의 세션이 잔존해 permission/2FA 캐시로 오작동하는 것 방지.
