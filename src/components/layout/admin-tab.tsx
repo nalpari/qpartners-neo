@@ -28,13 +28,27 @@ function toTabs(menuTree: MenuTreeItem[]) {
   }
   if (adminMenu.children.length === 0) return null;
 
-  return adminMenu.children
+  const tabs = adminMenu.children
     .filter((c): c is MenuApiItem & { pageUrl: string } =>
       c.isActive && typeof c.pageUrl === "string" && c.pageUrl.length > 0
       && c.pageUrl.startsWith("/") && !c.pageUrl.startsWith("//")
     )
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((c) => ({ label: c.menuName, href: c.pageUrl }));
+
+  // pageUrl 중복 제거 — DB 에 같은 pageUrl 을 가진 메뉴가 들어오면 React key 중복 에러 발생.
+  // 최초 등장한 행만 유지하고 나머지는 drop + 경고 로그 (시드/메뉴관리 정합성 점검용).
+  const seen = new Set<string>();
+  const deduped: typeof tabs = [];
+  for (const tab of tabs) {
+    if (seen.has(tab.href)) {
+      console.warn(`[AdminTab] pageUrl 중복 감지 — drop: ${tab.href} (${tab.label})`);
+      continue;
+    }
+    seen.add(tab.href);
+    deduped.push(tab);
+  }
+  return deduped;
 }
 
 export function AdminTab() {

@@ -2313,7 +2313,10 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "회원 목록 조회",
         description: "관리자 전용 — 시공점 제외 전체 회원 목록 (검색/필터/페이징)",
         parameters: [
-          { name: "keyword", in: "query", schema: { type: "string" }, description: "ID/성명/이메일/회사명 Like 검색" },
+          { name: "userId", in: "query", schema: { type: "string", maxLength: 200 }, description: "ID Like 검색 (QSP userId 파라미터로 매핑)" },
+          { name: "userName", in: "query", schema: { type: "string", maxLength: 200 }, description: "성명 Like 검색 (QSP userNm 파라미터로 매핑)" },
+          { name: "email", in: "query", schema: { type: "string", maxLength: 200 }, description: "이메일 Like 검색 (QSP email 파라미터로 매핑)" },
+          { name: "companyName", in: "query", schema: { type: "string", maxLength: 200 }, description: "회사명 Like 검색 (QSP compNm 파라미터로 매핑)" },
           { name: "userType", in: "query", schema: { type: "string" }, description: "회원유형 필터 (ADMIN/STORE/GENERAL)" },
           { name: "status", in: "query", schema: { type: "string" }, description: "상태 필터 (active/deleted/withdrawn)" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 }, description: "페이지 번호" },

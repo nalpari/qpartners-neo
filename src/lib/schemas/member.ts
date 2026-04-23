@@ -87,8 +87,12 @@ const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
 const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
 
 export const memberListQuerySchema = z.object({
-  // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지)
-  keyword: z.string().max(200, "検索語が長すぎます").optional(),
+  // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지).
+  // ID/氏名/Email/会社名 각각 개별 파라미터 — QSP userListMng 에 동일 필드명으로 매핑.
+  userId: z.string().max(200, "IDが長すぎます").optional(),
+  userName: z.string().max(200, "氏名が長すぎます").optional(),
+  email: z.string().max(200, "メールアドレスが長すぎます").optional(),
+  companyName: z.string().max(200, "会社名が長すぎます").optional(),
   userType: z.enum(memberTypeValues).optional(),
   status: z.enum(memberStatusValues).optional(),
   page: z.coerce.number().int().positive().default(1),

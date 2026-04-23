@@ -24,9 +24,12 @@ export interface MemberListResponse {
   };
 }
 
-/** 검색 필터 */
+/** 검색 필터 — ID/氏名/Email/会社名 각각 개별 QSP 파라미터로 전달 */
 export interface MemberSearchFilters {
-  keyword: string;
+  userId: string;
+  userName: string;
+  email: string;
+  companyName: string;
   userType: string;
   status: string;
 }
@@ -76,7 +79,10 @@ export function formatDate(value: string | null): string {
 }
 
 export const INITIAL_FILTERS: MemberSearchFilters = {
-  keyword: "",
+  userId: "",
+  userName: "",
+  email: "",
+  companyName: "",
   userType: "",
   status: "",
 };
