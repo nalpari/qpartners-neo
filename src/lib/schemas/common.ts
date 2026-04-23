@@ -21,9 +21,12 @@ export const targetTypeValues = [
 export const targetTypeSchema = z.enum(targetTypeValues);
 
 /**
- * RBAC 메뉴 코드 — prisma/seed.mjs 의 메뉴 시드와 1:1.
+ * RBAC 메뉴 코드 — DB 실제값 기준.
  * (1-Level) HOME / CONTENT / INQUIRY / MYPAGE / ADMIN
- * (2-Level, `ADM_` prefix) ADM_MEMBER / ADM_BULK_MAIL / ADM_NOTICE / ADM_CATEGORY
+ * (2-Level, CONTENT 하위)  CONT_LIST / CONT_CREATE
+ * (2-Level, INQUIRY 하위)  INQ_FORM
+ * (2-Level, MYPAGE 하위)   MY_PROFILE / MY_DOWNLOAD / MY_INQUIRY
+ * (2-Level, ADMIN 하위)    ADM_MEMBER / ADM_BULK_MAIL / ADM_NOTICE / ADM_CATEGORY
  *                          / ADM_PERMISSION / ADM_MENU / ADM_CODE
  *
  * Single source of truth: 여기에 추가 → seed.mjs / requireMenuPermission 양쪽 동시 반영.
@@ -31,6 +34,9 @@ export const targetTypeSchema = z.enum(targetTypeValues);
  */
 export const menuCodeValues = [
   "HOME", "CONTENT", "INQUIRY", "MYPAGE", "ADMIN",
+  "CONT_LIST", "CONT_CREATE",
+  "INQ_FORM",
+  "MY_PROFILE", "MY_DOWNLOAD", "MY_INQUIRY",
   "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
   "ADM_PERMISSION", "ADM_MENU", "ADM_CODE",
 ] as const;
