@@ -9,9 +9,6 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, PageSizeSelect, Checkbox, Button } from "@/components/common";
-import { useAlertStore } from "@/lib/store";
-import { useMenuPermission } from "@/hooks/use-menu-permission";
-import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
@@ -42,9 +39,6 @@ interface BulkMailTableProps {
 
 export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const router = useRouter();
-  const { openAlert } = useAlertStore();
-  // RBAC Phase 3 — BULK_MAIL canCreate 없으면 작성 화면 진입 alert.
-  const bulkMailPerm = useMenuPermission(ADMIN_MENU.BULK_MAIL);
   // 대량메일 목록은 기본 100건 (기존 useState("100") 동작 유지)
   const { pageSize: perPage, setPageSize: setPerPage } = usePageSize(100);
   const [currentPage, setCurrentPage] = useState(1);
@@ -75,10 +69,6 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const totalPages = Math.ceil(totalCount / perPage);
 
   const handleSendMail = () => {
-    if (!bulkMailPerm.isLoading && !bulkMailPerm.canCreate) {
-      openAlert({ type: "alert", message: "権限がありません。" });
-      return;
-    }
     router.push("/admin/bulk-mail/create", { transitionTypes: ["fade"] });
   };
 

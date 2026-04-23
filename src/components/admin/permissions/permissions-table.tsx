@@ -24,8 +24,6 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import { useAlertStore, usePopupStore } from "@/lib/store";
-import { useMenuPermission } from "@/hooks/use-menu-permission";
-import { ADMIN_MENU } from "@/lib/menu-codes";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type { RoleApiItem, RolesResponse, PermissionItem } from "./permissions-types";
 import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody } from "./permissions-types";
@@ -212,9 +210,6 @@ export function PermissionsTable() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
 
-  // RBAC Phase 3 — PERMISSIONS menuCode 기반 권한 가드. canUpdate 는 매트릭스 상 SUPER_ADMIN 전용 시드.
-  const permissionsPerm = useMenuPermission(ADMIN_MENU.PERMISSIONS);
-
   const [activeOnly, setActiveOnly] = useState(false);
   const [newRow, setNewRow] = useState(false);
   const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({
@@ -341,10 +336,6 @@ export function PermissionsTable() {
   // --- 신규행/저장 핸들러 ---
 
   const handleAdd = () => {
-    if (!permissionsPerm.isLoading && !permissionsPerm.canCreate) {
-      openAlert({ type: "alert", message: "権限がありません。" });
-      return;
-    }
     if (newRow) return;
     handleEditCancel();
     newRowFieldsRef.current = { code: "", name: "", description: "" };
@@ -381,11 +372,6 @@ export function PermissionsTable() {
   // 통합 저장 — 신규행 등록 OR 단일 셀 편집 commit
   // useCallback 으로 안정화하여 handleKeyDown deps 에 정상 포함 (stale closure 회피)
   const handleSave = useCallback(async () => {
-    const needPerm = newRow ? permissionsPerm.canCreate : permissionsPerm.canUpdate;
-    if (!permissionsPerm.isLoading && !needPerm) {
-      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
-      return;
-    }
     // 신규행 저장
     if (newRow) {
       const fields = newRowFieldsRef.current;
@@ -434,7 +420,7 @@ export function PermissionsTable() {
       console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
       openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     }
-  }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel, permissionsPerm.isLoading, permissionsPerm.canCreate, permissionsPerm.canUpdate]);
+  }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel]);
 
   // 키보드 — Enter 저장 / Escape 취소 (handleSave useCallback 으로 stale closure 회피)
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

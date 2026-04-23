@@ -8,8 +8,6 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox } from "@/components/common";
-import { useMenuPermission } from "@/hooks/use-menu-permission";
-import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { RolePermissionsResponse, MenuPermissionRow } from "@/components/admin/permissions/permissions-types";
 import { flattenMenuTree, rowsToPermissions } from "@/components/admin/permissions/permissions-types";
 
@@ -68,10 +66,6 @@ export function PermissionMenuPopup() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
-
-  // RBAC Phase 3 — 매트릭스 편집은 PERMISSIONS canUpdate (시드상 SUPER_ADMIN 전용 고정).
-  // 서버(/api/roles/:roleCode/permissions) 가 requireSuperAdmin 으로 최종 차단.
-  const permissionsPerm = useMenuPermission(ADMIN_MENU.PERMISSIONS);
 
   // roleCode 런타임 검증 — popupData 가 unknown 이므로 string + non-empty 가드
   const rawRoleCode = popupData.roleCode;
@@ -145,10 +139,6 @@ export function PermissionMenuPopup() {
   };
 
   const handleSave = () => {
-    if (!permissionsPerm.isLoading && !permissionsPerm.canUpdate) {
-      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
-      return;
-    }
     saveMutation.mutate(rowsToPermissions(displayRows));
   };
 

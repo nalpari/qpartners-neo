@@ -5,8 +5,6 @@ import { isAxiosError } from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
-import { useMenuPermission } from "@/hooks/use-menu-permission";
-import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
 import { targetsToPayload } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
@@ -64,9 +62,6 @@ export function NoticeFormPopup() {
   const mode = (popupData.mode as "create" | "edit") ?? "create";
   const initialData = popupData.notice as NoticeFormData | undefined;
   const noticeId = initialData?.id;
-
-  // RBAC Phase 3 — mode 별 canCreate/canUpdate 로 저장 가드.
-  const noticesPerm = useMenuPermission(ADMIN_MENU.NOTICES);
 
   const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
   const [startDate, setStartDate] = useState<Date | null>(parseDate(initialData?.startDate ?? ""));
@@ -162,11 +157,6 @@ export function NoticeFormPopup() {
 
   // Design Ref: §4.3 — handleSave 통합
   const handleSave = () => {
-    const needPerm = mode === "create" ? noticesPerm.canCreate : noticesPerm.canUpdate;
-    if (!noticesPerm.isLoading && !needPerm) {
-      openAlert({ type: "alert", message: "権限がありません。" });
-      return;
-    }
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
