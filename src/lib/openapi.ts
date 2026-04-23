@@ -2154,6 +2154,8 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         userType: { type: "string", enum: [...userTpValues] },
+                        userName: { type: "string", nullable: true, description: "원본 성명 (QSP userNm). Q.Order 매핑: 성명 단일 필드" },
+                        userNameKana: { type: "string", nullable: true, description: "원본 성명 히라가나 (QSP userNmKana). Q.Order 매핑: 담당자명 후리가나 단일 필드" },
                         sei: { type: "string", nullable: true },
                         mei: { type: "string", nullable: true },
                         seiKana: { type: "string", nullable: true },
@@ -2293,6 +2295,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MyPage"],
         summary: "회원탈퇴 (일반회원만)",
+        description:
+          "QSP updateUserDtl 로 statCd=R 전환 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
+          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502.",
         requestBody: {
           required: true,
           content: {
@@ -2324,8 +2329,12 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("입력 검증 실패 / 리퀘스트 형식 오류"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("일반회원만 탈퇴 가능"),
+          "403": errorResponse("2FA 미완 또는 일반회원 아님"),
+          "409": errorResponse("이미 탈퇴 처리된 회원"),
+          "500": errorResponse("서버 에러 / JWT 누락"),
+          "502": errorResponse("QSP 연동 실패"),
         },
       },
     },
@@ -2375,7 +2384,10 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "회원 목록 조회",
         description: "관리자 전용 — 시공점 제외 전체 회원 목록 (검색/필터/페이징)",
         parameters: [
-          { name: "keyword", in: "query", schema: { type: "string" }, description: "ID/성명/이메일/회사명 Like 검색" },
+          { name: "userId", in: "query", schema: { type: "string", maxLength: 200 }, description: "ID Like 검색 (QSP userId 파라미터로 매핑)" },
+          { name: "userName", in: "query", schema: { type: "string", maxLength: 200 }, description: "성명 Like 검색 (QSP userNm 파라미터로 매핑)" },
+          { name: "email", in: "query", schema: { type: "string", maxLength: 200 }, description: "이메일 Like 검색 (QSP email 파라미터로 매핑)" },
+          { name: "companyName", in: "query", schema: { type: "string", maxLength: 200 }, description: "회사명 Like 검색 (QSP compNm 파라미터로 매핑)" },
           { name: "userType", in: "query", schema: { type: "string" }, description: "회원유형 필터 (ADMIN/STORE/GENERAL)" },
           { name: "status", in: "query", schema: { type: "string" }, description: "상태 필터 (active/deleted/withdrawn)" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 }, description: "페이지 번호" },
@@ -3705,7 +3717,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           lastNameKana: { type: "string" },
           email: { type: "string" },
           userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
-          userRole: { type: "string" },
+          userRole: {
+            type: "string",
+            description:
+              "현재 권한 코드. 응답에는 SEKO 포함 가능(레거시 데이터). 요청(MemberUpdateRequest.userRole)에는 SEKO 부여 불가 — 2026-04-23 정책.",
+          },
           companyName: { type: "string" },
           companyNameKana: { type: "string" },
           zipcode: { type: "string" },
@@ -3743,7 +3759,11 @@ export const openApiSpec: OpenAPIV3.Document = {
       MemberUpdateRequest: {
         type: "object",
         properties: {
-          userRole: { type: "string", description: "일반회원만 변경 가능" },
+          userRole: {
+            type: "string",
+            enum: ["1ST_STORE", "2ND_STORE", "GENERAL"],
+            description: "일반회원만 변경 가능. SEKO(施工店) 부여 불가 (2026-04-23 정책)",
+          },
           twoFactorEnabled: { type: "boolean" },
           loginNotification: { type: "boolean" },
           attributeChangeNotification: { type: "boolean" },

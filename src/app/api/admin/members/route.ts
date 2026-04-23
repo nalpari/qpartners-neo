@@ -23,7 +23,10 @@ export async function GET(request: NextRequest) {
     // 2. 쿼리 파라미터 파싱
     const { searchParams } = request.nextUrl;
     const queryResult = memberListQuerySchema.safeParse({
-      keyword: searchParams.get("keyword") ?? undefined,
+      userId: searchParams.get("userId") ?? undefined,
+      userName: searchParams.get("userName") ?? undefined,
+      email: searchParams.get("email") ?? undefined,
+      companyName: searchParams.get("companyName") ?? undefined,
       userType: searchParams.get("userType") ?? undefined,
       status: searchParams.get("status") ?? undefined,
       page: searchParams.get("page") ?? undefined,
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { keyword, userType, status, page, pageSize } = queryResult.data;
+    const { userId, userName, email, companyName, userType, status, page, pageSize } = queryResult.data;
 
     // 3. QSP 회원관리 목록 조회 API 호출 (사양서 No.10 userListMng)
     //    QSP는 page/pageSize가 아닌 startRow/endRow 방식
@@ -50,7 +53,12 @@ export async function GET(request: NextRequest) {
       startRow: String(startRow),
       endRow: String(endRow),
     });
-    if (keyword) params.set("userNm", keyword);
+    // QSP userListMng 필드명 매핑: userId→userId, userName→userNm, email→email, companyName→compNm.
+    // QSP 가 지원하지 않는 파라미터는 무시되지만, 서버에 불필요한 값을 보내지 않도록 trim 후 빈 값은 제외.
+    if (userId) params.set("userId", userId);
+    if (userName) params.set("userNm", userName);
+    if (email) params.set("email", email);
+    if (companyName) params.set("compNm", companyName);
     if (userType) params.set("userTp", userType);
     if (status) {
       params.set("statCd", STATUS_FILTER_TO_STAT_CD[status]);

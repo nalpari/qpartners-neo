@@ -366,9 +366,15 @@ function MemberEditForm({
   // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
   const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
 
-  const validRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
-  const safeRole = (role: string | undefined) =>
-    role && validRoleValues.includes(role) ? role : "GENERAL";
+  // SEKO 는 신규 부여 불가(2026-04-23 정책) 이지만 기존 SEKO 권한 회원이 있을 수 있으므로
+  // 표시값은 그대로 보존. SEKO 상태에서는 SelectBox 대신 TextValue 로 읽기전용 표시.
+  const editableRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
+  const safeRole = (role: string | undefined) => {
+    if (!role) return "GENERAL";
+    if (editableRoleValues.includes(role)) return role;
+    // "SEKO" 등 옵션에 없는 기존 권한은 보존 — handleSave 에서 편집 안 됐을 때 전송 제외 처리.
+    return role;
+  };
   const [userRole, setUserRole] = useState(safeRole(member.userRole));
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(member.twoFactorEnabled ?? true);
   const [loginNotification, setLoginNotification] = useState(member.loginNotification);
@@ -379,6 +385,11 @@ function MemberEditForm({
   // 삭제/탈퇴 회원(isQspNotFound) 복구 경로 — status=Active 로 전환.
   // 백엔드는 이 경로에서 userRole + twoFactorEnabled 명시 필수(복구 후 QSP 잔존 값 silent 부활 방어).
   const isRestoringToActive = isQspNotFound && isStatusEditable && memberStatus === "Active";
+
+  // 기존 SEKO 권한은 편집 UI 제공 안함 (옵션에 SEKO 없어 SelectBox 값 공백 방지).
+  // 단, 복구 경로(isRestoringToActive)는 관리자가 SEKO → 다른 권한 재부여가 필수이므로 lock 해제.
+  // 복구 경로 + SEKO: SelectBox 에서 SEKO 옵션 부재로 빈 표시 → 관리자가 명시적 재선택 후 저장(미선택 저장 시 BE 400).
+  const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   const handleSave = () => {
     const payload: MemberUpdatePayload = {
@@ -395,7 +406,8 @@ function MemberEditForm({
       payload.status = memberStatus === "Active" ? "active" : "deleted";
     }
     // userRole 은 GENERAL 회원에게만 적용. 복구 경로에서도 userTp=GENERAL 한정으로 전송.
-    if (isGeneral && (!isQspNotFound || isRestoringToActive)) {
+    // 기존 SEKO 권한은 새 옵션에서 제외되어 편집 불가 → 전송 제외(BE Zod 거부 방지 + 기존 값 보존).
+    if (isGeneral && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked) {
       payload.userRole = userRole;
     }
     onSave(payload);
@@ -455,12 +467,15 @@ function MemberEditForm({
                   right={{
                     label: "ユーザー権限",
                     // GENERAL 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
-                    // 복구 시 백엔드가 userRole 명시 필수 — UI 에서 선택 UX 제공.
-                    isForm: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive),
-                    children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) ? (
+                    // 단, 기존 SEKO 권한(isUserRoleLocked) 은 신규 옵션에서 제외되어 읽기전용.
+                    isForm: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked,
+                    children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
-                        value={userRole}
+                        // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
+                        // "선택 없음" 상태를 명시적으로 표시 → 관리자가 반드시 재선택하게 유도.
+                        // 실제 state(userRole) 는 그대로 보존되어 저장 시 서버 검증(400) 과 조합됨.
+                        value={editableRoleValues.includes(userRole) ? userRole : ""}
                         onChange={setUserRole}
                         className="w-full"
                       />

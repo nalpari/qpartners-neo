@@ -43,13 +43,13 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
   };
 
   const handleSearch = () => {
-    // API keyword 단일 파라미터: 입력된 텍스트 필드 중 첫 번째 비어있지 않은 값 사용
-    const keyword = [local.id, local.name, local.email, local.companyName]
-      .map((v) => v.trim())
-      .find(Boolean) ?? "";
-
+    // 각 텍스트 필드를 개별 QSP 파라미터로 전달 (ID/氏名/Email/会社名 동시 AND 검색).
+    // 기존에는 첫 번째 비어있지 않은 값을 userNm 으로만 보내서 ID/Email 검색이 동작하지 않았음.
     onSearch({
-      keyword,
+      userId: local.id.trim(),
+      userName: local.name.trim(),
+      email: local.email.trim(),
+      companyName: local.companyName.trim(),
       status: local.status,
       userType: local.userType,
     });

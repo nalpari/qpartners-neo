@@ -86,9 +86,20 @@ const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
  */
 const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
 
+// 공백-only 입력을 undefined 로 정규화 — FE bypass 시 "   " 가 QSP 로 넘어가 무의미 쿼리 유발 차단.
+const searchString = (fieldMsg: string) =>
+  z.string().max(200, fieldMsg).optional().transform((v) => {
+    const trimmed = v?.trim();
+    return trimmed ? trimmed : undefined;
+  });
+
 export const memberListQuerySchema = z.object({
-  // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지)
-  keyword: z.string().max(200, "検索語が長すぎます").optional(),
+  // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지).
+  // ID/氏名/Email/会社名 각각 개별 파라미터 — QSP userListMng 에 동일 필드명으로 매핑.
+  userId: searchString("IDが長すぎます"),
+  userName: searchString("氏名が長すぎます"),
+  email: searchString("メールアドレスが長すぎます"),
+  companyName: searchString("会社名が長すぎます"),
   userType: z.enum(memberTypeValues).optional(),
   status: z.enum(memberStatusValues).optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -116,13 +127,11 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
 
 // ─── 회원 수정 요청 ───
 
-/** 관리자가 일반회원에게 부여 가능한 권한 코드 (p.47 #3)
- *  주의: 여기서의 SEKO 는 `authCd`(권한코드) 값이며, 위 `memberTypeValues` 의
- *  `userTp`(회원유형)와는 다른 개념이다. 즉 일반회원(userTp=GENERAL)에게
- *  시공점 권한(authCd=SEKO)을 부여할 수 있다는 의미로, userTp 가 SEKO 로
- *  바뀌는 것은 아니다.
+/** 관리자가 일반회원에게 부여 가능한 권한 코드.
+ *  시공점(SEKO) 제외 — 일반회원 수정 시 시공점 권한 부여 불가 정책 (2026-04-23).
+ *  FE `ROLE_OPTIONS_GENERAL` 와 SSoT 동기. UI 에서 옵션이 숨겨져도 서버에서 재검증.
  */
-const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"] as const;
+const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "GENERAL"] as const;
 
 /**
  * 회원 수정 요청 스키마.

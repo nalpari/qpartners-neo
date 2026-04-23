@@ -63,7 +63,10 @@ export function MembersTable({
         page: String(page),
         pageSize: String(pageSize),
       };
-      if (filters.keyword) params.keyword = filters.keyword;
+      if (filters.userId) params.userId = filters.userId;
+      if (filters.userName) params.userName = filters.userName;
+      if (filters.email) params.email = filters.email;
+      if (filters.companyName) params.companyName = filters.companyName;
       if (filters.userType) params.userType = filters.userType;
       if (filters.status) params.status = filters.status;
 

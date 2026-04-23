@@ -14,6 +14,8 @@ const CLOSE_ANIMATION_MS = 200;
 // Design Ref: §6.1 — 프로필 API 응답 타입
 interface ProfileData {
   compNm: string | null;
+  // 원본 userName 우선 (Q.Order 매핑: 성명 단일 필드). sei/mei 는 split fallback.
+  userName: string | null;
   sei: string | null;
   mei: string | null;
   email: string | null;
@@ -42,9 +44,13 @@ export function WithdrawPopup() {
   const isProfileReady = profile != null && !isProfileLoading && !profileError;
 
   function buildUserInfo(p: ProfileData) {
+    // 원본 userName 우선, split 된 sei+mei 는 fallback — Q.Order "성명" 단일 필드 매핑 유지.
+    const fullName = p.userName?.trim()
+      || [p.sei, p.mei].filter(Boolean).join(" ")
+      || "-";
     return [
       { label: "会社名", value: p.compNm ?? "-" },
-      { label: "氏名", value: [p.sei, p.mei].filter(Boolean).join(" ") || "-" },
+      { label: "氏名", value: fullName },
       { label: "メールアドレス (ID)", value: p.email ?? "-" },
       { label: "電話番号", value: p.telNo ?? "-" },
     ];
@@ -72,7 +78,7 @@ export function WithdrawPopup() {
       // Plan SC: 성공 → alert → 로그아웃 → 홈 이동
       openAlert({
         type: "alert",
-        message: "会員退会が完了されました。ご利用ありがとうございます。",
+        message: "会員退会が完了しました。ご利用ありがとうございます。",
         onConfirm: () => {
           logout();
           closePopup();
@@ -99,10 +105,19 @@ export function WithdrawPopup() {
           });
         } else if (status === 403) {
           openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
+        } else if (status === 409) {
+          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — 세션 정리 후 홈 이동.
+          openAlert({
+            type: "alert",
+            message: "すでに退会済みです。",
+            onConfirm: () => {
+              logout();
+              closePopup();
+              router.push("/");
+            },
+          });
         } else if (status === 429) {
           openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
-        } else if (status === 501) {
-          openAlert({ type: "alert", message: "退会機能は現在準備中です。しばらくお待ちください。" });
         } else {
           openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
         }
@@ -203,6 +218,8 @@ export function WithdrawPopup() {
                   setError("");
                 }}
                 placeholder="退会理由を入力してください"
+                // BE withdrawSchema.reason.max(1000) 과 일치 — 초과 입력 후 제출 실패 UX 방지.
+                maxLength={1000}
                 className={`w-full h-[120px] px-[16px] py-[12px] bg-white border rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none transition-colors duration-150 ${
                   error
                     ? "border-[#ff1a1a]"
