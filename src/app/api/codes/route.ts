@@ -3,14 +3,15 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { createCodeHeaderSchema } from "@/lib/schemas/code";
 
-// GET /api/codes — Header Code 목록 (관리자 전용)
+// GET /api/codes — Header Code 목록 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { searchParams } = request.nextUrl;
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: headers });
   } catch (error) {
-    console.error("[GET /api/codes]", error);
+    logError("GET /api/codes", error);
     return NextResponse.json(
       { error: "コードヘッダーの取得に失敗しました" },
       { status: 500 },
@@ -40,10 +41,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/codes — Header Code 등록 (관리자 전용)
+// POST /api/codes — Header Code 등록 (CODES.create — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-    console.error("[POST /api/codes]", error);
+    logError("POST /api/codes", error);
     return NextResponse.json(
       { error: "コードヘッダーの作成に失敗しました" },
       { status: 500 },

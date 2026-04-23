@@ -5,10 +5,11 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { canModifyResource, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
+import { canModifyResource, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
+import { logError } from "@/lib/log-error";
 import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import {
@@ -31,8 +32,8 @@ type Params = { params: Promise<{ id: string }> };
 // GET /api/admin/mass-mails/:id — 상세 조회
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — BULK_MAIL.read 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. ID 파라미터 검증
@@ -139,7 +140,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: unknown) {
-    console.error("[GET /api/admin/mass-mails/:id] 상세 조회 실패:", error);
+    logError("GET /api/admin/mass-mails/:id", error);
     return NextResponse.json(
       { error: "メール詳細の取得に失敗しました" },
       { status: 500 },
@@ -150,8 +151,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 // DELETE /api/admin/mass-mails/:id — 대량메일 단건 삭제
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — BULK_MAIL.delete 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "delete");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -220,7 +221,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: { id: idResult.data } });
   } catch (error: unknown) {
-    console.error("[DELETE /api/admin/mass-mails/:id] 삭제 실패:", error);
+    logError("DELETE /api/admin/mass-mails/:id", error);
     return NextResponse.json(
       { error: "メールの削除に失敗しました" },
       { status: 500 },
@@ -238,8 +239,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
   let uploadDir: string | undefined;
 
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — BULK_MAIL.update 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -514,7 +515,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { status: 409 },
       );
     }
-    console.error("[PUT /api/admin/mass-mails/:id] 수정 실패:", error);
+    logError("PUT /api/admin/mass-mails/:id", error);
     return NextResponse.json(
       { error: "メールの更新に失敗しました" },
       { status: 500 },

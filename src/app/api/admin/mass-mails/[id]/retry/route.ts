@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { canModifyResource, requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireMenuPermission } from "@/lib/auth";
+import { logError } from "@/lib/log-error";
 import { processMassMailRetry } from "@/lib/mass-mail/send-processor";
 import { prisma } from "@/lib/prisma";
 import { massMailIdParamSchema } from "@/lib/schemas/mass-mail";
@@ -11,8 +12,9 @@ type Params = { params: Promise<{ id: string }> };
 // POST /api/admin/mass-mails/:id/retry — send_failed 대량메일 재발송
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — BULK_MAIL.update 매트릭스 기반
+    //    (재발송은 기존 메일의 상태 전이 → update 로 분류)
+    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -80,7 +82,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       },
     });
   } catch (error: unknown) {
-    console.error("[POST /api/admin/mass-mails/:id/retry] 재발송 실패:", error);
+    logError("POST /api/admin/mass-mails/:id/retry", error);
     return NextResponse.json(
       { error: "メールの再送信に失敗しました" },
       { status: 500 },

@@ -45,6 +45,14 @@ export const restrictedMenuCodes = ["PERMISSIONS", "MENUS", "CODES"] as const;
 export type RestrictedMenuCode = (typeof restrictedMenuCodes)[number];
 export const restrictedMenuCodeSet: ReadonlySet<MenuCode> = new Set(restrictedMenuCodes);
 
+/**
+ * RBAC 메뉴 액션 — QpRoleMenuPermission 의 can{Read,Create,Update,Delete} 컬럼과 1:1.
+ * requireMenuPermission 가드와 403 응답 바디의 `action` 필드 값으로 공용.
+ */
+export const menuActionValues = ["read", "create", "update", "delete"] as const;
+export const menuActionSchema = z.enum(menuActionValues);
+export type MenuAction = z.infer<typeof menuActionSchema>;
+
 /** URL path parameter ID 검증 — 공통 */
 export const idParamSchema = z.coerce
   .number()

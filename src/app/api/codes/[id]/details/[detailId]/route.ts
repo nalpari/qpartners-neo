@@ -3,16 +3,17 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateCodeDetailSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string; detailId: string }> };
 
-// PUT /api/codes/:id/details/:detailId — Detail 수정 (관리자 전용)
+// PUT /api/codes/:id/details/:detailId — Detail 수정 (CODES.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id, detailId } = await params;
@@ -72,7 +73,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         );
       }
     }
-    console.error("[PUT /api/codes/:id/details/:detailId]", error);
+    logError("PUT /api/codes/:id/details/:detailId", error);
     return NextResponse.json(
       { error: "コード詳細の更新に失敗しました" },
       { status: 500 },
@@ -80,10 +81,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-// DELETE /api/codes/:id/details/:detailId — Detail 물리 삭제 (관리자 전용)
+// DELETE /api/codes/:id/details/:detailId — Detail 물리 삭제 (CODES.delete — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "delete");
     if (auth instanceof NextResponse) return auth;
 
     const { id, detailId } = await params;
@@ -115,7 +116,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     ) {
       return NextResponse.json({ error: "データが見つかりません" }, { status: 404 });
     }
-    console.error("[DELETE /api/codes/:id/details/:detailId]", error);
+    logError("DELETE /api/codes/:id/details/:detailId", error);
     return NextResponse.json(
       { error: "コード詳細の削除に失敗しました" },
       { status: 500 },

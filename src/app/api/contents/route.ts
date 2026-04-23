@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireAdmin } from "@/lib/auth";
+import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS, targetTypeValues } from "@/lib/schemas/common";
 import {
@@ -197,7 +198,7 @@ export async function GET(request: NextRequest) {
 // POST /api/contents — 콘텐츠 등록
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CONTENT", "create");
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
@@ -257,7 +258,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // POST는 requireAdmin 통과자 = 사내 사용자이므로 includeInternal=true (PUT detail과 동일 정책)
+    // POST는 requireMenuPermission("CONTENT","create") 통과자 = 사내 사용자이므로
+    // includeInternal=true (PUT detail과 동일 정책)
     return NextResponse.json({
       data: {
         ...content,
@@ -265,7 +267,7 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error) {
-    console.error("[POST /api/contents] 콘텐츠 등록 실패:", error);
+    logError("POST /api/contents", error);
     return NextResponse.json(
       { error: "コンテンツの登録に失敗しました" },
       { status: 500 },
