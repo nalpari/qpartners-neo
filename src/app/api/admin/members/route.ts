@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { logError } from "@/lib/log-error";
 import { parseQspDate } from "@/lib/qsp-member";
 import {
   memberListQuerySchema,
@@ -16,8 +17,8 @@ import {
 // GET /api/admin/members — 회원 목록 (시공점 제외)
 export async function GET(request: NextRequest) {
   try {
-    // 1. 관리자 권한 확인
-    const authResult = requireAdmin(request.headers);
+    // 1. 관리자 권한 확인 — MEMBERS.read 매트릭스 기반
+    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. 쿼리 파라미터 파싱
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error("[GET /api/admin/members] 회원 목록 조회 실패:", error);
+    logError("GET /api/admin/members", error);
     return NextResponse.json(
       { error: "会員一覧の取得に失敗しました" },
       { status: 500 },

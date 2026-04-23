@@ -8,10 +8,11 @@ import {
   canModifyResource,
   getUserFromHeaders,
   isInternalUser,
-  requireAdmin,
+  requireMenuPermission,
   resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { resolveUserName } from "@/lib/admin-name";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
@@ -148,7 +149,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 // PUT /api/contents/:id — 콘텐츠 수정
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CONTENT", "update");
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
@@ -232,7 +233,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
       });
     });
 
-    // PUT 은 requireAdmin 통과자 = 사내 사용자이므로 includeInternal=true
+    // PUT 은 requireMenuPermission("CONTENT","update") 통과자 = 사내 사용자이므로
+    // includeInternal=true
     return NextResponse.json({
       data: {
         ...content,
@@ -246,7 +248,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    console.error("[PUT /api/contents/:id]", error);
+    logError("PUT /api/contents/:id", error);
     return NextResponse.json(
       { error: "Failed to update content" },
       { status: 500 },
@@ -257,7 +259,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // DELETE /api/contents/:id — 콘텐츠 삭제 (soft delete)
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CONTENT", "delete");
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
@@ -299,7 +301,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    console.error("[DELETE /api/contents/:id]", error);
+    logError("DELETE /api/contents/:id", error);
     return NextResponse.json(
       { error: "Failed to delete content" },
       { status: 500 },

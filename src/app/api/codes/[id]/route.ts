@@ -3,16 +3,17 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateCodeHeaderSchema } from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/codes/:id — Header 단건 조회 (관리자 전용)
+// GET /api/codes/:id — Header 단건 조회 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: header });
   } catch (error) {
-    console.error("[GET /api/codes/:id]", error);
+    logError("GET /api/codes/:id", error);
     return NextResponse.json(
       { error: "コードヘッダーの取得に失敗しました" },
       { status: 500 },
@@ -41,10 +42,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-// PUT /api/codes/:id — Header 수정 (headerCode 수정 불가, 관리자 전용)
+// PUT /api/codes/:id — Header 수정 (CODES.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "CODES", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -94,7 +95,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     ) {
       return NextResponse.json({ error: "データが見つかりません" }, { status: 404 });
     }
-    console.error("[PUT /api/codes/:id]", error);
+    logError("PUT /api/codes/:id", error);
     return NextResponse.json(
       { error: "コードヘッダーの更新に失敗しました" },
       { status: 500 },

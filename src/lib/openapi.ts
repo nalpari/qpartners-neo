@@ -10,6 +10,37 @@ const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
   },
 });
 
+/**
+ * RBAC 메뉴 권한 403 응답 helper — Phase 2 requireMenuPermission 가드 반환값과 1:1.
+ * 응답 body 에 `menuCode` / `action` 을 포함해 클라이언트가 어떤 매트릭스 셀이 거부됐는지
+ * 진단 가능. 본 PR 에서는 helper 만 정의해두고 각 라우트 적용은 후속 문서화 PR 에서
+ * 일괄 처리한다 (런타임 집행은 이미 완료 — Phase 2 본 PR 범위).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const menuPermissionForbidden = (
+  menuCode: string,
+  action: "read" | "create" | "update" | "delete",
+): OpenAPIV3.ResponseObject => ({
+  description: `メニュー権限がありません (RBAC: ${menuCode}.${action})`,
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["error", "menuCode", "action"],
+        properties: {
+          error: { type: "string", example: "権限がありません" },
+          menuCode: { type: "string", example: menuCode },
+          action: {
+            type: "string",
+            enum: ["read", "create", "update", "delete"],
+            example: action,
+          },
+        },
+      },
+    },
+  },
+});
+
 const validationErrorResponse: OpenAPIV3.ResponseObject = {
   description: "Validation failed",
   content: {
@@ -1460,7 +1491,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": validationErrorResponse,
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: CONTENT.create)"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -1512,7 +1543,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": validationErrorResponse,
-          "403": errorResponse("수정 권한 없음"),
+          "403": errorResponse("メニュー権限 または 編集権限がありません (RBAC: CONTENT.update)"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
@@ -1525,7 +1556,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         ],
         responses: {
           "200": { description: "삭제 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "object" } } } } } },
-          "403": errorResponse("삭제 권한 없음"),
+          "403": errorResponse("メニュー権限 または 削除権限がありません (RBAC: CONTENT.delete)"),
           "404": errorResponse("Not found"),
           "500": errorResponse("서버 에러"),
         },
@@ -1555,7 +1586,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "201": { description: "업로드 성공", content: { "application/json": { schema: { type: "object", properties: { data: { type: "array", items: { type: "object" } } } } } } },
           "400": errorResponse("파일 검증 실패"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: CONTENT.create)"),
           "404": errorResponse("Not found"),
           "411": errorResponse("Content-Length 헤더 누락"),
           "413": errorResponse("Content-Length 초과"),
@@ -1624,7 +1655,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("수정 권한 없음"),
+          "403": errorResponse("メニュー権限 または 削除権限がありません (RBAC: CONTENT.delete)"),
           "404": errorResponse("Not found (동시 삭제 race 포함)"),
           "500": errorResponse("서버 에러"),
         },
@@ -1675,7 +1706,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("파일 검증 실패"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("수정 권한 없음"),
+          "403": errorResponse("メニュー権限 または 編集権限がありません (RBAC: CONTENT.update)"),
           "404": errorResponse("Not found"),
           "409": errorResponse("동시성 충돌 — 다른 요청에 의해 첨부파일이 변경됨"),
           "411": errorResponse("Content-Length 헤더 누락"),
@@ -2407,7 +2438,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.read)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2438,7 +2469,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("userTp 누락"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.read)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2505,7 +2536,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
           ),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.update)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2541,7 +2572,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("이메일 미등록"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.update)"),
           "404": errorResponse("회원 없음"),
           "429": errorResponse("リクエスト制限超過"),
           "500": errorResponse("서버 에러"),
@@ -2593,7 +2624,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.read)"),
         },
       },
       post: {
@@ -2654,7 +2685,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.create)"),
           "411": errorResponse("Content-Length 필요"),
           "413": errorResponse("요청 크기 초과"),
         },
@@ -2683,7 +2714,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.read)"),
           "404": errorResponse("메일 없음"),
         },
       },
@@ -2735,7 +2766,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("검증 실패 또는 draft 이외 수정 시도"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.update)"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
           "500": errorResponse("수정 실패"),
@@ -2767,7 +2798,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("draft 이외 상태는 삭제 불가"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.delete)"),
           "404": errorResponse("메일 없음"),
           "500": errorResponse("삭제 실패"),
         },
@@ -2803,7 +2834,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("send_failed 이외 상태에서 재발송 시도"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요 또는 타인 작성 메일"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.update)"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 재발송으로 상태 전이 실패"),
           "500": errorResponse("재발송 실패"),

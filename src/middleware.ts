@@ -53,19 +53,31 @@ function isTwoFactorPath(pathname: string): boolean {
   return TWO_FACTOR_PATHS.includes(pathname);
 }
 
-/** userTp → authRole 폴백 (authRole 미설정 JWT 대응) */
-const USERTP_ROLE_MAP: Record<string, string> = {
+/**
+ * userTp → authRole 폴백 (authRole 미설정 JWT 과도기 대응 — authRole 포함 JWT 가 완전 교체되면 제거).
+ *
+ * 매핑 기준:
+ * - STORE → `2ND_STORE` : `resolveAuthRole` 의 storeLvl 불명 폴백과 일치 (최소 권한 원칙).
+ *   `1ST_STORE` 로 폴백하면 하위 권한이 상위 권한으로 상승할 수 있어 구조적 금지.
+ * - ADMIN → `ADMIN` : `resolveAuthRole` 의 ADMIN_ROLE 미조회 케이스와 동일 (SUPER_ADMIN 상승 차단).
+ */
+const USERTP_ROLE_MAP: Readonly<Record<string, string>> = {
   ADMIN: "ADMIN",
   STORE: "2ND_STORE",
   SEKO: "SEKO",
   GENERAL: "GENERAL",
 };
 
-function getFallbackRole(userTp: string): string {
+/**
+ * authRole 폴백 — 미지의 userTp 는 `null` 반환(fail-closed).
+ * rules/api.md: "미지의 userTp 값은 GENERAL 폴백 금지 → 파싱 실패로 처리".
+ * 호출부는 null 시 401(Protected) 또는 비회원 통과(Public GET) 로 분기.
+ */
+function getFallbackRole(userTp: string): string | null {
   const role = USERTP_ROLE_MAP[userTp];
   if (!role) {
-    console.error("[middleware] 미지의 userTp — GENERAL 폴백 적용:", userTp);
-    return "GENERAL";
+    console.error("[middleware] 미지의 userTp — 폴백 차단 (fail-closed):", userTp);
+    return null;
   }
   return role;
 }
@@ -86,11 +98,16 @@ export async function middleware(request: NextRequest) {
           const publicUser = await verifyToken(publicToken);
           // 2FA 미완료 사용자는 비회원으로 통과 (관리자 전용 데이터 접근 방지)
           if (publicUser && publicUser.twoFactorVerified !== false) {
-            const requestHeaders = new Headers(request.headers);
-            requestHeaders.set("X-User-Type", publicUser.userTp);
-            requestHeaders.set("X-User-Id", publicUser.userId);
-            requestHeaders.set("X-User-Role", publicUser.authRole ?? getFallbackRole(publicUser.userTp));
-            return NextResponse.next({ request: { headers: requestHeaders } });
+            // authRole 포함 JWT → 그대로 사용. 과도기 JWT → userTp 폴백.
+            // 폴백도 실패(미지의 userTp)하면 public GET 특성상 비회원으로 자연 통과.
+            const role = publicUser.authRole ?? getFallbackRole(publicUser.userTp);
+            if (role) {
+              const requestHeaders = new Headers(request.headers);
+              requestHeaders.set("X-User-Type", publicUser.userTp);
+              requestHeaders.set("X-User-Id", publicUser.userId);
+              requestHeaders.set("X-User-Role", role);
+              return NextResponse.next({ request: { headers: requestHeaders } });
+            }
           }
         } catch (error) {
           // ConfigError(JWT_SECRET 미설정) = 서버 설정 문제 → protected path와 동일하게 500 반환
@@ -149,14 +166,27 @@ export async function middleware(request: NextRequest) {
   }
 
   // JWT 검증된 사용자 정보를 X-User-* 헤더로 주입 — route handler에서 getUserFromHeaders로 참조
+  // TODO: 과도기 제거 — authRole 없는 토큰이 0건이 되면 optional 제거 + 폴백 로직 삭제
+  const role = user.authRole ?? (() => {
+    console.warn(
+      "[middleware] 과도기 JWT — authRole 없음, userTp 기반 최소권한 폴백 시도 (userTp:",
+      user.userTp,
+      ")",
+    );
+    return getFallbackRole(user.userTp);
+  })();
+  if (!role) {
+    // 미지의 userTp + authRole 없음 — fail-closed 로 401 반환 (GENERAL 폴백 금지 정책)
+    return NextResponse.json(
+      { error: "認証情報が不正です" },
+      { status: 401 },
+    );
+  }
+
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("X-User-Type", user.userTp);
   requestHeaders.set("X-User-Id", user.userId);
-  // TODO: 과도기 제거 — authRole 없는 토큰이 0건이 되면 optional 제거
-  if (!user.authRole) {
-    console.warn("[middleware] 과도기 JWT — authRole 없음, userTp 기반 최소권한 폴백 적용 (userTp:", user.userTp, ")");
-  }
-  requestHeaders.set("X-User-Role", user.authRole ?? getFallbackRole(user.userTp));
+  requestHeaders.set("X-User-Role", role);
   if (user.deptNm) {
     requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }

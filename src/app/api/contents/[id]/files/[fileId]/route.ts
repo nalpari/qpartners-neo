@@ -6,9 +6,10 @@ import { randomUUID } from "crypto";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { canModifyResource, requireAdmin } from "@/lib/auth";
+import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFile } from "@/lib/file-validation";
+import { logError } from "@/lib/log-error";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/content";
@@ -29,7 +30,7 @@ type Params = { params: Promise<{ id: string; fileId: string }> };
 // DELETE /api/contents/:id/files/:fileId — 첨부파일 삭제
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const authResult = requireAdmin(request.headers);
+    const authResult = await requireMenuPermission(request.headers, "CONTENT", "delete");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -141,7 +142,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 식별할 수 있도록 attachmentId/contentId/errorCode 컨텍스트를 반드시 포함한다.
     const prismaErrorCode =
       error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;
-    console.error("[DELETE /api/contents/:id/files/:fileId] 실패:", {
+    logError("DELETE /api/contents/:id/files/:fileId", error, {
       errorName: error instanceof Error ? error.name : "unknown",
       errorMessage: error instanceof Error ? error.message : String(error),
       prismaErrorCode,
@@ -157,7 +158,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 // PUT /api/contents/:id/files/:fileId — 첨부파일 교체 (multipart/form-data)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const authResult = requireAdmin(request.headers);
+    const authResult = await requireMenuPermission(request.headers, "CONTENT", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -339,7 +340,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       { status: 200 }, // PUT은 기존 리소스 교체이므로 200 (201은 신규 생성)
     );
   } catch (error: unknown) {
-    console.error("[PUT /api/contents/:id/files/:fileId] 실패:", error);
+    logError("PUT /api/contents/:id/files/:fileId", error);
     return NextResponse.json(
       { error: "添付ファイルの差し替えに失敗しました" },
       { status: 500 },
