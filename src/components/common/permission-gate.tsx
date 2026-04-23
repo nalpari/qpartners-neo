@@ -1,10 +1,11 @@
 "use client";
 
 import { useMenuPermission, canPerform, type PermissionAction } from "@/hooks/use-menu-permission";
+import type { MenuCode } from "@/lib/schemas/common";
 
 interface PermissionGateProps {
-  /** 검사할 메뉴 코드 (Menu.menuCode) */
-  menuCode: string;
+  /** 검사할 메뉴 코드 — `menuCodeValues` 화이트리스트 내에서만 허용. */
+  menuCode: MenuCode;
   /** 검사할 CRUD 액션 — 미지정 시 `read` */
   action?: PermissionAction;
   /** 권한 없을 때 대체 렌더 — 미지정 시 null (숨김) */
