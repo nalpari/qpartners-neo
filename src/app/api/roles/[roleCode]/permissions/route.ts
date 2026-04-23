@@ -175,6 +175,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const result = updatePermissionsSchema.safeParse(body);
     if (!result.success) {
+      // 디버깅용 — 어떤 menuCode 가 enum 거부됐는지 서버 로그에 노출 (DB ↔ 코드 menuCode 정합성 추적).
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] Zod 검증 실패",
+        {
+          roleCode: parsedCode.data,
+          issues: result.error.issues,
+        },
+      );
       return NextResponse.json(
         { error: "バリデーションエラー", issues: result.error.issues },
         { status: 400 },
