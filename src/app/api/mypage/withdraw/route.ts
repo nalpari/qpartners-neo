@@ -222,11 +222,25 @@ export async function POST(request: NextRequest) {
 
       // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 saveResignReq 호출 사이에
       // 다른 경로(다른 탭/기기) 로 이미 탈퇴 처리가 완료되었을 가능성을 재확인.
-      const recheck = await fetchQspUserDetail(
-        user.email,
-        user.userTp,
-        "[POST /api/mypage/withdraw][recheck]",
-      );
+      // recheck 예외(네트워크 타임아웃 등)가 최상위 catch로 전파되면 500이 반환되어
+      // 분기 3 의도(502 "결과 불명")가 무너지므로 별도 try-catch 로 보호.
+      let recheck: Awaited<ReturnType<typeof fetchQspUserDetail>>;
+      try {
+        recheck = await fetchQspUserDetail(
+          user.email,
+          user.userTp,
+          "[POST /api/mypage/withdraw][recheck]",
+        );
+      } catch (recheckError: unknown) {
+        console.error(
+          "[POST /api/mypage/withdraw][recheck] 재조회 예외:",
+          recheckError,
+        );
+        return NextResponse.json(
+          { error: "退会処理の結果が確認できません。しばらくしてから再度お試しください。" },
+          { status: 502 },
+        );
+      }
 
       // 분기 1: 재조회 성공 + statCd === "R" → 실제로는 탈퇴 완료 상태. 409 + 쿠키 삭제.
       if (recheck.ok && recheck.detail.statCd === "R") {

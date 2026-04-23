@@ -2334,6 +2334,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2FA 미완 또는 일반회원 아님"),
           "409": errorResponse("이미 탈퇴 처리된 회원"),
+          "429": errorResponse("요청이 너무 많음 (rate limit 초과)"),
           "500": errorResponse("서버 에러 / JWT 누락"),
           "502": errorResponse("QSP 연동 실패"),
         },
