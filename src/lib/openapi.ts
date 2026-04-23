@@ -2292,8 +2292,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["MyPage"],
         summary: "회원탈퇴 (일반회원만)",
         description:
-          "QSP updateUserDtl 로 statCd=R 전환 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
-          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502.",
+          "QSP saveResignReq (사양서 No.8) 호출 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
+          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502. " +
+          "※ 과거 updateUserDtl+statCd:\"R\" 방식은 QSP 가 수용하지 않아 500 반환되므로 복귀 금지.",
         requestBody: {
           required: true,
           content: {
@@ -2302,7 +2303,11 @@ export const openApiSpec: OpenAPIV3.Document = {
                 type: "object",
                 required: ["reason"],
                 properties: {
-                  reason: { type: "string", maxLength: 1000 },
+                  reason: {
+                    type: "string",
+                    maxLength: 500,
+                    description: "退会理由 (QSP resignRemark 에 매핑, 최대 500자)",
+                  },
                 },
               },
             },

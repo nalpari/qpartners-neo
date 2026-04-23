@@ -42,6 +42,10 @@ export const QSP_API = {
   updateSecAuthDt: `${QSP_BASE_URL}/api/qpartners/user/updateSecAuthDt`,
   /** No.7 Q.Partners 회원정보 수정 — 마이페이지 내정보변경 */
   updateUserDtl: `${QSP_BASE_URL}/api/qpartners/user/updateUserDtl`,
+  /** No.8 Q.Partners 회원 탈퇴 — Q.Partner(일반사용자) 탈퇴 전용 엔드포인트.
+   *  필수: userTp, loginId, accsSiteCd, resignRemark(<=500). updateUserDtl 로 statCd=R 전환은
+   *  QSP 가 수용하지 않아 500 반환되므로 본 엔드포인트를 사용해야 함. */
+  saveResignReq: `${QSP_BASE_URL}/api/qpartners/user/saveResignReq`,
   /** No.10 Q.Partners 회원관리 목록 조회 */
   userListMng: `${QSP_BASE_URL}/api/qpartners/userMng/userListMng`,
   /** No.12 Q.Partners 회원관리 정보 수정 — 부가 정보 수정 (2차인증, 뉴스레터, 로그인 알림, 뉴스 수신) */

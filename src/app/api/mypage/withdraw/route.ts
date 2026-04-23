@@ -26,11 +26,12 @@ const CLEAR_COOKIE_OPTIONS = {
  * 처리 흐름:
  * 1. JWT 인증 + 2FA 확인
  * 2. userTp === GENERAL 강제 (그 외 403)
- * 3. Zod (withdrawSchema) 로 reason 검증
- * 4. QSP userDetail 로 필수값 확보 (updateUserDtl 가 성명/회사 등 필수 요구)
- * 5. QSP updateUserDtl 호출 — statCd="R" 로 전환 + resignRsn 전송
- *    - QSP 가 resignRsn 필드를 수용하지 않아도 interface log (fetchWithLog 자동 기록) 에 요청 body 가
- *      저장되어 사후 추적 가능. 로컬 qp_info 탈퇴 이력 테이블은 추후 migration 시 연결 (TODO).
+ * 3. Zod (withdrawSchema) 로 reason 검증 (<=500, QSP resignRemark 상한)
+ * 4. QSP userDetail 로 현재 statCd 확인 (409 중복 체크 전용 — 기존 필수필드 수집 목적은 제거됨)
+ * 5. QSP saveResignReq 호출 (사양서 No.8) — payload 는 {userTp, loginId, accsSiteCd, resignRemark} 4필드만
+ *    - 이전 구현은 updateUserDtl+statCd:"R" 을 보냈으나 QSP 가 수용하지 않아 HTTP 500 "저장 중 오류..." 반환됨
+ *      (2026-04-23 VPN 경유 QSP direct 호출로 실증).
+ *    - saveResignReq 는 QSP 가 표준 응답 포맷 (resultCode=S/E) 로 회신함.
  * 6. 성공 시 JWT 쿠키 삭제로 즉시 로그아웃 유도
  */
 export async function POST(request: NextRequest) {
@@ -86,9 +87,10 @@ export async function POST(request: NextRequest) {
     }
     const { reason } = result.data;
 
-    // 1. QSP userDetail 로 현재값 조회 — updateUserDtl 는 성명/회사/주소 등 필수 필드 요구.
-    //    GENERAL 회원은 QSP 내부 조회 키가 email(위 !user.email 체크로 null 제외). userId 대신 email 을 명시 전달해
-    //    fetchQspUserDetail 내부 userTp 분기를 우회하지 않도록 의도를 명확히 함.
+    // 1. QSP userDetail 로 현재 statCd 확인 — 409(이미 탈퇴) 재현을 위한 사전 체크 전용.
+    //    saveResignReq 는 자체적으로 "ユーザーの退会に失敗しました" 로 실패를 알리지만, 이미 탈퇴된 회원을 재호출하는
+    //    케이스를 명시적으로 409 로 분기시키기 위해 선행 조회를 유지한다.
+    //    GENERAL 회원은 QSP 내부 조회 키가 email (위 !user.email 체크로 null 제외).
     const detailResult = await fetchQspUserDetail(
       user.email,
       user.userTp,
@@ -127,36 +129,20 @@ export async function POST(request: NextRequest) {
       return resp;
     }
 
-    // 2. QSP updateUserDtl 호출 — statCd="R" 로 전환.
-    //    누락 필드는 QSP 가 기존 값 보존 → 필수값만 재전송, mutable 필드 중 탈퇴 관련만 덮어씀.
-    //    resignRsn 은 QSP 가 수용하면 저장, 아니면 silently drop. 탈퇴 이유는 interface log 에 잔존.
+    // 2. QSP saveResignReq 호출 — 탈퇴 전용 엔드포인트 (사양서 No.8).
+    //    필수 파라미터 4개만 전송. 이전 구현의 updateUserDtl + statCd:"R" + 17필드 방식은
+    //    QSP 가 수용하지 않아 HTTP 500 반환하므로 절대 복귀 금지.
     const qspPayload = {
-      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-      userId: user.userId,
-      loginId: user.userId,
-      email: user.email,
       userTp: user.userTp,
-      user1stNm: current.user1stNm ?? "",
-      user2ndNm: current.user2ndNm ?? "",
-      user1stNmKana: current.user1stNmKana ?? "",
-      user2ndNmKana: current.user2ndNmKana ?? "",
-      compNm: current.compNm ?? "",
-      compNmKana: current.compNmKana ?? "",
-      compPostCd: current.compPostCd ?? "",
-      compAddr: current.compAddr ?? "",
-      compAddr2: current.compAddr2 ?? "",
-      compTelNo: current.compTelNo ?? "",
-      compFaxNo: current.compFaxNo ?? "",
-      newsRcptYn: current.newsRcptYn ?? "N",
-      statCd: "R",
-      resignRsn: reason,
-      updBy: user.userId,
+      loginId: user.userId,
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+      resignRemark: reason,
     };
 
     let qspResponse: Response;
     try {
       qspResponse = await fetchWithLog(
-        QSP_API.updateUserDtl,
+        QSP_API.saveResignReq,
         {
           method: "POST",
           headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -166,7 +152,7 @@ export async function POST(request: NextRequest) {
         {
           system: "QSP",
           direction: "OUTBOUND",
-          apiName: "updateUserDtl",
+          apiName: "saveResignReq",
           callerRoute: "[POST /api/mypage/withdraw]",
           userId: maskEmail(user.userId),
           userType: user.userTp,
@@ -217,7 +203,7 @@ export async function POST(request: NextRequest) {
         resultMsg: truncatedMsg,
       });
 
-      // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 updateUserDtl 호출 사이에
+      // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 saveResignReq 호출 사이에
       // 다른 경로(다른 탭/기기) 로 이미 탈퇴 처리가 완료되었을 가능성을 재확인.
       // 실패 직후 userDetail 재조회 → statCd === "R" 이면 409 로 매핑 + 쿠키 삭제.
       const recheck = await fetchQspUserDetail(
