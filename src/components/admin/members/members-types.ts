@@ -24,9 +24,12 @@ export interface MemberListResponse {
   };
 }
 
-/** 검색 필터 */
+/** 검색 필터 — ID/氏名/Email/会社名 각각 개별 QSP 파라미터로 전달 */
 export interface MemberSearchFilters {
-  keyword: string;
+  userId: string;
+  userName: string;
+  email: string;
+  companyName: string;
   userType: string;
   status: string;
 }
@@ -76,7 +79,10 @@ export function formatDate(value: string | null): string {
 }
 
 export const INITIAL_FILTERS: MemberSearchFilters = {
-  keyword: "",
+  userId: "",
+  userName: "",
+  email: "",
+  companyName: "",
   userType: "",
   status: "",
 };
@@ -141,11 +147,12 @@ export const USER_TYPE_REVERSE_MAP: Record<string, string> = {
   "一般": "GENERAL",
 };
 
-/** 권한 SelectBox 옵션 (GENERAL만) */
+/** 권한 SelectBox 옵션 (GENERAL 회원 수정 전용).
+ *  시공점(SEKO) 제외 — 일반회원 수정 시 시공점 권한 부여 불가 정책 (2026-04-23).
+ */
 export const ROLE_OPTIONS_GENERAL = [
   { value: "1ST_STORE", label: "1次販売店" },
   { value: "2ND_STORE", label: "2次以降販売店" },
-  { value: "SEKO", label: "施工店" },
   { value: "GENERAL", label: "一般" },
 ] as const;
 

@@ -24,9 +24,14 @@ const SENSITIVE_KEYS = new Set([
   "chgPwd",
   "newPassword",
   "currentPassword",
+  // 사용자 자유기입 PII 가능 — 탈퇴 사유(유저 불만·개인정보 혼입 가능)
+  "resignRsn",
+  "reason",
 ]);
 
-const EMAIL_KEYS = new Set(["email"]);
+// loginId: GENERAL 회원의 경우 userId === email 이므로 이메일 주소가 그대로 로그에 남는다.
+// EMAIL_KEYS 로 마스킹해 GENERAL/ADMIN/STORE 모두 공통 처리.
+const EMAIL_KEYS = new Set(["email", "loginId"]);
 
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
@@ -74,8 +79,11 @@ function maskObjectFields(
   return masked;
 }
 
+// regex fallback — JSON 파싱 실패 경로에서만 동작하므로 false-positive 를 낮춘다.
+// `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
+// SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|resignRsn)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;

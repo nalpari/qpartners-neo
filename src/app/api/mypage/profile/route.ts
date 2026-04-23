@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
-import { fetchQspUserDetail } from "@/lib/qsp-member";
+import { fetchQspUserDetail, parseQspDate } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
@@ -152,6 +152,11 @@ export async function GET(request: NextRequest) {
     // 회원유형별 응답 구성
     const profile: Record<string, unknown> = {
       userType,
+      // 조회 표시용 원본 — Q.Order 매핑상 "성명"/"성명 히라가나" 는 단일 필드(userNm/userNmKana).
+      // QSP 가 user1stNm/user2ndNm 을 null 로 주고 userNm 만 내려주는 경우에도 splitName 이
+      // 공백 기준이라 실패해서 "-" 표시되던 이슈 해결 — 원본 값을 함께 노출.
+      userName: d.userNm,
+      userNameKana: d.userNmKana,
       sei: d.user2ndNm ?? seiFromNm ?? null,
       mei: d.user1stNm ?? meiFromNm ?? null,
       seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? null,
@@ -165,7 +170,9 @@ export async function GET(request: NextRequest) {
       telNo: d.compTelNo,
       fax: d.compFaxNo,
       newsRcptYn: d.newsRcptYn ?? "N",
-      newsRcptDate: d.newsRcptDate ?? null,
+      // QSP 가 "YYYY.MM.DD HH:mm:ss" 로 내려주는 경우 FE formatDate(new Date()) 가 파싱 실패 →
+      // ISO 8601 (+09:00) 로 정규화. null/포맷 불일치는 null 유지 (FE 에서 "許可"/"拒否" 단독 표시).
+      newsRcptDate: parseQspDate(d.newsRcptDate),
     };
 
     // 회원유형별 표시 필드 (SEKO는 위에서 early return 처리됨)

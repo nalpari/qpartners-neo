@@ -25,4 +25,10 @@ export const LOGIN_ERRORS = {
   SERVER_UNAVAILABLE: "サーバーに接続できません。しばらくしてからお試しください",
   BAD_REQUEST: "入力内容を確認してください",
   GENERIC: "ログインに失敗しました",
+  AUTO_LOGIN_FAILED: "自動ログインに失敗しました。もう一度ログインしてください",
 } as const;
+
+/** URL 쿼리 `?error=` → 사용자 표시 메시지 매핑 (외부 유입 에러 코드 허용 리스트) */
+export const LOGIN_QUERY_ERROR_MESSAGES: Record<string, string> = {
+  auto_login_failed: LOGIN_ERRORS.AUTO_LOGIN_FAILED,
+};
