@@ -68,21 +68,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // GENERAL 불변조건: userId === email. loginUserSchema 에 강제되지 않으므로 route 진입 시 명시 검증.
+    //   조회(fetchQspUserDetail)는 email, 탈퇴(saveResignReq)는 loginId(=userId) 로 이원화되어 있어
+    //   대소문자/공백 variant 로 둘이 다르면 조회 대상과 탈퇴 대상이 달라질 수 있음 → 보수적 거부.
+    if (user.userId !== user.email) {
+      console.error("[POST /api/mypage/withdraw] GENERAL invariant violation (userId !== email)", {
+        userTp: user.userTp,
+      });
+      return NextResponse.json(
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
+      );
+    }
+
     // Rate Limit — 탈퇴는 불가역 작업이므로 JWT 탈취 후 반복호출 / QSP 부하유발 차단.
-    //   IP(프록시 x-forwarded-for) 우선, 없으면 email 기반 fallback key 로 공용 버킷 전체 차단을 방지.
-    //   기준: password-reset/request 와 동일 패턴이나 탈퇴 특성상 더 엄격(1시간 내 IP 5건 / email 3건).
+    //   IP 버킷(있을 때만) + account 버킷(항상) AND 조합으로 XFF 스푸핑 IP 로테이션 공격 방어.
+    //   email 은 trim + toLowerCase 정규화로 variant 우회 차단.
+    //   기준: password-reset/request 보다 엄격(탈퇴 불가역 특성). IP 있음 → 각 5건, IP 없음 → account 3건.
     const forwarded = request.headers.get("x-forwarded-for");
     // x-real-ip 가 빈 문자열("")이면 `??` 를 통과해 공용 rate limit 버킷이 생기는 edge case 방어 — `||` + null fallback 으로 통일.
     const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null;
-    const rateLimitKey = ip ?? `account:${user.email}`;
-    if (!checkRateLimit(`withdraw:${rateLimitKey}`, ip ? 5 : 3, 60 * 60 * 1000)) {
+    const emailNorm = user.email.trim().toLowerCase();
+    const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+    // IP 헤더 부재 경고는 rate limit 평가 전에 기록 — 429 조기 return 경로에서도 IP-less 공격 패턴 가시성 확보.
+    if (!ip) {
+      console.warn("[POST /api/mypage/withdraw] IP 헤더 없음 — account 기반 rate limit 적용");
+    }
+    const ipOk = !ip || checkRateLimit(`withdraw:ip:${ip}`, 5, RATE_LIMIT_WINDOW_MS);
+    const accountOk = checkRateLimit(
+      `withdraw:account:${emailNorm}`,
+      ip ? 5 : 3,
+      RATE_LIMIT_WINDOW_MS,
+    );
+    if (!ipOk || !accountOk) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
         { status: 429 },
       );
-    }
-    if (!ip) {
-      console.warn("[POST /api/mypage/withdraw] IP 헤더 없음 — email 기반 rate limit 적용");
     }
 
     let body: unknown;
@@ -172,7 +194,9 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "saveResignReq",
           callerRoute: "[POST /api/mypage/withdraw]",
-          userId: maskEmail(user.userId),
+          // GENERAL invariant guard 로 userId === email 이 보장되지만, 소스를 email 로 명시해
+          // 향후 비-GENERAL 경로로 복제되더라도 마스킹 누락 회귀를 방지.
+          userId: maskEmail(user.email),
           userType: user.userTp,
         },
       );

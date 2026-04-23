@@ -2305,8 +2305,9 @@ export const openApiSpec: OpenAPIV3.Document = {
                 properties: {
                   reason: {
                     type: "string",
+                    minLength: 1,
                     maxLength: 500,
-                    description: "退会理由 (QSP resignRemark 에 매핑, 최대 500자)",
+                    description: "退会理由 (QSP resignRemark 에 매핑, 1~500자). 공백만 입력은 BE trim 후 min(1) 검증에서 400.",
                   },
                 },
               },
@@ -2336,7 +2337,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           "409": errorResponse("이미 탈퇴 처리된 회원"),
           "429": errorResponse("요청이 너무 많음 (rate limit 초과)"),
           "500": errorResponse("서버 에러 / JWT 누락"),
-          "502": errorResponse("QSP 연동 실패"),
+          "502": errorResponse(
+            "QSP 연동 실패. 세션 쿠키는 유지됨(재시도 가능). " +
+              "error 필드로 세부 사유 구분: 접속 불가 / 응답 파싱 실패 / 탈퇴 실패 확정 / 결과 불명. " +
+              "※ 쿠키 삭제는 200·409 시에만 발생.",
+          ),
         },
       },
     },
