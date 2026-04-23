@@ -86,13 +86,20 @@ const memberStatusValues = ["active", "deleted", "withdrawn"] as const;
  */
 const memberTypeValues = ["ADMIN", "STORE", "GENERAL"] as const;
 
+// 공백-only 입력을 undefined 로 정규화 — FE bypass 시 "   " 가 QSP 로 넘어가 무의미 쿼리 유발 차단.
+const searchString = (fieldMsg: string) =>
+  z.string().max(200, fieldMsg).optional().transform((v) => {
+    const trimmed = v?.trim();
+    return trimmed ? trimmed : undefined;
+  });
+
 export const memberListQuerySchema = z.object({
   // 길이 제한: QSP DoS 방지 (긴 문자열로 외부 API 부하 방지).
   // ID/氏名/Email/会社名 각각 개별 파라미터 — QSP userListMng 에 동일 필드명으로 매핑.
-  userId: z.string().max(200, "IDが長すぎます").optional(),
-  userName: z.string().max(200, "氏名が長すぎます").optional(),
-  email: z.string().max(200, "メールアドレスが長すぎます").optional(),
-  companyName: z.string().max(200, "会社名が長すぎます").optional(),
+  userId: searchString("IDが長すぎます"),
+  userName: searchString("氏名が長すぎます"),
+  email: searchString("メールアドレスが長すぎます"),
+  companyName: searchString("会社名が長すぎます"),
   userType: z.enum(memberTypeValues).optional(),
   status: z.enum(memberStatusValues).optional(),
   page: z.coerce.number().int().positive().default(1),

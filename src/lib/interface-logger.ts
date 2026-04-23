@@ -24,6 +24,9 @@ const SENSITIVE_KEYS = new Set([
   "chgPwd",
   "newPassword",
   "currentPassword",
+  // 사용자 자유기입 PII 가능 — 탈퇴 사유(유저 불만·개인정보 혼입 가능)
+  "resignRsn",
+  "reason",
 ]);
 
 const EMAIL_KEYS = new Set(["email"]);
@@ -75,7 +78,7 @@ function maskObjectFields(
 }
 
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|resignRsn|reason)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;

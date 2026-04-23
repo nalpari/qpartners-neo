@@ -376,8 +376,6 @@ function MemberEditForm({
     return role;
   };
   const [userRole, setUserRole] = useState(safeRole(member.userRole));
-  // 기존 SEKO 권한은 편집 UI 제공 안함 (옵션에 SEKO 없어 SelectBox 값 공백 방지).
-  const isUserRoleLocked = !editableRoleValues.includes(userRole);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(member.twoFactorEnabled ?? true);
   const [loginNotification, setLoginNotification] = useState(member.loginNotification);
   const [memberStatus, setMemberStatus] = useState(API_TO_STATUS[member.status] ?? "Active");
@@ -387,6 +385,11 @@ function MemberEditForm({
   // 삭제/탈퇴 회원(isQspNotFound) 복구 경로 — status=Active 로 전환.
   // 백엔드는 이 경로에서 userRole + twoFactorEnabled 명시 필수(복구 후 QSP 잔존 값 silent 부활 방어).
   const isRestoringToActive = isQspNotFound && isStatusEditable && memberStatus === "Active";
+
+  // 기존 SEKO 권한은 편집 UI 제공 안함 (옵션에 SEKO 없어 SelectBox 값 공백 방지).
+  // 단, 복구 경로(isRestoringToActive)는 관리자가 SEKO → 다른 권한 재부여가 필수이므로 lock 해제.
+  // 복구 경로 + SEKO: SelectBox 에서 SEKO 옵션 부재로 빈 표시 → 관리자가 명시적 재선택 후 저장(미선택 저장 시 BE 400).
+  const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   const handleSave = () => {
     const payload: MemberUpdatePayload = {

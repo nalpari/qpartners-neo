@@ -37,18 +37,16 @@ function toTabs(menuTree: MenuTreeItem[]) {
     .map((c) => ({ label: c.menuName, href: c.pageUrl }));
 
   // pageUrl 중복 제거 — DB 에 같은 pageUrl 을 가진 메뉴가 들어오면 React key 중복 에러 발생.
-  // 최초 등장한 행만 유지하고 나머지는 drop + 경고 로그 (시드/메뉴관리 정합성 점검용).
-  const seen = new Set<string>();
-  const deduped: typeof tabs = [];
+  // 최초 등장한 행만 유지. 시드/메뉴관리 정합성 문제이므로 error 로 기록해 운영 알람에 노출.
+  const deduped = new Map<string, { label: string; href: string }>();
   for (const tab of tabs) {
-    if (seen.has(tab.href)) {
-      console.warn(`[AdminTab] pageUrl 중복 감지 — drop: ${tab.href} (${tab.label})`);
+    if (deduped.has(tab.href)) {
+      console.error(`[AdminTab] pageUrl 중복 감지 — drop: ${tab.href} (${tab.label})`);
       continue;
     }
-    seen.add(tab.href);
-    deduped.push(tab);
+    deduped.set(tab.href, tab);
   }
-  return deduped;
+  return Array.from(deduped.values());
 }
 
 export function AdminTab() {

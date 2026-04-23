@@ -3655,7 +3655,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           lastNameKana: { type: "string" },
           email: { type: "string" },
           userType: { type: "string", enum: ["管理者", "販売店", "施工店", "一般", "unknown"] },
-          userRole: { type: "string" },
+          userRole: {
+            type: "string",
+            description:
+              "현재 권한 코드. 응답에는 SEKO 포함 가능(레거시 데이터). 요청(MemberUpdateRequest.userRole)에는 SEKO 부여 불가 — 2026-04-23 정책.",
+          },
           companyName: { type: "string" },
           companyNameKana: { type: "string" },
           zipcode: { type: "string" },
