@@ -19,13 +19,16 @@ interface PermissionGateProps {
  *
  * 사용 예:
  * ```tsx
- * <PermissionGate menuCode="MENU_MEMBERS" action="create" fallback={null}>
+ * import { ADMIN_MENU } from "@/lib/menu-codes";
+ *
+ * <PermissionGate menuCode={ADMIN_MENU.MEMBERS} action="create" fallback={null}>
  *   <Button>新規登録</Button>
  * </PermissionGate>
  * ```
  *
- * 로딩 중에는 `fallback` 렌더 (fail-closed 기본) — `useMenuPermission` 이
- * STUB 모드일 땐 isLoading 이 사실상 무의미하게 true 허용으로 귀결.
+ * 로딩 정책: 로딩 중에는 `fallback` 렌더 (fail-closed). 서버 `requireMenuPermission` 이
+ * 최종 방어선이므로 UI 상 권한 확인 전 children 이 잠깐 노출되는 플래시를 차단.
+ * (GNB 대량 메뉴 필터용 `useMenuPermissionMap.has()` 는 로딩 중 permissive 이며 정책 분리.)
  */
 export function PermissionGate({
   menuCode,

@@ -3,16 +3,16 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateMenuSchema } from "@/lib/schemas/menu";
 
 type Params = { params: Promise<{ id: string }> };
 
-// PUT /api/menus/:id — 메뉴 수정 (menuCode 수정 불가)
+// PUT /api/menus/:id — 메뉴 수정 (ADM_MENU.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_MENU", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;

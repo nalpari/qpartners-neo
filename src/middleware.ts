@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { getFallbackRole } from "@/lib/auth-role";
 import { ConfigError } from "@/lib/errors";
 import { verifyToken, COOKIE_NAME } from "@/lib/jwt";
 
@@ -54,34 +55,10 @@ function isTwoFactorPath(pathname: string): boolean {
 }
 
 /**
- * userTp → authRole 폴백 (authRole 미설정 JWT 과도기 대응 — authRole 포함 JWT 가 완전 교체되면 제거).
- *
- * 매핑 기준:
- * - STORE → `2ND_STORE` : `resolveAuthRole` 의 storeLvl 불명 폴백과 일치 (최소 권한 원칙).
- *   `1ST_STORE` 로 폴백하면 하위 권한이 상위 권한으로 상승할 수 있어 구조적 금지.
- * - ADMIN → `ADMIN` : `resolveAuthRole` 의 ADMIN_ROLE 미조회 케이스와 동일 (SUPER_ADMIN 상승 차단).
+ * userTp → authRole 폴백은 `src/lib/auth.ts#getFallbackRole` 공용 헬퍼를 사용한다.
+ * 이 헬퍼는 `resolveAuthRole` / `requirePageMenuPermission` / admin layout 과 동일 규칙으로
+ * 최소 권한 폴백을 적용해 FE/BE 전역 일관성을 보장한다.
  */
-const USERTP_ROLE_MAP: Readonly<Record<string, string>> = {
-  ADMIN: "ADMIN",
-  STORE: "2ND_STORE",
-  SEKO: "SEKO",
-  GENERAL: "GENERAL",
-};
-
-/**
- * authRole 폴백 — 미지의 userTp 는 `null` 반환(fail-closed).
- * rules/api.md: "미지의 userTp 값은 GENERAL 폴백 금지 → 파싱 실패로 처리".
- * 호출부는 null 시 401(Protected) 또는 비회원 통과(Public GET) 로 분기.
- */
-function getFallbackRole(userTp: string): string | null {
-  const role = USERTP_ROLE_MAP[userTp];
-  if (!role) {
-    console.error("[middleware] 미지의 userTp — 폴백 차단 (fail-closed):", userTp);
-    return null;
-  }
-  return role;
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 

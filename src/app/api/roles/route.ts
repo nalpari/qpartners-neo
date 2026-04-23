@@ -3,14 +3,14 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createRoleSchema } from "@/lib/schemas/permission";
 
-// GET /api/roles — 권한 목록 (관리자 전용)
+// GET /api/roles — 권한 목록 (ADM_PERMISSION.read 매트릭스 기반)
 export async function GET(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { searchParams } = request.nextUrl;
@@ -33,10 +33,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/roles — 권한 추가
+// POST /api/roles — 권한 추가 (ADM_PERMISSION.create — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;

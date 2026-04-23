@@ -34,15 +34,18 @@ interface MenuPermissionEntry {
   canDelete: boolean;
 }
 
+/**
+ * BE 응답 스키마 — `roleCode` 는 RBAC 정찰 차단 목적으로 응답에서 의도적으로 제거됨.
+ * (server: `GET /api/auth/me/permissions` 의 `{ data: { menus } }` 만 노출)
+ */
 interface MePermissionsData {
-  roleCode: string;
   menus: MenuPermissionEntry[];
 }
 
 async function fetchMyPermissions(): Promise<MePermissionsData> {
   if (IS_STUB) {
     // STUB — 소비처는 IS_STUB 분기에서 all-true 반환. 빈 응답만 내려둔다.
-    return { roleCode: "STUB", menus: [] };
+    return { menus: [] };
   }
   const res = await api.get<{ data: MePermissionsData }>("/auth/me/permissions");
   return res.data.data;

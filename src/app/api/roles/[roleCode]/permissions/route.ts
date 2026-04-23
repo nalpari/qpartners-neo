@@ -115,21 +115,21 @@ export async function GET(request: NextRequest, { params }: Params) {
  *
  * 권한: SUPER_ADMIN 전용 (requireSuperAdmin). ADMIN 은 조회만 가능.
  *   · 과거 requireAdmin 허용 시 ADMIN 이 1ST_STORE/SEKO 등 하위 역할의 매트릭스를 임의 조작하여
- *     MEMBERS.canDelete / BULK_MAIL.canCreate 등을 부여할 수 있었음 (CRITICAL #1).
+ *     ADM_MEMBER.canDelete / ADM_BULK_MAIL.canCreate 등을 부여할 수 있었음 (CRITICAL #1).
  *
  * 저장 전략: upsert (replace 아님).
- *   · 과거 `deleteMany + create` 는 payload 에 PERMISSIONS 행이 누락되면 PERMISSIONS 행까지
+ *   · 과거 `deleteMany + create` 는 payload 에 ADM_PERMISSION 행이 누락되면 해당 행까지
  *     일괄 삭제되어 lockout 가드를 우회할 수 있었음 (CRITICAL #2).
  *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지 → 우회 경로 차단 +
  *     `created_at` / `created_by` 감사 추적 보존 (HIGH #7).
  *
  * Lockout 가드 3단:
- *   1. target === "SUPER_ADMIN" — payload 에 `PERMISSIONS.canUpdate === false` 가 있으면 거부.
+ *   1. target === "SUPER_ADMIN" — payload 에 `ADM_PERMISSION.canUpdate === false` 가 있으면 거부.
  *      SUPER_ADMIN 이 자신의 권한관리 update 권한을 내리면 시스템 전체 lockout (CRITICAL #4).
- *   2. target === "SUPER_ADMIN" — payload 에 RESTRICTED 메뉴(PERMISSIONS/MENUS/CODES) 의
+ *   2. target === "SUPER_ADMIN" — payload 에 RESTRICTED 메뉴(ADM_PERMISSION/ADM_MENU/ADM_CODE) 의
  *      `canRead === false` 가 있으면 거부. read 가 막히면 해당 관리 페이지 자체가 열리지 않아
  *      복구가 DB 직접 수정 없이 불가능해진다 (CRITICAL #5).
- *   3. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(PERMISSIONS/MENUS/CODES)
+ *   3. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(ADM_PERMISSION/ADM_MENU/ADM_CODE)
  *      중 CUD true 가 있으면 거부. 매트릭스 의도(ADMIN = read only, 비관리자 = 접근 없음)
  *      를 API 단에서 강제 (HIGH #6).
  */

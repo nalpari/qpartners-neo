@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireAdmin } from "@/lib/auth";
+import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -14,10 +14,10 @@ import {
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/home-notices/:id — 공지 단건 조회
+// GET /api/home-notices/:id — 공지 단건 조회 (ADM_NOTICE.read 매트릭스 기반)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -79,10 +79,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-// PUT /api/home-notices/:id — 공지 수정
+// PUT /api/home-notices/:id — 공지 수정 (ADM_NOTICE.update 매트릭스 기반)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -183,10 +183,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-// DELETE /api/home-notices/:id — 공지 삭제 (물리 삭제)
+// DELETE /api/home-notices/:id — 공지 삭제 (물리 삭제, ADM_NOTICE.delete 매트릭스 기반)
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "delete");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;

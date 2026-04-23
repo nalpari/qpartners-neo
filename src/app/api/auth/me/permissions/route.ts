@@ -11,9 +11,10 @@ import { menuCodeSchema } from "@/lib/schemas/common";
  *
  * - 인증 필요 (미인증 → 401). middleware 에서 JWT 검증 후 X-User-* 헤더 주입됨.
  * - `authRole` ↔ `roleCode` 1:1 매핑 — X-User-Role 을 roleCode 로 그대로 사용.
- * - `SUPER_ADMIN`: 활성 메뉴 전체 CRUD true 합성 반환 (fail-open, resolveMenuPermission 정책 동일).
- * - 그 외: 단일 `findMany` 배치 쿼리로 해당 roleCode 의 활성 메뉴 권한 조회 (fail-closed).
- *   · resolveMenuPermission(단건 가드)과 동일 매핑 로직이나 쿼리 패턴만 배치 최적화.
+ * - **모든 역할(SUPER_ADMIN 포함) 매트릭스 그대로 반환** (fail-closed).
+ *   · `resolveMenuPermission` (단건 가드) 과 동일 정책이며 쿼리 패턴만 배치 최적화.
+ *   · "권한관리 UI 에서 토글한 결과를 즉시 반영한다" 는 RBAC 본연의 동작을 보장.
+ *   · self-lockout 위험은 `PUT /api/roles/:roleCode/permissions` 의 lockout 가드가 별도 방어.
  * - 시드 외 menuCode 가 DB 에 존재하면 응답에서 제외 (MenuCode 리터럴 유니온 검증 실패 시).
  * - 응답 body 는 `{ data: { menus } }` 만 포함 — `roleCode` 등 RBAC 내부 식별자는 응답에 노출하지 않음
  *   (자기 세션으로 RBAC 계층 정찰 차단, fail-closed 보안 원칙).
@@ -31,8 +32,6 @@ export async function GET(request: NextRequest) {
     let menus: Array<{ menuCode: string } & MenuPermission>;
 
     {
-      // SUPER_ADMIN 도 DB 매트릭스 그대로 반영 — 관리자가 권한관리 UI 에서 토글한 결과를 즉시 적용한다.
-      // self-lockout 위험은 PUT /api/roles/:roleCode/permissions 의 lockout 가드가 별도 방어.
       const permissions = await prisma.qpRoleMenuPermission.findMany({
         where: { roleCode, menu: { isActive: true } },
         select: {

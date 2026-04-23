@@ -11,8 +11,12 @@ import { NextResponse } from "next/server";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues, authRoleValues, targetTypeValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
+// getFallbackRole/AuthRole 은 Edge Runtime 호환을 위해 prisma 비의존 파일로 분리되어 있다.
+// 이 파일은 서버 API 전용이므로 그대로 re-export 해 기존 소비처의 import 경로를 유지.
+import { getFallbackRole, type AuthRole } from "@/lib/auth-role";
 
-export type AuthRole = (typeof authRoleValues)[number];
+export { getFallbackRole };
+export type { AuthRole };
 export type TargetType = (typeof targetTypeValues)[number];
 type UserTp = (typeof userTpValues)[number];
 

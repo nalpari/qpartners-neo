@@ -35,11 +35,3 @@ export const ADMIN_MENU = {
   MENUS: "ADM_MENU",
   CODES: "ADM_CODE",
 } as const satisfies Record<string, MenuCode>;
-
-/**
- * 본 파일에서 노출하는 전체 menuCode 유니언 — MENU/ADMIN_MENU 값의 union.
- * `MenuCode` (from `schemas/common`) 의 부분집합이며, `satisfies` 로 호환성 보장.
- */
-export type MenuCodeKey =
-  | (typeof MENU)[keyof typeof MENU]
-  | (typeof ADMIN_MENU)[keyof typeof ADMIN_MENU];

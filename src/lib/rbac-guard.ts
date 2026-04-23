@@ -15,6 +15,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { getFallbackRole } from "@/lib/auth";
+import { ConfigError } from "@/lib/errors";
 import { COOKIE_NAME, verifyToken } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
@@ -31,6 +33,15 @@ interface Options {
   fallback?: string;
 }
 
+/**
+ * 페이지 서버 가드 — middleware 와 동일한 JWT 정책으로 검증한다.
+ *
+ * - ConfigError (JWT_SECRET 미설정): middleware 와 동일하게 상위 Next.js error boundary 에 전파
+ *   (dev 전용 사태이며 운영에서는 500 페이지로 수렴하는 게 원하는 동작).
+ * - 토큰 없음 / 서명 불일치 / 만료 → `/login`
+ * - `authRole` 미탑재 과도기 JWT → `getFallbackRole(userTp)` 로 폴백 (middleware 와 동일 규칙).
+ * - 폴백도 실패(미지의 userTp)하거나 매트릭스상 권한 없음 → `fallback` 경로로 redirect.
+ */
 export async function requirePageMenuPermission(
   menuCode: MenuCode,
   action: MenuAction,
@@ -40,13 +51,26 @@ export async function requirePageMenuPermission(
 
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
-  const user = token ? await verifyToken(token) : null;
+
+  let user: Awaited<ReturnType<typeof verifyToken>> = null;
+  if (token) {
+    try {
+      user = await verifyToken(token);
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        // 설정 에러는 middleware 규약상 5xx 로 수렴시켜야 함. 상위로 재전파.
+        throw error;
+      }
+      // 서명 불일치·만료 등은 미인증으로 처리 (로그는 middleware 레벨에서 담당).
+      user = null;
+    }
+  }
 
   if (!user) {
     redirect("/login");
   }
 
-  const roleCode = user.authRole;
+  const roleCode = user.authRole ?? getFallbackRole(user.userTp);
   if (!roleCode) {
     redirect(fallback);
   }
