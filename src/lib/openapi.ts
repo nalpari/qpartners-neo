@@ -2231,6 +2231,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MyPage"],
         summary: "회원탈퇴 (일반회원만)",
+        description:
+          "QSP updateUserDtl 로 statCd=R 전환 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
+          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502.",
         requestBody: {
           required: true,
           content: {
@@ -2262,8 +2265,12 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "400": errorResponse("입력 검증 실패 / 리퀘스트 형식 오류"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("일반회원만 탈퇴 가능"),
+          "403": errorResponse("2FA 미완 또는 일반회원 아님"),
+          "409": errorResponse("이미 탈퇴 처리된 회원"),
+          "500": errorResponse("서버 에러 / JWT 누락"),
+          "502": errorResponse("QSP 연동 실패"),
         },
       },
     },
