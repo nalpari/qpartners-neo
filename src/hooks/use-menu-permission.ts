@@ -50,7 +50,10 @@ async function fetchMyPermissions(): Promise<MePermissionsData> {
 /**
  * 주어진 menuCode 에 대한 현재 사용자의 4개 CRUD 플래그 반환.
  * - IS_STUB 동안: 모두 true + isLoading 은 실제 훅 상태 반영
- * - 운영(IS_STUB=false): 응답의 해당 menuCode 항목을 참조, 없으면 false (fail-closed)
+ * - 운영(IS_STUB=false):
+ *   · SUPER_ADMIN 은 응답 roleCode 기준으로 fail-open(모든 menuCode true). BE 가 전체 true 합성을 내려주지만
+ *     DB menuCode(레거시 ADM_* prefix) 와 FE 상수(MEMBERS 등) 불일치 시 매칭 실패 → UI 가 먹통이 되는 것을 방어.
+ *   · 그 외 역할: 응답의 해당 menuCode 항목을 참조, 없으면 false (fail-closed)
  */
 export function useMenuPermission(menuCode: string): MenuPermission {
   const { data, isLoading } = useQuery<MePermissionsData>({
@@ -61,6 +64,16 @@ export function useMenuPermission(menuCode: string): MenuPermission {
   });
 
   if (IS_STUB) {
+    return {
+      canRead: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      isLoading,
+    };
+  }
+
+  if (data?.roleCode === "SUPER_ADMIN") {
     return {
       canRead: true,
       canCreate: true,
@@ -116,6 +129,8 @@ export function useMenuPermissionMap() {
 
   const has = (menuCode: string, action: PermissionAction = "read"): boolean => {
     if (IS_STUB) return true;
+    // SUPER_ADMIN fail-open — DB menuCode 불일치(레거시 ADM_* prefix) 로 매칭 실패해도 통과.
+    if (data?.roleCode === "SUPER_ADMIN") return true;
     const entry = data?.menus.find((m) => m.menuCode === menuCode);
     if (!entry) return false;
     switch (action) {
