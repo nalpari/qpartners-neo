@@ -15,6 +15,9 @@ import { MypageInfoConstruction } from "./mypage-info-construction";
 // Design Ref: §2 — API 응답 타입
 export interface ProfileData {
   userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
+  // 원본 단일 문자열 (Q.Order 매핑: 성명/성명 히라가나 1:1). split 실패 시 fallback 소스.
+  userName: string | null;
+  userNameKana: string | null;
   sei: string;
   mei: string;
   seiKana: string;

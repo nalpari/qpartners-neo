@@ -20,9 +20,19 @@ function formatNewsletter(yn: "Y" | "N", date: string | null): string {
 }
 
 function buildMemberFields(profile: ProfileData, userId: string, userType: string): ViewField[] {
+  // 원본 userName(QSP userNm) 우선, split 된 sei+mei 는 fallback.
+  // QSP 가 userNm 에 공백 없는 단일 문자열로 내려주면 splitName 실패 → sei/mei null →
+  // 기존에는 "-" 노출되던 현상. 원본 필드 우선 사용으로 해결.
+  const fullName = profile.userName?.trim()
+    || [profile.sei, profile.mei].filter(Boolean).join(" ")
+    || "-";
+  const fullNameKana = profile.userNameKana?.trim()
+    || [profile.seiKana, profile.meiKana].filter(Boolean).join(" ")
+    || "-";
+
   const fields: ViewField[] = [
-    { label: "氏名", value: [profile.sei, profile.mei].filter(Boolean).join(" ") || "-" },
-    { label: "氏名ひらがな", value: [profile.seiKana, profile.meiKana].filter(Boolean).join(" ") || "-" },
+    { label: "氏名", value: fullName },
+    { label: "氏名ひらがな", value: fullNameKana },
   ];
 
   const emailLabel = userType === "GENERAL" ? "メールアドレス (ID)" : "メールアドレス";

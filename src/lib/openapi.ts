@@ -2092,6 +2092,8 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         userType: { type: "string", enum: [...userTpValues] },
+                        userName: { type: "string", nullable: true, description: "원본 성명 (QSP userNm). Q.Order 매핑: 성명 단일 필드" },
+                        userNameKana: { type: "string", nullable: true, description: "원본 성명 히라가나 (QSP userNmKana). Q.Order 매핑: 담당자명 후리가나 단일 필드" },
                         sei: { type: "string", nullable: true },
                         mei: { type: "string", nullable: true },
                         seiKana: { type: "string", nullable: true },

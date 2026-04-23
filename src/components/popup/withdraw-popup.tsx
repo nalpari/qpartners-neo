@@ -14,6 +14,8 @@ const CLOSE_ANIMATION_MS = 200;
 // Design Ref: §6.1 — 프로필 API 응답 타입
 interface ProfileData {
   compNm: string | null;
+  // 원본 userName 우선 (Q.Order 매핑: 성명 단일 필드). sei/mei 는 split fallback.
+  userName: string | null;
   sei: string | null;
   mei: string | null;
   email: string | null;
@@ -42,9 +44,13 @@ export function WithdrawPopup() {
   const isProfileReady = profile != null && !isProfileLoading && !profileError;
 
   function buildUserInfo(p: ProfileData) {
+    // 원본 userName 우선, split 된 sei+mei 는 fallback — Q.Order "성명" 단일 필드 매핑 유지.
+    const fullName = p.userName?.trim()
+      || [p.sei, p.mei].filter(Boolean).join(" ")
+      || "-";
     return [
       { label: "会社名", value: p.compNm ?? "-" },
-      { label: "氏名", value: [p.sei, p.mei].filter(Boolean).join(" ") || "-" },
+      { label: "氏名", value: fullName },
       { label: "メールアドレス (ID)", value: p.email ?? "-" },
       { label: "電話番号", value: p.telNo ?? "-" },
     ];

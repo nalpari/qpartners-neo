@@ -152,6 +152,11 @@ export async function GET(request: NextRequest) {
     // 회원유형별 응답 구성
     const profile: Record<string, unknown> = {
       userType,
+      // 조회 표시용 원본 — Q.Order 매핑상 "성명"/"성명 히라가나" 는 단일 필드(userNm/userNmKana).
+      // QSP 가 user1stNm/user2ndNm 을 null 로 주고 userNm 만 내려주는 경우에도 splitName 이
+      // 공백 기준이라 실패해서 "-" 표시되던 이슈 해결 — 원본 값을 함께 노출.
+      userName: d.userNm,
+      userNameKana: d.userNmKana,
       sei: d.user2ndNm ?? seiFromNm ?? null,
       mei: d.user1stNm ?? meiFromNm ?? null,
       seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? null,
