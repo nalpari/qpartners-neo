@@ -248,7 +248,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                             type: "object",
                             required: ["menuCode", "canRead", "canCreate", "canUpdate", "canDelete"],
                             properties: {
-                              menuCode: { type: "string", example: "MEMBERS" },
+                              menuCode: { type: "string", example: "ADM_MEMBER" },
                               canRead: { type: "boolean" },
                               canCreate: { type: "boolean" },
                               canUpdate: { type: "boolean" },
@@ -1087,7 +1087,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 **권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
 
 **Lockout 방어 (3중화)**:
-1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "PERMISSIONS", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
+1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "ADM_PERMISSION", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
 2. target = \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
 3. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
@@ -1148,8 +1148,8 @@ export const openApiSpec: OpenAPIV3.Document = {
                         },
                         menuCode: {
                           type: "string",
-                          enum: ["PERMISSIONS", "MENUS", "CODES"],
-                          example: "PERMISSIONS",
+                          enum: ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"],
+                          example: "ADM_PERMISSION",
                         },
                         action: {
                           type: "string",

@@ -13,7 +13,7 @@ type Params = { params: Promise<{ id: string; detailId: string }> };
 // PUT /api/codes/:id/details/:detailId — Detail 수정 (CODES.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "update");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id, detailId } = await params;
@@ -84,7 +84,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // DELETE /api/codes/:id/details/:detailId — Detail 물리 삭제 (CODES.delete — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "delete");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "delete");
     if (auth instanceof NextResponse) return auth;
 
     const { id, detailId } = await params;

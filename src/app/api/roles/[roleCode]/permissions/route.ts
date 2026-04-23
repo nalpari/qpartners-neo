@@ -181,10 +181,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단 (PERMISSIONS.canUpdate).
+    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단 (ADM_PERMISSION.canUpdate).
     if (parsedCode.data === "SUPER_ADMIN") {
       const permRow = result.data.permissions.find(
-        (p) => p.menuCode === "PERMISSIONS",
+        (p) => p.menuCode === "ADM_PERMISSION",
       );
       if (permRow && permRow.canUpdate === false) {
         console.warn(
@@ -198,7 +198,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json(
           {
             error: "スーパー管理者の「権限管理」更新権限は無効化できません",
-            menuCode: "PERMISSIONS",
+            menuCode: "ADM_PERMISSION",
             action: "update",
           },
           { status: 400 },

@@ -40,15 +40,15 @@ const menus1 = [
   { menuCode: "ADMIN",   menuName: "管理者",           pageUrl: "/admin",    sortOrder: 5 },
 ];
 
-// 2-Level 메뉴 (parentId = ADMIN)
+// 2-Level 메뉴 (parentId = ADMIN) — DB 실제값 `ADM_` prefix 사용
 const menus2UnderAdmin = [
-  { menuCode: "MEMBERS",     menuName: "会員管理",         pageUrl: "/admin/members",     sortOrder: 1 },
-  { menuCode: "BULK_MAIL",   menuName: "大量メール発送",   pageUrl: "/admin/bulk-mail",   sortOrder: 2 },
-  { menuCode: "NOTICES",     menuName: "お知らせ管理",     pageUrl: "/admin/notices",     sortOrder: 3 },
-  { menuCode: "CATEGORIES",  menuName: "カテゴリ管理",     pageUrl: "/admin/categories",  sortOrder: 4 },
-  { menuCode: "PERMISSIONS", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 5 },
-  { menuCode: "MENUS",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 6 },
-  { menuCode: "CODES",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 7 },
+  { menuCode: "ADM_MEMBER",     menuName: "会員管理",         pageUrl: "/admin/members",     sortOrder: 1 },
+  { menuCode: "ADM_BULK_MAIL",  menuName: "大量メール発送",   pageUrl: "/admin/bulk-mail",   sortOrder: 2 },
+  { menuCode: "ADM_NOTICE",     menuName: "お知らせ管理",     pageUrl: "/admin/notices",     sortOrder: 3 },
+  { menuCode: "ADM_CATEGORY",   menuName: "カテゴリ管理",     pageUrl: "/admin/categories",  sortOrder: 4 },
+  { menuCode: "ADM_PERMISSION", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 5 },
+  { menuCode: "ADM_MENU",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 6 },
+  { menuCode: "ADM_CODE",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 7 },
 ];
 
 // 역할 (authRole enum 과 1:1)
@@ -61,10 +61,10 @@ const roles = [
   { roleCode: "GENERAL",     roleName: "一般",             description: "一般メニュー閲覧のみ" },
 ];
 
-// 권한 매트릭스 분류
+// 권한 매트릭스 분류 (2-Level 메뉴는 `ADM_` prefix)
 const GENERAL_MENUS = ["HOME", "CONTENT", "INQUIRY", "MYPAGE"];
-const ADMIN_FULL_MENUS = ["MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES", "CONTENT"];
-const ADMIN_RESTRICTED_MENUS = ["PERMISSIONS", "MENUS", "CODES"];
+const ADMIN_FULL_MENUS = ["ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY", "CONTENT"];
+const ADMIN_RESTRICTED_MENUS = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"];
 const ALL_MENU_CODES = [
   ...menus1.map((m) => m.menuCode),
   ...menus2UnderAdmin.map((m) => m.menuCode),

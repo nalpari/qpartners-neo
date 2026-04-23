@@ -13,7 +13,7 @@ type Params = { params: Promise<{ id: string }> };
 // GET /api/codes/:id — Header 단건 조회 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "read");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 // PUT /api/codes/:id — Header 수정 (CODES.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "update");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { id } = await params;

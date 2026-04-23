@@ -18,7 +18,7 @@ import {
 export async function GET(request: NextRequest) {
   try {
     // 1. 관리자 권한 확인 — MEMBERS.read 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "read");
+    const authResult = await requireMenuPermission(request.headers, "ADM_MEMBER", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. 쿼리 파라미터 파싱

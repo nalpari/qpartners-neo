@@ -20,15 +20,15 @@ export const MENU = {
   ADMIN: "ADMIN",
 } as const;
 
-/** 2-Level (ADMIN 하위) 메뉴 코드 */
+/** 2-Level (ADMIN 하위) 메뉴 코드 — DB 실제값 `ADM_` prefix 사용 */
 export const ADMIN_MENU = {
-  MEMBERS: "MEMBERS",
-  BULK_MAIL: "BULK_MAIL",
-  NOTICES: "NOTICES",
-  CATEGORIES: "CATEGORIES",
-  PERMISSIONS: "PERMISSIONS",
-  MENUS: "MENUS",
-  CODES: "CODES",
+  MEMBERS: "ADM_MEMBER",
+  BULK_MAIL: "ADM_BULK_MAIL",
+  NOTICES: "ADM_NOTICE",
+  CATEGORIES: "ADM_CATEGORY",
+  PERMISSIONS: "ADM_PERMISSION",
+  MENUS: "ADM_MENU",
+  CODES: "ADM_CODE",
 } as const;
 
 /** 전체 menuCode 유니언 타입 — useMenuPermission 인자 등 타입 체크용 */

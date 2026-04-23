@@ -11,7 +11,7 @@ import { createCodeHeaderSchema } from "@/lib/schemas/code";
 // GET /api/codes — Header Code 목록 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "read");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { searchParams } = request.nextUrl;
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 // POST /api/codes — Header Code 등록 (CODES.create — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireMenuPermission(request.headers, "CODES", "create");
+    const auth = await requireMenuPermission(request.headers, "ADM_CODE", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;
