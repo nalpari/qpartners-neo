@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
     //   IP(프록시 x-forwarded-for) 우선, 없으면 email 기반 fallback key 로 공용 버킷 전체 차단을 방지.
     //   기준: password-reset/request 와 동일 패턴이나 탈퇴 특성상 더 엄격(1시간 내 IP 5건 / email 3건).
     const forwarded = request.headers.get("x-forwarded-for");
-    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+    // x-real-ip 가 빈 문자열("")이면 `??` 를 통과해 공용 rate limit 버킷이 생기는 edge case 방어 — `||` + null fallback 으로 통일.
+    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null;
     const rateLimitKey = ip ?? `account:${user.email}`;
     if (!checkRateLimit(`withdraw:${rateLimitKey}`, ip ? 5 : 3, 60 * 60 * 1000)) {
       return NextResponse.json(
@@ -252,7 +253,16 @@ export async function POST(request: NextRequest) {
         return resp;
       }
 
-      // 분기 2: 재조회 성공 + statCd !== "R" → 탈퇴가 실제로 실패함(statCd 변화 없음).
+      // 분기 1-b: 재조회 성공했으나 statCd 가 null → 회원 상태 불명. 사전 체크(130행) 일관성 유지 위해 분기 3 과 동일하게 "결과 불명" 처리.
+      //   statCd null 을 "실패 확정"으로 판정하면 실제로는 탈퇴 성공했을 가능성을 오분류할 수 있으므로 안전측 502.
+      if (recheck.ok && recheck.detail.statCd === null) {
+        return NextResponse.json(
+          { error: "退会処理の結果が確認できません。しばらくしてから再度お試しください。" },
+          { status: 502 },
+        );
+      }
+
+      // 분기 2: 재조회 성공 + statCd !== "R" (null 제외) → 탈퇴가 실제로 실패함(statCd 변화 없음).
       //   쿠키를 삭제하면 사용자가 재시도할 수 없으므로 세션 유지. 잠시 후 재시도 안내.
       if (recheck.ok) {
         return NextResponse.json(
