@@ -12,6 +12,8 @@ import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 import { useMenuTree } from "@/hooks/use-menu-tree";
+import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
+import { useAlertStore } from "@/lib/store";
 import { MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
@@ -168,6 +170,18 @@ export function Gnb() {
     return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
   }, [menuTree]);
 
+  // RBAC — GNB 메뉴 클릭 시 매트릭스 canRead 가 false 면 이동 차단 + alert.
+  // 비로그인 상태는 기존 Link 동작(서버 가드가 /login 유도)을 그대로 사용.
+  const { has } = useMenuPermissionMap();
+  const { openAlert } = useAlertStore();
+  const handleGnbMenuClick = (e: React.MouseEvent<HTMLAnchorElement>, menuCode: string) => {
+    if (!hasAuthFlag) return;
+    if (!has(menuCode, "read")) {
+      e.preventDefault();
+      openAlert({ type: "alert", message: "アクセス権限がありません。" });
+    }
+  };
+
   const handleLogout = async () => {
     if (isLoggingOut.current) return;
     isLoggingOut.current = true;
@@ -221,6 +235,7 @@ export function Gnb() {
                   <Link
                     href={menu.pageUrl}
                     transitionTypes={["fade"]}
+                    onClick={(e) => handleGnbMenuClick(e, menu.menuCode)}
                     className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
                   >
                     {menu.menuName}
@@ -524,7 +539,11 @@ export function Gnb() {
                 href={menu.pageUrl}
                 transitionTypes={["fade"]}
                 className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={(e) => {
+                  handleGnbMenuClick(e, menu.menuCode);
+                  // 매트릭스 거부 시 preventDefault 된 상태 — 그래도 drawer 는 닫는 게 UX 자연스러움.
+                  setIsMobileMenuOpen(false);
+                }}
               >
                 <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
                   {menu.menuName}
