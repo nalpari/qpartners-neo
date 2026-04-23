@@ -116,6 +116,9 @@ export function PermissionMenuPopup() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["role-permissions", roleCode] });
+      // 본인 역할이 수정 대상일 수 있으므로 me/permissions 도 즉시 무효화.
+      // (staleTime 5분 때문에 저장 후에도 이전 캐시를 사용해 매트릭스 변경이 UI 에 반영 안 되던 이슈 해결)
+      queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
       openAlert({
         type: "alert",
         message: "保存されました。",
