@@ -3,25 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMenuTree } from "@/hooks/use-menu-tree";
-import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
-import { MENU, ADMIN_MENU } from "@/lib/menu-codes";
+import { MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
 interface AdminTabItem {
   label: string;
   href: string;
-  menuCode: string | null; // fallback 탭은 null — 권한 필터 통과
 }
 
 // 하드코딩 fallback — API 로딩 전 또는 실패 시 표시
 const FALLBACK_TABS: AdminTabItem[] = [
-  { label: "会員管理", href: "/admin/members", menuCode: ADMIN_MENU.MEMBERS },
-  { label: "バルクメール発送", href: "/admin/bulk-mail", menuCode: ADMIN_MENU.BULK_MAIL },
-  { label: "ホーム画面のお知らせ", href: "/admin/notices", menuCode: ADMIN_MENU.NOTICES },
-  { label: "カテゴリ管理", href: "/admin/categories", menuCode: ADMIN_MENU.CATEGORIES },
-  { label: "権限管理", href: "/admin/permissions", menuCode: ADMIN_MENU.PERMISSIONS },
-  { label: "メニュー管理", href: "/admin/menus", menuCode: ADMIN_MENU.MENUS },
-  { label: "コード管理", href: "/admin/codes", menuCode: ADMIN_MENU.CODES },
+  { label: "会員管理", href: "/admin/members" },
+  { label: "バルクメール発送", href: "/admin/bulk-mail" },
+  { label: "ホーム画面のお知らせ", href: "/admin/notices" },
+  { label: "カテゴリ管理", href: "/admin/categories" },
+  { label: "権限管理", href: "/admin/permissions" },
+  { label: "メニュー管理", href: "/admin/menus" },
+  { label: "コード管理", href: "/admin/codes" },
 ];
 
 /** 관리자(ADMIN) 1-Level 메뉴의 2-Level children을 탭으로 변환 */
@@ -41,7 +39,7 @@ function toTabs(menuTree: MenuTreeItem[]): AdminTabItem[] | null {
       && c.pageUrl.startsWith("/") && !c.pageUrl.startsWith("//")
     )
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((c): AdminTabItem => ({ label: c.menuName, href: c.pageUrl, menuCode: c.menuCode }));
+    .map((c): AdminTabItem => ({ label: c.menuName, href: c.pageUrl }));
 
   // pageUrl 중복 제거 — DB 에 같은 pageUrl 을 가진 메뉴가 들어오면 React key 중복 에러 발생.
   // 최초 등장한 행만 유지. 시드/메뉴관리 정합성 문제이므로 error 로 기록해 운영 알람에 노출.
@@ -63,18 +61,15 @@ export function AdminTab() {
   const pathname = usePathname();
 
   const { data: menuTree, isError, error } = useMenuTree();
-  // canRead 기반 탭 필터링. 권한 로딩 중에는 플래시 of empty nav 방지를 위해
-  // rawTabs 그대로 노출하고, 응답 도착 후에만 숨김 처리 (서버가 실제 차단 담당).
-  const { has, isLoading: isPermLoading } = useMenuPermissionMap();
 
   if (isError) {
     console.error("[AdminTab] 메뉴 API 조회 실패:", error);
   }
 
-  const rawTabs = (menuTree && toTabs(menuTree)) ?? FALLBACK_TABS;
-  const tabs = isPermLoading
-    ? rawTabs
-    : rawTabs.filter((t) => !t.menuCode || has(t.menuCode, "read"));
+  // 관리자 탭은 항상 표시. admin/layout 서버 가드가 이미 ADMIN/SUPER_ADMIN 만 페이지 진입 허용하므로
+  // 2차 menuCode 권한 필터는 불필요하고, BE me/permissions 와 DB menuCode(레거시 ADM_*) 불일치
+  // 시 탭이 통째로 숨겨지는 UX 장애 유발. 세부 액션 차단은 각 버튼 onClick 가드 + 서버 403 에 일임.
+  const tabs = (menuTree && toTabs(menuTree)) ?? FALLBACK_TABS;
 
   return (
     <nav className="flex gap-1 w-full max-w-[1440px] pb-[32px]">
