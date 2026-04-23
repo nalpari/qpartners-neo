@@ -176,12 +176,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const result = updatePermissionsSchema.safeParse(body);
     if (!result.success) {
       // 디버깅용 — 어떤 menuCode 가 enum 거부됐는지 서버 로그에 노출 (DB ↔ 코드 menuCode 정합성 추적).
+      // console.warn 의 기본 depth 제한으로 path/received 가 `[Array]` 로 truncate 되는 것을 피해 JSON 으로 직렬화.
       console.warn(
-        "[PUT /api/roles/:roleCode/permissions] Zod 검증 실패",
-        {
-          roleCode: parsedCode.data,
-          issues: result.error.issues,
-        },
+        "[PUT /api/roles/:roleCode/permissions] Zod 검증 실패\n"
+          + JSON.stringify(
+            {
+              roleCode: parsedCode.data,
+              issues: result.error.issues,
+              receivedMenuCodes: Array.isArray((body as { permissions?: unknown })?.permissions)
+                ? ((body as { permissions: Array<{ menuCode?: unknown }> }).permissions)
+                    .map((p) => p?.menuCode)
+                : undefined,
+            },
+            null,
+            2,
+          ),
       );
       return NextResponse.json(
         { error: "バリデーションエラー", issues: result.error.issues },
