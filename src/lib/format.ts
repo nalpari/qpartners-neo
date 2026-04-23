@@ -1,6 +1,7 @@
-/** 날짜를 YYYY.MM.DD 형식으로 포맷 */
+/** 날짜를 YYYY.MM.DD 형식으로 포맷. invalid/빈 값은 "-" 반환 (NaN.NaN.NaN 방어). */
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "-";
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");

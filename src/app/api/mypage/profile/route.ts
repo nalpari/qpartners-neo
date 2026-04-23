@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
-import { fetchQspUserDetail } from "@/lib/qsp-member";
+import { fetchQspUserDetail, parseQspDate } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
@@ -165,7 +165,9 @@ export async function GET(request: NextRequest) {
       telNo: d.compTelNo,
       fax: d.compFaxNo,
       newsRcptYn: d.newsRcptYn ?? "N",
-      newsRcptDate: d.newsRcptDate ?? null,
+      // QSP 가 "YYYY.MM.DD HH:mm:ss" 로 내려주는 경우 FE formatDate(new Date()) 가 파싱 실패 →
+      // ISO 8601 (+09:00) 로 정규화. null/포맷 불일치는 null 유지 (FE 에서 "許可"/"拒否" 단독 표시).
+      newsRcptDate: parseQspDate(d.newsRcptDate),
     };
 
     // 회원유형별 표시 필드 (SEKO는 위에서 early return 처리됨)
