@@ -105,6 +105,17 @@ export function WithdrawPopup() {
           });
         } else if (status === 403) {
           openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
+        } else if (status === 409) {
+          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — 세션 정리 후 홈 이동.
+          openAlert({
+            type: "alert",
+            message: "すでに退会済みです。",
+            onConfirm: () => {
+              logout();
+              closePopup();
+              router.push("/");
+            },
+          });
         } else if (status === 429) {
           openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
         } else if (status === 501) {
