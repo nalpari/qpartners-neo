@@ -24,9 +24,11 @@ const STATUS_ERROR_MAP: Record<number, string> = {
 interface LoginContentsProps {
   initialSavedId?: string;
   initialSavedTab?: TabType;
+  /** 서버에서 전달된 초기 error 메시지 (자동로그인 실패 등 외부 유입 안내) */
+  initialError?: string | null;
 }
 
-export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" }: LoginContentsProps) {
+export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null }: LoginContentsProps) {
   // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
   const prefillRef = useRef(useAppStore.getState().prefillEmail);
 
@@ -45,6 +47,8 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
   const [agreeTerms, setAgreeTerms] = useState(false);
+  // notice: 자동로그인 실패 등 외부 유입 안내 — 입력 시 초기화하지 않음 (탭 전환 시만 초기화)
+  const [notice, setNotice] = useState<string | null>(initialError);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -115,6 +119,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
     setId("");
     setPassword("");
     setShowPassword(false);
+    setNotice(null);
     setError(null);
   };
 
@@ -175,7 +180,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer" 
             showPassword={showPassword}
             saveId={saveId}
             agreeTerms={agreeTerms}
-            error={error}
+            error={error ?? notice}
             isSubmitting={isSubmitting}
             onIdChange={(v) => { setId(v); setError(null); }}
             onPasswordChange={(v) => { setPassword(v); setError(null); }}

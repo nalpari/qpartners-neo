@@ -127,6 +127,68 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/auth/auto-login/inbound": {
+      get: {
+        tags: ["Auth"],
+        summary: "외부 3사 → Q.Partners-neo 자동로그인 진입 (SSO inbound)",
+        description: `HANASYS DESIGN / Q.Order / Q.Musubi 에서 Q.Partners-neo 로 유입 시 자동로그인 진입 라우트.
+
+외부 3사가 자체 AES-256-CBC 암호화로 cipher 를 만든 뒤 브라우저를 이 URL 로 리다이렉트하면,
+서버가 cipher 를 복호화해 userId 를 얻고 QSP userDetail 로 사용자 정보를 조회한 뒤
+**Q.Partners-neo 자체 JWT 를 서명·발급**하여 세션 쿠키를 설정한다.
+(QSP 로그인 API 는 호출하지 않음 — QSP v1.0 은 자동로그인 모드 미지원이므로 cipher 소유 자체를 인증 증명으로 간주.)
+
+**cipher 규격 (AS-IS Q.Order 가이드 호환):**
+- 알고리즘: AES-256-CBC, PKCS5Padding
+- 키: \`SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)\` — 32바이트
+- IV: 요청마다 \`crypto.randomBytes(16)\` — 결정적 IV 방지
+- 출력: \`Base64(IV || ciphertext)\` → \`encodeURIComponent\`
+- 자정 경계: 서버는 당일 키 실패 시 전일 키로 재시도
+
+**응답:**
+- 성공: \`302\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵. SUPER_ADMIN 은 거부)
+- 실패: \`302\` → \`/login?error=auto_login_failed\` (쿼리 검증·Rate Limit·복호화·QSP userDetail·계정상태·authRole·JWT 중 실패)
+- 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 등)
+
+**보안 방어:**
+- Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed). 동일 cipher 재사용 차단 (1회용 소진).
+- Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`SITE_URL\` env / \`SITE_DEFAULTS.url\` 을 base 로 고정
+- 계정 상태: \`statCd === "A"\` 만 허용 (삭제/탈퇴 차단)
+- 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용`,
+        parameters: [
+          {
+            name: "autoLoginParam1",
+            in: "query",
+            required: true,
+            description: "URL 인코딩된 Base64(IV || AES-256-CBC ciphertext). 복호화 시 userId 문자열이 나와야 함.",
+            schema: { type: "string" },
+          },
+          {
+            name: "userTp",
+            in: "query",
+            required: true,
+            description: "QSP 사용자 유형 — cipher 가 userId 단독이므로 userTp 는 별도 쿼리로 전달. 변조 시 QSP 인증 단계에서 차단됨.",
+            schema: { type: "string", enum: [...userTpValues] },
+          },
+        ],
+        responses: {
+          "302": {
+            description: "자동로그인 성공 시 홈(/) 또는 실패 시 /login?error=auto_login_failed 로 리다이렉트 (302 Found, SSO 폴백 의도)",
+            headers: {
+              Location: {
+                schema: { type: "string" },
+                description: "리다이렉트 대상 URL (SITE_URL/SITE_DEFAULTS.url base — Host 헤더 조작 방어)",
+              },
+              "Set-Cookie": {
+                schema: { type: "string" },
+                description: "성공 시에만 JWT httpOnly 쿠키 전파",
+              },
+            },
+          },
+          "500": errorResponse("서버 설정 오류 (AUTO_LOGIN_AES_KEY 미설정 등)"),
+        },
+      },
+    },
     "/auth/login-user-info": {
       get: {
         tags: ["Auth"],
