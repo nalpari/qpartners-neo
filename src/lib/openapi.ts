@@ -12,9 +12,8 @@ const errorResponse = (description: string): OpenAPIV3.ResponseObject => ({
 
 /**
  * RBAC 메뉴 권한 403 응답 helper — Phase 2 requireMenuPermission 가드 반환값과 1:1.
- * 응답 body 에 `menuCode` / `action` 을 포함해 클라이언트가 어떤 매트릭스 셀이 거부됐는지
- * 진단 가능. 본 PR 에서는 helper 만 정의해두고 각 라우트 적용은 후속 문서화 PR 에서
- * 일괄 처리한다 (런타임 집행은 이미 완료 — Phase 2 본 PR 범위).
+ * 보안 정책: 403 응답에는 일반화된 에러만 반환 (menuCode/action 미포함 — RBAC 매트릭스 열거 방지).
+ * 디버깅 정보는 서버 로그에만 기록.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const menuPermissionForbidden = (
@@ -26,15 +25,9 @@ const menuPermissionForbidden = (
     "application/json": {
       schema: {
         type: "object",
-        required: ["error", "menuCode", "action"],
+        required: ["error"],
         properties: {
           error: { type: "string", example: "権限がありません" },
-          menuCode: { type: "string", example: menuCode },
-          action: {
-            type: "string",
-            enum: ["read", "create", "update", "delete"],
-            example: action,
-          },
         },
       },
     },

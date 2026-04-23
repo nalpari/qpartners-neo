@@ -156,7 +156,7 @@ const MENU_ACTION_TO_KEY: Readonly<Record<MenuAction, keyof MenuPermission>> = {
  * 성공: `{ user }` 반환 — 호출부에서 그대로 `const { user } = auth;` 로 소비.
  * 실패:
  *   · 401 `認証が必要です` — 헤더 인증 실패
- *   · 403 `{ error, menuCode, action }` — 매트릭스 상 해당 action 불허
+ *   · 403 `{ error }` — 매트릭스 상 해당 action 불허 (menuCode/action 은 서버 로그에만 기록)
  *
  * @example
  * const auth = await requireMenuPermission(request.headers, "CONTENT", "create");
@@ -178,8 +178,11 @@ export async function requireMenuPermission(
 
   const perm = await resolveMenuPermission(user, menuCode);
   if (!perm[MENU_ACTION_TO_KEY[action]]) {
+    console.warn(
+      `[requireMenuPermission] 권한 거부 — role=${user.role}, menuCode=${menuCode}, action=${action}`,
+    );
     return NextResponse.json(
-      { error: "権限がありません", menuCode, action },
+      { error: "権限がありません" },
       { status: 403 },
     );
   }

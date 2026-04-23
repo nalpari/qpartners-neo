@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { getUserFromHeaders, resolveMenuPermission } from "@/lib/auth";
+import { getUserFromHeaders } from "@/lib/auth";
+import type { MenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { menuCodeSchema } from "@/lib/schemas/common";
 
@@ -9,14 +10,12 @@ import { menuCodeSchema } from "@/lib/schemas/common";
  * GET /api/auth/me/permissions — 현재 로그인 사용자의 메뉴별 권한 목록
  *
  * - 인증 필요 (미인증 → 401). middleware 에서 JWT 검증 후 X-User-* 헤더 주입됨.
- * - `authRole` ↔ `roleCode` 1:1 매핑 (메모리 §4) — X-User-Role 을 roleCode 로 그대로 사용.
- * - 권한 판정은 `resolveMenuPermission` 공용 헬퍼로 위임 — `requireMenuPermission` 가드와
- *   동일 정책 보장 (FE/BE divergence 원천 차단). SUPER_ADMIN 은 DB 조회 스킵(fail-open),
- *   시드 미등록/비활성 메뉴는 해석 시 전부 false 로 수렴(fail-closed).
+ * - `authRole` ↔ `roleCode` 1:1 매핑 — X-User-Role 을 roleCode 로 그대로 사용.
+ * - `SUPER_ADMIN`: 활성 메뉴 전체 CRUD true 합성 반환 (fail-open, resolveMenuPermission 정책 동일).
+ * - 그 외: 단일 `findMany` 배치 쿼리로 해당 roleCode 의 활성 메뉴 권한 조회 (fail-closed).
+ *   · resolveMenuPermission(단건 가드)과 동일 매핑 로직이나 쿼리 패턴만 배치 최적화.
  * - 시드 외 menuCode 가 DB 에 존재하면 응답에서 제외 (MenuCode 리터럴 유니온 검증 실패 시).
- * - 응답 캐싱: `private, no-store` — 권한 회수 즉시성 확보 (SUPER_ADMIN 이 PUT /roles/../permissions 로
- *   권한을 회수해도 브라우저/중간 캐시가 옛 응답을 보관하면 UI 에는 보이는데 서버는 403 하는 UX 가 발생.
- *   권한 1회 조회 비용은 인덱스 포함 JOIN 1건(수 ms)으로 무시 가능).
+ * - 응답 캐싱: `private, no-store` — 권한 회수 즉시성 확보.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,32 +24,63 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    const activeMenus = await prisma.menu.findMany({
-      where: { isActive: true },
-      select: { menuCode: true },
-      orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }],
-    });
+    const roleCode = user.role;
 
-    const resolved = await Promise.all(
-      activeMenus.map(async (m) => {
+    let menus: Array<{ menuCode: string } & MenuPermission>;
+
+    if (roleCode === "SUPER_ADMIN") {
+      // SUPER_ADMIN: 활성 메뉴 전체 CRUD true 합성 (DB 권한 조회 스킵)
+      const activeMenus = await prisma.menu.findMany({
+        where: { isActive: true },
+        select: { menuCode: true },
+        orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }],
+      });
+      menus = activeMenus.flatMap((m) => {
         const parsed = menuCodeSchema.safeParse(m.menuCode);
         if (!parsed.success) {
           console.warn(
             `[GET /api/auth/me/permissions] 시드 외 menuCode 응답 제외: ${m.menuCode}`,
           );
-          return null;
+          return [];
         }
-        const perm = await resolveMenuPermission(user, parsed.data);
-        return { menuCode: parsed.data, ...perm };
-      }),
-    );
-
-    const menus = resolved.filter(
-      (m): m is NonNullable<typeof m> => m !== null,
-    );
+        return [{ menuCode: parsed.data, canRead: true, canCreate: true, canUpdate: true, canDelete: true }];
+      });
+    } else {
+      // 배치 쿼리 1회로 해당 roleCode 의 활성 메뉴 권한 전체 조회
+      const permissions = await prisma.qpRoleMenuPermission.findMany({
+        where: { roleCode, menu: { isActive: true } },
+        select: {
+          menuCode: true,
+          canRead: true,
+          canCreate: true,
+          canUpdate: true,
+          canDelete: true,
+        },
+        orderBy: [
+          { menu: { parentId: "asc" } },
+          { menu: { sortOrder: "asc" } },
+        ],
+      });
+      menus = permissions.flatMap((p) => {
+        const parsed = menuCodeSchema.safeParse(p.menuCode);
+        if (!parsed.success) {
+          console.warn(
+            `[GET /api/auth/me/permissions] 시드 외 menuCode 응답 제외: ${p.menuCode}`,
+          );
+          return [];
+        }
+        return [{
+          menuCode: parsed.data,
+          canRead: p.canRead,
+          canCreate: p.canCreate,
+          canUpdate: p.canUpdate,
+          canDelete: p.canDelete,
+        }];
+      });
+    }
 
     const response = NextResponse.json({
-      data: { roleCode: user.role, menus },
+      data: { roleCode, menus },
     });
     response.headers.set("Cache-Control", "private, no-store");
     return response;
