@@ -213,6 +213,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           actions={
             <ContentsDetailActions
               canModify={canModify}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
               onDelete={handleDelete}
               onEdit={handleEdit}
               onList={handleList}
@@ -246,6 +248,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         {/* 하단 기능 버튼 */}
         <ContentsDetailActions
           canModify={canModify}
+          canUpdate={canUpdate}
+          canDelete={canDelete}
           onDelete={handleDelete}
           onEdit={handleEdit}
           onList={handleList}
