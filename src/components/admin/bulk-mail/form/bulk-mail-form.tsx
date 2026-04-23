@@ -9,6 +9,8 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
@@ -31,6 +33,9 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { openAlert } = useAlertStore();
+
+  // RBAC Phase 3 — BULK_MAIL canCreate(配信/保存)/canUpdate(編集)/canDelete(削除) alert 가드.
+  const bulkMailPerm = useMenuPermission(ADMIN_MENU.BULK_MAIL);
 
   const isDetail = mode === "detail";
 
@@ -103,6 +108,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   // Plan SC: 配信 → status: pending → 상세로 이동
   const handleSend = () => {
+    // edit 모드는 canUpdate, create/copy 는 canCreate 로 가드.
+    const needCanUpdate = mode === "edit";
+    const permOk = needCanUpdate ? bulkMailPerm.canUpdate : bulkMailPerm.canCreate;
+    if (!bulkMailPerm.isLoading && !permOk) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const error = validate();
     if (error) {
       openAlert({ type: "alert", message: error });
@@ -125,6 +137,12 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   // Plan SC: 下書き保存 → status: draft (임시저장은 빈 필드 허용 — 의도적 미검증)
   const handleDraft = () => {
+    const needCanUpdate = mode === "edit";
+    const permOk = needCanUpdate ? bulkMailPerm.canUpdate : bulkMailPerm.canCreate;
+    if (!bulkMailPerm.isLoading && !permOk) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const fd = buildFormData({
       senderName, targets, optOut, subject, body,
       status: "draft", files,
@@ -160,6 +178,10 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   });
 
   const handleDelete = () => {
+    if (!bulkMailPerm.isLoading && !bulkMailPerm.canDelete) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "下書きを削除しますか？",

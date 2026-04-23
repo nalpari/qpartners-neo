@@ -8,6 +8,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, SelectBox, Radio, Spinner } from "@/components/common";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
   USER_TYPE_REVERSE_MAP,
@@ -253,6 +255,10 @@ export function MemberDetailPopup() {
   const isSaving = updateMutation.isPending || resetPasswordMutation.isPending;
   const isQspNotFound = rawMember?.notFoundInQsp === true;
 
+  // RBAC Phase 3 — MEMBERS menuCode 기준 수정 권한 체크. 서버 재검증이 최종 장벽이므로
+  // 로딩 중에는 진행 허용 (플래시 of empty state 방지).
+  const memberPerm = useMenuPermission(ADMIN_MENU.MEMBERS);
+
   const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
@@ -262,6 +268,10 @@ export function MemberDetailPopup() {
   };
 
   const handleSave = (payload: MemberUpdatePayload) => {
+    if (!memberPerm.isLoading && !memberPerm.canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     // 요청 직전 컨텍스트 유실(팝업 닫힘 중 저장·스토어 초기화 등) 방어.
     // mutate 전 early-return 으로 "サーバーエラー" 뭉개짐을 피하고, 운영자에게
     // 본질적 원인을 명확히 안내한다.
@@ -281,6 +291,10 @@ export function MemberDetailPopup() {
   };
 
   const handlePasswordReset = () => {
+    if (!memberPerm.isLoading && !memberPerm.canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "パスワードを初期化しますか？\n初期化されたパスワードはメールで送信されます。",

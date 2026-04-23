@@ -6,6 +6,8 @@ import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, Button } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
 import api from "@/lib/axios";
@@ -54,6 +56,9 @@ interface NoticesTableProps {
 
 export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps) {
   const { openPopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
+  // RBAC Phase 3 — NOTICES canCreate 가 신규 등록 버튼 가드.
+  const noticesPerm = useMenuPermission(ADMIN_MENU.NOTICES);
 
   // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
   // canModifyClient 권한 판정에 사용 — user 변경 시 renderer 가 재생성돼 클로저가 최신 사용자 참조.
@@ -156,6 +161,10 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
   }, [user, openPopup]);
 
   const handleRegister = () => {
+    if (!noticesPerm.isLoading && !noticesPerm.canCreate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const emptyForm: NoticeFormData = {
       targets: [],
       startDate: "",
