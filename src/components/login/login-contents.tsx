@@ -47,7 +47,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [error, setError] = useState<string | null>(initialError);
+  // notice: 자동로그인 실패 등 외부 유입 안내 — 입력 시 초기화하지 않음 (탭 전환 시만 초기화)
+  const [notice, setNotice] = useState<string | null>(initialError);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
   const openPopup = usePopupStore((s) => s.openPopup);
@@ -117,6 +119,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
     setId("");
     setPassword("");
     setShowPassword(false);
+    setNotice(null);
     setError(null);
   };
 
@@ -177,7 +180,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
             showPassword={showPassword}
             saveId={saveId}
             agreeTerms={agreeTerms}
-            error={error}
+            error={error ?? notice}
             isSubmitting={isSubmitting}
             onIdChange={(v) => { setId(v); setError(null); }}
             onPasswordChange={(v) => { setPassword(v); setError(null); }}

@@ -29,11 +29,11 @@ import { userTpSchema } from "@/lib/schemas/common";
  *     QSP (v1.0 사양서 기준) 는 자동로그인 모드를 지원하지 않음 — `loginKey` 파라미터 자체가 없음.
  *   - 자동로그인은 cipher 소유 자체를 "외부 3사에서 인증된 사용자" 증명으로 간주하고
  *     Q.Partners-neo 가 자체 세션을 발급한다 (QSP userDetail 은 메타데이터 조회에만 사용).
- *   - 2FA 는 스킵 — 외부 3사 SSO 경유 인증이라 Q.Partners-neo 에서 재요구하면 UX 파괴.
- *     단, SUPER_ADMIN 은 자동로그인 거부 (최소한의 고권한 계정 보호).
+ *   - 2FA 정책: ADMIN 은 twoFactorVerified=false 로 2FA 강제, SUPER_ADMIN 은 자동로그인 거부.
+ *     그 외(STORE/SEKO/GENERAL)는 2FA 스킵 — 외부 3사 SSO 경유 인증이라 재요구 시 UX 파괴.
  *
  * 보안 방어 계층:
- *   - Rate Limit: IP 기반 20/분, fallback(IP 없음) userTp 기반 10/분. QSP DDoS 대행·AES 키 프로빙 차단.
+ *   - Rate Limit: IP 기반 20/분, IP 식별 불가 시 즉시 거부 (fail-closed). QSP DDoS 대행·AES 키 프로빙 차단.
  *   - Open Redirect 방어: request.url 대신 SITE_URL/SITE_DEFAULTS.url 을 base 로 사용 (Host 헤더 조작 무효화).
  *   - statCd 검증: 삭제("D")/탈퇴("R") 계정 자동로그인 차단.
  *   - authRole fail-closed: DB 조회 실패 시 ADMIN 경로는 거부, STORE 는 최소권한(2ND_STORE) 강제.
@@ -52,10 +52,9 @@ const JWT_MAX_AGE_SEC = 60 * 60 * 8; // 8시간 — 일반 로그인과 동일
 const BASE_URL = process.env.SITE_URL ?? SITE_DEFAULTS.url;
 
 // Rate Limit — AES 복호화·QSP 외부 호출·JWT 서명은 모두 고비용이라 무제한 호출 시 QSP DDoS 대행,
-// AES 키 프로빙 벡터가 됨. IP 우선, IP 없음 시 userTp 기반 (더 낮은 한도).
+// AES 키 프로빙 벡터가 됨. IP 식별 불가 시 즉시 거부 (fail-closed).
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_IP_MAX = 20;
-const RATE_LIMIT_ANON_MAX = 10;
 
 function extractClientIp(request: NextRequest): string | null {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -89,14 +88,16 @@ export async function GET(request: NextRequest) {
     }
     const { autoLoginParam1, userTp } = parsed.data;
 
-    // 1. Rate Limit — IP 우선, 없으면 userTp 기반 (더 낮은 한도). 복호화·QSP·JWT 고비용 흐름 차단용.
+    // 1. Rate Limit — IP 식별 불가 시 즉시 거부 (fail-closed). 복호화·QSP·JWT 고비용 흐름 차단용.
+    //    IP 부재 시 anon 공유 버킷은 userTp 4개뿐이라 정상 사용자 DoS 벡터가 됨.
     const clientIp = extractClientIp(request);
-    const rateLimitKey = clientIp
-      ? `auto-login-inbound:ip:${clientIp}`
-      : `auto-login-inbound:anon:${userTp}`;
-    const limit = clientIp ? RATE_LIMIT_IP_MAX : RATE_LIMIT_ANON_MAX;
-    if (!checkRateLimit(rateLimitKey, limit, RATE_LIMIT_WINDOW_MS)) {
-      console.warn(LOG, "Rate limit 초과:", { hasIp: clientIp !== null, userTp });
+    if (!clientIp) {
+      console.warn(LOG, "IP 식별 불가 — 즉시 거부 (fail-closed):", { userTp });
+      return failRedirect("no_client_ip");
+    }
+    const rateLimitKey = `auto-login-inbound:ip:${clientIp}`;
+    if (!checkRateLimit(rateLimitKey, RATE_LIMIT_IP_MAX, RATE_LIMIT_WINDOW_MS)) {
+      console.warn(LOG, "Rate limit 초과:", { userTp });
       return failRedirect("rate_limit_exceeded");
     }
 
@@ -115,18 +116,40 @@ export async function GET(request: NextRequest) {
       }
       return failRedirect("decrypt_failed");
     }
-    if (!userId || userId.trim().length === 0) {
+    const trimmedUserId = userId.trim();
+    if (trimmedUserId.length === 0) {
       return failRedirect("empty_user_id");
+    }
+    // userId 형식 가드 — 수 KB 페이로드로 QSP 414/메모리 낭비, 제어 문자 주입 방어
+    if (trimmedUserId.length > 255) {
+      console.warn(LOG, "userId 길이 초과:", { length: trimmedUserId.length, userTp });
+      return failRedirect("user_id_too_long");
+    }
+    // 영숫자, 하이픈, 언더스코어, 점, @(이메일) 만 허용 — QSP loginId/email 범위
+    if (!/^[\w.@-]+$/.test(trimmedUserId)) {
+      console.warn(LOG, "userId 형식 불일치:", { userTp });
+      return failRedirect("user_id_invalid_format");
     }
 
     // 3. QSP userDetail (조회 전용) — pwd 없이 메타데이터만 조회
     //    4번째 인수(로그용 userId) 는 생략 — qsp-member 내부에서 rawId 를 maskEmail 로 이미 마스킹하므로
     //    평문 userId 중복 전달은 PII 위험만 증가시킴.
-    const userDetailResult = await fetchQspUserDetail(userId, userTp, LOG);
+    const userDetailResult = await fetchQspUserDetail(trimmedUserId, userTp, LOG);
     if (!userDetailResult.ok) {
       return failRedirect(`user_detail_${userDetailResult.error.status}`);
     }
     const detail = userDetailResult.detail;
+
+    // 3-1. userTp 교차 검증 — cipher에는 userId만 포함되고 userTp는 평문 쿼리.
+    //    공격자가 userTp를 변조하면 다른 계정 유형으로 QSP 조회 경로가 전환됨.
+    //    QSP 응답의 userTp와 쿼리 파라미터 userTp가 일치하는지 검증.
+    if (!detail.userTp || detail.userTp !== userTp) {
+      console.warn(LOG, "userTp 불일치 — 쿼리 변조 의심:", {
+        queryUserTp: userTp,
+        qspUserTp: detail.userTp,
+      });
+      return failRedirect("user_tp_mismatch");
+    }
 
     // 4. 계정 상태 검증 — statCd "A"(active) 만 자동로그인 허용.
     //    "D"(deleted)/"R"(withdrawn) 계정은 비밀번호 없는 경로에서 특히 위험 — 거부.
@@ -143,7 +166,7 @@ export async function GET(request: NextRequest) {
     let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
     try {
       authRole = await resolveAuthRole(userTp, detail.userId, detail.storeLvl);
-    } catch (error) {
+    } catch (error: unknown) {
       const errorName = error instanceof Error ? error.name : typeof error;
       console.warn(LOG, "authRole 결정 실패 — fail-closed 폴백:", { userTp, errorName });
       if (userTp === "ADMIN") {
@@ -169,13 +192,14 @@ export async function GET(request: NextRequest) {
     if (authRole === "ADMIN") {
       console.info(LOG, "ADMIN 자동로그인 — 감사 로그:", {
         userTp,
-        ip: clientIp ?? "unknown",
+        ip: clientIp,
         ua: request.headers.get("user-agent")?.slice(0, 120) ?? "unknown",
       });
     }
 
     // 7. LoginUser 페이로드 구성
-    //    - twoFactorVerified: true — 자동로그인은 2FA 스킵 (cipher 소유 = 외부 3사 인증 증명)
+    //    - twoFactorVerified: ADMIN은 false(2FA 강제) — Replay 방어 부재 상태에서 고권한 보호
+    //      그 외(STORE/SEKO/GENERAL)는 true — 외부 3사 SSO 경유 인증이라 2FA 재요구 시 UX 파괴
     //    - pwdInitYn: userDetail 은 z.string().nullable() 로 수신되므로 "Y"/"N" 만 통과시키고 그 외는 null
     const pwdInitYn: "Y" | "N" | null = detail.pwdInitYn === "Y"
       ? "Y"
@@ -195,7 +219,7 @@ export async function GET(request: NextRequest) {
       storeLvl: detail.storeLvl,
       statCd: detail.statCd,
       authRole,
-      twoFactorVerified: true,
+      twoFactorVerified: authRole !== "ADMIN",
       pwdInitYn,
       telNo: detail.compTelNo ?? null,
     };
@@ -231,10 +255,9 @@ export async function GET(request: NextRequest) {
     });
     return response;
   } catch (error: unknown) {
-    console.error(LOG, error);
-    return NextResponse.json(
-      { error: "サーバーエラーが発生しました" },
-      { status: 500 },
-    );
+    // ConfigError(설정 누락)는 inner try-catch에서 500 JSON으로 처리 — 운영자 즉시 인지.
+    // 여기 도달하는 예외는 예측 불가 런타임 에러 → 브라우저에 JSON 노출 대신 failRedirect로 통일.
+    console.error(LOG, "예측 불가 에러:", error);
+    return failRedirect("unexpected_runtime_error");
   }
 }
