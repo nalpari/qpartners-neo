@@ -151,7 +151,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 - 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 등)
 
 **보안 방어:**
-- Rate Limit: IP 기반 20/분, IP 미식별 시 userTp 기반 10/분
+- Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed). 동일 cipher 재사용 차단 (1회용 소진).
 - Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`SITE_URL\` env / \`SITE_DEFAULTS.url\` 을 base 로 고정
 - 계정 상태: \`statCd === "A"\` 만 허용 (삭제/탈퇴 차단)
 - 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용`,
