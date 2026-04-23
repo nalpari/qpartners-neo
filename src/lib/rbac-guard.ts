@@ -67,11 +67,17 @@ export async function requirePageMenuPermission(
   }
 
   if (!user) {
+    console.warn(
+      `[requirePageMenuPermission] 미인증 — /login redirect (menuCode=${menuCode}, action=${action})`,
+    );
     redirect("/login");
   }
 
   const roleCode = user.authRole ?? getFallbackRole(user.userTp);
   if (!roleCode) {
+    console.warn(
+      `[requirePageMenuPermission] roleCode 폴백 실패 — fallback redirect (userTp=${user.userTp}, menuCode=${menuCode})`,
+    );
     redirect(fallback);
   }
 
@@ -82,6 +88,9 @@ export async function requirePageMenuPermission(
 
   const column = ACTION_TO_COLUMN[action];
   if (!perm?.[column]) {
+    console.warn(
+      `[requirePageMenuPermission] 권한 거부 — role=${roleCode}, menuCode=${menuCode}, action=${action}`,
+    );
     redirect(fallback);
   }
 }

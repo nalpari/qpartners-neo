@@ -23,6 +23,15 @@ const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl
   { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
 ];
 
+/**
+ * 앱 내부 링크로 허용되는 pageUrl 패턴 — 메뉴관리 DB 값이 공격 벡터가 되지 않도록 whitelist.
+ * - 절대 경로만 (`/` 로 시작)
+ * - `//` (protocol-relative), 공백, `:` (스킴), `@` 등 예기치 않은 문자 차단
+ * - 허용 문자: 영숫자 / `-` / `_` / `/`
+ * 관리자 계정 탈취 + 메뉴관리 경로 변조가 선행되어야 하는 낮은 리스크이나 심층 방어 목적.
+ */
+const SAFE_PAGE_URL = /^\/[a-zA-Z0-9\-_/]+$/;
+
 /** 1-Level 메뉴에서 Gnb 노출 후보만 필터 (ADMIN 은 admin-tab 이 담당) */
 function filterGnbMenus(
   tree: MenuTreeItem[] | undefined,
@@ -37,8 +46,7 @@ function filterGnbMenus(
       && m.menuCode !== MENU.ADMIN
       && typeof m.pageUrl === "string"
       && m.pageUrl.length > 0
-      && m.pageUrl.startsWith("/")
-      && !m.pageUrl.startsWith("//"),
+      && SAFE_PAGE_URL.test(m.pageUrl),
     )
     .sort((a: MenuApiItem, b: MenuApiItem) => a.sortOrder - b.sortOrder)
     .map((m) => ({ menuCode: m.menuCode, menuName: m.menuName, pageUrl: m.pageUrl }));

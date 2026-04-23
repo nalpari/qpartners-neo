@@ -119,6 +119,9 @@ export function PermissionMenuPopup() {
       // 본인 역할이 수정 대상일 수 있으므로 me/permissions 도 즉시 무효화.
       // (staleTime 5분 때문에 저장 후에도 이전 캐시를 사용해 매트릭스 변경이 UI 에 반영 안 되던 이슈 해결)
       queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
+      // `/api/menus` 응답이 이제 requester role 의 canRead 기준으로 필터되므로,
+      // 권한 변경 시 GNB / AdminTab 에서 사용하는 메뉴 트리 캐시도 함께 무효화.
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({
         type: "alert",
         message: "保存されました。",

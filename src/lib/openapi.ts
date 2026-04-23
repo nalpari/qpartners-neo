@@ -1088,8 +1088,8 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 **Lockout 방어 (3중화)**:
 1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "ADM_PERMISSION", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
-2. target = \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
-3. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
+2. target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
+3. target ≠ \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
 세 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
         parameters: [
@@ -1144,7 +1144,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         error: {
                           type: "string",
-                          example: "「PERMISSIONS」のupdate権限はスーパー管理者にのみ付与できます",
+                          example: "「ADM_PERMISSION」のupdate権限はスーパー管理者にのみ付与できます",
                         },
                         menuCode: {
                           type: "string",
@@ -3600,10 +3600,13 @@ export const openApiSpec: OpenAPIV3.Document = {
                   type: "string",
                   enum: [
                     "HOME", "CONTENT", "INQUIRY", "MYPAGE", "ADMIN",
-                    "MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES",
-                    "PERMISSIONS", "MENUS", "CODES",
+                    "CONT_LIST", "CONT_CREATE",
+                    "INQ_FORM",
+                    "MY_PROFILE", "MY_DOWNLOAD", "MY_INQUIRY",
+                    "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
+                    "ADM_PERMISSION", "ADM_MENU", "ADM_CODE",
                   ],
-                  example: "MEMBERS",
+                  example: "ADM_MEMBER",
                 },
                 canRead: { type: "boolean", default: false },
                 canCreate: { type: "boolean", default: false },

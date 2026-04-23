@@ -117,9 +117,19 @@ export function canPerform(perm: MenuPermission, action: PermissionAction): bool
  * const visibleTabs = tabs.filter((t) => has(t.menuCode));
  * ```
  *
- * 로딩 중 정책: `has()` 는 true 반환(permissive). 실제 차단은 서버 가드
- * (`requirePageMenuPermission` + `requireMenuPermission`) 가 최종 방어선이며, 로딩 중 FE 에서
- * 오탐으로 alert/버튼 숨김을 일으키면 UX 가 크게 저해되기 때문.
+ * ### 로딩 중 정책 — `PermissionGate` 와 의도적으로 비대칭
+ *
+ * - `has()` (본 훅): 로딩 중 **permissive (true)**.
+ *   용도: GNB/AdminTab 처럼 **대량 메뉴를 한 번에 필터** 하는 경우. 로딩 중 전체를 숨기면
+ *   네비 골격이 붕괴되어 UX 가 크게 저해되므로 먼저 표시 후 데이터 수신 시 필터 교체.
+ *
+ * - `PermissionGate` (단건 액션 가드): 로딩 중 **fail-closed (fallback 렌더)**.
+ *   용도: "수정/삭제 버튼" 등 **단건 CUD 액션**. 로딩 중 잠깐 노출했다가 숨기면 클릭 race 로
+ *   권한 없는 요청이 서버로 떠나는 플래시가 발생하므로 선제 차단이 원칙.
+ *
+ * 두 정책 모두 **서버 가드(`requirePageMenuPermission` / `requireMenuPermission`) 가 최종
+ * 방어선** 이라 보안 경계는 항상 fail-closed. FE 의 분리는 UX 최적화 범위에 한정된다.
+ *
  * 데이터 로드 완료 후 응답에 없는 menuCode 는 false (fail-closed).
  *
  * `has` 인자 타입이 `string` 인 이유: AdminTab/GNB 에서 DB `/api/menus` 응답의
