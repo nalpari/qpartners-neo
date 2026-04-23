@@ -30,25 +30,9 @@ export async function GET(request: NextRequest) {
 
     let menus: Array<{ menuCode: string } & MenuPermission>;
 
-    if (roleCode === "SUPER_ADMIN") {
-      // SUPER_ADMIN: 활성 메뉴 전체 CRUD true 합성 (DB 권한 조회 스킵)
-      const activeMenus = await prisma.menu.findMany({
-        where: { isActive: true },
-        select: { menuCode: true },
-        orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }],
-      });
-      menus = activeMenus.flatMap((m) => {
-        const parsed = menuCodeSchema.safeParse(m.menuCode);
-        if (!parsed.success) {
-          console.warn(
-            `[GET /api/auth/me/permissions] 시드 외 menuCode 응답 제외: ${m.menuCode}`,
-          );
-          return [];
-        }
-        return [{ menuCode: parsed.data, canRead: true, canCreate: true, canUpdate: true, canDelete: true }];
-      });
-    } else {
-      // 배치 쿼리 1회로 해당 roleCode 의 활성 메뉴 권한 전체 조회
+    {
+      // SUPER_ADMIN 도 DB 매트릭스 그대로 반영 — 관리자가 권한관리 UI 에서 토글한 결과를 즉시 적용한다.
+      // self-lockout 위험은 PUT /api/roles/:roleCode/permissions 의 lockout 가드가 별도 방어.
       const permissions = await prisma.qpRoleMenuPermission.findMany({
         where: { roleCode, menu: { isActive: true } },
         select: {

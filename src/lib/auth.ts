@@ -106,11 +106,14 @@ export function requireSuperAdmin(
 /**
  * 사용자·메뉴에 대한 CRUD 권한 해석 — Phase 2 RBAC 단일 진실 (Single Source).
  *
- * - `SUPER_ADMIN`: DB 조회 스킵, 전부 true (fail-open — /auth/me/permissions 와 동일 정책)
- * - 그 외:
- *   · 시드에 미등록인 (roleCode, menuCode) 조합 → 전부 false (fail-closed)
- *   · 연결된 Menu 의 `isActive=false` → 전부 false (fail-closed)
- *   · 정상 조회: QpRoleMenuPermission 의 canRead/canCreate/canUpdate/canDelete 반환
+ * - 모든 역할: QpRoleMenuPermission 매트릭스 그대로 조회 (fail-closed).
+ *   · 시드에 미등록인 (roleCode, menuCode) 조합 → 전부 false
+ *   · 연결된 Menu 의 `isActive=false` → 전부 false
+ *   · 정상 조회: canRead/canCreate/canUpdate/canDelete 반환
+ *
+ * SUPER_ADMIN 도 매트릭스에 따라 움직인다 — "관리자가 매트릭스에서 토글한 결과를 즉시 반영한다"
+ * 는 RBAC 본연의 동작을 위함. self-lockout 위험은 PUT /api/roles/:roleCode/permissions 의
+ * lockout 가드(ADM_PERMISSION.canUpdate 회수 차단 등) 가 별도로 방어한다.
  *
  * `requireMenuPermission` 가드와 `GET /api/auth/me/permissions` 양쪽에서 호출되어
  * FE/BE 권한 판정 divergence 를 원천 차단한다.
@@ -119,10 +122,6 @@ export async function resolveMenuPermission(
   user: UserInfo,
   menuCode: MenuCode,
 ): Promise<MenuPermission> {
-  if (user.role === "SUPER_ADMIN") {
-    return { canRead: true, canCreate: true, canUpdate: true, canDelete: true };
-  }
-
   const row = await prisma.qpRoleMenuPermission.findFirst({
     where: {
       roleCode: user.role,
