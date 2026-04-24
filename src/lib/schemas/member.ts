@@ -231,6 +231,16 @@ const qspMemberDetailSchema = z.object({
   uptDt: z.string().nullable().optional(),
   /** 갱신자 성명 (userNm 형태, userId 아님) */
   uptNm: z.string().nullable().optional(),
+  /** 뉴스알림 변경일시 — "YYYY.MM.DD HH:mm:ss". QSP 신규 추가(2026-04-24).
+   *  마이페이지 뉴스레터 수신일시 표시 용도. 기존 `newsRcptDate` 는 더 이상 사용 안 됨. */
+  newsRcptChgDt: z.string().nullish(),
+  /** 최종 로그인일시 — "YYYY.MM.DD HH:mm:ss". 회원관리 상세 "최근 접속일" 표시 용도. */
+  loginDt: z.string().nullish(),
+  /** 탈퇴일시 — "YYYY.MM.DD HH:mm:ss". 회원관리 상세 표시 용도.
+   *  탈퇴(statCd=R) 회원에 한해 채워짐. */
+  resignDt: z.string().nullish(),
+  /** 탈퇴사유 — 최대 500자 (saveResignReq 입력 상한과 일치). 회원관리 상세 표시 용도. */
+  resignRemark: z.string().nullish(),
 });
 
 export const qspMemberDetailResponseSchema = z.object({

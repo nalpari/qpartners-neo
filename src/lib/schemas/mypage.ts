@@ -124,7 +124,12 @@ export const qspUserDetailSchema = z.object({
   pstnNm: z.string().nullable(),
   corporateNo: z.string().nullish(),
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
+  /** 뉴스알림 수신 일시 — QSP 구(舊) 필드. 신규 `newsRcptChgDt` 로 교체되는 중이라
+   *  당분간 둘 다 수신 가능하도록 유지하고 응답 매핑에서 newsRcptChgDt 우선. */
   newsRcptDate: z.string().nullish(),
+  /** 뉴스알림 변경일시 — QSP 신규 추가(2026-04-24). "YYYY.MM.DD HH:mm:ss".
+   *  마이페이지 뉴스레터 수신일시 표시에 사용. */
+  newsRcptChgDt: z.string().nullish(),
   // QSP 과도기: DEALER → STORE 호환 매핑 (qspLoginUserSchema와 동일 로직)
   userTp: z.string().nullable().transform((val) => {
     if (val === "DEALER") return "STORE" as const;

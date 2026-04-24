@@ -172,7 +172,8 @@ export async function GET(request: NextRequest) {
       newsRcptYn: d.newsRcptYn ?? "N",
       // QSP 가 "YYYY.MM.DD HH:mm:ss" 로 내려주는 경우 FE formatDate(new Date()) 가 파싱 실패 →
       // ISO 8601 (+09:00) 로 정규화. null/포맷 불일치는 null 유지 (FE 에서 "許可"/"拒否" 단독 표시).
-      newsRcptDate: parseQspDate(d.newsRcptDate),
+      // 신규 `newsRcptChgDt` 우선, 미지원 환경 대비 `newsRcptDate` 폴백 유지.
+      newsRcptDate: parseQspDate(d.newsRcptChgDt ?? d.newsRcptDate),
     };
 
     // 회원유형별 표시 필드 (SEKO는 위에서 early return 처리됨)

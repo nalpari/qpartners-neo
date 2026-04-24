@@ -3977,6 +3977,26 @@ export const openApiSpec: OpenAPIV3.Document = {
             nullable: true,
             description: "갱신자 성명 (QSP uptNm 원문 — userId 가 아닌 userNm 형태). 키 네이밍은 프론트 호환성 우선 (members-types.ts 의 updatedBy 와 일치). null 가능.",
           },
+          lastLoginAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "최종 로그인일시 (ISO 8601 +09:00 JST). QSP loginDt(YYYY.MM.DD HH:mm:ss) 정규화 결과. 로그인 이력이 없거나 QSP 미반환 시 null.",
+          },
+          withdrawnAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "탈퇴일시 (ISO 8601 +09:00 JST). QSP resignDt(YYYY.MM.DD HH:mm:ss) 정규화 결과. 탈퇴(statCd=R) 회원에 한해 값이 있고, 그 외는 null.",
+          },
+          withdrawReason: {
+            type: "string",
+            nullable: true,
+            description:
+              "탈퇴사유 (QSP resignRemark 원문, 최대 500자). 탈퇴 회원에 한해 값이 있고, 그 외는 null.",
+          },
           notFoundInQsp: { type: "boolean", description: "QSP에서 조회 불가(삭제/탈퇴 등)일 때 true" },
         },
       },

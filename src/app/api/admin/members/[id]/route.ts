@@ -138,6 +138,11 @@ function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
     updatedAt: parseQspDate(d.uptDt),
     // uptNm 은 nullable — QSP null 시 그대로 노출 (userNm 형태, 프론트 호환성 우선).
     updatedBy: d.uptNm ?? null,
+    // 회원관리 상세 신규 표시 필드 (QSP 2026-04-24 확장).
+    // 최근 접속일 · 탈퇴일시 · 탈퇴사유 — 탈퇴 회원은 resignDt/Remark 가 채워지고 그 외는 null.
+    lastLoginAt: parseQspDate(d.loginDt),
+    withdrawnAt: parseQspDate(d.resignDt),
+    withdrawReason: d.resignRemark ?? null,
     notFoundInQsp: false,
   };
 }
@@ -211,6 +216,10 @@ export async function GET(request: NextRequest, { params }: Params) {
           createdAt: null,
           updatedAt: null,
           updatedBy: null,
+          // 신규 확장 필드 — F_NOT_USER 경로에서도 null 기본값으로 일관된 shape 반환.
+          lastLoginAt: null,
+          withdrawnAt: null,
+          withdrawReason: null,
           notFoundInQsp: true,
         },
       });
