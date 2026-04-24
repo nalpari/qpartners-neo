@@ -194,7 +194,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "자동로그인 암호화 URL 생성 (outbound)",
         description:
-          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. hanasys는 QSP autoLoginEncryptData API 경유(QSP 응답 URL을 그대로 사용, 허용된 HANASYS FQDN 만 통과), qOrder/qMusubi는 자체 AES-256 암호화(SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)) 후 각 시스템 고유 도메인의 `?autoLoginParam1=` 에 부착. 반환 URL 예시: hanasys=`https://www.hanasys.jp/...?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. 3사 모두 QSP `autoLoginEncryptData` API 로부터 동일한 16B cipher 를 받아, Q.Partners 가 target 별 고유 도메인의 `?autoLoginParam1=` 에 부착하여 반환. QSP 응답의 `data.url` 은 HANASYS 한정 힌트로 사용하지 않음. 반환 URL 예시: hanasys=`https://dev.hanasys.jp/login?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
         requestBody: {
           required: true,
           content: {
@@ -243,13 +243,12 @@ export const openApiSpec: OpenAPIV3.Document = {
           "500": errorResponse("暗号化処理エラー"),
           "502": {
             description:
-              "外部暗号化サーバー関連エラー (hanasys target 限定). `code` で原因区分:\n" +
+              "外部暗号化サーバー関連エラー (QSP autoLoginEncryptData). `code` で原因区分:\n" +
               "- `UPSTREAM_TIMEOUT`: QSP 접속 실패/타임아웃\n" +
               "- `UPSTREAM_HTTP_ERROR`: QSP HTTP non-2xx\n" +
               "- `UPSTREAM_RESPONSE_PARSE_FAIL`: QSP 응답 JSON 파싱 실패\n" +
               "- `UPSTREAM_SCHEMA_MISMATCH`: QSP 응답 스키마 불일치\n" +
               "- `UPSTREAM_RESULT_FAIL`: QSP resultCode != 200\n" +
-              "- `UPSTREAM_REDIRECT_BLOCKED`: QSP 반환 URL host 비허용\n" +
               "- `UPSTREAM_ASSEMBLY_FAIL`: redirect URL 조립 실패",
             content: {
               "application/json": {
@@ -266,7 +265,6 @@ export const openApiSpec: OpenAPIV3.Document = {
                         "UPSTREAM_RESPONSE_PARSE_FAIL",
                         "UPSTREAM_SCHEMA_MISMATCH",
                         "UPSTREAM_RESULT_FAIL",
-                        "UPSTREAM_REDIRECT_BLOCKED",
                         "UPSTREAM_ASSEMBLY_FAIL",
                       ],
                     },
