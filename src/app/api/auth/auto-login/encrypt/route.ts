@@ -230,12 +230,16 @@ async function fetchQspCipher(
   try {
     qspBody = JSON.parse(bodyText);
   } catch (error) {
+    // Content-Type 이 JSON 계열이면 부분 성공(malformed JSON)일 때 cipher·resultMessage 등
+    // 민감 필드가 prefix 에 포함될 수 있으므로 원문 대신 메타 정보만 로깅.
+    // HTML/plain 등 비-JSON 응답(에러 페이지·프록시 리다이렉트 등)은 cipher 포함 가능성이 낮고
+    // 운영 진단에 실제 본문 prefix 가 유용하므로 slice 노출.
+    const isJsonLike = contentType?.toLowerCase().includes("json") ?? false;
     console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 JSON 파싱 실패:", {
       errorMessage: error instanceof Error ? error.message : String(error),
       contentType,
       bodyLength: bodyText.length,
-      // HTML/에러 페이지 식별 — 운영 진단용. userId 는 쿼리에 없으므로 PII 유출 우려 낮음.
-      bodyPrefix: bodyText.slice(0, 200),
+      bodyPrefix: isJsonLike ? "[masked:json-like]" : bodyText.slice(0, 200),
     });
     return {
       error: upstreamError(
