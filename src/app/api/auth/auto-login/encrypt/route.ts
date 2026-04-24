@@ -94,8 +94,11 @@ const qspEncryptResponseSchema = z.object({
   }),
 });
 
-/** userId 형식 가드 — middleware 통과 header 지만 defense-in-depth. */
-const USER_ID_PATTERN = /^[A-Za-z0-9@._-]{1,128}$/;
+/**
+ * userId 형식 가드 — middleware 통과 header 지만 defense-in-depth.
+ * 하위주소 이메일(`user+tag@example.com`)을 쓰는 GENERAL 회원이 차단되지 않도록 `+` 포함.
+ */
+const USER_ID_PATTERN = /^[A-Za-z0-9@._+\-]{1,128}$/;
 
 /**
  * 502 응답 식별자 — 운영/QA 가 원인 구분 가능하도록 code 필드로 분리.
