@@ -201,6 +201,60 @@ export function Gnb() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSitesOpen, setIsMobileSitesOpen] = useState(false);
+  /**
+   * 관련사이트 자동로그인 진행 상태 — 중복 클릭 방어용.
+   * 값이 존재하면 해당 `SiteValue` 에 대해 POST /api/auth/auto-login/encrypt 호출 중.
+   */
+  const [autoLoginInFlight, setAutoLoginInFlight] = useState<SiteValue | null>(null);
+
+  /**
+   * 관련사이트 클릭 핸들러 — HANASYS DESIGN / Q.Order / Q.Musubi 자동로그인 처리.
+   *
+   * 흐름:
+   *   1. qwarranty 는 자동로그인 미연동 → 기본 `<a href>` 동작 허용 (별도 로그인 페이지)
+   *   2. 그 외 target 은 preventDefault → POST /api/auth/auto-login/encrypt → 응답 URL 로 이동
+   *   3. API 실패 시 원래 href 로 fallback (최소한의 UX 보존)
+   *
+   * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
+   */
+  const handleRelatedSiteClick = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    site: RelatedSite,
+    closeMenu: () => void,
+  ) => {
+    // qwarranty 는 자동로그인 대상 아님 — 기본 링크 이동 + 드롭다운/메뉴 닫기만 수행
+    if (site.value === "qwarranty") {
+      closeMenu();
+      return;
+    }
+    e.preventDefault();
+    closeMenu();
+    if (autoLoginInFlight) return; // 중복 호출 방어
+    setAutoLoginInFlight(site.value);
+    const apiTarget =
+      site.value === "qorder" ? "qOrder"
+      : site.value === "qmusubi" ? "qMusubi"
+      : "hanasys";
+    try {
+      const res = await api.post<{ data: { url: string } }>(
+        "/auth/auto-login/encrypt",
+        { target: apiTarget },
+      );
+      const redirectUrl = res.data?.data?.url;
+      if (!redirectUrl) {
+        console.error("[header] 자동로그인 응답 URL 누락");
+        window.open(site.href, "_blank", "noopener,noreferrer");
+        return;
+      }
+      window.open(redirectUrl, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      console.error("[header] 자동로그인 실패 — fallback 이동:", err);
+      // 실패 fallback — 원래 사이트 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
+      window.open(site.href, "_blank", "noopener,noreferrer");
+    } finally {
+      setAutoLoginInFlight(null);
+    }
+  };
 
   return (
     <div className="relative h-[68px] lg:h-[78px]">
@@ -326,7 +380,8 @@ export function Gnb() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
-                            onClick={() => setIsDropdownOpen(false)}
+                            aria-busy={autoLoginInFlight === site.value || undefined}
+                            onClick={(e) => { void handleRelatedSiteClick(e, site, () => setIsDropdownOpen(false)); }}
                           >
                             <span className="block text-[13px] whitespace-nowrap">{site.label}</span>
                             {site.note && (
@@ -619,7 +674,8 @@ export function Gnb() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
-                        onClick={() => setIsMobileMenuOpen(false)}
+                        aria-busy={autoLoginInFlight === site.value || undefined}
+                        onClick={(e) => { void handleRelatedSiteClick(e, site, () => setIsMobileMenuOpen(false)); }}
                       >
                         <span className="text-[13px]">{site.label}</span>
                         {site.note && (
