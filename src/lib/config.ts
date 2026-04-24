@@ -11,6 +11,7 @@ import { join, resolve } from "path";
 // NOTE: Node.js runtime 전용 — Edge Runtime에서는 함수 내부에서 env를 읽어야 함
 
 const rawQspBaseUrl = process.env.QSP_BASE_URL?.trim();
+const rawQspEncryptBaseUrl = process.env.QSP_ENCRYPT_BASE_URL?.trim();
 // 검증 기준은 Next.js 런타임 모드(NODE_ENV)가 아닌 **배포 환경**(APP_ENV) 이다.
 // Jenkinsfile / docker-compose 에서 APP_ENV 로 환경을 구분 (development | production).
 // dev 배포는 APP_ENV=development 로 HTTPS 강제 우회 가능 (QSP dev 엔드포인트가 http 인 경우 대응).
@@ -25,8 +26,21 @@ if (isProductionDeploy && !isBuildPhase && !rawQspBaseUrl) {
 
 const QSP_BASE_URL = rawQspBaseUrl || "https://jp-dev.qsalesplatform.com";
 
+/**
+ * autoLoginEncryptData API 전용 base URL (optional).
+ * 미지정 시 QSP_BASE_URL 로 fallback — 기존 동작 유지(backward compatible).
+ *
+ * 용도: QSP 측 사정으로 autoLoginEncryptData 만 별도 인스턴스/도메인 호출이 필요한 경우
+ * (예: 내부 IP QSP 인스턴스에는 세션 인증이 걸려 있고 public 도메인에서만 무세션 허용하는 상황).
+ * login / userDetail 등 다른 QSP API 는 QSP_BASE_URL 을 계속 사용하므로 영향 없음.
+ */
+const QSP_ENCRYPT_BASE_URL = rawQspEncryptBaseUrl || QSP_BASE_URL;
+
 if (isProductionDeploy && !QSP_BASE_URL.startsWith("https://")) {
   throw new Error("QSP_BASE_URL must use HTTPS in production");
+}
+if (isProductionDeploy && !QSP_ENCRYPT_BASE_URL.startsWith("https://")) {
+  throw new Error("QSP_ENCRYPT_BASE_URL must use HTTPS in production");
 }
 
 export const QSP_API = {
@@ -50,8 +64,9 @@ export const QSP_API = {
   userListMng: `${QSP_BASE_URL}/api/qpartners/userMng/userListMng`,
   /** No.12 Q.Partners 회원관리 정보 수정 — 부가 정보 수정 (2차인증, 뉴스레터, 로그인 알림, 뉴스 수신) */
   updateUserDtlMng: `${QSP_BASE_URL}/api/qpartners/userMng/updateUserDtlMng`,
-  /** 자동로그인 암호화 — HANASYS DESIGN target 전용 (QSP가 cipher + 진입 URL 생성하여 반환) */
-  autoLoginEncrypt: `${QSP_BASE_URL}/login/autoLoginEncryptData`,
+  /** 자동로그인 암호화 — HANASYS DESIGN target 전용 (QSP가 cipher + 진입 URL 생성하여 반환).
+   *  base URL 은 QSP_ENCRYPT_BASE_URL 로 별도 override 가능 (다른 API 와 분리) */
+  autoLoginEncrypt: `${QSP_ENCRYPT_BASE_URL}/login/autoLoginEncryptData`,
 } as const;
 
 // ─── Auto Login (Q.Order / Q.Musubi) ───
