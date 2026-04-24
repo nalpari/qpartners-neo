@@ -119,15 +119,50 @@ function maskSensitiveFields(body: string | null | undefined): string | null {
   }
 }
 
-function maskEmailInUrl(url: string): string {
-  return url.replace(
-    /email=([^&]+)/gi,
-    (_match, email: string) => {
-      const decoded = decodeURIComponent(email);
-      const atIdx = decoded.indexOf("@");
-      if (atIdx <= 0) return `email=${email}`;
-      const masked = decoded[0] + "***" + decoded.slice(atIdx);
-      return `email=${encodeURIComponent(masked)}`;
+/**
+ * URL 쿼리스트링에서 PII/민감 파라미터 값을 마스킹.
+ *
+ * 대상 키:
+ *   - email / loginId: 이메일 형식은 maskEmail, 그 외는 앞 2자 + "***"
+ *   - autoLoginParam1: userId(=loginId/email) 평문 (URL-encoded 가능) → 전체 "***" 대체
+ *     (cipher 가 들어오는 경우도 있으나 qp_interface_log 에 cipher 전문이 남을 필요 없음)
+ *   - token / accessToken / refreshToken: 전체 "***"
+ *
+ * 호출 경로:
+ *   - fetchWithLog 의 requestUrl 로깅 (baseLog.requestUrl)
+ *   - fetch error 의 errorMessage 내부 URL 문자열
+ */
+const URL_SENSITIVE_QUERY_KEYS = new Set([
+  "email",
+  "loginid",
+  "autologinparam1",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+]);
+
+function maskSensitiveQueryInUrl(input: string): string {
+  return input.replace(
+    /([?&])([A-Za-z0-9_]+)=([^&\s]+)/g,
+    (_match, sep: string, key: string, value: string) => {
+      const lowered = key.toLowerCase();
+      if (!URL_SENSITIVE_QUERY_KEYS.has(lowered)) return _match;
+      if (lowered === "email" || lowered === "loginid") {
+        let decoded = value;
+        try {
+          decoded = decodeURIComponent(value);
+        } catch {
+          // 인코딩 파싱 실패 — 원문 그대로 마스킹 시도
+        }
+        const atIdx = decoded.indexOf("@");
+        if (atIdx > 0) {
+          const masked = decoded[0] + "***" + decoded.slice(atIdx);
+          return `${sep}${key}=${encodeURIComponent(masked)}`;
+        }
+        if (decoded.length <= 2) return `${sep}${key}=***`;
+        return `${sep}${key}=${encodeURIComponent(decoded.slice(0, 2) + "***")}`;
+      }
+      return `${sep}${key}=***`;
     },
   );
 }
@@ -173,7 +208,7 @@ export async function fetchWithLog(
     direction: params.direction,
     apiName: params.apiName,
     method,
-    requestUrl: maskEmailInUrl(url),
+    requestUrl: maskSensitiveQueryInUrl(url),
     requestBody: maskSensitiveFields(requestBody),
     callerRoute: params.callerRoute,
     userId: params.userId ?? null,
@@ -184,6 +219,8 @@ export async function fetchWithLog(
   let responseBodyText: string | null = null;
 
   try {
+    // 전 호출자의 cache 전략은 호출 지점에서 명시(호출 지점 가시성 + 전역 부수효과 회피).
+    // 외부 API 호출은 호출부에서 `cache: "no-store"` 을 명시하는 것을 원칙으로 함.
     response = await fetch(url, init);
 
     const cloned = response.clone();
@@ -202,7 +239,8 @@ export async function fetchWithLog(
       responseBody: null,
       resultCode: "F",
       durationMs,
-      errorMessage: rawMsg.slice(0, MAX_ERROR_MSG_LENGTH),
+      // fetch error 메시지에 URL 이 포함될 수 있음 → 쿼리스트링 민감값 마스킹 후 저장.
+      errorMessage: maskSensitiveQueryInUrl(rawMsg).slice(0, MAX_ERROR_MSG_LENGTH),
     });
 
     throw error;
