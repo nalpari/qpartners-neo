@@ -130,8 +130,10 @@ export async function POST(request: NextRequest) {
   let requireTwoFactor = false;
 
   if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
-    // 공통코드에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
-    // 같은 값(SEC_AUTH_VALIDITY)을 "가입 후 유예기간" 과 "secAuthDt 재인증 주기" 에 공용.
+    // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
+    // 관리자 "코드관리" 화면에서 10/20/30일 등 여러 개 활성(isActive=Y) 상태로 등록되어도
+    // `sortOrder` 오름차순 최상위(Sort Order = 1) 1건을 채택한다 — 동일 값("가입 후 유예기간"
+    // 과 "secAuthDt 재인증 주기") 에 공용으로 적용.
     let validityDays: number | null = null;
     try {
       const activeCode = await prisma.codeDetail.findFirst({
@@ -139,8 +141,8 @@ export async function POST(request: NextRequest) {
           header: { headerCode: "SEC_AUTH_VALIDITY" },
           isActive: true,
         },
-        orderBy: { id: "desc" },
-        select: { code: true },
+        orderBy: { sortOrder: "asc" },
+        select: { code: true, sortOrder: true },
       });
       if (activeCode) {
         const days = Number(activeCode.code);
