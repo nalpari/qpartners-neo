@@ -50,7 +50,13 @@ export type MenuCode = z.infer<typeof menuCodeSchema>;
  */
 export const restrictedMenuCodes = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"] as const;
 export type RestrictedMenuCode = (typeof restrictedMenuCodes)[number];
-export const restrictedMenuCodeSet: ReadonlySet<MenuCode> = new Set(restrictedMenuCodes);
+/**
+ * RESTRICTED 판정 — `updatePermissionsSchema` 에서 menuCode 가 enum 고정을 벗어나
+ * 임의 문자열(신규 메뉴관리 행)까지 허용되기 때문에 `ReadonlySet<string>` 로 넓혀
+ * lockout 가드 호출부(`restrictedMenuCodeSet.has(p.menuCode)`)의 타입 안전성을 유지한다.
+ * 런타임 동작은 값 비교이므로 영향 없음 — RESTRICTED 3종만 true 로 떨어진다.
+ */
+export const restrictedMenuCodeSet: ReadonlySet<string> = new Set(restrictedMenuCodes);
 
 /**
  * RBAC 메뉴 액션 — QpRoleMenuPermission 의 can{Read,Create,Update,Delete} 컬럼과 1:1.

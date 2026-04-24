@@ -78,7 +78,11 @@ function diffPreservedFields(
 
 /**
  * 4-0: GENERAL 외 회원(STORE/SEKO/ADMIN)이 수정 가능한 필드 화이트리스트.
- *      화면설계서 v1.1(2026-03-30) — 이들 회원은 ニュースレター受信設定만 변경 가능.
+ *
+ * 정책 (화면설계서):
+ *   · newsRcptYn / twoFactorEnabled / attributeChangeNotification — 전 회원 유형 대상
+ *   · loginNotification — 일반회원(GENERAL) 전용 (ADMIN/STORE/SEKO 미적용 → 화이트리스트 제외)
+ *   · userRole / status — GENERAL 전용 (본 핸들러 정책)
  *
  * 블랙리스트가 아닌 화이트리스트로 유지하는 이유:
  *   memberUpdateSchema 에 새 필드가 추가될 때 자동으로 "허용"되는 fail-open 위험
@@ -86,6 +90,8 @@ function diffPreservedFields(
  */
 const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set([
   "newsRcptYn",
+  "twoFactorEnabled",
+  "attributeChangeNotification",
 ]);
 
 /**
@@ -308,8 +314,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
     const preDetail = preDetailResult.ok ? preDetailResult.detail : null;
 
-    // 4-0. 권한별 수정 제한 정책 (화면설계서 v1.1, 2026-03-30)
-    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는 newsRcptYn 만 허용.
+    // 4-0. 권한별 수정 제한 정책 (화면설계서)
+    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는
+    //   newsRcptYn / twoFactorEnabled / attributeChangeNotification 만 허용.
     // ※ 비밀번호는 별도 API(/reset-password) 로 처리되므로 본 PUT 스키마에 없음.
     //
     // 화이트리스트(ALLOWED_NON_GENERAL_FIELDS) 기반 fail-closed 검증:
@@ -322,7 +329,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "一般会員以外はニュースレター受信設定のみ変更可能です",
+              "一般会員以外はニュースレター・二次認証・属性変更通知のみ変更可能です",
             details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
           },
           { status: 400 },

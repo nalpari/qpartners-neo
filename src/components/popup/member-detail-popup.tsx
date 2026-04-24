@@ -361,7 +361,10 @@ function MemberEditForm({
 }) {
   const memberTp = USER_TYPE_REVERSE_MAP[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
-  const isStatusEditable = isGeneral || memberTp === "SEKO";
+  // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
+  // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
+  // 편집 UI 자체를 표시하지 않는다 — 과거 `isGeneral || SEKO` 로직의 BE/FE 불일치 제거.
+  const isStatusEditable = isGeneral;
   const isWithdrawn = member.status === "withdrawn";
   // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
   const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
@@ -392,8 +395,13 @@ function MemberEditForm({
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   const handleSave = () => {
+    // 화면설계서 기준 편집 허용 필드:
+    //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn — 전 회원 유형
+    //   · loginNotification — GENERAL(일반회원) 한정
+    //   · status — GENERAL 전용 (SEKO 는 회원관리 대상 아님)
+    //   · userRole — GENERAL
+    // payload 에 불허 필드를 포함하면 BE 화이트리스트에서 400 거부되므로 유형별로 분기 구성.
     const payload: MemberUpdatePayload = {
-      loginNotification,
       attributeChangeNotification: attributeNotify,
       newsRcptYn,
     };
@@ -401,6 +409,10 @@ function MemberEditForm({
     // 비복구 + preDetail null(삭제 상태 유지) 경로에서는 백엔드가 변경 차단(400).
     if (!isQspNotFound || isRestoringToActive) {
       payload.twoFactorEnabled = twoFactorEnabled;
+    }
+    // 로그인 알림은 일반회원 전용 설정 (ADMIN/STORE/SEKO 미적용).
+    if (isGeneral) {
+      payload.loginNotification = loginNotification;
     }
     if (isStatusEditable) {
       payload.status = memberStatus === "Active" ? "active" : "deleted";
@@ -523,11 +535,17 @@ function MemberEditForm({
                   }}
                   right={{
                     label: "ログイン通知",
-                    children: (
+                    // 로그인 알림은 일반회원 전용 설정. GENERAL + 읽기가능 경로만 radio, 그 외는 TextValue.
+                    // 회원상태(isStatusEditable)와 동일한 UX — 편집 불가 필드는 비활성 radio 대신 값만 표시.
+                    // non-GENERAL 회원은 `対象外` 로 표기해 QSP 잔존값이 "有効" 으로 보여도 실제 적용 대상이
+                    // 아님을 명확히 안내 (관리자가 적용 상태로 오해하지 않도록).
+                    children: isGeneral && !isReadOnly ? (
                       <div className="flex items-center gap-3">
-                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" disabled={isReadOnly} />
-                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" disabled={isReadOnly} />
+                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
+                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
                       </div>
+                    ) : (
+                      <TextValue value={isGeneral ? (loginNotification ? "有効" : "無効") : "対象外"} />
                     ),
                   }}
                 />

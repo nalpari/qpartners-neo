@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
 import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { restrictedMenuCodeSet } from "@/lib/schemas/common";
@@ -175,7 +177,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const result = updatePermissionsSchema.safeParse(body);
     if (!result.success) {
-      // 디버깅용 — 어떤 menuCode 가 enum 거부됐는지 서버 로그에 노출 (DB ↔ 코드 menuCode 정합성 추적).
+      // 디버깅용 — 어떤 menuCode 가 형식 거부됐는지 서버 로그에 노출.
       // console.warn 의 기본 depth 제한으로 path/received 가 `[Array]` 로 truncate 되는 것을 피해 JSON 으로 직렬화.
       console.warn(
         "[PUT /api/roles/:roleCode/permissions] Zod 검증 실패\n"
@@ -194,6 +196,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
       return NextResponse.json(
         { error: "バリデーションエラー", issues: result.error.issues },
+        { status: 400 },
+      );
+    }
+
+    // menuCode 존재성 검증 — schema 는 형식만 확인하므로 실제 DB `qp_menus` 에 존재하는지
+    // 일괄 조회로 확정. 미존재 코드가 섞이면 upsert 단계에서 P2003(FK) 으로 떨어지는 대신
+    // 어떤 코드가 유효하지 않은지 400 으로 친절히 반환. isActive 관계없이 존재만 확인한다
+    // (비활성 메뉴도 매트릭스 기록은 유지해야 관리자 UI 재활성 시 권한이 복원되기 때문).
+    const requestedCodes = result.data.permissions.map((p) => p.menuCode);
+    const existingMenus = await prisma.menu.findMany({
+      where: { menuCode: { in: requestedCodes } },
+      select: { menuCode: true },
+    });
+    const existingSet = new Set(existingMenus.map((m) => m.menuCode));
+    const unknownCodes = requestedCodes.filter((c) => !existingSet.has(c));
+    if (unknownCodes.length > 0) {
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] 미존재 menuCode 포함",
+        { roleCode: parsedCode.data, unknownCodes },
+      );
+      return NextResponse.json(
+        { error: "存在しないメニューコードが含まれています", unknownMenuCodes: unknownCodes },
         { status: 400 },
       );
     }
@@ -324,6 +348,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
       },
     });
   } catch (error) {
+    // 사전 존재 검증(findMany) 이후 upsert 사이에 대상 메뉴가 삭제되는 경합 시 P2003(FK) 발생.
+    // 500 대신 400 으로 승격해 "다시 메뉴관리 상태를 확인하고 재시도" UX 유도.
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] FK 경합 — 메뉴가 삭제됨",
+        { code: error.code },
+      );
+      return NextResponse.json(
+        { error: "対象のメニューが削除されました。メニュー管理を更新して再試行してください" },
+        { status: 400 },
+      );
+    }
     console.error("[PUT /api/roles/:roleCode/permissions]", error);
     return NextResponse.json(
       { error: "権限の更新に失敗しました" },
