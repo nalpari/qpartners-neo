@@ -361,7 +361,10 @@ function MemberEditForm({
 }) {
   const memberTp = USER_TYPE_REVERSE_MAP[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
-  const isStatusEditable = isGeneral || memberTp === "SEKO";
+  // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
+  // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
+  // 편집 UI 자체를 표시하지 않는다 — 과거 `isGeneral || SEKO` 로직의 BE/FE 불일치 제거.
+  const isStatusEditable = isGeneral;
   const isWithdrawn = member.status === "withdrawn";
   // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
   const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");

@@ -9,6 +9,11 @@ import { authRoleValues } from "@/lib/schemas/common";
  * 주의: 본 정규식은 **형식 검증만** 수행. 실제 존재 여부는 route handler 에서 DB 조회로
  * 확인한다 (qp_menus FK). 정규식만으로 허용하면 존재하지 않는 menuCode 가 upsert 시
  * P2003(FK violation) 으로 떨어지므로, 호출부에서 사전에 일괄 검증해 400 으로 친절히 거부.
+ *
+ * 보안: enum 고정을 해제해도 lockout 가드는 `restrictedMenuCodeSet` (ADM_PERMISSION /
+ * ADM_MENU / ADM_CODE) 의 값-기반 `.has()` 비교로 판정하므로, 임의 문자열 주입 공격이
+ * 이 3종과 정확히 일치하지 않는 한 우회 불가. RESTRICTED 식별은 enum 이 아니라 Set 이
+ * 단일 진실 원천 (`src/lib/schemas/common.ts`).
  */
 const MENU_CODE_REGEX = /^[A-Z][A-Z0-9_]{0,49}$/;
 

@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+
 import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { restrictedMenuCodeSet } from "@/lib/schemas/common";
@@ -346,6 +348,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
       },
     });
   } catch (error) {
+    // 사전 존재 검증(findMany) 이후 upsert 사이에 대상 메뉴가 삭제되는 경합 시 P2003(FK) 발생.
+    // 500 대신 400 으로 승격해 "다시 메뉴관리 상태를 확인하고 재시도" UX 유도.
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
+      console.warn(
+        "[PUT /api/roles/:roleCode/permissions] FK 경합 — 메뉴가 삭제됨",
+        { code: error.code },
+      );
+      return NextResponse.json(
+        { error: "対象のメニューが削除されました。メニュー管理を更新して再試行してください" },
+        { status: 400 },
+      );
+    }
     console.error("[PUT /api/roles/:roleCode/permissions]", error);
     return NextResponse.json(
       { error: "権限の更新に失敗しました" },
