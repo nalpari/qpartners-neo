@@ -55,14 +55,41 @@ export const QSP_API = {
 } as const;
 
 // ─── Auto Login (Q.Order / Q.Musubi) ───
-// 자동로그인 엔드포인트는 Q.Order/Q.Musubi 자체 도메인이 아닌 QSP 도메인에 호스팅됨
-// (가이드: `{qsp-domain}/eos/login/autoLogin`, `{qsp-domain}/qm/login/autoLogin`)
+// 각 시스템 고유 도메인에 cipher 전달 — HANASYS가 QSP 응답으로 대상 도메인(hanasys.jp)을
+// 받아 이동하는 패턴과 일관. QSP_BASE_URL 과는 분리된 독립 도메인 사용.
+//
+// APP_ENV(Jenkinsfile/docker-compose 주입) 기반 prod/dev 자동 분기.
+// header.tsx 관련사이트 URL과 동일 도메인 규칙 적용 — prod: q-order.q-cells.jp /
+// q-musubi.q-cells.jp, dev: q-order-dev.q-cells.jp / q-musubi-dev.q-cells.jp.
+//
+// 경로(`/eos/login/autoLogin`, `/qm/login/autoLogin`)는 QSP 가이드 §3 기반 고정.
+// 도메인/경로 예외 필요 시 env 전체 오버라이드: Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL.
+const Q_ORDER_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
+  ? "https://q-order.q-cells.jp/eos/login/autoLogin"
+  : "https://q-order-dev.q-cells.jp/eos/login/autoLogin";
+const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
+  ? "https://q-musubi.q-cells.jp/qm/login/autoLogin"
+  : "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
+
 export const AUTO_LOGIN_URL = {
-  /** Q.Order 자동로그인 — GET {qsp-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
-  qOrder: `${QSP_BASE_URL}/eos/login/autoLogin`,
-  /** Q.Musubi 자동로그인 — GET {qsp-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
-  qMusubi: `${QSP_BASE_URL}/qm/login/autoLogin`,
+  /** Q.Order 자동로그인 — GET {q-order-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
+  qOrder:
+    process.env.Q_ORDER_AUTOLOGIN_URL?.trim() || Q_ORDER_AUTOLOGIN_URL_DEFAULT,
+  /** Q.Musubi 자동로그인 — GET {q-musubi-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
+  qMusubi:
+    process.env.Q_MUSUBI_AUTOLOGIN_URL?.trim() ||
+    Q_MUSUBI_AUTOLOGIN_URL_DEFAULT,
 } as const;
+
+// 운영 배포 시 대상 URL 은 반드시 HTTPS — env override 실수 방지.
+if (isProductionDeploy) {
+  if (!AUTO_LOGIN_URL.qOrder.startsWith("https://")) {
+    throw new Error("Q_ORDER_AUTOLOGIN_URL must use HTTPS in production");
+  }
+  if (!AUTO_LOGIN_URL.qMusubi.startsWith("https://")) {
+    throw new Error("Q_MUSUBI_AUTOLOGIN_URL must use HTTPS in production");
+  }
+}
 
 // ─── Upload Storage ───
 
