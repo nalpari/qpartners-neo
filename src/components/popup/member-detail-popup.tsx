@@ -392,8 +392,13 @@ function MemberEditForm({
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   const handleSave = () => {
+    // 화면설계서 기준 편집 허용 필드:
+    //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn — 전 회원 유형
+    //   · loginNotification — GENERAL(일반회원) 한정
+    //   · status — GENERAL / SEKO (isStatusEditable)
+    //   · userRole — GENERAL
+    // payload 에 불허 필드를 포함하면 BE 화이트리스트에서 400 거부되므로 유형별로 분기 구성.
     const payload: MemberUpdatePayload = {
-      loginNotification,
       attributeChangeNotification: attributeNotify,
       newsRcptYn,
     };
@@ -401,6 +406,10 @@ function MemberEditForm({
     // 비복구 + preDetail null(삭제 상태 유지) 경로에서는 백엔드가 변경 차단(400).
     if (!isQspNotFound || isRestoringToActive) {
       payload.twoFactorEnabled = twoFactorEnabled;
+    }
+    // 로그인 알림은 일반회원 전용 설정 (ADMIN/STORE/SEKO 미적용).
+    if (isGeneral) {
+      payload.loginNotification = loginNotification;
     }
     if (isStatusEditable) {
       payload.status = memberStatus === "Active" ? "active" : "deleted";
@@ -523,11 +532,15 @@ function MemberEditForm({
                   }}
                   right={{
                     label: "ログイン通知",
-                    children: (
+                    // 로그인 알림은 일반회원 전용 설정. GENERAL + 읽기가능 경로만 radio, 그 외는 TextValue.
+                    // 회원상태(isStatusEditable)와 동일한 UX — 편집 불가 필드는 비활성 radio 대신 값만 표시.
+                    children: isGeneral && !isReadOnly ? (
                       <div className="flex items-center gap-3">
-                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" disabled={isReadOnly} />
-                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" disabled={isReadOnly} />
+                        <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
+                        <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
                       </div>
+                    ) : (
+                      <TextValue value={loginNotification ? "有効" : "無効"} />
                     ),
                   }}
                 />

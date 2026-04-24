@@ -78,7 +78,11 @@ function diffPreservedFields(
 
 /**
  * 4-0: GENERAL 외 회원(STORE/SEKO/ADMIN)이 수정 가능한 필드 화이트리스트.
- *      화면설계서 v1.1(2026-03-30) — 이들 회원은 ニュースレター受信設定만 변경 가능.
+ *
+ * 정책 (화면설계서):
+ *   · newsRcptYn / twoFactorEnabled / attributeChangeNotification — 전 회원 유형 대상
+ *   · loginNotification — 일반회원(GENERAL) 전용 (ADMIN/STORE/SEKO 미적용 → 화이트리스트 제외)
+ *   · userRole / status — GENERAL 전용 (본 핸들러 정책)
  *
  * 블랙리스트가 아닌 화이트리스트로 유지하는 이유:
  *   memberUpdateSchema 에 새 필드가 추가될 때 자동으로 "허용"되는 fail-open 위험
@@ -86,6 +90,8 @@ function diffPreservedFields(
  */
 const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set([
   "newsRcptYn",
+  "twoFactorEnabled",
+  "attributeChangeNotification",
 ]);
 
 /**
