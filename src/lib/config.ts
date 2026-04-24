@@ -70,18 +70,29 @@ const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
   ? "https://q-musubi.q-cells.jp/qm/login/autoLogin"
   : "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
 
+/**
+ * 자동로그인 URL env override 처리.
+ * - prod 배포: HTTPS 필수 (미충족 시 부팅 실패)
+ * - dev 배포: HTTPS 권장 — HTTP 허용하되 부팅 로그로 경고 노출 (운영 사고 방지용 가시성 확보)
+ */
+function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
+  const override = process.env[envName]?.trim();
+  const url = override || defaultUrl;
+  if (!isProductionDeploy && override && !url.startsWith("https://")) {
+    console.warn(
+      `[config] ${envName}="${url}" 가 HTTPS 가 아님 — dev 환경 override. prod 배포 시 부팅 실패합니다.`,
+    );
+  }
+  return url;
+}
+
 export const AUTO_LOGIN_URL = {
   /** HANASYS DESIGN 자동로그인 — GET {hanasys-domain}/login?autoLoginParam1={cipher} */
-  hanasys:
-    process.env.HANASYS_AUTOLOGIN_URL?.trim() ||
-    HANASYS_AUTOLOGIN_URL_DEFAULT,
+  hanasys: resolveAutoLoginUrl("HANASYS_AUTOLOGIN_URL", HANASYS_AUTOLOGIN_URL_DEFAULT),
   /** Q.Order 자동로그인 — GET {q-order-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
-  qOrder:
-    process.env.Q_ORDER_AUTOLOGIN_URL?.trim() || Q_ORDER_AUTOLOGIN_URL_DEFAULT,
+  qOrder: resolveAutoLoginUrl("Q_ORDER_AUTOLOGIN_URL", Q_ORDER_AUTOLOGIN_URL_DEFAULT),
   /** Q.Musubi 자동로그인 — GET {q-musubi-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
-  qMusubi:
-    process.env.Q_MUSUBI_AUTOLOGIN_URL?.trim() ||
-    Q_MUSUBI_AUTOLOGIN_URL_DEFAULT,
+  qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL", Q_MUSUBI_AUTOLOGIN_URL_DEFAULT),
 } as const;
 
 // 운영 배포 시 대상 URL 은 반드시 HTTPS — env override 실수 방지.

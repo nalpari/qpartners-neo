@@ -105,7 +105,7 @@ function encryptAndAssemble(userId: string, baseUrl: string) {
       errorMessage: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json(
-      { error: "暗号化処理に失敗しました" },
+      { error: "リダイレクトURLの生成に失敗しました" },
       { status: 500 },
     );
   }
