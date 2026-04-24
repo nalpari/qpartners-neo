@@ -43,6 +43,10 @@ export const qspLoginUserSchema = z.object({
   secAuthDt: z.string().nullable(),
   loginFailCnt: z.number().nullable(),
   pwdInitYn: z.enum(["Y", "N"]).nullable(),
+  // QSP 가입일 ("YYYY.MM.DD" 또는 "YYYY.MM.DD HH:mm:ss"). 로그인 응답에서 누락될 수 있으므로
+  // nullish. 2FA 유예기간(신규가입 후 validityDays) 판정에 사용 — 누락 시 유예 스킵 후
+  // secAuthDt 기반 판정으로 폴백.
+  regDt: z.string().nullish(),
 });
 
 export type QspLoginUser = z.infer<typeof qspLoginUserSchema>;

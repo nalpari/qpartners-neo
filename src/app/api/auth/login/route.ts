@@ -11,6 +11,7 @@ import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
+import { parseQspDate } from "@/lib/qsp-member";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -120,13 +121,17 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    - secAuthYn !== "Y" → 불필요
-  //    - pwdInitYn === "Y" (비밀번호 초기화 직후) → 불필요 (p.14 스펙)
-  //    - secAuthDt + 공통코드 유효기간(SEC_AUTH_VALIDITY) ≤ 현재일시 → 필요
+  //    화면설계서 정책:
+  //      - 2FA 대상: 관리자 설정 `secAuthYn=Y` 회원
+  //      - 비대상: pwdInitYn="Y" (초기 비밀번호 상태, p.14 스펙)
+  //      - 유예: 가입일(regDt) + SEC_AUTH_VALIDITY > 현재 → 신규가입 유예기간 (팝업 미노출)
+  //      - 유예 경과 후: secAuthDt 없거나 + validityDays < 현재 → 필요
+  //      - 유예 경과 후: secAuthDt + validityDays > 현재 → 불필요 (최근 인증됨)
   let requireTwoFactor = false;
 
   if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
-    // 공통코드에서 2차인증 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요)
+    // 공통코드에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
+    // 같은 값(SEC_AUTH_VALIDITY)을 "가입 후 유예기간" 과 "secAuthDt 재인증 주기" 에 공용.
     let validityDays: number | null = null;
     try {
       const activeCode = await prisma.codeDetail.findFirst({
@@ -155,35 +160,62 @@ export async function POST(request: NextRequest) {
       // 유효기간 조회 실패 또는 값 이상 → fail-closed
       requireTwoFactor = true;
     } else {
-      // secAuthDt 파싱 ("yyyy.MM.dd HH:mm:ss" → ISO 8601 + KST 오프셋) 후 유효기간 비교
-      /** QSP secAuthDt는 KST(UTC+09:00) 기준 반환 */
-      const QSP_TIMEZONE_OFFSET = "+09:00";
-      const secAuthDt = qsp.data.secAuthDt;
-      if (!secAuthDt) {
-        // secAuthDt 없음 → 2FA 미인증 상태 → 필요
-        requireTwoFactor = true;
+      const now = Date.now();
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+      // (A) 가입일 유예 체크 — regDt + validityDays > now 면 신규가입 유예기간
+      //    regDt 미제공(QSP 로그인 응답에 누락)이면 유예 스킵하고 (B) 로 폴백.
+      let inRegGracePeriod = false;
+      if (qsp.data.regDt) {
+        const regIso = parseQspDate(qsp.data.regDt); // "YYYY-MM-DDTHH:mm:ss+09:00"
+        if (regIso) {
+          const regMs = new Date(regIso).getTime();
+          if (!Number.isNaN(regMs)) {
+            inRegGracePeriod = now < regMs + validityDays * MS_PER_DAY;
+          } else {
+            console.warn("[POST /api/auth/login] regDt 파싱 불가 — 유예 스킵");
+          }
+        }
+      }
+
+      if (inRegGracePeriod) {
+        // 신규가입 유예기간 — 2FA 팝업 노출 안 함
+        requireTwoFactor = false;
       } else {
-        const secAuthDtFormat = /^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}$/;
-        if (!secAuthDtFormat.test(secAuthDt)) {
-          console.error("[POST /api/auth/login] secAuthDt 형식 불일치:", secAuthDt);
+        // (B) 유예 경과 — secAuthDt 기반 재인증 주기 판정
+        const secAuthDt = qsp.data.secAuthDt;
+        if (!secAuthDt) {
+          // 유예 지났는데 한 번도 2FA 안 함 → 필요 (201T01 케이스)
           requireTwoFactor = true;
         } else {
-          const isoStr = secAuthDt.replace(/\./g, "-").replace(" ", "T") + QSP_TIMEZONE_OFFSET;
-          const authDate = new Date(isoStr);
-          if (Number.isNaN(authDate.getTime())) {
+          const authIso = parseQspDate(secAuthDt);
+          if (!authIso) {
             console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
             requireTwoFactor = true;
           } else {
-            const expiresAt = new Date(authDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
-            if (Number.isNaN(expiresAt.getTime())) {
-              console.error("[POST /api/auth/login] 2FA 만료시각 계산 실패:", { secAuthDt, validityDays });
+            const authMs = new Date(authIso).getTime();
+            if (Number.isNaN(authMs)) {
+              console.error("[POST /api/auth/login] secAuthDt 만료 계산 실패:", secAuthDt);
               requireTwoFactor = true;
             } else {
-              requireTwoFactor = Date.now() >= expiresAt.getTime();
+              requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
             }
           }
         }
       }
+
+      // 운영 추적용 진단 로그 — PII 제외, 판정 근거만.
+      console.log("[POST /api/auth/login] 2FA 판정", {
+        userTp: qsp.data.userTp,
+        userId: maskEmail(qsp.data.userId),
+        secAuthYn: qsp.data.secAuthYn,
+        pwdInitYn: qsp.data.pwdInitYn,
+        hasRegDt: !!qsp.data.regDt,
+        inRegGracePeriod,
+        hasSecAuthDt: !!qsp.data.secAuthDt,
+        validityDays,
+        requireTwoFactor,
+      });
     }
   }
 
