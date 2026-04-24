@@ -59,18 +59,19 @@ function isAllowedQspRedirectUrl(raw: string): boolean {
 /**
  * QSP autoLoginEncryptData 응답.
  * - data.userId: 암호문(non-empty)
- * - data.url: 이동 base URL (HANASYS용)
+ * - data.url: 이동 base URL (HANASYS용) — URL 형식만 검증, host allowlist는 후속 단계에서 별도 검증
  * - resultCode / resultMessage: 공통 응답 메타 — 200 이외는 상위 로직에서 502로 반환
+ *
+ * host allowlist 를 `.refine` 으로 묶지 않는 이유:
+ *   스키마 실패 로그가 "스키마 불일치"로 뭉개져 실제 원인 구분 불가.
+ *   URL 형식 실패 / host 거부 / userId 누락 등을 별도 분기로 로깅하여 운영 가시성 확보.
  */
 const qspEncryptResponseSchema = z.object({
   resultCode: z.number().int().optional(),
   resultMessage: z.string().optional(),
   data: z.object({
     userId: z.string().min(1, "QSP 암호문이 비어있습니다"),
-    url: z
-      .string()
-      .url()
-      .refine(isAllowedQspRedirectUrl, "허용되지 않은 redirect host"),
+    url: z.string().url(),
   }),
 });
 
@@ -200,7 +201,16 @@ async function encryptViaQsp(userId: string) {
 
   const parsed = qspEncryptResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 스키마 불일치:", parsed.error.issues);
+    // raw body 직접 로깅 금지 — 스키마 밖 경로(예상치 못한 필드, QSP 내부 stack trace 등) 유출 위험.
+    // 구조 힌트(top-level keys / 타입)만 기록하여 어느 필드가 문제인지 특정 가능하게 함.
+    const responseBodyShape =
+      qspBody != null && typeof qspBody === "object"
+        ? Object.keys(qspBody as Record<string, unknown>)
+        : typeof qspBody;
+    console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 스키마 불일치:", {
+      issues: parsed.error.issues,
+      responseBodyShape,
+    });
     return NextResponse.json(
       { error: "暗号化サーバーの応答形式が正しくありません" },
       { status: 502 },
@@ -220,6 +230,31 @@ async function encryptViaQsp(userId: string) {
   }
 
   const { userId: cipherText, url: qspUrl } = parsed.data.data;
+
+  // host allowlist 검증 — 스키마에서 분리하여 실패 원인을 별도 분기로 명시.
+  // Open Redirect 방어 + dev 내부 도메인/사설 IP 등 예상치 못한 host 반환 시 즉시 가시화.
+  if (!isAllowedQspRedirectUrl(qspUrl)) {
+    let parsedHost = "<invalid-url>";
+    try {
+      parsedHost = new URL(qspUrl).hostname;
+    } catch (error: unknown) {
+      // URL 파싱 실패는 host check 이전에 스키마 url() 에서 걸리지만 방어적 처리
+      console.warn("[POST /api/auth/auto-login/encrypt] host 추출 중 URL 파싱 실패:", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    console.error(
+      "[POST /api/auth/auto-login/encrypt] QSP 응답 URL host 허용되지 않음 — allowlist 확장 필요 가능:",
+      {
+        host: parsedHost,
+        allowedHosts: getAllowedQspRedirectHosts(),
+      },
+    );
+    return NextResponse.json(
+      { error: "暗号化サーバーの応答形式が正しくありません" },
+      { status: 502 },
+    );
+  }
   // 문자열 연결 대신 URL 객체 사용 — QSP가 반환하는 url에 ?가 포함/미포함 어느 쪽이든 안전.
   // searchParams.set은 값을 자동으로 인코딩하므로 encodeURIComponent 불필요.
   let redirectUrl: string;
