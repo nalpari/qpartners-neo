@@ -194,7 +194,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "자동로그인 암호화 URL 생성 (outbound)",
         description:
-          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. hanasys는 QSP autoLoginEncryptData API 경유(QSP 응답 URL 사용), qOrder/qMusubi는 자체 AES-256 암호화(SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)) 후 각 시스템 고유 도메인의 `?autoLoginParam1=` 에 부착.",
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. hanasys는 QSP autoLoginEncryptData API 경유(QSP 응답 URL을 그대로 사용, 허용된 HANASYS FQDN 만 통과), qOrder/qMusubi는 자체 AES-256 암호화(SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)) 후 각 시스템 고유 도메인의 `?autoLoginParam1=` 에 부착. 반환 URL 예시: hanasys=`https://www.hanasys.jp/...?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
         requestBody: {
           required: true,
           content: {
@@ -226,9 +226,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         url: {
                           type: "string",
-                          description: "자동로그인 파라미터가 포함된 이동 URL",
+                          description:
+                            "자동로그인 파라미터가 포함된 이동 URL. target 별 host: hanasys=www.hanasys.jp(prod)/dev.hanasys.jp(dev), qOrder=q-order(-dev).q-cells.jp, qMusubi=q-musubi(-dev).q-cells.jp",
                           example:
-                            "https://jp-dev.qsalesplatform.com/eos/login/autoLogin?autoLoginParam1=...",
+                            "https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...",
                         },
                       },
                     },
@@ -237,10 +238,43 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("リクエスト形式または target 파라미터 오류"),
-          "401": errorResponse("인증 필요"),
-          "500": errorResponse("암호화 처리 오류"),
-          "502": errorResponse("외부 암호화 서버 오류 (hanasys target 한정)"),
+          "400": errorResponse("リクエスト形式または target パラメータが正しくありません"),
+          "401": errorResponse("認証が必要です"),
+          "500": errorResponse("暗号化処理エラー"),
+          "502": {
+            description:
+              "外部暗号化サーバー関連エラー (hanasys target 限定). `code` で原因区分:\n" +
+              "- `UPSTREAM_TIMEOUT`: QSP 접속 실패/타임아웃\n" +
+              "- `UPSTREAM_HTTP_ERROR`: QSP HTTP non-2xx\n" +
+              "- `UPSTREAM_RESPONSE_PARSE_FAIL`: QSP 응답 JSON 파싱 실패\n" +
+              "- `UPSTREAM_SCHEMA_MISMATCH`: QSP 응답 스키마 불일치\n" +
+              "- `UPSTREAM_RESULT_FAIL`: QSP resultCode != 200\n" +
+              "- `UPSTREAM_REDIRECT_BLOCKED`: QSP 반환 URL host 비허용\n" +
+              "- `UPSTREAM_ASSEMBLY_FAIL`: redirect URL 조립 실패",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["error", "code"],
+                  properties: {
+                    error: { type: "string", example: "暗号化サーバーに接続できません" },
+                    code: {
+                      type: "string",
+                      enum: [
+                        "UPSTREAM_TIMEOUT",
+                        "UPSTREAM_HTTP_ERROR",
+                        "UPSTREAM_RESPONSE_PARSE_FAIL",
+                        "UPSTREAM_SCHEMA_MISMATCH",
+                        "UPSTREAM_RESULT_FAIL",
+                        "UPSTREAM_REDIRECT_BLOCKED",
+                        "UPSTREAM_ASSEMBLY_FAIL",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },

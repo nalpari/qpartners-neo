@@ -10,44 +10,55 @@ import { encryptRequestSchema } from "@/lib/schemas/auto-login";
 import type { AutoLoginTarget } from "@/lib/schemas/auto-login";
 
 /**
- * QSP 응답 `data.url` 허용 호스트 — Open Redirect 방어.
- * 정확 일치 또는 서브도메인(*.hanasys.jp 등) 허용.
+ * QSP 응답 `data.url` 허용 호스트 — Open Redirect 방어 (FQDN 정확 일치만 허용).
  *
- * 기본 목록은 하드코딩된 fallback이며, 환경에 따라 QSP가 반환하는 호스트가 다를 수 있으므로
- * `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS` env(콤마 구분)로 덮어쓸 수 있음.
- * 예) `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS="hanasys.jp,hanasys.co.jp,q-cells.jp,qsalesplatform.com"`
+ * HANASYS target 전용 endpoint 이므로 HANASYS dev/prod FQDN 만 기본 허용.
+ * 서브도메인 와일드카드 금지 — CMS/사용자 콘텐츠 서브도메인으로 cipher 탈취 방지.
+ *
+ * 운영/QA 에서 호스트 변경 필요 시 `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS` env(콤마 구분)로 덮어쓰기.
+ * 예) `AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS="www.hanasys.jp,dev.hanasys.jp"`
  */
 const DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS = [
-  "hanasys.jp",
-  "hanasys.co.jp",
-  "q-cells.jp",
+  "www.hanasys.jp", // prod
+  "dev.hanasys.jp", // dev
 ] as const;
+
+/**
+ * env entry 검증 패턴 — ASCII hostname(라벨 ≥ 2, TLD ≥ 2자).
+ * 포트/스킴 포함, TLD-only(`.jp`), punycode 는 silent misconfig 로 전역 open redirect 유발 가능 → 차단.
+ */
+const HOSTNAME_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
 
 function getAllowedQspRedirectHosts(): readonly string[] {
   const raw = process.env.AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS?.trim();
   if (!raw) return DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS;
-  const parsed = raw
+  const entries = raw
     .split(",")
     .map((h) => h.trim().toLowerCase())
     .filter((h) => h.length > 0);
-  if (parsed.length === 0) return DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS;
-  return parsed;
+  const valid: string[] = [];
+  for (const entry of entries) {
+    if (HOSTNAME_PATTERN.test(entry)) {
+      valid.push(entry);
+    } else {
+      console.warn(
+        "[auto-login] AUTO_LOGIN_ALLOWED_REDIRECT_HOSTS 비정상 entry 무시:",
+        { entry },
+      );
+    }
+  }
+  if (valid.length === 0) return DEFAULT_ALLOWED_QSP_REDIRECT_HOSTS;
+  return valid;
 }
 
+// ASCII hostname(FQDN) 정확 일치만 허용. IDN/Punycode 는 검증 패턴 불일치로 자연 차단됨.
 function isAllowedQspRedirectUrl(raw: string): boolean {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "https:") return false;
     const host = parsed.hostname.toLowerCase();
     const allowedHosts = getAllowedQspRedirectHosts();
-    return allowedHosts.some((allowed) => {
-      if (host === allowed) return true;
-      // 서브도메인 허용 — `foo.hanasys.jp` OK, `evilhanasys.jp` 차단
-      return (
-        host.length > allowed.length + 1 &&
-        host.endsWith(`.${allowed}`)
-      );
-    });
+    return allowedHosts.includes(host);
   } catch (error: unknown) {
     console.warn("[auto-login] QSP redirect URL 파싱 실패:", {
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -58,22 +69,71 @@ function isAllowedQspRedirectUrl(raw: string): boolean {
 
 /**
  * QSP autoLoginEncryptData 응답.
+ * - resultCode: QSP 공통 응답 메타. **required** — 누락 시 계약 위반으로 간주하여 502.
  * - data.userId: 암호문(non-empty)
  * - data.url: 이동 base URL (HANASYS용) — URL 형식만 검증, host allowlist는 후속 단계에서 별도 검증
- * - resultCode / resultMessage: 공통 응답 메타 — 200 이외는 상위 로직에서 502로 반환
  *
  * host allowlist 를 `.refine` 으로 묶지 않는 이유:
  *   스키마 실패 로그가 "스키마 불일치"로 뭉개져 실제 원인 구분 불가.
  *   URL 형식 실패 / host 거부 / userId 누락 등을 별도 분기로 로깅하여 운영 가시성 확보.
+ *
+ * `z.string().url()` 은 `javascript:` scheme 도 통과시키므로 `.refine` 으로 https 로 1차 방어.
+ * (후속 isAllowedQspRedirectUrl 에서 protocol 재검사하므로 방어 심도 유지용.)
  */
 const qspEncryptResponseSchema = z.object({
-  resultCode: z.number().int().optional(),
+  resultCode: z.number().int(),
   resultMessage: z.string().optional(),
   data: z.object({
-    userId: z.string().min(1, "QSP 암호문이 비어있습니다"),
-    url: z.string().url(),
+    userId: z.string().min(1, "暗号文が空です"),
+    url: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith("https://"), {
+        message: "https scheme required",
+      }),
   }),
 });
+
+/** userId 형식 가드 — middleware 통과 header 지만 defense-in-depth. */
+const USER_ID_PATTERN = /^[A-Za-z0-9@._-]{1,128}$/;
+
+/**
+ * 502 응답 식별자 — 운영/QA 가 원인 구분 가능하도록 code 필드로 분리.
+ * OpenAPI(`ErrorResponse`) 와 enum 동기화 유지.
+ */
+const UPSTREAM_CODES = {
+  TIMEOUT: "UPSTREAM_TIMEOUT",
+  HTTP_ERROR: "UPSTREAM_HTTP_ERROR",
+  RESPONSE_PARSE_FAIL: "UPSTREAM_RESPONSE_PARSE_FAIL",
+  SCHEMA_MISMATCH: "UPSTREAM_SCHEMA_MISMATCH",
+  RESULT_FAIL: "UPSTREAM_RESULT_FAIL",
+  REDIRECT_BLOCKED: "UPSTREAM_REDIRECT_BLOCKED",
+  ASSEMBLY_FAIL: "UPSTREAM_ASSEMBLY_FAIL",
+} as const;
+
+type UpstreamCode = (typeof UPSTREAM_CODES)[keyof typeof UPSTREAM_CODES];
+
+function upstreamError(code: UpstreamCode, message: string) {
+  return NextResponse.json({ error: message, code }, { status: 502 });
+}
+
+/** QSP resultMessage / fetch error.message 에 SQL·내부 스택·userId 유출 방지 */
+const MAX_UPSTREAM_MSG_LEN = 200;
+function sanitizeUpstreamMessage(raw: string | undefined, userId: string): string | undefined {
+  if (!raw) return raw;
+  let replaced = raw;
+  if (userId) {
+    // 원문 + URL-encoded 형태 모두 치환 (fetch error 메시지가 URL 을 포함하는 경우 대비).
+    replaced = replaced.split(userId).join("<userId>");
+    const encoded = encodeURIComponent(userId);
+    if (encoded !== userId) {
+      replaced = replaced.split(encoded).join("<userId>");
+    }
+  }
+  return replaced.length > MAX_UPSTREAM_MSG_LEN
+    ? replaced.slice(0, MAX_UPSTREAM_MSG_LEN) + "...[truncated]"
+    : replaced;
+}
 
 /** Q.Order / Q.Musubi 대상 URL 맵 — 자체 AES256로 암호화한 cipher를 붙여 반환 */
 const SELF_ENCRYPT_TARGET_URL: Record<
@@ -97,6 +157,17 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json(
         { error: "認証が必要です" },
+        { status: 401 },
+      );
+    }
+    // defense-in-depth — middleware 우회 시나리오 대비 userId 형식 가드.
+    // QSP GET query / AES 암호화 입력 양쪽에 쓰이므로 syntax 위해(주입)·예상 외 길이·제어문자 차단.
+    if (!USER_ID_PATTERN.test(userId)) {
+      console.warn("[POST /api/auth/auto-login/encrypt] userId 형식 비정상:", {
+        userIdLength: userId.length,
+      });
+      return NextResponse.json(
+        { error: "認証情報が正しくありません" },
         { status: 401 },
       );
     }
@@ -162,6 +233,8 @@ async function encryptViaQsp(userId: string) {
       `${QSP_API.autoLoginEncrypt}?autoLoginParam1=${encodeURIComponent(userId)}`,
       {
         method: "GET",
+        // 외부 API 프록시 — 응답 캐시 금지. 호출 지점에서 의도 명시.
+        cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       },
       {
@@ -173,19 +246,17 @@ async function encryptViaQsp(userId: string) {
       },
     );
   } catch (error) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 암호화 API 호출 실패:", error);
-    return NextResponse.json(
-      { error: "暗号化サーバーに接続できません" },
-      { status: 502 },
-    );
+    // fetch error 메시지에 URL(userId 쿼리 포함)/스택이 들어올 수 있음 → userId 치환 + truncate.
+    const rawMsg = error instanceof Error ? error.message : String(error);
+    console.error("[POST /api/auth/auto-login/encrypt] QSP 암호화 API 호출 실패:", {
+      errorMessage: sanitizeUpstreamMessage(rawMsg, userId),
+    });
+    return upstreamError(UPSTREAM_CODES.TIMEOUT, "暗号化サーバーに接続できません");
   }
 
   if (!qspResponse.ok) {
     console.error("[POST /api/auth/auto-login/encrypt] QSP 비정상 응답:", qspResponse.status);
-    return NextResponse.json(
-      { error: "暗号化サーバーエラーが発生しました" },
-      { status: 502 },
-    );
+    return upstreamError(UPSTREAM_CODES.HTTP_ERROR, "暗号化サーバーエラーが発生しました");
   }
 
   let qspBody: unknown;
@@ -193,9 +264,9 @@ async function encryptViaQsp(userId: string) {
     qspBody = await qspResponse.json();
   } catch (error) {
     console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 파싱 실패:", error);
-    return NextResponse.json(
-      { error: "暗号化サーバーの応答を処理できません" },
-      { status: 502 },
+    return upstreamError(
+      UPSTREAM_CODES.RESPONSE_PARSE_FAIL,
+      "暗号化サーバーの応答を処理できません",
     );
   }
 
@@ -211,22 +282,20 @@ async function encryptViaQsp(userId: string) {
       issues: parsed.error.issues,
       responseBodyShape,
     });
-    return NextResponse.json(
-      { error: "暗号化サーバーの応答形式が正しくありません" },
-      { status: 502 },
+    return upstreamError(
+      UPSTREAM_CODES.SCHEMA_MISMATCH,
+      "暗号化サーバーの応答形式が正しくありません",
     );
   }
 
-  // QSP 계약상 성공은 resultCode=200. 스키마가 optional이지만 값이 있으면 반드시 200이어야 함.
-  if (parsed.data.resultCode !== undefined && parsed.data.resultCode !== 200) {
+  // QSP 계약상 성공은 resultCode=200. required 로 올려 누락 = 계약 위반으로 502.
+  if (parsed.data.resultCode !== 200) {
     console.error("[POST /api/auth/auto-login/encrypt] QSP resultCode 비정상:", {
       resultCode: parsed.data.resultCode,
-      resultMessage: parsed.data.resultMessage,
+      // resultMessage 에 QSP 내부 SQL/스택이 유입될 수 있음 → truncate + userId 치환.
+      resultMessage: sanitizeUpstreamMessage(parsed.data.resultMessage, userId),
     });
-    return NextResponse.json(
-      { error: "暗号化サーバーの応答に失敗しました" },
-      { status: 502 },
-    );
+    return upstreamError(UPSTREAM_CODES.RESULT_FAIL, "暗号化サーバーの応答に失敗しました");
   }
 
   const { userId: cipherText, url: qspUrl } = parsed.data.data;
@@ -250,9 +319,9 @@ async function encryptViaQsp(userId: string) {
         allowedHosts: getAllowedQspRedirectHosts(),
       },
     );
-    return NextResponse.json(
-      { error: "暗号化サーバーの応答形式が正しくありません" },
-      { status: 502 },
+    return upstreamError(
+      UPSTREAM_CODES.REDIRECT_BLOCKED,
+      "リダイレクト先が許可されていません",
     );
   }
   // 문자열 연결 대신 URL 객체 사용 — QSP가 반환하는 url에 ?가 포함/미포함 어느 쪽이든 안전.
@@ -266,9 +335,9 @@ async function encryptViaQsp(userId: string) {
     console.error("[POST /api/auth/auto-login/encrypt] QSP url 조립 실패:", {
       errorMessage: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.json(
-      { error: "暗号化サーバーの応答形式が正しくありません" },
-      { status: 502 },
+    return upstreamError(
+      UPSTREAM_CODES.ASSEMBLY_FAIL,
+      "リダイレクトURLの生成に失敗しました",
     );
   }
 
