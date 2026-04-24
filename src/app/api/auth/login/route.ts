@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
           isActive: true,
         },
         orderBy: { sortOrder: "asc" },
-        select: { code: true, sortOrder: true },
+        select: { code: true },
       });
       if (activeCode) {
         const days = Number(activeCode.code);
@@ -167,13 +167,23 @@ export async function POST(request: NextRequest) {
 
       // (A) 가입일 유예 체크 — regDt + validityDays > now 면 신규가입 유예기간
       //    regDt 미제공(QSP 로그인 응답에 누락)이면 유예 스킵하고 (B) 로 폴백.
+      //    regDt 가 현재보다 **미래 (+1일 이상)** 이면 QSP 측 시간 이상/조작 가능성 →
+      //    fail-closed 로 유예 스킵 (2FA 무기한 우회 방지 — Boston 리뷰 HIGH).
+      const MAX_REG_DT_SKEW_MS = 24 * 60 * 60 * 1000; // NTP 드리프트 허용치 1일
       let inRegGracePeriod = false;
       if (qsp.data.regDt) {
         const regIso = parseQspDate(qsp.data.regDt); // "YYYY-MM-DDTHH:mm:ss+09:00"
         if (regIso) {
           const regMs = new Date(regIso).getTime();
           if (!Number.isNaN(regMs)) {
-            inRegGracePeriod = now < regMs + validityDays * MS_PER_DAY;
+            if (regMs > now + MAX_REG_DT_SKEW_MS) {
+              console.warn(
+                "[POST /api/auth/login] regDt 미래 날짜 감지 — 유예 스킵",
+                { userTp: qsp.data.userTp, userId: maskEmail(qsp.data.userId) },
+              );
+            } else {
+              inRegGracePeriod = now < regMs + validityDays * MS_PER_DAY;
+            }
           } else {
             console.warn("[POST /api/auth/login] regDt 파싱 불가 — 유예 스킵");
           }
@@ -181,7 +191,16 @@ export async function POST(request: NextRequest) {
       }
 
       if (inRegGracePeriod) {
-        // 신규가입 유예기간 — 2FA 팝업 노출 안 함
+        // 신규가입 유예기간 — 2FA 팝업 노출 안 함.
+        // 보안 모니터링: 면제 발생을 warn 으로 격상해 집계/알람에서 추적 가능하게 한다.
+        console.warn(
+          "[POST /api/auth/login] 2FA 면제(신규가입 유예)",
+          {
+            userTp: qsp.data.userTp,
+            userId: maskEmail(qsp.data.userId),
+            validityDays,
+          },
+        );
         requireTwoFactor = false;
       } else {
         // (B) 유예 경과 — secAuthDt 기반 재인증 주기 판정

@@ -17,13 +17,14 @@ interface ContentsResponse {
 export function HomeContents() {
   // 로그인 전후 / 역할 전환 시 캐시가 혼용되어 로그인 후에도 비로그인 캐시(보통 0건)가
   // 노출되던 문제 방지 — queryKey 에 사용자 scope 포함. home-notices 와 동일 패턴.
+  // userId 는 의도적으로 제외 (PII 노출 방지, role 단위 필터이므로 동일 role 공유 무해).
   const { data: user } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
     queryFn: () => null,
     staleTime: Infinity,
     enabled: false,
   });
-  const cacheScope = user ? `${user.userTp}:${user.authRole ?? "-"}:${user.userId}` : "guest";
+  const cacheScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "guest";
 
   const { data: contents = [], isLoading } = useQuery<HomeContentItem[]>({
     queryKey: ["home-contents", cacheScope],
