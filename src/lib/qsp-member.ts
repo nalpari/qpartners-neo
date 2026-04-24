@@ -61,9 +61,14 @@ export async function fetchQspUserDetail(
   logTag: string,
   userId?: string,
 ): Promise<{ ok: true; detail: QspMemberDetail } | { ok: false; error: QspFetchError }> {
+  // QSP BC_QP_USER 는 같은 email 에 다른 login_id 가 중복 등록될 수 있어,
+  // GENERAL 에서 email 단독 조회 시 selectOne() 이 TooManyResultsException 으로 실패.
+  // GENERAL 은 userId === email 이므로 email + loginId 를 함께 전달하여
+  // where 조건을 유니크하게 고정한다.
   const qspParams = new URLSearchParams({ accsSiteCd: SITE_DEFAULTS.accsSiteCd, userTp });
   if (userTp === "GENERAL") {
     qspParams.set("email", rawId);
+    qspParams.set("loginId", rawId);
   } else {
     qspParams.set("loginId", rawId);
   }
