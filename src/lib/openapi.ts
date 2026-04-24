@@ -189,6 +189,180 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/auth/auto-login/encrypt": {
+      post: {
+        tags: ["Auth"],
+        summary: "자동로그인 암호화 URL 생성 (outbound)",
+        description:
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. hanasys는 QSP autoLoginEncryptData API 경유, qOrder/qMusubi는 자체 AES-256 암호화(YYYYMMDD+AUTO_LOGIN_AES_KEY) 후 각 시스템 도메인으로 이동.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["target"],
+                properties: {
+                  target: {
+                    type: "string",
+                    enum: ["hanasys", "qOrder", "qMusubi"],
+                    description: "이동 대상 시스템",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "암호화 URL 생성 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        url: {
+                          type: "string",
+                          description: "자동로그인 파라미터가 포함된 이동 URL",
+                          example:
+                            "https://jp-dev.qsalesplatform.com/eos/login/autoLogin?autoLoginParam1=...",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("リクエスト形式または target 파라미터 오류"),
+          "401": errorResponse("인증 필요"),
+          "500": errorResponse("암호화 처리 오류"),
+          "502": errorResponse("외부 암호화 서버 오류 (hanasys target 한정)"),
+        },
+      },
+    },
+    "/auth/auto-login/decrypt": {
+      get: {
+        tags: ["Auth"],
+        summary: "자동로그인 복호화 (QSP 역호출용)",
+        description:
+          "QSP가 qOrder/qMusubi 자동로그인 처리 중 Q.Partners를 역호출하여 cipher를 userId로 복원하는 M2M 엔드포인트. Q.Partners encryptSelf가 생성한 cipher 전용이며 hanasys 경로는 대상 아님. 자정 경계(KST) 시 당일 키 → 전일 키 순으로 최대 2회 시도 후 모두 실패하면 500.",
+        parameters: [
+          {
+            name: "autoLoginParam1",
+            in: "query",
+            required: true,
+            schema: { type: "string" },
+            description: "URL 디코딩된 Base64 암호문",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "복호화 성공 — data.userId는 복호화된 평문 로그인 ID(항상 문자열). 사용자 존재 여부는 검증하지 않음.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", example: "T01" },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 200 },
+                    resultMessage: { type: "string", example: "decrypt success" },
+                  },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "autoLoginParam1 누락",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 400 },
+                    resultMessage: { type: "string", example: "autoLoginParam1 is required" },
+                  },
+                },
+              },
+            },
+          },
+          "401": {
+            description: "호출자 검증 실패 — AUTO_LOGIN_DECRYPT_SECRET 설정 시 X-QSP-Auth 헤더 불일치",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 401 },
+                    resultMessage: { type: "string", example: "caller verification failed" },
+                  },
+                },
+              },
+            },
+          },
+          "429": {
+            description: "rate limit 초과 (IP 기준 분당 60회, IP 헤더 없을 시 분당 20회)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 429 },
+                    resultMessage: { type: "string", example: "too many requests" },
+                  },
+                },
+              },
+            },
+          },
+          "500": {
+            description: "복호화 실패 (손상된 cipher 또는 키 불일치)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 500 },
+                    resultMessage: { type: "string", example: "decrypt failed" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     "/auth/login-user-info": {
       get: {
         tags: ["Auth"],

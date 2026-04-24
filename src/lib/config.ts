@@ -50,6 +50,18 @@ export const QSP_API = {
   userListMng: `${QSP_BASE_URL}/api/qpartners/userMng/userListMng`,
   /** No.12 Q.Partners 회원관리 정보 수정 — 부가 정보 수정 (2차인증, 뉴스레터, 로그인 알림, 뉴스 수신) */
   updateUserDtlMng: `${QSP_BASE_URL}/api/qpartners/userMng/updateUserDtlMng`,
+  /** 자동로그인 암호화 — HANASYS DESIGN target 전용 (QSP가 cipher + 진입 URL 생성하여 반환) */
+  autoLoginEncrypt: `${QSP_BASE_URL}/login/autoLoginEncryptData`,
+} as const;
+
+// ─── Auto Login (Q.Order / Q.Musubi) ───
+// 자동로그인 엔드포인트는 Q.Order/Q.Musubi 자체 도메인이 아닌 QSP 도메인에 호스팅됨
+// (가이드: `{qsp-domain}/eos/login/autoLogin`, `{qsp-domain}/qm/login/autoLogin`)
+export const AUTO_LOGIN_URL = {
+  /** Q.Order 자동로그인 — GET {qsp-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
+  qOrder: `${QSP_BASE_URL}/eos/login/autoLogin`,
+  /** Q.Musubi 자동로그인 — GET {qsp-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
+  qMusubi: `${QSP_BASE_URL}/qm/login/autoLogin`,
 } as const;
 
 // ─── Upload Storage ───

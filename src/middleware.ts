@@ -19,6 +19,9 @@ const PUBLIC_PATHS = [
   // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
   // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)
   "/api/auth/auto-login/inbound",
+  // 자동로그인 복호화 (QSP 역호출 M2M 엔드포인트) — 외부 QSP 서버가 호출하므로 JWT 쿠키 없음.
+  // 호출자 검증은 route handler 내부에서 X-QSP-Auth shared secret + rate-limit 로 수행.
+  "/api/auth/auto-login/decrypt",
   "/api/openapi",
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
   // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
