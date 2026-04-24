@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
-import { useAuthStore } from "@/lib/auth-store";
+import { performLogout } from "@/lib/auth-client";
 import { Button, Spinner } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -27,7 +27,7 @@ export function WithdrawPopup() {
   const router = useRouter();
   const { closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const logout = useAuthStore((s) => s.logout);
+  const queryClient = useQueryClient();
 
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
@@ -76,13 +76,16 @@ export function WithdrawPopup() {
       await api.post("/mypage/withdraw", { reason: reason.trim() });
       setIsSubmitting(false);
       // Plan SC: 성공 → alert → 로그아웃 → 홈 이동
+      // performLogout: /api/auth/logout 호출 + AUTH_FLAG_KEY 제거 + dispatchAuthChange + queryClient.clear
+      //   BE 가 200 응답에서 이미 쿠키를 삭제하지만, localStorage/이벤트/캐시 정리는 FE 담당.
       openAlert({
         type: "alert",
         message: "会員退会が完了しました。ご利用ありがとうございます。",
         onConfirm: () => {
-          logout();
-          closePopup();
-          router.push("/");
+          void performLogout(queryClient).finally(() => {
+            closePopup();
+            router.push("/");
+          });
         },
       });
     } catch (err: unknown) {
@@ -98,22 +101,25 @@ export function WithdrawPopup() {
             type: "alert",
             message: "ログインが必要です。",
             onConfirm: () => {
-              logout();
-              closePopup();
-              router.push("/login");
+              void performLogout(queryClient).finally(() => {
+                closePopup();
+                router.push("/login");
+              });
             },
           });
         } else if (status === 403) {
           openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
         } else if (status === 409) {
-          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — 세션 정리 후 홈 이동.
+          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — BE 가 쿠키를 삭제했으므로
+          // FE 는 localStorage/이벤트/캐시만 정리해 헤더·다른 탭 상태와 동기화.
           openAlert({
             type: "alert",
-            message: "すでに退会済みです。",
+            message: errorMsg ?? "すでに退会済みです。",
             onConfirm: () => {
-              logout();
-              closePopup();
-              router.push("/");
+              void performLogout(queryClient).finally(() => {
+                closePopup();
+                router.push("/");
+              });
             },
           });
         } else if (status === 429) {
@@ -126,7 +132,13 @@ export function WithdrawPopup() {
             message: errorMsg ?? "退会処理に失敗しました。しばらくしてから再度お試しください。",
           });
         } else {
-          openAlert({ type: "alert", message: errorMsg ?? "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+          // 500 및 매핑되지 않은 상태 코드는 BE 응답 본문을 신뢰하지 않고 고정 fallback 문구만 표시.
+          //   향후 BE 500 경로에 내부 오류 메시지(SQL / 스택트레이스 문자열 등)가 혼입되더라도
+          //   UI 자동 노출되지 않도록 차단하는 심층 방어. 429·502 는 사유 구분이 필요하므로 제외.
+          openAlert({
+            type: "alert",
+            message: "サーバーエラーが発生しました。しばらくしてからお試しください。",
+          });
         }
       } else {
         console.error("[Withdraw] 탈퇴 처리 실패:", err);

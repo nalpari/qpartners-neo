@@ -85,6 +85,14 @@ export async function POST(request: NextRequest) {
     //   IP 버킷(있을 때만) + account 버킷(항상) AND 조합으로 XFF 스푸핑 IP 로테이션 공격 방어.
     //   email 은 trim + toLowerCase 정규화로 variant 우회 차단.
     //   기준: password-reset/request 보다 엄격(탈퇴 불가역 특성). IP 있음 → 각 5건, IP 없음 → account 3건.
+    //
+    // 배치 순서 (body 파싱/Zod 검증 전 실행) — 의도적 결정:
+    //   (1) QSP 부하 보호 최우선: JWT 인증된 사용자의 악성/자동화 루프가 body 파싱 비용을
+    //       들이기 전에 차단되어 QSP saveResignReq 로 전파되는 것을 막는다.
+    //   (2) 정상 사용자가 잘못된 body(e.g. 필드 오타)를 보내도 토큰을 소모하는 trade-off 가 있으나,
+    //       탈퇴 화면은 단일 textarea(reason) 1개뿐이라 실 사용자가 시간당 5건을 넘기기 어려움.
+    //   (3) 반대 배치(검증 후 rate limit)는 인증만 통과한 공격자가 유효 body 1개만 확보하면
+    //       rate limit 을 우회할 수 있으므로 채택하지 않음.
     const forwarded = request.headers.get("x-forwarded-for");
     // x-real-ip 가 빈 문자열("")이면 `??` 를 통과해 공용 rate limit 버킷이 생기는 edge case 방어 — `||` + null fallback 으로 통일.
     const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null;
@@ -101,9 +109,16 @@ export async function POST(request: NextRequest) {
       RATE_LIMIT_WINDOW_MS,
     );
     if (!ipOk || !accountOk) {
+      // RFC 6585 — 429 응답에 Retry-After(초) 부여. 윈도우 전체를 대기 힌트로 제공하여
+      // 자동화 스크립트의 즉시 재시도 루프를 억제하고, 정상 클라이언트에도 재시도 타이밍을 안내.
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
-        { status: 429 },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)),
+          },
+        },
       );
     }
 
@@ -138,13 +153,15 @@ export async function POST(request: NextRequest) {
     );
     if (!detailResult.ok) {
       // QSP 내부 오류 메시지(SQL 등)가 클라이언트로 직접 전달되지 않도록 일반화된 문구로 대체.
+      // status 도 QSP 원본(404 등) 을 그대로 전달하면 User Enumeration 공격자의 회원 존재여부
+      // 추론 단서가 되므로 502(Bad Gateway) 로 고정. 원본 status 는 로그에만 보존.
       console.error("[POST /api/mypage/withdraw] QSP userDetail 조회 실패:", {
         status: detailResult.error.status,
         msg: detailResult.error.error,
       });
       return NextResponse.json(
         { error: "退会処理中にエラーが発生しました" },
-        { status: detailResult.error.status },
+        { status: 502 },
       );
     }
     const current = detailResult.detail;
