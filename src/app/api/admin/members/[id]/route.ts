@@ -305,8 +305,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
     const preDetail = preDetailResult.ok ? preDetailResult.detail : null;
 
-    // 4-0. 권한별 수정 제한 정책 (화면설계서 v1.1, 2026-03-30)
-    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는 newsRcptYn 만 허용.
+    // 4-0. 권한별 수정 제한 정책 (화면설계서)
+    // GENERAL 회원만 전체 필드 수정 가능. 그 외(STORE/SEKO/ADMIN)는
+    //   newsRcptYn / twoFactorEnabled / attributeChangeNotification 만 허용.
     // ※ 비밀번호는 별도 API(/reset-password) 로 처리되므로 본 PUT 스키마에 없음.
     //
     // 화이트리스트(ALLOWED_NON_GENERAL_FIELDS) 기반 fail-closed 검증:
@@ -319,7 +320,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "一般会員以外はニュースレター受信設定のみ変更可能です",
+              "一般会員以外はニュースレター・二次認証・属性変更通知のみ変更可能です",
             details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
           },
           { status: 400 },

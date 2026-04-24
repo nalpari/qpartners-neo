@@ -398,7 +398,7 @@ function MemberEditForm({
     // 화면설계서 기준 편집 허용 필드:
     //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn — 전 회원 유형
     //   · loginNotification — GENERAL(일반회원) 한정
-    //   · status — GENERAL / SEKO (isStatusEditable)
+    //   · status — GENERAL 전용 (SEKO 는 회원관리 대상 아님)
     //   · userRole — GENERAL
     // payload 에 불허 필드를 포함하면 BE 화이트리스트에서 400 거부되므로 유형별로 분기 구성.
     const payload: MemberUpdatePayload = {
@@ -537,13 +537,15 @@ function MemberEditForm({
                     label: "ログイン通知",
                     // 로그인 알림은 일반회원 전용 설정. GENERAL + 읽기가능 경로만 radio, 그 외는 TextValue.
                     // 회원상태(isStatusEditable)와 동일한 UX — 편집 불가 필드는 비활성 radio 대신 값만 표시.
+                    // non-GENERAL 회원은 `対象外` 로 표기해 QSP 잔존값이 "有効" 으로 보여도 실제 적용 대상이
+                    // 아님을 명확히 안내 (관리자가 적용 상태로 오해하지 않도록).
                     children: isGeneral && !isReadOnly ? (
                       <div className="flex items-center gap-3">
                         <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
                         <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
                       </div>
                     ) : (
-                      <TextValue value={loginNotification ? "有効" : "無効"} />
+                      <TextValue value={isGeneral ? (loginNotification ? "有効" : "無効") : "対象外"} />
                     ),
                   }}
                 />

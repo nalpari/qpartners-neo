@@ -1282,12 +1282,17 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 **권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
 
+**menuCode 검증 (2단)**:
+- Zod 형식 검증: \`^[A-Z][A-Z0-9_]{0,49}$\` (+ max 50). 메뉴관리 UI 에서 신규 등록한 menuCode(예: TEST2) 도 통과.
+- DB 존재성 검증: \`qp_menus\` 일괄 findMany. 미존재 코드 포함 시 400 + \`{ error, unknownMenuCodes: string[] }\`.
+- FK 경합: 사전 검증과 upsert 사이에 메뉴가 삭제되면 P2003 → 400 + 재시도 안내.
+
 **Lockout 방어 (3중화)**:
 1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "ADM_PERMISSION", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
 2. target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
 3. target ≠ \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
-세 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
+세 lockout 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
         parameters: [
           {
             name: "roleCode",
@@ -1328,7 +1333,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "バリデーションエラー 또는 Lockout 가드 거부",
+            description: "バリデーションエラー / 未存在 menuCode / FK 경합 / Lockout 가드 거부",
             content: {
               "application/json": {
                 schema: {
@@ -1336,7 +1341,35 @@ export const openApiSpec: OpenAPIV3.Document = {
                     { $ref: "#/components/schemas/ValidationErrorResponse" },
                     {
                       type: "object",
+                      required: ["error", "unknownMenuCodes"],
+                      description: "DB 에 존재하지 않는 menuCode 가 payload 에 포함",
+                      properties: {
+                        error: {
+                          type: "string",
+                          example: "存在しないメニューコードが含まれています",
+                        },
+                        unknownMenuCodes: {
+                          type: "array",
+                          items: { type: "string" },
+                          example: ["TEST_GHOST"],
+                        },
+                      },
+                    },
+                    {
+                      type: "object",
+                      required: ["error"],
+                      description: "P2003 FK 경합 — 사전 검증과 upsert 사이에 메뉴가 삭제됨",
+                      properties: {
+                        error: {
+                          type: "string",
+                          example: "対象のメニューが削除されました。メニュー管理を更新して再試行してください",
+                        },
+                      },
+                    },
+                    {
+                      type: "object",
                       required: ["error", "menuCode", "action"],
+                      description: "Lockout 가드 3단 중 하나에 의해 거부",
                       properties: {
                         error: {
                           type: "string",

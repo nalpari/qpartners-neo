@@ -55,8 +55,11 @@ export const updatePermissionsSchema = z
             // menuCode 는 메뉴관리 UI 에서 신규 등록 가능하므로 enum 하드코딩 대신 형식만 검증.
             // 존재 여부는 route handler 가 DB 조회(qp_menus) 로 일괄 확인 — 임의 문자열 주입은
             // FK + route 검증 두 단계에서 막힌다.
+            // `.max(50)` 은 정규식이 이미 50자 강제하지만, 향후 정규식만 완화될 때도 길이 제약이
+            // 남도록 Defense in Depth 로 병행.
             menuCode: z
               .string()
+              .max(50, "メニューコードが長すぎます")
               .regex(MENU_CODE_REGEX, "メニューコードの形式が正しくありません"),
             canRead: z.boolean().default(false),
             canCreate: z.boolean().default(false),
