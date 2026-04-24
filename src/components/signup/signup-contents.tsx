@@ -297,6 +297,7 @@ export function SignupContents() {
                   value={form.phone}
                   onChange={(v) => updateField("phone", v)}
                   type="tel"
+                  placeholder="000-0000-0000"
                 />
               </FormRow>
 
@@ -306,6 +307,7 @@ export function SignupContents() {
                   value={form.fax}
                   onChange={(v) => updateField("fax", v)}
                   type="tel"
+                  placeholder="0000-000-000"
                 />
               </FormRow>
             </div>
@@ -596,7 +598,7 @@ function PasswordInput({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-full lg:flex-1 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
+    <div className="flex items-center gap-2 w-full lg:w-[602px] lg:shrink-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
       <input
         type={show ? "text" : "password"}
         value={value}
