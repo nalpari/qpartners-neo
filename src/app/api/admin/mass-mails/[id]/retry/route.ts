@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — BULK_MAIL.update 매트릭스 기반
     //    (재발송은 기존 메일의 상태 전이 → update 로 분류)
-    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "update");
+    const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 

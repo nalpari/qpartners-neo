@@ -146,7 +146,7 @@ function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — MEMBERS.read 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "read");
+    const authResult = await requireMenuPermission(request.headers, "ADM_MEMBER", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. ID/userTp 파라미터 검증
@@ -235,7 +235,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — MEMBERS.update 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "update");
+    const authResult = await requireMenuPermission(request.headers, "ADM_MEMBER", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 

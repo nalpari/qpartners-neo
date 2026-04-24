@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useSyncExternalStore } from "react";
+import { useMemo, useState, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,46 @@ import { performLogout } from "@/lib/auth-client";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
+import { useMenuTree } from "@/hooks/use-menu-tree";
+import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
+import { useAlertStore } from "@/lib/store";
+import { MENU } from "@/lib/menu-codes";
+import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
+
+/** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
+const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+  { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
+  { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
+];
+
+/**
+ * 앱 내부 링크로 허용되는 pageUrl 패턴 — 메뉴관리 DB 값이 공격 벡터가 되지 않도록 whitelist.
+ * - 절대 경로만 (`/` 로 시작)
+ * - `//` (protocol-relative), 공백, `:` (스킴), `@` 등 예기치 않은 문자 차단
+ * - 허용 문자: 영숫자 / `-` / `_` / `/`
+ * 관리자 계정 탈취 + 메뉴관리 경로 변조가 선행되어야 하는 낮은 리스크이나 심층 방어 목적.
+ */
+const SAFE_PAGE_URL = /^\/[a-zA-Z0-9\-_/]+$/;
+
+/** 1-Level 메뉴에서 Gnb 노출 후보만 필터 (ADMIN 은 admin-tab 이 담당) */
+function filterGnbMenus(
+  tree: MenuTreeItem[] | undefined,
+  mode: "pc" | "mobile",
+): { menuCode: string; menuName: string; pageUrl: string }[] {
+  if (!tree || tree.length === 0) return [];
+  const visibleKey = mode === "pc" ? "showInTopNav" : "showInMobile";
+  return tree
+    .filter((m): m is MenuTreeItem & { pageUrl: string } =>
+      m.isActive
+      && m[visibleKey]
+      && m.menuCode !== MENU.ADMIN
+      && typeof m.pageUrl === "string"
+      && m.pageUrl.length > 0
+      && SAFE_PAGE_URL.test(m.pageUrl),
+    )
+    .sort((a: MenuApiItem, b: MenuApiItem) => a.sortOrder - b.sortOrder)
+    .map((m) => ({ menuCode: m.menuCode, menuName: m.menuName, pageUrl: m.pageUrl }));
+}
 
 async function fetchAuthMe(): Promise<LoginUser | null> {
   try {
@@ -42,11 +82,26 @@ interface RelatedSite {
   href: string;
   note?: string;
 }
+// 환경별 URL 분기 — NODE_ENV 는 Next.js 빌드 시 클라이언트 번들에 인라인됨
+const IS_PROD = process.env.NODE_ENV === "production";
+
+const RELATED_SITE_URLS = {
+  qorder: IS_PROD ? "https://q-order.q-cells.jp/" : "https://q-order-dev.q-cells.jp/",
+  qmusubi: IS_PROD ? "https://q-musubi.q-cells.jp/" : "https://q-musubi-dev.q-cells.jp/",
+  hanasys: IS_PROD ? "https://www.hanasys.jp/" : "https://dev.hanasys.jp/",
+} as const;
+
+// Q.WARRANTY 는 역할별 로그인 URL 분리 (ADMIN → admin_login, STORE → seller_login)
+const QWARRANTY_URLS = {
+  ADMIN: "https://q-warranty.q-cells.jp/admin_login",
+  STORE: "https://q-warranty.q-cells.jp/seller_login",
+} as const;
+
 const ALL_RELATED_SITES: readonly RelatedSite[] = [
-  { label: "HANASYS ORDER", value: "qorder", href: "https://qorder.hanasys.co.jp" },
-  { label: "HANASYS MUSUBI", value: "qmusubi", href: "https://qmusubi.hanasys.co.jp" },
-  { label: "HANASYS DESIGN", value: "hanasys", href: "https://hanasys.co.jp" },
-  { label: "Q.WARRANTY", value: "qwarranty", href: "https://qwarranty.hanasys.co.jp", note: "(別途ログインが必要)" },
+  { label: "HANASYS ORDER", value: "qorder", href: RELATED_SITE_URLS.qorder },
+  { label: "HANASYS MUSUBI", value: "qmusubi", href: RELATED_SITE_URLS.qmusubi },
+  { label: "HANASYS DESIGN", value: "hanasys", href: RELATED_SITE_URLS.hanasys },
+  { label: "Q.WARRANTY", value: "qwarranty", href: QWARRANTY_URLS.STORE, note: "(別途ログインが必要)" },
 ];
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
@@ -70,7 +125,10 @@ function getRelatedSites(user: LoginUser) {
   const key = getUserSiteKey(user);
   if (!key) return [];
   const allowed = SITE_ACCESS_MAP[key];
-  return ALL_RELATED_SITES.filter((site) => allowed.includes(site.value));
+  const qwarrantyHref = key === "ADMIN" ? QWARRANTY_URLS.ADMIN : QWARRANTY_URLS.STORE;
+  return ALL_RELATED_SITES
+    .filter((site) => allowed.includes(site.value))
+    .map((site) => site.value === "qwarranty" ? { ...site, href: qwarrantyHref } : site);
 }
 
 function subscribeAuthFlag(callback: () => void) {
@@ -108,6 +166,29 @@ export function Gnb() {
   const relatedSites = user ? getRelatedSites(user) : [];
   const showRelatedSites = relatedSites.length > 0;
   const isLoggingOut = useRef(false);
+
+  // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
+  const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
+  const pcMenus = useMemo(() => {
+    const filtered = filterGnbMenus(menuTree, "pc");
+    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
+  }, [menuTree]);
+  const mobileMenus = useMemo(() => {
+    const filtered = filterGnbMenus(menuTree, "mobile");
+    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
+  }, [menuTree]);
+
+  // RBAC — GNB 메뉴 클릭 시 매트릭스 canRead 가 false 면 이동 차단 + alert.
+  // 비로그인 상태는 기존 Link 동작(서버 가드가 /login 유도)을 그대로 사용.
+  const { has } = useMenuPermissionMap();
+  const { openAlert } = useAlertStore();
+  const handleGnbMenuClick = (e: React.MouseEvent<HTMLAnchorElement>, menuCode: string) => {
+    if (!hasAuthFlag) return;
+    if (!has(menuCode, "read")) {
+      e.preventDefault();
+      openAlert({ type: "alert", message: "アクセス権限がありません。" });
+    }
+  };
 
   const handleLogout = async () => {
     if (isLoggingOut.current) return;
@@ -157,24 +238,18 @@ export function Gnb() {
           {/* PC 메뉴 영역 */}
           <nav className="hidden lg:flex flex-1 items-center self-stretch">
             <ul className="flex items-center gap-[54px] pl-[60px]">
-              <li>
-                <Link
-                  href="/contents"
-                  transitionTypes={["fade"]}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
-                >
-                  コンテンツ
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/inquiry"
-                  transitionTypes={["fade"]}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
-                >
-                  お問い合わせ
-                </Link>
-              </li>
+              {pcMenus.map((menu) => (
+                <li key={menu.menuCode}>
+                  <Link
+                    href={menu.pageUrl}
+                    transitionTypes={["fade"]}
+                    onClick={(e) => handleGnbMenuClick(e, menu.menuCode)}
+                    className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white whitespace-nowrap transition-colors duration-200 hover:text-[#e97923]"
+                  >
+                    {menu.menuName}
+                  </Link>
+                </li>
+              ))}
               {showRelatedSites && (
                 <li className="relative">
                   <button
@@ -465,59 +540,39 @@ export function Gnb() {
 
           {/* 네비게이션 */}
           <nav className="flex flex-col flex-1">
-            {/* コンテンツ */}
-            <Link
-              href="/contents"
-              transitionTypes={["fade"]}
-              className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
-                コンテンツ
-              </span>
-              <svg
-                width="6"
-                height="10"
-                viewBox="0 0 6 10"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+            {/* 동적 메뉴 (API 기반, fallback 포함) */}
+            {mobileMenus.map((menu) => (
+              <Link
+                key={menu.menuCode}
+                href={menu.pageUrl}
+                transitionTypes={["fade"]}
+                className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
+                onClick={(e) => {
+                  handleGnbMenuClick(e, menu.menuCode);
+                  // 매트릭스 거부 시 preventDefault 된 상태 — 그래도 drawer 는 닫는 게 UX 자연스러움.
+                  setIsMobileMenuOpen(false);
+                }}
               >
-                <path
-                  d="M1 9L5 5L1 1"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
-
-            {/* お問い合わせ */}
-            <Link
-              href="/inquiry"
-              transitionTypes={["fade"]}
-              className="flex items-center justify-between px-3 py-[18px] border-b border-[#1a1a1a]"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
-                お問い合わせ
-              </span>
-              <svg
-                width="6"
-                height="10"
-                viewBox="0 0 6 10"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M1 9L5 5L1 1"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
+                <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
+                  {menu.menuName}
+                </span>
+                <svg
+                  width="6"
+                  height="10"
+                  viewBox="0 0 6 10"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M1 9L5 5L1 1"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </Link>
+            ))}
 
             {/* 関連サイト — 토글 (회원유형별 노출) */}
             {showRelatedSites && (

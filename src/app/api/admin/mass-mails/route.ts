@@ -50,7 +50,7 @@ interface ParsedRequest {
 
 async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequest | NextResponse> {
   // 1. 관리자 권한 확인 — BULK_MAIL.create 매트릭스 기반 (POST 전용 헬퍼)
-  const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "create");
+  const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "create");
   if (authResult instanceof NextResponse) return authResult;
   const { user } = authResult;
 
@@ -297,7 +297,7 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
 export async function GET(request: NextRequest) {
   try {
     // 1. 관리자 권한 확인 — BULK_MAIL.read 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "read");
+    const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. 쿼리 파라미터 파싱

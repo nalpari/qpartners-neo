@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   createHomeNoticeSchema,
@@ -9,10 +9,10 @@ import {
   toTargetArray,
 } from "@/lib/schemas/home-notice";
 
-// GET /api/home-notices — 공지 목록 (관리자용)
+// GET /api/home-notices — 공지 목록 (ADM_NOTICE.read 매트릭스 기반)
 export async function GET(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { searchParams } = request.nextUrl;
@@ -133,10 +133,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/home-notices — 공지 등록
+// POST /api/home-notices — 공지 등록 (ADM_NOTICE.create 매트릭스 기반)
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;

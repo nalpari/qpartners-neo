@@ -33,7 +33,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — BULK_MAIL.read 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "read");
+    const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "read");
     if (authResult instanceof NextResponse) return authResult;
 
     // 2. ID 파라미터 검증
@@ -152,7 +152,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — BULK_MAIL.delete 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "delete");
+    const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "delete");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
@@ -240,7 +240,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   try {
     // 1. 관리자 권한 확인 — BULK_MAIL.update 매트릭스 기반
-    const authResult = await requireMenuPermission(request.headers, "BULK_MAIL", "update");
+    const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 

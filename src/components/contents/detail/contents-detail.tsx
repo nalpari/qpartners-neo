@@ -8,6 +8,8 @@ import api from "@/lib/axios";
 import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { canModifyClient } from "@/lib/auth-client";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -114,7 +116,16 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
   const canModify = data ? canModifyClient(user, data) : false;
 
+  // RBAC Phase 3 §버튼 정책: 작성자 가드(canModify) 통과한 버튼에 한해 메뉴 권한 alert 가드.
+  // CONTENT menuCode 의 canUpdate/canDelete 가 false 면 클릭 시 "権限がありません。"
+  // 권한 로딩 중에는 서버 재검증이 최종 장벽이므로 진행 허용 (로딩 플래시 차단).
+  const { canUpdate, canDelete, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
+
   const handleDelete = () => {
+    if (!isPermLoading && !canDelete) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "本当に削除しますか？",
@@ -151,6 +162,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   };
 
   const handleEdit = () => {
+    if (!isPermLoading && !canUpdate) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     router.push(`/contents/${contentId}/edit`);
   };
 
@@ -198,6 +213,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           actions={
             <ContentsDetailActions
               canModify={canModify}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
               onDelete={handleDelete}
               onEdit={handleEdit}
               onList={handleList}
@@ -231,6 +248,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         {/* 하단 기능 버튼 */}
         <ContentsDetailActions
           canModify={canModify}
+          canUpdate={canUpdate}
+          canDelete={canDelete}
           onDelete={handleDelete}
           onEdit={handleEdit}
           onList={handleList}

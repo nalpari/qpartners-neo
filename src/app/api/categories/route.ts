@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/schemas/category";
 
@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
     const internalOnly = searchParams.get("internalOnly") === "true";
     const activeOnly = searchParams.get("activeOnly") !== "false";
 
-    // 비활성 항목 포함 조회 시 관리자 인증 필요
+    // 비활성 항목 포함 조회 시 ADM_CATEGORY.read 매트릭스 필요 (관리자 메뉴 전용)
     if (!activeOnly) {
-      const auth = requireAdmin(request.headers);
+      const auth = await requireMenuPermission(request.headers, "ADM_CATEGORY", "read");
       if (auth instanceof NextResponse) return auth;
     }
 
@@ -48,10 +48,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/categories — 카테고리 등록
+// POST /api/categories — 카테고리 등록 (ADM_CATEGORY.create 매트릭스 기반)
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_CATEGORY", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;

@@ -248,7 +248,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                             type: "object",
                             required: ["menuCode", "canRead", "canCreate", "canUpdate", "canDelete"],
                             properties: {
-                              menuCode: { type: "string", example: "MEMBERS" },
+                              menuCode: { type: "string", example: "ADM_MEMBER" },
                               canRead: { type: "boolean" },
                               canCreate: { type: "boolean" },
                               canUpdate: { type: "boolean" },
@@ -1087,9 +1087,9 @@ export const openApiSpec: OpenAPIV3.Document = {
 **권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
 
 **Lockout 방어 (3중화)**:
-1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "PERMISSIONS", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
-2. target = \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
-3. target ≠ \`SUPER_ADMIN\` + payload 에 \`PERMISSIONS\` / \`MENUS\` / \`CODES\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
+1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "ADM_PERMISSION", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
+2. target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
+3. target ≠ \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
 
 세 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
         parameters: [
@@ -1144,12 +1144,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         error: {
                           type: "string",
-                          example: "「PERMISSIONS」のupdate権限はスーパー管理者にのみ付与できます",
+                          example: "「ADM_PERMISSION」のupdate権限はスーパー管理者にのみ付与できます",
                         },
                         menuCode: {
                           type: "string",
-                          enum: ["PERMISSIONS", "MENUS", "CODES"],
-                          example: "PERMISSIONS",
+                          enum: ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"],
+                          example: "ADM_PERMISSION",
                         },
                         action: {
                           type: "string",
@@ -2444,7 +2444,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.read)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.read)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2475,7 +2475,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("userTp 누락"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.read)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.read)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2542,7 +2542,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
           ),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.update)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.update)"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류"),
         },
@@ -2578,7 +2578,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("이메일 미등록"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: MEMBERS.update)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.update)"),
           "404": errorResponse("회원 없음"),
           "429": errorResponse("リクエスト制限超過"),
           "500": errorResponse("서버 에러"),
@@ -2630,7 +2630,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.read)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_BULK_MAIL.read)"),
         },
       },
       post: {
@@ -2691,7 +2691,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.create)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_BULK_MAIL.create)"),
           "411": errorResponse("Content-Length 필요"),
           "413": errorResponse("요청 크기 초과"),
         },
@@ -2720,7 +2720,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限がありません (RBAC: BULK_MAIL.read)"),
+          "403": errorResponse("メニュー権限がありません (RBAC: ADM_BULK_MAIL.read)"),
           "404": errorResponse("메일 없음"),
         },
       },
@@ -2772,7 +2772,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("검증 실패 또는 draft 이외 수정 시도"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.update)"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: ADM_BULK_MAIL.update)"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
           "500": errorResponse("수정 실패"),
@@ -2804,7 +2804,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("draft 이외 상태는 삭제 불가"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.delete)"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: ADM_BULK_MAIL.delete)"),
           "404": errorResponse("메일 없음"),
           "500": errorResponse("삭제 실패"),
         },
@@ -2840,7 +2840,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("send_failed 이외 상태에서 재발송 시도"),
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: BULK_MAIL.update)"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: ADM_BULK_MAIL.update)"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 재발송으로 상태 전이 실패"),
           "500": errorResponse("재발송 실패"),
@@ -3629,10 +3629,13 @@ export const openApiSpec: OpenAPIV3.Document = {
                   type: "string",
                   enum: [
                     "HOME", "CONTENT", "INQUIRY", "MYPAGE", "ADMIN",
-                    "MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES",
-                    "PERMISSIONS", "MENUS", "CODES",
+                    "CONT_LIST", "CONT_CREATE",
+                    "INQ_FORM",
+                    "MY_PROFILE", "MY_DOWNLOAD", "MY_INQUIRY",
+                    "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
+                    "ADM_PERMISSION", "ADM_MENU", "ADM_CODE",
                   ],
-                  example: "MEMBERS",
+                  example: "ADM_MEMBER",
                 },
                 canRead: { type: "boolean", default: false },
                 canCreate: { type: "boolean", default: false },

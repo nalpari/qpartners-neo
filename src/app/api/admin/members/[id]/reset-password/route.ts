@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   try {
     // 1. 관리자 권한 확인 — MEMBERS.update 매트릭스 기반
     //    (비밀번호 초기화는 대상 회원 리소스의 상태 변경이므로 update 로 분류)
-    const authResult = await requireMenuPermission(request.headers, "MEMBERS", "update");
+    const authResult = await requireMenuPermission(request.headers, "ADM_MEMBER", "update");
     if (authResult instanceof NextResponse) return authResult;
     const { user: admin } = authResult;
 

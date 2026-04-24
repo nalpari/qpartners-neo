@@ -3,14 +3,14 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createRoleSchema } from "@/lib/schemas/permission";
 
-// GET /api/roles — 권한 목록 (관리자 전용)
+// GET /api/roles — 권한 목록 (ADM_PERMISSION.read 매트릭스 기반)
 export async function GET(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { searchParams } = request.nextUrl;
@@ -27,24 +27,25 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/roles]", error);
     return NextResponse.json(
-      { error: "Failed to fetch roles" },
+      { error: "権限一覧の取得に失敗しました" },
       { status: 500 },
     );
   }
 }
 
-// POST /api/roles — 권한 추가
+// POST /api/roles — 권한 추가 (ADM_PERMISSION.create — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "create");
     if (auth instanceof NextResponse) return auth;
 
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/roles] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディのJSON解析に失敗しました" },
         { status: 400 },
       );
     }
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が不正です", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -66,13 +67,13 @@ export async function POST(request: NextRequest) {
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: "이미 존재하는 roleCode입니다" },
+        { error: "既に存在するroleCodeです" },
         { status: 409 },
       );
     }
     console.error("[POST /api/roles]", error);
     return NextResponse.json(
-      { error: "Failed to create role" },
+      { error: "権限の作成に失敗しました" },
       { status: 500 },
     );
   }

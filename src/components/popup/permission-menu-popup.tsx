@@ -4,11 +4,27 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox } from "@/components/common";
 import type { RolePermissionsResponse, MenuPermissionRow } from "@/components/admin/permissions/permissions-types";
 import { flattenMenuTree, rowsToPermissions } from "@/components/admin/permissions/permissions-types";
+
+/**
+ * 서버 400 응답의 `error` 필드(일본어) 를 사용자에게 노출.
+ * lockout 가드/Zod refine 실패 등 구체 원인을 숨기지 않고 전달.
+ * response.data 가 예상과 다르면 기본 메시지로 폴백.
+ */
+function extractServerError(err: unknown): string {
+  if (!isAxiosError(err)) return "保存に失敗しました。";
+  const data = err.response?.data;
+  if (data && typeof data === "object" && "error" in data) {
+    const msg = (data as { error: unknown }).error;
+    if (typeof msg === "string" && msg.length > 0) return msg;
+  }
+  return "保存に失敗しました。";
+}
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -100,6 +116,12 @@ export function PermissionMenuPopup() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["role-permissions", roleCode] });
+      // 본인 역할이 수정 대상일 수 있으므로 me/permissions 도 즉시 무효화.
+      // (staleTime 5분 때문에 저장 후에도 이전 캐시를 사용해 매트릭스 변경이 UI 에 반영 안 되던 이슈 해결)
+      queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
+      // `/api/menus` 응답이 이제 requester role 의 canRead 기준으로 필터되므로,
+      // 권한 변경 시 GNB / AdminTab 에서 사용하는 메뉴 트리 캐시도 함께 무효화.
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({
         type: "alert",
         message: "保存されました。",
@@ -109,7 +131,8 @@ export function PermissionMenuPopup() {
     },
     onError: (error: unknown) => {
       console.error("[PUT /api/roles/permissions] 권한 저장 실패:", error);
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      // 서버 400 의 lockout 가드/Zod 검증 실패 메시지(일본어) 를 그대로 노출
+      openAlert({ type: "alert", message: extractServerError(error), confirmLabel: "確認" });
     },
   });
 

@@ -3,13 +3,14 @@
 // Design Ref: §5.1 — 메인 컨테이너 (useQuery + useMutation 3개)
 
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
+import { useMenuTree } from "@/hooks/use-menu-tree";
 import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
-import type { MenuTreeItem, MenuTreeResponse, MenuFormState } from "./menus-types";
+import type { MenuFormState } from "./menus-types";
 import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from "./menus-types";
 
 export function MenusContents() {
@@ -25,17 +26,8 @@ export function MenusContents() {
   const [sortValues, setSortValues] = useState<Record<string, number>>({});
 
   // --- API 조회 ---
-  // Plan R-01: GET /api/menus → TanStack Query 연동
-  const { data: menuTree = [] } = useQuery<MenuTreeItem[]>({
-    queryKey: ["menus", activeOnly],
-    queryFn: async () => {
-      const res = await api.get<MenuTreeResponse>("/menus", {
-        params: { activeOnly: String(activeOnly) },
-      });
-      return res.data.data;
-    },
-    staleTime: 60_000,
-  });
+  // Plan R-01: GET /api/menus → useMenuTree 훅으로 공통화
+  const { data: menuTree = [] } = useMenuTree({ activeOnly });
 
   // --- 파생 데이터 (API 응답 → UI 변환, useMemo로 안정화) ---
   const level1Menus = useMemo(() => menuTree.map(toMenuItem), [menuTree]);

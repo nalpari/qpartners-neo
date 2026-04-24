@@ -40,15 +40,34 @@ const menus1 = [
   { menuCode: "ADMIN",   menuName: "管理者",           pageUrl: "/admin",    sortOrder: 5 },
 ];
 
-// 2-Level 메뉴 (parentId = ADMIN)
+// 2-Level 메뉴 (parentId = ADMIN) — DB 실제값 `ADM_` prefix 사용
 const menus2UnderAdmin = [
-  { menuCode: "MEMBERS",     menuName: "会員管理",         pageUrl: "/admin/members",     sortOrder: 1 },
-  { menuCode: "BULK_MAIL",   menuName: "大量メール発送",   pageUrl: "/admin/bulk-mail",   sortOrder: 2 },
-  { menuCode: "NOTICES",     menuName: "お知らせ管理",     pageUrl: "/admin/notices",     sortOrder: 3 },
-  { menuCode: "CATEGORIES",  menuName: "カテゴリ管理",     pageUrl: "/admin/categories",  sortOrder: 4 },
-  { menuCode: "PERMISSIONS", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 5 },
-  { menuCode: "MENUS",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 6 },
-  { menuCode: "CODES",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 7 },
+  { menuCode: "ADM_MEMBER",     menuName: "会員管理",         pageUrl: "/admin/members",     sortOrder: 1 },
+  { menuCode: "ADM_BULK_MAIL",  menuName: "大量メール発送",   pageUrl: "/admin/bulk-mail",   sortOrder: 2 },
+  { menuCode: "ADM_NOTICE",     menuName: "お知らせ管理",     pageUrl: "/admin/notices",     sortOrder: 3 },
+  { menuCode: "ADM_CATEGORY",   menuName: "カテゴリ管理",     pageUrl: "/admin/categories",  sortOrder: 4 },
+  { menuCode: "ADM_PERMISSION", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 5 },
+  { menuCode: "ADM_MENU",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 6 },
+  { menuCode: "ADM_CODE",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 7 },
+];
+
+/**
+ * 2-Level 메뉴 (CONTENT / INQUIRY / MYPAGE 하위) — menuCodeValues 와 DB 동기화.
+ * 현재 GNB/AdminTab UI 에서 직접 표시되진 않지만 (top_nav=0, mobile=0),
+ * 매트릭스 단일 진실 소스 원칙상 schema ↔ seed 불일치를 제거하기 위해 등록한다.
+ * pageUrl 은 별도 페이지가 없는 섹션 메뉴는 NULL, 직접 대응 경로가 있으면 해당 경로.
+ */
+const menus2UnderContent = [
+  { menuCode: "CONT_LIST",   menuName: "コンテンツ一覧",  pageUrl: "/contents",        sortOrder: 1 },
+  { menuCode: "CONT_CREATE", menuName: "コンテンツ登録",  pageUrl: "/contents/create", sortOrder: 2 },
+];
+const menus2UnderInquiry = [
+  { menuCode: "INQ_FORM",    menuName: "お問い合わせ",    pageUrl: "/inquiry",         sortOrder: 1 },
+];
+const menus2UnderMypage = [
+  { menuCode: "MY_PROFILE",  menuName: "会員情報",        pageUrl: null, sortOrder: 1 },
+  { menuCode: "MY_DOWNLOAD", menuName: "ダウンロード履歴", pageUrl: null, sortOrder: 2 },
+  { menuCode: "MY_INQUIRY",  menuName: "お問い合わせ履歴", pageUrl: null, sortOrder: 3 },
 ];
 
 // 역할 (authRole enum 과 1:1)
@@ -61,13 +80,26 @@ const roles = [
   { roleCode: "GENERAL",     roleName: "一般",             description: "一般メニュー閲覧のみ" },
 ];
 
-// 권한 매트릭스 분류
-const GENERAL_MENUS = ["HOME", "CONTENT", "INQUIRY", "MYPAGE"];
-const ADMIN_FULL_MENUS = ["MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES", "CONTENT"];
-const ADMIN_RESTRICTED_MENUS = ["PERMISSIONS", "MENUS", "CODES"];
+// 권한 매트릭스 분류 (2-Level 메뉴는 `ADM_` prefix)
+// GENERAL_MENUS: 비관리자도 read 가능 (HOME/CONTENT/INQUIRY/MYPAGE 및 그 하위 열람 메뉴)
+// ADMIN_FULL_MENUS: ADMIN 전체 CRUD — CONTENT 계열은 사내 콘텐츠 작성 권한 포함
+// ADMIN_RESTRICTED_MENUS: ADMIN 은 read only, CUD 는 SUPER_ADMIN 전용
+const GENERAL_MENUS = [
+  "HOME", "CONTENT", "INQUIRY", "MYPAGE",
+  "CONT_LIST", "INQ_FORM",
+  "MY_PROFILE", "MY_DOWNLOAD", "MY_INQUIRY",
+];
+const ADMIN_FULL_MENUS = [
+  "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
+  "CONTENT", "CONT_LIST", "CONT_CREATE",
+];
+const ADMIN_RESTRICTED_MENUS = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"];
 const ALL_MENU_CODES = [
   ...menus1.map((m) => m.menuCode),
   ...menus2UnderAdmin.map((m) => m.menuCode),
+  ...menus2UnderContent.map((m) => m.menuCode),
+  ...menus2UnderInquiry.map((m) => m.menuCode),
+  ...menus2UnderMypage.map((m) => m.menuCode),
 ];
 
 /**
@@ -131,6 +163,22 @@ try {
 try {
   await conn.beginTransaction();
 
+  /**
+   * 구 menuCode cleanup — 신 `ADM_*` 체계 이전의 레거시 행을 is_active=0 으로 비활성.
+   * `ON DUPLICATE KEY UPDATE` 는 menu_code(unique) 기준이므로 구 행은 절대 갱신되지 않고
+   * 신규 `ADM_MEMBER` 등이 별도로 INSERT 되어 AdminTab/GNB 에 중복 탭이 렌더링되는 사고를
+   * 막는다. DELETE 는 FK(qp_role_menu_permissions) 영향이 있어 soft-disable 로만 처리.
+   * 멱등 — 이미 비활성이거나 행이 없으면 no-op.
+   */
+  console.log("[seed] 구 menuCode 비활성화 (레거시 cleanup)");
+  await conn.query(
+    `UPDATE qp_menus
+        SET is_active = 0,
+            updated_at = NOW(3)
+      WHERE menu_code IN (?, ?, ?, ?, ?, ?, ?)`,
+    ["MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES", "PERMISSIONS", "MENUS", "CODES"],
+  );
+
   console.log("[seed] 1-Level 메뉴 upsert");
   for (const m of menus1) {
     await conn.query(
@@ -148,28 +196,50 @@ try {
     );
   }
 
-  const [adminParent] = await conn.query(`SELECT id FROM qp_menus WHERE menu_code = 'ADMIN'`);
-  if (!adminParent?.id) {
-    throw new Error("[seed] ADMIN parent 메뉴 조회 실패 — 1-Level upsert가 실패한 것으로 추정");
+  /**
+   * 1-Level 메뉴의 id 를 code 로 조회. 다음 2-Level 업서트에서 parent_id 참조.
+   * 필수 parent 는 모두 existence 검증 — 누락 시 fail-fast.
+   */
+  const parentCodes = ["ADMIN", "CONTENT", "INQUIRY", "MYPAGE"];
+  const parentRows = await conn.query(
+    `SELECT menu_code, id FROM qp_menus WHERE menu_code IN (?, ?, ?, ?)`,
+    parentCodes,
+  );
+  const parentIdByCode = new Map(parentRows.map((r) => [r.menu_code, Number(r.id)]));
+  for (const code of parentCodes) {
+    if (!parentIdByCode.get(code)) {
+      throw new Error(`[seed] ${code} parent 메뉴 조회 실패 — 1-Level upsert가 실패한 것으로 추정`);
+    }
   }
-  const adminId = Number(adminParent.id);
 
-  console.log(`[seed] 2-Level 메뉴 upsert (parent_id=${adminId})`);
-  for (const m of menus2UnderAdmin) {
-    await conn.query(
-      `INSERT INTO qp_menus
-         (menu_code, menu_name, page_url, parent_id, sort_order, is_active, show_in_top_nav, show_in_mobile, created_at, updated_at, created_by)
-       VALUES (?, ?, ?, ?, ?, 1, 1, 1, NOW(3), NOW(3), 'SYSTEM')
-       ON DUPLICATE KEY UPDATE
-         menu_name = VALUES(menu_name),
-         page_url = VALUES(page_url),
-         parent_id = VALUES(parent_id),
-         sort_order = VALUES(sort_order),
-         is_active = 1,
-         updated_at = NOW(3)`,
-      [m.menuCode, m.menuName, m.pageUrl, adminId, m.sortOrder],
-    );
+  // 2-Level 공통 업서트 유틸
+  async function upsert2Level(menus, parentId) {
+    for (const m of menus) {
+      await conn.query(
+        `INSERT INTO qp_menus
+           (menu_code, menu_name, page_url, parent_id, sort_order, is_active, show_in_top_nav, show_in_mobile, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, NOW(3), NOW(3), 'SYSTEM')
+         ON DUPLICATE KEY UPDATE
+           menu_name = VALUES(menu_name),
+           page_url = VALUES(page_url),
+           parent_id = VALUES(parent_id),
+           sort_order = VALUES(sort_order),
+           is_active = 1,
+           updated_at = NOW(3)`,
+        // ADMIN 하위만 top_nav/mobile 노출, 나머지 신규 2-Level 은 UI 숨김 (매트릭스 용도)
+        [m.menuCode, m.menuName, m.pageUrl, parentId, m.sortOrder,
+         parentId === parentIdByCode.get("ADMIN") ? 1 : 0,
+         parentId === parentIdByCode.get("ADMIN") ? 1 : 0],
+      );
+    }
   }
+
+  const adminId = parentIdByCode.get("ADMIN");
+  console.log(`[seed] 2-Level 메뉴 upsert — ADMIN(${adminId}) / CONTENT / INQUIRY / MYPAGE 하위`);
+  await upsert2Level(menus2UnderAdmin, adminId);
+  await upsert2Level(menus2UnderContent, parentIdByCode.get("CONTENT"));
+  await upsert2Level(menus2UnderInquiry, parentIdByCode.get("INQUIRY"));
+  await upsert2Level(menus2UnderMypage, parentIdByCode.get("MYPAGE"));
 
   console.log("[seed] 역할 upsert");
   for (const r of roles) {
@@ -215,8 +285,11 @@ try {
   const permCount = permissionRows.length;
 
   await conn.commit();
+  const menuCount = menus1.length
+    + menus2UnderAdmin.length + menus2UnderContent.length
+    + menus2UnderInquiry.length + menus2UnderMypage.length;
   console.log(
-    `[seed] 완료 — 메뉴 ${menus1.length + menus2UnderAdmin.length}건, 역할 ${roles.length}건, 권한 ${permCount}건`,
+    `[seed] 완료 — 메뉴 ${menuCount}건, 역할 ${roles.length}건, 권한 ${permCount}건`,
   );
 } catch (err) {
   // rollback 자체가 throw 할 수 있으므로 (connection dead 등) 방어하여 원본 err 보존.
