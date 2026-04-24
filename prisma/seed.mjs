@@ -163,6 +163,22 @@ try {
 try {
   await conn.beginTransaction();
 
+  /**
+   * 구 menuCode cleanup — 신 `ADM_*` 체계 이전의 레거시 행을 is_active=0 으로 비활성.
+   * `ON DUPLICATE KEY UPDATE` 는 menu_code(unique) 기준이므로 구 행은 절대 갱신되지 않고
+   * 신규 `ADM_MEMBER` 등이 별도로 INSERT 되어 AdminTab/GNB 에 중복 탭이 렌더링되는 사고를
+   * 막는다. DELETE 는 FK(qp_role_menu_permissions) 영향이 있어 soft-disable 로만 처리.
+   * 멱등 — 이미 비활성이거나 행이 없으면 no-op.
+   */
+  console.log("[seed] 구 menuCode 비활성화 (레거시 cleanup)");
+  await conn.query(
+    `UPDATE qp_menus
+        SET is_active = 0,
+            updated_at = NOW(3)
+      WHERE menu_code IN (?, ?, ?, ?, ?, ?, ?)`,
+    ["MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES", "PERMISSIONS", "MENUS", "CODES"],
+  );
+
   console.log("[seed] 1-Level 메뉴 upsert");
   for (const m of menus1) {
     await conn.query(

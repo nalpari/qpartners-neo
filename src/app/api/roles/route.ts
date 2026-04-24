@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/roles]", error);
     return NextResponse.json(
-      { error: "Failed to fetch roles" },
+      { error: "権限一覧の取得に失敗しました" },
       { status: 500 },
     );
   }
@@ -42,9 +42,10 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[POST /api/roles] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディのJSON解析に失敗しました" },
         { status: 400 },
       );
     }
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が不正です", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -66,13 +67,13 @@ export async function POST(request: NextRequest) {
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: "이미 존재하는 roleCode입니다" },
+        { error: "既に存在するroleCodeです" },
         { status: 409 },
       );
     }
     console.error("[POST /api/roles]", error);
     return NextResponse.json(
-      { error: "Failed to create role" },
+      { error: "権限の作成に失敗しました" },
       { status: 500 },
     );
   }

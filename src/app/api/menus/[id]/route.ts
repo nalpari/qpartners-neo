@@ -18,15 +18,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ error: "IDが不正です" }, { status: 400 });
     }
 
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[PUT /api/menus/:id] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディのJSON解析に失敗しました" },
         { status: 400 },
       );
     }
@@ -35,14 +36,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が不正です", issues: result.error.issues },
         { status: 400 },
       );
     }
 
     if (Object.keys(result.data).length === 0) {
       return NextResponse.json(
-        { error: "No fields to update" },
+        { error: "更新対象のフィールドがありません" },
         { status: 400 },
       );
     }
@@ -58,11 +59,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2025"
     ) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "指定されたメニューが見つかりません" }, { status: 404 });
     }
     console.error("[PUT /api/menus/:id]", error);
     return NextResponse.json(
-      { error: "Failed to update menu" },
+      { error: "メニューの更新に失敗しました" },
       { status: 500 },
     );
   }

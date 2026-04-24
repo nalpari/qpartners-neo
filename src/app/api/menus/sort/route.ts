@@ -16,9 +16,10 @@ export async function PUT(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
+      console.warn("[PUT /api/menus/sort] Request body 파싱 실패:", error);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエストボディのJSON解析に失敗しました" },
         { status: 400 },
       );
     }
@@ -27,7 +28,7 @@ export async function PUT(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: result.error.issues },
+        { error: "入力値が不正です", issues: result.error.issues },
         { status: 400 },
       );
     }
@@ -43,7 +44,7 @@ export async function PUT(request: NextRequest) {
 
     if (missingIds.length > 0) {
       return NextResponse.json(
-        { error: "존재하지 않는 메뉴가 포함되어 있습니다", missingIds },
+        { error: "存在しないメニューが含まれています", missingIds },
         { status: 400 },
       );
     }
@@ -148,13 +149,13 @@ export async function PUT(request: NextRequest) {
       error.code === "P2025"
     ) {
       return NextResponse.json(
-        { error: "존재하지 않는 메뉴가 포함되어 있습니다" },
+        { error: "存在しないメニューが含まれています" },
         { status: 404 },
       );
     }
     console.error("[PUT /api/menus/sort]", error);
     return NextResponse.json(
-      { error: "Failed to update sort order" },
+      { error: "並び順の更新に失敗しました" },
       { status: 500 },
     );
   }
