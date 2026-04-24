@@ -32,7 +32,7 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   return (
     <button
       type="button"
-      className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] hover:underline cursor-pointer"
+      className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
       onClick={handleClick}
     >
       {data.userName}

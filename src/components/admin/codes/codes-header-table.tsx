@@ -110,7 +110,7 @@ function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   return (
     <button
       type="button"
-      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px]"
+      className="text-[#1060B4] underline cursor-pointer font-['Noto_Sans_JP'] text-[14px]"
       onClick={() => ctx.onHeaderClick(data.id)}
     >
       {data.headerCode}
