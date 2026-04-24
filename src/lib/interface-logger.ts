@@ -184,7 +184,8 @@ export async function fetchWithLog(
   let responseBodyText: string | null = null;
 
   try {
-    response = await fetch(url, init);
+    // 외부 API 프록시는 응답 캐싱 대상이 아님 — 호출자가 명시한 cache 옵션이 있으면 존중
+    response = await fetch(url, { ...init, cache: init.cache ?? "no-store" });
 
     const cloned = response.clone();
     try {
