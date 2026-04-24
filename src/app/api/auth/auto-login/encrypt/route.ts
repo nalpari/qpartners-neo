@@ -201,11 +201,15 @@ async function encryptViaQsp(userId: string) {
 
   const parsed = qspEncryptResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    // raw body 함께 로깅 — QSP 응답에는 cipher(AES 암호문) + url + resultCode 만 있어 PII 없음.
-    // 다음 실패 시 어느 필드가 문제인지 즉시 특정 가능하도록 전체 보관.
+    // raw body 직접 로깅 금지 — 스키마 밖 경로(예상치 못한 필드, QSP 내부 stack trace 등) 유출 위험.
+    // 구조 힌트(top-level keys / 타입)만 기록하여 어느 필드가 문제인지 특정 가능하게 함.
+    const responseBodyShape =
+      qspBody != null && typeof qspBody === "object"
+        ? Object.keys(qspBody as Record<string, unknown>)
+        : typeof qspBody;
     console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 스키마 불일치:", {
       issues: parsed.error.issues,
-      responseBody: qspBody,
+      responseBodyShape,
     });
     return NextResponse.json(
       { error: "暗号化サーバーの応答形式が正しくありません" },
@@ -233,8 +237,11 @@ async function encryptViaQsp(userId: string) {
     let parsedHost = "<invalid-url>";
     try {
       parsedHost = new URL(qspUrl).hostname;
-    } catch {
+    } catch (error: unknown) {
       // URL 파싱 실패는 host check 이전에 스키마 url() 에서 걸리지만 방어적 처리
+      console.warn("[POST /api/auth/auto-login/encrypt] host 추출 중 URL 파싱 실패:", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
     }
     console.error(
       "[POST /api/auth/auto-login/encrypt] QSP 응답 URL host 허용되지 않음 — allowlist 확장 필요 가능:",

@@ -239,8 +239,9 @@ const qspMemberDetailSchema = z.object({
   /** 탈퇴일시 — "YYYY.MM.DD HH:mm:ss". 회원관리 상세 표시 용도.
    *  탈퇴(statCd=R) 회원에 한해 채워짐. */
   resignDt: z.string().nullish(),
-  /** 탈퇴사유 — 최대 500자 (saveResignReq 입력 상한과 일치). 회원관리 상세 표시 용도. */
-  resignRemark: z.string().nullish(),
+  /** 탈퇴사유 — 최대 500자 (saveResignReq 입력 상한과 일치). 회원관리 상세 표시 용도.
+   *  QSP 가 제한을 초과한 값을 반환하더라도 응답 단계에서 차단 → 502 로 폴백. */
+  resignRemark: z.string().max(500).nullish(),
 });
 
 export const qspMemberDetailResponseSchema = z.object({

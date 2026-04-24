@@ -2364,7 +2364,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                         jobTitle: { type: "string", nullable: true },
                         corporateNo: { type: "string", nullable: true },
                         newsRcptYn: { type: "string", enum: ["Y", "N"] },
-                        newsRcptDate: { type: "string", nullable: true },
+                        newsRcptDate: {
+                          type: "string",
+                          nullable: true,
+                          description:
+                            "뉴스알림 변경일시. QSP `newsRcptChgDt` (신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백.",
+                        },
                         withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
                       },
                     },
