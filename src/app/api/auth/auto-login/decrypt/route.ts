@@ -9,8 +9,6 @@ import { checkRateLimit } from "@/lib/rate-limit";
 const DECRYPT_WINDOW_MS = 60 * 1000;
 /** QSP 정상 호출 초당 1회 상한 + 여유 */
 const DECRYPT_LIMIT_WITH_IP = 60;
-/** IP 헤더 부재 시 공용 버킷은 더 엄격히 */
-const DECRYPT_LIMIT_NO_IP = 20;
 /** 인증 실패 요청은 별도 버킷에서 더 엄격하게 제한 (brute-force 방어) */
 const DECRYPT_LIMIT_AUTH_FAIL = 10;
 
@@ -84,22 +82,38 @@ function extractIp(request: NextRequest): string | null {
 //   2. QSP가 cipher 수신 후 본 엔드포인트 역호출 → userId 복원
 //   3. QSP가 복원된 userId로 QSP 자체 로그인 플로우 수행 → 세션 수립 후 대상 시스템 진입
 //
-// 보호 순서: 호출자 검증(시크릿) → rate-limit → 파라미터 검증 → 복호화.
+// 보호 순서: IP 식별(fail-closed) → 호출자 검증(시크릿) → rate-limit → 파라미터 검증 → 복호화.
 // 인증 실패 요청은 별도 엄격 버킷(`auth-fail:{ip}`)에 기록하여 정상 버킷(`ok:{ip}`) 선점을 방지.
+//
+// IP 식별 불가 시 즉시 403 (fail-closed): `.claude/rules/api.md` 규칙에 따라 shared bucket 금지.
+// M2M 엔드포인트이므로 QSP 서버는 항상 IP를 가지며, IP 없는 요청은 비정상으로 간주.
+// inbound auto-login route와 동일 정책.
 //
 // 자정 경계(KST): 당일 키 복호화 실패 시 전일 키로 1회 재시도. 두 키 모두 실패 시 500.
 export async function GET(request: NextRequest) {
   try {
-    // 1. 호출자 검증 (rate-limit 앞 — 미인증 공격자의 정상 버킷 선점 방지)
-    const verdict = verifyCallerSecret(request);
+    // 1. IP 식별 — 불가 시 즉시 거부 (fail-closed, shared bucket 금지 원칙)
     const ip = extractIp(request);
-    const ipKey = ip ?? "auto-login-decrypt-no-ip";
+    if (!ip) {
+      console.warn("[GET /api/auth/auto-login/decrypt] IP 헤더 없음 — 요청 거부 (fail-closed)");
+      return NextResponse.json(
+        {
+          data: { userId: null },
+          resultCode: 403,
+          resultMessage: "ip header required",
+        },
+        { status: 403 },
+      );
+    }
+
+    // 2. 호출자 검증 (rate-limit 앞 — 미인증 공격자의 정상 버킷 선점 방지)
+    const verdict = verifyCallerSecret(request);
 
     if (verdict === "unauthorized") {
       // 인증 실패 전용 버킷 — brute-force 방어, 한도 10/min
       if (
         !checkRateLimit(
-          `auto-login-decrypt-auth-fail:${ipKey}`,
+          `auto-login-decrypt-auth-fail:${ip}`,
           DECRYPT_LIMIT_AUTH_FAIL,
           DECRYPT_WINDOW_MS,
         )
@@ -126,9 +140,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 2. 정상 호출자 rate-limit (QSP 정상 호출 초당 1회 상한 + 여유)
-    const limit = ip ? DECRYPT_LIMIT_WITH_IP : DECRYPT_LIMIT_NO_IP;
-    if (!checkRateLimit(`auto-login-decrypt:${ipKey}`, limit, DECRYPT_WINDOW_MS)) {
+    // 3. 정상 호출자 rate-limit (QSP 정상 호출 초당 1회 상한 + 여유)
+    if (!checkRateLimit(`auto-login-decrypt:${ip}`, DECRYPT_LIMIT_WITH_IP, DECRYPT_WINDOW_MS)) {
       return NextResponse.json(
         {
           data: { userId: null },
@@ -137,9 +150,6 @@ export async function GET(request: NextRequest) {
         },
         { status: 429 },
       );
-    }
-    if (!ip) {
-      console.warn("[GET /api/auth/auto-login/decrypt] IP 헤더 없음 — 제한적 rate limit 적용");
     }
 
     const autoLoginParam1 = request.nextUrl.searchParams.get("autoLoginParam1");

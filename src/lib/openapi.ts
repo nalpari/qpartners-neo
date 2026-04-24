@@ -320,8 +320,30 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "403": {
+            description:
+              "IP 헤더 없음 — M2M 엔드포인트는 IP 식별이 필수이며 shared bucket 금지 원칙에 따라 즉시 거부 (fail-closed)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        userId: { type: "string", nullable: true, example: null },
+                      },
+                    },
+                    resultCode: { type: "integer", example: 403 },
+                    resultMessage: { type: "string", example: "ip header required" },
+                  },
+                },
+              },
+            },
+          },
           "429": {
-            description: "rate limit 초과 (IP 기준 분당 60회, IP 헤더 없을 시 분당 20회)",
+            description:
+              "rate limit 초과 — 정상 요청 IP 기준 분당 60회, 호출자 검증 실패(brute-force) IP 기준 분당 10회",
             content: {
               "application/json": {
                 schema: {
