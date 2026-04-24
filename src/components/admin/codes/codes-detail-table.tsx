@@ -253,7 +253,7 @@ export function CodesDetailTable({
         getRowId={(p) => p.data.id}
         context={gridContext}
         className="codes-detail-grid"
-        maxHeight={500}
+        maxHeight={350}
         loading={isLoading}
         onCellDoubleClicked={handleCellDoubleClicked}
         onCellClicked={handleCellClicked}
