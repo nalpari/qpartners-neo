@@ -194,7 +194,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "자동로그인 암호화 URL 생성 (outbound)",
         description:
-          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. hanasys는 QSP autoLoginEncryptData API 경유, qOrder/qMusubi는 자체 AES-256 암호화(YYYYMMDD+AUTO_LOGIN_AES_KEY) 후 각 시스템 도메인으로 이동.",
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. 3사 공통으로 자체 AES-256 암호화(SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)) 결과를 각 시스템 고유 경로의 `?autoLoginParam1=` 에 부착.",
         requestBody: {
           required: true,
           content: {
@@ -228,7 +228,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "string",
                           description: "자동로그인 파라미터가 포함된 이동 URL",
                           example:
-                            "https://jp-dev.qsalesplatform.com/eos/login/autoLogin?autoLoginParam1=...",
+                            "https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...",
                         },
                       },
                     },
@@ -240,16 +240,15 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("リクエスト形式または target 파라미터 오류"),
           "401": errorResponse("인증 필요"),
           "500": errorResponse("암호화 처리 오류"),
-          "502": errorResponse("외부 암호화 서버 오류 (hanasys target 한정)"),
         },
       },
     },
     "/auth/auto-login/decrypt": {
       get: {
         tags: ["Auth"],
-        summary: "자동로그인 복호화 (QSP 역호출용)",
+        summary: "자동로그인 복호화 (외부 3사 역호출용)",
         description:
-          "QSP가 qOrder/qMusubi 자동로그인 처리 중 Q.Partners를 역호출하여 cipher를 userId로 복원하는 M2M 엔드포인트. Q.Partners encryptSelf가 생성한 cipher 전용이며 hanasys 경로는 대상 아님. 자정 경계(KST) 시 당일 키 → 전일 키 순으로 최대 2회 시도 후 모두 실패하면 500.",
+          "HANASYS / Q.Order / Q.Musubi 가 자동로그인 처리 중 Q.Partners를 역호출하여 cipher를 userId로 복원하는 M2M 엔드포인트. Q.Partners encrypt가 생성한 cipher 전용. 자정 경계(KST) 시 당일 키 → 전일 키 순으로 최대 2회 시도 후 모두 실패하면 500.",
         parameters: [
           {
             name: "autoLoginParam1",

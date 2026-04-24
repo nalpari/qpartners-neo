@@ -7,16 +7,16 @@ import { ConfigError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const DECRYPT_WINDOW_MS = 60 * 1000;
-/** QSP 정상 호출 초당 1회 상한 + 여유 */
+/** 외부 3사 정상 호출 초당 1회 상한 + 여유 */
 const DECRYPT_LIMIT_WITH_IP = 60;
 /** 인증 실패 요청은 별도 버킷에서 더 엄격하게 제한 (brute-force 방어) */
 const DECRYPT_LIMIT_AUTH_FAIL = 10;
 
-/** QSP 역호출 M2M 공유 비밀 헤더 */
+/** 외부 3사(HANASYS/Q.Order/Q.Musubi) 역호출 M2M 공유 비밀 헤더 */
 const M2M_SECRET_HEADER = "x-qsp-auth";
 
 /**
- * 호출자(QSP) 검증 결과.
+ * 호출자(외부 3사) 검증 결과.
  * - `authorized` : shared secret 일치 또는 명시적 dev 점진 배포 모드
  * - `unauthorized`: 헤더 누락 / 불일치
  *
@@ -70,23 +70,23 @@ function extractIp(request: NextRequest): string | null {
 
 // GET /api/auth/auto-login/decrypt?autoLoginParam1={URL-encoded cipher}
 //
-// 호출자: QSP (Q.Order/Q.Musubi 자동로그인 처리 도중 Q.Partners를 역호출).
-// 대상: Q.Partners encryptSelf가 생성한 cipher — 즉 qOrder/qMusubi 경로 전용.
-// hanasys 경로는 QSP 내부에서 cipher 생성·복호화 모두 처리되므로 이 엔드포인트로 오지 않는다.
+// 호출자: 외부 3사 (HANASYS / Q.Order / Q.Musubi) — Q.Partners 발급 cipher를 userId로 복원하기 위해 역호출.
+// 대상: Q.Partners encrypt가 생성한 cipher (3사 공통 자체 AES-256-CBC).
 //
 // 응답 포맷(M2M 인터페이스): QSP가이드 4.2 autoLoginDecryptData 계약에 맞춘
 // { data: { userId }, resultCode, resultMessage } 구조를 따른다. 유저 대면 아님.
 //
-// 흐름 (qOrder/qMusubi):
-//   1. Q.Partners encrypt → `{qsp}/eos/login/autoLogin?autoLoginParam1=<cipher>` 로 브라우저 이동
-//   2. QSP가 cipher 수신 후 본 엔드포인트 역호출 → userId 복원
-//   3. QSP가 복원된 userId로 QSP 자체 로그인 플로우 수행 → 세션 수립 후 대상 시스템 진입
+// 흐름:
+//   1. Q.Partners encrypt → `{target-domain}/{target-path}?autoLoginParam1=<cipher>` 로 브라우저 이동
+//      (HANASYS: /login, Q.Order: /eos/login/autoLogin, Q.Musubi: /qm/login/autoLogin)
+//   2. 대상 시스템이 cipher 수신 후 본 엔드포인트 역호출 → userId 복원
+//   3. 대상 시스템이 복원된 userId로 자체 로그인 플로우 수행 → 세션 수립 후 진입
 //
 // 보호 순서: IP 식별(fail-closed) → 호출자 검증(시크릿) → rate-limit → 파라미터 검증 → 복호화.
 // 인증 실패 요청은 별도 엄격 버킷(`auth-fail:{ip}`)에 기록하여 정상 버킷(`ok:{ip}`) 선점을 방지.
 //
 // IP 식별 불가 시 즉시 403 (fail-closed): `.claude/rules/api.md` 규칙에 따라 shared bucket 금지.
-// M2M 엔드포인트이므로 QSP 서버는 항상 IP를 가지며, IP 없는 요청은 비정상으로 간주.
+// M2M 엔드포인트이므로 호출 서버는 항상 IP를 가지며, IP 없는 요청은 비정상으로 간주.
 // inbound auto-login route와 동일 정책.
 //
 // 자정 경계(KST): 당일 키 복호화 실패 시 전일 키로 1회 재시도. 두 키 모두 실패 시 500.

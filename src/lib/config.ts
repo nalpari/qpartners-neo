@@ -50,20 +50,19 @@ export const QSP_API = {
   userListMng: `${QSP_BASE_URL}/api/qpartners/userMng/userListMng`,
   /** No.12 Q.Partners 회원관리 정보 수정 — 부가 정보 수정 (2차인증, 뉴스레터, 로그인 알림, 뉴스 수신) */
   updateUserDtlMng: `${QSP_BASE_URL}/api/qpartners/userMng/updateUserDtlMng`,
-  /** 자동로그인 암호화 — HANASYS DESIGN target 전용 (QSP가 cipher + 진입 URL 생성하여 반환) */
-  autoLoginEncrypt: `${QSP_BASE_URL}/login/autoLoginEncryptData`,
 } as const;
 
-// ─── Auto Login (Q.Order / Q.Musubi) ───
-// 각 시스템 고유 도메인에 cipher 전달 — HANASYS가 QSP 응답으로 대상 도메인(hanasys.jp)을
-// 받아 이동하는 패턴과 일관. QSP_BASE_URL 과는 분리된 독립 도메인 사용.
+// ─── Auto Login (HANASYS / Q.Order / Q.Musubi) ───
+// 3사 모두 동일한 자체 AES-256 암호화 방식 사용 — Q.Partners가 cipher 생성 후
+// 각 시스템 고유 도메인의 자동로그인 경로에 `?autoLoginParam1=<cipher>` 를 붙여 이동.
+// 외부 암호화 API 경유 없음 (구 `autoLoginEncryptData` 경로는 사용하지 않음).
 //
 // APP_ENV(Jenkinsfile/docker-compose 주입) 기반 prod/dev 자동 분기.
-// header.tsx 관련사이트 URL과 동일 도메인 규칙 적용 — prod: q-order.q-cells.jp /
-// q-musubi.q-cells.jp, dev: q-order-dev.q-cells.jp / q-musubi-dev.q-cells.jp.
-//
-// 경로(`/eos/login/autoLogin`, `/qm/login/autoLogin`)는 QSP 가이드 §3 기반 고정.
-// 도메인/경로 예외 필요 시 env 전체 오버라이드: Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL.
+// 도메인/경로 예외 필요 시 env 전체 오버라이드:
+//   HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
+const HANASYS_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
+  ? "https://www.hanasys.jp/login"
+  : "https://dev.hanasys.jp/login";
 const Q_ORDER_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
   ? "https://q-order.q-cells.jp/eos/login/autoLogin"
   : "https://q-order-dev.q-cells.jp/eos/login/autoLogin";
@@ -71,18 +70,36 @@ const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
   ? "https://q-musubi.q-cells.jp/qm/login/autoLogin"
   : "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
 
+/**
+ * 자동로그인 URL env override 처리.
+ * - prod 배포: HTTPS 필수 (미충족 시 부팅 실패)
+ * - dev 배포: HTTPS 권장 — HTTP 허용하되 부팅 로그로 경고 노출 (운영 사고 방지용 가시성 확보)
+ */
+function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
+  const override = process.env[envName]?.trim();
+  const url = override || defaultUrl;
+  if (!isProductionDeploy && override && !url.startsWith("https://")) {
+    console.warn(
+      `[config] ${envName}="${url}" 가 HTTPS 가 아님 — dev 환경 override. prod 배포 시 부팅 실패합니다.`,
+    );
+  }
+  return url;
+}
+
 export const AUTO_LOGIN_URL = {
+  /** HANASYS DESIGN 자동로그인 — GET {hanasys-domain}/login?autoLoginParam1={cipher} */
+  hanasys: resolveAutoLoginUrl("HANASYS_AUTOLOGIN_URL", HANASYS_AUTOLOGIN_URL_DEFAULT),
   /** Q.Order 자동로그인 — GET {q-order-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
-  qOrder:
-    process.env.Q_ORDER_AUTOLOGIN_URL?.trim() || Q_ORDER_AUTOLOGIN_URL_DEFAULT,
+  qOrder: resolveAutoLoginUrl("Q_ORDER_AUTOLOGIN_URL", Q_ORDER_AUTOLOGIN_URL_DEFAULT),
   /** Q.Musubi 자동로그인 — GET {q-musubi-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
-  qMusubi:
-    process.env.Q_MUSUBI_AUTOLOGIN_URL?.trim() ||
-    Q_MUSUBI_AUTOLOGIN_URL_DEFAULT,
+  qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL", Q_MUSUBI_AUTOLOGIN_URL_DEFAULT),
 } as const;
 
 // 운영 배포 시 대상 URL 은 반드시 HTTPS — env override 실수 방지.
 if (isProductionDeploy) {
+  if (!AUTO_LOGIN_URL.hanasys.startsWith("https://")) {
+    throw new Error("HANASYS_AUTOLOGIN_URL must use HTTPS in production");
+  }
   if (!AUTO_LOGIN_URL.qOrder.startsWith("https://")) {
     throw new Error("Q_ORDER_AUTOLOGIN_URL must use HTTPS in production");
   }
