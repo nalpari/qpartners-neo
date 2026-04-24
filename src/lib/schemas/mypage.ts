@@ -91,8 +91,11 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 // ─── 회원탈퇴 요청 ───
 
+// QSP saveResignReq 의 resignRemark 필드는 최대 500자 (사양서 No.8).
+// 사양서보다 관대한 상한을 허용하면 QSP 측에서 500 초과분이 silently truncate 되거나
+// 저장 실패가 뒤늦게 감지되므로, 입력 단계에서 동일 제약으로 막는다.
 export const withdrawSchema = z.object({
-  reason: z.string().min(1, "退会理由は必須です").max(1000),
+  reason: z.string().trim().min(1, "退会理由は必須です").max(500, "退会理由は500文字以内で入力してください"),
 });
 
 export type WithdrawInput = z.infer<typeof withdrawSchema>;

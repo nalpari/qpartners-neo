@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
-import { useAuthStore } from "@/lib/auth-store";
+import { performLogout } from "@/lib/auth-client";
 import { Button, Spinner } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -27,7 +27,7 @@ export function WithdrawPopup() {
   const router = useRouter();
   const { closePopup } = usePopupStore();
   const { openAlert } = useAlertStore();
-  const logout = useAuthStore((s) => s.logout);
+  const queryClient = useQueryClient();
 
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
@@ -76,13 +76,16 @@ export function WithdrawPopup() {
       await api.post("/mypage/withdraw", { reason: reason.trim() });
       setIsSubmitting(false);
       // Plan SC: 성공 → alert → 로그아웃 → 홈 이동
+      // performLogout: /api/auth/logout 호출 + AUTH_FLAG_KEY 제거 + dispatchAuthChange + queryClient.clear
+      //   BE 가 200 응답에서 이미 쿠키를 삭제하지만, localStorage/이벤트/캐시 정리는 FE 담당.
       openAlert({
         type: "alert",
         message: "会員退会が完了しました。ご利用ありがとうございます。",
         onConfirm: () => {
-          logout();
-          closePopup();
-          router.push("/");
+          void performLogout(queryClient).finally(() => {
+            closePopup();
+            router.push("/");
+          });
         },
       });
     } catch (err: unknown) {
@@ -98,28 +101,44 @@ export function WithdrawPopup() {
             type: "alert",
             message: "ログインが必要です。",
             onConfirm: () => {
-              logout();
-              closePopup();
-              router.push("/login");
+              void performLogout(queryClient).finally(() => {
+                closePopup();
+                router.push("/login");
+              });
             },
           });
         } else if (status === 403) {
           openAlert({ type: "alert", message: errorMsg ?? "退会権限がありません。" });
         } else if (status === 409) {
-          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — 세션 정리 후 홈 이동.
+          // 서버가 이미 탈퇴 처리된 회원을 멱등성 차원에서 409 로 반환 — BE 가 쿠키를 삭제했으므로
+          // FE 는 localStorage/이벤트/캐시만 정리해 헤더·다른 탭 상태와 동기화.
           openAlert({
             type: "alert",
-            message: "すでに退会済みです。",
+            message: errorMsg ?? "すでに退会済みです。",
             onConfirm: () => {
-              logout();
-              closePopup();
-              router.push("/");
+              void performLogout(queryClient).finally(() => {
+                closePopup();
+                router.push("/");
+              });
             },
           });
         } else if (status === 429) {
-          openAlert({ type: "alert", message: "しばらくしてからお試しください。" });
+          openAlert({ type: "alert", message: errorMsg ?? "しばらくしてからお試しください。" });
+        } else if (status === 502) {
+          // BE 는 QSP 장애 / 탈퇴 실패 / 결과 불명 상황을 502 로 반환하며 쿠키를 유지함 (재시도 가능).
+          // BE 의 안내 메시지를 그대로 표시해 사용자가 재시도 경로를 잃지 않도록 한다.
+          openAlert({
+            type: "alert",
+            message: errorMsg ?? "退会処理に失敗しました。しばらくしてから再度お試しください。",
+          });
         } else {
-          openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
+          // 500 및 매핑되지 않은 상태 코드는 BE 응답 본문을 신뢰하지 않고 고정 fallback 문구만 표시.
+          //   향후 BE 500 경로에 내부 오류 메시지(SQL / 스택트레이스 문자열 등)가 혼입되더라도
+          //   UI 자동 노출되지 않도록 차단하는 심층 방어. 429·502 는 사유 구분이 필요하므로 제외.
+          openAlert({
+            type: "alert",
+            message: "サーバーエラーが発生しました。しばらくしてからお試しください。",
+          });
         }
       } else {
         console.error("[Withdraw] 탈퇴 처리 실패:", err);
@@ -218,8 +237,8 @@ export function WithdrawPopup() {
                   setError("");
                 }}
                 placeholder="退会理由を入力してください"
-                // BE withdrawSchema.reason.max(1000) 과 일치 — 초과 입력 후 제출 실패 UX 방지.
-                maxLength={1000}
+                // QSP saveResignReq.resignRemark 500자 제약 (사양서 No.8) — BE withdrawSchema.reason.max(500) 과 일치.
+                maxLength={500}
                 className={`w-full h-[120px] px-[16px] py-[12px] bg-white border rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none transition-colors duration-150 ${
                   error
                     ? "border-[#ff1a1a]"

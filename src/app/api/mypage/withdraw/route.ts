@@ -7,6 +7,7 @@ import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
@@ -26,11 +27,12 @@ const CLEAR_COOKIE_OPTIONS = {
  * 처리 흐름:
  * 1. JWT 인증 + 2FA 확인
  * 2. userTp === GENERAL 강제 (그 외 403)
- * 3. Zod (withdrawSchema) 로 reason 검증
- * 4. QSP userDetail 로 필수값 확보 (updateUserDtl 가 성명/회사 등 필수 요구)
- * 5. QSP updateUserDtl 호출 — statCd="R" 로 전환 + resignRsn 전송
- *    - QSP 가 resignRsn 필드를 수용하지 않아도 interface log (fetchWithLog 자동 기록) 에 요청 body 가
- *      저장되어 사후 추적 가능. 로컬 qp_info 탈퇴 이력 테이블은 추후 migration 시 연결 (TODO).
+ * 3. Zod (withdrawSchema) 로 reason 검증 (<=500, QSP resignRemark 상한)
+ * 4. QSP userDetail 로 현재 statCd 확인 (409 중복 체크 전용 — 기존 필수필드 수집 목적은 제거됨)
+ * 5. QSP saveResignReq 호출 (사양서 No.8) — payload 는 {userTp, loginId, accsSiteCd, resignRemark} 4필드만
+ *    - 이전 구현은 updateUserDtl+statCd:"R" 을 보냈으나 QSP 가 수용하지 않아 HTTP 500 "저장 중 오류..." 반환됨
+ *      (2026-04-23 VPN 경유 QSP direct 호출로 실증).
+ *    - saveResignReq 는 QSP 가 표준 응답 포맷 (resultCode=S/E) 로 회신함.
  * 6. 성공 시 JWT 쿠키 삭제로 즉시 로그아웃 유도
  */
 export async function POST(request: NextRequest) {
@@ -66,6 +68,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // GENERAL 불변조건: userId === email. loginUserSchema 에 강제되지 않으므로 route 진입 시 명시 검증.
+    //   조회(fetchQspUserDetail)는 email, 탈퇴(saveResignReq)는 loginId(=userId) 로 이원화되어 있어
+    //   대소문자/공백 variant 로 둘이 다르면 조회 대상과 탈퇴 대상이 달라질 수 있음 → 보수적 거부.
+    if (user.userId !== user.email) {
+      console.error("[POST /api/mypage/withdraw] GENERAL invariant violation (userId !== email)", {
+        userTp: user.userTp,
+      });
+      return NextResponse.json(
+        { error: "ユーザー情報に不備があります。再ログインしてください" },
+        { status: 500 },
+      );
+    }
+
+    // Rate Limit — 탈퇴는 불가역 작업이므로 JWT 탈취 후 반복호출 / QSP 부하유발 차단.
+    //   IP 버킷(있을 때만) + account 버킷(항상) AND 조합으로 XFF 스푸핑 IP 로테이션 공격 방어.
+    //   email 은 trim + toLowerCase 정규화로 variant 우회 차단.
+    //   기준: password-reset/request 보다 엄격(탈퇴 불가역 특성). IP 있음 → 각 5건, IP 없음 → account 3건.
+    //
+    // 배치 순서 (body 파싱/Zod 검증 전 실행) — 의도적 결정:
+    //   (1) QSP 부하 보호 최우선: JWT 인증된 사용자의 악성/자동화 루프가 body 파싱 비용을
+    //       들이기 전에 차단되어 QSP saveResignReq 로 전파되는 것을 막는다.
+    //   (2) 정상 사용자가 잘못된 body(e.g. 필드 오타)를 보내도 토큰을 소모하는 trade-off 가 있으나,
+    //       탈퇴 화면은 단일 textarea(reason) 1개뿐이라 실 사용자가 시간당 5건을 넘기기 어려움.
+    //   (3) 반대 배치(검증 후 rate limit)는 인증만 통과한 공격자가 유효 body 1개만 확보하면
+    //       rate limit 을 우회할 수 있으므로 채택하지 않음.
+    const forwarded = request.headers.get("x-forwarded-for");
+    // x-real-ip 가 빈 문자열("")이면 `??` 를 통과해 공용 rate limit 버킷이 생기는 edge case 방어 — `||` + null fallback 으로 통일.
+    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null;
+    const emailNorm = user.email.trim().toLowerCase();
+    const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+    // IP 헤더 부재 경고는 rate limit 평가 전에 기록 — 429 조기 return 경로에서도 IP-less 공격 패턴 가시성 확보.
+    if (!ip) {
+      console.warn("[POST /api/mypage/withdraw] IP 헤더 없음 — account 기반 rate limit 적용");
+    }
+    const ipOk = !ip || checkRateLimit(`withdraw:ip:${ip}`, 5, RATE_LIMIT_WINDOW_MS);
+    const accountOk = checkRateLimit(
+      `withdraw:account:${emailNorm}`,
+      ip ? 5 : 3,
+      RATE_LIMIT_WINDOW_MS,
+    );
+    if (!ipOk || !accountOk) {
+      // RFC 6585 — 429 응답에 Retry-After(초) 부여. 윈도우 전체를 대기 힌트로 제공하여
+      // 자동화 스크립트의 즉시 재시도 루프를 억제하고, 정상 클라이언트에도 재시도 타이밍을 안내.
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)),
+          },
+        },
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -86,9 +142,10 @@ export async function POST(request: NextRequest) {
     }
     const { reason } = result.data;
 
-    // 1. QSP userDetail 로 현재값 조회 — updateUserDtl 는 성명/회사/주소 등 필수 필드 요구.
-    //    GENERAL 회원은 QSP 내부 조회 키가 email(위 !user.email 체크로 null 제외). userId 대신 email 을 명시 전달해
-    //    fetchQspUserDetail 내부 userTp 분기를 우회하지 않도록 의도를 명확히 함.
+    // 1. QSP userDetail 로 현재 statCd 확인 — 409(이미 탈퇴) 재현을 위한 사전 체크 전용.
+    //    saveResignReq 는 자체적으로 "ユーザーの退会に失敗しました" 로 실패를 알리지만, 이미 탈퇴된 회원을 재호출하는
+    //    케이스를 명시적으로 409 로 분기시키기 위해 선행 조회를 유지한다.
+    //    GENERAL 회원은 QSP 내부 조회 키가 email (위 !user.email 체크로 null 제외).
     const detailResult = await fetchQspUserDetail(
       user.email,
       user.userTp,
@@ -96,13 +153,15 @@ export async function POST(request: NextRequest) {
     );
     if (!detailResult.ok) {
       // QSP 내부 오류 메시지(SQL 등)가 클라이언트로 직접 전달되지 않도록 일반화된 문구로 대체.
+      // status 도 QSP 원본(404 등) 을 그대로 전달하면 User Enumeration 공격자의 회원 존재여부
+      // 추론 단서가 되므로 502(Bad Gateway) 로 고정. 원본 status 는 로그에만 보존.
       console.error("[POST /api/mypage/withdraw] QSP userDetail 조회 실패:", {
         status: detailResult.error.status,
         msg: detailResult.error.error,
       });
       return NextResponse.json(
         { error: "退会処理中にエラーが発生しました" },
-        { status: detailResult.error.status },
+        { status: 502 },
       );
     }
     const current = detailResult.detail;
@@ -127,36 +186,20 @@ export async function POST(request: NextRequest) {
       return resp;
     }
 
-    // 2. QSP updateUserDtl 호출 — statCd="R" 로 전환.
-    //    누락 필드는 QSP 가 기존 값 보존 → 필수값만 재전송, mutable 필드 중 탈퇴 관련만 덮어씀.
-    //    resignRsn 은 QSP 가 수용하면 저장, 아니면 silently drop. 탈퇴 이유는 interface log 에 잔존.
+    // 2. QSP saveResignReq 호출 — 탈퇴 전용 엔드포인트 (사양서 No.8).
+    //    필수 파라미터 4개만 전송. 이전 구현의 updateUserDtl + statCd:"R" + 17필드 방식은
+    //    QSP 가 수용하지 않아 HTTP 500 반환하므로 절대 복귀 금지.
     const qspPayload = {
-      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
-      userId: user.userId,
-      loginId: user.userId,
-      email: user.email,
       userTp: user.userTp,
-      user1stNm: current.user1stNm ?? "",
-      user2ndNm: current.user2ndNm ?? "",
-      user1stNmKana: current.user1stNmKana ?? "",
-      user2ndNmKana: current.user2ndNmKana ?? "",
-      compNm: current.compNm ?? "",
-      compNmKana: current.compNmKana ?? "",
-      compPostCd: current.compPostCd ?? "",
-      compAddr: current.compAddr ?? "",
-      compAddr2: current.compAddr2 ?? "",
-      compTelNo: current.compTelNo ?? "",
-      compFaxNo: current.compFaxNo ?? "",
-      newsRcptYn: current.newsRcptYn ?? "N",
-      statCd: "R",
-      resignRsn: reason,
-      updBy: user.userId,
+      loginId: user.userId,
+      accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+      resignRemark: reason,
     };
 
     let qspResponse: Response;
     try {
       qspResponse = await fetchWithLog(
-        QSP_API.updateUserDtl,
+        QSP_API.saveResignReq,
         {
           method: "POST",
           headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -166,9 +209,11 @@ export async function POST(request: NextRequest) {
         {
           system: "QSP",
           direction: "OUTBOUND",
-          apiName: "updateUserDtl",
+          apiName: "saveResignReq",
           callerRoute: "[POST /api/mypage/withdraw]",
-          userId: maskEmail(user.userId),
+          // GENERAL invariant guard 로 userId === email 이 보장되지만, 소스를 email 로 명시해
+          // 향후 비-GENERAL 경로로 복제되더라도 마스킹 누락 회귀를 방지.
+          userId: maskEmail(user.email),
           userType: user.userTp,
         },
       );
@@ -217,14 +262,29 @@ export async function POST(request: NextRequest) {
         resultMsg: truncatedMsg,
       });
 
-      // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 updateUserDtl 호출 사이에
+      // TOCTOU Race Condition 완화: 사전 체크(statCd !== "R") 와 saveResignReq 호출 사이에
       // 다른 경로(다른 탭/기기) 로 이미 탈퇴 처리가 완료되었을 가능성을 재확인.
-      // 실패 직후 userDetail 재조회 → statCd === "R" 이면 409 로 매핑 + 쿠키 삭제.
-      const recheck = await fetchQspUserDetail(
-        user.email,
-        user.userTp,
-        "[POST /api/mypage/withdraw][recheck]",
-      );
+      // recheck 예외(네트워크 타임아웃 등)가 최상위 catch로 전파되면 500이 반환되어
+      // 분기 3 의도(502 "결과 불명")가 무너지므로 별도 try-catch 로 보호.
+      let recheck: Awaited<ReturnType<typeof fetchQspUserDetail>>;
+      try {
+        recheck = await fetchQspUserDetail(
+          user.email,
+          user.userTp,
+          "[POST /api/mypage/withdraw][recheck]",
+        );
+      } catch (recheckError: unknown) {
+        console.error(
+          "[POST /api/mypage/withdraw][recheck] 재조회 예외:",
+          recheckError,
+        );
+        return NextResponse.json(
+          { error: "退会処理の結果が確認できません。しばらくしてから再度お試しください。" },
+          { status: 502 },
+        );
+      }
+
+      // 분기 1: 재조회 성공 + statCd === "R" → 실제로는 탈퇴 완료 상태. 409 + 쿠키 삭제.
       if (recheck.ok && recheck.detail.statCd === "R") {
         const resp = NextResponse.json(
           { error: "既に退会済みの会員です" },
@@ -234,14 +294,31 @@ export async function POST(request: NextRequest) {
         return resp;
       }
 
-      // recheck 실패 또는 statCd !== "R" — QSP 내부에서 부분 처리가 완료됐을 가능성 배제 불가.
-      // 보수적 조치: 쿠키 삭제 후 재로그인 유도. 탈퇴 실패 시 재로그인 비용은 보안 대비 허용 가능.
-      const errResp = NextResponse.json(
-        { error: "退会処理の結果が不明です。再ログインして確認してください" },
+      // 분기 1-b: 재조회 성공했으나 statCd 가 null → 회원 상태 불명. 사전 체크(130행) 일관성 유지 위해 분기 3 과 동일하게 "결과 불명" 처리.
+      //   statCd null 을 "실패 확정"으로 판정하면 실제로는 탈퇴 성공했을 가능성을 오분류할 수 있으므로 안전측 502.
+      if (recheck.ok && recheck.detail.statCd === null) {
+        return NextResponse.json(
+          { error: "退会処理の結果が確認できません。しばらくしてから再度お試しください。" },
+          { status: 502 },
+        );
+      }
+
+      // 분기 2: 재조회 성공 + statCd !== "R" (null 제외) → 탈퇴가 실제로 실패함(statCd 변화 없음).
+      //   쿠키를 삭제하면 사용자가 재시도할 수 없으므로 세션 유지. 잠시 후 재시도 안내.
+      if (recheck.ok) {
+        return NextResponse.json(
+          { error: "退会処理に失敗しました。しばらくしてから再度お試しください。" },
+          { status: 502 },
+        );
+      }
+
+      // 분기 3: 재조회 자체 실패 (QSP 통신 장애) → 탈퇴 결과 불명.
+      //   부분 처리 가능성은 있으나 QSP 장애 상황에서 세션까지 끊으면 재시도 경로가 사라짐.
+      //   쿠키 유지 + 재시도 안내. 탈퇴 완료가 실제 일어났다면 다음 로그인/요청에서 403 등으로 재노출됨.
+      return NextResponse.json(
+        { error: "退会処理の結果が確認できません。しばらくしてから再度お試しください。" },
         { status: 502 },
       );
-      errResp.cookies.set(COOKIE_NAME, "", CLEAR_COOKIE_OPTIONS);
-      return errResp;
     }
 
     // 3. JWT 쿠키 삭제 — 즉시 로그아웃. 탈퇴된 계정의 세션이 잔존해 permission/2FA 캐시로 오작동하는 것 방지.

@@ -26,6 +26,7 @@ const SENSITIVE_KEYS = new Set([
   "currentPassword",
   // 사용자 자유기입 PII 가능 — 탈퇴 사유(유저 불만·개인정보 혼입 가능)
   "resignRsn",
+  "resignRemark",
   "reason",
 ]);
 
@@ -83,7 +84,7 @@ function maskObjectFields(
 // `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|resignRsn)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;

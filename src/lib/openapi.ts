@@ -2292,8 +2292,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["MyPage"],
         summary: "회원탈퇴 (일반회원만)",
         description:
-          "QSP updateUserDtl 로 statCd=R 전환 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
-          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502.",
+          "QSP saveResignReq (사양서 No.8) 호출 + JWT 쿠키 삭제. 2FA 완료 + GENERAL 만 허용. " +
+          "이미 탈퇴한 회원은 409. QSP 연동 실패 시 502. " +
+          "※ 과거 updateUserDtl+statCd:\"R\" 방식은 QSP 가 수용하지 않아 500 반환되므로 복귀 금지.",
         requestBody: {
           required: true,
           content: {
@@ -2302,7 +2303,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                 type: "object",
                 required: ["reason"],
                 properties: {
-                  reason: { type: "string", maxLength: 1000 },
+                  reason: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 500,
+                    description: "退会理由 (QSP resignRemark 에 매핑, 1~500자). 공백만 입력은 BE trim 후 min(1) 검증에서 400.",
+                  },
                 },
               },
             },
@@ -2329,8 +2335,31 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2FA 미완 또는 일반회원 아님"),
           "409": errorResponse("이미 탈퇴 처리된 회원"),
+          "429": {
+            description:
+              "요청이 너무 많음 (rate limit 초과). `Retry-After` 응답 헤더로 재시도까지 대기 권장 초를 제공 (RFC 6585).",
+            headers: {
+              "Retry-After": {
+                description: "재시도까지 대기해야 할 초. rate limit 윈도우(3600s) 전체.",
+                schema: { type: "integer", example: 3600 },
+              },
+            },
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { error: { type: "string" } },
+                },
+              },
+            },
+          },
           "500": errorResponse("서버 에러 / JWT 누락"),
-          "502": errorResponse("QSP 연동 실패"),
+          "502": errorResponse(
+            "QSP 연동 실패 또는 QSP userDetail 조회 실패. 세션 쿠키는 유지됨(재시도 가능). " +
+              "error 필드로 세부 사유 구분: 접속 불가 / 응답 파싱 실패 / 탈퇴 실패 확정 / 결과 불명. " +
+              "※ QSP 원본 status(404 등)는 User Enumeration 방어를 위해 502 로 고정되며 로그에만 보존. " +
+              "※ 쿠키 삭제는 200·409 시에만 발생.",
+          ),
         },
       },
     },
