@@ -74,17 +74,18 @@ export const QSP_API = {
 // Q.Partners 가 target 별 URL 에 `?autoLoginParam1=<cipher>` 를 붙여 이동시킨다.
 // QSP 응답의 `data.url` 은 HANASYS 한정 힌트이므로 사용하지 않고 아래 map 을 자체 관리.
 //
-// APP_ENV(Jenkinsfile/docker-compose 주입) 기반 prod/dev 자동 분기.
-// 도메인/경로 예외 필요 시 env 오버라이드: HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
-const HANASYS_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
-  ? "https://www.hanasys.jp/login"
-  : "https://dev.hanasys.jp/login";
-const Q_ORDER_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
-  ? "https://q-order.q-cells.jp/eos/login/autoLogin"
-  : "https://q-order-dev.q-cells.jp/eos/login/autoLogin";
-const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = isProductionDeploy
-  ? "https://q-musubi.q-cells.jp/qm/login/autoLogin"
-  : "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
+// default 는 dev 도메인으로 고정. prod URL 은 운영 배포 시 env override 로 명시 주입.
+//   HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
+//
+// 이전에는 `isProductionDeploy ? prodUrl : devUrl` 로 분기했으나, APP_ENV 환경변수가
+// 잘못 주입(예: shell 환경 오염)되면 dev 배포에서도 운영 URL 이 선택되어 사용자가
+// 실제 운영 시스템으로 리다이렉트되는 사고가 발생했음(2026-04-25). 코드에서 운영 URL
+// 하드코딩을 제거하여 dev 환경에서 운영 URL 노출 가능성 자체를 차단.
+//
+// 정식 구조 개선(env 필수화 + 누락 시 부팅 실패) 은 후속 PR 에서 진행.
+const HANASYS_AUTOLOGIN_URL_DEFAULT = "https://dev.hanasys.jp/login";
+const Q_ORDER_AUTOLOGIN_URL_DEFAULT = "https://q-order-dev.q-cells.jp/eos/login/autoLogin";
+const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
 
 /**
  * 자동로그인 URL env override 처리.
