@@ -82,13 +82,14 @@ interface RelatedSite {
   href: string;
   note?: string;
 }
-// 환경별 URL 분기 — NODE_ENV 는 Next.js 빌드 시 클라이언트 번들에 인라인됨
-const IS_PROD = process.env.NODE_ENV === "production";
-
+// 운영 URL 하드코딩 제거 — PR #88 패턴(서버 config.ts) 을 클라이언트에도 적용.
+// IS_PROD(NODE_ENV) 분기에 의존하던 운영 URL 을 클라 번들에서 제거하여, 운영 빌드
+// 환경 오염(NODE_ENV=production) 만으로 운영 URL 이 사용자에게 노출되는 사고를 차단.
+// 운영 배포 시 prod URL 주입은 후속 PR(NEXT_PUBLIC_* env override + 부팅 가드) 에서 처리.
 const RELATED_SITE_URLS = {
-  qorder: IS_PROD ? "https://q-order.q-cells.jp/" : "https://q-order-dev.q-cells.jp/",
-  qmusubi: IS_PROD ? "https://q-musubi.q-cells.jp/" : "https://q-musubi-dev.q-cells.jp/",
-  hanasys: IS_PROD ? "https://www.hanasys.jp/" : "https://dev.hanasys.jp/",
+  qorder: "https://q-order-dev.q-cells.jp/",
+  qmusubi: "https://q-musubi-dev.q-cells.jp/",
+  hanasys: "https://dev.hanasys.jp/",
 } as const;
 
 // Q.WARRANTY 는 역할별 로그인 URL 분리 (ADMIN → admin_login, STORE → seller_login)
