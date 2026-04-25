@@ -23,7 +23,13 @@ const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 // 운영 전용 검증 블록이 통째로 스킵되는 위험(PR #87 사고의 거울상 — dev URL 이 운영 사용자에게 노출)
 // 을 방지하기 위해 fail-closed 로 명시 검증.
 const rawAppEnv = process.env.APP_ENV;
-if (!isBuildPhase && rawAppEnv !== "production" && rawAppEnv !== "development") {
+// 빌드 시점 우회는 **APP_ENV 누락 케이스만** 허용. APP_ENV 가 명시되어 있으면 빌드 단계에서도
+// 값 검증을 수행하여 "prod"/"develop" 같은 오타를 즉시 잡는다.
+// 또한 NEXT_PHASE env 가 런타임 컨테이너에 leak 된 경우에도, APP_ENV 가 정상 주입되어 있다면
+// 검증을 수행하여 silent skip 을 방지.
+const isBuildPhaseSkip =
+  isBuildPhase && (rawAppEnv === undefined || rawAppEnv.trim() === "");
+if (!isBuildPhaseSkip && rawAppEnv !== "production" && rawAppEnv !== "development") {
   throw new Error(
     `APP_ENV must be explicitly set to "production" or "development" (got: ${rawAppEnv ?? "undefined"})`,
   );
@@ -116,20 +122,24 @@ const PROD_AUTOLOGIN_HOSTS = {
 /**
  * 자동로그인 URL env override 처리.
  * - prod 배포: HTTPS + host 일치 필수 (assertProdAutoLoginUrl 에서 부팅 검증)
- * - dev 배포: HTTPS 권장 — HTTP override 는 ALLOW_INSECURE_AUTOLOGIN_URL=true 명시 opt-in 필수.
+ * - dev 배포: HTTPS 권장 — default URL 이든 override 이든 동일하게 검증.
+ *   HTTP 허용은 ALLOW_INSECURE_AUTOLOGIN_URL=true 명시 opt-in 필수.
  *   stdout 모니터링 부재 환경에서 평문 cipher 가 silent 로 흐르지 않도록 fail-closed.
+ *
+ * 과거 override 분기에만 검증을 적용했으나, default URL 자체가 향후 http 로 잘못 변경될
+ * 경우 dev 에서 silent 통과되는 갭이 있어 fail-closed 일관성을 위해 url 자체로 검증.
  */
 function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
   const override = process.env[envName]?.trim();
   const url = override || defaultUrl;
-  if (!isProductionDeploy && override && !url.startsWith("https://")) {
+  if (!isProductionDeploy && !url.startsWith("https://")) {
     if (process.env.ALLOW_INSECURE_AUTOLOGIN_URL !== "true") {
       throw new Error(
-        `${envName}="${url}" 가 HTTPS 가 아닙니다. dev 환경에서 HTTP override 를 허용하려면 ALLOW_INSECURE_AUTOLOGIN_URL=true 를 명시 설정하세요.`,
+        `${envName}="${url}" 가 HTTPS 가 아닙니다. dev 환경에서 HTTP 를 허용하려면 ALLOW_INSECURE_AUTOLOGIN_URL=true 를 명시 설정하세요.`,
       );
     }
     console.warn(
-      `[config] ${envName}="${url}" HTTP override (ALLOW_INSECURE_AUTOLOGIN_URL=true) — prod 배포 시 부팅 실패합니다.`,
+      `[config] ${envName}="${url}" HTTP (ALLOW_INSECURE_AUTOLOGIN_URL=true) — prod 배포 시 부팅 실패합니다.`,
     );
   }
   return url;
@@ -164,9 +174,18 @@ function assertProdAutoLoginUrl(envName: string, urlValue: string, expectedHost:
   if (parsed.username || parsed.password) {
     throw new Error(`${envName} must not contain userinfo (open redirect risk)`);
   }
-  if (parsed.host !== expectedHost) {
+  // hostname 만 비교 (host 는 포트 포함). 의도를 코드로 명시하여 미래에 host ↔ hostname
+  // 변경 시 검증 빈틈을 방지. 대소문자 정규화로 `WWW.HANASYS.JP` 같은 변형도 동일하게 처리.
+  if (parsed.hostname.toLowerCase() !== expectedHost) {
     throw new Error(
-      `${envName} host mismatch: expected "${expectedHost}", got "${parsed.host}"`,
+      `${envName} hostname mismatch: expected "${expectedHost}", got "${parsed.hostname}"`,
+    );
+  }
+  // 표준 HTTPS 포트(443) 외 거부. env 오타 / 의도치 않은 명시 포트 주입을 부팅 단계에서 차단.
+  // (ex. https://www.hanasys.jp:8443/login → mismatch 로 차단되지 않고 통과되는 갭 방지)
+  if (parsed.port !== "" && parsed.port !== "443") {
+    throw new Error(
+      `${envName} must use standard HTTPS port 443 (got: ${parsed.port}). Remove the explicit port or set it to 443.`,
     );
   }
 }

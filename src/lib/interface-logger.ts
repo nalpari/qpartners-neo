@@ -14,7 +14,16 @@ export type InterfaceLogParams = {
   callerRoute: string;
   userId?: string;
   userType?: string;
+  /**
+   * true 지정 시 응답 본문 전체를 `[masked:cipher-response]` 로 치환하여 저장.
+   * 응답 객체 안에 `userId` 키 등으로 cipher / 토큰이 포함되는 API 전용
+   * (예: QSP autoLoginEncryptData — 응답 `data.userId` 가 base64 cipher).
+   * SENSITIVE_KEYS / EMAIL_KEYS 의 키 단위 마스킹으로는 누락되는 케이스를 fail-closed 로 차단.
+   */
+  maskResponseBody?: boolean;
 };
+
+const MASKED_RESPONSE_PLACEHOLDER = "[masked:cipher-response]";
 
 const SENSITIVE_KEYS = new Set([
   "pwd",
@@ -249,10 +258,21 @@ export async function fetchWithLog(
   const durationMs = Math.round(performance.now() - startTime);
   const resultCode = extractResultCode(responseBodyText);
 
+  // cipher / 토큰 응답 API 는 본문 전체를 통째로 마스킹.
+  // 키 단위 마스킹(SENSITIVE_KEYS / EMAIL_KEYS)으로는 응답 스키마가 `userId` 등 일반 키명에
+  // cipher 를 담는 케이스(QSP autoLoginEncryptData)를 잡지 못하므로 fail-closed.
+  // 단, body 자체가 null(읽기 실패)일 때는 placeholder 대신 null 유지 — 운영 진단 시
+  // "본문 비었던 건지 / 마스킹된 건지" 구분 가능.
+  const persistedResponseBody = params.maskResponseBody
+    ? responseBodyText !== null
+      ? MASKED_RESPONSE_PLACEHOLDER
+      : null
+    : maskSensitiveFields(responseBodyText);
+
   writeLog({
     ...baseLog,
     responseStatus: response.status,
-    responseBody: maskSensitiveFields(responseBodyText),
+    responseBody: persistedResponseBody,
     resultCode,
     durationMs,
     errorMessage: null,
