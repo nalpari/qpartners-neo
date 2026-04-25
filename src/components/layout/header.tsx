@@ -76,33 +76,79 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
 // 표시 순서 = ORDER → MUSUBI → DESIGN → WARRANTY (역할별 노출은 SITE_ACCESS_MAP 으로 필터)
 // note: Q.WARRANTY 만 자동 로그인 미연동 → 단순 사이트 이동임을 명시.
 type SiteValue = "qorder" | "qmusubi" | "hanasys" | "qwarranty";
+type AutoLoginSiteValue = Exclude<SiteValue, "qwarranty">;
 interface RelatedSite {
   label: string;
   value: SiteValue;
   href: string;
   note?: string;
 }
-// 환경별 URL 분기 — NODE_ENV 는 Next.js 빌드 시 클라이언트 번들에 인라인됨
-const IS_PROD = process.env.NODE_ENV === "production";
+// 환경별 URL — 클릭 시점에 hostname 기준으로 분기 선택 (NODE_ENV/APP_ENV 오염 영향 없음).
+const RELATED_SITE_URLS_DEV: Record<AutoLoginSiteValue, string> = {
+  qorder: "https://q-order-dev.q-cells.jp/",
+  qmusubi: "https://q-musubi-dev.q-cells.jp/",
+  hanasys: "https://dev.hanasys.jp/",
+};
+const RELATED_SITE_URLS_PROD: Record<AutoLoginSiteValue, string> = {
+  qorder: "https://q-order.q-cells.jp/",
+  qmusubi: "https://q-musubi.q-cells.jp/",
+  hanasys: "https://www.hanasys.jp/",
+};
 
-const RELATED_SITE_URLS = {
-  qorder: IS_PROD ? "https://q-order.q-cells.jp/" : "https://q-order-dev.q-cells.jp/",
-  qmusubi: IS_PROD ? "https://q-musubi.q-cells.jp/" : "https://q-musubi-dev.q-cells.jp/",
-  hanasys: IS_PROD ? "https://www.hanasys.jp/" : "https://dev.hanasys.jp/",
-} as const;
+/**
+ * 운영 hostname 명시 allowlist (fail-closed).
+ *
+ * 이 목록에 정확히 일치하는 hostname 일 때만 prod URL 사용. 그 외 (개발/스테이징/preview/IP/loopback/unknown)
+ * 는 모두 dev URL 로 폴백한다. PR description "운영 URL 노출 차단" 의도와 정렬.
+ *
+ * `toLowerCase()` 비교로 IDN/대소문자 변칙(`WWW.Q-PARTNERS.Q-CELLS.JP`) 도 정규화 처리.
+ */
+const PROD_HOSTS: readonly string[] = [
+  "www.q-partners.q-cells.jp",
+  "q-partners.q-cells.jp",
+] as const;
+
+/**
+ * 자동로그인 응답 URL 검증용 host 화이트리스트 (defense-in-depth).
+ *
+ * 서버측(`route.ts`)이 `AUTO_LOGIN_URL[target]` 을 안전 조립하지만, BFF 변경/침해/MITM 시
+ * 임의 URL(`https://attacker/...`, `javascript:`, `data:`)이 응답에 포함될 가능성에 대비해
+ * 클라이언트에서도 protocol(https:) + hostname 일치를 한 번 더 검증한다.
+ */
+const ALLOWED_REDIRECT_HOSTS: Record<AutoLoginSiteValue, readonly string[]> = {
+  qorder: ["q-order.q-cells.jp", "q-order-dev.q-cells.jp"],
+  qmusubi: ["q-musubi.q-cells.jp", "q-musubi-dev.q-cells.jp"],
+  hanasys: ["www.hanasys.jp", "dev.hanasys.jp"],
+};
+
+function isSafeRedirect(raw: string, key: AutoLoginSiteValue): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:"
+      && !u.username
+      && !u.password
+      && ALLOWED_REDIRECT_HOSTS[key].includes(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 현재 페이지 hostname 을 SSR-safe 하게 구독.
+ *
+ * SSR/initial render: 빈 문자열 → dev URL 폴백.
+ * 클라이언트 mount 후: `window.location.hostname` 으로 수렴 → PROD_HOSTS 일치 시 prod URL.
+ * React Compiler 규칙(`set-state-in-effect`) 준수를 위해 useEffect+setState 대신 useSyncExternalStore 사용.
+ */
+const subscribeNoop = () => () => {};
+const getClientHostname = () => window.location.hostname.toLowerCase();
+const getServerHostname = () => "";
 
 // Q.WARRANTY 는 역할별 로그인 URL 분리 (ADMIN → admin_login, STORE → seller_login)
 const QWARRANTY_URLS = {
   ADMIN: "https://q-warranty.q-cells.jp/admin_login",
   STORE: "https://q-warranty.q-cells.jp/seller_login",
 } as const;
-
-const ALL_RELATED_SITES: readonly RelatedSite[] = [
-  { label: "HANASYS ORDER", value: "qorder", href: RELATED_SITE_URLS.qorder },
-  { label: "HANASYS MUSUBI", value: "qmusubi", href: RELATED_SITE_URLS.qmusubi },
-  { label: "HANASYS DESIGN", value: "hanasys", href: RELATED_SITE_URLS.hanasys },
-  { label: "Q.WARRANTY", value: "qwarranty", href: QWARRANTY_URLS.STORE, note: "(別途ログインが必要)" },
-];
 
 // SEKO(시공점), GENERAL(일반회원)은 関連サイト 미노출 — 의도적 제외
 type SiteAccessKey = "ADMIN" | "1ST_STORE" | "2ND_STORE";
@@ -121,14 +167,25 @@ function getUserSiteKey(user: LoginUser): SiteAccessKey | null {
   return null;
 }
 
-function getRelatedSites(user: LoginUser) {
+/**
+ * 역할별 関連サイト 목록 — `<a href>` fallback URL 도 hostname 기반 환경 분기 결과를 사용.
+ * 운영 hostname 일 때만 prod URL 인라인 → 우클릭/middle-click 새 탭 시 dev URL 노출 방지.
+ */
+function getRelatedSites(
+  user: LoginUser,
+  fallbackUrls: Record<AutoLoginSiteValue, string>,
+): RelatedSite[] {
   const key = getUserSiteKey(user);
   if (!key) return [];
   const allowed = SITE_ACCESS_MAP[key];
   const qwarrantyHref = key === "ADMIN" ? QWARRANTY_URLS.ADMIN : QWARRANTY_URLS.STORE;
-  return ALL_RELATED_SITES
-    .filter((site) => allowed.includes(site.value))
-    .map((site) => site.value === "qwarranty" ? { ...site, href: qwarrantyHref } : site);
+  const all: readonly RelatedSite[] = [
+    { label: "HANASYS ORDER", value: "qorder", href: fallbackUrls.qorder },
+    { label: "HANASYS MUSUBI", value: "qmusubi", href: fallbackUrls.qmusubi },
+    { label: "HANASYS DESIGN", value: "hanasys", href: fallbackUrls.hanasys },
+    { label: "Q.WARRANTY", value: "qwarranty", href: qwarrantyHref, note: "(別途ログインが必要)" },
+  ];
+  return all.filter((site) => allowed.includes(site.value));
 }
 
 function subscribeAuthFlag(callback: () => void) {
@@ -163,7 +220,12 @@ export function Gnb() {
 
   const isLoggedIn = user != null;
   const isAdmin = user?.userTp === "ADMIN";
-  const relatedSites = user ? getRelatedSites(user) : [];
+  // SSR initial: "" → dev URL fallback. Client mount 후 운영 hostname 이면 prod URL 로 수렴.
+  const hostname = useSyncExternalStore(subscribeNoop, getClientHostname, getServerHostname);
+  const fallbackUrls = PROD_HOSTS.includes(hostname)
+    ? RELATED_SITE_URLS_PROD
+    : RELATED_SITE_URLS_DEV;
+  const relatedSites = user ? getRelatedSites(user, fallbackUrls) : [];
   const showRelatedSites = relatedSites.length > 0;
   const isLoggingOut = useRef(false);
 
@@ -212,8 +274,10 @@ export function Gnb() {
    *
    * 흐름:
    *   1. qwarranty 는 자동로그인 미연동 → 기본 `<a href>` 동작 허용 (별도 로그인 페이지)
-   *   2. 그 외 target 은 preventDefault → POST /api/auth/auto-login/encrypt → 응답 URL 로 이동
-   *   3. API 실패 시 원래 href 로 fallback (최소한의 UX 보존)
+   *   2. 그 외 target 은 preventDefault → POST /api/auth/auto-login/encrypt
+   *      → 응답 URL 을 `isSafeRedirect()` 로 검증 후 새 탭 이동 (fail-closed)
+   *   3. API 실패/응답 누락/검증 실패 시 hostname 기반 fallback URL 로 이동
+   *      (PROD_HOSTS 일치만 prod, 그 외 모두 dev)
    *
    * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
    */
@@ -230,27 +294,33 @@ export function Gnb() {
     e.preventDefault();
     closeMenu();
     if (autoLoginInFlight) return; // 중복 호출 방어
-    setAutoLoginInFlight(site.value);
+    // 이 시점부터 site.value 는 자동로그인 3사로 좁혀짐 — RELATED_SITE_URLS_* 인덱싱 안전성 확보.
+    const siteKey: AutoLoginSiteValue = site.value;
+    setAutoLoginInFlight(siteKey);
     const apiTarget =
-      site.value === "qorder" ? "qOrder"
-      : site.value === "qmusubi" ? "qMusubi"
+      siteKey === "qorder" ? "qOrder"
+      : siteKey === "qmusubi" ? "qMusubi"
       : "hanasys";
+    // fallback URL — 컴포넌트 상위에서 hostname 기반으로 결정한 값을 그대로 사용.
+    const fallbackUrl = fallbackUrls[siteKey];
     try {
       const res = await api.post<{ data: { url: string } }>(
         "/auth/auto-login/encrypt",
         { target: apiTarget },
       );
       const redirectUrl = res.data?.data?.url;
-      if (!redirectUrl) {
-        console.error("[header] 자동로그인 응답 URL 누락");
-        window.open(site.href, "_blank", "noopener,noreferrer");
+      // defense-in-depth — 서버측이 안전 조립하더라도 클라에서 protocol+hostname 한 번 더 검증.
+      // BFF 변경/침해/MITM 시 임의 URL(`https://attacker/...`, `javascript:`, `data:`) 차단.
+      if (!redirectUrl || !isSafeRedirect(redirectUrl, siteKey)) {
+        console.error("[header] 자동로그인 응답 URL 차단 — fallback 이동");
+        window.open(fallbackUrl, "_blank", "noopener,noreferrer");
         return;
       }
       window.open(redirectUrl, "_blank", "noopener,noreferrer");
     } catch (err: unknown) {
       console.error("[header] 자동로그인 실패 — fallback 이동:", err);
-      // 실패 fallback — 원래 사이트 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
-      window.open(site.href, "_blank", "noopener,noreferrer");
+      // 실패 fallback — 환경별 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
+      window.open(fallbackUrl, "_blank", "noopener,noreferrer");
     } finally {
       setAutoLoginInFlight(null);
     }
