@@ -263,7 +263,13 @@ export async function fetchWithLog(
   // cipher 를 담는 케이스(QSP autoLoginEncryptData)를 잡지 못하므로 fail-closed.
   // 단, body 자체가 null(읽기 실패)일 때는 placeholder 대신 null 유지 — 운영 진단 시
   // "본문 비었던 건지 / 마스킹된 건지" 구분 가능.
-  const persistedResponseBody = params.maskResponseBody
+  //
+  // DIAG: 2026-04-25 진단용 — PR revert 예정.
+  // 비정상 응답(non-2xx)은 cipher 가 들어가지 않으므로 `response.ok` 일 때만 마스킹.
+  // QSP 403/4xx 응답 본문(차단 사유 메시지)이 qp_interface_log 에 남도록 임시 변경.
+  // 정식 채택 여부는 진단 결과 분석 후 별도 PR 에서 결정.
+  const shouldMaskResponse = params.maskResponseBody === true && response.ok;
+  const persistedResponseBody = shouldMaskResponse
     ? responseBodyText !== null
       ? MASKED_RESPONSE_PLACEHOLDER
       : null

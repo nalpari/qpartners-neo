@@ -31,11 +31,16 @@ import {
  * `javascript:` / `data:` 스킴 유입으로 Open Redirect / 저장형 XSS 위험.
  * 사용 필요 시 `.refine((u) => u.startsWith("https://"))` + host 화이트리스트 부활 필수.
  */
+// DIAG: 2026-04-25 진단용 — PR revert 예정.
+// data.url 을 스키마에 포함시켜 진단 로그에 노출. 보안상 사용은 여전히 금지(아래 참조).
+// 정식 채택 시 url 사용 가드(.refine HTTPS + host allowlist) 함께 부활 필요.
 const qspEncryptResponseSchema = z.object({
   resultCode: z.number().int(),
   resultMessage: z.string().optional(),
   data: z.object({
     userId: z.string().min(1, "暗号文が空です"),
+    // DIAG: 2026-04-25 — 진단 로깅 전용. 사용 금지(open-redirect/XSS 위험은 위 주석 그대로).
+    url: z.string().optional(),
   }),
 });
 
@@ -122,8 +127,15 @@ export async function POST(request: NextRequest) {
     }
     const { target } = parsedBody.data;
 
+    // DIAG: 2026-04-25 진단용 — PR revert 예정.
+    console.info("[POST /api/auth/auto-login/encrypt][diag] phase=request", {
+      target,
+      userIdMasked: maskUserId(userId),
+      userIdLength: userId.length,
+    });
+
     // 3. QSP 에서 cipher 발급 (target 무관)
-    const cipherResult = await fetchQspCipher(userId);
+    const cipherResult = await fetchQspCipher(userId, target);
     if ("error" in cipherResult) {
       return cipherResult.error;
     }
@@ -136,6 +148,14 @@ export async function POST(request: NextRequest) {
       const u = new URL(baseUrl);
       u.searchParams.set("autoLoginParam1", cipher);
       redirectUrl = u.toString();
+      // DIAG: 2026-04-25 진단용 — PR revert 예정.
+      console.info("[POST /api/auth/auto-login/encrypt][diag] phase=assemble", {
+        target,
+        baseUrl,
+        redirectHost: u.host,
+        redirectPath: u.pathname,
+        cipherB64Length: cipher.length,
+      });
     } catch (error: unknown) {
       console.error("[POST /api/auth/auto-login/encrypt] redirect URL 조립 실패:", {
         target,
@@ -146,6 +166,18 @@ export async function POST(request: NextRequest) {
         "リダイレクトURLの生成に失敗しました",
       );
     }
+
+    // DIAG: 2026-04-25 진단용 — PR revert 예정.
+    // 최종 redirect URL 의 cipher 부분만 *** 마스킹하여 노출.
+    const redirectUrlForLog = redirectUrl.replace(
+      /(autoLoginParam1=)[^&]+/,
+      "$1***",
+    );
+    console.info("[POST /api/auth/auto-login/encrypt][diag] phase=respond", {
+      target,
+      status: 200,
+      redirectUrlMasked: redirectUrlForLog,
+    });
 
     return NextResponse.json<EncryptResponse>({ data: { url: redirectUrl } });
   } catch (error: unknown) {
@@ -173,14 +205,31 @@ export async function POST(request: NextRequest) {
 /**
  * QSP autoLoginEncryptData 호출해 16B cipher 만 추출.
  * 성공 시 { cipher }, 실패 시 { error: NextResponse } 반환 (route 상위에서 그대로 반환).
+ *
+ * DIAG: 2026-04-25 진단용 — `target` 파라미터는 진단 로그 라벨링 전용. 호출 query 변경 없음.
  */
 async function fetchQspCipher(
   userId: string,
+  target: string,
 ): Promise<{ cipher: string } | { error: NextResponse }> {
+  const qspUrl = `${QSP_API.autoLoginEncrypt}?autoLoginParam1=${encodeURIComponent(userId)}`;
+  // DIAG: 2026-04-25 진단용 — PR revert 예정.
+  try {
+    const parsedUrl = new URL(qspUrl);
+    console.info("[POST /api/auth/auto-login/encrypt][diag] phase=qsp-call", {
+      target,
+      qspHost: parsedUrl.host,
+      qspPath: parsedUrl.pathname,
+      queryKeys: Array.from(parsedUrl.searchParams.keys()),
+    });
+  } catch {
+    // URL 파싱 실패는 진단 로그 부수효과라 본 흐름 영향 없음
+  }
+
   let qspResponse: Response;
   try {
     qspResponse = await fetchWithLog(
-      `${QSP_API.autoLoginEncrypt}?autoLoginParam1=${encodeURIComponent(userId)}`,
+      qspUrl,
       {
         method: "GET",
         // 외부 API 프록시 — 응답 캐시 금지. 호출 지점에서 의도 명시.
@@ -196,6 +245,7 @@ async function fetchQspCipher(
         // QSP 응답의 `data.userId` 가 base64 cipher (3사 자동로그인 진입 토큰).
         // SENSITIVE_KEYS 키 단위 마스킹으로는 잡히지 않으므로 본문 전체 마스킹.
         // cipher 가 qp_interface_log 에 평문 잔존 → DB 덤프 / 운영자 조회로 자정 경계까지 replay 가능.
+        // (DIAG: 2026-04-25 — interface-logger 가 4xx/5xx 응답은 본문 노출하도록 임시 변경됨)
         maskResponseBody: true,
       },
     );
@@ -207,8 +257,23 @@ async function fetchQspCipher(
     return { error: upstreamError(UPSTREAM_CODES.TIMEOUT, "暗号化サーバーに接続できません") };
   }
 
+  // DIAG: 2026-04-25 진단용 — PR revert 예정.
+  const diagContentType = qspResponse.headers.get("content-type");
   if (!qspResponse.ok) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 비정상 응답:", qspResponse.status);
+    // DIAG: 2026-04-25 — 4xx/5xx 응답 본문도 진단 로그에 남겨 차단 사유 직접 확인.
+    let diagErrorBodyPrefix: string | null = null;
+    try {
+      const errorBody = await qspResponse.clone().text();
+      diagErrorBodyPrefix = errorBody.slice(0, 500);
+    } catch {
+      // 본문 읽기 실패는 부수 정보 — 본 흐름 영향 없음
+    }
+    console.error("[POST /api/auth/auto-login/encrypt][diag] phase=qsp-resp", {
+      target,
+      status: qspResponse.status,
+      contentType: diagContentType,
+      bodyPrefix: diagErrorBodyPrefix,
+    });
     return {
       error: upstreamError(UPSTREAM_CODES.HTTP_ERROR, "暗号化サーバーエラーが発生しました"),
     };
@@ -281,5 +346,27 @@ async function fetchQspCipher(
     };
   }
 
-  return { cipher: parsed.data.data.userId };
+  // DIAG: 2026-04-25 진단용 — PR revert 예정.
+  // 가설 (α) vs (β) 판별의 결정타: cipher 길이 + data.url + content-type.
+  // 같은 사용자로 hanasys/qOrder/qMusubi 3회 호출 결과를 비교하면 QSP 가 호출 컨텍스트별로
+  // 다른 응답을 주는지(α) 동일 응답을 주는지(β) 확인 가능.
+  const cipherB64 = parsed.data.data.userId;
+  let cipherByteLength: number | null = null;
+  try {
+    cipherByteLength = Buffer.from(cipherB64, "base64").length;
+  } catch {
+    // base64 파싱 실패는 진단 로그 부수효과
+  }
+  console.info("[POST /api/auth/auto-login/encrypt][diag] phase=qsp-resp", {
+    target,
+    status: qspResponse.status,
+    contentType: diagContentType,
+    resultCode: parsed.data.resultCode,
+    resultMessage: sanitizeUpstreamMessage(parsed.data.resultMessage, userId),
+    cipherB64Length: cipherB64.length,
+    cipherByteLength,
+    dataUrl: parsed.data.data.url ?? null,
+  });
+
+  return { cipher: cipherB64 };
 }
