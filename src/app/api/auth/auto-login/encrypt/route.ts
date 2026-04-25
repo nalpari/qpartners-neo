@@ -193,10 +193,10 @@ async function fetchQspCipher(
         apiName: "autoLoginEncryptData",
         callerRoute: "[POST /api/auth/auto-login/encrypt]",
         userId: maskUserId(userId),
-        // QSP 응답의 `data.userId` 가 base64 cipher (3사 자동로그인 진입 토큰).
-        // SENSITIVE_KEYS 키 단위 마스킹으로는 잡히지 않으므로 본문 전체 마스킹.
-        // cipher 가 qp_interface_log 에 평문 잔존 → DB 덤프 / 운영자 조회로 자정 경계까지 replay 가능.
-        maskResponseBody: true,
+        // 운영 진단(자동로그인 502 사유 분석 등) 편의를 위해 응답 본문 평문 저장 유지.
+        // 응답 `data.userId` 에 base64 cipher 가 들어오므로 자정 키 경계(최대 24h)까지
+        // 운영자 조회 / DB 덤프 시 cipher replay 위험이 존재함을 인지한 결정.
+        // user_id 컬럼은 PII 보호를 위해 maskUserId() 마스킹 유지 (.claude/rules/api.md 준수).
       },
     );
   } catch (error) {
