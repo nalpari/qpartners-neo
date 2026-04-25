@@ -241,12 +241,13 @@ export function Gnb() {
       site.value === "qorder" ? "qOrder"
       : site.value === "qmusubi" ? "qMusubi"
       : "hanasys";
-    // 환경 분기 — NEXT_PUBLIC_APP_ENV (빌드 시 .env.development / .env.production 에서 인라인).
-    // 백엔드(config.ts) 와 동일한 .env 기반 분기 패턴.
-    const isProd = process.env.NEXT_PUBLIC_APP_ENV === "production";
-    const fallbackUrl = isProd
-      ? RELATED_SITE_URLS_PROD[site.value]
-      : RELATED_SITE_URLS_DEV[site.value];
+    // 환경 분기 — hostname 기준. dev. prefix 또는 localhost 면 dev URL, 그 외 운영 URL.
+    // .dockerignore/Dockerfile 변경 없이 동작하도록 NEXT_PUBLIC_APP_ENV 대신 hostname 사용.
+    const hostname = window.location.hostname;
+    const isDevHost = hostname.startsWith("dev.") || hostname === "localhost";
+    const fallbackUrl = isDevHost
+      ? RELATED_SITE_URLS_DEV[site.value]
+      : RELATED_SITE_URLS_PROD[site.value];
     try {
       const res = await api.post<{ data: { url: string } }>(
         "/auth/auto-login/encrypt",
