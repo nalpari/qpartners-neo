@@ -5,7 +5,13 @@ import { z } from "zod";
 import { AUTO_LOGIN_URL, QSP_API } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
-import { encryptRequestSchema } from "@/lib/schemas/auto-login";
+import {
+  encryptRequestSchema,
+  UPSTREAM_CODES,
+  type EncryptErrorResponse,
+  type EncryptResponse,
+  type UpstreamCode,
+} from "@/lib/schemas/auto-login";
 
 /**
  * QSP autoLoginEncryptData 응답.
@@ -16,36 +22,27 @@ import { encryptRequestSchema } from "@/lib/schemas/auto-login";
  *
  * - resultCode: 200 이외는 502
  * - data.userId: base64 cipher (필수, non-empty)
- * - data.url: QSP 가 반환하지만 Q.Partners 가 사용하지 않음 (schema 에서 optional 허용)
+ *
+ * NOTE: QSP 가 함께 반환하는 `data.url` 은 의도적으로 schema 에서 제외.
+ * 미래 누군가 "QSP 가 url 도 주니 그대로 쓰자" 패턴으로 부활시킬 때
+ * `javascript:` / `data:` 스킴 유입으로 Open Redirect / 저장형 XSS 위험.
+ * 사용 필요 시 `.refine((u) => u.startsWith("https://"))` + host 화이트리스트 부활 필수.
  */
 const qspEncryptResponseSchema = z.object({
   resultCode: z.number().int(),
   resultMessage: z.string().optional(),
   data: z.object({
     userId: z.string().min(1, "暗号文が空です"),
-    url: z.string().optional(),
   }),
 });
 
 /** userId 형식 가드 — middleware 통과 header 지만 defense-in-depth. `+` 포함(하위주소 이메일 지원). */
 const USER_ID_PATTERN = /^[A-Za-z0-9@._+\-]{1,128}$/;
 
-/**
- * 502 응답 식별자 — 운영/QA 가 원인 구분 가능하도록 code 필드로 분리.
- * OpenAPI (`/auth/auto-login/encrypt` 502 enum) 와 동기화 유지.
- */
-const UPSTREAM_CODES = {
-  TIMEOUT: "UPSTREAM_TIMEOUT",
-  HTTP_ERROR: "UPSTREAM_HTTP_ERROR",
-  RESPONSE_PARSE_FAIL: "UPSTREAM_RESPONSE_PARSE_FAIL",
-  SCHEMA_MISMATCH: "UPSTREAM_SCHEMA_MISMATCH",
-  RESULT_FAIL: "UPSTREAM_RESULT_FAIL",
-  ASSEMBLY_FAIL: "UPSTREAM_ASSEMBLY_FAIL",
-} as const;
-
-type UpstreamCode = (typeof UPSTREAM_CODES)[keyof typeof UPSTREAM_CODES];
-
-function upstreamError(code: UpstreamCode, message: string) {
+function upstreamError(
+  code: UpstreamCode,
+  message: string,
+): NextResponse<EncryptErrorResponse> {
   return NextResponse.json({ error: message, code }, { status: 502 });
 }
 
@@ -147,7 +144,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ data: { url: redirectUrl } });
+    return NextResponse.json<EncryptResponse>({ data: { url: redirectUrl } });
   } catch (error: unknown) {
     if (error instanceof ConfigError) {
       console.error(
@@ -193,6 +190,10 @@ async function fetchQspCipher(
         apiName: "autoLoginEncryptData",
         callerRoute: "[POST /api/auth/auto-login/encrypt]",
         userId: maskUserId(userId),
+        // QSP 응답의 `data.userId` 가 base64 cipher (3사 자동로그인 진입 토큰).
+        // SENSITIVE_KEYS 키 단위 마스킹으로는 잡히지 않으므로 본문 전체 마스킹.
+        // cipher 가 qp_interface_log 에 평문 잔존 → DB 덤프 / 운영자 조회로 자정 경계까지 replay 가능.
+        maskResponseBody: true,
       },
     );
   } catch (error) {

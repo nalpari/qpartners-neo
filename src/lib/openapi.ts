@@ -228,9 +228,33 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "string",
                           description:
                             "자동로그인 파라미터가 포함된 이동 URL. target 별 host: hanasys=www.hanasys.jp(prod)/dev.hanasys.jp(dev), qOrder=q-order(-dev).q-cells.jp, qMusubi=q-musubi(-dev).q-cells.jp",
-                          example:
-                            "https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...",
                         },
+                      },
+                    },
+                  },
+                },
+                examples: {
+                  hanasys: {
+                    summary: "HANASYS DESIGN",
+                    value: {
+                      data: {
+                        url: "https://www.hanasys.jp/login?autoLoginParam1=...",
+                      },
+                    },
+                  },
+                  qOrder: {
+                    summary: "Q.Order",
+                    value: {
+                      data: {
+                        url: "https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...",
+                      },
+                    },
+                  },
+                  qMusubi: {
+                    summary: "Q.Musubi",
+                    value: {
+                      data: {
+                        url: "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...",
                       },
                     },
                   },
@@ -238,25 +262,43 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("リクエスト形式または target パラメータが正しくありません"),
+          "400": {
+            description:
+              "リクエスト形式または target パラメータが不適格. route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ErrorResponse" },
+                examples: {
+                  bodyParseFail: {
+                    summary: "Request body JSON 파싱 실패",
+                    value: { error: "リクエスト形式が正しくありません" },
+                  },
+                  targetInvalid: {
+                    summary: "target enum 검증 실패",
+                    value: { error: "targetパラメータが正しくありません" },
+                  },
+                },
+              },
+            },
+          },
           "401": errorResponse("認証が必要です"),
           "500": errorResponse("暗号化処理エラー"),
           "502": {
             description:
-              "外部暗号化サーバー関連エラー (QSP autoLoginEncryptData). `code` で原因区分:\n" +
-              "- `UPSTREAM_TIMEOUT`: QSP 접속 실패/타임아웃\n" +
-              "- `UPSTREAM_HTTP_ERROR`: QSP HTTP non-2xx\n" +
-              "- `UPSTREAM_RESPONSE_PARSE_FAIL`: QSP 응답 JSON 파싱 실패\n" +
-              "- `UPSTREAM_SCHEMA_MISMATCH`: QSP 응답 스키마 불일치\n" +
-              "- `UPSTREAM_RESULT_FAIL`: QSP resultCode != 200\n" +
-              "- `UPSTREAM_ASSEMBLY_FAIL`: redirect URL 조립 실패",
+              "外部暗号化サーバー関連エラー (QSP autoLoginEncryptData). `code` で原因区分 (코드별 실제 응답 메시지는 examples 참조):\n" +
+              "- `UPSTREAM_TIMEOUT`: 暗号化サーバーに接続できません\n" +
+              "- `UPSTREAM_HTTP_ERROR`: 暗号化サーバーエラーが発生しました\n" +
+              "- `UPSTREAM_RESPONSE_PARSE_FAIL`: 暗号化サーバーの応答を処理できません\n" +
+              "- `UPSTREAM_SCHEMA_MISMATCH`: 暗号化サーバーの応答形式が正しくありません\n" +
+              "- `UPSTREAM_RESULT_FAIL`: 暗号化サーバーの応答に失敗しました\n" +
+              "- `UPSTREAM_ASSEMBLY_FAIL`: リダイレクトURLの生成に失敗しました",
             content: {
               "application/json": {
                 schema: {
                   type: "object",
                   required: ["error", "code"],
                   properties: {
-                    error: { type: "string", example: "暗号化サーバーに接続できません" },
+                    error: { type: "string" },
                     code: {
                       type: "string",
                       enum: [
@@ -267,6 +309,50 @@ export const openApiSpec: OpenAPIV3.Document = {
                         "UPSTREAM_RESULT_FAIL",
                         "UPSTREAM_ASSEMBLY_FAIL",
                       ],
+                    },
+                  },
+                },
+                examples: {
+                  timeout: {
+                    summary: "QSP 接続失敗 / タイムアウト",
+                    value: {
+                      error: "暗号化サーバーに接続できません",
+                      code: "UPSTREAM_TIMEOUT",
+                    },
+                  },
+                  httpError: {
+                    summary: "QSP HTTP non-2xx 응답",
+                    value: {
+                      error: "暗号化サーバーエラーが発生しました",
+                      code: "UPSTREAM_HTTP_ERROR",
+                    },
+                  },
+                  responseParseFail: {
+                    summary: "QSP 응답 JSON 파싱 실패",
+                    value: {
+                      error: "暗号化サーバーの応答を処理できません",
+                      code: "UPSTREAM_RESPONSE_PARSE_FAIL",
+                    },
+                  },
+                  schemaMismatch: {
+                    summary: "QSP 응답 스키마 불일치",
+                    value: {
+                      error: "暗号化サーバーの応答形式が正しくありません",
+                      code: "UPSTREAM_SCHEMA_MISMATCH",
+                    },
+                  },
+                  resultFail: {
+                    summary: "QSP resultCode != 200",
+                    value: {
+                      error: "暗号化サーバーの応答に失敗しました",
+                      code: "UPSTREAM_RESULT_FAIL",
+                    },
+                  },
+                  assemblyFail: {
+                    summary: "redirect URL 조립 실패",
+                    value: {
+                      error: "リダイレクトURLの生成に失敗しました",
+                      code: "UPSTREAM_ASSEMBLY_FAIL",
                     },
                   },
                 },
