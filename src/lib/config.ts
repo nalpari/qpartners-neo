@@ -12,13 +12,23 @@ import { join, resolve } from "path";
 
 const rawQspBaseUrl = process.env.QSP_BASE_URL?.trim();
 const rawQspEncryptBaseUrl = process.env.QSP_ENCRYPT_BASE_URL?.trim();
-// 검증 기준은 Next.js 런타임 모드(NODE_ENV)가 아닌 **배포 환경**(APP_ENV) 이다.
-// Jenkinsfile / docker-compose 에서 APP_ENV 로 환경을 구분 (development | production).
-// dev 배포는 APP_ENV=development 로 HTTPS 강제 우회 가능 (QSP dev 엔드포인트가 http 인 경우 대응).
-const isProductionDeploy = process.env.APP_ENV === "production";
 // next build는 NODE_ENV=production 으로 각 route를 로드하여 page data를 수집한다.
 // 빌드 시점엔 운영 env가 주입되지 않는 것이 정상이므로, 검증은 런타임에만 수행한다.
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+// 검증 기준은 Next.js 런타임 모드(NODE_ENV)가 아닌 **배포 환경**(APP_ENV) 이다.
+// Jenkinsfile / docker-compose 에서 APP_ENV 로 환경을 구분 (development | production).
+// dev 배포는 APP_ENV=development 로 HTTPS 강제 우회 가능 (QSP dev 엔드포인트가 http 인 경우 대응).
+//
+// APP_ENV 누락/오타(예: "prod", "develop", undefined) 시 isProductionDeploy=false 로 평가되어
+// 운영 전용 검증 블록이 통째로 스킵되는 위험(PR #87 사고의 거울상 — dev URL 이 운영 사용자에게 노출)
+// 을 방지하기 위해 fail-closed 로 명시 검증.
+const rawAppEnv = process.env.APP_ENV;
+if (!isBuildPhase && rawAppEnv !== "production" && rawAppEnv !== "development") {
+  throw new Error(
+    `APP_ENV must be explicitly set to "production" or "development" (got: ${rawAppEnv ?? "undefined"})`,
+  );
+}
+const isProductionDeploy = rawAppEnv === "production";
 
 if (isProductionDeploy && !isBuildPhase && !rawQspBaseUrl) {
   throw new Error("QSP_BASE_URL is required in production");
@@ -88,16 +98,38 @@ const Q_ORDER_AUTOLOGIN_URL_DEFAULT = "https://q-order-dev.q-cells.jp/eos/login/
 const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
 
 /**
+ * 운영 자동로그인 host 화이트리스트.
+ *
+ * env override 가 잘못/악의적으로 다른 host 로 주입(`https://attacker.example.com/login`,
+ * `https://www.hanasys.jp@attacker.example.com/login` 등 userinfo 트릭)되어도 cipher 가
+ * 외부로 유출되지 않도록 prod 부팅 단계에서 host 일치 검증 (open redirect 방어).
+ *
+ * NOTE: 이는 default URL 이 아니라 **검증용 화이트리스트** — 운영에서만 사용되며,
+ * 환경별 분기 정책(feedback_env_per_environment_config.md)과 별개의 보안 가드.
+ */
+const PROD_AUTOLOGIN_HOSTS = {
+  hanasys: "www.hanasys.jp",
+  qOrder: "q-order.q-cells.jp",
+  qMusubi: "q-musubi.q-cells.jp",
+} as const;
+
+/**
  * 자동로그인 URL env override 처리.
- * - prod 배포: HTTPS 필수 (미충족 시 부팅 실패)
- * - dev 배포: HTTPS 권장 — HTTP 허용하되 부팅 로그로 경고 노출 (운영 사고 방지용 가시성 확보)
+ * - prod 배포: HTTPS + host 일치 필수 (assertProdAutoLoginUrl 에서 부팅 검증)
+ * - dev 배포: HTTPS 권장 — HTTP override 는 ALLOW_INSECURE_AUTOLOGIN_URL=true 명시 opt-in 필수.
+ *   stdout 모니터링 부재 환경에서 평문 cipher 가 silent 로 흐르지 않도록 fail-closed.
  */
 function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
   const override = process.env[envName]?.trim();
   const url = override || defaultUrl;
   if (!isProductionDeploy && override && !url.startsWith("https://")) {
+    if (process.env.ALLOW_INSECURE_AUTOLOGIN_URL !== "true") {
+      throw new Error(
+        `${envName}="${url}" 가 HTTPS 가 아닙니다. dev 환경에서 HTTP override 를 허용하려면 ALLOW_INSECURE_AUTOLOGIN_URL=true 를 명시 설정하세요.`,
+      );
+    }
     console.warn(
-      `[config] ${envName}="${url}" 가 HTTPS 가 아님 — dev 환경 override. prod 배포 시 부팅 실패합니다.`,
+      `[config] ${envName}="${url}" HTTP override (ALLOW_INSECURE_AUTOLOGIN_URL=true) — prod 배포 시 부팅 실패합니다.`,
     );
   }
   return url;
@@ -112,29 +144,65 @@ export const AUTO_LOGIN_URL = {
   qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL", Q_MUSUBI_AUTOLOGIN_URL_DEFAULT),
 } as const;
 
-// 운영 배포 시 안전장치 — env override 누락(=default dev URL 잔존) / 비-HTTPS 모두 부팅 실패.
-// 운영 배포에서 dev URL 이 응답에 나가는 사고를 부팅 단계에서 강제로 차단한다.
+/**
+ * 운영 자동로그인 URL 부팅 검증.
+ *
+ * 의도: HTTPS 누락 / 임의 host 주입 / userinfo 트릭(`https://www.hanasys.jp@attacker.example.com/...`)
+ * 모두를 부팅 단계에서 차단하여 운영 사용자가 외부 URL 로 redirect 되어 cipher 가 유출되는
+ * 사고를 fail-closed 로 방지.
+ */
+function assertProdAutoLoginUrl(envName: string, urlValue: string, expectedHost: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlValue);
+  } catch {
+    throw new Error(`${envName} is not a valid URL: ${urlValue}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${envName} must use HTTPS in production (got: ${parsed.protocol})`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${envName} must not contain userinfo (open redirect risk)`);
+  }
+  if (parsed.host !== expectedHost) {
+    throw new Error(
+      `${envName} host mismatch: expected "${expectedHost}", got "${parsed.host}"`,
+    );
+  }
+}
+
+// 운영 배포 시 안전장치 — env override 누락(=default dev URL 잔존) / 비-HTTPS / 임의 host 모두 부팅 실패.
+// 운영 배포에서 dev URL 또는 외부 URL 이 응답에 나가는 사고를 부팅 단계에서 강제로 차단한다.
 // 운영 Jenkins credential 에 HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
 // 3개를 모두 명시 주입해야 부팅 성공.
 if (isProductionDeploy) {
-  if (AUTO_LOGIN_URL.hanasys.includes("dev.hanasys.jp")) {
+  // 1) default dev URL 잔존 차단 — 동등성 비교(===)로 default 상수 변경 시 자동 추적.
+  //    substring 매칭은 false-negative(향후 default 변경) / false-positive(우연한 토큰 포함) 모두 발생.
+  if (AUTO_LOGIN_URL.hanasys === HANASYS_AUTOLOGIN_URL_DEFAULT) {
     throw new Error("HANASYS_AUTOLOGIN_URL is required in production (default dev URL detected)");
   }
-  if (AUTO_LOGIN_URL.qOrder.includes("q-order-dev.")) {
+  if (AUTO_LOGIN_URL.qOrder === Q_ORDER_AUTOLOGIN_URL_DEFAULT) {
     throw new Error("Q_ORDER_AUTOLOGIN_URL is required in production (default dev URL detected)");
   }
-  if (AUTO_LOGIN_URL.qMusubi.includes("q-musubi-dev.")) {
+  if (AUTO_LOGIN_URL.qMusubi === Q_MUSUBI_AUTOLOGIN_URL_DEFAULT) {
     throw new Error("Q_MUSUBI_AUTOLOGIN_URL is required in production (default dev URL detected)");
   }
-  if (!AUTO_LOGIN_URL.hanasys.startsWith("https://")) {
-    throw new Error("HANASYS_AUTOLOGIN_URL must use HTTPS in production");
-  }
-  if (!AUTO_LOGIN_URL.qOrder.startsWith("https://")) {
-    throw new Error("Q_ORDER_AUTOLOGIN_URL must use HTTPS in production");
-  }
-  if (!AUTO_LOGIN_URL.qMusubi.startsWith("https://")) {
-    throw new Error("Q_MUSUBI_AUTOLOGIN_URL must use HTTPS in production");
-  }
+  // 2) HTTPS + host 화이트리스트 + userinfo 차단 — 임의 URL 주입 시에도 cipher 외부 유출 방지.
+  assertProdAutoLoginUrl(
+    "HANASYS_AUTOLOGIN_URL",
+    AUTO_LOGIN_URL.hanasys,
+    PROD_AUTOLOGIN_HOSTS.hanasys,
+  );
+  assertProdAutoLoginUrl(
+    "Q_ORDER_AUTOLOGIN_URL",
+    AUTO_LOGIN_URL.qOrder,
+    PROD_AUTOLOGIN_HOSTS.qOrder,
+  );
+  assertProdAutoLoginUrl(
+    "Q_MUSUBI_AUTOLOGIN_URL",
+    AUTO_LOGIN_URL.qMusubi,
+    PROD_AUTOLOGIN_HOSTS.qMusubi,
+  );
 }
 
 // ─── Upload Storage ───
