@@ -75,26 +75,6 @@ function getAesSecret(): string {
   return trimmed;
 }
 
-/**
- * userId를 AES-256-CBC로 암호화 — Base64(IV || ciphertext) 반환.
- *
- * IV는 요청마다 `crypto.randomBytes(16)`로 생성되므로 동일 userId라도 매번 다른 cipher가 생성됨.
- * 복호화측은 첫 16바이트를 IV로 분리한 뒤 나머지를 ciphertext로 해석 — `decryptAutoLogin` 참조.
- */
-export function encryptAutoLogin(userId: string): string {
-  const keyString = getTodayKST() + getAesSecret();
-  const key = deriveKey(keyString);
-  const iv = crypto.randomBytes(IV_LENGTH);
-
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(userId, "utf8"),
-    cipher.final(),
-  ]);
-  // IV를 cipher 앞에 prepend — decrypt 측에서 슬라이싱으로 분리
-  return Buffer.concat([iv, ciphertext]).toString("base64");
-}
-
 function decryptWithKey(payload: Buffer, keyString: string): string {
   if (payload.length <= IV_LENGTH) {
     throw new Error("cipher payload 길이가 IV 길이보다 짧음");
