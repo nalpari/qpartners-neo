@@ -112,8 +112,20 @@ export const AUTO_LOGIN_URL = {
   qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL", Q_MUSUBI_AUTOLOGIN_URL_DEFAULT),
 } as const;
 
-// 운영 배포 시 대상 URL 은 반드시 HTTPS — env override 실수 방지.
+// 운영 배포 시 안전장치 — env override 누락(=default dev URL 잔존) / 비-HTTPS 모두 부팅 실패.
+// 운영 배포에서 dev URL 이 응답에 나가는 사고를 부팅 단계에서 강제로 차단한다.
+// 운영 Jenkins credential 에 HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
+// 3개를 모두 명시 주입해야 부팅 성공.
 if (isProductionDeploy) {
+  if (AUTO_LOGIN_URL.hanasys.includes("dev.hanasys.jp")) {
+    throw new Error("HANASYS_AUTOLOGIN_URL is required in production (default dev URL detected)");
+  }
+  if (AUTO_LOGIN_URL.qOrder.includes("q-order-dev.")) {
+    throw new Error("Q_ORDER_AUTOLOGIN_URL is required in production (default dev URL detected)");
+  }
+  if (AUTO_LOGIN_URL.qMusubi.includes("q-musubi-dev.")) {
+    throw new Error("Q_MUSUBI_AUTOLOGIN_URL is required in production (default dev URL detected)");
+  }
   if (!AUTO_LOGIN_URL.hanasys.startsWith("https://")) {
     throw new Error("HANASYS_AUTOLOGIN_URL must use HTTPS in production");
   }
