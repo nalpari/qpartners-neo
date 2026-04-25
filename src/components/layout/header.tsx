@@ -82,14 +82,17 @@ interface RelatedSite {
   href: string;
   note?: string;
 }
-// 운영 URL 하드코딩 제거 — PR #88 패턴(서버 config.ts) 을 클라이언트에도 적용.
-// IS_PROD(NODE_ENV) 분기에 의존하던 운영 URL 을 클라 번들에서 제거하여, 운영 빌드
-// 환경 오염(NODE_ENV=production) 만으로 운영 URL 이 사용자에게 노출되는 사고를 차단.
-// 운영 배포 시 prod URL 주입은 후속 PR(NEXT_PUBLIC_* env override + 부팅 가드) 에서 처리.
-const RELATED_SITE_URLS = {
+// 환경별 URL — 클릭 시점에 hostname 기준으로 분기 선택 (NODE_ENV/APP_ENV 오염 영향 없음).
+// dev. prefix 또는 localhost 면 dev, 그 외(운영 도메인) 는 prod URL 사용.
+const RELATED_SITE_URLS_DEV = {
   qorder: "https://q-order-dev.q-cells.jp/",
   qmusubi: "https://q-musubi-dev.q-cells.jp/",
   hanasys: "https://dev.hanasys.jp/",
+} as const;
+const RELATED_SITE_URLS_PROD = {
+  qorder: "https://q-order.q-cells.jp/",
+  qmusubi: "https://q-musubi.q-cells.jp/",
+  hanasys: "https://www.hanasys.jp/",
 } as const;
 
 // Q.WARRANTY 는 역할별 로그인 URL 분리 (ADMIN → admin_login, STORE → seller_login)
@@ -98,10 +101,12 @@ const QWARRANTY_URLS = {
   STORE: "https://q-warranty.q-cells.jp/seller_login",
 } as const;
 
+// a 태그 href 용 — 자동로그인 3사는 클릭시 항상 preventDefault 되므로 hover preview 용도.
+// dev URL 을 default 로 두어 운영 URL 이 클라 번들에 인라인되지 않게 함.
 const ALL_RELATED_SITES: readonly RelatedSite[] = [
-  { label: "HANASYS ORDER", value: "qorder", href: RELATED_SITE_URLS.qorder },
-  { label: "HANASYS MUSUBI", value: "qmusubi", href: RELATED_SITE_URLS.qmusubi },
-  { label: "HANASYS DESIGN", value: "hanasys", href: RELATED_SITE_URLS.hanasys },
+  { label: "HANASYS ORDER", value: "qorder", href: RELATED_SITE_URLS_DEV.qorder },
+  { label: "HANASYS MUSUBI", value: "qmusubi", href: RELATED_SITE_URLS_DEV.qmusubi },
+  { label: "HANASYS DESIGN", value: "hanasys", href: RELATED_SITE_URLS_DEV.hanasys },
   { label: "Q.WARRANTY", value: "qwarranty", href: QWARRANTY_URLS.STORE, note: "(別途ログインが必要)" },
 ];
 
@@ -214,7 +219,7 @@ export function Gnb() {
    * 흐름:
    *   1. qwarranty 는 자동로그인 미연동 → 기본 `<a href>` 동작 허용 (별도 로그인 페이지)
    *   2. 그 외 target 은 preventDefault → POST /api/auth/auto-login/encrypt → 응답 URL 로 이동
-   *   3. API 실패 시 원래 href 로 fallback (최소한의 UX 보존)
+   *   3. API 실패 시 hostname 기준 환경별 fallback URL 로 이동 (dev. → dev URL, 그 외 → prod URL)
    *
    * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
    */
@@ -236,6 +241,12 @@ export function Gnb() {
       site.value === "qorder" ? "qOrder"
       : site.value === "qmusubi" ? "qMusubi"
       : "hanasys";
+    // 환경 분기 — hostname 기준. dev. prefix 또는 localhost 면 dev URL, 그 외 운영 URL.
+    const hostname = window.location.hostname;
+    const isDevHost = hostname.startsWith("dev.") || hostname === "localhost";
+    const fallbackUrl = isDevHost
+      ? RELATED_SITE_URLS_DEV[site.value]
+      : RELATED_SITE_URLS_PROD[site.value];
     try {
       const res = await api.post<{ data: { url: string } }>(
         "/auth/auto-login/encrypt",
@@ -244,14 +255,14 @@ export function Gnb() {
       const redirectUrl = res.data?.data?.url;
       if (!redirectUrl) {
         console.error("[header] 자동로그인 응답 URL 누락");
-        window.open(site.href, "_blank", "noopener,noreferrer");
+        window.open(fallbackUrl, "_blank", "noopener,noreferrer");
         return;
       }
       window.open(redirectUrl, "_blank", "noopener,noreferrer");
     } catch (err: unknown) {
       console.error("[header] 자동로그인 실패 — fallback 이동:", err);
-      // 실패 fallback — 원래 사이트 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
-      window.open(site.href, "_blank", "noopener,noreferrer");
+      // 실패 fallback — 환경별 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
+      window.open(fallbackUrl, "_blank", "noopener,noreferrer");
     } finally {
       setAutoLoginInFlight(null);
     }
