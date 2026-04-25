@@ -38,7 +38,14 @@ const UPSTREAM_CODE_VALUES = Object.values(UPSTREAM_CODES) as [
   ...UpstreamCode[],
 ];
 
-/** 200 응답 — 자동로그인 진입 URL 생성 성공 */
+/**
+ * 200 응답 — 자동로그인 진입 URL 생성 성공.
+ *
+ * Q.Partners route handler 가 **프론트(클라이언트)에 반환**하는 응답 스키마.
+ * QSP autoLoginEncryptData 응답 파싱 스키마(`qspEncryptResponseSchema`)와 별개이므로 혼동 주의.
+ * - 이 스키마: `POST /api/auth/auto-login/encrypt` 최종 응답 (route.ts → 브라우저)
+ * - QSP 파싱용: `qspEncryptResponseSchema` (route.ts 내부 전용, export 없음)
+ */
 export const encryptResponseSchema = z.object({
   data: z.object({
     url: z.string().url(),

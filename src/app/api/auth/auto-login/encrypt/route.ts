@@ -14,7 +14,10 @@ import {
 } from "@/lib/schemas/auto-login";
 
 /**
- * QSP autoLoginEncryptData 응답.
+ * QSP autoLoginEncryptData **서버 내부** 응답 파싱 스키마.
+ *
+ * ※ 이 스키마는 route.ts 내부에서만 사용하며 export 하지 않는다.
+ *   프론트에 반환하는 응답 스키마는 `@/lib/schemas/auto-login`의 `encryptResponseSchema` 참조.
  *
  * 3사 통합 구조(2026-04-25 정정): QSP 는 userId 에만 의존하여 16B cipher 를 발급한다.
  * 같은 유저는 DESIGN/Q.Order/Q.Musubi 에 동일 cipher 를 사용. Q.Partners 는 target 별 URL 에

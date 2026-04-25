@@ -185,7 +185,7 @@ function assertProdAutoLoginUrl(envName: string, urlValue: string, expectedHost:
   // (ex. https://www.hanasys.jp:8443/login → mismatch 로 차단되지 않고 통과되는 갭 방지)
   if (parsed.port !== "" && parsed.port !== "443") {
     throw new Error(
-      `${envName} must use default HTTPS port (got: ${parsed.port})`,
+      `${envName} must use standard HTTPS port 443 (got: ${parsed.port}). Remove the explicit port or set it to 443.`,
     );
   }
 }
