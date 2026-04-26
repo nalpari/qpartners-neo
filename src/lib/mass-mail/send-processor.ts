@@ -10,13 +10,20 @@
  * Design: mass-mail-send.design.md §3
  */
 
-import { MASS_MAIL_DEFAULTS } from "@/lib/config";
+import { readFile } from "fs/promises";
+import { resolve } from "path";
+
+import { MASS_MAIL_DEFAULTS, UPLOAD_DIR } from "@/lib/config";
 import { sendMail } from "@/lib/mailer";
+import type { SendMailAttachment } from "@/lib/mailer";
 import { escapeHtml } from "@/lib/mail-templates/utils";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
-import { ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
+import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
+import { assertRedirectConfiguredForNonProd, getRedirectEmails } from "@/lib/mass-mail/test-redirect";
+import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
+import type { RecipientAuthRole } from "@/generated/prisma/client";
 
 const LOG_TAG = "[mass-mail/send-processor]";
 
@@ -87,6 +94,101 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 대량메일 첨부파일을 메모리에 1회 로드.
+ *
+ * sendLoop 진입 시 호출 — 같은 첨부 객체를 모든 recipient sendMail 호출에 재사용해
+ * recipient × attachment 회 디스크 read 폭주를 방지.
+ *
+ * 보안:
+ *   - filePath 는 UPLOAD_DIR 기준 상대경로로 저장됨 → resolve 후 isInsideDir 로 traversal 차단
+ *   - isRegularFile 로 symlink/특수파일 거부 (path-safety.ts 패턴 일치)
+ *   - 검증 실패 파일은 skip + 에러 로그 (sendLoop 자체는 계속 — 첨부 누락보다는 본문 전달이 우선)
+ */
+async function loadMassMailAttachments(massMailId: number): Promise<SendMailAttachment[]> {
+  const rows = await prisma.massMailAttachment.findMany({
+    where: { massMailId },
+    select: { fileName: true, filePath: true },
+    orderBy: { id: "asc" },
+  });
+
+  if (rows.length === 0) return [];
+
+  const loaded: SendMailAttachment[] = [];
+  for (const row of rows) {
+    const absolutePath = resolve(UPLOAD_DIR, row.filePath);
+    if (!isInsideDir(absolutePath, UPLOAD_DIR)) {
+      console.error(
+        `${LOG_TAG} 첨부파일 경로 traversal 차단 — massMailId=${massMailId}, filePath=${row.filePath}`,
+      );
+      continue;
+    }
+    if (!(await isRegularFile(absolutePath))) {
+      console.error(
+        `${LOG_TAG} 첨부파일 정규 파일 아님 (symlink/특수파일/누락) — massMailId=${massMailId}, filePath=${row.filePath}`,
+      );
+      continue;
+    }
+    try {
+      const content = await readFile(absolutePath);
+      loaded.push({ filename: row.fileName, content });
+    } catch (error: unknown) {
+      console.error(
+        `${LOG_TAG} 첨부파일 read 실패 — massMailId=${massMailId}, filePath=${row.filePath}`,
+        error,
+      );
+    }
+  }
+
+  console.log(
+    `${LOG_TAG} 첨부파일 로드 완료 — massMailId=${massMailId}, 대상 ${rows.length}건 / 로드 성공 ${loaded.length}건`,
+  );
+  return loaded;
+}
+
+/**
+ * 단일 recipient 에 대한 SMTP 발송 — 테스트 redirect 적용.
+ *
+ * - redirect 비활성 또는 매핑 없음: 원본 이메일 1건 발송
+ * - redirect 활성 + 매핑 있음: 매핑된 N개 이메일 각각 순차 발송 (1건이라도 실패하면 throw)
+ *
+ * 모든 redirect 대상이 성공해야 sendLoop 가 sent 로 마킹. throw 시 sendLoop 의 catch 가
+ * 30초 룰/retry 흐름으로 흡수.
+ */
+async function sendOneRecipient(
+  recipient: { email: string; authRole: RecipientAuthRole },
+  subject: string,
+  html: string,
+  attachments: SendMailAttachment[],
+): Promise<void> {
+  const redirectTargets = getRedirectEmails(recipient.authRole);
+  const targets = redirectTargets ?? [recipient.email];
+
+  for (const to of targets) {
+    if (redirectTargets) {
+      console.log(
+        `${LOG_TAG} [test-redirect] ${maskEmailLog(recipient.email)} (${recipient.authRole}) → ${to}`,
+      );
+    }
+    await sendMail({
+      to,
+      subject,
+      html,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
+  }
+}
+
+/** 로그용 간단 마스킹 — interface-logger.maskEmail 과 동일 정책이지만 모듈 의존 회피 */
+function maskEmailLog(email: string): string {
+  const at = email.indexOf("@");
+  if (at < 1) return "***";
+  const local = email.slice(0, at);
+  const domain = email.slice(at);
+  if (local.length <= 2) return `${local[0]}***${domain}`;
+  return `${local.slice(0, 2)}***${domain}`;
+}
+
 function buildMailHtml(body: string, senderName: string): string {
   // body는 POST/PUT 단계에서 DOMPurify로 sanitize 완료된 HTML.
   // senderName은 사용자 입력 평문 → 반드시 escape (stored XSS / 피싱 방어).
@@ -128,12 +230,13 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
   if (!massMail) throw new Error(`MassMail not found: ${massMailId}`);
 
   const html = buildMailHtml(massMail.body, massMail.senderName);
+  const attachments = await loadMassMailAttachments(massMailId);
   const maxRetry = MASS_MAIL_DEFAULTS.recipientMaxRetry;
   const retryDelayMs = MASS_MAIL_DEFAULTS.recipientRetryDelayMs;
 
   const pendings = await prisma.massMailRecipient.findMany({
     where: { massMailId, status: "pending", retryCount: { lt: maxRetry } },
-    select: { id: true, email: true, retryCount: true },
+    select: { id: true, email: true, retryCount: true, authRole: true },
   });
 
   console.log(`${LOG_TAG} 발송 루프 시작 — massMailId: ${massMailId}, pending: ${pendings.length}건 (retry 여력 있음)`);
@@ -150,14 +253,38 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
     while (!resolved && currentRetryCount < maxRetry) {
       let smtpOk = false;
       try {
-        await sendMail({
-          to: recipient.email,
-          subject: massMail.subject,
-          html,
-        });
+        await sendOneRecipient(recipient, massMail.subject, html, attachments);
         smtpOk = true;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+
+        // SMTP 5xx 영구 실패 → retry 무의미 → 즉시 failed 마킹 (30초 대기 + 재시도 skip).
+        // retry_count 는 max 로 설정하여 다음 cycle 의 sendLoop where 절 (retryCount<max) 에서 자동 제외.
+        // 불변량 유지: retry_count == max → status ∈ {sent, failed}.
+        if (isPermanentSmtpFailure(error)) {
+          try {
+            await prisma.massMailRecipient.update({
+              where: { id: recipient.id },
+              data: {
+                status: "failed",
+                retryCount: maxRetry,
+                errorMessage: message.slice(0, 500),
+              },
+            });
+            failedCount++;
+          } catch (dbError: unknown) {
+            console.error(
+              `${LOG_TAG} CRITICAL — recipient ${recipient.id} 영구 실패 (5xx) DB 마킹 실패. 다음 cycle 에서 복구 시도.`,
+              dbError,
+            );
+          }
+          console.warn(
+            `${LOG_TAG} recipient ${recipient.id} SMTP 영구 실패 (5xx) — retry skip. error: ${message}`,
+          );
+          resolved = true;
+          break;
+        }
+
         currentRetryCount++;
 
         if (currentRetryCount >= maxRetry) {
@@ -325,6 +452,10 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
   try {
     await runWithInFlightGuard(massMailId, async () => {
   try {
+    // 사고 방지 — dev/non-production 환경에서 redirect 미설정이면 발송 자체 거부
+    // (collect-recipients 의 QSP 호출 + DB INSERT 도 안 일어남, fail-fast)
+    assertRedirectConfiguredForNonProd();
+
     const mail = await prisma.massMail.findUnique({
       where: { id: massMailId },
       select: { id: true, status: true },
@@ -397,6 +528,9 @@ export async function processMassMailRetry(massMailId: number): Promise<void> {
   try {
     await runWithInFlightGuard(massMailId, async () => {
   try {
+    // 사고 방지 — dev/non-production 환경에서 redirect 미설정이면 재발송도 거부
+    assertRedirectConfiguredForNonProd();
+
     const existingRecipients = await prisma.massMailRecipient.count({ where: { massMailId } });
     if (existingRecipients === 0) {
       console.warn(

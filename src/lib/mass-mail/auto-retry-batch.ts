@@ -29,6 +29,7 @@ import {
   runWithInFlightGuard,
   sendLoop,
 } from "@/lib/mass-mail/send-processor";
+import { assertRedirectConfiguredForNonProd } from "@/lib/mass-mail/test-redirect";
 import { prisma } from "@/lib/prisma";
 
 const LOG_TAG = "[mass-mail/auto-retry-batch]";
@@ -93,6 +94,19 @@ export async function runBatchOnce(): Promise<void> {
   }
   g.__massMailBatchRunning = true;
   const startedAt = Date.now();
+
+  // 사고 방지 — dev/non-production 환경에서 redirect 미설정이면 batch 자체 silent skip.
+  // throw 시 cycle 연속 실패 카운트 증가 → 5회 누적 시 batch 타이머 해제 + /api/health 503.
+  // dev 서버 매핑 등록 누락 만으로 health probe 까지 503 으로 노출되는 사이드이펙트는 과함 →
+  // 카운트 증가 없는 silent skip 로 처리. 발송 자체는 processMassMailSend/Retry 가드가 차단.
+  try {
+    assertRedirectConfiguredForNonProd();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`${LOG_TAG} cycle skip — ${message}`);
+    g.__massMailBatchRunning = false;
+    return;
+  }
 
   try {
     // 1. 좀비 감지: sending + updated_at < NOW - zombieThreshold → send_failed 자동 승격.

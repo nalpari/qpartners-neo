@@ -2,9 +2,11 @@ import nodemailer from "nodemailer";
 
 import { SMTP_DEFAULTS } from "@/lib/config";
 
-const isDev = process.env.NODE_ENV === "development";
-/** Ethereal 사용 조건: 개발환경 + 명시적 opt-in (SMTP_USE_ETHEREAL=true) */
-const useEtherealFlag = isDev && process.env.SMTP_USE_ETHEREAL === "true";
+// NOTE: Next.js 가 빌드 타임에 process.env.NODE_ENV 를 인라인하므로 next start 환경에서는
+// 항상 "production" 으로 평가됨. 운영/비운영 식별은 APP_ENV(런타임 env) 로 통일.
+const isNonProd = process.env.APP_ENV !== "production";
+/** Ethereal 사용 조건: 비운영 환경 + 명시적 opt-in (SMTP_USE_ETHEREAL=true) */
+const useEtherealFlag = isNonProd && process.env.SMTP_USE_ETHEREAL === "true";
 
 // Ethereal transporter 캐싱 (SMTP_USE_ETHEREAL=true 시, 프로세스 수명 동안 유지)
 let etherealPromise: Promise<nodemailer.Transporter> | null = null;
@@ -18,6 +20,8 @@ async function getTransporter() {
           const testAccount = await nodemailer.createTestAccount();
           console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_USE_ETHEREAL=true를 제거하면 실제 SMTP로 전환됩니다.");
           console.warn("[SMTP] Ethereal account: " + testAccount.user);
+          console.warn("[SMTP] Ethereal password: " + testAccount.pass);
+          console.warn("[SMTP] Ethereal login URL: https://ethereal.email/login (위 account/password 로 로그인 후 Messages 메뉴에서 발송 메일 확인)");
           return nodemailer.createTransport({
             host: "smtp.ethereal.email",
             port: 587,
@@ -65,10 +69,21 @@ async function getTransporter() {
   });
 }
 
+/**
+ * 메일 첨부파일 — nodemailer 의 attachments 옵션 중 안전한 부분만 노출.
+ * - filename: 수신자 메일 클라이언트에 표시될 파일명 (원본 그대로)
+ * - content: 메모리 버퍼 (호출부에서 디스크 1회 로드 후 전달, 매 발송마다 재사용 가능)
+ */
+export interface SendMailAttachment {
+  filename: string;
+  content: Buffer;
+}
+
 interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
+  attachments?: SendMailAttachment[];
 }
 
 export interface SendMailResult {
@@ -79,7 +94,7 @@ export interface SendMailResult {
 }
 
 /** 공용 메일 발송 유틸리티 */
-export async function sendMail({ to, subject, html }: SendMailOptions): Promise<SendMailResult> {
+export async function sendMail({ to, subject, html, attachments }: SendMailOptions): Promise<SendMailResult> {
   const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
   const useEthereal = useEtherealFlag;
 
@@ -98,6 +113,7 @@ export async function sendMail({ to, subject, html }: SendMailOptions): Promise<
       to,
       subject,
       html,
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
     });
   } catch (error) {
     // Ethereal transporter send 실패 시 캐시 무효화 (세션 만료 등)

@@ -42,3 +42,36 @@ export function classifyFailure(message: string | null | undefined): FailureCate
 
 /** GET /api/admin/mass-mails/:id 의 failedRecipients 상한 (PII 노출 + 응답 크기 제어) */
 export const FAILED_RECIPIENTS_RESPONSE_LIMIT = 500;
+
+/**
+ * SMTP 에러가 영구 실패(=retry 무의미)인지 판정.
+ *
+ * - 5xx 응답 (550 User unknown, 553 Mailbox not found, 554 Mail rejected 등) → 영구 실패 → retry 안 함
+ * - 4xx 응답 (421 Service unavailable, 450/451/452 temporary 등) → 일시 실패 → retry 의미 있음
+ * - 네트워크 에러 (ETIMEDOUT, ECONNRESET 등) → 일시 실패 → retry 의미 있음
+ *
+ * 판정 우선순위:
+ *   1) nodemailer error.responseCode (정수, 가장 신뢰)
+ *   2) message 안의 명확한 5xx 패턴 (responseCode 누락 케이스 fallback)
+ *
+ * **불확실하면 false (retry 허용)** — 잘못된 영구 실패 판정으로 정상 메일이 누락되는 사고 방지.
+ */
+export function isPermanentSmtpFailure(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && "responseCode" in error) {
+    const code = (error as { responseCode?: unknown }).responseCode;
+    if (typeof code === "number" && code >= 500 && code < 600) return true;
+    if (typeof code === "number" && code >= 400 && code < 500) return false;
+  }
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lower = message.toLowerCase();
+  // 명확한 5xx 응답 코드 패턴 (550/553/554 등 — 4xx 와 혼동 방지 위해 \b 경계 필수)
+  if (/\b5\d{2}\b/.test(message)) return true;
+  // 표준 영구 거부 메시지
+  if (lower.includes("user unknown")) return true;
+  if (lower.includes("invalid recipient")) return true;
+  if (lower.includes("mailbox not found")) return true;
+  if (lower.includes("recipient address rejected")) return true;
+  if (lower.includes("does not exist")) return true;
+  if (lower.includes("no such user")) return true;
+  return false;
+}
