@@ -52,9 +52,15 @@ export const FAILED_RECIPIENTS_RESPONSE_LIMIT = 500;
  *
  * 판정 우선순위:
  *   1) nodemailer error.responseCode (정수, 가장 신뢰)
- *   2) message 안의 명확한 5xx 패턴 (responseCode 누락 케이스 fallback)
+ *   2) RFC 3463 enhanced status code 5.x.x (예: 5.1.1)
+ *   3) SMTP reply line 시작 패턴 (`550 ...`, `554-...` 등 — RFC 5321 reply-line 형식)
+ *   4) 명시적 영구 거부 키워드 (영문 + 일본 ISP 응답)
  *
  * **불확실하면 false (retry 허용)** — 잘못된 영구 실패 판정으로 정상 메일이 누락되는 사고 방지.
+ *
+ * 좁은 정규식 사용 이유: `/\b5\d{2}\b/` 는 `"timeout 502ms"`, `"queue size 550 messages"` 등
+ * 임의의 3자리 숫자에 매칭되어 일시 장애가 영구 실패로 오판정되는 false-positive 가 발생.
+ * 도메인이 일본 ISP(docomo/au/softbank/biglobe 등) 다수이므로 영향 범위가 큼.
  */
 export function isPermanentSmtpFailure(error: unknown): boolean {
   if (typeof error === "object" && error !== null && "responseCode" in error) {
@@ -63,15 +69,35 @@ export function isPermanentSmtpFailure(error: unknown): boolean {
     if (typeof code === "number" && code >= 400 && code < 500) return false;
   }
   const message = error instanceof Error ? error.message : String(error ?? "");
+
+  // RFC 3463 enhanced mail system status code — 5.x.x 형식 (예: "5.1.1 User unknown").
+  // \b 경계로 "v5.1.1" 같은 버전 표기와 분리.
+  if (/\b5\.\d+\.\d+\b/.test(message)) return true;
+
+  // RFC 5321 reply-line 시작 패턴. SMTP 응답은 `<3자리>[ -]<text>` 형식 → 라인 시작에서만 매칭.
+  // multiline 플래그로 라인 단위 검사. `5XX-` 는 multi-line reply 의 continuation.
+  if (/^\s*5\d{2}[ -]/m.test(message)) return true;
+
   const lower = message.toLowerCase();
-  // 명확한 5xx 응답 코드 패턴 (550/553/554 등 — 4xx 와 혼동 방지 위해 \b 경계 필수)
-  if (/\b5\d{2}\b/.test(message)) return true;
-  // 표준 영구 거부 메시지
+  // 표준 영구 거부 메시지 (영문)
   if (lower.includes("user unknown")) return true;
   if (lower.includes("invalid recipient")) return true;
   if (lower.includes("mailbox not found")) return true;
+  if (lower.includes("mailbox unavailable")) return true;
   if (lower.includes("recipient address rejected")) return true;
   if (lower.includes("does not exist")) return true;
   if (lower.includes("no such user")) return true;
+
+  // 일본 ISP 영구 거부 메시지 (docomo/au/softbank/biglobe/nifty 등 응답 패턴).
+  // 일시 장애와 혼동 방지를 위해 명백한 거부 표현만 매칭.
+  if (message.includes("ユーザーが存在しません")) return true;
+  if (message.includes("該当ユーザーが見つかりません")) return true;
+  if (message.includes("宛先不明")) return true;
+  if (message.includes("宛先が存在しません")) return true;
+  if (message.includes("メールボックスが存在しません")) return true;
+  if (message.includes("メールアドレスが存在しません")) return true;
+  if (message.includes("受信を拒否")) return true;
+  if (message.includes("受信拒否")) return true;
+
   return false;
 }

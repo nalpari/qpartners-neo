@@ -99,21 +99,53 @@ function resolveUserTypesToQuery(targets: CollectTargets): string[] {
   return userTypes;
 }
 
+/**
+ * RFC 5321 기본 형식 + CRLF 차단 검증.
+ *
+ * - CR(\r) / LF(\n) 포함 시 SMTP 헤더 인젝션 가능성 (Bcc/From 추가 등) → 즉시 거부.
+ * - QSP 가 보낸 이메일이 그대로 nodemailer `to` 필드로 전달되므로 신뢰 경계에서 차단.
+ * - 화이트스페이스 / 빈 local-part / @ 누락 등도 거부.
+ */
+const EMAIL_BASIC_RE = /^[^\s<>"'\r\n]+@[^\s<>"'\r\n]+\.[^\s<>"'\r\n]+$/;
+function isSafeEmail(email: string): boolean {
+  if (email.length === 0 || email.length > 254) return false;
+  if (/[\r\n]/.test(email)) return false;
+  return EMAIL_BASIC_RE.test(email);
+}
+
+/**
+ * silent fallback 카운터 — collectRecipients 1회 호출 단위로 누적해 종료 시점에 1회 로깅.
+ * mapRecipient 내부에서 throw / log spam 없이 운영자 추적 단서를 남기기 위함.
+ */
+interface RecipientStats {
+  adminUserIdNull: number;
+  invalidEmail: number;
+  newsRcptOptOut: number;
+  superAdminOnlyExcluded: number;
+}
+
 /** QSP 응답 아이템 → 필터 + authRole 매핑 결정. null 반환 시 제외 */
 function mapRecipient(
   item: QspMemberItem,
   targets: CollectTargets,
   superAdminIds: Set<string>,
+  stats: RecipientStats,
 ): CollectedRecipient | null {
   // 활성 회원만 (A) — D(삭제), R(탈퇴) 제외
   if (lookupStatCd(item.statCd) !== "active") return null;
 
-  // 이메일 null/빈값 제외
+  // 이메일 null/빈값/형식 오류/CRLF 인젝션 시도 제외 (SMTP 헤더 인젝션 방어)
   const email = item.email?.trim();
-  if (!email) return null;
+  if (!email || !isSafeEmail(email)) {
+    if (email) stats.invalidEmail++;
+    return null;
+  }
 
   // 뉴스레터 수신거부 제외 (optOut=false 인 경우)
-  if (!targets.optOut && item.newsRcptYn === "N") return null;
+  if (!targets.optOut && item.newsRcptYn === "N") {
+    stats.newsRcptOptOut++;
+    return null;
+  }
 
   // userTp 별 매핑 — targets 와 일치하지 않으면 제외
   let authRole: RecipientAuthRole | null = null;
@@ -121,11 +153,16 @@ function mapRecipient(
     case "ADMIN": {
       // SUPER_ADMIN 판정은 ADMIN_ROLE 공통코드 매칭 (resolveAuthRole 와 동일 단일 진실 원천)
       // userId null 인 케이스는 SUPER_ADMIN 매칭 불가 → ADMIN 폴백 (최소 권한)
+      if (!item.userId) stats.adminUserIdNull++;
       const isSuper = item.userId ? superAdminIds.has(item.userId) : false;
       if (isSuper && targets.targetSuperAdmin) {
         authRole = "SUPER_ADMIN";
       } else if (!isSuper && targets.targetAdmin) {
         authRole = "ADMIN";
+      } else if (!isSuper && targets.targetSuperAdmin && !targets.targetAdmin) {
+        // SUPER_ADMIN only 발송인데 이 회원이 ADMIN_ROLE 공통코드에 미등록 → silent 제외.
+        // 운영자 audit 단서로 카운트만 누적, 종료 시 1회 로깅.
+        stats.superAdminOnlyExcluded++;
       }
       break;
     }
@@ -235,6 +272,12 @@ export async function collectRecipients(
 
   const context: CollectionContext = { targets, callerRoute, loginId };
   const dedupedByEmail = new Map<string, CollectedRecipient>();
+  const stats: RecipientStats = {
+    adminUserIdNull: 0,
+    invalidEmail: 0,
+    newsRcptOptOut: 0,
+    superAdminOnlyExcluded: 0,
+  };
 
   // userTp 별 응답을 모아둔 뒤, ADMIN 응답이 있으면 SUPER_ADMIN 판정용 IN 쿼리 1회 실행.
   // mapRecipient 호출은 SUPER_ADMIN set 확보 후 일괄 수행 (원래 페이징 순서 유지).
@@ -257,7 +300,7 @@ export async function collectRecipients(
   for (const userTp of userTypes) {
     const items = fetchedByUserType.get(userTp) ?? [];
     for (const item of items) {
-      const mapped = mapRecipient(item, targets, superAdminIds);
+      const mapped = mapRecipient(item, targets, superAdminIds, stats);
       if (!mapped) continue;
       // email 기준 중복 제거 — 선착순 유지
       if (!dedupedByEmail.has(mapped.email)) {
@@ -270,5 +313,18 @@ export async function collectRecipients(
   console.log(
     `[collect-recipients] 발송대상 수집 완료 — userTypes: ${userTypes.join(",")}, 수집: ${recipients.length}건`,
   );
+
+  // silent fallback / 제외 카운트 가시화 — 0 인 항목은 생략, 운영자 audit 단서 (PII 미포함).
+  const statsParts: string[] = [];
+  if (stats.adminUserIdNull > 0) statsParts.push(`adminUserIdNull=${stats.adminUserIdNull}`);
+  if (stats.invalidEmail > 0) statsParts.push(`invalidEmail=${stats.invalidEmail}`);
+  if (stats.newsRcptOptOut > 0) statsParts.push(`newsRcptOptOut=${stats.newsRcptOptOut}`);
+  if (stats.superAdminOnlyExcluded > 0) {
+    statsParts.push(`superAdminOnlyExcluded=${stats.superAdminOnlyExcluded}`);
+  }
+  if (statsParts.length > 0) {
+    console.warn(`[collect-recipients] silent 제외/폴백 카운트 — ${statsParts.join(", ")}`);
+  }
+
   return recipients;
 }

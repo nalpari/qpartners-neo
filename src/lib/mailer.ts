@@ -4,7 +4,17 @@ import { SMTP_DEFAULTS } from "@/lib/config";
 
 // NOTE: Next.js 가 빌드 타임에 process.env.NODE_ENV 를 인라인하므로 next start 환경에서는
 // 항상 "production" 으로 평가됨. 운영/비운영 식별은 APP_ENV(런타임 env) 로 통일.
-const isNonProd = process.env.APP_ENV !== "production";
+const APP_ENV_RAW = process.env.APP_ENV;
+const VALID_APP_ENV: ReadonlySet<string> = new Set(["production", "staging", "development"]);
+if (APP_ENV_RAW && !VALID_APP_ENV.has(APP_ENV_RAW)) {
+  // 알 수 없는 APP_ENV 값은 비운영(test redirect 활성 등) 으로 폴백되므로 운영 사고로 이어질 수 있음.
+  // 부팅 1회 명시적 경고.
+  console.warn(
+    `[SMTP] ⚠ APP_ENV="${APP_ENV_RAW}" 가 화이트리스트(${Array.from(VALID_APP_ENV).join(", ")})에 없음. ` +
+      `비운영으로 폴백 처리되며 mass-mail test redirect 가 활성화될 수 있음. APP_ENV 설정을 확인하세요.`,
+  );
+}
+const isNonProd = APP_ENV_RAW !== "production";
 /** Ethereal 사용 조건: 비운영 환경 + 명시적 opt-in (SMTP_USE_ETHEREAL=true) */
 const useEtherealFlag = isNonProd && process.env.SMTP_USE_ETHEREAL === "true";
 
@@ -18,10 +28,14 @@ async function getTransporter() {
       etherealPromise = (async () => {
         try {
           const testAccount = await nodemailer.createTestAccount();
+          // 비밀번호는 throwaway 계정 자격증명이지만 로그 수집(Datadog/CloudWatch 등) 영구 보관 시
+          // 인박스 접근 권한자가 발송 메일 본문(일본어 사용자명 등 PII 포함 가능)을 열람할 수 있는
+          // 우회 경로가 됨 → prefix 만 노출, 전체 PW 가 필요하면 ethereal.email 에서 신규 발급 권장.
+          const passPrefix = testAccount.pass.length > 4 ? `${testAccount.pass.slice(0, 4)}***` : "***";
           console.warn("[SMTP] ⚠ Ethereal 테스트 SMTP 사용 중 — 실제 메일이 발송되지 않습니다. SMTP_USE_ETHEREAL=true를 제거하면 실제 SMTP로 전환됩니다.");
           console.warn("[SMTP] Ethereal account: " + testAccount.user);
-          console.warn("[SMTP] Ethereal password: " + testAccount.pass);
-          console.warn("[SMTP] Ethereal login URL: https://ethereal.email/login (위 account/password 로 로그인 후 Messages 메뉴에서 발송 메일 확인)");
+          console.warn(`[SMTP] Ethereal password (prefix only): ${passPrefix}`);
+          console.warn("[SMTP] 전체 PW 필요 시 https://ethereal.email/create 에서 신규 계정 발급 권장 (throwaway 계정이지만 평문 로그 영구 보관 회피).");
           return nodemailer.createTransport({
             host: "smtp.ethereal.email",
             port: 587,

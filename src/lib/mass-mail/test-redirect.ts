@@ -26,6 +26,13 @@ const LOG_TAG = "[mass-mail/test-redirect]";
 
 type RedirectMap = Partial<Record<RecipientAuthRole, string[]>>;
 
+/**
+ * env JSON 파싱 시 허용되는 키 — `RecipientAuthRole` 와 1:1 매핑.
+ *
+ * SEKO 는 `collect-recipients` 가 `SekoNotSupportedError` 로 발송 자체를 차단하므로
+ * 실제 redirect 분배 대상에서는 영구 제외. 다만 운영자가 env 에 SEKO 키를 실수로
+ * 넣어도 알 수 없는 키 경고만 띄우고 통과시키도록 허용 키 집합에는 유지.
+ */
 const VALID_ROLES: ReadonlySet<RecipientAuthRole> = new Set([
   "SUPER_ADMIN",
   "ADMIN",
@@ -34,6 +41,21 @@ const VALID_ROLES: ReadonlySet<RecipientAuthRole> = new Set([
   "SEKO",
   "GENERAL",
 ]);
+
+/**
+ * 매핑이 반드시 존재해야 하는 role 목록. SEKO 는 제외(미지원).
+ *
+ * `assertRedirectConfiguredForNonProd` 가 이 목록 전부의 매핑 존재 여부를 검증해
+ * "GENERAL 만 누락" 같은 부분 매핑으로 GENERAL 회원 전원이 원본 이메일로 발송되는
+ * fail-open 갭(코드리뷰 CRITICAL #1)을 차단.
+ */
+const REQUIRED_ROLES: readonly RecipientAuthRole[] = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "FIRST_STORE",
+  "SECOND_STORE",
+  "GENERAL",
+] as const;
 
 /**
  * env 를 1회 파싱해 캐시. 모듈 import 시점에 결정.
@@ -126,8 +148,10 @@ export function isRedirectActive(): boolean {
  * 진입 시 호출하여 collect 단계 이전에 발송 자체를 거부 → status=send_failed.
  *
  * - APP_ENV=production : 운영 배포는 redirect 무시가 정상이므로 통과 (no-op)
- * - APP_ENV=development / 미설정 + REDIRECT_MAP 있음 : 통과
+ * - APP_ENV=development / 미설정 + REDIRECT_MAP 있음 + 모든 필수 role 매핑 존재 : 통과
  * - APP_ENV=development / 미설정 + REDIRECT_MAP 없음 : throw (실 회원 발송 차단)
+ * - APP_ENV=development / 미설정 + REDIRECT_MAP 있음 + 일부 role 매핑 누락 : throw
+ *   (부분 매핑 시 누락 role 회원이 원본 이메일로 fan-out 되는 fail-open 갭 차단)
  *
  * **dev 서버 배포 운영 절차**: Jenkins Credentials 의 dev env 파일에
  * MASS_MAIL_TEST_REDIRECT_MAP 추가 등록 필수 (인프라 담당). 등록 전까지는 dev 서버에서
@@ -135,10 +159,26 @@ export function isRedirectActive(): boolean {
  */
 export function assertRedirectConfiguredForNonProd(): void {
   if (process.env.APP_ENV === "production") return;
-  if (REDIRECT_MAP !== null) return;
-  throw new Error(
-    `[test-redirect] REDIRECT_NOT_CONFIGURED — APP_ENV=${process.env.APP_ENV ?? "unset"} 환경에서 ` +
-    `MASS_MAIL_TEST_REDIRECT_MAP 미설정. 실 회원 발송 사고 방지를 위해 발송을 거부합니다. ` +
-    `dev/local 환경은 매핑을 반드시 설정해야 합니다 (인프라 담당자에게 Jenkins Credentials 등록 의뢰 필요).`,
-  );
+  if (REDIRECT_MAP === null) {
+    throw new Error(
+      `[test-redirect] REDIRECT_NOT_CONFIGURED — APP_ENV=${process.env.APP_ENV ?? "unset"} 환경에서 ` +
+      `MASS_MAIL_TEST_REDIRECT_MAP 미설정. 실 회원 발송 사고 방지를 위해 발송을 거부합니다. ` +
+      `dev/local 환경은 매핑을 반드시 설정해야 합니다 (인프라 담당자에게 Jenkins Credentials 등록 의뢰 필요).`,
+    );
+  }
+
+  // 부분 매핑 차단 — REQUIRED_ROLES 중 하나라도 매핑이 없으면 발송 거부.
+  // 예: { "SUPER_ADMIN": [...] } 만 등록 → GENERAL recipient 이 원본 이메일로 발송되는 갭 차단.
+  const missing = REQUIRED_ROLES.filter((role) => {
+    const emails = REDIRECT_MAP[role];
+    return !emails || emails.length === 0;
+  });
+  if (missing.length > 0) {
+    throw new Error(
+      `[test-redirect] REDIRECT_PARTIAL_MAPPING — APP_ENV=${process.env.APP_ENV ?? "unset"} 환경에서 ` +
+      `MASS_MAIL_TEST_REDIRECT_MAP 의 매핑이 누락된 role: [${missing.join(", ")}]. ` +
+      `누락된 role 의 회원이 원본 이메일로 발송되는 사고를 막기 위해 발송을 거부합니다. ` +
+      `필수 role(${REQUIRED_ROLES.join(", ")}) 모두에 테스트 이메일을 등록하세요.`,
+    );
+  }
 }
