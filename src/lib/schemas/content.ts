@@ -14,14 +14,14 @@ const contentTargetSchema = z
   })
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
-    { message: "startAt은 endAt보다 이전이어야 합니다", path: ["startAt"] },
+    { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
 export const createContentSchema = z.object({
-  title: z.string().min(1, "title은 필수입니다").max(500),
+  title: z.string().min(1, "タイトルは必須です").max(500),
   body: z.string().max(100000).optional(),
   status: z.enum(["draft", "published"]).default("draft"),
   publishedAt: z.coerce.date().optional(),
@@ -32,7 +32,7 @@ export const createContentSchema = z.object({
 });
 
 export const updateContentSchema = z.object({
-  title: z.string().min(1, "title은 필수입니다").max(500).optional(),
+  title: z.string().min(1, "タイトルは必須です").max(500).optional(),
   body: z.string().max(100000).optional(),
   status: z.enum(["draft", "published"]).optional(),
   authorDepartment: z.string().max(100).optional(),
