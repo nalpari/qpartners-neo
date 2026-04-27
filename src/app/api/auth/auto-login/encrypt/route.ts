@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
     if (error instanceof ConfigError) {
       console.error(
         "[POST /api/auth/auto-login/encrypt] 설정 에러:",
-        error.message,
+        error.name,
+        "— AUTO_LOGIN_OUTBOUND_AES_KEY 설정 확인 필요",
       );
       return NextResponse.json(
         { error: "サーバー設定エラーが発生しました" },

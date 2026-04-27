@@ -194,7 +194,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "자동로그인 암호화 URL 생성 (outbound)",
         description:
-          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. **2026-04-27 자체 암호화 전환**: Q.Partners 가 직접 AES-128-CBC 로 cipher 를 발급 (Key: `AUTO_LOGIN_OUTBOUND_AES_KEY` 16B, IV: `YYYYMMDD_autoL!!` KST 일자). 3사 동일 사양 (담당자 명시) — 동일 사용자라면 3사 cipher 일치. Q.Partners 가 target 별 고유 도메인의 `?autoLoginParam1=` 에 부착하여 반환. 반환 URL 예시: hanasys=`https://dev.hanasys.jp/login?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. Q.Partners 가 직접 KST 일자 기반 시간 제한 cipher 를 발급. 3사 동일 사양 — 동일 사용자라면 3사 cipher 일치. Q.Partners 가 target 별 고유 도메인의 `?autoLoginParam1=` 에 부착하여 반환. 반환 URL 예시: hanasys=`https://dev.hanasys.jp/login?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
         requestBody: {
           required: true,
           content: {
@@ -284,13 +284,13 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("認証が必要です"),
           "500": {
             description:
-              "サーバーエラー — `AUTO_LOGIN_OUTBOUND_AES_KEY` 設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類. 자체 암호화 전환(2026-04-27)으로 외부 게이트웨이 호출이 사라져 502 응답은 폐기됨.",
+              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
                 examples: {
                   configError: {
-                    summary: "AUTO_LOGIN_OUTBOUND_AES_KEY 미설정/길이 불일치",
+                    summary: "暗号化設定エラー",
                     value: { error: "サーバー設定エラーが発生しました" },
                   },
                   assemblyFail: {

@@ -39,7 +39,11 @@ function formatKstDate(date: Date): string {
   return `${y}${m}${d}`;
 }
 
+let _cachedKey: Buffer | null = null;
+
 function getOutboundAesKey(): Buffer {
+  if (_cachedKey) return _cachedKey;
+
   const raw = process.env.AUTO_LOGIN_OUTBOUND_AES_KEY;
   if (!raw) {
     throw new ConfigError(
@@ -52,9 +56,10 @@ function getOutboundAesKey(): Buffer {
   const buf = Buffer.from(raw, "utf8");
   if (buf.length !== KEY_LENGTH) {
     throw new ConfigError(
-      `AUTO_LOGIN_OUTBOUND_AES_KEY 는 정확히 ${KEY_LENGTH} byte(UTF-8) 여야 합니다 (현재: ${buf.length} byte)`,
+      "AUTO_LOGIN_OUTBOUND_AES_KEY 길이가 올바르지 않습니다 — 설정을 확인하세요",
     );
   }
+  _cachedKey = buf;
   return buf;
 }
 
