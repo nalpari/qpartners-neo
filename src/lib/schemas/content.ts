@@ -14,10 +14,10 @@ const contentTargetSchema = z
   })
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
-    { message: "startAt은 endAt보다 이전이어야 합니다", path: ["startAt"] },
+    { message: "startAt은 endAt보다 이전이거나 같아야 합니다", path: ["startAt"] },
   );
 
 export const createContentSchema = z.object({
