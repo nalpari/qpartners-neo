@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
 // POST /api/auth/email/check — 이메일 중복 체크
@@ -10,8 +11,20 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 // QSP userDetail 을 두 키로 병렬 조회한다:
 //   1) loginId 단독 → BC_QP_USER.user_id 컬럼 매칭 (newUserReq 가 검사하는 컬럼)
 //   2) email   단독 → BC_QP_USER.e_mail   컬럼 매칭 (AS-IS 데이터의 user_id ≠ e_mail 케이스 대응)
-// 둘 중 하나라도 hit 또는 다건(TooManyResults) 신호면 409 처리. 양쪽 모두 미존재여야 사용 가능.
+// 둘 중 하나라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능.
 // PII(email) 가 URL query 에 노출되지 않도록 클라이언트 → 본 라우트는 POST 사용.
+//
+// race: 본 체크와 newUserReq 사이는 원자적이지 않다. 동시 가입 시 동일 e_mail 다중 생성 여지는
+// QSP newUserReq 정책 보강(별도 트랙)으로 해결한다.
+
+const LOG = "[POST /api/auth/email/check]";
+const QSP_TIMEOUT_MS = 10_000;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+const RATE_IP_LIMIT = 30;
+const RATE_FALLBACK_LIMIT = 10;
+
+// 외부 시스템 헬스 추론을 막기 위해 502 응답은 단일 메시지로 통일.
+const GENERIC_UPSTREAM_ERROR = "メール確認中にエラーが発生しました";
 
 type LookupOutcome =
   | { kind: "found" }
@@ -19,11 +32,18 @@ type LookupOutcome =
   | { kind: "ambiguous"; resultCode: string }
   | { kind: "transport-error"; httpStatus: number }
   | { kind: "schema-error" }
-  | { kind: "business-error"; resultCode: string };
+  | { kind: "business-error"; resultCode: string }
+  | { kind: "aborted" };
+
+// 컬럼명(loginId/email) 추론 단서를 차단하기 위해 외부에 노출되는 라벨은 1/2 로 익명화.
+type LookupId = 1 | 2;
+type SearchBy = "loginId" | "email";
 
 async function lookupQspUser(
   email: string,
-  searchBy: "loginId" | "email",
+  searchBy: SearchBy,
+  lookupId: LookupId,
+  externalSignal: AbortSignal,
 ): Promise<LookupOutcome> {
   const params = new URLSearchParams({
     accsSiteCd: "QPARTNERS",
@@ -31,34 +51,40 @@ async function lookupQspUser(
   });
   params.set(searchBy, email);
 
+  const signal = AbortSignal.any([
+    externalSignal,
+    AbortSignal.timeout(QSP_TIMEOUT_MS),
+  ]);
+
   let qspResponse: Response;
   try {
     qspResponse = await fetchWithLog(
       `${QSP_API.userDetail}?${params.toString()}`,
       {
         method: "GET",
-        signal: AbortSignal.timeout(10_000),
+        cache: "no-store",
+        signal,
       },
       {
         system: "QSP",
         direction: "OUTBOUND",
         apiName: "userDetail",
-        callerRoute: `[POST /api/auth/email/check] (${searchBy})`,
+        callerRoute: `${LOG} (lookup#${lookupId})`,
         userId: maskEmail(email),
         userType: "GENERAL",
       },
     );
   } catch (error) {
-    console.error(
-      `[POST /api/auth/email/check] QSP API 호출 실패 (${searchBy}):`,
-      error,
-    );
+    if (externalSignal.aborted) {
+      return { kind: "aborted" };
+    }
+    console.error(`${LOG} QSP API 호출 실패 (lookup#${lookupId}):`, error);
     return { kind: "transport-error", httpStatus: 0 };
   }
 
   if (!qspResponse.ok) {
     console.error(
-      `[POST /api/auth/email/check] QSP 비정상 응답 (${searchBy}):`,
+      `${LOG} QSP 비정상 응답 (lookup#${lookupId}):`,
       qspResponse.status,
     );
     return { kind: "transport-error", httpStatus: qspResponse.status };
@@ -69,7 +95,7 @@ async function lookupQspUser(
     qspBody = await qspResponse.json();
   } catch (parseError) {
     console.warn(
-      `[POST /api/auth/email/check] QSP 응답 JSON 파싱 실패 (${searchBy}):`,
+      `${LOG} QSP 응답 JSON 파싱 실패 (lookup#${lookupId}):`,
       parseError,
     );
     return { kind: "schema-error" };
@@ -77,9 +103,7 @@ async function lookupQspUser(
 
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
-    console.error(
-      `[POST /api/auth/email/check] QSP 응답 스키마 불일치 (${searchBy})`,
-    );
+    console.error(`${LOG} QSP 응답 스키마 불일치 (lookup#${lookupId})`);
     return { kind: "schema-error" };
   }
 
@@ -99,16 +123,20 @@ async function lookupQspUser(
   // 매칭되는 회원이 둘 이상이라는 의미이므로 중복으로 간주 (보수적).
   if (qsp.result.resultCode === "E") {
     console.error(
-      `[POST /api/auth/email/check] QSP 다건 매칭 (${searchBy}) — resultCode=E`,
+      `${LOG} QSP 다건 매칭 (lookup#${lookupId}) — resultCode=E`,
     );
     return { kind: "ambiguous", resultCode: qsp.result.resultCode };
   }
 
   console.error(
-    `[POST /api/auth/email/check] QSP 비즈니스 에러 (${searchBy}):`,
+    `${LOG} QSP 비즈니스 에러 (lookup#${lookupId}):`,
     qsp.result.resultCode,
   );
   return { kind: "business-error", resultCode: qsp.result.resultCode };
+}
+
+function isDecisive(outcome: LookupOutcome): boolean {
+  return outcome.kind === "found" || outcome.kind === "ambiguous";
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +145,7 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json();
     } catch (error) {
-      console.warn("[POST /api/auth/email/check] JSON parse 실패:", error);
+      console.warn(`${LOG} JSON parse 실패:`, error);
       return NextResponse.json(
         { error: "Invalid JSON body" },
         { status: 400 },
@@ -144,45 +172,79 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [byLoginId, byEmail] = await Promise.all([
-      lookupQspUser(email, "loginId"),
-      lookupQspUser(email, "email"),
-    ]);
+    // Rate limit — public endpoint + QSP 호출 2배 → enumeration / DoS 증폭 방어.
+    // [전제] 배포 환경의 리버스 프록시(Nginx/ALB)가 클라이언트 x-forwarded-for를 덮어씀.
+    //        프록시 없이 직접 노출 시 헤더 스푸핑 가능 → email 기반 fallback 키로 보완.
+    const forwarded = request.headers.get("x-forwarded-for");
+    const ip =
+      forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+    const rateKey = ip ?? `account:${email}`;
+    const rateLimit = ip ? RATE_IP_LIMIT : RATE_FALLBACK_LIMIT;
+    if (!checkRateLimit(`email-check:${rateKey}`, rateLimit, RATE_WINDOW_MS)) {
+      return NextResponse.json(
+        {
+          error:
+            "リクエストが多すぎます。しばらく経ってから再度お試しください。",
+        },
+        { status: 429 },
+      );
+    }
+    if (!ip) {
+      console.warn(`${LOG} IP 헤더 없음 — email 기반 rate limit 적용`);
+    }
 
-    // 한쪽이라도 found / ambiguous → 중복
-    if (
-      byLoginId.kind === "found" ||
-      byEmail.kind === "found" ||
-      byLoginId.kind === "ambiguous" ||
-      byEmail.kind === "ambiguous"
-    ) {
+    // 두 lookup 을 동일 AbortController 로 병렬 시작.
+    // 한쪽이 found/ambiguous (결정적 결과) 로 빠르게 끝나면 즉시 다른 쪽 abort →
+    // 한쪽이 hang 시 최악 10s 대기 회피.
+    const ac = new AbortController();
+    const p1: Promise<{ id: 1; outcome: LookupOutcome }> = lookupQspUser(
+      email,
+      "loginId",
+      1,
+      ac.signal,
+    ).then((outcome) => ({ id: 1, outcome }));
+    const p2: Promise<{ id: 2; outcome: LookupOutcome }> = lookupQspUser(
+      email,
+      "email",
+      2,
+      ac.signal,
+    ).then((outcome) => ({ id: 2, outcome }));
+
+    const first = await Promise.race([p1, p2]);
+    if (isDecisive(first.outcome)) {
+      ac.abort();
       return NextResponse.json(
         { error: "すでに使用されているメールアドレスです" },
         { status: 409 },
       );
     }
 
-    // 양쪽 모두 not-found 인 경우만 사용 가능
+    const settled = await Promise.all([p1, p2]);
+    const [byLoginId, byEmail] = [settled[0].outcome, settled[1].outcome];
+
+    if (isDecisive(byLoginId) || isDecisive(byEmail)) {
+      return NextResponse.json(
+        { error: "すでに使用されているメールアドレスです" },
+        { status: 409 },
+      );
+    }
+
     if (byLoginId.kind === "not-found" && byEmail.kind === "not-found") {
       return NextResponse.json({
         data: { available: true, message: "使用可能なメールアドレスです" },
       });
     }
 
-    // 그 외(transport/schema/business error) — 정확 판정 불가, 보수적으로 502
-    const message =
-      byLoginId.kind === "transport-error" || byEmail.kind === "transport-error"
-        ? byLoginId.kind === "transport-error" && byLoginId.httpStatus === 0
-          ? "外部サーバーに接続できません"
-          : "外部サーバーエラーが発生しました"
-        : byLoginId.kind === "schema-error" || byEmail.kind === "schema-error"
-          ? "外部サーバーの応答を処理できません"
-          : "メール確認中にエラーが発生しました";
-    return NextResponse.json({ error: message }, { status: 502 });
-  } catch (error) {
-    console.error("[POST /api/auth/email/check]", error);
+    // 그 외(transport / schema / business error) — 정확 판정 불가, 보수적으로 502.
+    // 외부 시스템 헬스 추론 차단을 위해 메시지 분기 없이 단일화.
     return NextResponse.json(
-      { error: "メール確認中にエラーが発生しました" },
+      { error: GENERIC_UPSTREAM_ERROR },
+      { status: 502 },
+    );
+  } catch (error) {
+    console.error(LOG, error);
+    return NextResponse.json(
+      { error: GENERIC_UPSTREAM_ERROR },
       { status: 500 },
     );
   }
