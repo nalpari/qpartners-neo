@@ -20,8 +20,11 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 const LOG = "[POST /api/auth/email/check]";
 const QSP_TIMEOUT_MS = 10_000;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
+// IP 차원: 동일 IP 의 분산 enumeration 시도 차단 (1h 내 30회).
 const RATE_IP_LIMIT = 30;
-const RATE_FALLBACK_LIMIT = 10;
+// Email 차원: 동일 이메일 표적 enumeration 시도 차단 (1h 내 10회).
+// 두 차원은 독립 적용 — 한쪽이라도 초과 시 429. IP 가 없으면 Email 차원만 적용 → effective 10/h.
+const RATE_EMAIL_LIMIT = 10;
 
 // 외부 시스템 헬스 추론을 막기 위해 502 응답은 단일 메시지로 통일.
 const GENERIC_UPSTREAM_ERROR = "メール確認中にエラーが発生しました";
@@ -76,7 +79,14 @@ async function lookupQspUser(
     );
   } catch (error) {
     if (externalSignal.aborted) {
+      // race winner 가 abort 시킨 경우 — 정상 fast-path. 디버깅 noise 회피.
       return { kind: "aborted" };
+    }
+    // AbortError 는 timeout(QSP_TIMEOUT_MS 초과) 이 유일한 발생 경로.
+    // 디버깅 시 일반 transport error(네트워크/DNS) 와 구분되도록 warn 로 기록.
+    if (error instanceof DOMException && error.name === "AbortError") {
+      console.warn(`${LOG} QSP API timeout (lookup#${lookupId})`);
+      return { kind: "transport-error", httpStatus: 0 };
     }
     console.error(`${LOG} QSP API 호출 실패 (lookup#${lookupId}):`, error);
     return { kind: "transport-error", httpStatus: 0 };
@@ -121,6 +131,10 @@ async function lookupQspUser(
 
   // resultCode "E" — TooManyResultsException 등 동일 키로 다건 매칭 신호.
   // 매칭되는 회원이 둘 이상이라는 의미이므로 중복으로 간주 (보수적).
+  // [trade-off] QSP 가 다른 비즈니스 에러도 "E" 로 응답할 가능성이 있어
+  //   AS-IS 데이터 오염 시 정상 신규 가입자가 차단되는 false-positive 우려가 있다.
+  //   대안: QSP 응답 message 를 추가로 검사해 TooManyResults 만 ambiguous 로 분류.
+  //   본 PR 범위 외(QSP 응답 사양 확인 필요) — 현재는 안전 우선으로 차단.
   if (qsp.result.resultCode === "E") {
     console.error(
       `${LOG} QSP 다건 매칭 (lookup#${lookupId}) — resultCode=E`,
@@ -172,15 +186,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Email 정규화 — rate limit 키 / QSP lookup / 로그 마스킹의 baseline 일관성 확보.
+    // 대소문자만 다른 표기로 enumeration rate limit 우회되는 케이스(`A@x.com` vs `a@x.com`) 차단.
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Rate limit — public endpoint + QSP 호출 2배 → enumeration / DoS 증폭 방어.
     // [전제] 배포 환경의 리버스 프록시(Nginx/ALB)가 클라이언트 x-forwarded-for를 덮어씀.
-    //        프록시 없이 직접 노출 시 헤더 스푸핑 가능 → email 기반 fallback 키로 보완.
+    //        프록시 없이 직접 노출 시 헤더 스푸핑 가능 → email 차원 키로 보완.
+    // 두 차원 모두 독립 적용 — IP 차원은 분산 enumeration, Email 차원은 표적 enumeration 차단.
     const forwarded = request.headers.get("x-forwarded-for");
+    const forwardedFirst = forwarded?.split(",")[0]?.trim();
+    const realIp = request.headers.get("x-real-ip")?.trim();
     const ip =
-      forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-    const rateKey = ip ?? `account:${email}`;
-    const rateLimit = ip ? RATE_IP_LIMIT : RATE_FALLBACK_LIMIT;
-    if (!checkRateLimit(`email-check:${rateKey}`, rateLimit, RATE_WINDOW_MS)) {
+      forwardedFirst && forwardedFirst.length > 0
+        ? forwardedFirst
+        : realIp && realIp.length > 0
+          ? realIp
+          : null;
+
+    if (
+      ip &&
+      !checkRateLimit(`email-check:ip:${ip}`, RATE_IP_LIMIT, RATE_WINDOW_MS)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "リクエストが多すぎます。しばらく経ってから再度お試しください。",
+        },
+        { status: 429 },
+      );
+    }
+    if (
+      !checkRateLimit(
+        `email-check:email:${normalizedEmail}`,
+        RATE_EMAIL_LIMIT,
+        RATE_WINDOW_MS,
+      )
+    ) {
       return NextResponse.json(
         {
           error:
@@ -190,21 +232,24 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!ip) {
-      console.warn(`${LOG} IP 헤더 없음 — email 기반 rate limit 적용`);
+      console.warn(`${LOG} IP 헤더 없음 — email 차원 rate limit 만 적용`);
     }
 
     // 두 lookup 을 동일 AbortController 로 병렬 시작.
     // 한쪽이 found/ambiguous (결정적 결과) 로 빠르게 끝나면 즉시 다른 쪽 abort →
     // 한쪽이 hang 시 최악 10s 대기 회피.
+    // [trade-off] happy path(양쪽 모두 not-found) 에서 먼저 끝난 쪽이 not-found 면 abort 트리거 안 됨 →
+    //   다른 쪽이 hang 일 경우 timeout(10s) 까지 대기. race 효과는 결정적 결과 때만.
+    //   둘 다 결과를 봐야 안전한 판정이 가능하므로 의도된 trade-off.
     const ac = new AbortController();
     const p1: Promise<{ id: 1; outcome: LookupOutcome }> = lookupQspUser(
-      email,
+      normalizedEmail,
       "loginId",
       1,
       ac.signal,
     ).then((outcome) => ({ id: 1, outcome }));
     const p2: Promise<{ id: 2; outcome: LookupOutcome }> = lookupQspUser(
-      email,
+      normalizedEmail,
       "email",
       2,
       ac.signal,

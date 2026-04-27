@@ -16,6 +16,8 @@ const EMAIL_CHECK_MESSAGES: Record<string, string> = {
   duplicate: "既に使用中の電子メールです",
   invalid: "正しくない電子メールアドレスです",
   error: "メールチェック中にエラーが発生しました",
+  "rate-limited":
+    "リクエストが多すぎます。しばらく経ってから再度お試しください",
 };
 
 export function SignupContents() {
@@ -47,7 +49,7 @@ export function SignupContents() {
 
   // UI 상태
   const [emailCheckStatus, setEmailCheckStatus] = useState<
-    "idle" | "ok" | "duplicate" | "invalid" | "error"
+    "idle" | "ok" | "duplicate" | "invalid" | "error" | "rate-limited"
   >("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
@@ -118,8 +120,11 @@ export function SignupContents() {
       setEmailCheckStatus("ok");
     } catch (error) {
       console.error("[Signup] 이메일 중복체크 실패:", error);
-      if (isAxiosError(error) && error.response?.status === 409) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 409) {
         setEmailCheckStatus("duplicate");
+      } else if (status === 429) {
+        setEmailCheckStatus("rate-limited");
       } else {
         setEmailCheckStatus("error");
       }
