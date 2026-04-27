@@ -9,16 +9,10 @@ import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
-import type { CategoryFormState } from "./categories-types";
+import type { CategoryFormState, CascadePreview } from "./categories-types";
 import { findCategoryById } from "./categories-types";
 import { useCategoryQuery } from "./use-category-query";
 import { useCategoryMutations } from "./use-category-mutations";
-
-interface CascadePreview {
-  id: number;
-  descendantCount: number;
-  contentLinkCount: number;
-}
 
 export function CategoriesContents() {
   const { openAlert } = useAlertStore();
@@ -32,6 +26,9 @@ export function CategoriesContents() {
   // CategoriesDetail 내부 form state 를 리마운트로 재초기화하기 위한 토큰.
   // 초기화 버튼 클릭 시 증가 → key 변경 → CategoriesDetail 이 selectedCategory/INITIAL_FORM 으로 재생성.
   const [resetToken, setResetToken] = useState(0);
+  // cascade-preview 호출 중 더블클릭 가드 — preview API 호출 중에는 deleteMutation.isPending 가
+  // 아직 false 이므로 별도 플래그로 삭제 버튼 disabled 처리.
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // ─── Server State ───
   const { data: treeData = [], isLoading, isError } = useCategoryQuery();
@@ -137,9 +134,11 @@ export function CategoriesContents() {
   // 운영자에게 영향 범위를 표시. 클라이언트 트리는 비활성/사내전용 필터로 일부 노드가
   // 누락될 수 있어, 백엔드 카운트를 기준으로 한다 (영향 범위 과소 표시 방지).
   const handleDelete = async () => {
-    if (selectedId === null) return;
+    // 더블클릭/연타 가드 — preview API in-flight 중 재진입 차단.
+    if (selectedId === null || isPreviewLoading) return;
 
     let preview: CascadePreview;
+    setIsPreviewLoading(true);
     try {
       const res = await api.get<{ data: CascadePreview }>(
         `/categories/${selectedId}/cascade-preview`,
@@ -152,6 +151,8 @@ export function CategoriesContents() {
         : "削除前の影響範囲を取得できませんでした。しばらくしてからお試しください。";
       openAlert({ type: "alert", message });
       return;
+    } finally {
+      setIsPreviewLoading(false);
     }
 
     const messageLines = [
@@ -229,7 +230,8 @@ export function CategoriesContents() {
         parentOptions={parentOptions}
         treeData={treeData}
         isNewMode={isNewMode}
-        isSaving={isSaving}
+        // preview 로딩 중에도 삭제/저장 버튼 disabled — 중복 요청 차단.
+        isSaving={isSaving || isPreviewLoading}
         onSave={handleSave}
         onDelete={handleDelete}
         onNew={handleNew}

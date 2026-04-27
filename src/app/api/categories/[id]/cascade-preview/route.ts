@@ -5,11 +5,9 @@ import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/category";
 
-type Params = { params: Promise<{ id: string }> };
+import { CATEGORY_MAX_DESCENDANTS } from "../../_constants";
 
-// BFS 안전 한도 — DELETE 핸들러와 동일 값 유지(상수 단일 출처).
-// 카테고리 트리 깊이/폭 어떠한 비정상 패턴이 와도 무한 루프 방지.
-const MAX_DESCENDANTS = 10_000;
+type Params = { params: Promise<{ id: string }> };
 
 // GET /api/categories/:id/cascade-preview
 //
@@ -42,7 +40,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const descendantIds: number[] = [];
     let frontier: number[] = [parsed.data];
     while (frontier.length > 0) {
-      if (descendantIds.length >= MAX_DESCENDANTS) {
+      if (descendantIds.length >= CATEGORY_MAX_DESCENDANTS) {
         console.warn(
           "[GET /api/categories/:id/cascade-preview] MAX_DESCENDANTS 초과",
           { categoryId: parsed.data, collected: descendantIds.length },

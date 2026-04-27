@@ -7,11 +7,12 @@ import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateCategorySchema } from "@/lib/schemas/category";
 
-type Params = { params: Promise<{ id: string }> };
+import {
+  CATEGORY_MAX_DESCENDANTS,
+  MaxDescendantsExceededError,
+} from "../_constants";
 
-// BFS 안전 한도 — cascade-preview 와 동일 값으로 동기 유지(영향 범위 일관성).
-// 비정상적으로 큰 트리(잘못된 마이그레이션 결과 등)에서 무한 루프/대량 쿼리를 차단.
-const MAX_DESCENDANTS = 10_000;
+type Params = { params: Promise<{ id: string }> };
 
 // PUT /api/categories/:id — 카테고리 수정 (ADM_CATEGORY.update 매트릭스 기반)
 export async function PUT(request: NextRequest, { params }: Params) {
@@ -179,8 +180,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         while (frontier.length > 0) {
           // 안전 가드 — 비정상 데이터(자기 참조 사이클·잘못된 마이그레이션 등)에 의한
           // 무한 루프 방지. 상한 초과 시 트랜잭션 롤백 후 422 응답.
-          if (descendantIds.length >= MAX_DESCENDANTS) {
-            throw new Error("MAX_DESCENDANTS_EXCEEDED");
+          if (descendantIds.length >= CATEGORY_MAX_DESCENDANTS) {
+            throw new MaxDescendantsExceededError();
           }
           const children = await tx.category.findMany({
             where: { parentId: { in: frontier } },
@@ -234,7 +235,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "MAX_DESCENDANTS_EXCEEDED") {
+    if (error instanceof MaxDescendantsExceededError) {
       console.warn("[DELETE /api/categories/:id] MAX_DESCENDANTS 초과");
       return NextResponse.json(
         { error: "Too many descendants to delete in a single request" },

@@ -147,11 +147,23 @@ const KNOWN_AUTH_CD_VALUES = new Set([
  *
  * 매핑 정책:
  *   - "NORMAL" → "GENERAL" (QSP 일반회원 기본값 정규화)
- *   - 그 외 값(ADMIN, 1ST_STORE, 2ND_STORE, SEKO 등) 은 그대로 통과
+ *   - 그 외 값(ADMIN, 1ST_STORE, 2ND_STORE, SEKO 등) 은 그대로 통과 (의도적 passthrough)
  *   - null/undefined/"" → "" (기존 동작 유지 — 정보 없음)
  *
- * KNOWN_AUTH_CD_VALUES 에 없는 값이 들어오면 console.warn — QSP 가 새 권한 코드를 추가했을 때
- * 운영자가 즉시 인지하고 매핑 정책을 갱신할 수 있도록 가시성 확보 (silent passthrough 방지).
+ * 의도적 passthrough 인 이유:
+ *   QSP 가 추후 새로운 표준 권한 코드(예: "VIEWER", "AUDITOR")를 추가할 때, 정규화 함수가
+ *   "UNKNOWN" 으로 일괄 마스킹하면 운영자가 권한 코드 신설 사실 자체를 인지할 수 없어
+ *   매핑 정책 업데이트 누락이 발생한다. 따라서 미지 값은 노출 + warn 로그 조합으로
+ *   "운영자에게 알린 뒤 그대로 통과" 하여, FE SelectBox 가 fallback TextValue 로 표시 →
+ *   운영팀이 즉시 매핑 추가를 진행하는 흐름을 유지한다.
+ *
+ * 보안 측면 — 이 함수가 받는 authCd 는 이미 백엔드 → QSP → 백엔드 경유로 검증된 회원관리
+ * 응답 페이로드 일부이며, 자유 입력 사용자 입력이 아니므로 임의 문자열 노출 위험은 없다.
+ * 다만 새 권한 코드 누락은 권한 부여 UX 결함으로 이어지므로 console.warn 으로 가시성 확보.
+ *
+ * KNOWN_AUTH_CD_VALUES 갱신 절차:
+ *   warn 로그 발견 → QSP 권한 코드 사양서 확인 → KNOWN_AUTH_CD_VALUES + ROLE_OPTIONS_*
+ *   동시 갱신 → 필요 시 매핑 분기 추가.
  */
 export function normalizeAuthCdToUserRole(
   authCd: string | null | undefined,
