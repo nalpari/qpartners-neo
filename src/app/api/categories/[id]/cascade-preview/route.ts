@@ -37,6 +37,11 @@ export async function GET(request: NextRequest, { params }: Params) {
     // BFS 로 자손 ID 수집 — DELETE 핸들러와 동일 알고리즘.
     // 트랜잭션 미사용 — preview 는 read-only, race 가 발생해도 운영자에게 안내된 수치와
     // 실제 cascade 결과 사이의 미세한 차이는 허용 (DELETE 시점에 다시 정확히 카운트).
+    //
+    // 가드 기준 — descendantIds.length 만 비교 (root 미포함).
+    //   삭제 대상은 root + descendants 이지만, root 는 항상 1개 고정이라 상한 판단의
+    //   본질은 descendants 규모. DELETE 핸들러도 동일 기준을 사용하므로 preview/DELETE
+    //   양쪽이 일관되게 같은 임계점에서 422 반환 → 운영자 UX 와 실제 처리 결과 동기화.
     const descendantIds: number[] = [];
     let frontier: number[] = [parsed.data];
     while (frontier.length > 0) {

@@ -193,12 +193,12 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           frontier = childIds;
         }
 
-        // 2. cascade 로 정리될 ContentCategory 링크 선조회 (감사 로그용).
+        // 2. cascade 로 정리될 ContentCategory 링크 카운트만 집계 (감사 로그용).
         //    root + 자손 모두 포함. 실제 삭제는 DB cascade 가 처리.
+        //    카운트만 사용하므로 findMany → count 로 메모리 비용 O(N) → O(1).
         const affectedCategoryIds = [parsed.data, ...descendantIds];
-        const affectedLinks = await tx.contentCategory.findMany({
+        const cascadedContentLinkCount = await tx.contentCategory.count({
           where: { categoryId: { in: affectedCategoryIds } },
-          select: { contentId: true, categoryId: true },
         });
 
         // 3. root 삭제 → DB 엔진이 자손 카테고리 + 모든 ContentCategory 링크 cascade 삭제.
@@ -207,7 +207,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         return {
           id: parsed.data,
           cascadedCategoryIds: descendantIds,
-          cascadedContentLinks: affectedLinks,
+          cascadedContentLinkCount,
         };
       },
       { isolationLevel: "Serializable" },
@@ -215,15 +215,21 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     // 구조적 감사 로그 — PII 없음(ID만). 운영 복구/추적용.
     // cascade 가 발생한 경우(자손 카테고리 또는 ContentCategory 링크가 있는 경우)에만 출력.
+    // ID 배열은 최대 50개까지만 인라인 — 상한(CATEGORY_MAX_DESCENDANTS=10000) 도달 시
+    // 단일 로그 엔트리가 비대해져 로그 수집/검색 부담을 키우는 것 방지.
     if (
       deleted.cascadedCategoryIds.length > 0 ||
-      deleted.cascadedContentLinks.length > 0
+      deleted.cascadedContentLinkCount > 0
     ) {
+      const AUDIT_ID_PREVIEW_MAX = 50;
+      const totalIds = deleted.cascadedCategoryIds.length;
+      const previewIds = deleted.cascadedCategoryIds.slice(0, AUDIT_ID_PREVIEW_MAX);
       console.info("[DELETE /api/categories/:id] cascade removed", {
         categoryId: deleted.id,
-        cascadedCategoryCount: deleted.cascadedCategoryIds.length,
-        cascadedCategoryIds: deleted.cascadedCategoryIds,
-        cascadedContentLinkCount: deleted.cascadedContentLinks.length,
+        cascadedCategoryCount: totalIds,
+        cascadedCategoryIdsPreview: previewIds,
+        cascadedCategoryIdsTruncated: totalIds > AUDIT_ID_PREVIEW_MAX,
+        cascadedContentLinkCount: deleted.cascadedContentLinkCount,
       });
     }
 
@@ -231,7 +237,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       data: {
         id: deleted.id,
         cascadedCategoryCount: deleted.cascadedCategoryIds.length,
-        cascadedContentCount: deleted.cascadedContentLinks.length,
+        cascadedContentCount: deleted.cascadedContentLinkCount,
       },
     });
   } catch (error) {

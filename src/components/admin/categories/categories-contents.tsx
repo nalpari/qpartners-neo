@@ -155,13 +155,15 @@ export function CategoriesContents() {
       setIsPreviewLoading(false);
     }
 
+    // 라인 구성: 해당 영향이 있는 경우(>0)에만 안내 라인 추가.
+    // contentLinkCount === 0 이면 "コンテンツの紐付け..." 라인 자체를 숨겨 불필요 정보 노출 방지.
     const messageLines = [
       preview.descendantCount > 0
         ? `下位カテゴリー${preview.descendantCount}件もすべて削除されます。`
         : null,
       preview.contentLinkCount > 0
         ? `関連するコンテンツの紐付け${preview.contentLinkCount}件が自動で解除されます（コンテンツ本体は残ります）。`
-        : "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。",
+        : null,
       "削除してもよろしいですか？",
     ].filter((line): line is string => line !== null);
     openAlert({

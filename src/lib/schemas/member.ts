@@ -127,9 +127,10 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
 
 // ─── authCd → userRole 정규화 ───
 
-/** 알려진(매핑/통과 정책 합의된) authCd 집합. 새 값 발견 시 운영 가시성 확보를 위해 warn. */
+/** 알려진(매핑/통과 정책 합의된) authCd 집합. 새 값 발견 시 운영 가시성 확보를 위해 warn.
+ *  NOTE: "NORMAL" 은 normalizeAuthCdToUserRole 에서 "GENERAL" 로 먼저 분기되어
+ *        Set 체크에 도달하지 않으므로 의도적으로 미포함. */
 const KNOWN_AUTH_CD_VALUES = new Set([
-  "NORMAL",
   "ADMIN",
   "SUPER_ADMIN",
   "1ST_STORE",
