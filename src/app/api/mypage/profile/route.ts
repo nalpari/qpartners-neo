@@ -61,16 +61,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // QSP BC_QP_USER 는 같은 email 에 다른 login_id 가 중복 등록될 수 있어
+    // email + userTp 만으로 selectOne() 시 TooManyResultsException 발생 가능.
+    // loginId 를 항상 함께 전달하여 where 조건을 유니크하게 고정.
+    // (GENERAL 은 userId === email 이므로 같은 값을 전송)
     const params = new URLSearchParams({
       accsSiteCd: "QPARTNERS",
       email: user.email,
       userTp: user.userTp,
+      loginId: user.userId,
     });
-    // ADMIN/STORE는 loginId ≠ email일 수 있으므로 loginId 필수 전달
-    // (GENERAL은 loginId = email이므로 불필요)
-    if (user.userTp === "ADMIN" || user.userTp === "STORE") {
-      params.set("loginId", user.userId);
-    }
 
     let qspResponse: Response;
     try {
