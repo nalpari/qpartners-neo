@@ -224,12 +224,19 @@ export async function POST(request: NextRequest) {
         } else {
           const authIso = parseQspDate(secAuthDt);
           if (!authIso) {
-            console.error("[POST /api/auth/login] secAuthDt 파싱 실패:", secAuthDt);
+            // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
+            console.error(
+              "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
+              secAuthDt.length,
+            );
             requireTwoFactor = true;
           } else {
             const authMs = new Date(authIso).getTime();
             if (Number.isNaN(authMs)) {
-              console.error("[POST /api/auth/login] secAuthDt 만료 계산 실패:", secAuthDt);
+              console.error(
+                "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
+                secAuthDt.length,
+              );
               requireTwoFactor = true;
             } else {
               requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;

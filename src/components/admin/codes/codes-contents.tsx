@@ -42,8 +42,21 @@ function getApiErrorMessage(err: unknown, stage?: string): string {
   const prefix = stage ? `${stage}: ` : "";
   if (!isAxiosError(err)) return `${prefix}サーバーエラーが発生しました。`;
   const status = err.response?.status;
+  // 400 응답은 서버가 도메인 메시지(예: "SEC_AUTH_VALIDITY は 1〜90 日…")로
+  // 안내하는 경우가 있으므로 `data.error` 가 문자열이면 그대로 노출, 아니면 폴백.
+  if (status === 400) {
+    const responseData = err.response?.data;
+    const serverMsg =
+      typeof responseData === "object" &&
+      responseData !== null &&
+      "error" in responseData &&
+      typeof (responseData as { error: unknown }).error === "string"
+        ? (responseData as { error: string }).error
+        : undefined;
+    if (serverMsg && serverMsg.length > 0) return `${prefix}${serverMsg}`;
+    return `${prefix}入力値を確認してください。`;
+  }
   switch (status) {
-    case 400: return `${prefix}入力値を確認してください。`;
     case 401: return "ログインが必要です。";
     case 403: return "権限がありません。";
     case 404: return `${prefix}データが見つかりません。`;
