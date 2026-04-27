@@ -15,6 +15,7 @@ import type {
   ColDef,
   ICellRendererParams,
   RowClassParams,
+  CellClassParams,
   CellDoubleClickedEvent,
   CellClickedEvent,
   GridApi,
@@ -32,6 +33,22 @@ import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody } from "./permissi
 const NON_EDITABLE_FIELDS = new Set(["roleCode", "isActive"]);
 
 const centerCellStyle = CENTER_CELL_STYLE;
+
+/**
+ * 편집 중(신규행 / editingField 일치) 셀의 수평 패딩을 축소해 input 이 컬럼 폭을 거의
+ * 가득 사용하되 셀 경계와 최소 여백(4px)을 유지하도록 한다. 테마 기본값
+ * `cellHorizontalPadding: 18` 은 좁은 컬럼에서 input 을 잘라 보이게 하고, 0 으로 밀면
+ * input 이 셀 경계에 다닥다닥 붙어 가독성이 떨어짐 — 4px 타협점.
+ */
+function makeEditableCellStyle(field: string) {
+  return (params: CellClassParams<PermissionItem>) => {
+    const isEditing = params.data?.isNew || params.data?.editingField === field;
+    if (isEditing) {
+      return { ...centerCellStyle, paddingLeft: "4px", paddingRight: "4px" };
+    }
+    return centerCellStyle;
+  };
+}
 
 // AG Grid row 매칭 안정화 — id 기반 매칭으로 activeOnly 토글/refetch 시 row identity 유지
 const getRowIdFn = (p: { data: PermissionItem }) => p.data.id;
@@ -83,7 +100,7 @@ function CellInput({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       placeholder={placeholder}
-      className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
+      className="w-full h-[34px] px-3 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
     />
   );
 }
@@ -473,7 +490,7 @@ export function PermissionsTable() {
       field: "roleCode",
       flex: 1,
       cellRenderer: CodeRenderer,
-      cellStyle: centerCellStyle,
+      cellStyle: makeEditableCellStyle("roleCode"),
       headerClass: "ag-header-cell-center",
     },
     {
@@ -481,6 +498,7 @@ export function PermissionsTable() {
       field: "roleName",
       flex: 1.5,
       cellRenderer: EditableTextRendererFn,
+      cellStyle: makeEditableCellStyle("roleName"),
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: suppressKeyboardWhenEditing,
     },
@@ -489,6 +507,7 @@ export function PermissionsTable() {
       field: "description",
       flex: 2,
       cellRenderer: EditableTextRendererFn,
+      cellStyle: makeEditableCellStyle("description"),
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: suppressKeyboardWhenEditing,
     },

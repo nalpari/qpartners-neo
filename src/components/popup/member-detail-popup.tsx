@@ -502,21 +502,15 @@ function MemberEditForm({
                   right={{ label: "部署名", children: <TextValue value={member.department} /> }}
                 />
                 {/* 5행: 最近アクセス / 役職 */}
-                {/* 最近アクセス: 1순위 lastLoginAt(로그인 시각), 2순위 updatedAt(레코드 갱신 시각).
-                    현재 백엔드 GET /api/admin/members/:id 응답에 lastLoginAt 매핑 미반영 상태 →
-                    사실상 updatedAt 로 fallback. 백엔드 매핑 추가되면 자동으로 로그인 시각 표시. */}
+                {/* 最近アクセス: QSP loginDt → lastLoginAt 매핑. 값 없으면 "-".
+                    과거 updatedAt(레코드 갱신 시각) 로 fallback 했으나 의미가 달라(접속 ≠ 갱신)
+                    혼동 소지 제거. */}
                 <DetailRow
                   left={{
                     label: "最近アクセス",
                     children: (
                       <TextValue
-                        value={
-                          member.lastLoginAt
-                            ? formatDateTime(member.lastLoginAt)
-                            : member.updatedAt
-                              ? formatDateTime(member.updatedAt)
-                              : "-"
-                        }
+                        value={member.lastLoginAt ? formatDateTime(member.lastLoginAt) : "-"}
                       />
                     ),
                   }}

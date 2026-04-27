@@ -26,8 +26,17 @@ export function HomeNotices() {
   });
   const isLoggedIn = user != null;
 
+  // queryKey 에 userTp + authRole 을 포함해 로그인 전후 / 역할 전환 시 캐시를 자동 분리.
+  //   이전 구조(["home-notices", "active"]) 는 비로그인 상태에서 enabled:false 로 fetch 안
+  //   한 직후 로그인해도 Next.js App Router partial rendering 에서 enabled 전환이 refetch
+  //   를 트리거하지 못하는 edge case 가 있었음. 추가로 서버 응답이 role 별로 다른데 key 에
+  //   role 이 없으면 다른 계정으로 재로그인 시 stale 데이터가 노출됨.
+  // userId 는 의도적으로 제외 — queryKey 는 DevTools / SSR dehydrate 에 노출될 수 있어
+  //   PII(이메일/로그인 ID) 를 직접 담지 않는다. API 응답이 role 단위 필터링이라 동일 role
+  //   회원 간 데이터 공유는 문제 없음.
+  const cacheScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "guest";
   const { data: notices = [] } = useQuery<HomeNoticeItem[]>({
-    queryKey: ["home-notices", "active"],
+    queryKey: ["home-notices", "active", cacheScope],
     queryFn: async () => {
       const res = await api.get<ActiveNoticesResponse>(
         "/home-notices/active",

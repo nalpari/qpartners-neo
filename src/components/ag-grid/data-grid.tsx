@@ -7,6 +7,7 @@ import {
   DragAndDropModule,
   ModuleRegistry,
   RenderApiModule,
+  RowApiModule,
   RowAutoHeightModule,
   RowStyleModule,
   themeQuartz,
@@ -19,6 +20,9 @@ import {
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
+// AG Grid v32+ 모듈 분리 정책:
+//   - `api.getRowNode()` 는 RowApiModule 에 포함 → codes/permissions 테이블의 더블클릭 수정
+//     플로우에서 필수. 누락 시 런타임 error #200 (moduleName=RowApi).
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
   CellStyleModule,
@@ -26,6 +30,7 @@ ModuleRegistry.registerModules([
   RowStyleModule,
   DragAndDropModule,
   RenderApiModule,
+  RowApiModule,
 ]);
 
 const customTheme = themeQuartz.withParams({

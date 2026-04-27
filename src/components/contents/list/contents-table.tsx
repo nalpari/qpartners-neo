@@ -69,7 +69,7 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
       <Link
         href={`/contents/${data.id}`}
         transitionTypes={["fade"]}
-        className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#555] whitespace-nowrap hover:underline"
+        className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] whitespace-nowrap underline cursor-pointer"
       >
         {data.title}
       </Link>

@@ -7,7 +7,7 @@ import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
@@ -33,7 +33,11 @@ export function TwoFactorAuthPopup() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { popupData, closePopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
   const inputRef = useRef<HTMLInputElement>(null);
+  // 최초 자동 송신과 수동 재전송 구분 — 수동 재전송 성공 시에만 "재전송됨" 알림을 띄운다.
+  // useMutation 의 onSuccess 는 발송 주체를 모르므로 플래그로 분리.
+  const isManualResendRef = useRef(false);
 
   // popupData 타입 가드 — undefined 방어
   const userId = typeof popupData.userId === "string" ? popupData.userId : "";
@@ -57,8 +61,17 @@ export function TwoFactorAuthPopup() {
     mutationFn: () => api.post("/auth/two-factor/send", { userTp, userId }),
     onSuccess: () => {
       startTimer();
+      // 수동 재전송에서 트리거된 경우에만 알림. 자동 첫 발송은 팝업 오픈 안내문으로 충분.
+      if (isManualResendRef.current) {
+        isManualResendRef.current = false;
+        openAlert({
+          type: "alert",
+          message: "認証番号が再送信されました。",
+        });
+      }
     },
     onError: (err) => {
+      isManualResendRef.current = false;
       console.error("[2FA] 送信失敗:", err);
       if (isAxiosError(err) && err.response?.status === 429) {
         setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
@@ -127,6 +140,8 @@ export function TwoFactorAuthPopup() {
     setCode("");
     setError(null);
     inputRef.current?.focus();
+    // 이 발송이 수동 재전송임을 플래그로 기록 → onSuccess 에서 알림 노출
+    isManualResendRef.current = true;
     sendMutation.mutate();
   };
 
@@ -238,7 +253,8 @@ export function TwoFactorAuthPopup() {
                 <button
                   type="button"
                   onClick={handleResend}
-                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0"
+                  disabled={sendMutation.isPending}
+                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0 transition-colors duration-150 hover:bg-[#101010] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   再送信
                 </button>

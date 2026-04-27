@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useCallback } from "react";
-import type { ColDef, ICellRendererParams, CellDoubleClickedEvent, CellClickedEvent, GridApi, GridReadyEvent } from "ag-grid-community";
+import type { ColDef, ICellRendererParams, CellClassParams, CellDoubleClickedEvent, CellClickedEvent, GridApi, GridReadyEvent } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
@@ -15,6 +15,22 @@ const centerCellStyle = {
   alignItems: "center" as const,
   justifyContent: "center" as const,
 };
+
+/**
+ * 편집 중(신규행 / editingField 일치) 셀의 수평 패딩을 축소해 input 이 컬럼 폭을 거의
+ * 가득 사용하되 셀 경계와 최소 여백(4px)을 유지하도록 한다. 테마 기본값
+ * `cellHorizontalPadding: 18` 은 좁은 컬럼에서 input 을 잘라 보이게 하고, 0 으로 밀면
+ * input 이 셀 경계에 다닥다닥 붙어 가독성이 떨어짐 — 4px 타협점.
+ */
+function makeEditableCellStyle(field: string) {
+  return (params: CellClassParams<DetailGridRow>) => {
+    const isEditing = params.data?.isNew || params.data?.editingField === field;
+    if (isEditing) {
+      return { ...centerCellStyle, paddingLeft: "4px", paddingRight: "4px" };
+    }
+    return centerCellStyle;
+  };
+}
 
 // AG Grid 의 셀 키보드 네비게이션이 input 타이핑(화살표/Home/End 등)을 가로채지 않도록
 // 편집 가능 컬럼에 적용. input/textarea 가 포커스된 상태에서는 모든 키를 input 이 처리.
@@ -64,7 +80,7 @@ function CellInput({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       placeholder={placeholder}
-      className="flex-1 min-w-0 h-[42px] px-4 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
+      className="w-full h-[34px] px-3 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
     />
   );
 }
@@ -179,14 +195,14 @@ export function CodesDetailTable({
 
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
-    { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("code"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("displayCode"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeName"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeNameEtc"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("sortOrder"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
   ], []);
 
@@ -237,7 +253,7 @@ export function CodesDetailTable({
         getRowId={(p) => p.data.id}
         context={gridContext}
         className="codes-detail-grid"
-        maxHeight={500}
+        maxHeight={350}
         loading={isLoading}
         onCellDoubleClicked={handleCellDoubleClicked}
         onCellClicked={handleCellClicked}

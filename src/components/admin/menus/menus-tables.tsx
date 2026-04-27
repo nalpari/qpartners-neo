@@ -36,7 +36,7 @@ function MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   return (
     <button
       type="button"
-      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
+      className="text-[#1060B4] underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
       onClick={() => ctx.onLevel1Click?.(data.id)}
     >
       {data.menuName}
@@ -51,7 +51,7 @@ function Level2MenuNameRenderer(params: ICellRendererParams<MenuItem>) {
   return (
     <button
       type="button"
-      className="text-[#1060B4] hover:underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
+      className="text-[#1060B4] underline cursor-pointer font-['Noto_Sans_JP'] text-[14px] text-left"
       onClick={() => ctx.onLevel2Click?.(data.id)}
     >
       {data.menuName}

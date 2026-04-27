@@ -6,7 +6,11 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 import { requireMenuPermission } from "@/lib/auth";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
-import { idParamSchema, updateCodeDetailSchema } from "@/lib/schemas/code";
+import {
+  idParamSchema,
+  updateCodeDetailSchema,
+  validateSecAuthValidityCode,
+} from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string; detailId: string }> };
 
@@ -53,6 +57,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: "更新する項目がありません" },
         { status: 400 },
       );
+    }
+
+    // SEC_AUTH_VALIDITY 헤더에 한해 1~90 정수 상하한 가드 (Boston 리뷰 HIGH #2).
+    // code 변경 요청이 있을 때만 헤더를 추가 조회하여 검증한다 (오버헤드 최소화).
+    if (result.data.code !== undefined) {
+      const header = await prisma.codeHeader.findUnique({
+        where: { id: parsedId.data },
+        select: { headerCode: true },
+      });
+      if (!header) {
+        return NextResponse.json(
+          { error: "ヘッダーコードが見つかりません" },
+          { status: 404 },
+        );
+      }
+      const validity = validateSecAuthValidityCode(header.headerCode, result.data.code);
+      if (!validity.ok) {
+        return NextResponse.json({ error: validity.message }, { status: 400 });
+      }
     }
 
     const detail = await prisma.codeDetail.update({
