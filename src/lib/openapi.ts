@@ -768,7 +768,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "이메일 중복 체크",
-        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인. PII 보호를 위해 POST 사용.",
+        description:
+          "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
         requestBody: {
           required: true,
           content: {
