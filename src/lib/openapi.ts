@@ -194,7 +194,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "자동로그인 암호화 URL 생성 (outbound)",
         description:
-          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. 3사 모두 QSP `autoLoginEncryptData` API 로부터 동일한 16B cipher 를 받아, Q.Partners 가 target 별 고유 도메인의 `?autoLoginParam1=` 에 부착하여 반환. QSP 응답의 `data.url` 은 HANASYS 한정 힌트로 사용하지 않음. 반환 URL 예시: hanasys=`https://dev.hanasys.jp/login?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
+          "로그인 사용자의 userId를 암호화하여 대상 시스템(HANASYS DESIGN / Q.Order / Q.Musubi)의 자동로그인 이동 URL을 반환. 인증 필수. Q.Partners 가 직접 KST 일자 기반 시간 제한 cipher 를 발급. 3사 동일 사양 — 동일 사용자라면 3사 cipher 일치. Q.Partners 가 target 별 고유 도메인의 `?autoLoginParam1=` 에 부착하여 반환. 반환 URL 예시: hanasys=`https://dev.hanasys.jp/login?autoLoginParam1=...`, qOrder=`https://q-order-dev.q-cells.jp/eos/login/autoLogin?autoLoginParam1=...`, qMusubi=`https://q-musubi-dev.q-cells.jp/qm/login/autoLogin?autoLoginParam1=...`.",
         requestBody: {
           required: true,
           content: {
@@ -282,78 +282,24 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("認証が必要です"),
-          "500": errorResponse("暗号化処理エラー"),
-          "502": {
+          "500": {
             description:
-              "外部暗号化サーバー関連エラー (QSP autoLoginEncryptData). `code` で原因区分 (코드별 실제 응답 메시지는 examples 참조):\n" +
-              "- `UPSTREAM_TIMEOUT`: 暗号化サーバーに接続できません\n" +
-              "- `UPSTREAM_HTTP_ERROR`: 暗号化サーバーエラーが発生しました\n" +
-              "- `UPSTREAM_RESPONSE_PARSE_FAIL`: 暗号化サーバーの応答を処理できません\n" +
-              "- `UPSTREAM_SCHEMA_MISMATCH`: 暗号化サーバーの応答形式が正しくありません\n" +
-              "- `UPSTREAM_RESULT_FAIL`: 暗号化サーバーの応答に失敗しました\n" +
-              "- `UPSTREAM_ASSEMBLY_FAIL`: リダイレクトURLの生成に失敗しました",
+              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類.",
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  required: ["error", "code"],
-                  properties: {
-                    error: { type: "string" },
-                    code: {
-                      type: "string",
-                      enum: [
-                        "UPSTREAM_TIMEOUT",
-                        "UPSTREAM_HTTP_ERROR",
-                        "UPSTREAM_RESPONSE_PARSE_FAIL",
-                        "UPSTREAM_SCHEMA_MISMATCH",
-                        "UPSTREAM_RESULT_FAIL",
-                        "UPSTREAM_ASSEMBLY_FAIL",
-                      ],
-                    },
-                  },
-                },
+                schema: { $ref: "#/components/schemas/ErrorResponse" },
                 examples: {
-                  timeout: {
-                    summary: "QSP 接続失敗 / タイムアウト",
-                    value: {
-                      error: "暗号化サーバーに接続できません",
-                      code: "UPSTREAM_TIMEOUT",
-                    },
-                  },
-                  httpError: {
-                    summary: "QSP HTTP non-2xx 응답",
-                    value: {
-                      error: "暗号化サーバーエラーが発生しました",
-                      code: "UPSTREAM_HTTP_ERROR",
-                    },
-                  },
-                  responseParseFail: {
-                    summary: "QSP 응답 JSON 파싱 실패",
-                    value: {
-                      error: "暗号化サーバーの応答を処理できません",
-                      code: "UPSTREAM_RESPONSE_PARSE_FAIL",
-                    },
-                  },
-                  schemaMismatch: {
-                    summary: "QSP 응답 스키마 불일치",
-                    value: {
-                      error: "暗号化サーバーの応答形式が正しくありません",
-                      code: "UPSTREAM_SCHEMA_MISMATCH",
-                    },
-                  },
-                  resultFail: {
-                    summary: "QSP resultCode != 200",
-                    value: {
-                      error: "暗号化サーバーの応答に失敗しました",
-                      code: "UPSTREAM_RESULT_FAIL",
-                    },
+                  configError: {
+                    summary: "暗号化設定エラー",
+                    value: { error: "サーバー設定エラーが発生しました" },
                   },
                   assemblyFail: {
                     summary: "redirect URL 조립 실패",
-                    value: {
-                      error: "リダイレクトURLの生成に失敗しました",
-                      code: "UPSTREAM_ASSEMBLY_FAIL",
-                    },
+                    value: { error: "リダイレクトURLの生成に失敗しました" },
+                  },
+                  unexpected: {
+                    summary: "예상치 못한 에러",
+                    value: { error: "サーバーエラーが発生しました" },
                   },
                 },
               },
