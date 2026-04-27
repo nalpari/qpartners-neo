@@ -122,30 +122,25 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    화면설계서 정책 (※ 정확한 섹션 번호는 설계서 확정 후 보강 필요 — TODO):
-  //      - 2FA 대상: 관리자 설정 `secAuthYn=Y` 회원
-  //      - 비대상: pwdInitYn="Y" (초기 비밀번호 상태, p.14 스펙)
-  //      - 유예: 가입일(regDt) + SEC_AUTH_VALIDITY > 현재 → 신규가입 유예기간 (팝업 미노출)
-  //      - 유예 경과 후: secAuthDt 없거나 + validityDays < 현재 → 필요
-  //      - 유예 경과 후: secAuthDt + validityDays > 현재 → 불필요 (최근 인증됨)
+  //    정책 (신규가입 유예 폐지, secAuthDt 단일 기준):
+  //      - 2FA 대상: 관리자 설정 secAuthYn !== "N" (Y/null/undefined 모두 대상)
+  //      - 비대상: pwdInitYn === "Y" (초기 비밀번호 상태, p.14 스펙) → 우선
+  //      - 면제: secAuthYn === "N" (관리자 명시 해제)
+  //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
+  //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
+  //                   secAuthDt 없음 → 필요 (한 번도 2FA 안 함)
   //
-  //    [공용 코드 정책 — Boston 리뷰 HIGH #2 대응]
-  //      현재 화면설계서가 "신규가입 유예기간" 과 "secAuthDt 재인증 주기" 양쪽을
-  //      단일 공통코드 SEC_AUTH_VALIDITY 로 운용하도록 정의하고 있어 본 핸들러도
-  //      `validityDays` 하나로 (A)/(B) 분기를 함께 결정한다.
-  //      이로 인한 "9999일 입력 시 2FA 사실상 무력화" 위험은 코드관리 등록/수정
-  //      API(POST/PUT /api/codes/:id/details*) 에서 SEC_AUTH_VALIDITY 헤더에 한해
-  //      값 범위를 1~90 정수로 강제하는 가드로 차단한다 (validateSecAuthValidityCode).
-  //      장기적으로는 SEC_AUTH_GRACE_PERIOD / SEC_AUTH_VALIDITY 로 분리하여 두 정책을
-  //      독립 관리하도록 개선할 것 (다음 스프린트 검토 항목).
+  //    [공용 코드 정책]
+  //      `SEC_AUTH_VALIDITY` 는 secAuthDt 재인증 주기 단일 용도로 사용한다.
+  //      관리자 "코드관리" 화면에서 여러 개 활성(isActive=Y)이면 sortOrder 오름차순
+  //      최상위 1건을 채택. 등록/수정 단계에서 1~90 정수 상한 가드
+  //      (validateSecAuthValidityCode)가 적용되므로 이 시점에 도달하는 값은 정상 범위.
+  //      그래도 런타임 fail-closed 는 유지한다.
   let requireTwoFactor = false;
   // 진단 메타 — dev 환경 응답 노출 + 운영 로그 두 곳에서 동일 사유 표기.
-  // 분기 안에 있던 진단 로그를 밖으로 끌어내, 어떤 단계에서 면제/요구가 결정됐는지
-  // 모든 회원 케이스에서 추적 가능하게 한다 (운영 디버깅 핵심).
   type TwoFactorReason =
     | "DISABLED_BY_ADMIN"
     | "PWD_INIT_PRIORITY"
-    | "REG_GRACE_PERIOD"
     | "FIRST_TIME_REQUIRED"
     | "EXPIRED_REQUIRED"
     | "WITHIN_VALIDITY"
@@ -154,17 +149,10 @@ export async function POST(request: NextRequest) {
 
   // 사양: "2단계 인증 대상 = 회원관리 데이터 중 2단계 인증 해제가 체크되지 않은 회원"
   // → secAuthYn === "N" (해제 명시) 만 면제, "Y"/null/undefined 모두 대상.
-  // QSP 가 GENERAL 회원 등에게 secAuthYn=null 을 내려보내는 케이스도 있어,
-  // null 을 비대상으로 흘려보내면 사양과 어긋난다 (Boston 리뷰 HIGH).
   if (qsp.data.pwdInitYn === "Y") {
     twoFactorReason = "PWD_INIT_PRIORITY";
   } else if (qsp.data.secAuthYn !== "N") {
     // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
-    // 관리자 "코드관리" 화면에서 10/20/30일 등 여러 개 활성(isActive=Y) 상태로 등록되어도
-    // `sortOrder` 오름차순 최상위(Sort Order = 1) 1건을 채택한다 — 동일 값("가입 후 유예기간"
-    // 과 "secAuthDt 재인증 주기") 에 공용으로 적용.
-    // ※ 등록/수정 단계에서 1~90 정수 상한 가드(validateSecAuthValidityCode)가 적용되므로
-    //   이 시점에 도달하는 값은 정상 범위. 그래도 런타임 fail-closed 는 유지한다.
     let validityDays: number | null = null;
     try {
       const activeCode = await prisma.codeDetail.findFirst({
@@ -197,74 +185,34 @@ export async function POST(request: NextRequest) {
       const now = Date.now();
       const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-      // (A) 가입일 유예 체크 — regDt + validityDays > now 면 신규가입 유예기간
-      //    regDt 미제공(QSP 로그인 응답에 누락)이면 유예 스킵하고 (B) 로 폴백.
-      //    regDt 가 현재보다 **미래 (+1일 이상)** 이면 QSP 측 시간 이상/조작 가능성 →
-      //    fail-closed 로 유예 스킵 (2FA 무기한 우회 방지 — Boston 리뷰 HIGH).
-      const MAX_REG_DT_SKEW_MS = 24 * 60 * 60 * 1000; // NTP 드리프트 허용치 1일
-      let inRegGracePeriod = false;
-      if (qsp.data.regDt) {
-        const regIso = parseQspDate(qsp.data.regDt); // "YYYY-MM-DDTHH:mm:ss+09:00"
-        if (regIso) {
-          const regMs = new Date(regIso).getTime();
-          if (!Number.isNaN(regMs)) {
-            if (regMs > now + MAX_REG_DT_SKEW_MS) {
-              console.warn(
-                "[POST /api/auth/login] regDt 미래 날짜 감지 — 유예 스킵",
-                { userTp: qsp.data.userTp, userId: maskEmail(qsp.data.userId) },
-              );
-            } else {
-              inRegGracePeriod = now < regMs + validityDays * MS_PER_DAY;
-            }
-          } else {
-            console.warn("[POST /api/auth/login] regDt 파싱 불가 — 유예 스킵");
-          }
-        }
-      }
-
-      if (inRegGracePeriod) {
-        // 신규가입 유예기간 — 2FA 팝업 노출 안 함.
-        // 보안 모니터링: 면제 발생을 warn 으로 격상해 집계/알람에서 추적 가능하게 한다.
-        console.warn(
-          "[POST /api/auth/login] 2FA 면제(신규가입 유예)",
-          {
-            userTp: qsp.data.userTp,
-            userId: maskEmail(qsp.data.userId),
-            validityDays,
-          },
-        );
-        requireTwoFactor = false;
-        twoFactorReason = "REG_GRACE_PERIOD";
+      // secAuthDt 단일 기준 — 신규가입 유예 폐지.
+      const secAuthDt = qsp.data.secAuthDt;
+      if (!secAuthDt) {
+        // 한 번도 2FA 안 함 → 필요
+        requireTwoFactor = true;
+        twoFactorReason = "FIRST_TIME_REQUIRED";
       } else {
-        // (B) 유예 경과 — secAuthDt 기반 재인증 주기 판정
-        const secAuthDt = qsp.data.secAuthDt;
-        if (!secAuthDt) {
-          // 유예 지났는데 한 번도 2FA 안 함 → 필요 (201T01 케이스)
+        const authIso = parseQspDate(secAuthDt);
+        if (!authIso) {
+          // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
+          console.error(
+            "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
+            secAuthDt.length,
+          );
           requireTwoFactor = true;
-          twoFactorReason = "FIRST_TIME_REQUIRED";
+          twoFactorReason = "FAIL_CLOSED";
         } else {
-          const authIso = parseQspDate(secAuthDt);
-          if (!authIso) {
-            // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
+          const authMs = new Date(authIso).getTime();
+          if (Number.isNaN(authMs)) {
             console.error(
-              "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
+              "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
               secAuthDt.length,
             );
             requireTwoFactor = true;
             twoFactorReason = "FAIL_CLOSED";
           } else {
-            const authMs = new Date(authIso).getTime();
-            if (Number.isNaN(authMs)) {
-              console.error(
-                "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
-                secAuthDt.length,
-              );
-              requireTwoFactor = true;
-              twoFactorReason = "FAIL_CLOSED";
-            } else {
-              requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
-              twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
-            }
+            requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
+            twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
           }
         }
       }
@@ -278,7 +226,6 @@ export async function POST(request: NextRequest) {
     userId: maskEmail(qsp.data.userId),
     secAuthYn: qsp.data.secAuthYn,
     pwdInitYn: qsp.data.pwdInitYn,
-    hasRegDt: !!qsp.data.regDt,
     hasSecAuthDt: !!qsp.data.secAuthDt,
     requireTwoFactor,
     twoFactorReason,
