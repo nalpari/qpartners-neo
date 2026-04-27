@@ -768,7 +768,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "이메일 중복 체크",
-        description: "QSP /user/detail I/F를 활용하여 이메일 사용 가능 여부 확인. PII 보호를 위해 POST 사용.",
+        description:
+          "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
         requestBody: {
           required: true,
           content: {
@@ -805,6 +807,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("유효한 이메일 주소를 입력해주세요"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
+          "429": errorResponse("요청 횟수 초과"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
