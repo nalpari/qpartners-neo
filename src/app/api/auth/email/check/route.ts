@@ -92,6 +92,13 @@ async function lookupQspUser(
     return { kind: "transport-error", httpStatus: 0 };
   }
 
+  // race winner 가 abort 시킨 후에도 패배 lookup 의 응답 본문 읽기는 abort 전파 없이
+  // 진행되어 schema-error / transport-error 분기를 noise 로 트리거할 수 있다.
+  // 응답 본문 처리 직전·직후 abort 상태를 확인해 fast-path 결과로 폴딩.
+  if (externalSignal.aborted) {
+    return { kind: "aborted" };
+  }
+
   if (!qspResponse.ok) {
     console.error(
       `${LOG} QSP 비정상 응답 (lookup#${lookupId}):`,
@@ -104,6 +111,9 @@ async function lookupQspUser(
   try {
     qspBody = await qspResponse.json();
   } catch (parseError) {
+    if (externalSignal.aborted) {
+      return { kind: "aborted" };
+    }
     console.warn(
       `${LOG} QSP 응답 JSON 파싱 실패 (lookup#${lookupId}):`,
       parseError,
@@ -113,6 +123,9 @@ async function lookupQspUser(
 
   const parsed = qspResponseSchema.safeParse(qspBody);
   if (!parsed.success) {
+    if (externalSignal.aborted) {
+      return { kind: "aborted" };
+    }
     console.error(`${LOG} QSP 응답 스키마 불일치 (lookup#${lookupId})`);
     return { kind: "schema-error" };
   }
@@ -150,7 +163,22 @@ async function lookupQspUser(
 }
 
 function isDecisive(outcome: LookupOutcome): boolean {
-  return outcome.kind === "found" || outcome.kind === "ambiguous";
+  // Exhaustive switch — LookupOutcome 에 신규 kind 추가 시 컴파일 단계에서 catch.
+  switch (outcome.kind) {
+    case "found":
+    case "ambiguous":
+      return true;
+    case "not-found":
+    case "transport-error":
+    case "schema-error":
+    case "business-error":
+    case "aborted":
+      return false;
+    default: {
+      const _exhaustive: never = outcome;
+      return _exhaustive;
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -242,21 +270,11 @@ export async function POST(request: NextRequest) {
     //   다른 쪽이 hang 일 경우 timeout(10s) 까지 대기. race 효과는 결정적 결과 때만.
     //   둘 다 결과를 봐야 안전한 판정이 가능하므로 의도된 trade-off.
     const ac = new AbortController();
-    const p1: Promise<{ id: 1; outcome: LookupOutcome }> = lookupQspUser(
-      normalizedEmail,
-      "loginId",
-      1,
-      ac.signal,
-    ).then((outcome) => ({ id: 1, outcome }));
-    const p2: Promise<{ id: 2; outcome: LookupOutcome }> = lookupQspUser(
-      normalizedEmail,
-      "email",
-      2,
-      ac.signal,
-    ).then((outcome) => ({ id: 2, outcome }));
+    const p1 = lookupQspUser(normalizedEmail, "loginId", 1, ac.signal);
+    const p2 = lookupQspUser(normalizedEmail, "email", 2, ac.signal);
 
     const first = await Promise.race([p1, p2]);
-    if (isDecisive(first.outcome)) {
+    if (isDecisive(first)) {
       ac.abort();
       return NextResponse.json(
         { error: "すでに使用されているメールアドレスです" },
@@ -264,8 +282,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const settled = await Promise.all([p1, p2]);
-    const [byLoginId, byEmail] = [settled[0].outcome, settled[1].outcome];
+    const [byLoginId, byEmail] = await Promise.all([p1, p2]);
 
     if (isDecisive(byLoginId) || isDecisive(byEmail)) {
       return NextResponse.json(

@@ -11,7 +11,19 @@ import { Spinner } from "@/components/common/spinner";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 
-const EMAIL_CHECK_MESSAGES: Record<string, string> = {
+type EmailCheckStatus =
+  | "idle"
+  | "ok"
+  | "duplicate"
+  | "invalid"
+  | "error"
+  | "rate-limited";
+
+// idle 은 메시지 표시 대상이 아니므로 제외 (Exclude<EmailCheckStatus, "idle">).
+const EMAIL_CHECK_MESSAGES: Record<
+  Exclude<EmailCheckStatus, "idle">,
+  string
+> = {
   ok: "利用可能な電子メールです",
   duplicate: "既に使用中の電子メールです",
   invalid: "正しくない電子メールアドレスです",
@@ -48,9 +60,8 @@ export function SignupContents() {
   });
 
   // UI 상태
-  const [emailCheckStatus, setEmailCheckStatus] = useState<
-    "idle" | "ok" | "duplicate" | "invalid" | "error" | "rate-limited"
-  >("idle");
+  const [emailCheckStatus, setEmailCheckStatus] =
+    useState<EmailCheckStatus>("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [isEmailChecking, setIsEmailChecking] = useState(false);
@@ -108,15 +119,22 @@ export function SignupContents() {
 
   // Design Ref: §5.1.5 — 이메일 중복체크 API 연동
   const handleEmailCheck = async () => {
+    // 서버(/auth/email/check, /auth/signup) 는 trim+lowercase 정규화된 값으로 처리한다.
+    // 프론트도 동일 baseline 을 form 에 반영해 사용자가 보는 값과 서버 저장값이 일치하게 한다.
+    const normalizedEmail = form.email.trim().toLowerCase();
+    if (normalizedEmail !== form.email) {
+      setForm((prev) => ({ ...prev, email: normalizedEmail }));
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       setEmailCheckStatus("invalid");
       return;
     }
 
     setIsEmailChecking(true);
     try {
-      await api.post("/auth/email/check", { email: form.email });
+      await api.post("/auth/email/check", { email: normalizedEmail });
       setEmailCheckStatus("ok");
     } catch (error) {
       console.error("[Signup] 이메일 중복체크 실패:", error);
@@ -153,7 +171,7 @@ export function SignupContents() {
       const res = await api.post<{ data: { userName: string; email: string } }>(
         "/auth/signup",
         {
-          email: form.email,
+          email: form.email.trim().toLowerCase(),
           pwd: form.password,
           confirmPwd: form.passwordConfirm,
           user1stNm: form.firstName,
@@ -373,7 +391,7 @@ export function SignupContents() {
                   <button
                     type="button"
                     onClick={() => { void handleEmailCheck(); }}
-                    disabled={isEmailChecking}
+                    disabled={isEmailChecking || emailCheckStatus === "rate-limited"}
                     className="flex items-center justify-center h-[42px] w-full lg:w-[110px] shrink-0 bg-[#ECF4F9] border border-[#C0DFF4] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] text-[#0E78C3] leading-[1.5] cursor-pointer disabled:opacity-50"
                   >
                     {isEmailChecking ? "確認中..." : "重複チェック"}

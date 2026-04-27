@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   const {
-    email,
+    email: rawEmail,
     pwd,
     user1stNm,
     user2ndNm,
@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
     pstnNm,
     newsRcptYn,
   } = result.data;
+
+  // /auth/email/check 는 정규화된 키(trim+lowercase)로 QSP 조회한다.
+  // 본 핸들러도 동일 baseline 으로 정규화해 두 라우트 결과 불일치(대소문자 변형 중복회원)를 차단.
+  const email = rawEmail.trim().toLowerCase();
 
   // 2. QSP newUserReq I/F 호출
   let qspResponse: Response;
