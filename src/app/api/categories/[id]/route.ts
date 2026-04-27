@@ -143,6 +143,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
 }
 
 // DELETE /api/categories/:id — 카테고리 삭제 (물리 삭제, ADM_CATEGORY.delete 매트릭스 기반)
+//
+// 정책 (2026-04-27 변경):
+//   - 하위 카테고리가 존재해도 삭제 허용 → 자손 카테고리 전체 cascade 삭제.
+//   - Prisma 스키마의 self-relation `onDelete: Cascade` 로 DB 엔진이 자손 트리 자동 정리.
+//   - 각 카테고리의 ContentCategory 링크도 기존 cascade 정책으로 함께 정리(콘텐츠 본체 보존).
+//
+// 감사 로그: 삭제 전에 자손 카테고리 ID 와 ContentCategory 링크를 선조회해 cascade 결과를
+// 명시적으로 기록 (DB 엔진의 silent cascade 가 운영 추적에서 보이지 않게 되는 문제 방지).
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_CATEGORY", "delete");
@@ -154,56 +162,68 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 하위 카테고리 존재 여부만 확인 후 삭제. 콘텐츠 연결(ContentCategory)은
-    // Prisma 스키마의 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체는 영향 없음, 링크만 제거).
-    // isolationLevel: Serializable — count 체크와 delete 사이에 다른 세션이 child 를 추가하는
-    // TOCTOU race 차단 (PUT 핸들러와 동일 기준).
+    // isolationLevel: Serializable — 자손 카테고리 카운트와 delete 사이에 다른 세션이
+    // child 를 추가/이동하는 TOCTOU race 차단 (PUT 핸들러와 동일 기준).
     const deleted = await prisma.$transaction(
       async (tx) => {
-        const childExists = await tx.category.findFirst({
-          where: { parentId: parsed.data },
-          select: { id: true },
-        });
-
-        if (childExists) {
-          throw new Error("HAS_CHILDREN");
+        // 1. 자손 카테고리 ID 수집 (BFS, 트리 깊이만큼 쿼리 발생).
+        //    재귀 CTE 대신 iterative — Prisma 표준 API 만으로 구현, 가독성 우선.
+        //    트리 깊이가 매우 큰 경우 raw SQL CTE 로 1쿼리 전환 검토.
+        const descendantIds: number[] = [];
+        let frontier: number[] = [parsed.data];
+        while (frontier.length > 0) {
+          const children = await tx.category.findMany({
+            where: { parentId: { in: frontier } },
+            select: { id: true },
+          });
+          if (children.length === 0) break;
+          const childIds = children.map((c) => c.id);
+          descendantIds.push(...childIds);
+          frontier = childIds;
         }
 
-        // Cascade 로 해제될 ContentCategory 링크 선조회 — 감사 로그·응답에 카운트 포함.
-        // 실제 cascade 삭제는 category.delete() 호출 시 DB 엔진이 처리.
+        // 2. cascade 로 정리될 ContentCategory 링크 선조회 (감사 로그용).
+        //    root + 자손 모두 포함. 실제 삭제는 DB cascade 가 처리.
+        const affectedCategoryIds = [parsed.data, ...descendantIds];
         const affectedLinks = await tx.contentCategory.findMany({
-          where: { categoryId: parsed.data },
-          select: { contentId: true },
+          where: { categoryId: { in: affectedCategoryIds } },
+          select: { contentId: true, categoryId: true },
         });
 
+        // 3. root 삭제 → DB 엔진이 자손 카테고리 + 모든 ContentCategory 링크 cascade 삭제.
         await tx.category.delete({ where: { id: parsed.data } });
-        return { id: parsed.data, cascadedContentIds: affectedLinks.map((l) => l.contentId) };
+
+        return {
+          id: parsed.data,
+          cascadedCategoryIds: descendantIds,
+          cascadedContentLinks: affectedLinks,
+        };
       },
       { isolationLevel: "Serializable" },
     );
 
     // 구조적 감사 로그 — PII 없음(ID만). 운영 복구/추적용.
-    if (deleted.cascadedContentIds.length > 0) {
+    // cascade 가 발생한 경우(자손 카테고리 또는 ContentCategory 링크가 있는 경우)에만 출력.
+    if (
+      deleted.cascadedCategoryIds.length > 0 ||
+      deleted.cascadedContentLinks.length > 0
+    ) {
       console.info("[DELETE /api/categories/:id] cascade removed", {
         categoryId: deleted.id,
-        cascadedContentCount: deleted.cascadedContentIds.length,
-        cascadedContentIds: deleted.cascadedContentIds,
+        cascadedCategoryCount: deleted.cascadedCategoryIds.length,
+        cascadedCategoryIds: deleted.cascadedCategoryIds,
+        cascadedContentLinkCount: deleted.cascadedContentLinks.length,
       });
     }
 
     return NextResponse.json({
       data: {
         id: deleted.id,
-        cascadedContentCount: deleted.cascadedContentIds.length,
+        cascadedCategoryCount: deleted.cascadedCategoryIds.length,
+        cascadedContentCount: deleted.cascadedContentLinks.length,
       },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "HAS_CHILDREN") {
-      return NextResponse.json(
-        { error: "하위 카테고리가 존재하여 삭제할 수 없습니다" },
-        { status: 400 },
-      );
-    }
     if (
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2025"

@@ -8,7 +8,7 @@ import { Spinner } from "@/components/common";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
 import type { CategoryFormState } from "./categories-types";
-import { findCategoryById } from "./categories-types";
+import { findCategoryById, countDescendants } from "./categories-types";
 import { useCategoryQuery } from "./use-category-query";
 import { useCategoryMutations } from "./use-category-mutations";
 
@@ -125,14 +125,22 @@ export function CategoriesContents() {
   };
 
   // Plan SC: SC-06 — 삭제
-  // 연결된 콘텐츠 링크(ContentCategory)는 Cascade 로 자동 해제됨을 사용자에게 고지.
-  // 콘텐츠 본체는 보존되며 카테고리 매핑만 해제됨.
+  // 자손 카테고리가 있으면 모두 함께 삭제(Cascade) — 운영자가 영향 범위를 인지하도록 카운트 표시.
+  // 콘텐츠 링크(ContentCategory)도 자동 해제(콘텐츠 본체 보존).
   const handleDelete = () => {
     if (selectedId === null) return;
+    const node = findCategoryById(treeData, selectedId);
+    const descendantCount = node ? countDescendants(node) : 0;
+    const messageLines = [
+      descendantCount > 0
+        ? `下位カテゴリー${descendantCount}件もすべて削除されます。`
+        : null,
+      "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。",
+      "削除してもよろしいですか？",
+    ].filter((line): line is string => line !== null);
     openAlert({
       type: "confirm",
-      message:
-        "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。\n削除してもよろしいですか？",
+      message: messageLines.join("\n"),
       onConfirm: () => deleteMutation.mutate(selectedId),
     });
   };

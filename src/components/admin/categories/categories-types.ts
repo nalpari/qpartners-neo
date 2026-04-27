@@ -113,3 +113,14 @@ export function findCategoryById(tree: CategoryNode[], id: number): CategoryNode
   }
   return null;
 }
+
+/** 노드의 모든 자손 카테고리 개수를 재귀로 카운트 (노드 자신은 제외).
+ *  API 응답에서 leaf 노드는 children 필드가 누락(undefined)될 수 있어 방어 처리. */
+export function countDescendants(node: CategoryNode): number {
+  const children = node.children ?? [];
+  if (children.length === 0) return 0;
+  return children.reduce(
+    (sum, child) => sum + 1 + countDescendants(child),
+    0,
+  );
+}
