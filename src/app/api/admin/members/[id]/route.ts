@@ -14,6 +14,7 @@ import {
   STATUS_TO_STAT_CD,
   lookupStatCd,
   lookupUserTypeLabel,
+  normalizeAuthCdToUserRole,
 } from "@/lib/schemas/member";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -122,7 +123,7 @@ function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
     lastNameKana: d.user2ndNmKana ?? "",
     email: d.email ?? "",
     userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
-    userRole: d.authCd ?? "",
+    userRole: normalizeAuthCdToUserRole(d.authCd),
     companyName: d.compNm ?? "",
     companyNameKana: d.compNmKana ?? "",
     zipcode: d.compPostCd ?? "",

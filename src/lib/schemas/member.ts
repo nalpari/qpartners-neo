@@ -125,6 +125,28 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
   return USER_TP_TO_DEFAULT_AUTH_CD[userTp] ?? null;
 }
 
+// ─── authCd → userRole 정규화 ───
+
+/**
+ * QSP authCd 를 프론트 userRole enum 으로 정규화.
+ *
+ * QSP 는 신규 일반회원 가입 시 `authCd: "NORMAL"` 을 발급(signup 라우트에서 명시 전송)하지만,
+ * 프론트 `ROLE_OPTIONS_GENERAL` enum 은 "GENERAL" 을 사용한다. 매핑 없이 "NORMAL" 을 그대로
+ * 내려보내면 회원 상세 팝업에서 SelectBox 옵션과 불일치 → TextValue fallback → 권한 수정 불가.
+ *
+ * 매핑 정책:
+ *   - "NORMAL" → "GENERAL" (QSP 일반회원 기본값 정규화)
+ *   - 그 외 값(ADMIN, 1ST_STORE, 2ND_STORE, SEKO 등) 은 그대로 통과
+ *   - null/undefined/"" → "" (기존 동작 유지 — 정보 없음)
+ */
+export function normalizeAuthCdToUserRole(
+  authCd: string | null | undefined,
+): string {
+  if (!authCd) return "";
+  if (authCd === "NORMAL") return "GENERAL";
+  return authCd;
+}
+
 // ─── 회원 수정 요청 ───
 
 /** 관리자가 일반회원에게 부여 가능한 권한 코드.

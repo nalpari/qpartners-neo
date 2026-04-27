@@ -196,21 +196,18 @@ export function MemberDetailPopup() {
       // 목록은 상태 뱃지/정렬 반영 위해 invalidate 유지
       await queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
       if (result.member) {
-        // 서버가 member 스냅샷을 준 경우 캐시 직접 갱신 —
-        // Delete 전환 시 QSP F_NOT_USER 재조회로 필드가 비어버리는 문제 방지.
+        // 서버가 member 스냅샷을 준 경우 즉시 캐시 갱신 (UI 깜빡임 없는 즉시 반영).
+        // 단, 스냅샷의 updatedAt 등 일부 필드가 백엔드 PUT 응답 시점에 stale 일 가능성이 있어
+        // 아래 invalidate 로 GET 재조회까지 보장한다.
         queryClient.setQueryData(
           ["admin", "member", userId, userTp],
           result.member,
         );
-      } else {
-        // snapshot 미반환(preDetail null 복구 경로 / userRolePostCheckFailed 로 서버가
-        // 의도적으로 snapshot drop 한 경로 포함) — invalidateQueries 로 강제 재조회한다.
-        // 서버의 "사후 검증 불가 → 강제 재조회" 의도와 프론트 캐시 정책을 일치시켜,
-        // stale userRole 이 캐시에 남아 운영자가 "반영 안 됨" 으로 오인하는 상황을 방지.
-        // F_NOT_USER 응답은 백엔드가 notFoundInQsp=true 로 내려주고, 프론트는 listItem
-        // fallback 으로 기본 필드를 채우므로 공백 화면이 재발하지 않는다.
-        await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       }
+      // 항상 invalidate 로 GET 강제 재조회 — 백엔드 PUT 응답의 updatedAt 등 stale 필드 방어.
+      // F_NOT_USER 응답은 백엔드가 notFoundInQsp=true 로 내려주고, 프론트는 listItem
+      // fallback 으로 기본 필드를 채우므로 Delete 전환 시 공백 화면 재발 없음.
+      await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       // TOCTOU 사후 검증 실패/불일치 경고만 노출 (userRole 변경 경로에서만 발생).
       // 경고 발생 시 운영자가 목록에서 재확인하도록 안내 문구 부가.
       const warningMsg = result.warning;
