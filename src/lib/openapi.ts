@@ -2367,8 +2367,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       delete: {
         tags: ["Category"],
-        summary: "카테고리 삭제 (물리 삭제)",
-        description: "하위 카테고리가 있으면 삭제 불가. 연결된 콘텐츠(ContentCategory)는 onDelete: Cascade 로 자동 정리됨 (콘텐츠 본체 영향 없음).",
+        summary: "카테고리 삭제 (물리 삭제, 자손 cascade)",
+        description:
+          "하위 카테고리가 있어도 자손 트리 전체가 cascade 로 함께 삭제됩니다(Prisma self-relation onDelete: Cascade). 연결된 ContentCategory 링크는 자동 정리되며 콘텐츠 본체는 보존됩니다. 삭제 영향 범위가 매우 큰 경우(MAX_DESCENDANTS=10000 초과) 422 로 거부됩니다.",
         parameters: [
           {
             name: "id",
@@ -2389,6 +2390,16 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         id: { type: "integer", example: 1 },
+                        cascadedCategoryCount: {
+                          type: "integer",
+                          description: "함께 삭제된 자손 카테고리 수",
+                          example: 0,
+                        },
+                        cascadedContentCount: {
+                          type: "integer",
+                          description: "자동 해제된 ContentCategory 링크 수",
+                          example: 0,
+                        },
                       },
                     },
                   },
@@ -2396,8 +2407,52 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("하위 카테고리 존재"),
+          "400": errorResponse("Invalid ID"),
           "404": errorResponse("Not found"),
+          "422": errorResponse("Too many descendants to delete in a single request"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/categories/{id}/cascade-preview": {
+      get: {
+        tags: ["Category"],
+        summary: "카테고리 삭제 영향 범위 미리보기",
+        description:
+          "삭제 전 운영자에게 영향 범위를 안내하기 위한 read-only API. 자손 카테고리 수와 영향받을 ContentCategory 링크 수를 사전 집계합니다. ADM_CATEGORY.delete 권한 필요.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer", example: 1 },
+                        descendantCount: { type: "integer", example: 0 },
+                        contentLinkCount: { type: "integer", example: 0 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "404": errorResponse("Not found"),
+          "422": errorResponse("Too many descendants to preview"),
           "500": errorResponse("서버 에러"),
         },
       },

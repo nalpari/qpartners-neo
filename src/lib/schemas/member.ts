@@ -127,6 +127,17 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
 
 // ─── authCd → userRole 정규화 ───
 
+/** 알려진(매핑/통과 정책 합의된) authCd 집합. 새 값 발견 시 운영 가시성 확보를 위해 warn. */
+const KNOWN_AUTH_CD_VALUES = new Set([
+  "NORMAL",
+  "ADMIN",
+  "SUPER_ADMIN",
+  "1ST_STORE",
+  "2ND_STORE",
+  "GENERAL",
+  "SEKO",
+]);
+
 /**
  * QSP authCd 를 프론트 userRole enum 으로 정규화.
  *
@@ -138,12 +149,21 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
  *   - "NORMAL" → "GENERAL" (QSP 일반회원 기본값 정규화)
  *   - 그 외 값(ADMIN, 1ST_STORE, 2ND_STORE, SEKO 등) 은 그대로 통과
  *   - null/undefined/"" → "" (기존 동작 유지 — 정보 없음)
+ *
+ * KNOWN_AUTH_CD_VALUES 에 없는 값이 들어오면 console.warn — QSP 가 새 권한 코드를 추가했을 때
+ * 운영자가 즉시 인지하고 매핑 정책을 갱신할 수 있도록 가시성 확보 (silent passthrough 방지).
  */
 export function normalizeAuthCdToUserRole(
   authCd: string | null | undefined,
 ): string {
   if (!authCd) return "";
   if (authCd === "NORMAL") return "GENERAL";
+  if (!KNOWN_AUTH_CD_VALUES.has(authCd)) {
+    console.warn(
+      "[normalizeAuthCdToUserRole] 알 수 없는 authCd — 매핑 정책 검토 필요:",
+      authCd,
+    );
+  }
   return authCd;
 }
 

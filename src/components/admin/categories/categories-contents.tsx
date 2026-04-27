@@ -3,14 +3,22 @@
 // Design Ref: §4.1 — 메인 컨테이너 (2-Column 레이아웃 + 상태 관리)
 
 import { useState, useMemo } from "react";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
 import type { CategoryFormState } from "./categories-types";
-import { findCategoryById, countDescendants } from "./categories-types";
+import { findCategoryById } from "./categories-types";
 import { useCategoryQuery } from "./use-category-query";
 import { useCategoryMutations } from "./use-category-mutations";
+
+interface CascadePreview {
+  id: number;
+  descendantCount: number;
+  contentLinkCount: number;
+}
 
 export function CategoriesContents() {
   const { openAlert } = useAlertStore();
@@ -125,17 +133,34 @@ export function CategoriesContents() {
   };
 
   // Plan SC: SC-06 — 삭제
-  // 자손 카테고리가 있으면 모두 함께 삭제(Cascade) — 운영자가 영향 범위를 인지하도록 카운트 표시.
-  // 콘텐츠 링크(ContentCategory)도 자동 해제(콘텐츠 본체 보존).
-  const handleDelete = () => {
+  // 서버 측 cascade-preview API 로 자손 카테고리/연결 콘텐츠 수를 정확히 집계하여
+  // 운영자에게 영향 범위를 표시. 클라이언트 트리는 비활성/사내전용 필터로 일부 노드가
+  // 누락될 수 있어, 백엔드 카운트를 기준으로 한다 (영향 범위 과소 표시 방지).
+  const handleDelete = async () => {
     if (selectedId === null) return;
-    const node = findCategoryById(treeData, selectedId);
-    const descendantCount = node ? countDescendants(node) : 0;
+
+    let preview: CascadePreview;
+    try {
+      const res = await api.get<{ data: CascadePreview }>(
+        `/categories/${selectedId}/cascade-preview`,
+      );
+      preview = res.data.data;
+    } catch (err) {
+      console.error("[Categories] cascade-preview 호출 실패:", err);
+      const message = isAxiosError(err) && err.response?.status === 422
+        ? "下位カテゴリー数が多すぎます。先に下位を整理してから削除してください。"
+        : "削除前の影響範囲を取得できませんでした。しばらくしてからお試しください。";
+      openAlert({ type: "alert", message });
+      return;
+    }
+
     const messageLines = [
-      descendantCount > 0
-        ? `下位カテゴリー${descendantCount}件もすべて削除されます。`
+      preview.descendantCount > 0
+        ? `下位カテゴリー${preview.descendantCount}件もすべて削除されます。`
         : null,
-      "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。",
+      preview.contentLinkCount > 0
+        ? `関連するコンテンツの紐付け${preview.contentLinkCount}件が自動で解除されます（コンテンツ本体は残ります）。`
+        : "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。",
       "削除してもよろしいですか？",
     ].filter((line): line is string => line !== null);
     openAlert({

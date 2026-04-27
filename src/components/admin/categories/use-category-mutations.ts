@@ -8,6 +8,12 @@ import type {
 } from "./categories-types";
 import { resolveApiErrorMessage } from "./categories-types";
 
+interface DeleteCategoryResponse {
+  id: number;
+  cascadedCategoryCount: number;
+  cascadedContentCount: number;
+}
+
 interface UseCategoryMutationsOptions {
   onCreateSuccess: (node: CategoryNode) => void;
   onDeleteSuccess: () => void;
@@ -47,11 +53,26 @@ export function useCategoryMutations({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/categories/${id}`),
-    onSuccess: () => {
+    mutationFn: async (id: number) => {
+      const res = await api.delete<{ data: DeleteCategoryResponse }>(`/categories/${id}`);
+      return res.data.data;
+    },
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       onDeleteSuccess();
-      openAlert({ type: "alert", message: "削除されました。" });
+      // cascade 결과를 운영자에게 명시 — 미리보기와 실제 결과가 일치하지 않을 수 있으므로
+      // 삭제 직후 실제 정리된 수를 보여주어 추적성 확보.
+      const summaryParts: string[] = [];
+      if (result.cascadedCategoryCount > 0) {
+        summaryParts.push(`下位カテゴリー${result.cascadedCategoryCount}件`);
+      }
+      if (result.cascadedContentCount > 0) {
+        summaryParts.push(`コンテンツの紐付け${result.cascadedContentCount}件`);
+      }
+      const message = summaryParts.length > 0
+        ? `削除されました。\n（${summaryParts.join("・")}も併せて整理されました）`
+        : "削除されました。";
+      openAlert({ type: "alert", message });
     },
     onError: handleApiError,
   });
