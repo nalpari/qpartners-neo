@@ -1,79 +1,26 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
-import { AUTO_LOGIN_URL, QSP_API } from "@/lib/config";
+import { encryptOutboundCipher } from "@/lib/auto-login-outbound-crypto";
+import { AUTO_LOGIN_URL } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
-import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
   encryptRequestSchema,
-  UPSTREAM_CODES,
-  type EncryptErrorResponse,
   type EncryptResponse,
-  type UpstreamCode,
 } from "@/lib/schemas/auto-login";
-
-/**
- * QSP autoLoginEncryptData **서버 내부** 응답 파싱 스키마.
- *
- * ※ 이 스키마는 route.ts 내부에서만 사용하며 export 하지 않는다.
- *   프론트에 반환하는 응답 스키마는 `@/lib/schemas/auto-login`의 `encryptResponseSchema` 참조.
- *
- * 3사 통합 구조(2026-04-25 정정): QSP 는 userId 에만 의존하여 16B cipher 를 발급한다.
- * 같은 유저는 DESIGN/Q.Order/Q.Musubi 에 동일 cipher 를 사용. Q.Partners 는 target 별 URL 에
- * cipher 를 붙여 반환할 뿐 이므로 QSP 응답의 `data.url` 은 참조하지 않는다.
- *
- * - resultCode: 200 이외는 502
- * - data.userId: base64 cipher (필수, non-empty)
- *
- * NOTE: QSP 가 함께 반환하는 `data.url` 은 의도적으로 schema 에서 제외.
- * 미래 누군가 "QSP 가 url 도 주니 그대로 쓰자" 패턴으로 부활시킬 때
- * `javascript:` / `data:` 스킴 유입으로 Open Redirect / 저장형 XSS 위험.
- * 사용 필요 시 `.refine((u) => u.startsWith("https://"))` + host 화이트리스트 부활 필수.
- */
-const qspEncryptResponseSchema = z.object({
-  resultCode: z.number().int(),
-  resultMessage: z.string().optional(),
-  data: z.object({
-    userId: z.string().min(1, "暗号文が空です"),
-  }),
-});
 
 /** userId 형식 가드 — middleware 통과 header 지만 defense-in-depth. `+` 포함(하위주소 이메일 지원). */
 const USER_ID_PATTERN = /^[A-Za-z0-9@._+\-]{1,128}$/;
 
-function upstreamError(
-  code: UpstreamCode,
-  message: string,
-): NextResponse<EncryptErrorResponse> {
-  return NextResponse.json({ error: message, code }, { status: 502 });
-}
-
-/** QSP resultMessage / fetch error.message 에 SQL·내부 스택·userId 유출 방지 */
-const MAX_UPSTREAM_MSG_LEN = 200;
-function sanitizeUpstreamMessage(raw: string | undefined, userId: string): string | undefined {
-  if (!raw) return raw;
-  let replaced = raw;
-  if (userId) {
-    replaced = replaced.split(userId).join("<userId>");
-    const encoded = encodeURIComponent(userId);
-    if (encoded !== userId) {
-      replaced = replaced.split(encoded).join("<userId>");
-    }
-  }
-  return replaced.length > MAX_UPSTREAM_MSG_LEN
-    ? replaced.slice(0, MAX_UPSTREAM_MSG_LEN) + "...[truncated]"
-    : replaced;
-}
-
 // POST /api/auth/auto-login/encrypt — 자동로그인 암호화 URL 생성
 //
-// 3사(HANASYS/Q.Order/Q.Musubi) 통합 구조:
-//   1. QSP autoLoginEncryptData API 호출 (target 무관, userId 만 전달)
-//   2. QSP 가 16B cipher 발급
-//   3. Q.Partners 가 target 별 URL(`AUTO_LOGIN_URL`)에 cipher 를 붙여 프론트에 반환
+// 3사(HANASYS/Q.Order/Q.Musubi) 통합 구조 — 2026-04-27 자체 암호화로 전환:
+//   1. 인증된 userId 를 Q.Partners 가 직접 AES-128-CBC 암호화 (`encryptOutboundCipher`)
+//   2. target 별 URL(`AUTO_LOGIN_URL`)에 cipher 를 붙여 프론트에 반환
+//   3. 프론트가 새 탭으로 이동 → 3사 시스템이 cipher 검증 후 자동로그인 처리
 //
-// QSP 응답의 `data.url` 은 HANASYS 한정 힌트이므로 사용하지 않는다.
+// 담당자 명시 사실: "암호화 방식은 ORDER/QMUSUBI/DESIGN 다 동일" — 동일 키·IV 로 3사 cipher 일치.
+// 외부 게이트웨이(QSP `autoLoginEncryptData`) 호출은 본 라우트에서 제거됨.
 export async function POST(request: NextRequest) {
   try {
     // 1. 인증 확인 (middleware 에서 X-User-Id 주입)
@@ -85,7 +32,7 @@ export async function POST(request: NextRequest) {
       );
     }
     // defense-in-depth — middleware 우회 시나리오 대비 userId 형식 가드.
-    // QSP GET query 에 들어가므로 syntax 위해(주입)·예상 외 길이·제어문자 차단.
+    // 평문이 그대로 cipher 입력이 되므로 예상 외 길이·제어문자를 사전 차단.
     if (!USER_ID_PATTERN.test(userId)) {
       console.warn("[POST /api/auth/auto-login/encrypt] userId 형식 비정상:", {
         userIdLength: userId.length,
@@ -122,12 +69,9 @@ export async function POST(request: NextRequest) {
     }
     const { target } = parsedBody.data;
 
-    // 3. QSP 에서 cipher 발급 (target 무관)
-    const cipherResult = await fetchQspCipher(userId);
-    if ("error" in cipherResult) {
-      return cipherResult.error;
-    }
-    const { cipher } = cipherResult;
+    // 3. 자체 AES-128-CBC 암호화 — 3사 동일 사양 (담당자 명시 사실, 2026-04-27).
+    //    Key: AUTO_LOGIN_OUTBOUND_AES_KEY (16B), IV: YYYYMMDD_autoL!! (KST 일자).
+    const cipher = encryptOutboundCipher(userId);
 
     // 4. target 별 URL 에 cipher 를 붙여 반환
     const baseUrl = AUTO_LOGIN_URL[target];
@@ -141,9 +85,9 @@ export async function POST(request: NextRequest) {
         target,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      return upstreamError(
-        UPSTREAM_CODES.ASSEMBLY_FAIL,
-        "リダイレクトURLの生成に失敗しました",
+      return NextResponse.json(
+        { error: "リダイレクトURLの生成に失敗しました" },
+        { status: 500 },
       );
     }
 
@@ -168,118 +112,4 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
-
-/**
- * QSP autoLoginEncryptData 호출해 16B cipher 만 추출.
- * 성공 시 { cipher }, 실패 시 { error: NextResponse } 반환 (route 상위에서 그대로 반환).
- */
-async function fetchQspCipher(
-  userId: string,
-): Promise<{ cipher: string } | { error: NextResponse }> {
-  let qspResponse: Response;
-  try {
-    qspResponse = await fetchWithLog(
-      `${QSP_API.autoLoginEncrypt}?autoLoginParam1=${encodeURIComponent(userId)}`,
-      {
-        method: "GET",
-        // 외부 API 프록시 — 응답 캐시 금지. 호출 지점에서 의도 명시.
-        cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
-      },
-      {
-        system: "QSP",
-        direction: "OUTBOUND",
-        apiName: "autoLoginEncryptData",
-        callerRoute: "[POST /api/auth/auto-login/encrypt]",
-        userId: maskUserId(userId),
-        // 운영 진단(자동로그인 502 사유 분석 등) 편의를 위해 응답 본문 평문 저장 유지.
-        // 응답 `data.userId` 에 base64 cipher 가 들어오므로 자정 키 경계(최대 24h)까지
-        // 운영자 조회 / DB 덤프 시 cipher replay 위험이 존재함을 인지한 결정.
-        // user_id 컬럼은 PII 보호를 위해 maskUserId() 마스킹 유지 (.claude/rules/api.md 준수).
-      },
-    );
-  } catch (error) {
-    const rawMsg = error instanceof Error ? error.message : String(error);
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 암호화 API 호출 실패:", {
-      errorMessage: sanitizeUpstreamMessage(rawMsg, userId),
-    });
-    return { error: upstreamError(UPSTREAM_CODES.TIMEOUT, "暗号化サーバーに接続できません") };
-  }
-
-  if (!qspResponse.ok) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 비정상 응답:", qspResponse.status);
-    return {
-      error: upstreamError(UPSTREAM_CODES.HTTP_ERROR, "暗号化サーバーエラーが発生しました"),
-    };
-  }
-
-  // HTML/비-JSON 응답 대비 — text 로 먼저 받은 뒤 JSON.parse 시도.
-  // 실패 시 contentType/bodyPrefix 를 로그에 남겨 즉시 원인 판단 가능하게 한다.
-  const contentType = qspResponse.headers.get("content-type");
-  let bodyText: string;
-  try {
-    bodyText = await qspResponse.text();
-  } catch (error) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 body 읽기 실패:", error);
-    return {
-      error: upstreamError(
-        UPSTREAM_CODES.RESPONSE_PARSE_FAIL,
-        "暗号化サーバーの応答を処理できません",
-      ),
-    };
-  }
-
-  let qspBody: unknown;
-  try {
-    qspBody = JSON.parse(bodyText);
-  } catch (error) {
-    // Content-Type 이 JSON 계열이면 부분 성공(malformed JSON)일 때 cipher·resultMessage 등
-    // 민감 필드가 prefix 에 포함될 수 있으므로 원문 대신 메타 정보만 로깅.
-    // HTML/plain 등 비-JSON 응답(에러 페이지·프록시 리다이렉트 등)은 cipher 포함 가능성이 낮고
-    // 운영 진단에 실제 본문 prefix 가 유용하므로 slice 노출.
-    const isJsonLike = contentType?.toLowerCase().includes("json") ?? false;
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 JSON 파싱 실패:", {
-      errorMessage: error instanceof Error ? error.message : String(error),
-      contentType,
-      bodyLength: bodyText.length,
-      bodyPrefix: isJsonLike ? "[masked:json-like]" : bodyText.slice(0, 200),
-    });
-    return {
-      error: upstreamError(
-        UPSTREAM_CODES.RESPONSE_PARSE_FAIL,
-        "暗号化サーバーの応答を処理できません",
-      ),
-    };
-  }
-
-  const parsed = qspEncryptResponseSchema.safeParse(qspBody);
-  if (!parsed.success) {
-    const responseBodyShape =
-      qspBody != null && typeof qspBody === "object"
-        ? Object.keys(qspBody as Record<string, unknown>)
-        : typeof qspBody;
-    console.error("[POST /api/auth/auto-login/encrypt] QSP 응답 스키마 불일치:", {
-      issues: parsed.error.issues,
-      responseBodyShape,
-    });
-    return {
-      error: upstreamError(
-        UPSTREAM_CODES.SCHEMA_MISMATCH,
-        "暗号化サーバーの応答形式が正しくありません",
-      ),
-    };
-  }
-
-  if (parsed.data.resultCode !== 200) {
-    console.error("[POST /api/auth/auto-login/encrypt] QSP resultCode 비정상:", {
-      resultCode: parsed.data.resultCode,
-      resultMessage: sanitizeUpstreamMessage(parsed.data.resultMessage, userId),
-    });
-    return {
-      error: upstreamError(UPSTREAM_CODES.RESULT_FAIL, "暗号化サーバーの応答に失敗しました"),
-    };
-  }
-
-  return { cipher: parsed.data.data.userId };
 }

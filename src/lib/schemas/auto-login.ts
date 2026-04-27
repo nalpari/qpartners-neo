@@ -19,32 +19,10 @@ export const encryptRequestSchema = z.object({
 export type EncryptRequest = z.infer<typeof encryptRequestSchema>;
 
 /**
- * POST /api/auth/auto-login/encrypt 502 응답 코드.
- * route handler / OpenAPI / 클라이언트 타입이 모두 본 단일 정의를 공유.
- */
-export const UPSTREAM_CODES = {
-  TIMEOUT: "UPSTREAM_TIMEOUT",
-  HTTP_ERROR: "UPSTREAM_HTTP_ERROR",
-  RESPONSE_PARSE_FAIL: "UPSTREAM_RESPONSE_PARSE_FAIL",
-  SCHEMA_MISMATCH: "UPSTREAM_SCHEMA_MISMATCH",
-  RESULT_FAIL: "UPSTREAM_RESULT_FAIL",
-  ASSEMBLY_FAIL: "UPSTREAM_ASSEMBLY_FAIL",
-} as const;
-export type UpstreamCode = (typeof UPSTREAM_CODES)[keyof typeof UPSTREAM_CODES];
-
-/** z.enum 용 tuple (1개 이상 보장) */
-const UPSTREAM_CODE_VALUES = Object.values(UPSTREAM_CODES) as [
-  UpstreamCode,
-  ...UpstreamCode[],
-];
-
-/**
  * 200 응답 — 자동로그인 진입 URL 생성 성공.
  *
  * Q.Partners route handler 가 **프론트(클라이언트)에 반환**하는 응답 스키마.
- * QSP autoLoginEncryptData 응답 파싱 스키마(`qspEncryptResponseSchema`)와 별개이므로 혼동 주의.
- * - 이 스키마: `POST /api/auth/auto-login/encrypt` 최종 응답 (route.ts → 브라우저)
- * - QSP 파싱용: `qspEncryptResponseSchema` (route.ts 내부 전용, export 없음)
+ * 2026-04-27 부로 cipher 는 Q.Partners 자체 AES-128-CBC 암호화로 발급 (QSP 의존성 제거).
  */
 export const encryptResponseSchema = z.object({
   data: z.object({
@@ -54,11 +32,12 @@ export const encryptResponseSchema = z.object({
 export type EncryptResponse = z.infer<typeof encryptResponseSchema>;
 
 /**
- * 502 응답 — 외부 암호화 서버(QSP autoLoginEncryptData) 관련 에러.
- * code 가 있으면 502, 없으면 일반 에러 응답.
+ * 에러 응답 — 자체 암호화·URL 조립 실패 등 서버 에러.
+ *
+ * 자체 암호화로 전환된 후 외부 게이트웨이 호출이 없어 502 코드 체계는 폐기됨.
+ * 모든 에러는 4xx(요청 형식) / 5xx(서버) 로 분류되며 본 스키마는 메시지만 노출.
  */
 export const encryptErrorSchema = z.object({
   error: z.string(),
-  code: z.enum(UPSTREAM_CODE_VALUES).optional(),
 });
 export type EncryptErrorResponse = z.infer<typeof encryptErrorSchema>;
