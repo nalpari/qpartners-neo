@@ -127,6 +127,49 @@ export const codeDetailListResponseSchema = z.object({
   data: z.array(codeDetailResponseSchema),
 });
 
+// ─── SEC_AUTH_VALIDITY 가드 (Boston 리뷰 HIGH #2) ───
+
+/**
+ * SEC_AUTH_VALIDITY 공통코드 값의 허용 범위 (일수).
+ *
+ * 2FA "신규가입 유예기간" 과 "secAuthDt 재인증 주기" 에 공용 적용되는 값이라
+ * 무제한 입력을 허용하면 9999 같은 값으로 사실상 2FA 가 무력화될 수 있다.
+ * 등록/수정 단계에서 본 범위로 강제 클램프한다.
+ *
+ * 하한 1: 0/음수는 의미 없음, 1일 미만은 재인증 주기로 비현실.
+ * 상한 90: 보안 정책상 분기 단위 재인증을 상한선으로 둔다 (필요 시 정책에 맞춰 조정).
+ */
+export const SEC_AUTH_VALIDITY_MIN_DAYS = 1;
+export const SEC_AUTH_VALIDITY_MAX_DAYS = 90;
+export const SEC_AUTH_VALIDITY_HEADER_CODE = "SEC_AUTH_VALIDITY";
+
+/**
+ * SEC_AUTH_VALIDITY 헤더에 등록되는 code 값(일수 문자열) 검증.
+ * 다른 헤더 코드는 검증을 건너뛴다 (no-op → ok=true).
+ *
+ * @param headerCode CodeHeader.headerCode (대상 식별)
+ * @param codeValue  CodeDetail.code (일수 문자열, 예: "10")
+ */
+export function validateSecAuthValidityCode(
+  headerCode: string,
+  codeValue: string,
+): { ok: true } | { ok: false; message: string } {
+  if (headerCode !== SEC_AUTH_VALIDITY_HEADER_CODE) return { ok: true };
+
+  const days = Number(codeValue);
+  if (
+    !Number.isSafeInteger(days) ||
+    days < SEC_AUTH_VALIDITY_MIN_DAYS ||
+    days > SEC_AUTH_VALIDITY_MAX_DAYS
+  ) {
+    return {
+      ok: false,
+      message: `SEC_AUTH_VALIDITY は ${SEC_AUTH_VALIDITY_MIN_DAYS}〜${SEC_AUTH_VALIDITY_MAX_DAYS} 日の整数で入力してください`,
+    };
+  }
+  return { ok: true };
+}
+
 // ─── Types ───
 
 export type CreateCodeHeaderInput = z.infer<typeof createCodeHeaderSchema>;

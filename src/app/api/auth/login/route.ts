@@ -122,12 +122,22 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    화면설계서 정책:
+  //    화면설계서 정책 (※ 정확한 섹션 번호는 설계서 확정 후 보강 필요 — TODO):
   //      - 2FA 대상: 관리자 설정 `secAuthYn=Y` 회원
   //      - 비대상: pwdInitYn="Y" (초기 비밀번호 상태, p.14 스펙)
   //      - 유예: 가입일(regDt) + SEC_AUTH_VALIDITY > 현재 → 신규가입 유예기간 (팝업 미노출)
   //      - 유예 경과 후: secAuthDt 없거나 + validityDays < 현재 → 필요
   //      - 유예 경과 후: secAuthDt + validityDays > 현재 → 불필요 (최근 인증됨)
+  //
+  //    [공용 코드 정책 — Boston 리뷰 HIGH #2 대응]
+  //      현재 화면설계서가 "신규가입 유예기간" 과 "secAuthDt 재인증 주기" 양쪽을
+  //      단일 공통코드 SEC_AUTH_VALIDITY 로 운용하도록 정의하고 있어 본 핸들러도
+  //      `validityDays` 하나로 (A)/(B) 분기를 함께 결정한다.
+  //      이로 인한 "9999일 입력 시 2FA 사실상 무력화" 위험은 코드관리 등록/수정
+  //      API(POST/PUT /api/codes/:id/details*) 에서 SEC_AUTH_VALIDITY 헤더에 한해
+  //      값 범위를 1~90 정수로 강제하는 가드로 차단한다 (validateSecAuthValidityCode).
+  //      장기적으로는 SEC_AUTH_GRACE_PERIOD / SEC_AUTH_VALIDITY 로 분리하여 두 정책을
+  //      독립 관리하도록 개선할 것 (다음 스프린트 검토 항목).
   let requireTwoFactor = false;
 
   if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
@@ -135,6 +145,8 @@ export async function POST(request: NextRequest) {
     // 관리자 "코드관리" 화면에서 10/20/30일 등 여러 개 활성(isActive=Y) 상태로 등록되어도
     // `sortOrder` 오름차순 최상위(Sort Order = 1) 1건을 채택한다 — 동일 값("가입 후 유예기간"
     // 과 "secAuthDt 재인증 주기") 에 공용으로 적용.
+    // ※ 등록/수정 단계에서 1~90 정수 상한 가드(validateSecAuthValidityCode)가 적용되므로
+    //   이 시점에 도달하는 값은 정상 범위. 그래도 런타임 fail-closed 는 유지한다.
     let validityDays: number | null = null;
     try {
       const activeCode = await prisma.codeDetail.findFirst({

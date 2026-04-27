@@ -6,7 +6,11 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 import { requireMenuPermission } from "@/lib/auth";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
-import { createCodeDetailSchema, idParamSchema } from "@/lib/schemas/code";
+import {
+  createCodeDetailSchema,
+  idParamSchema,
+  validateSecAuthValidityCode,
+} from "@/lib/schemas/code";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -91,6 +95,12 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (!header) {
       return NextResponse.json({ error: "ヘッダーコードが見つかりません" }, { status: 404 });
+    }
+
+    // SEC_AUTH_VALIDITY 헤더에 한해 1~90 정수 상하한 가드 (Boston 리뷰 HIGH #2)
+    const validity = validateSecAuthValidityCode(header.headerCode, result.data.code);
+    if (!validity.ok) {
+      return NextResponse.json({ error: validity.message }, { status: 400 });
     }
 
     const detail = await prisma.codeDetail.create({
