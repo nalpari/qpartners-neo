@@ -79,7 +79,25 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       allOf: [
                         { $ref: "#/components/schemas/LoginUser" },
-                        { type: "object", properties: { requireTwoFactor: { type: "boolean", description: "2차 인증 필요 여부" } } },
+                        {
+                          type: "object",
+                          properties: {
+                            _twoFactorReason: {
+                              type: "string",
+                              enum: [
+                                "DISABLED_BY_ADMIN",
+                                "PWD_INIT_PRIORITY",
+                                "REG_GRACE_PERIOD",
+                                "FIRST_TIME_REQUIRED",
+                                "EXPIRED_REQUIRED",
+                                "WITHIN_VALIDITY",
+                                "FAIL_CLOSED",
+                              ],
+                              description:
+                                "2FA 판정 사유 — NODE_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
+                            },
+                          },
+                        },
                       ],
                     },
                   },

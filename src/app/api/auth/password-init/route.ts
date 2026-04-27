@@ -267,6 +267,8 @@ export async function POST(request: NextRequest) {
       data: {
         message: "保存されました。",
         user: updatedUser,
+        // requireTwoFactor 는 dead field 였으나, 동일 응답 스키마를 공유하던 타 라우트와의
+        // 일관성/하위 호환을 위해 명시 false 유지(updatedUser.twoFactorVerified=true 와 등가).
         requireTwoFactor: false,
       },
     });

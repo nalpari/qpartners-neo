@@ -139,8 +139,26 @@ export async function POST(request: NextRequest) {
   //      장기적으로는 SEC_AUTH_GRACE_PERIOD / SEC_AUTH_VALIDITY 로 분리하여 두 정책을
   //      독립 관리하도록 개선할 것 (다음 스프린트 검토 항목).
   let requireTwoFactor = false;
+  // 진단 메타 — dev 환경 응답 노출 + 운영 로그 두 곳에서 동일 사유 표기.
+  // 분기 안에 있던 진단 로그를 밖으로 끌어내, 어떤 단계에서 면제/요구가 결정됐는지
+  // 모든 회원 케이스에서 추적 가능하게 한다 (운영 디버깅 핵심).
+  type TwoFactorReason =
+    | "DISABLED_BY_ADMIN"
+    | "PWD_INIT_PRIORITY"
+    | "REG_GRACE_PERIOD"
+    | "FIRST_TIME_REQUIRED"
+    | "EXPIRED_REQUIRED"
+    | "WITHIN_VALIDITY"
+    | "FAIL_CLOSED";
+  let twoFactorReason: TwoFactorReason = "DISABLED_BY_ADMIN";
 
-  if (qsp.data.secAuthYn === "Y" && qsp.data.pwdInitYn !== "Y") {
+  // 사양: "2단계 인증 대상 = 회원관리 데이터 중 2단계 인증 해제가 체크되지 않은 회원"
+  // → secAuthYn === "N" (해제 명시) 만 면제, "Y"/null/undefined 모두 대상.
+  // QSP 가 GENERAL 회원 등에게 secAuthYn=null 을 내려보내는 케이스도 있어,
+  // null 을 비대상으로 흘려보내면 사양과 어긋난다 (Boston 리뷰 HIGH).
+  if (qsp.data.pwdInitYn === "Y") {
+    twoFactorReason = "PWD_INIT_PRIORITY";
+  } else if (qsp.data.secAuthYn !== "N") {
     // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
     // 관리자 "코드관리" 화면에서 10/20/30일 등 여러 개 활성(isActive=Y) 상태로 등록되어도
     // `sortOrder` 오름차순 최상위(Sort Order = 1) 1건을 채택한다 — 동일 값("가입 후 유예기간"
@@ -174,6 +192,7 @@ export async function POST(request: NextRequest) {
     if (validityDays === null) {
       // 유효기간 조회 실패 또는 값 이상 → fail-closed
       requireTwoFactor = true;
+      twoFactorReason = "FAIL_CLOSED";
     } else {
       const now = Date.now();
       const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -215,12 +234,14 @@ export async function POST(request: NextRequest) {
           },
         );
         requireTwoFactor = false;
+        twoFactorReason = "REG_GRACE_PERIOD";
       } else {
         // (B) 유예 경과 — secAuthDt 기반 재인증 주기 판정
         const secAuthDt = qsp.data.secAuthDt;
         if (!secAuthDt) {
           // 유예 지났는데 한 번도 2FA 안 함 → 필요 (201T01 케이스)
           requireTwoFactor = true;
+          twoFactorReason = "FIRST_TIME_REQUIRED";
         } else {
           const authIso = parseQspDate(secAuthDt);
           if (!authIso) {
@@ -230,6 +251,7 @@ export async function POST(request: NextRequest) {
               secAuthDt.length,
             );
             requireTwoFactor = true;
+            twoFactorReason = "FAIL_CLOSED";
           } else {
             const authMs = new Date(authIso).getTime();
             if (Number.isNaN(authMs)) {
@@ -238,27 +260,29 @@ export async function POST(request: NextRequest) {
                 secAuthDt.length,
               );
               requireTwoFactor = true;
+              twoFactorReason = "FAIL_CLOSED";
             } else {
               requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
+              twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
             }
           }
         }
       }
-
-      // 운영 추적용 진단 로그 — PII 제외, 판정 근거만.
-      console.log("[POST /api/auth/login] 2FA 판정", {
-        userTp: qsp.data.userTp,
-        userId: maskEmail(qsp.data.userId),
-        secAuthYn: qsp.data.secAuthYn,
-        pwdInitYn: qsp.data.pwdInitYn,
-        hasRegDt: !!qsp.data.regDt,
-        inRegGracePeriod,
-        hasSecAuthDt: !!qsp.data.secAuthDt,
-        validityDays,
-        requireTwoFactor,
-      });
     }
   }
+
+  // 운영 추적용 진단 로그 — 모든 회원 케이스(분기 진입 여부 무관)에서 출력해
+  // "왜 면제됐는지" / "왜 요구됐는지" 항상 추적 가능하게 한다. PII 제외, 판정 근거만.
+  console.log("[POST /api/auth/login] 2FA 판정", {
+    userTp: qsp.data.userTp,
+    userId: maskEmail(qsp.data.userId),
+    secAuthYn: qsp.data.secAuthYn,
+    pwdInitYn: qsp.data.pwdInitYn,
+    hasRegDt: !!qsp.data.regDt,
+    hasSecAuthDt: !!qsp.data.secAuthDt,
+    requireTwoFactor,
+    twoFactorReason,
+  });
 
   // 6. 세부 권한코드(authRole) 판별
   let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
@@ -303,9 +327,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 8. httpOnly 쿠키 설정
+  // 8. httpOnly 쿠키 설정.
+  //    응답 페이로드: twoFactorVerified 단일 SSoT (= !requireTwoFactor).
+  //    dev 환경에 한해 _twoFactorReason 진단 메타 노출 — production 에서는 절대 노출 안 함.
+  const debugMeta = process.env.NODE_ENV === "development"
+    ? { _twoFactorReason: twoFactorReason }
+    : {};
   const response = NextResponse.json({
-    data: { ...user, requireTwoFactor },
+    data: { ...user, ...debugMeta },
   });
 
   response.cookies.set(COOKIE_NAME, token, {
