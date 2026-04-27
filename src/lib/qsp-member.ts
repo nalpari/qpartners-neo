@@ -51,7 +51,12 @@ export function buildQspPreservedFields(
 
 /**
  * QSP 유저 정보 조회 공통 헬퍼 (사양서 No.13 userDetail).
- * userTp에 따라 조회 키가 다름: GENERAL → email, ADMIN/STORE/SEKO → loginId
+ * 모든 userTp 에 대해 loginId(= user_id) 로만 조회한다.
+ *
+ * QSP 동작 (담당자 회신 2026-04-27):
+ *   email 이 함께 전달되면 QSP 가 email 우선 매칭으로 동작하여, 동일 email 을 가진
+ *   GENERAL 회원이 다수일 경우 selectOne() 이 TooManyResultsException 으로 실패한다.
+ *   email 매칭은 비밀번호 초기화 (사용자 조회) 흐름 전용이며, 일반 조회에서는 보내지 않는다.
  *
  * framework-agnostic: NextResponse를 반환하지 않으며, 호출부에서 HTTP 응답으로 변환한다.
  */
@@ -61,17 +66,11 @@ export async function fetchQspUserDetail(
   logTag: string,
   userId?: string,
 ): Promise<{ ok: true; detail: QspMemberDetail } | { ok: false; error: QspFetchError }> {
-  // QSP BC_QP_USER 는 같은 email 에 다른 login_id 가 중복 등록될 수 있어,
-  // GENERAL 에서 email 단독 조회 시 selectOne() 이 TooManyResultsException 으로 실패.
-  // GENERAL 은 userId === email 이므로 email + loginId 를 함께 전달하여
-  // where 조건을 유니크하게 고정한다.
-  const qspParams = new URLSearchParams({ accsSiteCd: SITE_DEFAULTS.accsSiteCd, userTp });
-  if (userTp === "GENERAL") {
-    qspParams.set("email", rawId);
-    qspParams.set("loginId", rawId);
-  } else {
-    qspParams.set("loginId", rawId);
-  }
+  const qspParams = new URLSearchParams({
+    accsSiteCd: SITE_DEFAULTS.accsSiteCd,
+    userTp,
+    loginId: rawId,
+  });
 
   let qspResponse: Response;
   try {

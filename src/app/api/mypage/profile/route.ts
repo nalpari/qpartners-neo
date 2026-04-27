@@ -61,13 +61,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // QSP BC_QP_USER 는 같은 email 에 다른 login_id 가 중복 등록될 수 있어
-    // email + userTp 만으로 selectOne() 시 TooManyResultsException 발생 가능.
-    // loginId 를 항상 함께 전달하여 where 조건을 유니크하게 고정.
-    // (GENERAL 은 userId === email 이므로 같은 값을 전송)
+    // QSP userDetail 은 email 우선 매칭이라 일반 조회에는 email 을 보내지 않는다.
+    // loginId 단독 전달 → user_id 매칭으로 단건 조회 보장.
+    // email 매칭은 비밀번호 초기화 흐름 전용 (담당자 회신 2026-04-27).
     const params = new URLSearchParams({
       accsSiteCd: "QPARTNERS",
-      email: user.email,
       userTp: user.userTp,
       loginId: user.userId,
     });

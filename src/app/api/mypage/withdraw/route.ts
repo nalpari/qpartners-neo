@@ -145,9 +145,9 @@ export async function POST(request: NextRequest) {
     // 1. QSP userDetail 로 현재 statCd 확인 — 409(이미 탈퇴) 재현을 위한 사전 체크 전용.
     //    saveResignReq 는 자체적으로 "ユーザーの退会に失敗しました" 로 실패를 알리지만, 이미 탈퇴된 회원을 재호출하는
     //    케이스를 명시적으로 409 로 분기시키기 위해 선행 조회를 유지한다.
-    //    GENERAL 회원은 QSP 내부 조회 키가 email (위 !user.email 체크로 null 제외).
+    //    QSP userDetail 은 loginId(= user_id) 로 조회 (email 우선 매칭 회피, 담당자 회신 2026-04-27).
     const detailResult = await fetchQspUserDetail(
-      user.email,
+      user.userId,
       user.userTp,
       "[POST /api/mypage/withdraw]",
     );
@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
       let recheck: Awaited<ReturnType<typeof fetchQspUserDetail>>;
       try {
         recheck = await fetchQspUserDetail(
-          user.email,
+          user.userId,
           user.userTp,
           "[POST /api/mypage/withdraw][recheck]",
         );
