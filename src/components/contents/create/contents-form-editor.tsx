@@ -40,7 +40,7 @@ export function ContentsFormEditor({
           <span className="text-[#FF1A1A]">*</span>
         </h2>
         <BlockEditorLoader
-          value={content}
+          defaultValue={content}
           onChange={onContentChange}
           onParseError={onContentParseError}
           ariaLabel="内容を入力"
