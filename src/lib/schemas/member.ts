@@ -125,6 +125,73 @@ export function defaultAuthCdFromUserTp(userTp: string): string | null {
   return USER_TP_TO_DEFAULT_AUTH_CD[userTp] ?? null;
 }
 
+// ─── authCd → userRole 정규화 ───
+
+/** 알려진(매핑/통과 정책 합의된) authCd 집합. 새 값 발견 시 운영 가시성 확보를 위해 warn.
+ *  NOTE: "NORMAL" 은 normalizeAuthCdToUserRole 에서 "GENERAL" 로 먼저 분기되어
+ *        Set 체크에 도달하지 않으므로 의도적으로 미포함. */
+const KNOWN_AUTH_CD_VALUES = new Set([
+  "ADMIN",
+  "SUPER_ADMIN",
+  "1ST_STORE",
+  "2ND_STORE",
+  "GENERAL",
+  "SEKO",
+]);
+
+/**
+ * QSP authCd 를 프론트 userRole enum 으로 정규화.
+ *
+ * QSP 는 신규 일반회원 가입 시 `authCd: "NORMAL"` 을 발급(signup 라우트에서 명시 전송)하지만,
+ * 프론트 `ROLE_OPTIONS_GENERAL` enum 은 "GENERAL" 을 사용한다. 매핑 없이 "NORMAL" 을 그대로
+ * 내려보내면 회원 상세 팝업에서 SelectBox 옵션과 불일치 → TextValue fallback → 권한 수정 불가.
+ *
+ * 매핑 정책:
+ *   - "NORMAL" → "GENERAL" (QSP 일반회원 기본값 정규화)
+ *   - 그 외 값(ADMIN, 1ST_STORE, 2ND_STORE, SEKO 등) 은 그대로 통과 (의도적 passthrough)
+ *   - null/undefined/"" → "" (기존 동작 유지 — 정보 없음)
+ *
+ * 의도적 passthrough 인 이유:
+ *   QSP 가 추후 새로운 표준 권한 코드(예: "VIEWER", "AUDITOR")를 추가할 때, 정규화 함수가
+ *   "UNKNOWN" 으로 일괄 마스킹하면 운영자가 권한 코드 신설 사실 자체를 인지할 수 없어
+ *   매핑 정책 업데이트 누락이 발생한다. 따라서 미지 값은 노출 + warn 로그 조합으로
+ *   "운영자에게 알린 뒤 그대로 통과" 하여, FE SelectBox 가 fallback TextValue 로 표시 →
+ *   운영팀이 즉시 매핑 추가를 진행하는 흐름을 유지한다.
+ *
+ * 보안 측면 — 이 함수가 받는 authCd 는 이미 백엔드 → QSP → 백엔드 경유로 검증된 회원관리
+ * 응답 페이로드 일부이며, 자유 입력 사용자 입력이 아니므로 임의 문자열 노출 위험은 없다.
+ * 다만 새 권한 코드 누락은 권한 부여 UX 결함으로 이어지므로 console.warn 으로 가시성 확보.
+ *
+ * KNOWN_AUTH_CD_VALUES 갱신 절차:
+ *   warn 로그 발견 → QSP 권한 코드 사양서 확인 → KNOWN_AUTH_CD_VALUES + ROLE_OPTIONS_*
+ *   동시 갱신 → 필요 시 매핑 분기 추가.
+ */
+/** authCd 길이 상한. KNOWN 권한 코드 최대 길이("SUPER_ADMIN"=11)의 ~3배 여유.
+ *  Defence in Depth — QSP 응답이 신뢰 범위이고 React 텍스트 렌더링이 자동 이스케이프하므로
+ *  XSS 위험은 낮으나, 비정상적으로 긴 문자열 노출을 사전 차단한다. */
+const AUTH_CD_MAX_LENGTH = 32;
+
+export function normalizeAuthCdToUserRole(
+  authCd: string | null | undefined,
+): string {
+  if (!authCd) return "";
+  if (authCd === "NORMAL") return "GENERAL";
+  if (authCd.length > AUTH_CD_MAX_LENGTH) {
+    console.warn(
+      "[normalizeAuthCdToUserRole] authCd 길이 상한 초과 — 빈 값으로 폴백:",
+      { length: authCd.length, max: AUTH_CD_MAX_LENGTH },
+    );
+    return "";
+  }
+  if (!KNOWN_AUTH_CD_VALUES.has(authCd)) {
+    console.warn(
+      "[normalizeAuthCdToUserRole] 알 수 없는 authCd — 매핑 정책 검토 필요:",
+      authCd,
+    );
+  }
+  return authCd;
+}
+
 // ─── 회원 수정 요청 ───
 
 /** 관리자가 일반회원에게 부여 가능한 권한 코드.

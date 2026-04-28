@@ -3,11 +3,13 @@
 // Design Ref: §4.1 — 메인 컨테이너 (2-Column 레이아웃 + 상태 관리)
 
 import { useState, useMemo } from "react";
+import { isAxiosError } from "axios";
+import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
-import type { CategoryFormState } from "./categories-types";
+import type { CategoryFormState, CascadePreview } from "./categories-types";
 import { findCategoryById } from "./categories-types";
 import { useCategoryQuery } from "./use-category-query";
 import { useCategoryMutations } from "./use-category-mutations";
@@ -24,6 +26,9 @@ export function CategoriesContents() {
   // CategoriesDetail 내부 form state 를 리마운트로 재초기화하기 위한 토큰.
   // 초기화 버튼 클릭 시 증가 → key 변경 → CategoriesDetail 이 selectedCategory/INITIAL_FORM 으로 재생성.
   const [resetToken, setResetToken] = useState(0);
+  // cascade-preview 호출 중 더블클릭 가드 — preview API 호출 중에는 deleteMutation.isPending 가
+  // 아직 false 이므로 별도 플래그로 삭제 버튼 disabled 처리.
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // ─── Server State ───
   const { data: treeData = [], isLoading, isError } = useCategoryQuery();
@@ -125,14 +130,52 @@ export function CategoriesContents() {
   };
 
   // Plan SC: SC-06 — 삭제
-  // 연결된 콘텐츠 링크(ContentCategory)는 Cascade 로 자동 해제됨을 사용자에게 고지.
-  // 콘텐츠 본체는 보존되며 카테고리 매핑만 해제됨.
-  const handleDelete = () => {
-    if (selectedId === null) return;
+  // 서버 측 cascade-preview API 로 자손 카테고리/연결 콘텐츠 수를 정확히 집계하여
+  // 운영자에게 영향 범위를 표시. 클라이언트 트리는 비활성/사내전용 필터로 일부 노드가
+  // 누락될 수 있어, 백엔드 카운트를 기준으로 한다 (영향 범위 과소 표시 방지).
+  const handleDelete = async () => {
+    // 더블클릭/연타 가드 — preview API in-flight 중 재진입 차단.
+    if (selectedId === null || isPreviewLoading) return;
+
+    let preview: CascadePreview;
+    setIsPreviewLoading(true);
+    try {
+      const res = await api.get<{ data: CascadePreview }>(
+        `/categories/${selectedId}/cascade-preview`,
+      );
+      preview = res.data.data;
+    } catch (err) {
+      console.error("[Categories] cascade-preview 호출 실패:", err);
+      const status = isAxiosError(err) ? err.response?.status : undefined;
+      let message: string;
+      if (status === 422) {
+        message = "下位カテゴリー数が多すぎます。先に下位を整理してから削除してください。";
+      } else if (status === 404) {
+        // 다른 세션에서 이미 삭제된 케이스 — 트리 새로고침 유도.
+        message = "対象のカテゴリーが見つかりません。ページを更新してください。";
+      } else {
+        message = "削除前の影響範囲を取得できませんでした。しばらくしてからお試しください。";
+      }
+      openAlert({ type: "alert", message });
+      return;
+    } finally {
+      setIsPreviewLoading(false);
+    }
+
+    // 라인 구성: 해당 영향이 있는 경우(>0)에만 안내 라인 추가.
+    // contentLinkCount === 0 이면 "コンテンツの紐付け..." 라인 자체를 숨겨 불필요 정보 노출 방지.
+    const messageLines = [
+      preview.descendantCount > 0
+        ? `下位カテゴリー${preview.descendantCount}件もすべて削除されます。`
+        : null,
+      preview.contentLinkCount > 0
+        ? `関連するコンテンツの紐付け${preview.contentLinkCount}件が自動で解除されます（コンテンツ本体は残ります）。`
+        : null,
+      "削除してもよろしいですか？",
+    ].filter((line): line is string => line !== null);
     openAlert({
       type: "confirm",
-      message:
-        "関連するコンテンツの紐付けは自動で解除されます（コンテンツ本体は残ります）。\n削除してもよろしいですか？",
+      message: messageLines.join("\n"),
       onConfirm: () => deleteMutation.mutate(selectedId),
     });
   };
@@ -196,7 +239,8 @@ export function CategoriesContents() {
         parentOptions={parentOptions}
         treeData={treeData}
         isNewMode={isNewMode}
-        isSaving={isSaving}
+        // preview 로딩 중에도 삭제/저장 버튼 disabled — 중복 요청 차단.
+        isSaving={isSaving || isPreviewLoading}
         onSave={handleSave}
         onDelete={handleDelete}
         onNew={handleNew}

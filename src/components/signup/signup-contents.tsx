@@ -621,7 +621,7 @@ function PasswordInput({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 w-full lg:w-[602px] lg:shrink-0 h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
+    <div className="flex items-center gap-2 w-full lg:w-[602px] h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
       <input
         type={show ? "text" : "password"}
         value={value}

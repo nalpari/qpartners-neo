@@ -67,11 +67,15 @@ const GENERIC_ERROR = "サーバーエラーが発生しました。しばらく
 const STATUS_ERROR_MAP: Record<number, string> = {
   409: "入力されたカテゴリコードは既に使用中のカテゴリコードです。",
   404: "対象が見つかりません。",
+  // DELETE/cascade-preview 가 자손 카테고리 상한(CATEGORY_MAX_DESCENDANTS) 초과 시 422 반환.
+  // preview 단계 메시지(categories-contents.tsx)와 동일 문구로 통일.
+  422: "下位カテゴリー数が多すぎます。先に下位を整理してから削除してください。",
 };
 
 /** 400 에러의 서버 에러 키워드 → UI 메시지 매핑 (향후 errorCode 도입 시 키를 코드로 교체) */
+// NOTE: "하위 카테고리" 패턴은 cascade 정책 전환(2026-04-27)으로 도달 불가 — 제거.
+//   현 DELETE 핸들러는 자손 존재 시 cascade 처리, 상한 초과만 422로 분기.
 const BAD_REQUEST_PATTERNS: { keyword: string; message: string }[] = [
-  { keyword: "하위 카테고리", message: "下位カテゴリが存在するため削除できません。" },
   { keyword: "콘텐츠", message: "コンテンツが紐づいているため削除できません。" },
   { keyword: "2Depth", message: "カテゴリはDepth-2までのみ登録できます。" },
 ];
@@ -112,4 +116,14 @@ export function findCategoryById(tree: CategoryNode[], id: number): CategoryNode
     if (found) return found;
   }
   return null;
+}
+
+/** GET /api/categories/:id/cascade-preview 응답.
+ *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 수 + 콘텐츠 링크 수)를 표시.
+ *  previewedAt 은 preview/DELETE 사이 TOCTOU 갭 가시화용 메타(ISO 8601). */
+export interface CascadePreview {
+  id: number;
+  descendantCount: number;
+  contentLinkCount: number;
+  previewedAt: string;
 }
