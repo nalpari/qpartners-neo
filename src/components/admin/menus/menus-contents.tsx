@@ -28,6 +28,10 @@ export function MenusContents() {
   // <input defaultValue> 의 타이핑값이 DOM 에서 손실되어 다중 행 일괄 변경이 불가했음.
   // ref 로 두면 타이핑은 부모 리렌더를 트리거하지 않으므로 모든 입력값이 보존된다.
   const sortValuesRef = useRef<Record<string, number>>({});
+  // 정렬 저장 성공 시 증가 — input key 에 포함시켜 모든 sort input 을 강제 remount.
+  // 사용자가 친 값과 server 의 새 sortOrder 가 같은 경우 key={data.sortOrder} 만으로는
+  // remount 가 안 되어 typed 값이 DOM 에 남아 server 값과 불일치하는 표시 버그를 차단.
+  const [sortRefreshVersion, setSortRefreshVersion] = useState(0);
 
   // --- API 조회 ---
   // Plan R-01: GET /api/menus → useMenuTree 훅으로 공통화
@@ -102,6 +106,8 @@ export function MenusContents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menus"] });
       sortValuesRef.current = {};
+      // 모든 sort input 강제 remount → server 값으로 재동기화 (typed 값 잔존 방지)
+      setSortRefreshVersion((v) => v + 1);
       openAlert({ type: "alert", message: "整列が保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -209,6 +215,7 @@ export function MenusContents() {
             onSortSave={handleSortSave}
             onSortValueChange={handleSortValueChange}
             isSortSaving={sortMutation.isPending}
+            sortRefreshVersion={sortRefreshVersion}
           />
         </section>
       </div>

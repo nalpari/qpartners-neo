@@ -75,7 +75,8 @@ function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
   // 입력값이 화면에 반영되지 않는다. uncontrolled(defaultValue) + key로 처리:
   //   - 평소엔 브라우저가 키 입력을 그대로 표시(타이핑 자유)
   //   - 외부 값(data.sortOrder)이 바뀌면 key 변화로 input remount → defaultValue 갱신
-  //     (정렬저장 후 sortValues 리셋 + query invalidate로 새 sortOrder가 들어오는 케이스)
+  //   - 저장 후 server 값과 typed 값이 같거나, server 가 행을 갱신 안 한 경우엔
+  //     상위에서 DataGrid 자체에 key 를 부여해 grid 를 remount → 모든 input 재초기화
   return (
     <input
       key={data.sortOrder}
@@ -105,6 +106,7 @@ interface MenusTablesProps {
   onSortSave: () => void;
   onSortValueChange: (id: string, value: number) => void;
   isSortSaving: boolean;
+  sortRefreshVersion: number;
 }
 
 export function MenusTables({
@@ -119,6 +121,7 @@ export function MenusTables({
   onSortSave,
   onSortValueChange,
   isSortSaving,
+  sortRefreshVersion,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -247,6 +250,7 @@ export function MenusTables({
             />
           </div>
           <DataGrid<MenuItem>
+            key={`level1-${sortRefreshVersion}`}
             columnDefs={level1Columns}
             rowData={level1Data}
             getRowId={(p) => p.data.id}
@@ -269,6 +273,7 @@ export function MenusTables({
             )}
           </h3>
           <DataGrid<MenuItem>
+            key={`level2-${sortRefreshVersion}`}
             columnDefs={level2Columns}
             rowData={level2Data}
             getRowId={(p) => p.data.id}
