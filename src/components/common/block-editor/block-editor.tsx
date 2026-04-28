@@ -13,6 +13,7 @@ import type { BlockEditorProps } from "./block-editor.types";
 export function BlockEditor({
   value,
   onChange,
+  onParseError,
   placeholder,
   editable = true,
   ariaLabel,
@@ -26,22 +27,27 @@ export function BlockEditor({
   // value가 바뀌어 폼 reset이 필요한 경우는 부모에서 컴포넌트 트리를 리마운트한다.
   const initialValueRef = useRef(value);
 
+  // onParseError를 ref로 잡아 마운트 effect deps에 넣지 않는다 — 부모가 매 렌더마다 새 함수를 넘겨도 본문 재파싱이 일어나지 않게 한다.
+  const onParseErrorRef = useRef(onParseError);
   useEffect(() => {
-    let cancelled = false;
+    onParseErrorRef.current = onParseError;
+  }, [onParseError]);
+
+  useEffect(() => {
     const html = prepareBodyForEditor(initialValueRef.current);
     if (!html) return;
 
-    // tryParseHTMLToBlocks 는 이 버전(@blocknote/core@0.49)에서 동기 함수임.
-    const blocks = editor.tryParseHTMLToBlocks(html);
-    if (cancelled) return;
-    editor.replaceBlocks(editor.document, blocks);
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const blocks = editor.tryParseHTMLToBlocks(html);
+      editor.replaceBlocks(editor.document, blocks);
+    } catch (error: unknown) {
+      // 비정상 HTML(레거시 본문, 예상 외 구조)로 파싱이 실패하면 에디터가 빈 상태로 시작한다.
+      // 호출자에게 알려 사용자에게 데이터 손실 가능성을 안내해야 한다.
+      console.error("[BlockEditor] 초기 본문 파싱 실패:", error);
+      onParseErrorRef.current?.(error);
+    }
   }, [editor]);
 
-  // blocksToFullHTML 는 이 버전(@blocknote/core@0.49)에서 동기 함수임.
   useEditorChange((e) => {
     const html = e.blocksToFullHTML(e.document);
     onChange(html);

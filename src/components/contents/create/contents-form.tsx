@@ -190,6 +190,14 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     router.push("/contents", { transitionTypes: ["fade"] });
   };
 
+  const handleContentParseError = (error: unknown) => {
+    console.error("[Contents] 本文 파싱 실패:", error);
+    openAlert({
+      type: "alert",
+      message: "保存された本文を読み込めませんでした。データが破損している可能性があります。再入力する前にキャンセルし、管理者にお問い合わせください。",
+    });
+  };
+
   const handleSave = async () => {
     // 필수항목 검증
     if (!approver) {
@@ -313,6 +321,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           onTitleChange={setTitle}
           content={content}
           onContentChange={setContent}
+          onContentParseError={handleContentParseError}
         />
 
         <ContentsFormAttachment

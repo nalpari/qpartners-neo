@@ -3,6 +3,11 @@ export interface BlockEditorProps {
   value: string;
   /** 본문이 변경될 때마다 호출. 인자는 BlockNote가 출력한 풀 HTML 문자열. */
   onChange: (html: string) => void;
+  /**
+   * 마운트 시점 초기 HTML을 BlockNote 블록으로 파싱하다 실패한 경우 호출.
+   * 호출되면 에디터는 빈 상태로 시작하므로, 호출자는 사용자에게 알려 원본 덮어쓰기로 인한 데이터 손실을 방지해야 한다.
+   */
+  onParseError?: (error: unknown) => void;
   /** 비어 있을 때 표시할 안내 문구 (BlockNote는 첫 paragraph에 표시). */
   placeholder?: string;
   /** false면 readonly. */

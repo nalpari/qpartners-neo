@@ -8,6 +8,7 @@ interface ContentsFormEditorProps {
   onTitleChange: (value: string) => void;
   content: string;
   onContentChange: (value: string) => void;
+  onContentParseError?: (error: unknown) => void;
 }
 
 export function ContentsFormEditor({
@@ -15,6 +16,7 @@ export function ContentsFormEditor({
   onTitleChange,
   content,
   onContentChange,
+  onContentParseError,
 }: ContentsFormEditorProps) {
   return (
     <>
@@ -40,6 +42,7 @@ export function ContentsFormEditor({
         <BlockEditorLoader
           value={content}
           onChange={onContentChange}
+          onParseError={onContentParseError}
           ariaLabel="内容を入力"
           placeholder="内容を入力してください"
         />
