@@ -107,6 +107,8 @@ export function MemberDetailPopup() {
   const listItem = popupData.listItem as MemberListItem | undefined;
 
   // Design Ref: §4.2 — 상세 조회
+  // staleTime: 0 + refetchOnMount: "always" — 팝업 재오픈 시 항상 최신 데이터.
+  // 갱신일(updatedAt) / 최근접속일시(lastLoginAt) 등 외부에서 변경 가능한 필드를 반영.
   const { data: rawMember, isLoading } = useQuery<MemberDetail & { notFoundInQsp?: boolean }>({
     queryKey: ["admin", "member", userId, userTp],
     queryFn: async () => {
@@ -117,6 +119,8 @@ export function MemberDetailPopup() {
       return res.data.data;
     },
     enabled: !!userId && !!userTp,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // QSP 미조회 회원(notFoundInQsp)일 때 목록 데이터로 fallback
