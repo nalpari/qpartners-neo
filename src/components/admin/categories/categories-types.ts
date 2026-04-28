@@ -119,9 +119,11 @@ export function findCategoryById(tree: CategoryNode[], id: number): CategoryNode
 }
 
 /** GET /api/categories/:id/cascade-preview 응답.
- *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 수 + 콘텐츠 링크 수)를 표시. */
+ *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 수 + 콘텐츠 링크 수)를 표시.
+ *  previewedAt 은 preview/DELETE 사이 TOCTOU 갭 가시화용 메타(ISO 8601). */
 export interface CascadePreview {
   id: number;
   descendantCount: number;
   contentLinkCount: number;
+  previewedAt: string;
 }

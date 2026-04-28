@@ -70,11 +70,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       where: { categoryId: { in: affectedCategoryIds } },
     });
 
+    // previewedAt — preview/DELETE 사이 TOCTOU 갭 가시화. 운영자가 oo초 전 수치임을
+    // 인지하고 재요청 여부를 판단할 수 있도록 ISO 8601 timestamp 동봉.
     return NextResponse.json({
       data: {
         id: parsed.data,
         descendantCount: descendantIds.length,
         contentLinkCount,
+        previewedAt: new Date().toISOString(),
       },
     });
   } catch (error) {

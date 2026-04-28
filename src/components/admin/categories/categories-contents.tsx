@@ -146,9 +146,16 @@ export function CategoriesContents() {
       preview = res.data.data;
     } catch (err) {
       console.error("[Categories] cascade-preview 호출 실패:", err);
-      const message = isAxiosError(err) && err.response?.status === 422
-        ? "下位カテゴリー数が多すぎます。先に下位を整理してから削除してください。"
-        : "削除前の影響範囲を取得できませんでした。しばらくしてからお試しください。";
+      const status = isAxiosError(err) ? err.response?.status : undefined;
+      let message: string;
+      if (status === 422) {
+        message = "下位カテゴリー数が多すぎます。先に下位を整理してから削除してください。";
+      } else if (status === 404) {
+        // 다른 세션에서 이미 삭제된 케이스 — 트리 새로고침 유도.
+        message = "対象のカテゴリーが見つかりません。ページを更新してください。";
+      } else {
+        message = "削除前の影響範囲を取得できませんでした。しばらくしてからお試しください。";
+      }
       openAlert({ type: "alert", message });
       return;
     } finally {

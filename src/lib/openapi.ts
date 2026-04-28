@@ -87,7 +87,6 @@ export const openApiSpec: OpenAPIV3.Document = {
                               enum: [
                                 "DISABLED_BY_ADMIN",
                                 "PWD_INIT_PRIORITY",
-                                "REG_GRACE_PERIOD",
                                 "FIRST_TIME_REQUIRED",
                                 "EXPIRED_REQUIRED",
                                 "WITHIN_VALIDITY",
@@ -2461,6 +2460,13 @@ export const openApiSpec: OpenAPIV3.Document = {
                         id: { type: "integer", example: 1 },
                         descendantCount: { type: "integer", example: 0 },
                         contentLinkCount: { type: "integer", example: 0 },
+                        previewedAt: {
+                          type: "string",
+                          format: "date-time",
+                          example: "2026-04-28T00:00:00.000Z",
+                          description:
+                            "preview 응답 생성 시각 (ISO 8601). DELETE 시점과의 TOCTOU 갭을 운영자에게 가시화하기 위한 메타.",
+                        },
                       },
                     },
                   },

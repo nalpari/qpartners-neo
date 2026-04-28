@@ -166,11 +166,23 @@ const KNOWN_AUTH_CD_VALUES = new Set([
  *   warn 로그 발견 → QSP 권한 코드 사양서 확인 → KNOWN_AUTH_CD_VALUES + ROLE_OPTIONS_*
  *   동시 갱신 → 필요 시 매핑 분기 추가.
  */
+/** authCd 길이 상한. KNOWN 권한 코드 최대 길이("SUPER_ADMIN"=11)의 ~3배 여유.
+ *  Defence in Depth — QSP 응답이 신뢰 범위이고 React 텍스트 렌더링이 자동 이스케이프하므로
+ *  XSS 위험은 낮으나, 비정상적으로 긴 문자열 노출을 사전 차단한다. */
+const AUTH_CD_MAX_LENGTH = 32;
+
 export function normalizeAuthCdToUserRole(
   authCd: string | null | undefined,
 ): string {
   if (!authCd) return "";
   if (authCd === "NORMAL") return "GENERAL";
+  if (authCd.length > AUTH_CD_MAX_LENGTH) {
+    console.warn(
+      "[normalizeAuthCdToUserRole] authCd 길이 상한 초과 — 빈 값으로 폴백:",
+      { length: authCd.length, max: AUTH_CD_MAX_LENGTH },
+    );
+    return "";
+  }
   if (!KNOWN_AUTH_CD_VALUES.has(authCd)) {
     console.warn(
       "[normalizeAuthCdToUserRole] 알 수 없는 authCd — 매핑 정책 검토 필요:",
