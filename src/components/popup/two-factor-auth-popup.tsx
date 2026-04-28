@@ -12,18 +12,37 @@ import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
-/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 */
-const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
-  { pattern: "일치하지 않습니다", message: "認証番号が一致しません！" },
-  { pattern: "입력시간이 초과", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
-  { pattern: "시도 횟수를 초과", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
-  { pattern: "먼저 발송", message: "認証番号を先に送信してください。再送信をお試しください。" },
+/**
+ * 서버 에러 코드 → 일본어 사용자 메시지 매핑.
+ * 서버 응답 body 에 `code` 필드가 있으면 코드 기반 매핑(번역/메시지 변경에 강함).
+ * 코드가 없으면 레거시 메시지 includes 패턴으로 폴백 (배포 순서·구버전 응답 호환).
+ */
+const ERROR_CODE_MAP: Record<string, string> = {
+  MISMATCH: "認証番号が一致しません！",
+  EXPIRED: "入力時間を超過しました。再送信後、もう一度入力してください。",
+  MAX_ATTEMPTS: "認証の試行回数を超過しました。認証番号を再送信してください。",
+  NOT_SENT: "認証番号を先に送信してください。再送信をお試しください。",
+};
+
+const ERROR_MESSAGE_PATTERN_MAP: { pattern: string; message: string }[] = [
+  { pattern: "일치하지 않습니다", message: ERROR_CODE_MAP.MISMATCH },
+  { pattern: "입력시간이 초과", message: ERROR_CODE_MAP.EXPIRED },
+  { pattern: "시도 횟수를 초과", message: ERROR_CODE_MAP.MAX_ATTEMPTS },
+  { pattern: "먼저 발송", message: ERROR_CODE_MAP.NOT_SENT },
 ];
 
-function mapServerError(serverMsg: string): string {
-  const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
+function mapServerError(serverMsg: string, code: string | null): string {
+  // 1. code 기반 매칭 — 서버 메시지 변경/번역에 영향받지 않음.
+  if (code && ERROR_CODE_MAP[code]) return ERROR_CODE_MAP[code];
+  // 1-1. code 가 있으나 FE 매핑에 없는 신종 → 서버에 새 code 가 추가됐는데 FE 가 못 따라간 상태.
+  //      운영 알람 수준으로 격상해 모니터링이 즉시 인지하도록.
+  if (code) {
+    console.error("[2FA] 未マッピングのサーバー code:", { code, serverMsg });
+  }
+  // 2. 레거시 폴백 — 구 응답(혹은 배포 시점 차이)에서 code 미존재 시 메시지 패턴 매칭.
+  const match = ERROR_MESSAGE_PATTERN_MAP.find((e) => serverMsg.includes(e.pattern));
   if (!match) {
-    console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
+    console.warn("[2FA] 未認識のサーバーエラー:", { code, serverMsg });
   }
   return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
 }
@@ -178,8 +197,14 @@ export function TwoFactorAuthPopup() {
       console.error("[2FA] 認証失敗:", err);
       if (isAxiosError(err) && err.response) {
         const serverError = extractApiError(err);
-        if (serverError) {
-          setError(mapServerError(serverError));
+        // body 에 code 필드가 있으면 추출 — 메시지 매칭보다 안정적.
+        const data = err.response.data;
+        const code =
+          typeof data === "object" && data !== null && "code" in data && typeof (data as Record<string, unknown>).code === "string"
+            ? ((data as Record<string, unknown>).code as string)
+            : null;
+        if (serverError || code) {
+          setError(mapServerError(serverError ?? "", code));
         } else {
           console.warn("[2FA] 予期しないエラーレスポンス形式:", err.response.data);
           setError("認証処理中にエラーが発生しました。しばらくしてからお試しください");

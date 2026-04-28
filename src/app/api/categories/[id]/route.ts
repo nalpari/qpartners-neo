@@ -9,6 +9,7 @@ import { idParamSchema, updateCategorySchema } from "@/lib/schemas/category";
 
 import {
   CATEGORY_MAX_DESCENDANTS,
+  CategoryError,
   MaxDescendantsExceededError,
 } from "../_constants";
 
@@ -73,7 +74,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
           });
 
           if (!current) {
-            throw new Error("NOT_FOUND");
+            throw new CategoryError("NOT_FOUND");
           }
 
           const newOrder = result.data.sortOrder;
@@ -131,7 +132,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ data: category });
   } catch (error) {
-    if (error instanceof Error && error.message === "NOT_FOUND") {
+    if (error instanceof CategoryError && error.kind === "NOT_FOUND") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (
@@ -208,7 +209,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           select: { parentId: true, sortOrder: true },
         });
         if (!target) {
-          throw new Error("NOT_FOUND");
+          throw new CategoryError("NOT_FOUND");
         }
 
         // 4. root 삭제 → DB 엔진이 자손 카테고리 + 모든 ContentCategory 링크 cascade 삭제.
@@ -276,7 +277,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         { status: 422 },
       );
     }
-    if (error instanceof Error && error.message === "NOT_FOUND") {
+    if (error instanceof CategoryError && error.kind === "NOT_FOUND") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (

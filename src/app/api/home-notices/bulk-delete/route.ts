@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
+import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 
 // 한 번에 일괄 삭제할 수 있는 최대 건수 — UI 페이지 사이즈(20) 의 5배 정도로 보수적 상한.
@@ -83,13 +84,11 @@ export async function POST(request: NextRequest) {
         // 3. 권한 검증 — 한 건이라도 권한 없으면 전체 거부 (fail-closed).
         //    canModifyResource 는 SUPER_ADMIN 작성글 식별 위해 비동기 (DB 조회 가능).
         //    Serializable 트랜잭션 안에서 Promise.all 병렬 실행은 일부 드라이버/풀에서
-        //    동일 트랜잭션 커넥션의 동시 사용을 막기 때문에 dead-lock 위험이 있어
-        //    안정성을 위해 순차 처리. (canModifyResource 자체는 prisma 글로벌 인스턴스를
-        //    사용하므로 트랜잭션과 직접 경쟁하지는 않지만, 향후 tx 사용으로 옮기더라도
-        //    안전하도록 sequential 패턴을 채택.)
+        //    동일 트랜잭션 커넥션의 동시 사용을 막기 때문에 dead-lock 위험이 있어 순차 처리.
+        //    tx 전달 → admin role 조회까지 동일 트랜잭션 스냅샷에서 평가.
         const deniedIds: number[] = [];
         for (const notice of notices) {
-          const allowed = await canModifyResource(auth.user, notice);
+          const allowed = await canModifyResource(auth.user, notice, tx);
           if (!allowed) deniedIds.push(notice.id);
         }
         if (deniedIds.length > 0) {
@@ -106,12 +105,12 @@ export async function POST(request: NextRequest) {
       { isolationLevel: "Serializable" },
     );
 
-    // 감사 로그 — PII 없음. 운영 추적용 (요청자 userId/role + ID 목록).
+    // 감사 로그 — auth.user.userId 는 이메일 형태 가능, maskEmail 적용으로 PII 누출 방지.
     console.info("[POST /api/home-notices/bulk-delete] bulk deleted", {
       requestedCount: ids.length,
       deletedCount: result.deletedCount,
       ids: result.ids,
-      by: auth.user.userId,
+      by: maskEmail(auth.user.userId),
       role: auth.user.role,
     });
 

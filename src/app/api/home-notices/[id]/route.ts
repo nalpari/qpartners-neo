@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { resolveUserName } from "@/lib/admin-name";
+import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
 import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -65,11 +66,13 @@ export async function GET(request: NextRequest, { params }: Params) {
     if (internal) {
       const createdById = notice.createdBy ?? notice.userId;
       const sameUser = notice.updatedBy && notice.updatedBy === createdById;
+      // updatedBy 가 createdBy 와 다른 사람(다른 userType 가능)인 경우 notice.userType 으로
+      // QSP 조회하면 잘못된 결과가 반환되거나 null 폴백이 빈번. 후보 userType 순차 시도.
       const [superAdminSettled, createdNameSettled, updatedNameSettled] = await Promise.allSettled([
         resolveAuthorSuperAdmin({ userType: notice.userType, userId: notice.userId }),
         resolveUserName(notice.userType, createdById, logTag),
         notice.updatedBy && !sameUser
-          ? resolveUserName(notice.userType, notice.updatedBy, logTag)
+          ? resolveUserNameUnknownType(notice.updatedBy, logTag).then((r) => r.name)
           : Promise.resolve<string | null>(null),
       ]);
       authorIsSuperAdmin =
@@ -160,8 +163,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
         if (!existing) throw new HomeNoticeUpdateError("NOT_FOUND");
 
         // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인.
-        // canModifyResource 는 author SUPER_ADMIN 판정용 admin role 조회를 prisma 글로벌로 수행 — 다른 테이블 참조 데이터이므로 tx 외부 세션 사용도 정합성에 영향 없음.
-        if (!(await canModifyResource(auth.user, existing))) {
+        // tx 전달 → admin role 조회까지 동일 트랜잭션 스냅샷에서 평가, 권한 판정과 update 사이의 정합성 강화.
+        if (!(await canModifyResource(auth.user, existing, tx))) {
           throw new HomeNoticeUpdateError("FORBIDDEN");
         }
 
@@ -206,10 +209,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       { isolationLevel: "Serializable" },
     );
 
-    // 감사 로그 — PII 없음(ID/role 만). 운영 추적용.
+    // 감사 로그 — auth.user.userId 가 STORE/SEKO/GENERAL 의 경우 이메일 형태 가능.
+    // maskEmail 통과시켜 PII 누출 방지(이메일 아니면 원본 유지).
     console.info("[PUT /api/home-notices/:id] updated", {
       id: notice.id,
-      by: auth.user.userId,
+      by: maskEmail(auth.user.userId),
       role: auth.user.role,
     });
 
@@ -282,7 +286,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     console.info("[DELETE /api/home-notices/:id] deleted", {
       id: parsed.data,
-      by: auth.user.userId,
+      by: maskEmail(auth.user.userId),
       role: auth.user.role,
     });
 

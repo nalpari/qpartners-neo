@@ -2,8 +2,9 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
-import { resolveUserName } from "@/lib/admin-name";
+import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
 import { requireMenuPermission } from "@/lib/auth";
+import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
   createHomeNoticeSchema,
@@ -142,30 +143,88 @@ export async function GET(request: NextRequest) {
       prisma.homeNotice.count({ where }),
     ]);
 
-    // QSP 사용자 이름 일괄 조회 — 행 N건의 createdBy/updatedBy 에서 unique (userType, userId) 만 추출해
+    // QSP 사용자 이름 일괄 조회 — 행 N건의 createdBy/updatedBy 에서 unique 키만 추출해
     // 외부 API 호출 횟수를 최소화한다 (페이지 내 동일 등록자 다수 등장 시 1회로 축소).
-    // 실패는 silent — 이름 미해결 시 프론트가 userId 로 폴백한다.
+    // 실패는 silent — 이름 미해결 시 프론트가 userId 로 폴백.
+    //
+    // ▼ HIGH 1 수정: createdBy 는 notice.userType 으로 lookup 가능하지만, updatedBy 는
+    //   다른 userType 사용자(예: SUPER_ADMIN 이 STORE 작성글 갱신)가 들어올 수 있어
+    //   notice.userType 으로 조회하면 잘못된 사용자가 반환되거나 null 폴백 빈번.
+    //   → known 키는 (userType, userId), unknown 키는 (userId) 로 분리해 lookup.
     const logTag = "[GET /api/home-notices]";
-    type NameKey = string; // `${userType}:${userId}`
-    const buildKey = (ut: string, uid: string): NameKey => `${ut}:${uid}`;
-    const uniqueRefs = new Map<NameKey, { userType: string; userId: string }>();
+    type LookupKey = string;
+    const knownKey = (ut: string, uid: string): LookupKey => `known:${ut}:${uid}`;
+    const unknownKey = (uid: string): LookupKey => `unknown:${uid}`;
+
+    const knownLookups = new Map<LookupKey, { userType: string; userId: string }>();
+    const unknownLookups = new Map<LookupKey, string>();
+
+    // 1차 패스: 모든 createdBy 를 known 으로 등록 — 이 정보가 unknown 등록 시 dedupe 기준이 됨.
     for (const n of notices) {
-      // notice 의 userType 은 작성자(creator) 의 사용자 타입.
-      // updatedBy 는 작성자와 다른 타입의 사용자일 수 있으나, list 응답에 별도 컬럼이 없어
-      // contents API 와 동일하게 작성자 userType 으로 lookup 시도 — 실패 시 null 폴백 (resolveUserName 자체가 흡수).
-      if (n.createdBy) uniqueRefs.set(buildKey(n.userType, n.createdBy), { userType: n.userType, userId: n.createdBy });
-      if (n.updatedBy) uniqueRefs.set(buildKey(n.userType, n.updatedBy), { userType: n.userType, userId: n.updatedBy });
+      if (n.createdBy) {
+        knownLookups.set(knownKey(n.userType, n.createdBy), {
+          userType: n.userType,
+          userId: n.createdBy,
+        });
+      }
     }
 
-    const refsArray = Array.from(uniqueRefs.entries());
-    const settled = await Promise.allSettled(
-      refsArray.map(([, ref]) => resolveUserName(ref.userType, ref.userId, logTag)),
-    );
-    const nameMap = new Map<NameKey, string | null>();
-    refsArray.forEach(([key], idx) => {
-      const r = settled[idx];
+    // 보조 인덱스: userId → 매칭되는 known LookupKey 1개. updatedBy 가 다른 row 의 createdBy 와
+    // 동일 userId 라면 그 known 조회 결과를 그대로 재활용해서 외부 호출 폭증을 차단한다.
+    // (서로 다른 userType 으로 같은 userId 가 등록되는 경우는 사실상 없으므로 첫 매칭 사용.)
+    const knownByUserId = new Map<string, LookupKey>();
+    for (const [key, ref] of knownLookups.entries()) {
+      if (!knownByUserId.has(ref.userId)) knownByUserId.set(ref.userId, key);
+    }
+
+    // 2차 패스: updatedBy 등록 — createdBy 동일·known 에 이미 있는 userId 는 skip.
+    for (const n of notices) {
+      if (!n.updatedBy) continue;
+      if (n.updatedBy === n.createdBy) continue; // known 결과 재사용
+      if (knownByUserId.has(n.updatedBy)) continue; // 다른 row 의 createdBy 로 이미 등록됨
+      unknownLookups.set(unknownKey(n.updatedBy), n.updatedBy);
+    }
+
+    const knownEntries = Array.from(knownLookups.entries());
+    const unknownEntries = Array.from(unknownLookups.entries());
+
+    const [knownSettled, unknownSettled] = await Promise.all([
+      Promise.allSettled(
+        knownEntries.map(([, ref]) =>
+          resolveUserName(ref.userType, ref.userId, logTag),
+        ),
+      ),
+      Promise.allSettled(
+        unknownEntries.map(([, uid]) =>
+          resolveUserNameUnknownType(uid, logTag).then((r) => r.name),
+        ),
+      ),
+    ]);
+
+    const nameMap = new Map<LookupKey, string | null>();
+    knownEntries.forEach(([key], idx) => {
+      const r = knownSettled[idx];
       nameMap.set(key, r.status === "fulfilled" ? r.value : null);
     });
+    unknownEntries.forEach(([key], idx) => {
+      const r = unknownSettled[idx];
+      nameMap.set(key, r.status === "fulfilled" ? r.value : null);
+    });
+
+    const resolveCreatedByName = (n: (typeof notices)[number]): string | null =>
+      n.createdBy ? (nameMap.get(knownKey(n.userType, n.createdBy)) ?? null) : null;
+
+    const resolveUpdatedByName = (n: (typeof notices)[number]): string | null => {
+      if (!n.updatedBy) return null;
+      // 동일인 갱신 → 이미 조회된 known 결과 재사용.
+      if (n.updatedBy === n.createdBy) {
+        return nameMap.get(knownKey(n.userType, n.updatedBy)) ?? null;
+      }
+      // 다른 row 의 createdBy 로 known 조회된 userId 면 그 결과 재사용.
+      const knownKeyForUser = knownByUserId.get(n.updatedBy);
+      if (knownKeyForUser) return nameMap.get(knownKeyForUser) ?? null;
+      return nameMap.get(unknownKey(n.updatedBy)) ?? null;
+    };
 
     const data = notices.map((n) => ({
       id: n.id,
@@ -180,10 +239,10 @@ export async function GET(request: NextRequest) {
       userId: n.userId,
       createdAt: n.createdAt,
       createdBy: n.createdBy,
-      createdByName: n.createdBy ? (nameMap.get(buildKey(n.userType, n.createdBy)) ?? null) : null,
+      createdByName: resolveCreatedByName(n),
       updatedAt: n.updatedAt,
       updatedBy: n.updatedBy,
-      updatedByName: n.updatedBy ? (nameMap.get(buildKey(n.userType, n.updatedBy)) ?? null) : null,
+      updatedByName: resolveUpdatedByName(n),
     }));
 
     return NextResponse.json({
@@ -253,7 +312,7 @@ export async function POST(request: NextRequest) {
 
     console.info("[POST /api/home-notices] created", {
       id: notice.id,
-      by: auth.user.userId,
+      by: maskEmail(auth.user.userId),
       role: auth.user.role,
     });
 

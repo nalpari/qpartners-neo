@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
   if (!record) {
     return NextResponse.json(
-      { error: "인증번호를 먼저 발송해 주세요." },
+      { error: "인증번호를 먼저 발송해 주세요.", code: "NOT_SENT" },
       { status: 401 },
     );
   }
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
   // 4. 만료시간 확인
   if (record.expiresAt < new Date()) {
     return NextResponse.json(
-      { error: "입력시간이 초과되었습니다. 재전송 후, 다시 입력해주세요." },
+      { error: "입력시간이 초과되었습니다. 재전송 후, 다시 입력해주세요.", code: "EXPIRED" },
       { status: 401 },
     );
   }
@@ -125,13 +125,13 @@ export async function POST(request: NextRequest) {
         console.error("[POST /api/auth/two-factor/verify] 코드 무효화 실패 (보안 주의):", error);
       }
       return NextResponse.json(
-        { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
+        { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요.", code: "MAX_ATTEMPTS" },
         { status: 401 },
       );
     }
 
     return NextResponse.json(
-      { error: "인증번호가 일치하지 않습니다." },
+      { error: "인증번호가 일치하지 않습니다.", code: "MISMATCH" },
       { status: 401 },
     );
   }
