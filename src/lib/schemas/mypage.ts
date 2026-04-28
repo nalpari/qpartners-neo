@@ -130,6 +130,12 @@ export const qspUserDetailSchema = z.object({
   /** 뉴스알림 변경일시 — QSP 신규 추가(2026-04-24). "YYYY.MM.DD HH:mm:ss".
    *  마이페이지 뉴스레터 수신일시 표시에 사용. */
   newsRcptChgDt: z.string().nullish(),
+  /** 로그인 알림받기 유효/무효 — 회원관리 (p.47 #6). 발송 조건 판정 SOT (qp_info 미구현).
+   *  QSP 응답 누락 시 null → 발송 X (fail-closed). */
+  loginNotiYn: z.enum(["Y", "N"]).nullish(),
+  /** 속성변경 알림받기 유효/무효 — 회원관리 (p.47 #7). 마이페이지 수정 시 알림 발송 SOT.
+   *  QSP 응답 누락 시 null → 발송 X (fail-closed). */
+  attrChgYn: z.enum(["Y", "N"]).nullish(),
   // QSP 과도기: DEALER → STORE 호환 매핑 (qspLoginUserSchema와 동일 로직)
   userTp: z.string().nullable().transform((val) => {
     if (val === "DEALER") return "STORE" as const;
