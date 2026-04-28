@@ -201,35 +201,63 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           where: { categoryId: { in: affectedCategoryIds } },
         });
 
-        // 3. root 삭제 → DB 엔진이 자손 카테고리 + 모든 ContentCategory 링크 cascade 삭제.
+        // 3. 형제 재정렬용 — 삭제 대상의 parentId / sortOrder 미리 확보.
+        //    delete 후엔 row 가 사라져 조회 불가하므로 반드시 delete 이전 시점.
+        const target = await tx.category.findUnique({
+          where: { id: parsed.data },
+          select: { parentId: true, sortOrder: true },
+        });
+        if (!target) {
+          throw new Error("NOT_FOUND");
+        }
+
+        // 4. root 삭제 → DB 엔진이 자손 카테고리 + 모든 ContentCategory 링크 cascade 삭제.
         await tx.category.delete({ where: { id: parsed.data } });
+
+        // 5. 같은 부모(parentId) 형제들 sortOrder 갭 제거 — 더 큰 값들 -1.
+        //    parentId 가 null(최상위) 인 경우도 동일 처리. 자손은 cascade 로 통째로 사라지므로
+        //    그 안쪽의 형제 재정렬은 불필요(갭 자체가 생기지 않음).
+        const reordered = await tx.category.updateMany({
+          where: {
+            parentId: target.parentId,
+            sortOrder: { gt: target.sortOrder },
+          },
+          data: { sortOrder: { decrement: 1 } },
+        });
 
         return {
           id: parsed.data,
           cascadedCategoryIds: descendantIds,
           cascadedContentLinkCount,
+          reorderedSiblingCount: reordered.count,
+          parentId: target.parentId,
+          removedSortOrder: target.sortOrder,
         };
       },
       { isolationLevel: "Serializable" },
     );
 
     // 구조적 감사 로그 — PII 없음(ID만). 운영 복구/추적용.
-    // cascade 가 발생한 경우(자손 카테고리 또는 ContentCategory 링크가 있는 경우)에만 출력.
+    // cascade 또는 형제 재정렬이 발생한 경우 출력.
     // ID 배열은 최대 50개까지만 인라인 — 상한(CATEGORY_MAX_DESCENDANTS=10000) 도달 시
     // 단일 로그 엔트리가 비대해져 로그 수집/검색 부담을 키우는 것 방지.
     if (
       deleted.cascadedCategoryIds.length > 0 ||
-      deleted.cascadedContentLinkCount > 0
+      deleted.cascadedContentLinkCount > 0 ||
+      deleted.reorderedSiblingCount > 0
     ) {
       const AUDIT_ID_PREVIEW_MAX = 50;
       const totalIds = deleted.cascadedCategoryIds.length;
       const previewIds = deleted.cascadedCategoryIds.slice(0, AUDIT_ID_PREVIEW_MAX);
       console.info("[DELETE /api/categories/:id] cascade removed", {
         categoryId: deleted.id,
+        parentId: deleted.parentId,
+        removedSortOrder: deleted.removedSortOrder,
         cascadedCategoryCount: totalIds,
         cascadedCategoryIdsPreview: previewIds,
         cascadedCategoryIdsTruncated: totalIds > AUDIT_ID_PREVIEW_MAX,
         cascadedContentLinkCount: deleted.cascadedContentLinkCount,
+        reorderedSiblingCount: deleted.reorderedSiblingCount,
       });
     }
 
@@ -247,6 +275,9 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         { error: "Too many descendants to delete in a single request" },
         { status: 422 },
       );
+    }
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (
       error instanceof PrismaClientKnownRequestError &&
