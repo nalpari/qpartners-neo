@@ -4,6 +4,7 @@
 export interface NoticeListItem {
   id: number;
   targets: string[];
+  title: string;
   content: string;
   url: string | null;
   startAt: string;
@@ -34,6 +35,7 @@ export interface NoticeFormData {
   targets: string[];
   startDate: string;
   endDate: string;
+  title: string;
   content: string;
   url: string;
   author: string;

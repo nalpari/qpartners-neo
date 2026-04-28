@@ -28,7 +28,9 @@ interface NoticesSearchProps {
 }
 
 export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps) {
-  const [content, setContent] = useState(filters.keyword);
+  // 2026-04-28: 검색 키워드를 「お知らせ内容」 → 「タイトル」 으로 전환.
+  // state name 도 의미 일치하도록 title 로 정정.
+  const [title, setTitle] = useState(filters.keyword);
   const [statuses, setStatuses] = useState<string[]>(filters.statuses);
   const [author, setAuthor] = useState(filters.author);
   const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
@@ -41,7 +43,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
 
   const handleSearch = () => {
     onSearch({
-      keyword: content,
+      keyword: title,
       statuses,
       targetType,
       startDate,
@@ -55,7 +57,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   };
 
   const handleReset = () => {
-    setContent("");
+    setTitle("");
     setStatuses([]);
     setAuthor("");
     setStartDate(null);
@@ -72,11 +74,11 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
           <div className="flex flex-1 gap-1 h-[58px] items-center">
             <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap">
-                お知らせ内容
+                タイトル
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={content} onChange={setContent} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
+              <InputBox value={title} onChange={setTitle} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
             </div>
           </div>
 

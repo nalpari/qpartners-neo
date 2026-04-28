@@ -18,6 +18,7 @@ export const createHomeNoticeSchema = z
     ...targetFields,
     startAt: z.coerce.date(),
     endAt: z.coerce.date(),
+    title: z.string().min(1, "タイトルは必須です").max(100, "タイトルは100文字以内で入力してください"),
     content: z.string().min(1, "内容は必須です"),
     url: z
       .string()
@@ -54,6 +55,11 @@ export const updateHomeNoticeSchema = z
     targetGeneral: z.boolean().optional(),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
+    title: z
+      .string()
+      .min(1, "タイトルは必須です")
+      .max(100, "タイトルは100文字以内で入力してください")
+      .optional(),
     content: z.string().min(1, "内容は必須です").optional(),
     url: z
       .string()

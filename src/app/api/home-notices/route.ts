@@ -82,7 +82,8 @@ export async function GET(request: NextRequest) {
     }
 
     const where = {
-      ...(keyword && { content: { contains: keyword } }),
+      // 검색 keyword 는 title 부분 일치 (2026-04-28 변경: content → title).
+      ...(keyword && { title: { contains: keyword } }),
       ...(createdBy && { createdBy: { contains: createdBy } }),
       ...(targetField && { [targetField]: true }),
       ...((startDate || endDate) && {
@@ -107,6 +108,7 @@ export async function GET(request: NextRequest) {
     const data = notices.map((n) => ({
       id: n.id,
       targets: toTargetArray(n),
+      title: n.title,
       content: n.content,
       url: n.url,
       startAt: n.startAt,

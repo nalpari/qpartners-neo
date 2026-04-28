@@ -53,6 +53,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const data = {
       id: notice.id,
       targets: toTargetArray(notice),
+      title: notice.title,
       content: notice.content,
       url: notice.url,
       startAt: notice.startAt,

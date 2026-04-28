@@ -37,6 +37,7 @@ interface NoticeDetailResponse {
   data: {
     id: number;
     targets: string[];
+    title: string;
     content: string;
     url: string | null;
     startAt: string;
@@ -214,59 +215,82 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     });
   };
 
-  // user·openPopup 을 클로저로 바인딩한 renderer — useMemo 로 reference 안정화 (user 변경 시 재생성)
-  const ContentCellRenderer = useMemo(() => {
+  // 공통 클릭 핸들러 — 상세 조회 → 권한 체크 → 팝업 오픈.
+  // 타이틀/내용 두 컬럼 모두 동일 동작을 공유하도록 useCallback 으로 추출.
+  const openNoticeDetail = useCallback(
+    async (id: number) => {
+      try {
+        const res = await api.get<NoticeDetailResponse>(`/home-notices/${id}`);
+        const d = res.data.data;
+
+        if (!canModifyClient(user, d)) {
+          useAlertStore.getState().openAlert({
+            type: "alert",
+            message: "このお知らせを編集する権限がありません。",
+          });
+          return;
+        }
+
+        const formData: NoticeFormData = {
+          id: d.id,
+          targets: d.targets,
+          startDate: d.startAt,
+          endDate: d.endAt,
+          title: d.title,
+          content: d.content,
+          url: d.url ?? "",
+          author: d.createdBy ?? "",
+          authorId: d.userId,
+          createdAt: d.createdAt,
+          updater: d.updatedBy ?? "",
+          updaterId: "",
+          updatedAt: d.updatedAt,
+        };
+        openPopup("notice-form", { mode: "edit", notice: formData });
+      } catch (error: unknown) {
+        console.error("[NoticesTable] 공지 상세 조회 실패:", error);
+        useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
+      }
+    },
+    [user, openPopup],
+  );
+
+  // 타이틀 셀 — 클릭 시 팝업 오픈.
+  const TitleCellRenderer = useMemo(() => {
     const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
       const rowData = params.data;
       if (!rowData) return null;
-
-      const handleClick = async () => {
-        try {
-          const res = await api.get<NoticeDetailResponse>(`/home-notices/${rowData.id}`);
-          const d = res.data.data;
-
-          // 권한 체크: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
-          if (!canModifyClient(user, d)) {
-            useAlertStore.getState().openAlert({
-              type: "alert",
-              message: "このお知らせを編集する権限がありません。",
-            });
-            return;
-          }
-
-          const formData: NoticeFormData = {
-            id: d.id,
-            targets: d.targets,
-            startDate: d.startAt,
-            endDate: d.endAt,
-            content: d.content,
-            url: d.url ?? "",
-            author: d.createdBy ?? "",
-            authorId: d.userId,
-            createdAt: d.createdAt,
-            updater: d.updatedBy ?? "",
-            updaterId: "",
-            updatedAt: d.updatedAt,
-          };
-          openPopup("notice-form", { mode: "edit", notice: formData });
-        } catch (error: unknown) {
-          console.error("[NoticesTable] 공지 상세 조회 실패:", error);
-          useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
-        }
-      };
-
       return (
         <button
           type="button"
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-          onClick={handleClick}
+          onClick={() => openNoticeDetail(rowData.id)}
+        >
+          {rowData.title?.trim() || "(タイトル未設定)"}
+        </button>
+      );
+    };
+    return Renderer;
+  }, [openNoticeDetail]);
+
+  // 내용 셀 — 타이틀 미입력 데이터 식별을 위해 함께 노출. 동일 클릭 동작.
+  // (title 마이그레이션 완료 후 제거 검토 — 임시 fallback 컬럼)
+  const ContentCellRenderer = useMemo(() => {
+    const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
+      const rowData = params.data;
+      if (!rowData) return null;
+      return (
+        <button
+          type="button"
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer text-left"
+          onClick={() => openNoticeDetail(rowData.id)}
         >
           {rowData.content}
         </button>
       );
     };
     return Renderer;
-  }, [user, openPopup]);
+  }, [openNoticeDetail]);
 
   // 체크박스 cell renderer — context 로 selectedIds 와 토글 핸들러 전달.
   // selectedIds 가 바뀔 때마다 useEffect 가 refreshCells 를 호출해 강제 재렌더.
@@ -312,6 +336,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
       targets: [],
       startDate: "",
       endDate: "",
+      title: "",
       content: "",
       url: "",
       author: "",
@@ -349,6 +374,14 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
+        headerName: "タイトル",
+        field: "title",
+        flex: 1.5,
+        cellRenderer: TitleCellRenderer,
+        headerClass: "ag-header-cell-center",
+      },
+      {
+        // 임시 fallback — 기존 데이터 식별용. title 입력이 정착되면 제거 검토.
         headerName: "お知らせ内容",
         field: "content",
         flex: 2,
@@ -402,7 +435,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
     ],
-    [ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
+    [TitleCellRenderer, ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
   );
 
   // 그리드 context — cell renderer 가 최신 selectedIds / 토글 핸들러를 참조하도록 매 렌더 갱신.

@@ -10,6 +10,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 interface HomeNoticeItem {
   id: number;
   startAt?: string;
+  title: string;
   content: string;
   url: string | null;
 }
@@ -18,8 +19,8 @@ interface ActiveNoticesResponse {
   data: HomeNoticeItem[];
 }
 
-// title 필드가 아직 API/DB 에 없어서 임시 placeholder. 추후 notice.title 도입 시 fallback 용도로 유지.
-const PLACEHOLDER_TITLE = "タイトルが表示されます";
+// 2026-04-28: title 필드 도입 — 빈 값(이전 데이터 미입력) 안전 폴백으로 유지.
+const PLACEHOLDER_TITLE = "タイトル";
 
 const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
 
@@ -108,7 +109,7 @@ function NoticeRow({
             </span>
           )}
           <span className="font-['Pretendard'] font-semibold truncate">
-            {PLACEHOLDER_TITLE}
+            {notice.title?.trim() || PLACEHOLDER_TITLE}
           </span>
         </span>
         <span className="shrink-0 size-[28px] flex items-center justify-center text-[#6a88a9]">

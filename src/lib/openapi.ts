@@ -1490,7 +1490,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 목록 (관리자용)",
         parameters: [
-          { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "타이틀(title) Like 검색 — 2026-04-28 변경: content → title", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
           { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
           { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
@@ -3951,7 +3951,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       HomeNotice: {
         type: "object",
-        required: ["id", "startAt", "endAt", "content", "userType", "userId", "createdAt", "updatedAt"],
+        required: ["id", "startAt", "endAt", "title", "content", "userType", "userId", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
           targetSuperAdmin: { type: "boolean" },
@@ -3962,6 +3962,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean" },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           userType: { type: "string", enum: [...userTpValues] },
@@ -3977,6 +3978,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "integer" },
           targets: { type: "array", items: { type: "string" }, example: ["first_store", "seko"] },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },
@@ -4009,6 +4011,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },
@@ -4016,7 +4019,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       CreateHomeNotice: {
         type: "object",
-        required: ["startAt", "endAt", "content"],
+        required: ["startAt", "endAt", "title", "content"],
         description: "게시대상(target*) 중 최소 1개 true 필수",
         properties: {
           targetSuperAdmin: { type: "boolean", default: false },
@@ -4027,6 +4030,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean", default: false },
           startAt: { type: "string", format: "date-time", example: "2026-03-20T00:00:00Z" },
           endAt: { type: "string", format: "date-time", example: "2026-03-30T23:59:59Z" },
+          title: { type: "string", maxLength: 100, example: "システムメンテナンスのお知らせ" },
           content: { type: "string", example: "공지 내용 텍스트" },
           url: { type: "string", maxLength: 500, nullable: true, example: "https://example.com" },
         },
@@ -4043,6 +4047,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean" },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", maxLength: 500, nullable: true },
         },

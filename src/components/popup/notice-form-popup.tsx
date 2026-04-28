@@ -27,6 +27,7 @@ interface FormErrors {
   startDate?: string;
   endDate?: string;
   dateRange?: string;
+  title?: string;
   content?: string;
   url?: string;
 }
@@ -66,6 +67,7 @@ export function NoticeFormPopup() {
   const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
   const [startDate, setStartDate] = useState<Date | null>(parseDate(initialData?.startDate ?? ""));
   const [endDate, setEndDate] = useState<Date | null>(parseDate(initialData?.endDate ?? ""));
+  const [title, setTitle] = useState(initialData?.title ?? "");
   const [content, setContent] = useState(initialData?.content ?? "");
   const [url, setUrl] = useState(initialData?.url ?? "");
 
@@ -86,6 +88,8 @@ export function NoticeFormPopup() {
     if (startDate && endDate && startDate >= endDate) {
       errs.dateRange = "開始日は終了日より前に設定してください";
     }
+    if (!title.trim()) errs.title = "タイトルを入力してください";
+    else if (title.length > 100) errs.title = "タイトルは100文字以内で入力してください";
     if (!content.trim()) errs.content = "お知らせ内容を入力してください";
     if (url && !url.startsWith("https://")) {
       errs.url = "URLはhttps://で始めてください";
@@ -207,6 +211,7 @@ export function NoticeFormPopup() {
       ...targetsToPayload(targets),
       startAt: startDate!.toISOString(),
       endAt: endDate!.toISOString(),
+      title: title.trim(),
       content: content.trim(),
       url: url.trim() || null,
     };
@@ -281,6 +286,15 @@ export function NoticeFormPopup() {
             {errors.startDate && <p className={errorText}>{errors.startDate}</p>}
             {errors.endDate && <p className={errorText}>{errors.endDate}</p>}
             {errors.dateRange && <p className={errorText}>{errors.dateRange}</p>}
+          </div>
+
+          {/* 타이틀 */}
+          <div className="flex flex-col gap-3">
+            <label className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#101010]">
+              タイトル<span className="text-[#FF1A1A]">*</span>
+            </label>
+            <InputBox value={title} onChange={setTitle} placeholder="" />
+            {errors.title && <p className={errorText}>{errors.title}</p>}
           </div>
 
           {/* 공지내용 */}

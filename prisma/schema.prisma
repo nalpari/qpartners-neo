@@ -281,6 +281,7 @@ model HomeNotice {
   targetGeneral      Boolean                   @default(false) @map("target_general")
   startAt            DateTime                  @map("start_at")
   endAt              DateTime                  @map("end_at")
+  title              String                    @default("無題") @db.VarChar(100)
   content            String                    @db.Text
   url                String?                   @db.VarChar(500)
   createdAt          DateTime                  @default(now()) @map("created_at")
