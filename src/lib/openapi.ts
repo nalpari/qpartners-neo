@@ -2864,8 +2864,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Member"],
         summary: "회원 상세정보 수정",
         description:
-          "관리자 전용 — 권한별 수정 제한 정책: GENERAL 은 전체 필드 수정 가능. " +
-          "STORE/SEKO/ADMIN 은 newsRcptYn 만 변경 가능 (비밀번호는 별도 /reset-password API). " +
+          "관리자 전용 — 권한별 수정 제한 정책 (2026-04-28 갱신): GENERAL 은 전체 필드 수정 가능. " +
+          "STORE/SEKO/ADMIN 은 newsRcptYn / twoFactorEnabled / attributeChangeNotification / loginNotification 변경 가능 (비밀번호는 별도 /reset-password API). " +
           "삭제(D) STORE 회원은 storeLvl 확보 불가로 수정 차단(400). " +
           "preDetail null (삭제 회원) 경로: 비복구 시 userRole/twoFactorEnabled 변경 불가(400). " +
           "status='active' 복구 시 userRole + twoFactorEnabled 명시 필수 (400 if missing) — QSP 잔존 값(authCd/secAuthYn)의 silent 부활 차단. " +
