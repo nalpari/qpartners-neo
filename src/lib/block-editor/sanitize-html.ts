@@ -81,11 +81,18 @@ function ensureHooksRegistered(): void {
  */
 export function sanitizeContentHtml(html: string | null | undefined): string {
   if (!html) return "";
-  ensureHooksRegistered();
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: true,
-    ALLOW_ARIA_ATTR: true,
-  });
+  try {
+    ensureHooksRegistered();
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS,
+      ALLOWED_ATTR,
+      ALLOW_DATA_ATTR: true,
+      ALLOW_ARIA_ATTR: true,
+    });
+  } catch (error: unknown) {
+    // sanitize는 렌더 직전에 호출되므로 throw가 페이지 전체 크래시로 이어진다.
+    // dompurify는 string 입력에 거의 throw하지 않지만, 방어적으로 빈 본문으로 폴백한다.
+    console.error("[sanitizeContentHtml] sanitize 실패:", error);
+    return "";
+  }
 }
