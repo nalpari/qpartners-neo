@@ -28,8 +28,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 요청자 role 의 canRead=true 메뉴만 필터 — 응답 range 를 매트릭스로 좁힌다.
+    // 관리 모드(activeOnly=false)에서는 비활성 메뉴도 포함해야 한다 — 비활성 메뉴를
+    // 숨기면 사용자는 이미 존재하는 비활성 menuCode 를 인지하지 못한 채 신규 등록을
+    // 시도해 409(Unique 충돌)를 받게 된다. 이때 화면 목록에는 보이지 않으니 원인 파악
+    // 불가. 관리 모드에선 isActive 필터를 제거해 모든 메뉴를 노출.
     const allowedPerms = await prisma.qpRoleMenuPermission.findMany({
-      where: { roleCode: user.role, canRead: true, menu: { isActive: true } },
+      where: {
+        roleCode: user.role,
+        canRead: true,
+        ...(activeOnly && { menu: { isActive: true } }),
+      },
       select: { menuCode: true },
     });
     const allowedSet = new Set(allowedPerms.map((p) => p.menuCode));
