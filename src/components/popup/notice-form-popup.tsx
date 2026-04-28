@@ -153,7 +153,46 @@ export function NoticeFormPopup() {
     },
   });
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  // 단건 삭제 mutation — 팝업 하단 削除 버튼에서 사용. confirm 후에만 호출.
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.delete(`/home-notices/${noticeId}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
+      openAlert({ type: "alert", message: "削除しました。", confirmLabel: "確認" });
+      closePopup();
+    },
+    onError: (error: unknown) => {
+      if (isAxiosError(error) && error.response?.status === 403) {
+        openAlert({
+          type: "alert",
+          message: "このお知らせを削除する権限がありません。",
+          confirmLabel: "確認",
+        });
+        return;
+      }
+      openAlert({ type: "alert", message: "削除に失敗しました。", confirmLabel: "確認" });
+    },
+  });
+
+  const isSaving =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending;
+
+  // 삭제 버튼 클릭 — confirm 후에만 실제 삭제 mutation 호출.
+  const handleDelete = () => {
+    if (!noticeId) return;
+    openAlert({
+      type: "confirm",
+      message: "本当に削除してもよろしいですか？",
+      confirmLabel: "削除",
+      cancelLabel: "キャンセル",
+      onConfirm: () => deleteMutation.mutate(),
+    });
+  };
 
   // Design Ref: §4.3 — handleSave 통합
   const handleSave = () => {
@@ -303,13 +342,22 @@ export function NoticeFormPopup() {
             </div>
           </div>
 
-          {/* 버튼 */}
+          {/* 버튼 — 순서: キャンセル → 削除(edit 모드만) → 保存 */}
           <div className="popup-buttons--inline">
-            <Button variant="secondary" onClick={handleClose}>
+            <Button variant="secondary" onClick={handleClose} disabled={isSaving}>
               キャンセル
             </Button>
+            {mode === "edit" && (
+              <Button
+                variant="secondary"
+                onClick={handleDelete}
+                disabled={isSaving}
+              >
+                {deleteMutation.isPending ? "削除中..." : "削除"}
+              </Button>
+            )}
             <Button variant="primary" onClick={handleSave} disabled={isSaving}>
-              {isSaving ? "保存中..." : "保存"}
+              {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
             </Button>
           </div>
         </div>

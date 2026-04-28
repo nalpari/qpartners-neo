@@ -1642,6 +1642,60 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
 
+    "/home-notices/bulk-delete": {
+      post: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 일괄 삭제 (물리 삭제, all-or-nothing)",
+        description:
+          "선택한 공지들을 한 번에 삭제. 요청한 ID 중 하나라도 미존재 또는 권한 부족 시 전체 거부 (어느 것도 삭제하지 않음). 권한 모델은 단건 DELETE 와 동일.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["ids"],
+                properties: {
+                  ids: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 1,
+                    maxItems: 100,
+                    description: "삭제 대상 공지 ID 배열 (최대 100건)",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "일괄 삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        deletedCount: { type: "integer", example: 3 },
+                        ids: { type: "array", items: { type: "integer" } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("입력 검증 실패 (빈 배열 / 100건 초과 등)"),
+          "403": errorResponse("일부 공지에 대한 삭제 권한 없음 (deniedIds 포함)"),
+          "404": errorResponse("일부 공지가 존재하지 않음 (missingIds 포함)"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
     "/home-notices/active": {
       get: {
         tags: ["HomeNotice"],
