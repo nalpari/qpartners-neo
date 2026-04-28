@@ -1,5 +1,6 @@
 "use client";
 
+import { prepareBodyForRender } from "@/lib/block-editor/prepare-body-for-render";
 import { sanitizeContentHtml } from "@/lib/block-editor/sanitize-html";
 
 import { formatDate } from "@/lib/format";
@@ -65,12 +66,12 @@ export function ContentsDetailBody({
         </div>
       </div>
 
-      {/* 본문 — DOMPurify 적용, \n → <br> 전처리로 줄바꿈 보존 */}
+      {/* 본문 — 렌더 전처리(prepareBodyForRender) → sanitize → 삽입 */}
       {body && (
         <div
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{
-            __html: sanitizeContentHtml(body.replace(/\n/g, "<br>")),
+            __html: sanitizeContentHtml(prepareBodyForRender(body)),
           }}
         />
       )}
