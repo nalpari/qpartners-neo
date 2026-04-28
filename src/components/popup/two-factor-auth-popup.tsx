@@ -28,7 +28,7 @@ const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
 function mapServerError(serverMsg: string): string {
   const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
   if (!match) {
-    console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
+    console.warn("[2FA] 未認識のサーバーエラー");
   }
   return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
 }
@@ -79,11 +79,7 @@ export function TwoFactorAuthPopup() {
       isManualResendRef.current = false;
       console.error("[2FA] 送信失敗:", err);
       const serverError = isAxiosError(err) ? extractApiError(err) : undefined;
-      if (serverError) {
-        setError(mapServerError(serverError));
-      } else {
-        setError("メール送信に失敗しました。再送信をお試しください。");
-      }
+      setError(serverError ? mapServerError(serverError) : "認証処理中にエラーが発生しました。しばらくしてからお試しください。");
     },
   });
 
