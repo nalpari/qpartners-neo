@@ -227,9 +227,22 @@ export async function POST(request: NextRequest) {
     secAuthYn: qsp.data.secAuthYn,
     pwdInitYn: qsp.data.pwdInitYn,
     hasSecAuthDt: !!qsp.data.secAuthDt,
+    hasEmail: !!qsp.data.email,
     requireTwoFactor,
     twoFactorReason,
   });
+
+  // 2FA 대상인데 이메일 없는 경우 서버에서 직접 차단 — 클라이언트 우회 방지
+  if (requireTwoFactor && !qsp.data.email) {
+    console.warn("[POST /api/auth/login] 2FA 대상이나 이메일 미등록 — 로그인 차단", {
+      userId: maskEmail(qsp.data.userId),
+      userTp: qsp.data.userTp,
+    });
+    return NextResponse.json(
+      { error: "2段階認証に必要なメール情報が登録されていません。管理者にお問い合わせください。" },
+      { status: 403 },
+    );
+  }
 
   // 6. 세부 권한코드(authRole) 판별
   let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;

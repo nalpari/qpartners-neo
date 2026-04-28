@@ -12,18 +12,23 @@ import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
-/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 */
+/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 (verify + send 공용) */
 const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
-  { pattern: "일치하지 않습니다", message: "認証番号が一致しません！" },
-  { pattern: "입력시간이 초과", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
-  { pattern: "시도 횟수를 초과", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
-  { pattern: "먼저 발송", message: "認証番号を先に送信してください。再送信をお試しください。" },
+  // verify 에러 (일본어 메시지 그대로 매핑)
+  { pattern: "認証番号が一致しません", message: "認証番号が一致しません！" },
+  { pattern: "入力時間を超過", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
+  { pattern: "認証の試行回数を超過", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
+  { pattern: "認証番号を先に送信", message: "認証番号を先に送信してください。再送信をお試しください。" },
+  // send 에러
+  { pattern: "メール情報がない", message: "メール情報がないため認証番号を送信できません。" },
+  { pattern: "送信回数を超え", message: "認証番号の送信回数を超過しました。しばらくしてからお試しください。" },
+  { pattern: "認証番号の送信に失敗", message: "認証番号の送信に失敗しました。しばらくしてから再度お試しください。" },
 ];
 
 function mapServerError(serverMsg: string): string {
   const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
   if (!match) {
-    console.warn("[2FA] 未認識のサーバーエラー:", serverMsg);
+    console.warn("[2FA] 未認識のサーバーエラー");
   }
   return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
 }
@@ -70,14 +75,11 @@ export function TwoFactorAuthPopup() {
         });
       }
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       isManualResendRef.current = false;
       console.error("[2FA] 送信失敗:", err);
-      if (isAxiosError(err) && err.response?.status === 429) {
-        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
-      } else {
-        setError("メール送信に失敗しました。再送信をお試しください。");
-      }
+      const serverError = isAxiosError(err) ? extractApiError(err) : undefined;
+      setError(serverError ? mapServerError(serverError) : "認証処理中にエラーが発生しました。しばらくしてからお試しください。");
     },
   });
 

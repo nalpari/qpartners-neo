@@ -6,7 +6,7 @@ import { userTpSchema } from "@/lib/schemas/common";
 
 export const twoFactorSendSchema = z.object({
   userTp: userTpSchema,
-  userId: z.string().min(1, "사용자 ID는 필수입니다"),
+  userId: z.string().min(1, "ユーザーIDは必須です"),
 });
 
 export type TwoFactorSendInput = z.infer<typeof twoFactorSendSchema>;
@@ -15,11 +15,11 @@ export type TwoFactorSendInput = z.infer<typeof twoFactorSendSchema>;
 
 export const twoFactorVerifySchema = z.object({
   userTp: userTpSchema,
-  userId: z.string().min(1, "사용자 ID는 필수입니다"),
+  userId: z.string().min(1, "ユーザーIDは必須です"),
   code: z
     .string()
-    .length(6, "인증번호는 6자리입니다")
-    .regex(/^\d+$/, "숫자만 입력 가능합니다"),
+    .length(6, "認証番号は6桁です")
+    .regex(/^\d+$/, "数字のみ入力可能です"),
 });
 
 export type TwoFactorVerifyInput = z.infer<typeof twoFactorVerifySchema>;

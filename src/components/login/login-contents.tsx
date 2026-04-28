@@ -86,7 +86,11 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지.
         // userTp 는 응답의 userData.userTp 를 사용 — 탭에서 변환한 값(TAB_TO_USERTP)을 쓰면
         // QSP 가 확정한 실제 회원유형과 어긋나 verify 라우트에서 403 으로 떨어진다.
-        // email 은 팝업에서 사용하지 않으므로 전달하지 않는다(send 라우트가 JWT 의 email 사용).
+        if (!userData.email) {
+          // 이메일 미등록 사용자는 2FA 인증번호 발송 불가 → 로그인 차단 + 안내
+          setError("2段階認証に必要なメール情報が登録されていません。管理者にお問い合わせください。");
+          return;
+        }
         openPopup("two-factor-auth", { userId: userData.userId, userTp: userData.userTp });
       } else {
         // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
