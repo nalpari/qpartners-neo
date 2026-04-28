@@ -1,6 +1,6 @@
 "use client";
 
-import DOMPurify from "dompurify";
+import { sanitizeContentHtml } from "@/lib/block-editor/sanitize-html";
 
 import { formatDate } from "@/lib/format";
 
@@ -70,7 +70,7 @@ export function ContentsDetailBody({
         <div
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{
-            __html: DOMPurify.sanitize(body.replace(/\n/g, "<br>")),
+            __html: sanitizeContentHtml(body.replace(/\n/g, "<br>")),
           }}
         />
       )}
