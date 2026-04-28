@@ -2,7 +2,7 @@
 
 // Design Ref: §5.1 — 메인 컨테이너 (useQuery + useMutation 3개)
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
@@ -23,7 +23,11 @@ export function MenusContents() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeOnly, setActiveOnly] = useState(false);
-  const [sortValues, setSortValues] = useState<Record<string, number>>({});
+  // 정렬 순서 변경값은 ref 에 누적 — state 로 두면 입력 1회마다 부모 리렌더 →
+  // MenusTables 의 columnDefs 참조 갱신 → AG Grid 가 셀을 rebuild → uncontrolled
+  // <input defaultValue> 의 타이핑값이 DOM 에서 손실되어 다중 행 일괄 변경이 불가했음.
+  // ref 로 두면 타이핑은 부모 리렌더를 트리거하지 않으므로 모든 입력값이 보존된다.
+  const sortValuesRef = useRef<Record<string, number>>({});
 
   // --- API 조회 ---
   // Plan R-01: GET /api/menus → useMenuTree 훅으로 공통화
@@ -97,7 +101,7 @@ export function MenusContents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menus"] });
-      setSortValues({});
+      sortValuesRef.current = {};
       openAlert({ type: "alert", message: "整列が保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -159,9 +163,9 @@ export function MenusContents() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Plan R-07: 정렬저장 — sortValues에 기록된 변경사항만 전송
+  // Plan R-07: 정렬저장 — sortValuesRef 에 기록된 변경사항만 전송
   const handleSortSave = () => {
-    const items = Object.entries(sortValues).map(([id, sortOrder]) => ({
+    const items = Object.entries(sortValuesRef.current).map(([id, sortOrder]) => ({
       id: Number(id),
       sortOrder,
     }));
@@ -170,9 +174,9 @@ export function MenusContents() {
     sortMutation.mutate(items);
   };
 
-  // Sort input 값 변경
+  // Sort input 값 변경 — ref 직접 업데이트 (리렌더 없음, 다중 행 입력값 보존)
   const handleSortValueChange = (id: string, value: number) => {
-    setSortValues((prev) => ({ ...prev, [id]: value }));
+    sortValuesRef.current[id] = value;
   };
 
   return (
@@ -204,7 +208,6 @@ export function MenusContents() {
             onLevel2Click={handleLevel2Click}
             onSortSave={handleSortSave}
             onSortValueChange={handleSortValueChange}
-            sortValues={sortValues}
             isSortSaving={sortMutation.isPending}
           />
         </section>

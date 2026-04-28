@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useCallback } from "react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -20,7 +21,6 @@ interface MenusGridContext {
   onLevel1Click?: (id: string) => void;
   onLevel2Click?: (id: string) => void;
   onSortValueChange?: (id: string, v: number) => void;
-  sortValues?: Record<string, number>;
 }
 
 function toCtx(context: unknown): MenusGridContext {
@@ -104,7 +104,6 @@ interface MenusTablesProps {
   onLevel2Click: (id: string) => void;
   onSortSave: () => void;
   onSortValueChange: (id: string, value: number) => void;
-  sortValues: Record<string, number>;
   isSortSaving: boolean;
 }
 
@@ -119,13 +118,14 @@ export function MenusTables({
   onLevel2Click,
   onSortSave,
   onSortValueChange,
-  sortValues,
   isSortSaving,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
+  // useMemo 로 안정화 — 부모 리렌더 시 새 ColDef 배열이 AG Grid 로 흘러가면 셀 rebuild
+  // 가능성이 있어 uncontrolled <input> 의 타이핑값이 손실됨. 컬럼 구조는 정적이므로 빈 deps.
 
-  const level1Columns: ColDef<MenuItem>[] = [
+  const level1Columns = useMemo<ColDef<MenuItem>[]>(() => [
     {
       headerName: "Menu Name",
       field: "menuName",
@@ -166,9 +166,9 @@ export function MenusTables({
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: () => true,
     },
-  ];
+  ], []);
 
-  const level2Columns: ColDef<MenuItem>[] = [
+  const level2Columns = useMemo<ColDef<MenuItem>[]>(() => [
     {
       headerName: "Menu Name",
       field: "menuName",
@@ -201,14 +201,24 @@ export function MenusTables({
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: () => true,
     },
-  ];
+  ], []);
 
   // --- Row Class (선택 하이라이트) ---
 
-  const getLevel1RowClass = (params: RowClassParams<MenuItem>) => {
+  const getLevel1RowClass = useCallback((params: RowClassParams<MenuItem>) => {
     if (params.data?.id === selectedLevel1Id) return "ag-row-selected-menu";
     return undefined;
-  };
+  }, [selectedLevel1Id]);
+
+  // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
+  const level1Context = useMemo(
+    () => ({ selectedLevel1Id, onLevel1Click, onSortValueChange }),
+    [selectedLevel1Id, onLevel1Click, onSortValueChange],
+  );
+  const level2Context = useMemo(
+    () => ({ onLevel2Click, onSortValueChange }),
+    [onLevel2Click, onSortValueChange],
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -243,7 +253,7 @@ export function MenusTables({
             getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={500}
-            context={{ selectedLevel1Id, onLevel1Click, onSortValueChange, sortValues }}
+            context={level1Context}
           />
         </div>
 
@@ -264,7 +274,7 @@ export function MenusTables({
             getRowId={(p) => p.data.id}
             className="menus-grid"
             maxHeight={500}
-            context={{ onLevel2Click, onSortValueChange, sortValues }}
+            context={level2Context}
           />
         </div>
       </div>
