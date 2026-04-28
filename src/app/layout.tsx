@@ -23,6 +23,17 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Q.PARTNERS",
   description: "Q.PARTNERS",
+  /**
+   * Referrer-Policy 명시 — 자동로그인 외부 3사(HANASYS/Q.Order/Q.Musubi) 가
+   * `request.getHeader("REFERER")` 로 호출 도메인 화이트리스트 검사를 수행하는데,
+   * 브라우저 기본 정책(strict-origin-when-cross-origin) 은 cross-origin 시 origin 만
+   * 전송하여 일부 환경에서 검사 단계에서 차단될 수 있다.
+   *
+   * `no-referrer-when-downgrade` 로 HTTPS → HTTPS 이동 시 full URL(path/query 포함) 이
+   * Referer 헤더로 전송되도록 설정. HTTPS → HTTP 다운그레이드는 여전히 차단되어
+   * downgrade 누설은 방어된다.
+   */
+  referrer: "no-referrer-when-downgrade",
 };
 
 export default function RootLayout({
