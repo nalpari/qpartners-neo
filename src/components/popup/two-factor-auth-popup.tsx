@@ -63,7 +63,6 @@ export function TwoFactorAuthPopup() {
       startTimer();
       // 수동 재전송에서 트리거된 경우에만 알림. 자동 첫 발송은 팝업 오픈 안내문으로 충분.
       if (isManualResendRef.current) {
-        isManualResendRef.current = false;
         openAlert({
           type: "alert",
           message: "認証番号が再送信されました。",
@@ -71,13 +70,21 @@ export function TwoFactorAuthPopup() {
       }
     },
     onError: (err) => {
-      isManualResendRef.current = false;
       console.error("[2FA] 送信失敗:", err);
-      if (isAxiosError(err) && err.response?.status === 429) {
-        setError("認証番号の送信回数を超過しました。しばらくしてからお試しください。");
+      const message = isAxiosError(err) && err.response?.status === 429
+        ? "認証番号の送信回数を超過しました。しばらくしてからお試しください。"
+        : "メール送信に失敗しました。しばらくしてからお試しください。";
+      // 수동 재전송 실패 시에는 alert 로 명시 (인라인 텍스트만으로는 사용자가 인지 못하는 케이스 방지).
+      // 자동 첫 발송 실패 시에는 인라인 에러로 충분 (팝업 본문 자체가 안내문 컨텍스트).
+      if (isManualResendRef.current) {
+        openAlert({ type: "alert", message });
       } else {
-        setError("メール送信に失敗しました。再送信をお試しください。");
+        setError(message);
       }
+    },
+    onSettled: () => {
+      // 성공/실패 무관하게 manual flag 리셋 — onSuccess/onError 분기 누락 방지.
+      isManualResendRef.current = false;
     },
   });
 
@@ -137,6 +144,8 @@ export function TwoFactorAuthPopup() {
   };
 
   const handleResend = () => {
+    // 진단 로그 — 클릭이 실제로 진입했는지 가시화 (브라우저 콘솔에서 확인 가능).
+    console.log("[2FA] 再送信 클릭", { isPending: sendMutation.isPending });
     setCode("");
     setError(null);
     inputRef.current?.focus();
@@ -253,8 +262,7 @@ export function TwoFactorAuthPopup() {
                 <button
                   type="button"
                   onClick={handleResend}
-                  disabled={sendMutation.isPending}
-                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0 transition-colors duration-150 hover:bg-[#101010] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0 transition-colors duration-150 hover:bg-[#101010]"
                 >
                   再送信
                 </button>
