@@ -56,6 +56,8 @@ export function MembersTable({
   onPageSizeChange,
 }: MembersTableProps) {
   // Design Ref: §4.3 — useQuery
+  // staleTime: 0 + refetchOnMount/Focus 활성 — 최근접속일시(lastLoginAt) 등 외부에서 변경되는
+  // 운영 데이터가 즉시 반영되도록 보장. 페이지 재진입·탭 포커스 복귀 시 자동 fetch.
   const { data, isLoading } = useQuery<MemberListResponse["data"]>({
     queryKey: ["admin", "members", filters, page, pageSize],
     queryFn: async () => {
@@ -73,7 +75,9 @@ export function MembersTable({
       const res = await api.get<MemberListResponse>("/admin/members", { params });
       return res.data.data;
     },
-    staleTime: Infinity,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const list = data?.list ?? [];

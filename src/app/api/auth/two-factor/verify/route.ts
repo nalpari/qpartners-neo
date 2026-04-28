@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   if (!record) {
     return NextResponse.json(
-      { error: "認証番号を先に送信してください。" },
+      { error: "認証番号を先に送信してください。", code: "NOT_SENT" },
       { status: 401 },
     );
   }
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
   // 4. 만료시간 확인
   if (record.expiresAt < new Date()) {
     return NextResponse.json(
-      { error: "入力時間を超過しました。再送信後、もう一度入力してください。" },
+      { error: "入力時間を超過しました。再送信後、もう一度入力してください。", code: "EXPIRED" },
       { status: 401 },
     );
   }
@@ -127,13 +127,13 @@ export async function POST(request: NextRequest) {
         console.error("[POST /api/auth/two-factor/verify] 코드 무효화 실패 (보안 주의):", error);
       }
       return NextResponse.json(
-        { error: "認証の試行回数を超過しました。認証番号を再送信してください。" },
+        { error: "認証の試行回数を超過しました。認証番号を再送信してください。", code: "MAX_ATTEMPTS" },
         { status: 401 },
       );
     }
 
     return NextResponse.json(
-      { error: "認証番号が一致しません。" },
+      { error: "認証番号が一致しません。", code: "MISMATCH" },
       { status: 401 },
     );
   }

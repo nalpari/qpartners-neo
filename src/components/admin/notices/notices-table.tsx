@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { isAxiosError } from "axios";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  ColDef,
+  GridApi,
+  GridReadyEvent,
+  ICellRendererParams,
+} from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, Button } from "@/components/common";
+import { Pagination, PageSizeSelect, Button, Checkbox } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
@@ -20,17 +26,17 @@ import {
   STATUS_LABEL_MAP,
   targetsToLabel,
   formatDate,
+  formatUserLabel,
 } from "./notices-types";
 
 // Design Ref: §4.3 — NoticesTable useQuery + AG Grid 컬럼 매핑
-
-const PAGE_SIZE = 20;
 
 
 interface NoticeDetailResponse {
   data: {
     id: number;
     targets: string[];
+    title: string;
     content: string;
     url: string | null;
     startAt: string;
@@ -41,19 +47,37 @@ interface NoticeDetailResponse {
     authorIsSuperAdmin?: boolean;
     createdAt: string;
     createdBy: string | null;
+    createdByName?: string | null;
     updatedAt: string;
     updatedBy: string | null;
+    updatedByName?: string | null;
   };
 }
 
 interface NoticesTableProps {
   filters: NoticeSearchFilters;
   page: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  // 일괄 삭제 선택 상태는 부모가 보유. 페이지/필터 변경 시 부모가 명시적으로 초기화.
+  // (자식 useEffect 로 외부값 변화에 맞춰 setState 하면 React Compiler set-state-in-effect 규칙 위반)
+  selectedIds: Set<number>;
+  onSelectedIdsChange: (ids: Set<number>) => void;
 }
 
-export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps) {
+export function NoticesTable({
+  filters,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  selectedIds,
+  onSelectedIdsChange,
+}: NoticesTableProps) {
   const { openPopup } = usePopupStore();
+  const { openAlert } = useAlertStore();
+  const queryClient = useQueryClient();
 
   // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
   // canModifyClient 권한 판정에 사용 — user 변경 시 renderer 가 재생성돼 클로저가 최신 사용자 참조.
@@ -65,24 +89,28 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
   });
 
   const { data, isLoading } = useQuery<NoticeListResponse>({
+    // 배열을 직접 키에 넣으면 reference identity 가 매 렌더 바뀔 때 캐시 미스 발생.
+    // join(",") 으로 직렬화해 동일 내용은 동일 키로 안정화.
     queryKey: [
       "home-notices",
       filters.keyword,
-      filters.statuses,
-      filters.targetType,
+      filters.statuses.join(","),
+      filters.targetTypes.join(","),
       filters.author,
       filters.startDate?.getTime(),
       filters.endDate?.getTime(),
       page,
+      pageSize,
     ],
     queryFn: async () => {
       const params: Record<string, string> = {
         page: String(page),
-        pageSize: String(PAGE_SIZE),
+        pageSize: String(pageSize),
       };
       if (filters.keyword) params.keyword = filters.keyword;
       if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
-      if (filters.targetType) params.targetType = filters.targetType;
+      // 게시대상 멀티 선택 — comma-separated 로 BE 에 전달, BE 에서 OR 조건으로 변환.
+      if (filters.targetTypes.length > 0) params.targetType = filters.targetTypes.join(",");
       if (filters.author) params.createdBy = filters.author;
       if (filters.startDate) {
         const d = filters.startDate;
@@ -98,68 +126,215 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     },
   });
 
-  const items = data?.data ?? [];
+  const items = useMemo(() => data?.data ?? [], [data]);
   const totalPages = data?.meta.totalPages ?? 1;
 
-  // user·openPopup 을 클로저로 바인딩한 renderer — useMemo 로 reference 안정화 (user 변경 시 재생성)
+  const visibleIds = useMemo(() => items.map((it) => it.id), [items]);
+  // 헤더 체크박스 3상태 — 권한 팝업 패턴과 동일 (none/some/all).
+  // some 일 때 indeterminate(회색 가로선) 으로 부분 선택 시각화.
+  const visibleSelectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
+  const someVisibleSelected =
+    visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length;
+
+  const toggleOne = useCallback(
+    (id: number, checked: boolean) => {
+      const next = new Set(selectedIds);
+      if (checked) next.add(id);
+      else next.delete(id);
+      onSelectedIdsChange(next);
+    },
+    [selectedIds, onSelectedIdsChange],
+  );
+
+  const toggleAllVisible = useCallback(
+    (checked: boolean) => {
+      const next = new Set(selectedIds);
+      if (checked) {
+        for (const id of visibleIds) next.add(id);
+      } else {
+        for (const id of visibleIds) next.delete(id);
+      }
+      onSelectedIdsChange(next);
+    },
+    [selectedIds, visibleIds, onSelectedIdsChange],
+  );
+
+  // AG Grid api ref — selectedIds 변경 시 _select 컬럼 셀 재렌더 강제. AG Grid 셀 렌더러는
+  // context 가 바뀌어도 자동 재호출되지 않아, refreshCells 로 명시적으로 트리거해야 체크 표시가 갱신됨.
+  const gridApiRef = useRef<GridApi<NoticeListItem> | null>(null);
+
+  const handleGridReady = useCallback((event: GridReadyEvent<NoticeListItem>) => {
+    gridApiRef.current = event.api;
+  }, []);
+
+  useEffect(() => {
+    const api = gridApiRef.current;
+    if (!api) return;
+    // 헤더는 separate refresh 호출 필요 — refreshHeader 로 select 컬럼 헤더 체크박스 갱신.
+    api.refreshCells({ columns: ["_select"], force: true });
+    api.refreshHeader();
+  }, [selectedIds]);
+
+  // 일괄 삭제 mutation — confirm 후에만 호출. 단건 삭제와 권한 모델 동일.
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const res = await api.post("/home-notices/bulk-delete", { ids });
+      return res.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
+      onSelectedIdsChange(new Set());
+      openAlert({ type: "alert", message: "削除しました。", confirmLabel: "確認" });
+    },
+    onError: (error: unknown) => {
+      if (isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 403) {
+          openAlert({
+            type: "alert",
+            message: "選択したお知らせの中に削除する権限がないものが含まれています。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
+        if (status === 404) {
+          openAlert({
+            type: "alert",
+            message: "選択したお知らせの一部が見つかりません。再読み込みしてください。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
+      }
+      openAlert({ type: "alert", message: "一括削除に失敗しました。", confirmLabel: "確認" });
+    },
+  });
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) {
+      openAlert({
+        type: "alert",
+        message: "削除するお知らせを選択してください。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
+    openAlert({
+      type: "confirm",
+      message: "本当に削除してもよろしいですか？",
+      confirmLabel: "削除",
+      cancelLabel: "キャンセル",
+      onConfirm: () => bulkDeleteMutation.mutate(Array.from(selectedIds)),
+    });
+  };
+
+  // 공통 클릭 핸들러 — 상세 조회 → 권한 체크 → 팝업 오픈.
+  // 타이틀/내용 두 컬럼 모두 동일 동작을 공유하도록 useCallback 으로 추출.
+  const openNoticeDetail = useCallback(
+    async (id: number) => {
+      try {
+        const res = await api.get<NoticeDetailResponse>(`/home-notices/${id}`);
+        const d = res.data.data;
+
+        if (!canModifyClient(user, d)) {
+          useAlertStore.getState().openAlert({
+            type: "alert",
+            message: "このお知らせを編集する権限がありません。",
+          });
+          return;
+        }
+
+        const formData: NoticeFormData = {
+          id: d.id,
+          targets: d.targets,
+          startDate: d.startAt,
+          endDate: d.endAt,
+          title: d.title,
+          content: d.content,
+          url: d.url ?? "",
+          // 팝업 표시는 "이름(ID)" 형식 — author/updater 가 이름, authorId/updaterId 가 ID.
+          // 이름 미해결 시 author=빈문자열, ID 만 표시.
+          author: d.createdByName ?? "",
+          authorId: d.createdBy ?? d.userId,
+          createdAt: d.createdAt,
+          updater: d.updatedByName ?? "",
+          updaterId: d.updatedBy ?? "",
+          updatedAt: d.updatedAt,
+        };
+        openPopup("notice-form", { mode: "edit", notice: formData });
+      } catch (error: unknown) {
+        console.error("[NoticesTable] 공지 상세 조회 실패:", error);
+        useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
+      }
+    },
+    [user, openPopup],
+  );
+
+  // 내용 셀 — 클릭 시 상세 팝업 오픈. (タイトル 컬럼은 일단 비노출 — 사용자 요청 §1)
   const ContentCellRenderer = useMemo(() => {
     const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
       const rowData = params.data;
       if (!rowData) return null;
-
-      const handleClick = async () => {
-        try {
-          const res = await api.get<NoticeDetailResponse>(`/home-notices/${rowData.id}`);
-          const d = res.data.data;
-
-          // 권한 체크: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
-          if (!canModifyClient(user, d)) {
-            useAlertStore.getState().openAlert({
-              type: "alert",
-              message: "このお知らせを編集する権限がありません。",
-            });
-            return;
-          }
-
-          const formData: NoticeFormData = {
-            id: d.id,
-            targets: d.targets,
-            startDate: d.startAt,
-            endDate: d.endAt,
-            content: d.content,
-            url: d.url ?? "",
-            author: d.createdBy ?? "",
-            authorId: d.userId,
-            createdAt: d.createdAt,
-            updater: d.updatedBy ?? "",
-            updaterId: "",
-            updatedAt: d.updatedAt,
-          };
-          openPopup("notice-form", { mode: "edit", notice: formData });
-        } catch (error: unknown) {
-          console.error("[NoticesTable] 공지 상세 조회 실패:", error);
-          useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
-        }
-      };
-
       return (
         <button
           type="button"
-          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-          onClick={handleClick}
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer text-left"
+          onClick={() => openNoticeDetail(rowData.id)}
         >
           {rowData.content}
         </button>
       );
     };
     return Renderer;
-  }, [user, openPopup]);
+  }, [openNoticeDetail]);
+
+  // 체크박스 cell renderer — context 로 selectedIds 와 토글 핸들러 전달.
+  // selectedIds 가 바뀔 때마다 useEffect 가 refreshCells 를 호출해 강제 재렌더.
+  const CheckboxCellRenderer = useMemo(() => {
+    const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
+      const rowData = params.data;
+      if (!rowData) return null;
+      const ctx = params.context as {
+        selectedIds: Set<number>;
+        toggleOne: (id: number, checked: boolean) => void;
+      };
+      return (
+        <div className="flex items-center justify-center w-full h-full">
+          <Checkbox
+            checked={ctx.selectedIds.has(rowData.id)}
+            onChange={(checked) => ctx.toggleOne(rowData.id, checked)}
+          />
+        </div>
+      );
+    };
+    return Renderer;
+  }, []);
+
+  // 헤더 체크박스 — visibleIds 일괄 토글. AG Grid headerComponent 로 마운트.
+  // 권한 팝업과 동일한 3상태 — none/some(indeterminate)/all.
+  // refreshHeader 호출로 매번 새 props 가 전달돼 상태가 즉시 반영됨.
+  const HeaderCheckbox = useMemo(() => {
+    return function HeaderCheckboxRenderer() {
+      return (
+        <div className="flex items-center justify-center w-full h-full">
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={someVisibleSelected}
+            onChange={toggleAllVisible}
+          />
+        </div>
+      );
+    };
+  }, [allVisibleSelected, someVisibleSelected, toggleAllVisible]);
 
   const handleRegister = () => {
     const emptyForm: NoticeFormData = {
       targets: [],
       startDate: "",
       endDate: "",
+      title: "",
       content: "",
       url: "",
       author: "",
@@ -174,6 +349,21 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
 
   const columnDefs = useMemo<ColDef<NoticeListItem>[]>(
     () => [
+      {
+        headerName: "",
+        colId: "_select",
+        width: 56,
+        minWidth: 56,
+        maxWidth: 56,
+        suppressMovable: true,
+        resizable: false,
+        sortable: false,
+        filter: false,
+        headerComponent: HeaderCheckbox,
+        cellRenderer: CheckboxCellRenderer,
+        cellStyle: CENTER_CELL_STYLE,
+        headerClass: "ag-header-cell-center",
+      },
       {
         headerName: "掲示対象",
         field: "targets",
@@ -213,9 +403,10 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
+        // "이름(ID)" 형식 — 이름 미해결 시 ID 만 표시 (formatUserLabel 폴백).
         headerName: "登録者",
-        field: "createdBy",
-        flex: 0.8,
+        flex: 1,
+        valueGetter: (p) => formatUserLabel(p.data?.createdByName, p.data?.createdBy),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
@@ -228,23 +419,43 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
+        // "이름(ID)" 형식 — 이름 미해결 시 ID 만 표시. updatedBy 미존재 시 "-" 폴백.
         headerName: "更新者",
-        field: "updatedBy",
-        flex: 0.8,
+        flex: 1,
+        valueGetter: (p) => formatUserLabel(p.data?.updatedByName, p.data?.updatedBy),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
-    [ContentCellRenderer],
+    [ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
+  );
+
+  // 그리드 context — cell renderer 가 최신 selectedIds / 토글 핸들러를 참조하도록 매 렌더 갱신.
+  const gridContext = useMemo(
+    () => ({ selectedIds, toggleOne }),
+    [selectedIds, toggleOne],
   );
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
-      {/* 상단 바 */}
-      <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={handleRegister}>
-          お知らせ登録
-        </Button>
+      {/* 상단 바 — 좌측: 선택 정보, 우측: 削除 + 登録 + 表示件数(맨 우측) */}
+      <div className="flex items-center justify-between">
+        <div className="font-['Noto_Sans_JP'] text-[13px] text-[#6a88a9] min-h-[20px]">
+          {selectedIds.size > 0 ? `${selectedIds.size}件選択中` : ""}
+        </div>
+        <div className="flex items-center gap-[8px]">
+          <Button
+            variant="secondary"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            {bulkDeleteMutation.isPending ? "削除中..." : "削除"}
+          </Button>
+          <Button variant="primary" onClick={handleRegister}>
+            お知らせ登録
+          </Button>
+          <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
+        </div>
       </div>
 
       {/* AG Grid + Pagination */}
@@ -253,6 +464,8 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           columnDefs={columnDefs}
           rowData={items}
           loading={isLoading}
+          context={gridContext}
+          onGridReady={handleGridReady}
         />
         {totalPages > 0 && (
           <Pagination

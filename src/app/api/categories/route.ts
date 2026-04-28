@@ -7,6 +7,8 @@ import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/schemas/category";
 
+import { CategoryError } from "./_constants";
+
 // GET /api/categories — 카테고리 트리 목록
 export async function GET(request: NextRequest) {
   try {
@@ -89,11 +91,11 @@ export async function POST(request: NextRequest) {
           });
 
           if (!parent) {
-            throw new Error("PARENT_NOT_FOUND");
+            throw new CategoryError("PARENT_NOT_FOUND");
           }
 
           if (parent.parentId !== null) {
-            throw new Error("DEPTH_EXCEEDED");
+            throw new CategoryError("DEPTH_EXCEEDED");
           }
         }
 
@@ -122,17 +124,19 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: category }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "PARENT_NOT_FOUND") {
-      return NextResponse.json(
-        { error: "상위 카테고리가 존재하지 않습니다" },
-        { status: 404 },
-      );
-    }
-    if (error instanceof Error && error.message === "DEPTH_EXCEEDED") {
-      return NextResponse.json(
-        { error: "2Depth까지만 등록 가능합니다" },
-        { status: 400 },
-      );
+    if (error instanceof CategoryError) {
+      if (error.kind === "PARENT_NOT_FOUND") {
+        return NextResponse.json(
+          { error: "상위 카테고리가 존재하지 않습니다" },
+          { status: 404 },
+        );
+      }
+      if (error.kind === "DEPTH_EXCEEDED") {
+        return NextResponse.json(
+          { error: "2Depth까지만 등록 가능합니다" },
+          { status: 400 },
+        );
+      }
     }
     if (
       error instanceof PrismaClientKnownRequestError &&

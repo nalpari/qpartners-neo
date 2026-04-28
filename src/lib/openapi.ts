@@ -1491,9 +1491,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 목록 (관리자용)",
         parameters: [
-          { name: "keyword", in: "query", description: "공지내용 Like 검색", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "공지내용(content) Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
-          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
+          { name: "targetType", in: "query", description: "게시대상 필터 — 단일 또는 콤마 구분 멀티 선택 (super_admin/admin/first_store/second_store/seko/general). 멀티는 OR 매칭", schema: { type: "string" } },
           { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
@@ -1638,6 +1638,60 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("Invalid ID"),
           "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/home-notices/bulk-delete": {
+      post: {
+        tags: ["HomeNotice"],
+        summary: "홈화면 공지 일괄 삭제 (물리 삭제, all-or-nothing)",
+        description:
+          "선택한 공지들을 한 번에 삭제. 요청한 ID 중 하나라도 미존재 또는 권한 부족 시 전체 거부 (어느 것도 삭제하지 않음). 권한 모델은 단건 DELETE 와 동일.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["ids"],
+                properties: {
+                  ids: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 1,
+                    maxItems: 100,
+                    description: "삭제 대상 공지 ID 배열 (최대 100건)",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "일괄 삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        deletedCount: { type: "integer", example: 3 },
+                        ids: { type: "array", items: { type: "integer" } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("입력 검증 실패 (빈 배열 / 100건 초과 등)"),
+          "403": errorResponse("일부 공지에 대한 삭제 권한 없음 (deniedIds 포함)"),
+          "404": errorResponse("일부 공지가 존재하지 않음 (missingIds 포함)"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -2865,8 +2919,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Member"],
         summary: "회원 상세정보 수정",
         description:
-          "관리자 전용 — 권한별 수정 제한 정책: GENERAL 은 전체 필드 수정 가능. " +
-          "STORE/SEKO/ADMIN 은 newsRcptYn 만 변경 가능 (비밀번호는 별도 /reset-password API). " +
+          "관리자 전용 — 권한별 수정 제한 정책 (2026-04-28 갱신): GENERAL 은 전체 필드 수정 가능. " +
+          "STORE/SEKO/ADMIN 은 newsRcptYn / twoFactorEnabled / attributeChangeNotification / loginNotification 변경 가능 (비밀번호는 별도 /reset-password API). " +
           "삭제(D) STORE 회원은 storeLvl 확보 불가로 수정 차단(400). " +
           "preDetail null (삭제 회원) 경로: 비복구 시 userRole/twoFactorEnabled 변경 불가(400). " +
           "status='active' 복구 시 userRole + twoFactorEnabled 명시 필수 (400 if missing) — QSP 잔존 값(authCd/secAuthYn)의 silent 부활 차단. " +
@@ -3898,7 +3952,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       HomeNotice: {
         type: "object",
-        required: ["id", "startAt", "endAt", "content", "userType", "userId", "createdAt", "updatedAt"],
+        required: ["id", "startAt", "endAt", "title", "content", "userType", "userId", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
           targetSuperAdmin: { type: "boolean" },
@@ -3909,6 +3963,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean" },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           userType: { type: "string", enum: [...userTpValues] },
@@ -3924,6 +3979,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "integer" },
           targets: { type: "array", items: { type: "string" }, example: ["first_store", "seko"] },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },
@@ -3933,8 +3989,18 @@ export const openApiSpec: OpenAPIV3.Document = {
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
+          createdByName: {
+            type: "string",
+            nullable: true,
+            description: "등록자 표시명 — QSP userDetail 조회 결과. 미해결/실패 시 null",
+          },
           updatedAt: { type: "string", format: "date-time" },
           updatedBy: { type: "string", nullable: true },
+          updatedByName: {
+            type: "string",
+            nullable: true,
+            description: "갱신자 표시명 — QSP userDetail 조회 결과. 미해결/실패 시 null",
+          },
         },
       },
       HomeNoticeDetail: {
@@ -3956,6 +4022,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
           startAt: { type: "string", format: "date-time" },
@@ -3963,7 +4030,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       CreateHomeNotice: {
         type: "object",
-        required: ["startAt", "endAt", "content"],
+        required: ["startAt", "endAt", "title", "content"],
         description: "게시대상(target*) 중 최소 1개 true 필수",
         properties: {
           targetSuperAdmin: { type: "boolean", default: false },
@@ -3974,6 +4041,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean", default: false },
           startAt: { type: "string", format: "date-time", example: "2026-03-20T00:00:00Z" },
           endAt: { type: "string", format: "date-time", example: "2026-03-30T23:59:59Z" },
+          title: { type: "string", maxLength: 100, example: "システムメンテナンスのお知らせ" },
           content: { type: "string", example: "공지 내용 텍스트" },
           url: { type: "string", maxLength: 500, nullable: true, example: "https://example.com" },
         },
@@ -3990,6 +4058,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           targetGeneral: { type: "boolean" },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
+          title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", maxLength: 500, nullable: true },
         },

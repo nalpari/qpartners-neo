@@ -18,6 +18,8 @@ import type { TabType } from "@/components/login/types";
 const STATUS_ERROR_MAP: Record<number, string> = {
   400: LOGIN_ERRORS.BAD_REQUEST,
   401: LOGIN_ERRORS.INVALID_CREDENTIALS,
+  // body 가 있으면 serverMsg 가 우선 사용됨. body 없는 403(프록시·CDN 차단 등) 시 폴백.
+  403: LOGIN_ERRORS.FORBIDDEN,
   502: LOGIN_ERRORS.SERVER_UNAVAILABLE,
 };
 

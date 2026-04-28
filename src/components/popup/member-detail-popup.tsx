@@ -107,6 +107,8 @@ export function MemberDetailPopup() {
   const listItem = popupData.listItem as MemberListItem | undefined;
 
   // Design Ref: §4.2 — 상세 조회
+  // staleTime: 0 + refetchOnMount: "always" — 팝업 재오픈 시 항상 최신 데이터.
+  // 갱신일(updatedAt) / 최근접속일시(lastLoginAt) 등 외부에서 변경 가능한 필드를 반영.
   const { data: rawMember, isLoading } = useQuery<MemberDetail & { notFoundInQsp?: boolean }>({
     queryKey: ["admin", "member", userId, userTp],
     queryFn: async () => {
@@ -117,6 +119,8 @@ export function MemberDetailPopup() {
       return res.data.data;
     },
     enabled: !!userId && !!userTp,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // QSP 미조회 회원(notFoundInQsp)일 때 목록 데이터로 fallback
@@ -392,24 +396,20 @@ function MemberEditForm({
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   const handleSave = () => {
-    // 화면설계서 기준 편집 허용 필드:
-    //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn — 전 회원 유형
-    //   · loginNotification — GENERAL(일반회원) 한정
+    // 화면설계서 기준 편집 허용 필드 (2026-04-28 정책 갱신):
+    //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn / loginNotification — 전 회원 유형
     //   · status — GENERAL 전용 (SEKO 는 회원관리 대상 아님)
     //   · userRole — GENERAL
     // payload 에 불허 필드를 포함하면 BE 화이트리스트에서 400 거부되므로 유형별로 분기 구성.
     const payload: MemberUpdatePayload = {
       attributeChangeNotification: attributeNotify,
       newsRcptYn,
+      loginNotification,
     };
     // 일반 경로(preDetail 존재) 또는 복구 경로에서만 2FA 전송.
     // 비복구 + preDetail null(삭제 상태 유지) 경로에서는 백엔드가 변경 차단(400).
     if (!isQspNotFound || isRestoringToActive) {
       payload.twoFactorEnabled = twoFactorEnabled;
-    }
-    // 로그인 알림은 일반회원 전용 설정 (ADMIN/STORE/SEKO 미적용).
-    if (isGeneral) {
-      payload.loginNotification = loginNotification;
     }
     if (isStatusEditable) {
       payload.status = memberStatus === "Active" ? "active" : "deleted";
@@ -526,17 +526,15 @@ function MemberEditForm({
                   }}
                   right={{
                     label: "ログイン通知",
-                    // 로그인 알림은 일반회원 전용 설정. GENERAL + 읽기가능 경로만 radio, 그 외는 TextValue.
-                    // 회원상태(isStatusEditable)와 동일한 UX — 편집 불가 필드는 비활성 radio 대신 값만 표시.
-                    // non-GENERAL 회원은 `対象外` 로 표기해 QSP 잔존값이 "有効" 으로 보여도 실제 적용 대상이
-                    // 아님을 명확히 안내 (관리자가 적용 상태로 오해하지 않도록).
-                    children: isGeneral && !isReadOnly ? (
+                    // 로그인 알림은 전 회원 유형 편집 가능 (2026-04-28 정책 갱신).
+                    // 읽기전용(isReadOnly) 경로에서만 TextValue 로 표시.
+                    children: !isReadOnly ? (
                       <div className="flex items-center gap-3">
                         <Radio name="loginNotify" value="true" checked={loginNotification} onChange={() => setLoginNotification(true)} label="有効" />
                         <Radio name="loginNotify" value="false" checked={!loginNotification} onChange={() => setLoginNotification(false)} label="無効" />
                       </div>
                     ) : (
-                      <TextValue value={isGeneral ? (loginNotification ? "有効" : "無効") : "対象外"} />
+                      <TextValue value={loginNotification ? "有効" : "無効"} />
                     ),
                   }}
                 />

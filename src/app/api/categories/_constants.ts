@@ -14,3 +14,18 @@ export class MaxDescendantsExceededError extends Error {
     this.name = "MaxDescendantsExceededError";
   }
 }
+
+/**
+ * 카테고리 라우트 공용 도메인 에러.
+ *
+ * `Error("NOT_FOUND")` 등 문자열 매칭 패턴은 메시지 변경/번역에 silent fail 가능 → instanceof 분기로 통일.
+ * - `NOT_FOUND`: PUT/DELETE 시 대상 카테고리 미존재
+ * - `PARENT_NOT_FOUND`: POST 시 지정한 부모 카테고리 미존재
+ * - `DEPTH_EXCEEDED`: POST 시 3Depth 이상 시도
+ */
+export class CategoryError extends Error {
+  constructor(public readonly kind: "NOT_FOUND" | "PARENT_NOT_FOUND" | "DEPTH_EXCEEDED") {
+    super(kind);
+    this.name = "CategoryError";
+  }
+}
