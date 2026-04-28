@@ -12,23 +12,42 @@ import { performLogout } from "@/lib/auth-client";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
-/** 서버 에러 메시지 → 일본어 사용자 메시지 매핑 (verify + send 공용) */
-const ERROR_MESSAGE_MAP: { pattern: string; message: string }[] = [
-  // verify 에러 (일본어 메시지 그대로 매핑)
-  { pattern: "認証番号が一致しません", message: "認証番号が一致しません！" },
-  { pattern: "入力時間を超過", message: "入力時間を超過しました。再送信後、もう一度入力してください。" },
-  { pattern: "認証の試行回数を超過", message: "認証の試行回数を超過しました。認証番号を再送信してください。" },
-  { pattern: "認証番号を先に送信", message: "認証番号を先に送信してください。再送信をお試しください。" },
-  // send 에러
+/**
+ * 서버 에러 코드 → 일본어 사용자 메시지 매핑.
+ * 서버 응답 body 에 `code` 필드가 있으면 코드 기반 매핑(번역/메시지 변경에 강함).
+ * 코드가 없으면 레거시 메시지 includes 패턴으로 폴백 (배포 순서·구버전 응답 호환).
+ */
+const ERROR_CODE_MAP: Record<string, string> = {
+  MISMATCH: "認証番号が一致しません！",
+  EXPIRED: "入力時間を超過しました。再送信後、もう一度入力してください。",
+  MAX_ATTEMPTS: "認証の試行回数を超過しました。認証番号を再送信してください。",
+  NOT_SENT: "認証番号を先に送信してください。再送信をお試しください。",
+};
+
+const ERROR_MESSAGE_PATTERN_MAP: { pattern: string; message: string }[] = [
+  // verify 에러 (BE 일본어 메시지 패턴)
+  { pattern: "認証番号が一致しません", message: ERROR_CODE_MAP.MISMATCH },
+  { pattern: "入力時間を超過", message: ERROR_CODE_MAP.EXPIRED },
+  { pattern: "認証の試行回数を超過", message: ERROR_CODE_MAP.MAX_ATTEMPTS },
+  { pattern: "認証番号を先に送信", message: ERROR_CODE_MAP.NOT_SENT },
+  // send 에러 (code 미지원 — 메시지 패턴으로만 매칭)
   { pattern: "メール情報がない", message: "メール情報がないため認証番号を送信できません。" },
   { pattern: "送信回数を超え", message: "認証番号の送信回数を超過しました。しばらくしてからお試しください。" },
   { pattern: "認証番号の送信に失敗", message: "認証番号の送信に失敗しました。しばらくしてから再度お試しください。" },
 ];
 
-function mapServerError(serverMsg: string): string {
-  const match = ERROR_MESSAGE_MAP.find((e) => serverMsg.includes(e.pattern));
+function mapServerError(serverMsg: string, code: string | null): string {
+  // 1. code 기반 매칭 — 서버 메시지 변경/번역에 영향받지 않음.
+  if (code && ERROR_CODE_MAP[code]) return ERROR_CODE_MAP[code];
+  // 1-1. code 가 있으나 FE 매핑에 없는 신종 → 서버에 새 code 가 추가됐는데 FE 가 못 따라간 상태.
+  //      운영 알람 수준으로 격상해 모니터링이 즉시 인지하도록.
+  if (code) {
+    console.error("[2FA] 未マッピングのサーバー code:", { code, serverMsg });
+  }
+  // 2. 레거시 폴백 — 구 응답(혹은 배포 시점 차이)에서 code 미존재 시 메시지 패턴 매칭.
+  const match = ERROR_MESSAGE_PATTERN_MAP.find((e) => serverMsg.includes(e.pattern));
   if (!match) {
-    console.warn("[2FA] 未認識のサーバーエラー");
+    console.warn("[2FA] 未認識のサーバーエラー:", { code, serverMsg });
   }
   return match?.message ?? "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
 }
@@ -68,7 +87,6 @@ export function TwoFactorAuthPopup() {
       startTimer();
       // 수동 재전송에서 트리거된 경우에만 알림. 자동 첫 발송은 팝업 오픈 안내문으로 충분.
       if (isManualResendRef.current) {
-        isManualResendRef.current = false;
         openAlert({
           type: "alert",
           message: "認証番号が再送信されました。",
@@ -76,10 +94,30 @@ export function TwoFactorAuthPopup() {
       }
     },
     onError: (err: Error) => {
-      isManualResendRef.current = false;
       console.error("[2FA] 送信失敗:", err);
-      const serverError = isAxiosError(err) ? extractApiError(err) : undefined;
-      setError(serverError ? mapServerError(serverError) : "認証処理中にエラーが発生しました。しばらくしてからお試しください。");
+      let message: string;
+      if (isAxiosError(err) && err.response) {
+        const serverError = extractApiError(err);
+        const data = err.response.data;
+        const code =
+          typeof data === "object" && data !== null && "code" in data && typeof (data as Record<string, unknown>).code === "string"
+            ? ((data as Record<string, unknown>).code as string)
+            : null;
+        message = mapServerError(serverError ?? "", code);
+      } else {
+        message = "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
+      }
+      // 수동 재전송 실패 시에는 alert 로 명시 (인라인 텍스트만으로는 사용자가 인지 못하는 케이스 방지).
+      // 자동 첫 발송 실패 시에는 인라인 에러로 충분 (팝업 본문 자체가 안내문 컨텍스트).
+      if (isManualResendRef.current) {
+        openAlert({ type: "alert", message });
+      } else {
+        setError(message);
+      }
+    },
+    onSettled: () => {
+      // 성공/실패 무관하게 manual flag 리셋 — onSuccess/onError 분기 누락 방지.
+      isManualResendRef.current = false;
     },
   });
 
@@ -139,6 +177,8 @@ export function TwoFactorAuthPopup() {
   };
 
   const handleResend = () => {
+    // 진단 로그 — 클릭이 실제로 진입했는지 가시화 (브라우저 콘솔에서 확인 가능).
+    console.log("[2FA] 再送信 클릭", { isPending: sendMutation.isPending });
     setCode("");
     setError(null);
     inputRef.current?.focus();
@@ -171,8 +211,14 @@ export function TwoFactorAuthPopup() {
       console.error("[2FA] 認証失敗:", err);
       if (isAxiosError(err) && err.response) {
         const serverError = extractApiError(err);
-        if (serverError) {
-          setError(mapServerError(serverError));
+        // body 에 code 필드가 있으면 추출 — 메시지 매칭보다 안정적.
+        const data = err.response.data;
+        const code =
+          typeof data === "object" && data !== null && "code" in data && typeof (data as Record<string, unknown>).code === "string"
+            ? ((data as Record<string, unknown>).code as string)
+            : null;
+        if (serverError || code) {
+          setError(mapServerError(serverError ?? "", code));
         } else {
           console.warn("[2FA] 予期しないエラーレスポンス形式:", err.response.data);
           setError("認証処理中にエラーが発生しました。しばらくしてからお試しください");
@@ -255,8 +301,7 @@ export function TwoFactorAuthPopup() {
                 <button
                   type="button"
                   onClick={handleResend}
-                  disabled={sendMutation.isPending}
-                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0 transition-colors duration-150 hover:bg-[#101010] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex items-center justify-center w-full lg:w-[71px] h-[52px] bg-[rgba(16,16,16,0.7)] border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white shrink-0 transition-colors duration-150 hover:bg-[#101010]"
                 >
                   再送信
                 </button>

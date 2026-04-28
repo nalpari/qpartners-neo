@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
@@ -9,6 +10,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 interface HomeNoticeItem {
   id: number;
   startAt?: string;
+  title: string;
   content: string;
   url: string | null;
 }
@@ -16,6 +18,11 @@ interface HomeNoticeItem {
 interface ActiveNoticesResponse {
   data: HomeNoticeItem[];
 }
+
+// 2026-04-28: title 필드 도입 — 빈 값(이전 데이터 미입력) 안전 폴백으로 유지.
+const PLACEHOLDER_TITLE = "タイトル";
+
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
 
 export function HomeNotices() {
   const { data: user } = useQuery<LoginUser | null>({
@@ -26,14 +33,6 @@ export function HomeNotices() {
   });
   const isLoggedIn = user != null;
 
-  // queryKey 에 userTp + authRole 을 포함해 로그인 전후 / 역할 전환 시 캐시를 자동 분리.
-  //   이전 구조(["home-notices", "active"]) 는 비로그인 상태에서 enabled:false 로 fetch 안
-  //   한 직후 로그인해도 Next.js App Router partial rendering 에서 enabled 전환이 refetch
-  //   를 트리거하지 못하는 edge case 가 있었음. 추가로 서버 응답이 role 별로 다른데 key 에
-  //   role 이 없으면 다른 계정으로 재로그인 시 stale 데이터가 노출됨.
-  // userId 는 의도적으로 제외 — queryKey 는 DevTools / SSR dehydrate 에 노출될 수 있어
-  //   PII(이메일/로그인 ID) 를 직접 담지 않는다. API 응답이 role 단위 필터링이라 동일 role
-  //   회원 간 데이터 공유는 문제 없음.
   const cacheScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "guest";
   const { data: notices = [] } = useQuery<HomeNoticeItem[]>({
     queryKey: ["home-notices", "active", cacheScope],
@@ -47,68 +46,133 @@ export function HomeNotices() {
     enabled: isLoggedIn,
   });
 
+  // "init": 사용자 미조작 (첫 항목 자동 펼침), number: 해당 id 펼침, null: 모두 접힘
+  const [expandedId, setExpandedId] = useState<number | null | "init">("init");
+
+  const firstId = notices[0]?.id ?? null;
+  const effectiveId = expandedId === "init" ? firstId : expandedId;
+
+  const toggle = (id: number) => {
+    setExpandedId(effectiveId === id ? null : id);
+  };
+
   if (!isLoggedIn || notices.length === 0) return null;
 
-  return (
-    <>
-      {/* PC */}
-      <div className="hidden lg:flex gap-[18px] w-full">
-        {notices.map((notice) => (
-          <NoticeCard key={notice.id} notice={notice} />
-        ))}
-      </div>
+  const lastIdx = notices.length - 1;
 
-      {/* Mobile */}
-      <div className="flex lg:hidden flex-col gap-[10px] w-full mt-[10px]">
-        {notices.map((notice) => (
-          <NoticeCard key={notice.id} notice={notice} />
-        ))}
-      </div>
-    </>
+  return (
+    <div className="flex flex-col w-full bg-white rounded-[12px] shadow-[0px_6px_32px_0px_rgba(0,0,0,0.05)] overflow-hidden">
+      {notices.map((notice, idx) => (
+        <NoticeRow
+          key={notice.id}
+          notice={notice}
+          isOpen={effectiveId === notice.id}
+          isLast={idx === lastIdx}
+          onToggle={() => toggle(notice.id)}
+        />
+      ))}
+    </div>
   );
 }
 
-const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
-
-function NoticeCard({ notice }: { notice: HomeNoticeItem }) {
-  const date = notice.startAt ? formatDate(notice.startAt) : null;
+function NoticeRow({
+  notice,
+  isOpen,
+  isLast,
+  onToggle,
+}: {
+  notice: HomeNoticeItem;
+  isOpen: boolean;
+  isLast: boolean;
+  onToggle: () => void;
+}) {
+  const date = notice.startAt ? formatDate(notice.startAt) : "";
   const hasUrl = notice.url != null && notice.url.length > 0 && isSafeUrl(notice.url);
+  const borderCls = !isLast ? "border-b border-[#f3f7fb]" : "";
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[24px] px-[24px] pb-[32px] overflow-hidden">
-      <div className="flex flex-col gap-[16px]">
-        {/* Date header */}
-        <div className="flex items-center gap-[8px] h-[44px] bg-[#eef3f8] rounded-[8px] pl-[12px] pr-[8px]">
+    <div className={`bg-white ${borderCls}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className={`flex items-center w-full gap-[8px] pl-[24px] pr-[24px] lg:pl-[42px] lg:pr-[42px] transition-colors duration-200 ${
+          isOpen
+            ? "h-[48px] bg-[#eef3f8]"
+            : "py-[10px] bg-white hover:bg-[#fafbfc]"
+        }`}
+      >
+        <span className="flex-1 min-w-0 flex items-center gap-[16px] overflow-hidden text-[#6a88a9] text-[14px] leading-[1.4] text-left">
           {date && (
-            <span className="flex-1 min-w-0 truncate font-['Pretendard'] font-medium text-[14px] text-[#6a88a9] leading-[1.4]">
+            <span className="font-['Pretendard'] font-normal whitespace-nowrap shrink-0">
               {date}
             </span>
           )}
-          {!date && <span className="flex-1" />}
-          {hasUrl && (
-            <a
-              href={notice.url ?? "#"}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center size-[28px] shrink-0 hover:opacity-70 transition-opacity"
-            >
-              <Image
-                src="/asset/images/contents/notice_link.svg"
-                alt="リンク"
-                width={28}
-                height={28}
-              />
-            </a>
-          )}
-        </div>
+          <span className="font-['Pretendard'] font-semibold truncate">
+            {notice.title?.trim() || PLACEHOLDER_TITLE}
+          </span>
+        </span>
+        <span className="shrink-0 size-[28px] flex items-center justify-center text-[#6a88a9]">
+          <ChevronIcon open={isOpen} />
+        </span>
+      </button>
 
-        {/* Content */}
-        <div className="px-[8px]">
-          <p className="font-['Noto_Sans_JP'] text-[13px] text-[#6a88a9] leading-[1.7]">
-            {notice.content}
-          </p>
+      {/* grid-template-rows 0fr ↔ 1fr 트릭으로 콘텐츠 높이를 모르는 채로 자연스럽게 펼침/접힘 */}
+      <div
+        aria-hidden={!isOpen}
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="pt-[16px] pb-[24px] flex flex-col lg:flex-row items-stretch lg:items-center gap-[14px] lg:gap-[8px] px-[24px] lg:px-[42px]">
+            <p className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[13px] text-[#6a88a9] leading-[1.7] whitespace-pre-wrap break-words">
+              {notice.content}
+            </p>
+            {hasUrl && (
+              <a
+                href={notice.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                tabIndex={isOpen ? 0 : -1}
+                className="flex items-center justify-center gap-[8px] h-[32px] px-[13px] rounded-[4px] border border-[#d2dbe5] bg-white text-[#6a88a9] text-[13px] leading-[1.3] hover:bg-[#f7f9fb] transition-colors w-full lg:w-auto shrink-0"
+              >
+                <span className="font-['Noto_Sans_JP'] uppercase whitespace-nowrap">リンク</span>
+                <Image
+                  src="/asset/images/contents/link_icon.svg"
+                  alt=""
+                  width={12}
+                  height={12}
+                  className="shrink-0"
+                  aria-hidden="true"
+                />
+              </a>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+      className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+    >
+      <path
+        d="M3 5l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+

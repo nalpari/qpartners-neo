@@ -1,7 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import type { Prisma } from "@/generated/prisma/client";
+import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
 import { requireMenuPermission } from "@/lib/auth";
+import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
   createHomeNoticeSchema,
@@ -25,8 +28,18 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? "20") || 20));
 
-    // targetType → 해당 boolean 필드 필터
-    const targetMap: Record<string, string> = {
+    // targetType → 해당 boolean 필드 필터.
+    // comma-separated 멀티 선택 (`first_store,seko`) 지원 — OR 조건으로 변환.
+    // 단일 값도 동일 경로로 처리.
+    type TargetField =
+      | "targetSuperAdmin"
+      | "targetAdmin"
+      | "targetFirstStore"
+      | "targetSecondStore"
+      | "targetConstructor"
+      | "targetGeneral";
+
+    const targetMap: Record<string, TargetField> = {
       super_admin: "targetSuperAdmin",
       admin: "targetAdmin",
       first_store: "targetFirstStore",
@@ -35,13 +48,27 @@ export async function GET(request: NextRequest) {
       general: "targetGeneral",
     };
 
-    if (targetType && !targetMap[targetType]) {
-      return NextResponse.json(
-        { error: "送信先フィルタの値が正しくありません" },
-        { status: 400 },
-      );
+    const targetFields: TargetField[] = [];
+    if (targetType) {
+      const requested = targetType
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      // dedupe + 화이트리스트 검증 — 한 항목이라도 미정의 키면 400.
+      const seen = new Set<string>();
+      for (const key of requested) {
+        const field = targetMap[key];
+        if (!field) {
+          return NextResponse.json(
+            { error: "送信先フィルタの値が正しくありません" },
+            { status: 400 },
+          );
+        }
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targetFields.push(field);
+      }
     }
-    const targetField = targetType ? targetMap[targetType] : undefined;
 
     // status 필터 → DB where 조건으로 변환 (메모리 필터 대신 DB 레벨)
     const now = new Date();
@@ -73,6 +100,12 @@ export async function GET(request: NextRequest) {
         }
       : undefined;
 
+    // 게시대상 멀티 선택 — 선택된 boolean 컬럼들 중 하나라도 true 면 매칭(OR).
+    const targetWhere =
+      targetFields.length > 0
+        ? { OR: targetFields.map((f) => ({ [f]: true })) }
+        : undefined;
+
     // 날짜 파라미터 검증
     if (startDate && isNaN(new Date(startDate).getTime())) {
       return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
@@ -81,17 +114,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
 
+    // statusWhere · targetWhere 둘 다 최상위 OR 을 사용하므로 단순 spread 시 키 충돌이 발생.
+    // AND 배열로 묶어 두 그룹을 동시에 적용 (상태 OR ∧ 대상 OR).
+    const andClauses: Prisma.HomeNoticeWhereInput[] = [];
+    if (statusWhere) andClauses.push(statusWhere);
+    if (targetWhere) andClauses.push(targetWhere);
+
     const where = {
+      // 검색 keyword 는 content 부분 일치.
       ...(keyword && { content: { contains: keyword } }),
       ...(createdBy && { createdBy: { contains: createdBy } }),
-      ...(targetField && { [targetField]: true }),
       ...((startDate || endDate) && {
         createdAt: {
           ...(startDate && { gte: new Date(startDate) }),
           ...(endDate && { lte: new Date(`${endDate}T23:59:59.999+09:00`) }),
         },
       }),
-      ...statusWhere,
+      ...(andClauses.length > 0 ? { AND: andClauses } : {}),
     };
 
     const [notices, total] = await Promise.all([
@@ -104,9 +143,93 @@ export async function GET(request: NextRequest) {
       prisma.homeNotice.count({ where }),
     ]);
 
+    // QSP 사용자 이름 일괄 조회 — 행 N건의 createdBy/updatedBy 에서 unique 키만 추출해
+    // 외부 API 호출 횟수를 최소화한다 (페이지 내 동일 등록자 다수 등장 시 1회로 축소).
+    // 실패는 silent — 이름 미해결 시 프론트가 userId 로 폴백.
+    //
+    // ▼ HIGH 1 수정: createdBy 는 notice.userType 으로 lookup 가능하지만, updatedBy 는
+    //   다른 userType 사용자(예: SUPER_ADMIN 이 STORE 작성글 갱신)가 들어올 수 있어
+    //   notice.userType 으로 조회하면 잘못된 사용자가 반환되거나 null 폴백 빈번.
+    //   → known 키는 (userType, userId), unknown 키는 (userId) 로 분리해 lookup.
+    const logTag = "[GET /api/home-notices]";
+    type LookupKey = string;
+    const knownKey = (ut: string, uid: string): LookupKey => `known:${ut}:${uid}`;
+    const unknownKey = (uid: string): LookupKey => `unknown:${uid}`;
+
+    const knownLookups = new Map<LookupKey, { userType: string; userId: string }>();
+    const unknownLookups = new Map<LookupKey, string>();
+
+    // 1차 패스: 모든 createdBy 를 known 으로 등록 — 이 정보가 unknown 등록 시 dedupe 기준이 됨.
+    for (const n of notices) {
+      if (n.createdBy) {
+        knownLookups.set(knownKey(n.userType, n.createdBy), {
+          userType: n.userType,
+          userId: n.createdBy,
+        });
+      }
+    }
+
+    // 보조 인덱스: userId → 매칭되는 known LookupKey 1개. updatedBy 가 다른 row 의 createdBy 와
+    // 동일 userId 라면 그 known 조회 결과를 그대로 재활용해서 외부 호출 폭증을 차단한다.
+    // (서로 다른 userType 으로 같은 userId 가 등록되는 경우는 사실상 없으므로 첫 매칭 사용.)
+    const knownByUserId = new Map<string, LookupKey>();
+    for (const [key, ref] of knownLookups.entries()) {
+      if (!knownByUserId.has(ref.userId)) knownByUserId.set(ref.userId, key);
+    }
+
+    // 2차 패스: updatedBy 등록 — createdBy 동일·known 에 이미 있는 userId 는 skip.
+    for (const n of notices) {
+      if (!n.updatedBy) continue;
+      if (n.updatedBy === n.createdBy) continue; // known 결과 재사용
+      if (knownByUserId.has(n.updatedBy)) continue; // 다른 row 의 createdBy 로 이미 등록됨
+      unknownLookups.set(unknownKey(n.updatedBy), n.updatedBy);
+    }
+
+    const knownEntries = Array.from(knownLookups.entries());
+    const unknownEntries = Array.from(unknownLookups.entries());
+
+    const [knownSettled, unknownSettled] = await Promise.all([
+      Promise.allSettled(
+        knownEntries.map(([, ref]) =>
+          resolveUserName(ref.userType, ref.userId, logTag),
+        ),
+      ),
+      Promise.allSettled(
+        unknownEntries.map(([, uid]) =>
+          resolveUserNameUnknownType(uid, logTag).then((r) => r.name),
+        ),
+      ),
+    ]);
+
+    const nameMap = new Map<LookupKey, string | null>();
+    knownEntries.forEach(([key], idx) => {
+      const r = knownSettled[idx];
+      nameMap.set(key, r.status === "fulfilled" ? r.value : null);
+    });
+    unknownEntries.forEach(([key], idx) => {
+      const r = unknownSettled[idx];
+      nameMap.set(key, r.status === "fulfilled" ? r.value : null);
+    });
+
+    const resolveCreatedByName = (n: (typeof notices)[number]): string | null =>
+      n.createdBy ? (nameMap.get(knownKey(n.userType, n.createdBy)) ?? null) : null;
+
+    const resolveUpdatedByName = (n: (typeof notices)[number]): string | null => {
+      if (!n.updatedBy) return null;
+      // 동일인 갱신 → 이미 조회된 known 결과 재사용.
+      if (n.updatedBy === n.createdBy) {
+        return nameMap.get(knownKey(n.userType, n.updatedBy)) ?? null;
+      }
+      // 다른 row 의 createdBy 로 known 조회된 userId 면 그 결과 재사용.
+      const knownKeyForUser = knownByUserId.get(n.updatedBy);
+      if (knownKeyForUser) return nameMap.get(knownKeyForUser) ?? null;
+      return nameMap.get(unknownKey(n.updatedBy)) ?? null;
+    };
+
     const data = notices.map((n) => ({
       id: n.id,
       targets: toTargetArray(n),
+      title: n.title,
       content: n.content,
       url: n.url,
       startAt: n.startAt,
@@ -116,8 +239,10 @@ export async function GET(request: NextRequest) {
       userId: n.userId,
       createdAt: n.createdAt,
       createdBy: n.createdBy,
+      createdByName: resolveCreatedByName(n),
       updatedAt: n.updatedAt,
       updatedBy: n.updatedBy,
+      updatedByName: resolveUpdatedByName(n),
     }));
 
     return NextResponse.json({
@@ -142,7 +267,8 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (parseError) {
+      console.warn("[POST /api/home-notices] Request body 파싱 실패:", parseError);
       return NextResponse.json(
         { error: "リクエスト形式が正しくありません" },
         { status: 400 },
@@ -184,11 +310,17 @@ export async function POST(request: NextRequest) {
       { isolationLevel: "Serializable" },
     );
 
+    console.info("[POST /api/home-notices] created", {
+      id: notice.id,
+      by: maskEmail(auth.user.userId),
+      role: auth.user.role,
+    });
+
     return NextResponse.json({ data: notice }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
       return NextResponse.json(
-        { error: "同一期間に掲載できるお知らせは5件までです" },
+        { error: "同一期間に掲載できるお知らせは5件までです", code: "LIMIT_EXCEEDED" },
         { status: 400 },
       );
     }

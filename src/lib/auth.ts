@@ -8,6 +8,7 @@
 
 import { NextResponse } from "next/server";
 
+import type { Prisma } from "@/generated/prisma/client";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues, authRoleValues, targetTypeValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
@@ -278,13 +279,18 @@ export type AuthorSuperAdminResult = {
  */
 export async function resolveAuthorSuperAdmin(
   resource: { userType: string; userId: string },
+  tx?: Prisma.TransactionClient,
 ): Promise<AuthorSuperAdminResult> {
   if (resource.userType !== "ADMIN") {
     return { isSuperAdmin: false, status: "known" };
   }
+  // tx 가 전달되면 트랜잭션 컨텍스트 안에서 조회 — 트랜잭션 외부 prisma 와 격리/일관성 차이가 있는
+  // 케이스(예: PUT 핸들러가 같은 row 를 수정 중)에서 동일 스냅샷 보장.
+  // tx 미전달 시 글로벌 prisma 사용(기존 동작 유지 — 호출부 영향 없음).
+  const client = tx ?? prisma;
   try {
     // 1단계: ADMIN_ROLE 헤더 존재 확인 — isActive 는 여기서 필터링하지 않고 분기로 처리
-    const header = await prisma.codeHeader.findFirst({
+    const header = await client.codeHeader.findFirst({
       where: { headerCode: "ADMIN_ROLE" },
       select: { id: true, isActive: true },
     });
@@ -299,7 +305,7 @@ export async function resolveAuthorSuperAdmin(
       return { isSuperAdmin: false, status: "known" };
     }
     // 2단계: 해당 userId가 SUPER_ADMIN으로 등록됐는지 확인
-    const entry = await prisma.codeDetail.findFirst({
+    const entry = await client.codeDetail.findFirst({
       where: { headerId: header.id, code: resource.userId, isActive: true },
       select: { id: true },
     });
@@ -319,8 +325,9 @@ export async function resolveAuthorSuperAdmin(
  */
 export async function isAuthorSuperAdmin(
   resource: { userType: string; userId: string },
+  tx?: Prisma.TransactionClient,
 ): Promise<boolean> {
-  const result = await resolveAuthorSuperAdmin(resource);
+  const result = await resolveAuthorSuperAdmin(resource, tx);
   return result.isSuperAdmin;
 }
 
@@ -333,14 +340,18 @@ export async function isAuthorSuperAdmin(
  *   · 공용 유틸이므로 호출 경로 의존 없이 방어적 계약 유지
  *
  * 적용 대상: Content, HomeNotice, MassMail 등 `{ userType, userId }` 를 가진 리소스
+ *
+ * @param tx Optional Prisma 트랜잭션 클라이언트 — 권한 검증을 동일 트랜잭션 안에서
+ *   수행해야 하는 핸들러(예: PUT/DELETE 의 Serializable tx) 에서 전달.
  */
 export async function canModifyResource(
   user: UserInfo,
   resource: { userType: string; userId: string },
+  tx?: Prisma.TransactionClient,
 ): Promise<boolean> {
   if (user.role === "SUPER_ADMIN") return true;
   if (user.role === "ADMIN") {
-    return !(await isAuthorSuperAdmin(resource));
+    return !(await isAuthorSuperAdmin(resource, tx));
   }
   return user.userType === resource.userType && user.userId === resource.userId;
 }

@@ -28,22 +28,30 @@ interface NoticesSearchProps {
 }
 
 export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps) {
+  // 검색 키워드는 「お知らせ内容」(content) 부분 일치.
   const [content, setContent] = useState(filters.keyword);
   const [statuses, setStatuses] = useState<string[]>(filters.statuses);
   const [author, setAuthor] = useState(filters.author);
   const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
   const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
-  const [targetType, setTargetType] = useState(filters.targetType);
+  // 게시대상은 멀티 선택 — statuses 와 동일한 toggle 패턴 (OR 조건).
+  const [targetTypes, setTargetTypes] = useState<string[]>(filters.targetTypes);
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
+  };
+
+  const toggleTargetType = (value: string, checked: boolean) => {
+    setTargetTypes(
+      checked ? [...targetTypes, value] : targetTypes.filter((t) => t !== value),
+    );
   };
 
   const handleSearch = () => {
     onSearch({
       keyword: content,
       statuses,
-      targetType,
+      targetTypes,
       startDate,
       endDate,
       author,
@@ -60,7 +68,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
     setAuthor("");
     setStartDate(null);
     setEndDate(null);
-    setTargetType("");
+    setTargetTypes([]);
     onReset();
   };
 
@@ -138,8 +146,8 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               {TARGET_OPTIONS.map((opt) => (
                 <Checkbox
                   key={opt.value}
-                  checked={targetType === opt.value}
-                  onChange={(checked) => setTargetType(checked ? opt.value : "")}
+                  checked={targetTypes.includes(opt.value)}
+                  onChange={(checked) => toggleTargetType(opt.value, checked)}
                   label={opt.label}
                 />
               ))}

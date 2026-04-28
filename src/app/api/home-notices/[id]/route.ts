@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
+import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
 import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
   idParamSchema,
@@ -13,6 +15,17 @@ import {
 } from "@/lib/schemas/home-notice";
 
 type Params = { params: Promise<{ id: string }> };
+
+// 트랜잭션 내부에서 단일 catch 분기로 매핑하기 위한 도메인 에러.
+// throw 문자열 매칭 대신 instanceof 로 분기 → 메시지 변경/번역에 영향받지 않음.
+class HomeNoticeUpdateError extends Error {
+  constructor(
+    public readonly kind: "NOT_FOUND" | "FORBIDDEN" | "LIMIT_EXCEEDED" | "INVALID_RANGE",
+  ) {
+    super(kind);
+    this.name = "HomeNoticeUpdateError";
+  }
+}
 
 // GET /api/home-notices/:id — 공지 단건 조회 (ADM_NOTICE.read 매트릭스 기반)
 export async function GET(request: NextRequest, { params }: Params) {
@@ -40,19 +53,44 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 프론트 수정/삭제 버튼 노출 판단용 — 사내 사용자에게만 제공 (Contents API와 동일 패턴)
-    // resolveAuthorSuperAdmin 은 내부에서 에러를 흡수하고 status=unknown + fail-closed(true) 로 수렴 — ADMIN 수정 버튼 숨김
+    // 프론트 수정/삭제 버튼 노출 판단용 + 등록자/갱신자 이름 조회.
+    // - resolveAuthorSuperAdmin: ADMIN 수정 버튼 숨김 (내부 fail-closed)
+    // - resolveUserName: QSP 외부 호출 — 실패 시 null → 프론트가 userId 로 폴백
+    // 사내 사용자에게만 제공 (일반 사용자에게 admin 메타 노출 방지).
     const internal = isInternalUser(auth.user.role);
-    const authorIsSuperAdmin = internal
-      ? (await resolveAuthorSuperAdmin({
-          userType: notice.userType,
-          userId: notice.userId,
-        })).isSuperAdmin
-      : undefined;
+    const logTag = "[GET /api/home-notices/:id]";
+
+    let authorIsSuperAdmin: boolean | undefined;
+    let createdByName: string | null | undefined;
+    let updatedByName: string | null | undefined;
+    if (internal) {
+      const createdById = notice.createdBy ?? notice.userId;
+      const sameUser = notice.updatedBy && notice.updatedBy === createdById;
+      // updatedBy 가 createdBy 와 다른 사람(다른 userType 가능)인 경우 notice.userType 으로
+      // QSP 조회하면 잘못된 결과가 반환되거나 null 폴백이 빈번. 후보 userType 순차 시도.
+      const [superAdminSettled, createdNameSettled, updatedNameSettled] = await Promise.allSettled([
+        resolveAuthorSuperAdmin({ userType: notice.userType, userId: notice.userId }),
+        resolveUserName(notice.userType, createdById, logTag),
+        notice.updatedBy && !sameUser
+          ? resolveUserNameUnknownType(notice.updatedBy, logTag).then((r) => r.name)
+          : Promise.resolve<string | null>(null),
+      ]);
+      authorIsSuperAdmin =
+        superAdminSettled.status === "fulfilled" ? superAdminSettled.value.isSuperAdmin : undefined;
+      createdByName = createdNameSettled.status === "fulfilled" ? createdNameSettled.value : null;
+      if (!notice.updatedBy) {
+        updatedByName = null;
+      } else if (sameUser) {
+        updatedByName = createdByName;
+      } else {
+        updatedByName = updatedNameSettled.status === "fulfilled" ? updatedNameSettled.value : null;
+      }
+    }
 
     const data = {
       id: notice.id,
       targets: toTargetArray(notice),
+      title: notice.title,
       content: notice.content,
       url: notice.url,
       startAt: notice.startAt,
@@ -63,8 +101,10 @@ export async function GET(request: NextRequest, { params }: Params) {
       authorIsSuperAdmin,
       createdAt: notice.createdAt,
       createdBy: notice.createdBy,
+      createdByName,
       updatedAt: notice.updatedAt,
       updatedBy: notice.updatedBy,
+      updatedByName,
     };
 
     console.log(`[GET /api/home-notices/:id] 공지 단건 조회 — id: ${notice.id}`);
@@ -94,7 +134,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (parseError) {
+      console.warn("[PUT /api/home-notices/:id] Request body 파싱 실패:", parseError);
       return NextResponse.json(
         { error: "リクエスト形式が正しくありません" },
         { status: 400 },
@@ -110,47 +151,54 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // startAt 또는 endAt 한쪽만 보낸 경우, 기존 레코드와 cross-validation
-    const existing = await prisma.homeNotice.findUnique({
-      where: { id: parsed.data },
-      select: { startAt: true, endAt: true, userType: true, userId: true },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
-    }
-
-    // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
-    if (!(await canModifyResource(auth.user, existing))) {
-      return NextResponse.json(
-        { error: "修正する権限がありません" },
-        { status: 403 },
-      );
-    }
-
-    const finalStartAt = result.data.startAt ?? existing.startAt;
-    const finalEndAt = result.data.endAt ?? existing.endAt;
-
-    if (finalStartAt >= finalEndAt) {
-      return NextResponse.json(
-        { error: "開始日は終了日より前に設定してください" },
-        { status: 400 },
-      );
-    }
-
-    // 게시기간 겹치는 공지 5개 초과 체크 + 수정을 트랜잭션으로 처리
+    // 존재 확인 → 권한 검증 → 한도 검증 → 갱신을 모두 동일 트랜잭션(Serializable) 안에서 수행해
+    // findUnique 와 update 사이의 TOCTOU 윈도우(작성자/소유자가 다른 세션에서 변경되는 경우)를 닫음.
     const notice = await prisma.$transaction(
       async (tx) => {
-        const overlapCount = await tx.homeNotice.count({
-          where: {
-            id: { not: parsed.data },
-            startAt: { lte: finalEndAt },
-            endAt: { gte: finalStartAt },
-          },
+        const existing = await tx.homeNotice.findUnique({
+          where: { id: parsed.data },
+          select: { startAt: true, endAt: true, userType: true, userId: true },
         });
 
-        if (overlapCount >= 5) {
-          throw new Error("LIMIT_EXCEEDED");
+        if (!existing) throw new HomeNoticeUpdateError("NOT_FOUND");
+
+        // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인.
+        // tx 전달 → admin role 조회까지 동일 트랜잭션 스냅샷에서 평가, 권한 판정과 update 사이의 정합성 강화.
+        if (!(await canModifyResource(auth.user, existing, tx))) {
+          throw new HomeNoticeUpdateError("FORBIDDEN");
+        }
+
+        const finalStartAt = result.data.startAt ?? existing.startAt;
+        const finalEndAt = result.data.endAt ?? existing.endAt;
+
+        if (finalStartAt >= finalEndAt) {
+          // schema refine 은 양쪽이 다 전달된 경우만 검사 — 한쪽만 보낸 케이스는 여기서 cross-validation.
+          throw new HomeNoticeUpdateError("INVALID_RANGE");
+        }
+
+        // 게시기간이 실제로 변경된 경우에만 5건 한도 재검사.
+        // 이유:
+        //   POST(create) 는 "신규 공지 자신의 기간" 만 검사하므로 긴 기간을 가진 기존 공지
+        //   안에 다른 공지가 누적되어 자신 기준 5건 초과 상태가 만들어질 수 있음. 이때
+        //   날짜 변경 없이 content/대상/URL 만 수정하는 것까지 막히는 UX 결함이 생김.
+        //   날짜를 그대로 두는 수정은 새로운 겹침 관계를 만들지 않으므로 한도 검사 불필요.
+        //   날짜가 바뀌는 경우에만 새 기간 기준으로 다시 검사 (period shift / expand / shrink).
+        const datesUnchanged =
+          finalStartAt.getTime() === existing.startAt.getTime() &&
+          finalEndAt.getTime() === existing.endAt.getTime();
+
+        if (!datesUnchanged) {
+          const overlapCount = await tx.homeNotice.count({
+            where: {
+              id: { not: parsed.data },
+              startAt: { lte: finalEndAt },
+              endAt: { gte: finalStartAt },
+            },
+          });
+
+          if (overlapCount >= 5) {
+            throw new HomeNoticeUpdateError("LIMIT_EXCEEDED");
+          }
         }
 
         return tx.homeNotice.update({
@@ -161,13 +209,36 @@ export async function PUT(request: NextRequest, { params }: Params) {
       { isolationLevel: "Serializable" },
     );
 
+    // 감사 로그 — auth.user.userId 가 STORE/SEKO/GENERAL 의 경우 이메일 형태 가능.
+    // maskEmail 통과시켜 PII 누출 방지(이메일 아니면 원본 유지).
+    console.info("[PUT /api/home-notices/:id] updated", {
+      id: notice.id,
+      by: maskEmail(auth.user.userId),
+      role: auth.user.role,
+    });
+
     return NextResponse.json({ data: notice });
   } catch (error) {
-    if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
-      return NextResponse.json(
-        { error: "同一期間に掲載できるお知らせは5件までです" },
-        { status: 400 },
-      );
+    if (error instanceof HomeNoticeUpdateError) {
+      if (error.kind === "NOT_FOUND") {
+        return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
+      }
+      if (error.kind === "FORBIDDEN") {
+        return NextResponse.json({ error: "修正する権限がありません" }, { status: 403 });
+      }
+      if (error.kind === "LIMIT_EXCEEDED") {
+        // FE 가 message 문자열이 아닌 code 로 분기할 수 있도록 식별자 동봉.
+        return NextResponse.json(
+          { error: "同一期間に掲載できるお知らせは5件までです", code: "LIMIT_EXCEEDED" },
+          { status: 400 },
+        );
+      }
+      if (error.kind === "INVALID_RANGE") {
+        return NextResponse.json(
+          { error: "開始日は終了日より前に設定してください" },
+          { status: 400 },
+        );
+      }
     }
     if (
       error instanceof PrismaClientKnownRequestError &&
@@ -212,6 +283,12 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     await prisma.homeNotice.delete({ where: { id: parsed.data } });
+
+    console.info("[DELETE /api/home-notices/:id] deleted", {
+      id: parsed.data,
+      by: maskEmail(auth.user.userId),
+      role: auth.user.role,
+    });
 
     return NextResponse.json({ data: { id: parsed.data } });
   } catch (error) {
