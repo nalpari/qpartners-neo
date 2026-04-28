@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { getUserFromRequest } from "@/lib/jwt";
-import { fetchQspUserDetail, parseQspDate } from "@/lib/qsp-member";
+import { sendAttrChangeNotification } from "@/lib/notification-mail/attr-change-mail";
+import { fetchQspUserDetail, parseQspDate, type QspMemberDetail } from "@/lib/qsp-member";
 import { qspUpdateResponseSchema } from "@/lib/schemas/member";
 import {
   profileUpdateSchema,
@@ -288,8 +289,38 @@ export async function PUT(request: NextRequest) {
     //   compNm, compNmKana, compPostCd, compAddr, compAddr2, compTelNo, newsRcptYn
     {
       let qspPayload: Record<string, unknown>;
+      // 속성 변경 알림 메일용 — 변경 직전 QSP 상세 정보.
+      // ADMIN/STORE 는 payload 구성에도 사용(아래), GENERAL 은 알림용으로만 사용.
+      // fetchQspUserDetail 반환 타입(QspMemberDetail) 과 일치시킴.
+      let preDetail: QspMemberDetail | null = null;
 
       if (user.userTp === "GENERAL") {
+        // GENERAL: 알림(attrChgYn) 판정을 위해 변경 직전 detail 시도 — 실패는 허용
+        // (실패 시 알림만 스킵, 본 업데이트 로직은 기존 그대로 진행)
+        try {
+          const detailResult = await fetchQspUserDetail(
+            user.userId,
+            user.userTp,
+            "[PUT /api/mypage/profile]",
+          );
+          if (detailResult.ok) {
+            preDetail = detailResult.detail;
+          } else {
+            console.warn(
+              "[PUT /api/mypage/profile] preDetail 조회 실패 — 알림 메일 스킵",
+              {
+                ...buildUserLogContext(user),
+                status: detailResult.error.status,
+              },
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "[PUT /api/mypage/profile] preDetail 조회 예외 — 알림 메일 스킵",
+            error,
+          );
+        }
+
         // GENERAL: 프론트에서 전체 필드를 받아서 전송
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
@@ -327,6 +358,8 @@ export async function PUT(request: NextRequest) {
           );
         }
         const current = detailResult.detail;
+        // 알림용으로도 동일 detail 재사용 (추가 호출 없음)
+        preDetail = current;
         qspPayload = {
           accsSiteCd: SITE_DEFAULTS.accsSiteCd,
           userId: user.userId,
@@ -416,6 +449,22 @@ export async function PUT(request: NextRequest) {
           { error: "プロフィールの修正に失敗しました" },
           { status: 502 },
         );
+      }
+
+      // ─── 속성 변경 알림 메일 발송 (회원관리 p.47 #7) ───
+      // 발송 조건: 변경 직전 QSP attrChgYn === "Y" (fail-closed: null 은 발송 X)
+      // 발송 실패는 본 API 응답에 영향 X (send-notification.ts 가 내부 try-catch + warn)
+      // recipientName: 변경 후 값(d.sei/mei) 우선, 없으면 preDetail (ADMIN/STORE 는 항상 preDetail)
+      if (preDetail?.attrChgYn === "Y" && user.email) {
+        const sei = d.sei?.trim() ? d.sei : (preDetail.user2ndNm ?? "");
+        const mei = d.mei?.trim() ? d.mei : (preDetail.user1stNm ?? "");
+        void sendAttrChangeNotification({
+          to: user.email,
+          recipientName: { sei, mei },
+          preDetail,
+          request: d,
+          callerRoute: "[PUT /api/mypage/profile]",
+        });
       }
     }
 

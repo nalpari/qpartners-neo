@@ -97,6 +97,12 @@ interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
+  /**
+   * BCC 수신자 — 단일 주소 또는 주소 배열.
+   * 알림 메일(notification-mail) 등 운영 모니터링 용도로 사용.
+   * dev/staging 에서 운영 주체 실주소 노출 방지는 호출부(send-notification.ts)에서 가드한다.
+   */
+  bcc?: string | string[];
   attachments?: SendMailAttachment[];
 }
 
@@ -108,7 +114,7 @@ export interface SendMailResult {
 }
 
 /** 공용 메일 발송 유틸리티 */
-export async function sendMail({ to, subject, html, attachments }: SendMailOptions): Promise<SendMailResult> {
+export async function sendMail({ to, subject, html, bcc, attachments }: SendMailOptions): Promise<SendMailResult> {
   const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
   const useEthereal = useEtherealFlag;
 
@@ -127,6 +133,7 @@ export async function sendMail({ to, subject, html, attachments }: SendMailOptio
       to,
       subject,
       html,
+      ...(bcc !== undefined ? { bcc } : {}),
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
     });
   } catch (error) {

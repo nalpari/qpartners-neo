@@ -1,0 +1,34 @@
+/**
+ * 알림 메일 (로그인/속성 변경) 공통 상수.
+ *
+ * AS-IS oldQpartners `sitemanage/ini/const_mail.php` 미러링.
+ * 운영 주체 BCC 는 dev 환경에서 차단되므로 (send-notification.ts) 안전하게 노출 가능.
+ */
+
+/**
+ * 운영 주체 BCC.
+ * AS-IS const_mail.php:93-96 (MAIL_EDIT_USER_BCC) 동일.
+ * dev/staging 에서는 send-notification.ts 가 자동 제거.
+ */
+export const NOTIFICATION_MAIL_BCC = [
+  "hasegawa.j@qcells.com",
+  "q-partners@hqj.co.jp",
+] as const;
+
+/**
+ * 속성 변경 알림 메일 제목.
+ * AS-IS const_mail.php:90 (MAIL_EDIT_USER_TITLE) 동일.
+ */
+export const ATTR_CHANGE_MAIL_SUBJECT = "【Q.PARTNERS】会員情報変更完了のお知らせ";
+
+/**
+ * 로그인 알림 메일 제목.
+ * 담당자 회신 후 확정 — 본 모듈 v0.1 시점에는 사용하지 않음.
+ */
+export const LOGIN_NOTIFICATION_MAIL_SUBJECT = "【Q.PARTNERS】ログイン通知";
+
+/**
+ * 마이페이지 URL fallback.
+ * 환경변수 `SITE_URL` 미설정 시 사용. 운영 도메인.
+ */
+export const SITE_URL_FALLBACK = "https://q-partners.hqj.co.jp";
