@@ -12,6 +12,7 @@
 | State (server) | TanStack Query |
 | Package Manager | pnpm |
 | Containerization | Docker (multi-stage build, standalone output) |
+| Rich Text Editor | BlockNote (`@blocknote/mantine`, ja locale) — content body 입력 |
 
 ## Prerequisites
 
@@ -102,7 +103,10 @@ src/
 │   ├── layout.tsx        # Root layout (QueryProvider wraps here)
 │   ├── page.tsx          # Home page
 │   └── globals.css       # Tailwind config & theme tokens
+├── components/common/
+│   └── block-editor/     # BlockNote wrapper (client-only via next/dynamic)
 ├── lib/
+│   ├── block-editor/     # 본문 정규화·sanitize·empty 검증 유틸
 │   ├── prisma.ts         # Prisma client singleton (MariaDB adapter)
 │   ├── query-provider.tsx # TanStack Query provider (client component)
 │   └── store.ts          # Zustand store
