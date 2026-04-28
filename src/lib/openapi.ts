@@ -1490,9 +1490,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 목록 (관리자용)",
         parameters: [
-          { name: "keyword", in: "query", description: "타이틀(title) Like 검색 — 2026-04-28 변경: content → title", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "공지내용(content) Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
-          { name: "targetType", in: "query", description: "게시대상 필터 (super_admin/admin/first_store/second_store/seko/general)", schema: { type: "string" } },
+          { name: "targetType", in: "query", description: "게시대상 필터 — 단일 또는 콤마 구분 멀티 선택 (super_admin/admin/first_store/second_store/seko/general). 멀티는 OR 매칭", schema: { type: "string" } },
           { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
@@ -3988,8 +3988,18 @@ export const openApiSpec: OpenAPIV3.Document = {
           userId: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
+          createdByName: {
+            type: "string",
+            nullable: true,
+            description: "등록자 표시명 — QSP userDetail 조회 결과. 미해결/실패 시 null",
+          },
           updatedAt: { type: "string", format: "date-time" },
           updatedBy: { type: "string", nullable: true },
+          updatedByName: {
+            type: "string",
+            nullable: true,
+            description: "갱신자 표시명 — QSP userDetail 조회 결과. 미해결/실패 시 null",
+          },
         },
       },
       HomeNoticeDetail: {

@@ -82,14 +82,16 @@ export async function POST(request: NextRequest) {
 
         // 3. 권한 검증 — 한 건이라도 권한 없으면 전체 거부 (fail-closed).
         //    canModifyResource 는 SUPER_ADMIN 작성글 식별 위해 비동기 (DB 조회 가능).
-        //    Promise.all 로 병렬 처리해 N건 검증 시간을 줄임.
-        const verdicts = await Promise.all(
-          notices.map(async (notice) => ({
-            id: notice.id,
-            allowed: await canModifyResource(auth.user, notice),
-          })),
-        );
-        const deniedIds = verdicts.filter((v) => !v.allowed).map((v) => v.id);
+        //    Serializable 트랜잭션 안에서 Promise.all 병렬 실행은 일부 드라이버/풀에서
+        //    동일 트랜잭션 커넥션의 동시 사용을 막기 때문에 dead-lock 위험이 있어
+        //    안정성을 위해 순차 처리. (canModifyResource 자체는 prisma 글로벌 인스턴스를
+        //    사용하므로 트랜잭션과 직접 경쟁하지는 않지만, 향후 tx 사용으로 옮기더라도
+        //    안전하도록 sequential 패턴을 채택.)
+        const deniedIds: number[] = [];
+        for (const notice of notices) {
+          const allowed = await canModifyResource(auth.user, notice);
+          if (!allowed) deniedIds.push(notice.id);
+        }
         if (deniedIds.length > 0) {
           throw new BulkDeleteError("FORBIDDEN", { deniedIds });
         }
@@ -104,10 +106,13 @@ export async function POST(request: NextRequest) {
       { isolationLevel: "Serializable" },
     );
 
-    // 감사 로그 — PII 없음(ID 만). 운영 추적용.
+    // 감사 로그 — PII 없음. 운영 추적용 (요청자 userId/role + ID 목록).
     console.info("[POST /api/home-notices/bulk-delete] bulk deleted", {
       requestedCount: ids.length,
       deletedCount: result.deletedCount,
+      ids: result.ids,
+      by: auth.user.userId,
+      role: auth.user.role,
     });
 
     return NextResponse.json({ data: result });

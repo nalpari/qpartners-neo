@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -10,7 +10,7 @@ import type {
   ICellRendererParams,
 } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, Button, Checkbox } from "@/components/common";
+import { Pagination, PageSizeSelect, Button, Checkbox } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
@@ -26,11 +26,10 @@ import {
   STATUS_LABEL_MAP,
   targetsToLabel,
   formatDate,
+  formatUserLabel,
 } from "./notices-types";
 
 // Design Ref: §4.3 — NoticesTable useQuery + AG Grid 컬럼 매핑
-
-const PAGE_SIZE = 20;
 
 
 interface NoticeDetailResponse {
@@ -48,18 +47,34 @@ interface NoticeDetailResponse {
     authorIsSuperAdmin?: boolean;
     createdAt: string;
     createdBy: string | null;
+    createdByName?: string | null;
     updatedAt: string;
     updatedBy: string | null;
+    updatedByName?: string | null;
   };
 }
 
 interface NoticesTableProps {
   filters: NoticeSearchFilters;
   page: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  // 일괄 삭제 선택 상태는 부모가 보유. 페이지/필터 변경 시 부모가 명시적으로 초기화.
+  // (자식 useEffect 로 외부값 변화에 맞춰 setState 하면 React Compiler set-state-in-effect 규칙 위반)
+  selectedIds: Set<number>;
+  onSelectedIdsChange: (ids: Set<number>) => void;
 }
 
-export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps) {
+export function NoticesTable({
+  filters,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  selectedIds,
+  onSelectedIdsChange,
+}: NoticesTableProps) {
   const { openPopup } = usePopupStore();
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
@@ -74,24 +89,28 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
   });
 
   const { data, isLoading } = useQuery<NoticeListResponse>({
+    // 배열을 직접 키에 넣으면 reference identity 가 매 렌더 바뀔 때 캐시 미스 발생.
+    // join(",") 으로 직렬화해 동일 내용은 동일 키로 안정화.
     queryKey: [
       "home-notices",
       filters.keyword,
-      filters.statuses,
-      filters.targetType,
+      filters.statuses.join(","),
+      filters.targetTypes.join(","),
       filters.author,
       filters.startDate?.getTime(),
       filters.endDate?.getTime(),
       page,
+      pageSize,
     ],
     queryFn: async () => {
       const params: Record<string, string> = {
         page: String(page),
-        pageSize: String(PAGE_SIZE),
+        pageSize: String(pageSize),
       };
       if (filters.keyword) params.keyword = filters.keyword;
       if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
-      if (filters.targetType) params.targetType = filters.targetType;
+      // 게시대상 멀티 선택 — comma-separated 로 BE 에 전달, BE 에서 OR 조건으로 변환.
+      if (filters.targetTypes.length > 0) params.targetType = filters.targetTypes.join(",");
       if (filters.author) params.createdBy = filters.author;
       if (filters.startDate) {
         const d = filters.startDate;
@@ -110,9 +129,6 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
   const items = useMemo(() => data?.data ?? [], [data]);
   const totalPages = data?.meta.totalPages ?? 1;
 
-  // 일괄 삭제 선택 ID 집합. 페이지/필터 변경 시에도 유지(전역). bulk-delete 성공 시 초기화.
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-
   const visibleIds = useMemo(() => items.map((it) => it.id), [items]);
   // 헤더 체크박스 3상태 — 권한 팝업 패턴과 동일 (none/some/all).
   // some 일 때 indeterminate(회색 가로선) 으로 부분 선택 시각화.
@@ -122,28 +138,27 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
   const someVisibleSelected =
     visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length;
 
-  const toggleOne = useCallback((id: number, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
+  const toggleOne = useCallback(
+    (id: number, checked: boolean) => {
+      const next = new Set(selectedIds);
       if (checked) next.add(id);
       else next.delete(id);
-      return next;
-    });
-  }, []);
+      onSelectedIdsChange(next);
+    },
+    [selectedIds, onSelectedIdsChange],
+  );
 
   const toggleAllVisible = useCallback(
     (checked: boolean) => {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (checked) {
-          for (const id of visibleIds) next.add(id);
-        } else {
-          for (const id of visibleIds) next.delete(id);
-        }
-        return next;
-      });
+      const next = new Set(selectedIds);
+      if (checked) {
+        for (const id of visibleIds) next.add(id);
+      } else {
+        for (const id of visibleIds) next.delete(id);
+      }
+      onSelectedIdsChange(next);
     },
-    [visibleIds],
+    [selectedIds, visibleIds, onSelectedIdsChange],
   );
 
   // AG Grid api ref — selectedIds 변경 시 _select 컬럼 셀 재렌더 강제. AG Grid 셀 렌더러는
@@ -170,7 +185,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
-      setSelectedIds(new Set());
+      onSelectedIdsChange(new Set());
       openAlert({ type: "alert", message: "削除しました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -239,11 +254,13 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           title: d.title,
           content: d.content,
           url: d.url ?? "",
-          author: d.createdBy ?? "",
-          authorId: d.userId,
+          // 팝업 표시는 "이름(ID)" 형식 — author/updater 가 이름, authorId/updaterId 가 ID.
+          // 이름 미해결 시 author=빈문자열, ID 만 표시.
+          author: d.createdByName ?? "",
+          authorId: d.createdBy ?? d.userId,
           createdAt: d.createdAt,
-          updater: d.updatedBy ?? "",
-          updaterId: "",
+          updater: d.updatedByName ?? "",
+          updaterId: d.updatedBy ?? "",
           updatedAt: d.updatedAt,
         };
         openPopup("notice-form", { mode: "edit", notice: formData });
@@ -255,26 +272,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
     [user, openPopup],
   );
 
-  // 타이틀 셀 — 클릭 시 팝업 오픈.
-  const TitleCellRenderer = useMemo(() => {
-    const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
-      const rowData = params.data;
-      if (!rowData) return null;
-      return (
-        <button
-          type="button"
-          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer"
-          onClick={() => openNoticeDetail(rowData.id)}
-        >
-          {rowData.title?.trim() || "(タイトル未設定)"}
-        </button>
-      );
-    };
-    return Renderer;
-  }, [openNoticeDetail]);
-
-  // 내용 셀 — 타이틀 미입력 데이터 식별을 위해 함께 노출. 동일 클릭 동작.
-  // (title 마이그레이션 완료 후 제거 검토 — 임시 fallback 컬럼)
+  // 내용 셀 — 클릭 시 상세 팝업 오픈. (タイトル 컬럼은 일단 비노출 — 사용자 요청 §1)
   const ContentCellRenderer = useMemo(() => {
     const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
       const rowData = params.data;
@@ -374,14 +372,6 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
-        headerName: "タイトル",
-        field: "title",
-        flex: 1.5,
-        cellRenderer: TitleCellRenderer,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        // 임시 fallback — 기존 데이터 식별용. title 입력이 정착되면 제거 검토.
         headerName: "お知らせ内容",
         field: "content",
         flex: 2,
@@ -413,9 +403,10 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
+        // "이름(ID)" 형식 — 이름 미해결 시 ID 만 표시 (formatUserLabel 폴백).
         headerName: "登録者",
-        field: "createdBy",
-        flex: 0.8,
+        flex: 1,
+        valueGetter: (p) => formatUserLabel(p.data?.createdByName, p.data?.createdBy),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
@@ -428,14 +419,15 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
         headerClass: "ag-header-cell-center",
       },
       {
+        // "이름(ID)" 형식 — 이름 미해결 시 ID 만 표시. updatedBy 미존재 시 "-" 폴백.
         headerName: "更新者",
-        field: "updatedBy",
-        flex: 0.8,
+        flex: 1,
+        valueGetter: (p) => formatUserLabel(p.data?.updatedByName, p.data?.updatedBy),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
     ],
-    [TitleCellRenderer, ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
+    [ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
   );
 
   // 그리드 context — cell renderer 가 최신 selectedIds / 토글 핸들러를 참조하도록 매 렌더 갱신.
@@ -446,7 +438,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
 
   return (
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
-      {/* 상단 바 — 좌측: 선택 정보, 우측: 削除 + 登録 */}
+      {/* 상단 바 — 좌측: 선택 정보, 우측: 削除 + 登録 + 表示件数(맨 우측) */}
       <div className="flex items-center justify-between">
         <div className="font-['Noto_Sans_JP'] text-[13px] text-[#6a88a9] min-h-[20px]">
           {selectedIds.size > 0 ? `${selectedIds.size}件選択中` : ""}
@@ -462,6 +454,7 @@ export function NoticesTable({ filters, page, onPageChange }: NoticesTableProps)
           <Button variant="primary" onClick={handleRegister}>
             お知らせ登録
           </Button>
+          <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
         </div>
       </div>
 

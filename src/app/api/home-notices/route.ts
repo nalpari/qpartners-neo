@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import type { Prisma } from "@/generated/prisma/client";
+import { resolveUserName } from "@/lib/admin-name";
 import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -25,8 +27,18 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? "20") || 20));
 
-    // targetType → 해당 boolean 필드 필터
-    const targetMap: Record<string, string> = {
+    // targetType → 해당 boolean 필드 필터.
+    // comma-separated 멀티 선택 (`first_store,seko`) 지원 — OR 조건으로 변환.
+    // 단일 값도 동일 경로로 처리.
+    type TargetField =
+      | "targetSuperAdmin"
+      | "targetAdmin"
+      | "targetFirstStore"
+      | "targetSecondStore"
+      | "targetConstructor"
+      | "targetGeneral";
+
+    const targetMap: Record<string, TargetField> = {
       super_admin: "targetSuperAdmin",
       admin: "targetAdmin",
       first_store: "targetFirstStore",
@@ -35,13 +47,27 @@ export async function GET(request: NextRequest) {
       general: "targetGeneral",
     };
 
-    if (targetType && !targetMap[targetType]) {
-      return NextResponse.json(
-        { error: "送信先フィルタの値が正しくありません" },
-        { status: 400 },
-      );
+    const targetFields: TargetField[] = [];
+    if (targetType) {
+      const requested = targetType
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      // dedupe + 화이트리스트 검증 — 한 항목이라도 미정의 키면 400.
+      const seen = new Set<string>();
+      for (const key of requested) {
+        const field = targetMap[key];
+        if (!field) {
+          return NextResponse.json(
+            { error: "送信先フィルタの値が正しくありません" },
+            { status: 400 },
+          );
+        }
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targetFields.push(field);
+      }
     }
-    const targetField = targetType ? targetMap[targetType] : undefined;
 
     // status 필터 → DB where 조건으로 변환 (메모리 필터 대신 DB 레벨)
     const now = new Date();
@@ -73,6 +99,12 @@ export async function GET(request: NextRequest) {
         }
       : undefined;
 
+    // 게시대상 멀티 선택 — 선택된 boolean 컬럼들 중 하나라도 true 면 매칭(OR).
+    const targetWhere =
+      targetFields.length > 0
+        ? { OR: targetFields.map((f) => ({ [f]: true })) }
+        : undefined;
+
     // 날짜 파라미터 검증
     if (startDate && isNaN(new Date(startDate).getTime())) {
       return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
@@ -81,18 +113,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
 
+    // statusWhere · targetWhere 둘 다 최상위 OR 을 사용하므로 단순 spread 시 키 충돌이 발생.
+    // AND 배열로 묶어 두 그룹을 동시에 적용 (상태 OR ∧ 대상 OR).
+    const andClauses: Prisma.HomeNoticeWhereInput[] = [];
+    if (statusWhere) andClauses.push(statusWhere);
+    if (targetWhere) andClauses.push(targetWhere);
+
     const where = {
-      // 검색 keyword 는 title 부분 일치 (2026-04-28 변경: content → title).
-      ...(keyword && { title: { contains: keyword } }),
+      // 검색 keyword 는 content 부분 일치.
+      ...(keyword && { content: { contains: keyword } }),
       ...(createdBy && { createdBy: { contains: createdBy } }),
-      ...(targetField && { [targetField]: true }),
       ...((startDate || endDate) && {
         createdAt: {
           ...(startDate && { gte: new Date(startDate) }),
           ...(endDate && { lte: new Date(`${endDate}T23:59:59.999+09:00`) }),
         },
       }),
-      ...statusWhere,
+      ...(andClauses.length > 0 ? { AND: andClauses } : {}),
     };
 
     const [notices, total] = await Promise.all([
@@ -104,6 +141,31 @@ export async function GET(request: NextRequest) {
       }),
       prisma.homeNotice.count({ where }),
     ]);
+
+    // QSP 사용자 이름 일괄 조회 — 행 N건의 createdBy/updatedBy 에서 unique (userType, userId) 만 추출해
+    // 외부 API 호출 횟수를 최소화한다 (페이지 내 동일 등록자 다수 등장 시 1회로 축소).
+    // 실패는 silent — 이름 미해결 시 프론트가 userId 로 폴백한다.
+    const logTag = "[GET /api/home-notices]";
+    type NameKey = string; // `${userType}:${userId}`
+    const buildKey = (ut: string, uid: string): NameKey => `${ut}:${uid}`;
+    const uniqueRefs = new Map<NameKey, { userType: string; userId: string }>();
+    for (const n of notices) {
+      // notice 의 userType 은 작성자(creator) 의 사용자 타입.
+      // updatedBy 는 작성자와 다른 타입의 사용자일 수 있으나, list 응답에 별도 컬럼이 없어
+      // contents API 와 동일하게 작성자 userType 으로 lookup 시도 — 실패 시 null 폴백 (resolveUserName 자체가 흡수).
+      if (n.createdBy) uniqueRefs.set(buildKey(n.userType, n.createdBy), { userType: n.userType, userId: n.createdBy });
+      if (n.updatedBy) uniqueRefs.set(buildKey(n.userType, n.updatedBy), { userType: n.userType, userId: n.updatedBy });
+    }
+
+    const refsArray = Array.from(uniqueRefs.entries());
+    const settled = await Promise.allSettled(
+      refsArray.map(([, ref]) => resolveUserName(ref.userType, ref.userId, logTag)),
+    );
+    const nameMap = new Map<NameKey, string | null>();
+    refsArray.forEach(([key], idx) => {
+      const r = settled[idx];
+      nameMap.set(key, r.status === "fulfilled" ? r.value : null);
+    });
 
     const data = notices.map((n) => ({
       id: n.id,
@@ -118,8 +180,10 @@ export async function GET(request: NextRequest) {
       userId: n.userId,
       createdAt: n.createdAt,
       createdBy: n.createdBy,
+      createdByName: n.createdBy ? (nameMap.get(buildKey(n.userType, n.createdBy)) ?? null) : null,
       updatedAt: n.updatedAt,
       updatedBy: n.updatedBy,
+      updatedByName: n.updatedBy ? (nameMap.get(buildKey(n.userType, n.updatedBy)) ?? null) : null,
     }));
 
     return NextResponse.json({
@@ -144,7 +208,8 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (parseError) {
+      console.warn("[POST /api/home-notices] Request body 파싱 실패:", parseError);
       return NextResponse.json(
         { error: "リクエスト形式が正しくありません" },
         { status: 400 },
@@ -186,11 +251,17 @@ export async function POST(request: NextRequest) {
       { isolationLevel: "Serializable" },
     );
 
+    console.info("[POST /api/home-notices] created", {
+      id: notice.id,
+      by: auth.user.userId,
+      role: auth.user.role,
+    });
+
     return NextResponse.json({ data: notice }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
       return NextResponse.json(
-        { error: "同一期間に掲載できるお知らせは5件までです" },
+        { error: "同一期間に掲載できるお知らせは5件までです", code: "LIMIT_EXCEEDED" },
         { status: 400 },
       );
     }

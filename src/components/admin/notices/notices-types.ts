@@ -14,8 +14,11 @@ export interface NoticeListItem {
   userId: string;
   createdAt: string;
   createdBy: string;
+  /** QSP userDetail 조회 결과 — 미해결/실패 시 null. 표시는 "이름(ID)" 형식. */
+  createdByName: string | null;
   updatedAt: string;
   updatedBy: string | null;
+  updatedByName: string | null;
 }
 
 /** 목록 응답 전체 */
@@ -50,7 +53,8 @@ export interface NoticeFormData {
 export interface NoticeSearchFilters {
   keyword: string;
   statuses: string[];
-  targetType: string;
+  // 게시대상 멀티 선택 (OR 조건). 비어있으면 전체.
+  targetTypes: string[];
   startDate: Date | null;
   endDate: Date | null;
   author: string;
@@ -59,7 +63,7 @@ export interface NoticeSearchFilters {
 export const INITIAL_FILTERS: NoticeSearchFilters = {
   keyword: "",
   statuses: [],
-  targetType: "",
+  targetTypes: [],
   startDate: null,
   endDate: null,
   author: "",
@@ -107,6 +111,23 @@ export function targetsToPayload(targets: string[]): Record<string, boolean> {
     result[field] = targets.includes(key);
   }
   return result;
+}
+
+/**
+ * 등록자/갱신자 표시 헬퍼 — 그리드·팝업 공용.
+ * - 이름·ID 둘 다 있음: `이름(ID)`
+ * - ID 만 있음: `ID`
+ * - 모두 없음: `-`
+ *
+ * 그리드(formatUserLabel) 와 팝업이 같은 폴백 정책을 쓰도록 단일 정의 유지.
+ */
+export function formatUserLabel(
+  name: string | null | undefined,
+  userId: string | null | undefined,
+): string {
+  if (!userId) return "-";
+  if (name && name.trim()) return `${name}(${userId})`;
+  return userId;
 }
 
 /** ISO 8601 → YYYY.MM.DD */

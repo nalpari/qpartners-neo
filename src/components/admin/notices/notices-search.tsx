@@ -28,24 +28,30 @@ interface NoticesSearchProps {
 }
 
 export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps) {
-  // 2026-04-28: 검색 키워드를 「お知らせ内容」 → 「タイトル」 으로 전환.
-  // state name 도 의미 일치하도록 title 로 정정.
-  const [title, setTitle] = useState(filters.keyword);
+  // 검색 키워드는 「お知らせ内容」(content) 부분 일치.
+  const [content, setContent] = useState(filters.keyword);
   const [statuses, setStatuses] = useState<string[]>(filters.statuses);
   const [author, setAuthor] = useState(filters.author);
   const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
   const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
-  const [targetType, setTargetType] = useState(filters.targetType);
+  // 게시대상은 멀티 선택 — statuses 와 동일한 toggle 패턴 (OR 조건).
+  const [targetTypes, setTargetTypes] = useState<string[]>(filters.targetTypes);
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
   };
 
+  const toggleTargetType = (value: string, checked: boolean) => {
+    setTargetTypes(
+      checked ? [...targetTypes, value] : targetTypes.filter((t) => t !== value),
+    );
+  };
+
   const handleSearch = () => {
     onSearch({
-      keyword: title,
+      keyword: content,
       statuses,
-      targetType,
+      targetTypes,
       startDate,
       endDate,
       author,
@@ -57,12 +63,12 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   };
 
   const handleReset = () => {
-    setTitle("");
+    setContent("");
     setStatuses([]);
     setAuthor("");
     setStartDate(null);
     setEndDate(null);
-    setTargetType("");
+    setTargetTypes([]);
     onReset();
   };
 
@@ -74,11 +80,11 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
           <div className="flex flex-1 gap-1 h-[58px] items-center">
             <div className="w-[120px] shrink-0 flex items-center h-full bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap">
-                タイトル
+                お知らせ内容
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <InputBox value={title} onChange={setTitle} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
+              <InputBox value={content} onChange={setContent} onKeyDown={handleKeyDown} placeholder="" className="w-full" />
             </div>
           </div>
 
@@ -140,8 +146,8 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               {TARGET_OPTIONS.map((opt) => (
                 <Checkbox
                   key={opt.value}
-                  checked={targetType === opt.value}
-                  onChange={(checked) => setTargetType(checked ? opt.value : "")}
+                  checked={targetTypes.includes(opt.value)}
+                  onChange={(checked) => toggleTargetType(opt.value, checked)}
                   label={opt.label}
                 />
               ))}

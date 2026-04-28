@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
-import { targetsToPayload } from "@/components/admin/notices/notices-types";
+import { targetsToPayload, formatUserLabel } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
 
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
@@ -91,11 +91,23 @@ export function NoticeFormPopup() {
     if (!title.trim()) errs.title = "タイトルを入力してください";
     else if (title.length > 100) errs.title = "タイトルは100文字以内で入力してください";
     if (!content.trim()) errs.content = "お知らせ内容を入力してください";
-    if (url && !url.startsWith("https://")) {
-      errs.url = "URLはhttps://で始めてください";
+    // BE 스키마(createHomeNoticeSchema/updateHomeNoticeSchema) 와 일치 — http(s) 모두 허용.
+    if (url && !/^https?:\/\//.test(url)) {
+      errs.url = "URLはhttp:// または https:// で始めてください";
     }
     return errs;
   }
+
+  // 400 응답 body 에서 code 추출 — BE 가 LIMIT_EXCEEDED 등 식별자를 동봉.
+  // 메시지 문자열 매칭은 번역/메시지 수정 시 깨지므로 code 기반 분기로 전환.
+  const isLimitExceeded = (error: unknown): boolean => {
+    if (!isAxiosError(error)) return false;
+    if (error.response?.status !== 400) return false;
+    const data = error.response.data;
+    if (typeof data !== "object" || data === null) return false;
+    const code = (data as Record<string, unknown>).code;
+    return code === "LIMIT_EXCEEDED";
+  };
 
   // Design Ref: §4.1 — 등록 mutation
   const createMutation = useMutation({
@@ -109,19 +121,13 @@ export function NoticeFormPopup() {
       closePopup();
     },
     onError: (error: unknown) => {
-      if (isAxiosError(error) && error.response?.status === 400) {
-        const data = error.response.data;
-        const msg = typeof data === "object" && data !== null && "error" in data && typeof (data as Record<string, unknown>).error === "string"
-          ? (data as Record<string, unknown>).error as string
-          : "";
-        if (msg === "同一期間に掲載できるお知らせは5件までです") {
-          openAlert({
-            type: "alert",
-            message: "活性(予定含む)のお知らせが5件を超えることはできません。",
-            confirmLabel: "確認",
-          });
-          return;
-        }
+      if (isLimitExceeded(error)) {
+        openAlert({
+          type: "alert",
+          message: "活性(予定含む)のお知らせが5件を超えることはできません。",
+          confirmLabel: "確認",
+        });
+        return;
       }
       openAlert({ type: "alert", message: "登録に失敗しました。", confirmLabel: "確認" });
     },
@@ -139,19 +145,13 @@ export function NoticeFormPopup() {
       closePopup();
     },
     onError: (error: unknown) => {
-      if (isAxiosError(error) && error.response?.status === 400) {
-        const data = error.response.data;
-        const msg = typeof data === "object" && data !== null && "error" in data && typeof (data as Record<string, unknown>).error === "string"
-          ? (data as Record<string, unknown>).error as string
-          : "";
-        if (msg === "同一期間に掲載できるお知らせは5件までです") {
-          openAlert({
-            type: "alert",
-            message: "活性(予定含む)のお知らせが5件を超えることはできません。",
-            confirmLabel: "確認",
-          });
-          return;
-        }
+      if (isLimitExceeded(error)) {
+        openAlert({
+          type: "alert",
+          message: "活性(予定含む)のお知らせが5件を超えることはできません。",
+          confirmLabel: "確認",
+        });
+        return;
       }
       openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     },
@@ -205,12 +205,17 @@ export function NoticeFormPopup() {
       setErrors(errs);
       return;
     }
+    // validate() 통과 후라도 TS 가 union 좁혀주지 않으므로 명시적 가드 — non-null 단언 제거.
+    if (!startDate || !endDate) {
+      setErrors({ dateRange: "開始日と終了日を選択してください" });
+      return;
+    }
     setErrors({});
 
     const payload = {
       ...targetsToPayload(targets),
-      startAt: startDate!.toISOString(),
-      endAt: endDate!.toISOString(),
+      startAt: startDate.toISOString(),
+      endAt: endDate.toISOString(),
       title: title.trim(),
       content: content.trim(),
       url: url.trim() || null,
@@ -326,7 +331,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">登録者</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {initialData?.author ? `${initialData.author} (${initialData.authorId})` : "—"}
+                  {formatUserLabel(initialData?.author, initialData?.authorId)}
                 </span>
               </div>
             </div>
@@ -342,7 +347,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">更新者</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {initialData?.updater ? `${initialData.updater} (${initialData.updaterId})` : "—"}
+                  {formatUserLabel(initialData?.updater, initialData?.updaterId)}
                 </span>
               </div>
             </div>
