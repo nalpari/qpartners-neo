@@ -113,6 +113,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
+          "403": errorResponse("2FA 대상이나 이메일 미등록 — 로그인 차단"),
           "502": errorResponse("외부 인증 서버 오류"),
         },
       },

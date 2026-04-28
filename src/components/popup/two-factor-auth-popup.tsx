@@ -25,10 +25,15 @@ const ERROR_CODE_MAP: Record<string, string> = {
 };
 
 const ERROR_MESSAGE_PATTERN_MAP: { pattern: string; message: string }[] = [
-  { pattern: "일치하지 않습니다", message: ERROR_CODE_MAP.MISMATCH },
-  { pattern: "입력시간이 초과", message: ERROR_CODE_MAP.EXPIRED },
-  { pattern: "시도 횟수를 초과", message: ERROR_CODE_MAP.MAX_ATTEMPTS },
-  { pattern: "먼저 발송", message: ERROR_CODE_MAP.NOT_SENT },
+  // verify 에러 (BE 일본어 메시지 패턴)
+  { pattern: "認証番号が一致しません", message: ERROR_CODE_MAP.MISMATCH },
+  { pattern: "入力時間を超過", message: ERROR_CODE_MAP.EXPIRED },
+  { pattern: "認証の試行回数を超過", message: ERROR_CODE_MAP.MAX_ATTEMPTS },
+  { pattern: "認証番号を先に送信", message: ERROR_CODE_MAP.NOT_SENT },
+  // send 에러 (code 미지원 — 메시지 패턴으로만 매칭)
+  { pattern: "メール情報がない", message: "メール情報がないため認証番号を送信できません。" },
+  { pattern: "送信回数を超え", message: "認証番号の送信回数を超過しました。しばらくしてからお試しください。" },
+  { pattern: "認証番号の送信に失敗", message: "認証番号の送信に失敗しました。しばらくしてから再度お試しください。" },
 ];
 
 function mapServerError(serverMsg: string, code: string | null): string {
@@ -88,11 +93,20 @@ export function TwoFactorAuthPopup() {
         });
       }
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       console.error("[2FA] 送信失敗:", err);
-      const message = isAxiosError(err) && err.response?.status === 429
-        ? "認証番号の送信回数を超過しました。しばらくしてからお試しください。"
-        : "メール送信に失敗しました。しばらくしてからお試しください。";
+      let message: string;
+      if (isAxiosError(err) && err.response) {
+        const serverError = extractApiError(err);
+        const data = err.response.data;
+        const code =
+          typeof data === "object" && data !== null && "code" in data && typeof (data as Record<string, unknown>).code === "string"
+            ? ((data as Record<string, unknown>).code as string)
+            : null;
+        message = mapServerError(serverError ?? "", code);
+      } else {
+        message = "認証処理中にエラーが発生しました。しばらくしてからお試しください。";
+      }
       // 수동 재전송 실패 시에는 alert 로 명시 (인라인 텍스트만으로는 사용자가 인지 못하는 케이스 방지).
       // 자동 첫 발송 실패 시에는 인라인 에러로 충분 (팝업 본문 자체가 안내문 컨텍스트).
       if (isManualResendRef.current) {
