@@ -278,6 +278,9 @@ export function Gnb() {
    *      → 응답 URL 을 `isSafeRedirect()` 로 검증 후 새 탭 이동 (fail-closed)
    *   3. API 실패/응답 누락/검증 실패 시 hostname 기반 fallback URL 로 이동
    *      (PROD_HOSTS 일치만 prod, 그 외 모두 dev)
+   *   4. window.open 은 `noopener` 만 사용 (`noreferrer` 제외) — ORDER/MUSUBI 가
+   *      REFERER 헤더로 도메인 화이트리스트 검사를 수행하므로 noreferrer 시 차단됨.
+   *      noopener 만으로 reverse tabnabbing 방어는 유지.
    *
    * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
    */
@@ -313,14 +316,14 @@ export function Gnb() {
       // BFF 변경/침해/MITM 시 임의 URL(`https://attacker/...`, `javascript:`, `data:`) 차단.
       if (!redirectUrl || !isSafeRedirect(redirectUrl, siteKey)) {
         console.error("[header] 자동로그인 응답 URL 차단 — fallback 이동");
-        window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+        window.open(fallbackUrl, "_blank", "noopener");
         return;
       }
-      window.open(redirectUrl, "_blank", "noopener,noreferrer");
+      window.open(redirectUrl, "_blank", "noopener");
     } catch (err: unknown) {
       console.error("[header] 자동로그인 실패 — fallback 이동:", err);
       // 실패 fallback — 환경별 URL 로 일반 이동 (미로그인 상태이지만 최소 접근성 유지)
-      window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+      window.open(fallbackUrl, "_blank", "noopener");
     } finally {
       setAutoLoginInFlight(null);
     }
