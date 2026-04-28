@@ -309,6 +309,9 @@ const qspMemberDetailSchema = z.object({
   /** 탈퇴사유 — 최대 500자 (saveResignReq 입력 상한과 일치). 회원관리 상세 표시 용도.
    *  QSP 가 제한을 초과한 값을 반환하더라도 응답 단계에서 차단 → 502 로 폴백. */
   resignRemark: z.string().max(500).nullish(),
+  /** 법인번호 — GENERAL 회원의 마이페이지 수정 대상 필드.
+   *  속성 변경 알림(attr-change-mail.ts)에서 변경 전/후 비교에 사용. */
+  corporateNo: z.string().nullish(),
 });
 
 export const qspMemberDetailResponseSchema = z.object({
