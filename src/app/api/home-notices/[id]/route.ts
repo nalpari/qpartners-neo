@@ -138,19 +138,31 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 게시기간 겹치는 공지 5개 초과 체크 + 수정을 트랜잭션으로 처리
+    // 게시기간이 실제로 변경된 경우에만 5건 한도 재검사.
+    // 이유:
+    //   POST(create) 는 "신규 공지 자신의 기간" 만 검사하므로 긴 기간을 가진 기존 공지
+    //   안에 다른 공지가 누적되어 자신 기준 5건 초과 상태가 만들어질 수 있음. 이때
+    //   날짜 변경 없이 content/대상/URL 만 수정하는 것까지 막히는 UX 결함이 생김.
+    //   날짜를 그대로 두는 수정은 새로운 겹침 관계를 만들지 않으므로 한도 검사 불필요.
+    //   날짜가 바뀌는 경우에만 새 기간 기준으로 다시 검사 (period shift / expand / shrink).
+    const datesUnchanged =
+      finalStartAt.getTime() === existing.startAt.getTime() &&
+      finalEndAt.getTime() === existing.endAt.getTime();
+
     const notice = await prisma.$transaction(
       async (tx) => {
-        const overlapCount = await tx.homeNotice.count({
-          where: {
-            id: { not: parsed.data },
-            startAt: { lte: finalEndAt },
-            endAt: { gte: finalStartAt },
-          },
-        });
+        if (!datesUnchanged) {
+          const overlapCount = await tx.homeNotice.count({
+            where: {
+              id: { not: parsed.data },
+              startAt: { lte: finalEndAt },
+              endAt: { gte: finalStartAt },
+            },
+          });
 
-        if (overlapCount >= 5) {
-          throw new Error("LIMIT_EXCEEDED");
+          if (overlapCount >= 5) {
+            throw new Error("LIMIT_EXCEEDED");
+          }
         }
 
         return tx.homeNotice.update({
