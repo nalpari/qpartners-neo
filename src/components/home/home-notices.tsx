@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
@@ -136,7 +137,14 @@ function NoticeRow({
                 className="flex items-center justify-center gap-[8px] h-[32px] px-[13px] rounded-[4px] border border-[#d2dbe5] bg-white text-[#6a88a9] text-[13px] leading-[1.3] hover:bg-[#f7f9fb] transition-colors w-full lg:w-auto shrink-0"
               >
                 <span className="font-['Noto_Sans_JP'] uppercase whitespace-nowrap">リンク</span>
-                <ChevronRightIcon />
+                <Image
+                  src="/asset/images/contents/link_icon.svg"
+                  alt=""
+                  width={12}
+                  height={12}
+                  className="shrink-0"
+                  aria-hidden="true"
+                />
               </a>
             )}
           </div>
@@ -167,22 +175,3 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-function ChevronRightIcon() {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 1l4 4-4 4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
