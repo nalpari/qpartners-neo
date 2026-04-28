@@ -14,11 +14,13 @@ const MAX_VERIFY_ATTEMPTS = 5;
 
 // POST /api/auth/two-factor/verify — 2차 인증번호 검증
 export async function POST(request: NextRequest) {
+ try {
   // 1. Request body 파싱 + Zod 검증
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.warn("[POST /api/auth/two-factor/verify] Request body 파싱 실패:", error);
     return NextResponse.json(
       { error: "Invalid JSON body" },
       { status: 400 },
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
     return NextResponse.json(
-      { error: "인증이 필요합니다" },
+      { error: "認証が必要です" },
       { status: 401 },
     );
   }
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
   const user = await verifyToken(token);
   if (!user) {
     return NextResponse.json(
-      { error: "토큰이 만료되었거나 유효하지 않습니다" },
+      { error: "トークンが期限切れか無効です" },
       { status: 401 },
     );
   }
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
   // JWT 사용자와 요청 사용자 일치 여부 검증
   if (user.userId !== userId || user.userTp !== userTp) {
     return NextResponse.json(
-      { error: "요청 사용자 정보가 일치하지 않습니다" },
+      { error: "リクエストユーザー情報が一致しません" },
       { status: 403 },
     );
   }
@@ -74,14 +76,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/two-factor/verify] DB 조회 실패:", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
+      { error: "サーバーエラーが発生しました" },
       { status: 500 },
     );
   }
 
   if (!record) {
     return NextResponse.json(
-      { error: "인증번호를 먼저 발송해 주세요." },
+      { error: "認証番号を先に送信してください。" },
       { status: 401 },
     );
   }
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
   // 4. 만료시간 확인
   if (record.expiresAt < new Date()) {
     return NextResponse.json(
-      { error: "입력시간이 초과되었습니다. 재전송 후, 다시 입력해주세요." },
+      { error: "入力時間を超過しました。再送信後、もう一度入力してください。" },
       { status: 401 },
     );
   }
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("[POST /api/auth/two-factor/verify] attempts 증가 실패:", error);
       return NextResponse.json(
-        { error: "서버 오류가 발생했습니다" },
+        { error: "サーバーエラーが発生しました" },
         { status: 500 },
       );
     }
@@ -125,13 +127,13 @@ export async function POST(request: NextRequest) {
         console.error("[POST /api/auth/two-factor/verify] 코드 무효화 실패 (보안 주의):", error);
       }
       return NextResponse.json(
-        { error: "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해 주세요." },
+        { error: "認証の試行回数を超過しました。認証番号を再送信してください。" },
         { status: 401 },
       );
     }
 
     return NextResponse.json(
-      { error: "인증번호가 일치하지 않습니다." },
+      { error: "認証番号が一致しません。" },
       { status: 401 },
     );
   }
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/two-factor/verify] DB 업데이트 실패:", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다" },
+      { error: "サーバーエラーが発生しました" },
       { status: 500 },
     );
   }
@@ -207,7 +209,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/auth/two-factor/verify] JWT 생성 실패:", error);
     return NextResponse.json(
-      { error: "인증 처리 중 서버 오류가 발생했습니다" },
+      { error: "認証処理中にサーバーエラーが発生しました" },
       { status: 500 },
     );
   }
@@ -223,4 +225,11 @@ export async function POST(request: NextRequest) {
   });
 
   return response;
+ } catch (error) {
+    console.error("[POST /api/auth/two-factor/verify]", error);
+    return NextResponse.json(
+      { error: "認証処理中にサーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
 }

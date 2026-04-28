@@ -227,9 +227,18 @@ export async function POST(request: NextRequest) {
     secAuthYn: qsp.data.secAuthYn,
     pwdInitYn: qsp.data.pwdInitYn,
     hasSecAuthDt: !!qsp.data.secAuthDt,
+    hasEmail: !!qsp.data.email,
     requireTwoFactor,
     twoFactorReason,
   });
+
+  // 2FA 대상인데 이메일 없는 경우 운영 경고 — 사용자가 인증 불가 상태
+  if (requireTwoFactor && !qsp.data.email) {
+    console.warn("[POST /api/auth/login] 2FA 대상이나 이메일 미등록 — 인증번호 발송 불가", {
+      userId: maskEmail(qsp.data.userId),
+      userTp: qsp.data.userTp,
+    });
+  }
 
   // 6. 세부 권한코드(authRole) 판별
   let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
