@@ -63,7 +63,7 @@ function normalizeValue(v: unknown): string {
 
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "";
-  return String(v);
+  return escapeHtml(String(v));
 }
 
 /**
@@ -84,7 +84,7 @@ function diffFields(
 
   for (const [fieldName, label] of Object.entries(labelMap)) {
     const requestValue = (request as Record<string, unknown>)[fieldName];
-    if (requestValue === undefined || requestValue === null) continue;
+    if (requestValue === undefined || requestValue === null || requestValue === "") continue;
 
     const preValue = mapPreFieldValue(preDetail, fieldName);
     if (normalizeValue(preValue) === normalizeValue(requestValue)) continue;
@@ -124,11 +124,11 @@ function buildBodyHtml(args: {
     "以下の登録情報の変更が完了しましたので、以下にご連絡いたします。",
     "",
     "●会社情報変更",
-    ...args.companyChanges.map(escapeHtml),
+    ...args.companyChanges,
     "",
     "",
     "●会員情報変更",
-    ...args.userChanges.map(escapeHtml),
+    ...args.userChanges,
     "",
     "※メールアドレスを変更された場合は、変更後のメールアドレスがログインIDとなります。",
     "",
@@ -173,11 +173,16 @@ export async function sendAttrChangeNotification(ctx: AttrChangeMailContext): Pr
     return;
   }
 
+  const siteUrl = process.env.SITE_URL;
+  if (!siteUrl) {
+    console.warn(`${ctx.callerRoute} SITE_URL 환경변수 미설정 — fallback(${SITE_URL_FALLBACK}) 사용`);
+  }
+
   const html = buildBodyHtml({
     recipientName: ctx.recipientName,
     companyChanges,
     userChanges,
-    siteUrl: process.env.SITE_URL ?? SITE_URL_FALLBACK,
+    siteUrl: siteUrl ?? SITE_URL_FALLBACK,
   });
 
   await sendNotificationMail({

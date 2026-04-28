@@ -9,11 +9,18 @@
  * 운영 주체 BCC.
  * AS-IS const_mail.php:93-96 (MAIL_EDIT_USER_BCC) 동일.
  * dev/staging 에서는 send-notification.ts 가 자동 제거.
+ *
+ * 환경변수 `NOTIFICATION_MAIL_BCC` (콤마 구분) 가 설정되어 있으면 우선 사용.
+ * 미설정 시 기본값 사용.
  */
-export const NOTIFICATION_MAIL_BCC = [
+const DEFAULT_BCC = [
   "hasegawa.j@qcells.com",
   "q-partners@hqj.co.jp",
-] as const;
+];
+
+export const NOTIFICATION_MAIL_BCC: string[] = process.env.NOTIFICATION_MAIL_BCC
+  ? process.env.NOTIFICATION_MAIL_BCC.split(",").map((s) => s.trim()).filter(Boolean)
+  : DEFAULT_BCC;
 
 /**
  * 속성 변경 알림 메일 제목.

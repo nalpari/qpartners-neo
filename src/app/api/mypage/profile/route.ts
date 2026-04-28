@@ -314,7 +314,7 @@ export async function PUT(request: NextRequest) {
               },
             );
           }
-        } catch (error) {
+        } catch (error: unknown) {
           console.warn(
             "[PUT /api/mypage/profile] preDetail 조회 예외 — 알림 메일 스킵",
             error,
@@ -341,6 +341,7 @@ export async function PUT(request: NextRequest) {
           deptNm: d.department,
           pstnNm: d.jobTitle,
           newsRcptYn: d.newsRcptYn,
+          // QSP updateUserDtl 은 `bizNo` 로 수신, userDetail 은 `corporateNo` 로 반환 (API 사양)
           bizNo: d.corporateNo,
           updBy: user.userId,
         };
