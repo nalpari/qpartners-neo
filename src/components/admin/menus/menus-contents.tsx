@@ -103,7 +103,7 @@ export function MenusContents() {
     },
   });
 
-  // DELETE /api/menus/{id} — 메뉴 삭제 (하위 메뉴 존재 시 409)
+  // DELETE /api/menus/{id} — 메뉴 삭제 (하위 메뉴는 cascade 삭제)
   //
   // isLevel1 분기: 1-level(부모) 삭제 시에만 selectedLevel1Id 를 해제한다.
   // 2-level(자식) 삭제 시에는 부모 선택을 유지해 사용자가 같은 부모의 다른 자식을
@@ -124,14 +124,6 @@ export function MenusContents() {
       console.error("[DELETE /api/menus/:id] 메뉴 삭제 실패:", error);
       if (isAxiosError(error)) {
         const status = error.response?.status;
-        if (status === 409) {
-          openAlert({
-            type: "alert",
-            message: "下位メニューが存在するため削除できません。先に下位メニューを削除してください。",
-            confirmLabel: "確認",
-          });
-          return;
-        }
         if (status === 403) {
           openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
           return;
@@ -235,6 +227,7 @@ export function MenusContents() {
 
   // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출.
   // upperMenu 비어 있으면 1-level, 값 있으면 2-level (toFormState 가 parentId 를 매핑).
+  // 1-level 인데 자식이 있으면 cascade 삭제됨을 명시 — 사용자가 인지하고 진행하도록.
   const handleDelete = () => {
     if (!isEditing || !editingId) {
       openAlert({
@@ -246,9 +239,15 @@ export function MenusContents() {
     }
     const targetName = formState.menuName || formState.menuCode;
     const isLevel1 = formState.upperMenu === "";
+    const childCount = isLevel1
+      ? menuTree.find((m) => String(m.id) === editingId)?.children.length ?? 0
+      : 0;
+    const message = childCount > 0
+      ? `「${targetName}」と下位メニュー${childCount}件を削除しますか？`
+      : `「${targetName}」を削除しますか？`;
     openAlert({
       type: "confirm",
-      message: `「${targetName}」を削除しますか？`,
+      message,
       onConfirm: () => deleteMutation.mutate({ id: editingId, isLevel1 }),
     });
   };

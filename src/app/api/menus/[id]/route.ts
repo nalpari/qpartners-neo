@@ -71,11 +71,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 // DELETE /api/menus/:id — 메뉴 삭제 (ADM_MENU.delete — SUPER_ADMIN 전용)
 //
-// - 하위 메뉴 보유 시 409 — 고아 행 발생 방지(스키마상 `onDelete: SetNull` 이지만 운영 의도는
-//   "선 하위 정리 후 상위 삭제" 이므로 명시적으로 차단). 사용자에게 원인 안내.
-// - 권한 매트릭스(`QpRoleMenuPermission`) 행은 menuCode FK 제약으로 메뉴 삭제 전 선삭제 필요.
+// - 하위 메뉴 보유 시: cascade 삭제 — 자식 메뉴 + 자식 권한 매트릭스도 함께 제거.
+//   (메뉴는 2-level 제한이므로 손자는 존재하지 않아 한 단계만 cascade 처리.)
+// - 권한 매트릭스(`QpRoleMenuPermission`) 행은 menuCode FK 제약으로 메뉴 삭제 전 선삭제 필요 —
+//   대상 + 자식들의 menuCode 를 한 번에 수집해 deleteMany 로 처리.
 // - 같은 parentId 그룹 형제들의 sortOrder 를 삭제 직후 1..N 으로 재번호 → 중간 공백/스킵 제거.
-//   모두 같은 트랜잭션으로 묶어 부분 실패 시 일관성 보장.
+// - 응답 deletedChildren 으로 cascade 된 자식 수, resequenced 로 sortOrder 가 변경된 형제 수 노출.
+// - 모두 같은 트랜잭션으로 묶어 부분 실패 시 일관성 보장.
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_MENU", "delete");
@@ -92,7 +94,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       select: {
         menuCode: true,
         parentId: true,
-        _count: { select: { children: true } },
+        children: { select: { id: true, menuCode: true } },
       },
     });
 
@@ -103,12 +105,9 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    if (target._count.children > 0) {
-      return NextResponse.json(
-        { error: "下位メニューが存在するため削除できません。先に下位メニューを削除してください。" },
-        { status: 409 },
-      );
-    }
+    // cascade 대상 menuCode / id 수집 — 대상 본인 + 자식들.
+    const cascadeMenuCodes = [target.menuCode, ...target.children.map((c) => c.menuCode)];
+    const childIds = target.children.map((c) => c.id);
 
     // 같은 그룹의 형제(삭제 대상 제외)를 sortOrder asc 로 조회 — 삭제 후 1..N 재번호 대상.
     // 트랜잭션 시작 전에 조회해도 안전: DELETE 트랜잭션 내부에서 형제 행만 update 하므로
@@ -129,10 +128,17 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       .filter((u) => u.oldSort !== u.newSort);
 
     await prisma.$transaction([
+      // 1) 대상 + 자식들의 권한 매트릭스 행 선삭제 (FK)
       prisma.qpRoleMenuPermission.deleteMany({
-        where: { menuCode: target.menuCode },
+        where: { menuCode: { in: cascadeMenuCodes } },
       }),
+      // 2) 자식 메뉴 일괄 삭제 (있을 때만 — deleteMany 는 빈 IN 도 허용하지만 스킵으로 명시성 ↑)
+      ...(childIds.length > 0
+        ? [prisma.menu.deleteMany({ where: { id: { in: childIds } } })]
+        : []),
+      // 3) 대상 메뉴 삭제
       prisma.menu.delete({ where: { id: parsed.data } }),
+      // 4) 같은 parentId 그룹 형제 1..N 재번호
       ...reseqUpdates.map((u) =>
         prisma.menu.update({
           where: { id: u.id },
@@ -142,7 +148,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     ]);
 
     return NextResponse.json({
-      data: { id: parsed.data, resequenced: reseqUpdates.length },
+      data: {
+        id: parsed.data,
+        deletedChildren: childIds.length,
+        resequenced: reseqUpdates.length,
+      },
     });
   } catch (error) {
     if (
