@@ -242,7 +242,15 @@ export function MenusTables({
   const handleLevel1GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
     level1GridApiRef.current = event.api;
   }, []);
+  // 초기 마운트(selectedLevel1Id === null) 에는 빈 그리드에 redrawRows 가 호출되어
+  // noop 이지만 노이즈가 발생. 첫 변경(null → id) 부터 실행되도록 prev 추적 + 가드.
+  const prevLevel1HighlightIdRef = useRef<string | null>(selectedLevel1Id);
   useEffect(() => {
+    const prev = prevLevel1HighlightIdRef.current;
+    prevLevel1HighlightIdRef.current = selectedLevel1Id;
+    // 첫 마운트(prev === selectedLevel1Id) 시 스킵 — useEffect 는 mount 에도 실행됨.
+    if (prev === selectedLevel1Id) return;
+
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
