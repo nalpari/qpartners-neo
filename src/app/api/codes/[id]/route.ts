@@ -43,6 +43,11 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
+// NOTE: 헤더 DELETE 핸들러는 현재 미구현 — 운영상 헤더 자체 삭제는 코드관리 화면에서
+// 미노출(비활성화 토글로 대체). 향후 DELETE 핸들러를 추가할 경우 USER_TYPE 헤더 삭제
+// 시 반드시 `invalidateUserTypeLabelCache()` 를 호출해야 in-memory 라벨 캐시(5분 TTL)
+// 가 stale 상태로 유지되는 것을 막을 수 있다. (Boston Code Review HIGH #2 대응)
+
 // PUT /api/codes/:id — Header 수정 (CODES.update — SUPER_ADMIN 전용, ADMIN 은 403)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
