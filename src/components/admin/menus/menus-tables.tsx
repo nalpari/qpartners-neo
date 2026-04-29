@@ -266,7 +266,7 @@ export function MenusTables({
         </h2>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={onDelete}
             disabled={!isDeleteEnabled || isDeleting}
           >

@@ -248,7 +248,7 @@ export function MenusContents() {
     const isLevel1 = formState.upperMenu === "";
     openAlert({
       type: "confirm",
-      message: `「${targetName}」を削除します。よろしいですか？`,
+      message: `「${targetName}」を削除しますか？`,
       onConfirm: () => deleteMutation.mutate({ id: editingId, isLevel1 }),
     });
   };
