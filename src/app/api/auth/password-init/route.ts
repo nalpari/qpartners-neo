@@ -54,7 +54,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. rate limit — 유저당 5분간 5회
+    // 2. 접근 제어 가드 — 최초 로그인(2FA 미완료) 상태에서만 호출 허용
+    //    pwdInitYn 제거 후 대체: twoFactorVerified === false 가 "아직 본인인증 미완료 최초 로그인" 상태를 표현
+    if (user.twoFactorVerified) {
+      return NextResponse.json(
+        { error: "この操作は初回ログイン時のみ有効です" },
+        { status: 403 },
+      );
+    }
+
+    // 3. rate limit — 유저당 5분간 5회
     if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },

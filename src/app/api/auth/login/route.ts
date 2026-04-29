@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
   // 5. 2차 인증 필요 여부 판별
   //    정책 (secAuthDt 단일 기준 + 최초 인증 강제 우선):
   //      - 최우선: secAuthDt 없음 → 무조건 필요 (한 번도 2FA 안 함, secAuthYn 무시)
+  //        → pwdInitYn 기반 2FA 면제 폐기: secAuthDt 유무만으로 판정 통일.
+  //          신규 사용자(secAuthDt=null)는 최초 1회 2FA 필수 — 이메일 미등록 시 설정 유도.
   //      - 면제: secAuthYn === "N" (관리자 명시 해제)
   //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
   //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
@@ -281,7 +283,7 @@ export async function POST(request: NextRequest) {
   // 8. httpOnly 쿠키 설정.
   //    응답 페이로드: twoFactorVerified 단일 SSoT (= !requireTwoFactor).
   //    dev 환경에 한해 _twoFactorReason 진단 메타 노출 — production 에서는 절대 노출 안 함.
-  const debugMeta = process.env.NODE_ENV === "development"
+  const debugMeta = process.env.APP_ENV === "development"
     ? { _twoFactorReason: twoFactorReason }
     : {};
   const response = NextResponse.json({
