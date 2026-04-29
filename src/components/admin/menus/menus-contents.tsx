@@ -104,13 +104,19 @@ export function MenusContents() {
   });
 
   // DELETE /api/menus/{id} — 메뉴 삭제 (하위 메뉴 존재 시 409)
+  //
+  // isLevel1 분기: 1-level(부모) 삭제 시에만 selectedLevel1Id 를 해제한다.
+  // 2-level(자식) 삭제 시에는 부모 선택을 유지해 사용자가 같은 부모의 다른 자식을
+  // 연속으로 관리할 수 있도록 함 — 부모 행 하이라이트 + 2-level 목록 컨텍스트 보존.
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id }: { id: string; isLevel1: boolean }) => {
       await api.delete(`/menus/${id}`);
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       handleNew();
-      setSelectedLevel1Id(null);
+      if (variables.isLevel1) {
+        setSelectedLevel1Id(null);
+      }
       await queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "削除されました。", confirmLabel: "確認" });
     },
@@ -227,7 +233,8 @@ export function MenusContents() {
     sortValuesRef.current[id] = value;
   };
 
-  // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출
+  // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출.
+  // upperMenu 비어 있으면 1-level, 값 있으면 2-level (toFormState 가 parentId 를 매핑).
   const handleDelete = () => {
     if (!isEditing || !editingId) {
       openAlert({
@@ -238,10 +245,11 @@ export function MenusContents() {
       return;
     }
     const targetName = formState.menuName || formState.menuCode;
+    const isLevel1 = formState.upperMenu === "";
     openAlert({
       type: "confirm",
       message: `「${targetName}」を削除します。よろしいですか？`,
-      onConfirm: () => deleteMutation.mutate(editingId),
+      onConfirm: () => deleteMutation.mutate({ id: editingId, isLevel1 }),
     });
   };
 
