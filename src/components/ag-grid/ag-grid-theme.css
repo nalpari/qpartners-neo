@@ -105,10 +105,15 @@
   -moz-appearance: textfield;
 }
 
-/* 메뉴관리: 선택된 1-Level 행 하이라이트 */
-.ag-row-selected-menu {
+/* 메뉴관리: 선택된 행 하이라이트.
+ *
+ * cell 단위 클래스로 적용 — row 단위 getRowClass + redrawRows() 조합은 AG Grid 35 +
+ * React 19 환경에서 row destroy 시 cellRenderer commit phase 와 충돌해
+ * "removeChild ..." NotFoundError 를 일으켰음. cell 단위는 refreshCells 로 안전하게
+ * 갱신 가능하고, 모든 cell 에 동일 background 가 들어가면 시각적으로 행 전체 효과. */
+.ag-cell-selected-menu {
   background-color: #EDF4FB !important;
 }
-.ag-row-selected-menu:hover {
+.ag-row:hover .ag-cell-selected-menu {
   background-color: #DBEAF7 !important;
 }
