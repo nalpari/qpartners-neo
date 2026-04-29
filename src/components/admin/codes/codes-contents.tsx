@@ -145,6 +145,35 @@ export function CodesContents() {
     });
   }, [handleRequestEditCancel, resetDetailNewRow]);
 
+  // 使用可否(isActive) 즉시 토글 — Header 행. SelectBox onChange 콜백.
+  // 셀 편집 패턴(detailEditRef)을 거치지 않고 바로 PUT mutation 호출 → 토글 즉시 반영.
+  // 비활성으로 전환하면 /api/codes/lookup 이 isActive=true 만 응답하므로 dropdown
+  // (PAGE_SIZE 등) 에서 자동 제외 — 별도 작업 불필요.
+  const handleHeaderActiveChange = useCallback(async (id: string, isActive: boolean) => {
+    if (id.startsWith("new-")) return;
+    const headerId = Number(id);
+    if (!Number.isFinite(headerId)) return;
+    try {
+      await headerUpdateMutation.mutateAsync({ headerId, data: { isActive } });
+    } catch (err: unknown) {
+      console.error(`[Codes] Header 사用可否 変更 失敗: id=${id}`);
+      openAlert({ type: "alert", message: getApiErrorMessage(err, "Header修正") });
+    }
+  }, [headerUpdateMutation, openAlert]);
+
+  // 使用可否(isActive) 즉시 토글 — Detail 행
+  const handleDetailActiveChange = useCallback(async (id: string, isActive: boolean) => {
+    if (id.startsWith("new-")) return;
+    const detailId = Number(id);
+    if (!Number.isFinite(detailId)) return;
+    try {
+      await detailUpdateMutation.mutateAsync({ detailId, data: { isActive } });
+    } catch (err: unknown) {
+      console.error(`[Codes] Detail 使用可否 変更 失敗: id=${id}`);
+      openAlert({ type: "alert", message: getApiErrorMessage(err, "Detail修正") });
+    }
+  }, [detailUpdateMutation, openAlert]);
+
   // 통합 저장 — 중복 호출 가드 + validation → ValidationError, API 실패 → _stage 부착 throw
   const handleSave = useCallback(async () => {
     if (isSaving) return;
@@ -293,6 +322,8 @@ export function CodesContents() {
         newRowFieldsRef={headers.headerNewRowRef}
         activeOnly={headers.headerActiveOnly}
         onActiveOnlyChange={headers.setHeaderActiveOnly}
+        onActiveChange={handleHeaderActiveChange}
+        isActiveBusy={headerUpdateMutation.isPending}
       />
 
       <CodesDetailTable
@@ -311,6 +342,8 @@ export function CodesContents() {
         newRowFieldsRef={details.detailNewRowRef}
         activeOnly={details.detailActiveOnly}
         onActiveOnlyChange={details.setDetailActiveOnly}
+        onActiveChange={handleDetailActiveChange}
+        isActiveBusy={detailUpdateMutation.isPending}
       />
     </main>
   );

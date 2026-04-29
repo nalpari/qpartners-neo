@@ -7,8 +7,9 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { DetailGridRow } from "./codes-types";
 
-// 편집 불가 필드 — headerCode·code(생성 후 불변, 신규행 입력만 허용) + 使用可否(isActive)
-const NON_EDITABLE_FIELDS = new Set(["headerCode", "code", "isActive"]);
+// 편집 불가 필드 — headerCode·code(생성 후 불변, 신규행 입력만 허용).
+// 使用可否(isActive) 는 native <select> 로 즉시 토글 가능.
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "code"]);
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -85,17 +86,21 @@ function CellInput({
   );
 }
 
+type DetailGridContext = {
+  newRowFieldsRef: React.RefObject<Record<string, string>>;
+  onNewRowFieldChange: (field: string, value: string) => void;
+  onEditFieldChange: (field: string, value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  onActiveChange: (id: string, isActive: boolean) => void;
+  isActiveBusy: boolean;
+};
+
 // 컴포넌트 바깥 정의 — 매 렌더 함수 identity 안정화로 셀 재마운트 방지
 function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const data = params.data;
   const field = params.colDef?.field;
   if (!data || !field) return null;
-  const ctx = params.context as {
-    newRowFieldsRef: React.RefObject<Record<string, string>>;
-    onNewRowFieldChange: (field: string, value: string) => void;
-    onEditFieldChange: (field: string, value: string) => void;
-    onKeyDown: (e: React.KeyboardEvent) => void;
-  };
+  const ctx = params.context as DetailGridContext;
   if (data.isNew) {
     return <CellInput defaultValue={ctx.newRowFieldsRef.current[field] ?? ""} placeholder="" onChange={(v) => ctx.onNewRowFieldChange(field, v)} />;
   }
@@ -111,10 +116,29 @@ function HeaderCodeCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
   return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.headerCode}</span>;
 }
 
-function ActiveTextRendererFn(params: ICellRendererParams<DetailGridRow>) {
+// 使用可否(isActive) — native <select> 로 즉시 토글. onChange 시 부모로 전달되어 PUT 호출.
+// 신규행(isNew) 에는 표시하지 않음 — 신규 행은 저장 시 BE default(true) 적용.
+//
+// custom SelectBox 는 absolute positioned dropdown 이라 AG Grid 셀의 overflow:hidden
+// 때문에 옵션 목록이 잘려 보이지 않는다. native <select> 는 브라우저가 외부 popup 으로
+// 렌더해 클리핑 없이 정상 표시.
+function ActiveSelectRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const data = params.data;
   if (!data || data.isNew) return null;
-  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
+  const ctx = params.context as DetailGridContext;
+  return (
+    <select
+      value={data.isActive}
+      disabled={ctx.isActiveBusy}
+      onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="w-[70px] h-[34px] px-2 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
+    >
+      <option value="Y">Y</option>
+      <option value="N">N</option>
+    </select>
+  );
 }
 
 interface CodesDetailTableProps {
@@ -133,6 +157,8 @@ interface CodesDetailTableProps {
   newRowFieldsRef: React.RefObject<Record<string, string>>;
   activeOnly: boolean;
   onActiveOnlyChange: (checked: boolean) => void;
+  onActiveChange: (id: string, isActive: boolean) => void;
+  isActiveBusy?: boolean;
 }
 
 export function CodesDetailTable({
@@ -151,6 +177,8 @@ export function CodesDetailTable({
   newRowFieldsRef,
   activeOnly,
   onActiveOnlyChange,
+  onActiveChange,
+  isActiveBusy = false,
 }: CodesDetailTableProps) {
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거 되어도 셀 value 자체는 변하지 않아
@@ -186,12 +214,14 @@ export function CodesDetailTable({
   }, [onSave, onEditCancel]);
 
   // ag-grid context로 핸들러 주입
-  const gridContext = useMemo(() => ({
+  const gridContext = useMemo<DetailGridContext>(() => ({
     newRowFieldsRef,
     onNewRowFieldChange,
     onEditFieldChange,
     onKeyDown: handleKeyDown,
-  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown]);
+    onActiveChange,
+    isActiveBusy,
+  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown, onActiveChange, isActiveBusy]);
 
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
@@ -203,7 +233,7 @@ export function CodesDetailTable({
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("sortOrder"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveSelectRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
   ], []);
 
   const getRowClass = useCallback((params: RowClassParams<DetailGridRow>) => {
