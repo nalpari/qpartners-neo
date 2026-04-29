@@ -1176,7 +1176,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Menu"],
         summary: "메뉴 삭제 (SUPER_ADMIN 전용, 하위 메뉴 존재 시 409)",
         description:
-          "ADM_MENU.delete 권한 필요. 하위 메뉴(children) 가 존재하면 409 반환 — 선 하위 정리 후 재시도. 권한 매트릭스(QpRoleMenuPermission) 행은 동일 트랜잭션에서 선삭제됨.",
+          "ADM_MENU.delete 권한 필요. 하위 메뉴(children) 가 존재하면 409 반환 — 선 하위 정리 후 재시도. 권한 매트릭스(QpRoleMenuPermission) 행은 동일 트랜잭션에서 선삭제됨. 같은 parentId 그룹 형제 행의 sortOrder 는 삭제 직후 1..N 으로 자동 재번호되며, 응답 resequenced 는 실제 sortOrder 가 변경된 형제 수.",
         parameters: [
           {
             name: "id",
@@ -1197,6 +1197,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         id: { type: "integer", example: 12 },
+                        resequenced: { type: "integer", example: 2 },
                       },
                     },
                   },

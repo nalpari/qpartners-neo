@@ -74,7 +74,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
 // - 하위 메뉴 보유 시 409 — 고아 행 발생 방지(스키마상 `onDelete: SetNull` 이지만 운영 의도는
 //   "선 하위 정리 후 상위 삭제" 이므로 명시적으로 차단). 사용자에게 원인 안내.
 // - 권한 매트릭스(`QpRoleMenuPermission`) 행은 menuCode FK 제약으로 메뉴 삭제 전 선삭제 필요.
-//   같은 트랜잭션으로 묶어 부분 실패 시 일관성 보장.
+// - 같은 parentId 그룹 형제들의 sortOrder 를 삭제 직후 1..N 으로 재번호 → 중간 공백/스킵 제거.
+//   모두 같은 트랜잭션으로 묶어 부분 실패 시 일관성 보장.
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_MENU", "delete");
@@ -90,6 +91,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       where: { id: parsed.data },
       select: {
         menuCode: true,
+        parentId: true,
         _count: { select: { children: true } },
       },
     });
@@ -108,14 +110,40 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 같은 그룹의 형제(삭제 대상 제외)를 sortOrder asc 로 조회 — 삭제 후 1..N 재번호 대상.
+    // 트랜잭션 시작 전에 조회해도 안전: DELETE 트랜잭션 내부에서 형제 행만 update 하므로
+    // race 가능성은 동일 그룹의 다른 동시 mutation 인데, sortOrder 정렬 mutation 들은
+    // 모두 SUPER_ADMIN 전용이라 운영상 동시 발생 빈도가 매우 낮음 (fail-acceptable).
+    const siblings = await prisma.menu.findMany({
+      where: {
+        parentId: target.parentId,
+        id: { not: parsed.data },
+      },
+      select: { id: true, sortOrder: true },
+      orderBy: { sortOrder: "asc" },
+    });
+
+    // 현재 sortOrder 와 새 위치(1-indexed)가 다른 행만 update 대상 — 불필요한 write 회피.
+    const reseqUpdates = siblings
+      .map((sib, idx) => ({ id: sib.id, oldSort: sib.sortOrder, newSort: idx + 1 }))
+      .filter((u) => u.oldSort !== u.newSort);
+
     await prisma.$transaction([
       prisma.qpRoleMenuPermission.deleteMany({
         where: { menuCode: target.menuCode },
       }),
       prisma.menu.delete({ where: { id: parsed.data } }),
+      ...reseqUpdates.map((u) =>
+        prisma.menu.update({
+          where: { id: u.id },
+          data: { sortOrder: u.newSort },
+        }),
+      ),
     ]);
 
-    return NextResponse.json({ data: { id: parsed.data } });
+    return NextResponse.json({
+      data: { id: parsed.data, resequenced: reseqUpdates.length },
+    });
   } catch (error) {
     if (
       error instanceof PrismaClientKnownRequestError &&
