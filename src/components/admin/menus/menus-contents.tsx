@@ -276,6 +276,7 @@ export function MenusContents() {
             level2Data={level2Menus}
             selectedLevel1Id={selectedLevel1Id}
             selectedLevel1Name={selectedLevel1Name}
+            editingId={editingId}
             activeOnly={activeOnly}
             onActiveFilterChange={setActiveOnly}
             onLevel1Click={handleLevel1Click}

@@ -99,6 +99,8 @@ interface MenusTablesProps {
   level2Data: MenuItem[];
   selectedLevel1Id: string | null;
   selectedLevel1Name: string;
+  /** 현재 폼에 바인딩된 메뉴 id — 2-Level 행 하이라이트용. null 이면 신규 모드. */
+  editingId: string | null;
   activeOnly: boolean;
   onActiveFilterChange: (checked: boolean) => void;
   onLevel1Click: (id: string) => void;
@@ -117,6 +119,7 @@ export function MenusTables({
   level2Data,
   selectedLevel1Id,
   selectedLevel1Name,
+  editingId,
   activeOnly,
   onActiveFilterChange,
   onLevel1Click,
@@ -219,9 +222,16 @@ export function MenusTables({
     return undefined;
   }, [selectedLevel1Id]);
 
+  // 2-Level 하이라이트 — 현재 폼에 바인딩된 자식(editingId)만 강조. editingId 가
+  // 1-Level 인 경우엔 level2 row id 와 매칭되지 않아 자연스럽게 하이라이트 없음.
+  const getLevel2RowClass = useCallback((params: RowClassParams<MenuItem>) => {
+    if (editingId && params.data?.id === editingId) return "ag-row-selected-menu";
+    return undefined;
+  }, [editingId]);
+
   // AG Grid 의 getRowClass 는 행 생성 시점에 한 번만 평가되고 prop 변경 시 자동
-  // 재평가되지 않는다. selectedLevel1Id 가 바뀌어도 이전 선택 행의 하이라이트가
-  // 그대로 남는 현상을 redrawRows() 로 강제 재평가해 해소.
+  // 재평가되지 않는다. selectedLevel1Id / editingId 가 바뀌어도 이전 선택 행의
+  // 하이라이트가 그대로 남는 현상을 redrawRows() 로 강제 재평가해 해소.
   //
   // ⚠️ redrawRows() 는 row DOM 을 즉시 teardown→recreate 하는데, React cellRenderer
   // (MenuNameRenderer 등) 가 같은 노드를 관리해 React 의 commit phase 와 충돌해
@@ -237,8 +247,6 @@ export function MenusTables({
     queueMicrotask(() => {
       if (cancelled) return;
       const api = level1GridApiRef.current;
-      // AG Grid 가 destroy 된 후에는 isDestroyed() === true. 호출 시 내부에서 에러가
-      // 나지 않도록 가드 (api 객체는 살아있을 수 있음).
       if (!api || api.isDestroyed()) return;
       api.redrawRows();
     });
@@ -246,6 +254,23 @@ export function MenusTables({
       cancelled = true;
     };
   }, [selectedLevel1Id]);
+
+  const level2GridApiRef = useRef<GridApi<MenuItem> | null>(null);
+  const handleLevel2GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
+    level2GridApiRef.current = event.api;
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const api = level2GridApiRef.current;
+      if (!api || api.isDestroyed()) return;
+      api.redrawRows();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editingId]);
 
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(
@@ -321,9 +346,11 @@ export function MenusTables({
             columnDefs={level2Columns}
             rowData={level2Data}
             getRowId={(p) => p.data.id}
+            getRowClass={getLevel2RowClass}
             className="menus-grid"
             maxHeight={500}
             context={level2Context}
+            onGridReady={handleLevel2GridReady}
           />
         </div>
       </div>
