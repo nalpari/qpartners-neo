@@ -132,7 +132,7 @@ function ActiveSelectRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const ctx = params.context as DetailGridContext;
   return (
     <div
-      className="relative w-[110px]"
+      className="relative w-full"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
@@ -248,7 +248,7 @@ export function CodesDetailTable({
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("sortOrder"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveSelectRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "使用可否", field: "isActive", flex: 0.8, cellRenderer: ActiveSelectRendererFn, cellStyle: { ...centerCellStyle, paddingLeft: "6px", paddingRight: "6px" }, headerClass: "ag-header-cell-center" },
   ], []);
 
   const getRowClass = useCallback((params: RowClassParams<DetailGridRow>) => {
