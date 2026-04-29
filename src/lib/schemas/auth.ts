@@ -85,7 +85,6 @@ export const loginUserSchema = qspLoginUserSchema
     // TODO: 과도기 제거 — 전체 사용자 재로그인 후 optional 제거하고 required로 전환
     authRole: z.enum(authRoleValues).optional(),
     twoFactorVerified: z.boolean(),
-    pwdInitYn: z.enum(["Y", "N"]).nullable().optional(),
     // 전화번호 — 현재는 QSP compTelNo(회사 전화번호) 단일 매핑
     // nullish: 기존 JWT 호환 (undefined, 재로그인 전까지) + QSP 응답 null 허용
     // TODO: SEKO 사용자는 개인 전화번호(telNo) 별도 처리 필요
