@@ -259,7 +259,18 @@ export function MenusTables({
   const handleLevel2GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
     level2GridApiRef.current = event.api;
   }, []);
+  // Level2 redrawRows 게이팅:
+  //  - selectedLevel1Id 변경(다른 부모 클릭) → level2Data 자체가 새로 받아져 AG Grid 가
+  //    행을 자연 재생성. 이때 redrawRows 를 또 호출하면 React cellRenderer 의 commit 과
+  //    충돌해 "removeChild ..." 런타임 에러 재발.
+  //  - 같은 부모 내에서 자식 간 이동(editingId 만 변경, selectedLevel1Id 동일) 일 때만
+  //    rowData 가 그대로이므로 redrawRows 가 필요하다.
+  const prevSelectedLevel1IdRef = useRef(selectedLevel1Id);
   useEffect(() => {
+    const sameParent = prevSelectedLevel1IdRef.current === selectedLevel1Id;
+    prevSelectedLevel1IdRef.current = selectedLevel1Id;
+    if (!sameParent) return;
+
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
@@ -270,7 +281,7 @@ export function MenusTables({
     return () => {
       cancelled = true;
     };
-  }, [editingId]);
+  }, [editingId, selectedLevel1Id]);
 
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(
