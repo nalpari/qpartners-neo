@@ -7,6 +7,7 @@ import { requireMenuPermission } from "@/lib/auth";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema, updateCodeHeaderSchema } from "@/lib/schemas/code";
+import { invalidateUserTypeLabelCache } from "@/lib/user-type-labels";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -86,6 +87,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       where: { id: parsed.data },
       data: result.data,
     });
+
+    // USER_TYPE 헤더가 영향받았다면 라벨 캐시 무효화 (isActive 토글·라벨 변경 즉시 반영).
+    if (header.headerCode === "USER_TYPE") {
+      invalidateUserTypeLabelCache();
+    }
 
     return NextResponse.json({ data: header });
   } catch (error) {

@@ -11,8 +11,8 @@ import {
   qspMemberListResponseSchema,
   STATUS_FILTER_TO_STAT_CD,
   lookupStatCd,
-  lookupUserTypeLabel,
 } from "@/lib/schemas/member";
+import { getUserTypeLabelMap } from "@/lib/user-type-labels";
 
 // GET /api/admin/members — 회원 목록 (시공점 제외)
 export async function GET(request: NextRequest) {
@@ -139,13 +139,16 @@ export async function GET(request: NextRequest) {
     if (list === null && totCnt > 0) {
       console.warn("[GET /api/admin/members] QSP totCnt > 0 이지만 list가 null:", { totCnt });
     }
+    // userType 라벨은 코드관리(USER_TYPE) 디테일 기반 — 운영자가 codeName 변경 시 즉시 반영.
+    // 5분 in-memory 캐시 + 코드관리 mutation 시 invalidate 로 stale 회피.
+    const userTypeLabelMap = await getUserTypeLabelMap();
     const mappedList = (list ?? []).map((item) => ({
       id: item.userId,
       userId: item.userId,
       userName: item.userNm ?? "",
       userNameKana: item.userNmKana ?? "",
       email: item.email ?? "",
-      userType: lookupUserTypeLabel(item.userTp) ?? "unknown",
+      userType: (item.userTp ? userTypeLabelMap.get(item.userTp) : undefined) ?? "unknown",
       companyName: item.compNm ?? "",
       status: lookupStatCd(item.statCd) ?? "unknown",
       // QSP loginDt(YYYY.MM.DD HH:mm:ss) / regDt(YYYY.MM.DD) 모두 ISO 8601 (+09:00) 로 정규화 —

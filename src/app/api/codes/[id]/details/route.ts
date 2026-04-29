@@ -11,6 +11,7 @@ import {
   idParamSchema,
   validateSecAuthValidityCode,
 } from "@/lib/schemas/code";
+import { invalidateUserTypeLabelCache } from "@/lib/user-type-labels";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -109,6 +110,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         headerId: parsed.data,
       },
     });
+
+    if (header.headerCode === "USER_TYPE") {
+      invalidateUserTypeLabelCache();
+    }
 
     return NextResponse.json({ data: detail }, { status: 201 });
   } catch (error) {

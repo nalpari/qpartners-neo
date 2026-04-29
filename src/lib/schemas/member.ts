@@ -36,10 +36,13 @@ export const STATUS_FILTER_TO_STAT_CD: Record<MemberStatus, QspStatCd> = {
   withdrawn: "R",
 };
 
-/** QSP userTp → 화면표시 회원유형 레이블
+/** QSP userTp → 화면표시 회원유형 레이블 (hardcoded fallback)
  *  MF-3: 관리자 회원관리 화면에서는 시공점(SEKO)을 관리 대상에서 제외하지만,
  *  QSP 응답에 SEKO 가 포함되어 상세/목록에 노출되는 경우를 대비해 레이블을 정의해 둔다.
  *  (미정의 시 "unknown" 으로 표시되어 운영상 추적이 어려움)
+ *
+ *  본 객체는 DB(코드관리 USER_TYPE) 미등록·조회 실패 시 fallback. 정상 경로는
+ *  `getUserTypeLabelMap()` 가 코드관리 디테일을 조회해 제공한다.
  */
 export const USER_TYPE_LABEL = {
   ADMIN: "管理者",

@@ -17,6 +17,7 @@ import {
   formatDateTime,
   formatDate,
 } from "@/components/admin/members/members-types";
+import { useUserType } from "@/hooks/use-user-type";
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -358,7 +359,9 @@ function MemberEditForm({
   onPasswordReset: () => void;
   onClose: () => void;
 }) {
-  const memberTp = USER_TYPE_REVERSE_MAP[member.userType] ?? "";
+  // 동적 reverseMap 우선, 미매핑 시 hardcoded fallback (코드관리 USER_TYPE 미등록 대응)
+  const { reverseMap: dynamicReverseMap } = useUserType();
+  const memberTp = dynamicReverseMap[member.userType] ?? USER_TYPE_REVERSE_MAP[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로

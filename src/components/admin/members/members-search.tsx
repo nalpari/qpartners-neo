@@ -4,8 +4,9 @@
 
 import { useState } from "react";
 import { InputBox, SelectBox, Button } from "@/components/common";
-import { STATUS_OPTIONS, MEMBER_TYPE_OPTIONS } from "./members-types";
+import { STATUS_OPTIONS } from "./members-types";
 import type { MemberSearchFilters } from "./members-types";
+import { useUserType } from "@/hooks/use-user-type";
 
 interface MembersSearchProps {
   onSearch: (filters: MemberSearchFilters) => void;
@@ -32,6 +33,8 @@ const INITIAL_LOCAL: LocalFields = {
 
 export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
   const [local, setLocal] = useState<LocalFields>(INITIAL_LOCAL);
+  // USER_TYPE 공통코드에서 동적으로 옵션 수급 (코드관리 변경 즉시 반영). fallback 내장.
+  const { searchOptions: userTypeOptions } = useUserType();
 
   const updateLocal = (key: keyof LocalFields) => (value: string) => {
     setLocal((prev) => ({ ...prev, [key]: value }));
@@ -87,7 +90,7 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
           </SearchField>
           <SearchField label="会員タイプ" width="w-[461px]">
             <SelectBox
-              options={[...MEMBER_TYPE_OPTIONS]}
+              options={userTypeOptions}
               value={local.userType}
               onChange={updateLocal("userType")}
               className="w-full"

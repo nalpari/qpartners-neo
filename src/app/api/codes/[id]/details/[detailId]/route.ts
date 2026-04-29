@@ -11,6 +11,7 @@ import {
   updateCodeDetailSchema,
   validateSecAuthValidityCode,
 } from "@/lib/schemas/code";
+import { invalidateUserTypeLabelCache } from "@/lib/user-type-labels";
 
 type Params = { params: Promise<{ id: string; detailId: string }> };
 
@@ -83,6 +84,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       data: result.data,
     });
 
+    // USER_TYPE 헤더 디테일 변경 시 라벨 캐시 무효화 (코드/codeName/isActive 즉시 반영).
+    const headerForCache = await prisma.codeHeader.findUnique({
+      where: { id: parsedId.data },
+      select: { headerCode: true },
+    });
+    if (headerForCache?.headerCode === "USER_TYPE") {
+      invalidateUserTypeLabelCache();
+    }
+
     return NextResponse.json({ data: detail });
   } catch (error) {
     if (error instanceof PrismaClientKnownRequestError) {
@@ -127,9 +137,19 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       `[DELETE /api/codes/:id/details/:detailId] userId=${auth.user.userId} headerId=${parsedId.data} detailId=${parsedDetailId.data}`,
     );
 
+    // 삭제 전 헤더 정보 확보 — 삭제 직후 라벨 캐시 무효화 결정에 사용.
+    const headerForCache = await prisma.codeHeader.findUnique({
+      where: { id: parsedId.data },
+      select: { headerCode: true },
+    });
+
     await prisma.codeDetail.delete({
       where: { id: parsedDetailId.data, headerId: parsedId.data },
     });
+
+    if (headerForCache?.headerCode === "USER_TYPE") {
+      invalidateUserTypeLabelCache();
+    }
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
