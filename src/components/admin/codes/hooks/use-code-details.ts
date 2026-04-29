@@ -71,6 +71,8 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["codes", "details", selectedHeaderId] });
+      // lookup 소비처(usePageSize 등)도 즉시 갱신되도록 ["common-code"] 캐시 무효화.
+      queryClient.invalidateQueries({ queryKey: ["common-code"] });
       setDetailNewRow(null);
       detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS };
     },
@@ -84,6 +86,9 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["codes", "details", selectedHeaderId] });
+      // 디테일 isActive 토글이나 codeName 변경이 즉시 PageSizeSelect 등 lookup 소비처에
+      // 반영되도록 공통코드 캐시 무효화.
+      queryClient.invalidateQueries({ queryKey: ["common-code"] });
     },
   });
 
