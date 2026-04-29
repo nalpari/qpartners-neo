@@ -729,7 +729,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
-        description: "JWT 인증 상태에서 비밀번호 변경. pwdInitYn=Y인 판매점 최초 로그인 시 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (pwdInitYn=N, twoFactorVerified=true).",
+        description: "JWT 인증 상태에서 비밀번호 변경. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true).",
         requestBody: {
           required: true,
           content: {
@@ -3510,7 +3510,6 @@ export const openApiSpec: OpenAPIV3.Document = {
           statCd: { type: "string", nullable: true, description: "상태코드 (A=활성)" },
           authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"], description: "세부 권한코드 — 프론트 접근 제어 기준" },
           twoFactorVerified: { type: "boolean", description: "2FA 검증 상태 (true=완료/불필요, false=미완료)" },
-          pwdInitYn: { type: "string", enum: ["Y", "N"], nullable: true, description: "비밀번호 초기화 여부 — Y면 회원정보 설정 팝업 표시 (p.12)" },
           telNo: { type: "string", nullable: true, description: "회사 전화번호 (QSP compTelNo 매핑) — 문의하기 자동입력용. optional: 기존 JWT 호환" },
         },
       },

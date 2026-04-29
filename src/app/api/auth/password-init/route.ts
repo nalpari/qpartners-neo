@@ -54,15 +54,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. pwdInitYn 가드 — 최초 로그인 비밀번호 설정 전용 엔드포인트
-    if (user.pwdInitYn !== "Y") {
-      return NextResponse.json(
-        { error: "パスワード初期化が必要な状態ではありません" },
-        { status: 403 },
-      );
-    }
-
-    // 3. rate limit — 유저당 5분간 5회
+    // 2. rate limit — 유저당 5분간 5회
     if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
@@ -224,7 +216,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. JWT 재발급 — pwdInitYn 해소 + 최신 사용자 정보 반영
+    // 7. JWT 재발급 — 최신 사용자 정보 반영
     let authRole: AuthRole;
     try {
       authRole = await resolveAuthRole(user.userTp, loginId, detailData?.storeLvl ?? user.storeLvl ?? null);
@@ -248,8 +240,7 @@ export async function POST(request: NextRequest) {
       storeLvl: detailData?.storeLvl ?? user.storeLvl,
       statCd: detailData?.statCd ?? user.statCd,
       authRole,
-      twoFactorVerified: true, // 최초 로그인 비밀번호 변경 후 2FA Skip
-      pwdInitYn: "N", // 비밀번호 변경 완료 → 초기화 상태 해소
+      twoFactorVerified: true, // 비밀번호 변경 후 2FA Skip
     };
 
     let jwtToken: string;

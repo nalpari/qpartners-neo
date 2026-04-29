@@ -123,8 +123,7 @@ export async function POST(request: NextRequest) {
 
   // 5. 2차 인증 필요 여부 판별
   //    정책 (secAuthDt 단일 기준 + 최초 인증 강제 우선):
-  //      - 최우선: secAuthDt 없음 → 무조건 필요 (한 번도 2FA 안 함, secAuthYn / pwdInitYn 무시)
-  //      - 비대상: pwdInitYn === "Y" (초기 비밀번호 상태, p.14 스펙)
+  //      - 최우선: secAuthDt 없음 → 무조건 필요 (한 번도 2FA 안 함, secAuthYn 무시)
   //      - 면제: secAuthYn === "N" (관리자 명시 해제)
   //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
   //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
@@ -139,7 +138,6 @@ export async function POST(request: NextRequest) {
   // 진단 메타 — dev 환경 응답 노출 + 운영 로그 두 곳에서 동일 사유 표기.
   type TwoFactorReason =
     | "DISABLED_BY_ADMIN"
-    | "PWD_INIT_PRIORITY"
     | "FIRST_TIME_REQUIRED"
     | "EXPIRED_REQUIRED"
     | "WITHIN_VALIDITY"
@@ -148,12 +146,10 @@ export async function POST(request: NextRequest) {
 
   // 0) 최우선 가드 — secAuthDt 가 없으면(한 번도 2FA 한 적 없음) 무조건 강제.
   //    SUPER_ADMIN/ADMIN 포함 모든 권한이 최초 1회는 반드시 2FA 통과 후 secAuthDt 생성.
-  //    secAuthYn === "N" (관리자 면제) / pwdInitYn === "Y" (초기 비번) 보다 우선.
+  //    secAuthYn === "N" (관리자 면제) 보다 우선.
   if (!qsp.data.secAuthDt) {
     requireTwoFactor = true;
     twoFactorReason = "FIRST_TIME_REQUIRED";
-  } else if (qsp.data.pwdInitYn === "Y") {
-    twoFactorReason = "PWD_INIT_PRIORITY";
   } else if (qsp.data.secAuthYn !== "N") {
     // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
     let validityDays: number | null = null;
@@ -222,7 +218,6 @@ export async function POST(request: NextRequest) {
     userTp: qsp.data.userTp,
     userId: maskEmail(qsp.data.userId),
     secAuthYn: qsp.data.secAuthYn,
-    pwdInitYn: qsp.data.pwdInitYn,
     hasSecAuthDt: !!qsp.data.secAuthDt,
     hasEmail: !!qsp.data.email,
     requireTwoFactor,
@@ -268,7 +263,6 @@ export async function POST(request: NextRequest) {
     authRole,
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,
-    pwdInitYn: qsp.data.pwdInitYn,
     // QSP compTelNo(회사 전화번호) → telNo로 전달 (문의하기 자동 입력용)
     telNo: qsp.data.compTelNo ?? null,
   };
