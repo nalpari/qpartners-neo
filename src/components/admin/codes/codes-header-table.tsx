@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useCallback } from "react";
+import Image from "next/image";
 import type { ColDef, ICellRendererParams, CellClassParams, CellDoubleClickedEvent, CellClickedEvent, GridApi, GridReadyEvent } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -155,22 +156,36 @@ function EditableTextRendererFn(params: ICellRendererParams<HeaderGridRow>) {
 // custom SelectBox 는 absolute positioned dropdown 이라 AG Grid 셀의 overflow:hidden
 // 때문에 옵션 목록이 잘려 보이지 않는다. native <select> 는 브라우저가 외부 popup 으로
 // 렌더해 클리핑 없이 정상 표시. mouse/click stopPropagation 으로 cellClicked 누수 차단.
+//
+// 디자인은 권한관리(permissions-table) ActiveRenderer 와 동일 — appearance-none + 우측
+// 화살표 아이콘 absolute. 사이트 전반 일관 룩앤필 유지.
 function ActiveSelectRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   const data = params.data;
   if (!data || data.isNew) return null;
   const ctx = params.context as HeaderGridContext;
   return (
-    <select
-      value={data.isActive}
-      disabled={ctx.isActiveBusy}
-      onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
+    <div
+      className="relative w-[110px]"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      className="w-[70px] h-[34px] px-2 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
     >
-      <option value="Y">Y</option>
-      <option value="N">N</option>
-    </select>
+      <select
+        value={data.isActive}
+        disabled={ctx.isActiveBusy}
+        onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
+        className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
+      >
+        <option value="Y">Y</option>
+        <option value="N">N</option>
+      </select>
+      <Image
+        src="/asset/images/common/select_arr.svg"
+        alt=""
+        width={24}
+        height={24}
+        className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+      />
+    </div>
   );
 }
 
