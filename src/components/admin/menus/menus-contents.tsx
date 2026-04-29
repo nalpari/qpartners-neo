@@ -132,6 +132,14 @@ export function MenusContents() {
           openAlert({ type: "alert", message: "メニューが見つかりません。画面を更新してください。", confirmLabel: "確認" });
           return;
         }
+        if (status === 409) {
+          openAlert({
+            type: "alert",
+            message: "孫メニューが存在するため削除できません。データ構造を確認してください。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
       }
       openAlert({ type: "alert", message: "削除に失敗しました。", confirmLabel: "確認" });
     },

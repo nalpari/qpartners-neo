@@ -1176,7 +1176,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Menu"],
         summary: "메뉴 삭제 (SUPER_ADMIN 전용, 하위 메뉴는 cascade 삭제)",
         description:
-          "ADM_MENU.delete 권한 필요. 하위 메뉴(children)가 있으면 함께 삭제(cascade). 권한 매트릭스(QpRoleMenuPermission) 행은 대상 + 자식 menuCode 모두 동일 트랜잭션에서 선삭제. 같은 parentId 그룹 형제 행의 sortOrder 는 삭제 직후 1..N 으로 자동 재번호. 응답 deletedChildren 은 cascade 된 자식 수, resequenced 는 실제 sortOrder 가 변경된 형제 수.",
+          "ADM_MENU.delete 권한 필요. 하위 메뉴(children)가 있으면 함께 삭제(cascade). 손자(grandchildren) 가 발견되면 409 반환 (schema 우회/직접 DB 입력으로 2-level 제한 깨진 경우 운영자 인지 후 수동 정리 유도). 권한 매트릭스(QpRoleMenuPermission) 행은 대상 + 자식 menuCode 모두 동일 interactive transaction 에서 선삭제. 같은 parentId 그룹 형제 행의 sortOrder 는 삭제 직후 1..N 으로 자동 재번호. 조회 + 변경이 모두 트랜잭션 내부에서 일어나 TOCTOU race 차단. 응답 deletedChildren 은 cascade 된 자식 수, resequenced 는 실제 sortOrder 가 변경된 형제 수.",
         parameters: [
           {
             name: "id",
@@ -1209,6 +1209,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("ID 형식 오류"),
           "403": errorResponse("권한 없음"),
           "404": errorResponse("Not found"),
+          "409": errorResponse("손자 메뉴 존재 (depth violation)"),
           "500": errorResponse("서버 에러"),
         },
       },
