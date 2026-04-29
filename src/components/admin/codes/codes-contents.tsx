@@ -155,6 +155,7 @@ export function CodesContents() {
     if (!Number.isFinite(headerId)) return;
     try {
       await headerUpdateMutation.mutateAsync({ headerId, data: { isActive } });
+      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     } catch (err: unknown) {
       console.error(`[Codes] Header 사用可否 変更 失敗: id=${id}`);
       openAlert({ type: "alert", message: getApiErrorMessage(err, "Header修正") });
@@ -168,6 +169,7 @@ export function CodesContents() {
     if (!Number.isFinite(detailId)) return;
     try {
       await detailUpdateMutation.mutateAsync({ detailId, data: { isActive } });
+      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     } catch (err: unknown) {
       console.error(`[Codes] Detail 使用可否 変更 失敗: id=${id}`);
       openAlert({ type: "alert", message: getApiErrorMessage(err, "Detail修正") });
