@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
+import { isHtmlEmpty } from "@/lib/block-editor/is-html-empty";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -189,6 +190,14 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     router.push("/contents", { transitionTypes: ["fade"] });
   };
 
+  const handleContentParseError = (error: unknown) => {
+    console.error("[Contents] 本文 파싱 실패:", error);
+    openAlert({
+      type: "alert",
+      message: "保存された本文を読み込めませんでした。データが破損している可能性があります。再入力する前にキャンセルし、管理者にお問い合わせください。",
+    });
+  };
+
   const handleSave = async () => {
     // 필수항목 검증
     if (!approver) {
@@ -199,7 +208,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       openAlert({ type: "alert", message: "タイトルは必須入力項目です。" });
       return;
     }
-    if (!content.trim()) {
+    if (isHtmlEmpty(content)) {
       openAlert({ type: "alert", message: "内容は必須入力項目です。" });
       return;
     }
@@ -312,6 +321,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           onTitleChange={setTitle}
           content={content}
           onContentChange={setContent}
+          onContentParseError={handleContentParseError}
         />
 
         <ContentsFormAttachment

@@ -56,3 +56,6 @@ docs/ref/
 
 # uploaded files
 storage/uploads/
+
+# git worktrees
+.worktrees/
