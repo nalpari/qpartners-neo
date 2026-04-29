@@ -218,14 +218,12 @@ export function MemberDetailPopup() {
       const message = warningMsg
         ? `保存しました。\n\n注意:\n${warningMsg}\n\n一覧から再度ご確認ください。`
         : "保存しました。";
+      // 저장 성공 alert 확인 후에도 팝업을 자동 닫지 않는다 (2026-04-29 정책 갱신).
+      // 운영자가 동일 회원의 다른 항목을 연속 편집할 수 있도록 컨텍스트를 유지하고,
+      // 닫기는 유저가 キャンセル / × 버튼으로 명시적으로 수행하도록 한다.
       openAlert({
         type: "alert",
         message,
-        // TOCTOU 감지·기본값 주입 등 warning 경로에서는 팝업을 자동으로 닫지 않는다.
-        // 운영자가 확인 직후 회원 상세 화면에서 현재 상태를 다시 검토할 수 있도록
-        // 컨텍스트를 유지한다 (닫기는 유저가 명시적으로 수행). 경고가 없는 정상 저장
-        // 경로에서만 기존 UX 대로 자동 닫기.
-        onConfirm: warningMsg ? undefined : () => closePopup(),
       });
     },
     onError: (err: unknown) => {
@@ -489,7 +487,7 @@ function MemberEditForm({
                         className="w-full"
                       />
                     ) : (
-                      <TextValue value={ROLE_LABEL_MAP[member.userRole] ?? member.userRole} />
+                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || member.userType} />
                     ),
                   }}
                 />
