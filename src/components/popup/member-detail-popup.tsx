@@ -490,7 +490,10 @@ function MemberEditForm({
                         className="w-full"
                       />
                     ) : (
-                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || member.userType} />
+                      // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
+                      // 시 회원유형(일본어 라벨) 으로 폴백하면 의미론적으로 잘못된 표시가 된다.
+                      // 라벨 매핑 → 원본 코드 → 명시적 빈값("-") 순으로 표시.
+                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ),
                   }}
                 />

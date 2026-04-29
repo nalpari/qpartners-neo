@@ -60,19 +60,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 헤더 정보를 1회만 조회해 SEC_AUTH_VALIDITY 검증 + USER_TYPE 캐시 무효화 양쪽에 재사용.
+    // 기존 구현은 PUT 처리 중 최대 2회 codeHeader.findUnique 가 발생했음 — DB 왕복 절감.
+    const header = await prisma.codeHeader.findUnique({
+      where: { id: parsedId.data },
+      select: { headerCode: true },
+    });
+    if (!header) {
+      return NextResponse.json(
+        { error: "ヘッダーコードが見つかりません" },
+        { status: 404 },
+      );
+    }
+
     // SEC_AUTH_VALIDITY 헤더에 한해 1~90 정수 상하한 가드 (Boston 리뷰 HIGH #2).
-    // code 변경 요청이 있을 때만 헤더를 추가 조회하여 검증한다 (오버헤드 최소화).
     if (result.data.code !== undefined) {
-      const header = await prisma.codeHeader.findUnique({
-        where: { id: parsedId.data },
-        select: { headerCode: true },
-      });
-      if (!header) {
-        return NextResponse.json(
-          { error: "ヘッダーコードが見つかりません" },
-          { status: 404 },
-        );
-      }
       const validity = validateSecAuthValidityCode(header.headerCode, result.data.code);
       if (!validity.ok) {
         return NextResponse.json({ error: validity.message }, { status: 400 });
@@ -85,11 +87,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     });
 
     // USER_TYPE 헤더 디테일 변경 시 라벨 캐시 무효화 (코드/codeName/isActive 즉시 반영).
-    const headerForCache = await prisma.codeHeader.findUnique({
-      where: { id: parsedId.data },
-      select: { headerCode: true },
-    });
-    if (headerForCache?.headerCode === "USER_TYPE") {
+    if (header.headerCode === "USER_TYPE") {
       invalidateUserTypeLabelCache();
     }
 

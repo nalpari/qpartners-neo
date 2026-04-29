@@ -17,13 +17,23 @@ import { useQueryClient } from "@tanstack/react-query";
  *   layout 레벨 effect 하나로 모든 경로에 일괄 적용 (idempotent — 중복 호출 무해).
  *
  * 동작:
- *   1. queryClient.invalidateQueries() — 모든 TanStack Query 캐시 무효화
+ *   1. admin 변경 영향이 있는 키만 선택적 invalidate — `["menus"]`(메뉴/권한·코드관리에서
+ *      변경된 메뉴 트리), `["common-code"]`(공통코드 lookup 캐시), `["roles"]`(권한관리)
  *   2. router.refresh() — RSC + fetch 캐시 무효화 (server component 재페치)
+ *
+ * 선택적 무효화 이유 (Boston Code Review MEDIUM):
+ *   `queryClient.invalidateQueries()` 를 인자 없이 호출하면 모든 활성 query 가 한꺼번에
+ *   리페치되어 admin → 일반 전환 시 불필요한 네트워크 waterfall 이 발생한다. admin 에서
+ *   변경 가능한 도메인(메뉴·코드·권한) 만 명시적으로 무효화해 부수효과 최소화.
  *
  * 비교:
  *   풀 리로드(window.location)는 React 트리 전체 unmount 로 UX 가 끊긴다.
  *   refresh() 는 URL/스크롤 유지 + 서버 데이터만 다시 가져와 SPA 흐름을 보존.
  */
+
+// admin 변경 영향이 있는 query key prefix — 추가 시 한 곳에서 관리.
+const ADMIN_INVALIDATE_KEYS = [["menus"], ["common-code"], ["roles"]] as const;
+
 export function AdminTransitionRefresh() {
   const pathname = usePathname();
   const router = useRouter();
@@ -40,7 +50,9 @@ export function AdminTransitionRefresh() {
     const isAdmin = pathname?.startsWith("/admin") ?? false;
     if (!wasAdmin || isAdmin) return;
 
-    queryClient.invalidateQueries();
+    for (const key of ADMIN_INVALIDATE_KEYS) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
     router.refresh();
   }, [pathname, queryClient, router]);
 
