@@ -222,12 +222,29 @@ export function MenusTables({
   // AG Grid 의 getRowClass 는 행 생성 시점에 한 번만 평가되고 prop 변경 시 자동
   // 재평가되지 않는다. selectedLevel1Id 가 바뀌어도 이전 선택 행의 하이라이트가
   // 그대로 남는 현상을 redrawRows() 로 강제 재평가해 해소.
+  //
+  // ⚠️ redrawRows() 는 row DOM 을 즉시 teardown→recreate 하는데, React cellRenderer
+  // (MenuNameRenderer 등) 가 같은 노드를 관리해 React 의 commit phase 와 충돌해
+  // "removeChild ... not a child of this node" 런타임 에러가 발생할 수 있다.
+  // queueMicrotask 로 React commit 직후 다음 마이크로태스크에서 호출해 회피.
+  // grid 가 unmount 된 시점이면 ref 가 유효해도 호출이 noop 이 되도록 in-flight 가드.
   const level1GridApiRef = useRef<GridApi<MenuItem> | null>(null);
   const handleLevel1GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
     level1GridApiRef.current = event.api;
   }, []);
   useEffect(() => {
-    level1GridApiRef.current?.redrawRows();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const api = level1GridApiRef.current;
+      // AG Grid 가 destroy 된 후에는 isDestroyed() === true. 호출 시 내부에서 에러가
+      // 나지 않도록 가드 (api 객체는 살아있을 수 있음).
+      if (!api || api.isDestroyed()) return;
+      api.redrawRows();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedLevel1Id]);
 
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
