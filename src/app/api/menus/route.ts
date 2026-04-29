@@ -67,13 +67,20 @@ export async function GET(request: NextRequest) {
       orderBy: { sortOrder: "asc" },
     });
 
-    // 매트릭스에 없는 1-Level 메뉴는 통째로 제외, 2-Level 도 허용된 것만.
-    const filtered = menus
-      .filter((m) => allowedSet.has(m.menuCode))
-      .map((m) => ({
-        ...m,
-        children: m.children.filter((c) => allowedSet.has(c.menuCode)),
-      }));
+    // 네비게이션 모드(activeOnly=true): 매트릭스에 없는 1-Level 메뉴는 통째로 제외,
+    //   2-Level 도 허용된 것만. canRead 가 navigation 노출 권한이므로 적용.
+    // 관리 모드(activeOnly=false): ADM_MENU.read 게이트(위)만으로 검증 완료.
+    //   canRead 매트릭스는 navigation 가시성용이라 관리 화면에 적용하면 안 된다.
+    //   (적용 시 권한 매트릭스에 미등록된 메뉴가 화면에서 사라져, 사용자가 인지 못한
+    //    채 동일 menuCode 로 신규 등록 시 P2002 → 409 가 발생해 원인 파악 불가)
+    const filtered = activeOnly
+      ? menus
+          .filter((m) => allowedSet.has(m.menuCode))
+          .map((m) => ({
+            ...m,
+            children: m.children.filter((c) => allowedSet.has(c.menuCode)),
+          }))
+      : menus;
 
     return NextResponse.json({ data: filtered });
   } catch (error) {
