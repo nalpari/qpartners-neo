@@ -68,3 +68,68 @@ export async function PUT(request: NextRequest, { params }: Params) {
     );
   }
 }
+
+// DELETE /api/menus/:id — 메뉴 삭제 (ADM_MENU.delete — SUPER_ADMIN 전용)
+//
+// - 하위 메뉴 보유 시 409 — 고아 행 발생 방지(스키마상 `onDelete: SetNull` 이지만 운영 의도는
+//   "선 하위 정리 후 상위 삭제" 이므로 명시적으로 차단). 사용자에게 원인 안내.
+// - 권한 매트릭스(`QpRoleMenuPermission`) 행은 menuCode FK 제약으로 메뉴 삭제 전 선삭제 필요.
+//   같은 트랜잭션으로 묶어 부분 실패 시 일관성 보장.
+export async function DELETE(request: NextRequest, { params }: Params) {
+  try {
+    const auth = await requireMenuPermission(request.headers, "ADM_MENU", "delete");
+    if (auth instanceof NextResponse) return auth;
+
+    const { id } = await params;
+    const parsed = idParamSchema.safeParse(id);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "IDが不正です" }, { status: 400 });
+    }
+
+    const target = await prisma.menu.findUnique({
+      where: { id: parsed.data },
+      select: {
+        menuCode: true,
+        _count: { select: { children: true } },
+      },
+    });
+
+    if (!target) {
+      return NextResponse.json(
+        { error: "指定されたメニューが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    if (target._count.children > 0) {
+      return NextResponse.json(
+        { error: "下位メニューが存在するため削除できません。先に下位メニューを削除してください。" },
+        { status: 409 },
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.qpRoleMenuPermission.deleteMany({
+        where: { menuCode: target.menuCode },
+      }),
+      prisma.menu.delete({ where: { id: parsed.data } }),
+    ]);
+
+    return NextResponse.json({ data: { id: parsed.data } });
+  } catch (error) {
+    if (
+      error instanceof PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json(
+        { error: "指定されたメニューが見つかりません" },
+        { status: 404 },
+      );
+    }
+    console.error("[DELETE /api/menus/:id]", error);
+    return NextResponse.json(
+      { error: "メニューの削除に失敗しました" },
+      { status: 500 },
+    );
+  }
+}

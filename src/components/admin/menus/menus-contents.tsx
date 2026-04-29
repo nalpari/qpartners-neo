@@ -103,6 +103,42 @@ export function MenusContents() {
     },
   });
 
+  // DELETE /api/menus/{id} — 메뉴 삭제 (하위 메뉴 존재 시 409)
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/menus/${id}`);
+    },
+    onSuccess: async () => {
+      handleNew();
+      setSelectedLevel1Id(null);
+      await queryClient.invalidateQueries({ queryKey: ["menus"] });
+      openAlert({ type: "alert", message: "削除されました。", confirmLabel: "確認" });
+    },
+    onError: (error: unknown) => {
+      console.error("[DELETE /api/menus/:id] 메뉴 삭제 실패:", error);
+      if (isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 409) {
+          openAlert({
+            type: "alert",
+            message: "下位メニューが存在するため削除できません。先に下位メニューを削除してください。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
+        if (status === 403) {
+          openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+          return;
+        }
+        if (status === 404) {
+          openAlert({ type: "alert", message: "メニューが見つかりません。画面を更新してください。", confirmLabel: "確認" });
+          return;
+        }
+      }
+      openAlert({ type: "alert", message: "削除に失敗しました。", confirmLabel: "確認" });
+    },
+  });
+
   // Plan R-06: PUT /api/menus/sort — 정렬순서 일괄 저장
   const sortMutation = useMutation({
     mutationFn: async (items: { id: number; sortOrder: number }[]) => {
@@ -191,6 +227,24 @@ export function MenusContents() {
     sortValuesRef.current[id] = value;
   };
 
+  // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출
+  const handleDelete = () => {
+    if (!isEditing || !editingId) {
+      openAlert({
+        type: "alert",
+        message: "削除するメニューを選択してください。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
+    const targetName = formState.menuName || formState.menuCode;
+    openAlert({
+      type: "confirm",
+      message: `「${targetName}」を削除します。よろしいですか？`,
+      onConfirm: () => deleteMutation.mutate(editingId),
+    });
+  };
+
   return (
     <main className="flex flex-col items-center gap-[18px] w-full pb-[48px]">
       <div className="flex flex-col gap-[32px] w-[1440px]">
@@ -222,6 +276,9 @@ export function MenusContents() {
             onSortValueChange={handleSortValueChange}
             isSortSaving={sortMutation.isPending}
             sortRefreshVersion={sortRefreshVersion}
+            onDelete={handleDelete}
+            isDeleteEnabled={isEditing && editingId !== null}
+            isDeleting={deleteMutation.isPending}
           />
         </section>
       </div>

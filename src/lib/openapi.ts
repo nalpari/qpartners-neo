@@ -1172,6 +1172,45 @@ export const openApiSpec: OpenAPIV3.Document = {
           "500": errorResponse("서버 에러"),
         },
       },
+      delete: {
+        tags: ["Menu"],
+        summary: "메뉴 삭제 (SUPER_ADMIN 전용, 하위 메뉴 존재 시 409)",
+        description:
+          "ADM_MENU.delete 권한 필요. 하위 메뉴(children) 가 존재하면 409 반환 — 선 하위 정리 후 재시도. 권한 매트릭스(QpRoleMenuPermission) 행은 동일 트랜잭션에서 선삭제됨.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer", example: 12 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("ID 형식 오류"),
+          "403": errorResponse("권한 없음"),
+          "404": errorResponse("Not found"),
+          "409": errorResponse("하위 메뉴 존재"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
     },
 
     "/menus/sort": {

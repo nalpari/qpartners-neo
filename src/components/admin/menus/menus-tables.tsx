@@ -107,6 +107,9 @@ interface MenusTablesProps {
   onSortValueChange: (id: string, value: number) => void;
   isSortSaving: boolean;
   sortRefreshVersion: number;
+  onDelete: () => void;
+  isDeleteEnabled: boolean;
+  isDeleting: boolean;
 }
 
 export function MenusTables({
@@ -122,6 +125,9 @@ export function MenusTables({
   onSortValueChange,
   isSortSaving,
   sortRefreshVersion,
+  onDelete,
+  isDeleteEnabled,
+  isDeleting,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -241,9 +247,18 @@ export function MenusTables({
         <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">
           メニュー目録
         </h2>
-        <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
-          整列保存
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={onDelete}
+            disabled={!isDeleteEnabled || isDeleting}
+          >
+            削除
+          </Button>
+          <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
+            整列保存
+          </Button>
+        </div>
       </div>
 
       {/* 테이블 2개 (flex-wrap) */}
