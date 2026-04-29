@@ -13,9 +13,9 @@ import {
   qspUpdateResponseSchema,
   STATUS_TO_STAT_CD,
   lookupStatCd,
-  lookupUserTypeLabel,
   normalizeAuthCdToUserRole,
 } from "@/lib/schemas/member";
+import { getUserTypeLabelMap } from "@/lib/user-type-labels";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
 import { userTpSchema } from "@/lib/schemas/common";
 import type { MemberDetail } from "@/components/admin/members/members-types";
@@ -110,8 +110,15 @@ function isSelfTarget(adminUserId: string, detail: QspMemberDetail): boolean {
  * GET / PUT 양쪽에서 동일 매핑을 사용해 DRY 유지.
  * 반환타입을 MemberDetail 로 명시 — 필드 drift 발생 시 컴파일 시점 탐지.
  * (openapi MemberDetail 스키마와도 필드 정렬 유지 필수)
+ *
+ * userTypeLabelMap 은 코드관리(USER_TYPE) 디테일 기반 — 운영자가 codeName 을 변경하면
+ * 즉시 회원 상세 응답 라벨에 반영. 호출측에서 `await getUserTypeLabelMap()` 으로 주입한다.
  */
-function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
+function mapQspDetailToResponse(
+  d: QspMemberDetail,
+  id: string,
+  userTypeLabelMap: Map<string, string>,
+): MemberDetail {
   return {
     id,
     userId: d.userId,
@@ -122,7 +129,7 @@ function mapQspDetailToResponse(d: QspMemberDetail, id: string): MemberDetail {
     firstNameKana: d.user1stNmKana ?? "",
     lastNameKana: d.user2ndNmKana ?? "",
     email: d.email ?? "",
-    userType: lookupUserTypeLabel(d.userTp) ?? "unknown",
+    userType: (d.userTp ? userTypeLabelMap.get(d.userTp) : undefined) ?? "unknown",
     userRole: normalizeAuthCdToUserRole(d.authCd),
     companyName: d.compNm ?? "",
     companyNameKana: d.compNmKana ?? "",
@@ -233,7 +240,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 4. 응답 매핑 (QSP → TO-BE)
-    const mapped = mapQspDetailToResponse(detailResult.detail, idResult.data);
+    const userTypeLabelMap = await getUserTypeLabelMap();
+    const mapped = mapQspDetailToResponse(detailResult.detail, idResult.data, userTypeLabelMap);
 
     console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
 
@@ -772,10 +780,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // 타입은 mapper 반환에 의존하는 구조가 아니라 "응답 계약" 에 의존하도록 MemberDetail 로
     // 직접 명시 — drift 시 컴파일 실패로 변경을 강제한다 (mapper 시그니처 변경만 따라가지 않음).
     let memberSnapshot: MemberDetail | undefined;
+    const userTypeLabelMap = await getUserTypeLabelMap();
     if (postDetail) {
-      memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data);
+      memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data, userTypeLabelMap);
     } else if (preDetail && !userRolePostCheckFailed) {
-      const base = mapQspDetailToResponse(preDetail, idResult.data);
+      const base = mapQspDetailToResponse(preDetail, idResult.data, userTypeLabelMap);
       memberSnapshot = {
         ...base,
         ...(result.data.userRole !== undefined && { userRole: result.data.userRole }),

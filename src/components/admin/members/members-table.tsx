@@ -11,15 +11,24 @@ import { Pagination, PageSizeSelect } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
+import { useUserType } from "@/hooks/use-user-type";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
+
+// AG Grid cellRenderer 는 컴포넌트 외부 함수라 React hook 직접 사용 불가.
+// USER_TYPE 동적 reverseMap(일본어 라벨 → 영문 코드) 은 context 로 주입한다.
+type MembersGridContext = { userTypeReverseMap: Record<string, string> };
 
 function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
   const data = params.data;
   if (!data) return null;
 
   const openPopup = usePopupStore.getState().openPopup;
-
-  const userTp = USER_TYPE_REVERSE_MAP[data.userType];
+  const ctx = (params.context ?? {}) as MembersGridContext;
+  // 동적 reverseMap(코드관리 USER_TYPE) 우선 시도, 미매핑 시 hardcoded fallback.
+  // BE 서버 캐시(5분 TTL) ↔ FE TanStack Query 캐시(5분 staleTime) 의 갱신 타이밍이
+  // 어긋나 동적 reverseMap 만으로는 영문 코드를 못 찾는 케이스를 차단하기 위함.
+  // 두 경로 모두 실패 시에만 미매핑 처리(차단) — 기존 라벨 변경 운영 시 팝업 진입 보장.
+  const userTp = ctx.userTypeReverseMap[data.userType] ?? USER_TYPE_REVERSE_MAP[data.userType];
 
   const handleClick = () => {
     if (!userTp) {
@@ -55,6 +64,14 @@ export function MembersTable({
   onPageChange,
   onPageSizeChange,
 }: MembersTableProps) {
+  // USER_TYPE 공통코드 reverseMap — 백엔드가 응답하는 일본어 라벨을 다시 영문 코드로 매핑.
+  // 코드관리 변경 시 ["common-code","USER_TYPE"] invalidate 로 즉시 갱신됨.
+  const { reverseMap: userTypeReverseMap } = useUserType();
+  const gridContext = useMemo(
+    () => ({ userTypeReverseMap }),
+    [userTypeReverseMap],
+  );
+
   // Design Ref: §4.3 — useQuery
   // staleTime: 0 + refetchOnMount/Focus 활성 — 최근접속일시(lastLoginAt) 등 외부에서 변경되는
   // 운영 데이터가 즉시 반영되도록 보장. 페이지 재진입·탭 포커스 복귀 시 자동 fetch.
@@ -178,6 +195,7 @@ export function MembersTable({
           columnDefs={columnDefs}
           rowData={list}
           getRowId={(p) => p.data.id}
+          context={gridContext}
           loading={isLoading}
           emptyMessage="検索結果がありません"
         />

@@ -17,6 +17,7 @@ import {
   formatDateTime,
   formatDate,
 } from "@/components/admin/members/members-types";
+import { useUserType } from "@/hooks/use-user-type";
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -218,14 +219,12 @@ export function MemberDetailPopup() {
       const message = warningMsg
         ? `保存しました。\n\n注意:\n${warningMsg}\n\n一覧から再度ご確認ください。`
         : "保存しました。";
+      // 저장 성공 alert 확인 후에도 팝업을 자동 닫지 않는다 (2026-04-29 정책 갱신).
+      // 운영자가 동일 회원의 다른 항목을 연속 편집할 수 있도록 컨텍스트를 유지하고,
+      // 닫기는 유저가 キャンセル / × 버튼으로 명시적으로 수행하도록 한다.
       openAlert({
         type: "alert",
         message,
-        // TOCTOU 감지·기본값 주입 등 warning 경로에서는 팝업을 자동으로 닫지 않는다.
-        // 운영자가 확인 직후 회원 상세 화면에서 현재 상태를 다시 검토할 수 있도록
-        // 컨텍스트를 유지한다 (닫기는 유저가 명시적으로 수행). 경고가 없는 정상 저장
-        // 경로에서만 기존 UX 대로 자동 닫기.
-        onConfirm: warningMsg ? undefined : () => closePopup(),
       });
     },
     onError: (err: unknown) => {
@@ -360,7 +359,9 @@ function MemberEditForm({
   onPasswordReset: () => void;
   onClose: () => void;
 }) {
-  const memberTp = USER_TYPE_REVERSE_MAP[member.userType] ?? "";
+  // 동적 reverseMap 우선, 미매핑 시 hardcoded fallback (코드관리 USER_TYPE 미등록 대응)
+  const { reverseMap: dynamicReverseMap } = useUserType();
+  const memberTp = dynamicReverseMap[member.userType] ?? USER_TYPE_REVERSE_MAP[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
@@ -489,7 +490,10 @@ function MemberEditForm({
                         className="w-full"
                       />
                     ) : (
-                      <TextValue value={ROLE_LABEL_MAP[member.userRole] ?? member.userRole} />
+                      // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
+                      // 시 회원유형(일본어 라벨) 으로 폴백하면 의미론적으로 잘못된 표시가 된다.
+                      // 라벨 매핑 → 원본 코드 → 명시적 빈값("-") 순으로 표시.
+                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ),
                   }}
                 />

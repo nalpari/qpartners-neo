@@ -1,19 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useCallback } from "react";
+import Image from "next/image";
 import type { ColDef, ICellRendererParams, CellClassParams, CellDoubleClickedEvent, CellClickedEvent, GridApi, GridReadyEvent } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { HeaderGridRow } from "./codes-types";
 
-// 편집 불가 필드 — 첫번째 컬럼(headerCode, detail 진입 링크) + 使用可否(isActive)
-const NON_EDITABLE_FIELDS = new Set(["headerCode", "isActive"]);
+// 편집 불가 필드 — 첫번째 컬럼(headerCode, detail 진입 링크) 만.
+// 使用可否(isActive) 는 native <select> 로 즉시 토글 가능.
+const NON_EDITABLE_FIELDS = new Set(["headerCode"]);
 
 const centerCellStyle = {
   display: "flex" as const,
   alignItems: "center" as const,
   justifyContent: "center" as const,
+};
+
+// 使用可否 셀 전용 스타일 — native <select> 가 셀 폭을 거의 가득 사용하면서
+// 우측 화살표 아이콘(svg 24px + right-2=8px) 과 텍스트 사이 최소 여백 확보용 6px.
+// 편집 input 의 4px 와 의도적으로 다름(편집 input 은 border 까지 포함, select 는 absolute 화살표).
+const ACTIVE_CELL_STYLE = {
+  ...centerCellStyle,
+  paddingLeft: "6px",
+  paddingRight: "6px",
 };
 
 /**
@@ -91,6 +102,8 @@ type HeaderGridContext = {
   onEditFieldChange: (field: string, value: string) => void;
   onHeaderClick: (id: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onActiveChange: (id: string, isActive: boolean) => void;
+  isActiveBusy: boolean;
 };
 
 // 첫번째 컬럼 — 신규행은 input, 기존행은 detail 진입 버튼 (편집 불가)
@@ -146,10 +159,43 @@ function EditableTextRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
 }
 
-function ActiveTextRendererFn(params: ICellRendererParams<HeaderGridRow>) {
+// 使用可否(isActive) — native <select> 로 즉시 토글. onChange 시 부모로 전달되어 PUT 호출.
+// 신규행(isNew) 에는 표시하지 않음 — 신규 행은 저장 시 BE default(true) 적용.
+//
+// custom SelectBox 는 absolute positioned dropdown 이라 AG Grid 셀의 overflow:hidden
+// 때문에 옵션 목록이 잘려 보이지 않는다. native <select> 는 브라우저가 외부 popup 으로
+// 렌더해 클리핑 없이 정상 표시. mouse/click stopPropagation 으로 cellClicked 누수 차단.
+//
+// 디자인은 권한관리(permissions-table) ActiveRenderer 와 동일 — appearance-none + 우측
+// 화살표 아이콘 absolute. 사이트 전반 일관 룩앤필 유지.
+function ActiveSelectRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   const data = params.data;
   if (!data || data.isNew) return null;
-  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{data.isActive}</span>;
+  const ctx = params.context as HeaderGridContext;
+  return (
+    <div
+      className="relative w-full"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <select
+        value={data.isActive}
+        disabled={ctx.isActiveBusy}
+        onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
+        className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
+      >
+        <option value="Y">Y</option>
+        <option value="N">N</option>
+      </select>
+      <Image
+        src="/asset/images/common/select_arr.svg"
+        alt=""
+        width={24}
+        height={24}
+        className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+      />
+    </div>
+  );
 }
 
 interface CodesHeaderTableProps {
@@ -169,6 +215,8 @@ interface CodesHeaderTableProps {
   newRowFieldsRef: React.RefObject<Record<string, string>>;
   activeOnly: boolean;
   onActiveOnlyChange: (checked: boolean) => void;
+  onActiveChange: (id: string, isActive: boolean) => void;
+  isActiveBusy?: boolean;
 }
 
 export function CodesHeaderTable({
@@ -188,6 +236,8 @@ export function CodesHeaderTable({
   newRowFieldsRef,
   activeOnly,
   onActiveOnlyChange,
+  onActiveChange,
+  isActiveBusy = false,
 }: CodesHeaderTableProps) {
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
@@ -228,7 +278,9 @@ export function CodesHeaderTable({
     onEditFieldChange,
     onHeaderClick,
     onKeyDown: handleKeyDown,
-  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, onHeaderClick, handleKeyDown]);
+    onActiveChange,
+    isActiveBusy,
+  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, onHeaderClick, handleKeyDown, onActiveChange, isActiveBusy]);
 
   const columnDefs = useMemo<ColDef<HeaderGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeRendererFn, cellStyle: makeEditableCellStyle("headerCode"), headerClass: "ag-header-cell-center" },
@@ -240,7 +292,7 @@ export function CodesHeaderTable({
     { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nNum2", field: "relNum2", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relNum2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nNum3", field: "relNum3", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relNum3"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "使用可否", field: "isActive", flex: 0.6, cellRenderer: ActiveTextRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "使用可否", field: "isActive", flex: 0.8, cellRenderer: ActiveSelectRendererFn, cellStyle: ACTIVE_CELL_STYLE, headerClass: "ag-header-cell-center" },
   ], []);
 
   const getRowClass = useCallback((params: RowClassParams<HeaderGridRow>) => {
@@ -266,7 +318,7 @@ export function CodesHeaderTable({
   }, [onCellEditStart]);
 
   return (
-    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
+    <div className="flex flex-col w-[1440px] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">Header Code</h2>

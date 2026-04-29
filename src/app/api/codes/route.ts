@@ -7,6 +7,7 @@ import { requireMenuPermission } from "@/lib/auth";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { createCodeHeaderSchema } from "@/lib/schemas/code";
+import { invalidateUserTypeLabelCache } from "@/lib/user-type-labels";
 
 // GET /api/codes — Header Code 목록 (CODES.read — ADMIN 포함 매트릭스 허용)
 export async function GET(request: NextRequest) {
@@ -68,6 +69,10 @@ export async function POST(request: NextRequest) {
     }
 
     const header = await prisma.codeHeader.create({ data: result.data });
+    // USER_TYPE 라벨 캐시 무효화 — 헤더 신규 등록이 즉시 회원관리 응답에 반영되도록.
+    if (result.data.headerCode === "USER_TYPE") {
+      invalidateUserTypeLabelCache();
+    }
     return NextResponse.json({ data: header }, { status: 201 });
   } catch (error) {
     if (

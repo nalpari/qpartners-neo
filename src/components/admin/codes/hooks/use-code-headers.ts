@@ -26,7 +26,7 @@ export function useCodeHeaders() {
   // 검색·필터 state
   const [searchKeyword, setSearchKeyword] = useState("");
   const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [headerActiveOnly, setHeaderActiveOnly] = useState(false);
+  const [headerActiveOnly, setHeaderActiveOnly] = useState(true);
 
   // 신규행 state
   const [headerNewRow, setHeaderNewRow] = useState<HeaderGridRow | null>(null);
@@ -67,6 +67,8 @@ export function useCodeHeaders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["codes", "headers"] });
+      // 공통코드 lookup 캐시도 함께 무효화 — 신규 헤더가 즉시 lookup 응답에 반영되도록.
+      queryClient.invalidateQueries({ queryKey: ["common-code"] });
       setHeaderNewRow(null);
       headerNewRowRef.current = { ...EMPTY_HEADER_FIELDS };
     },
@@ -80,6 +82,10 @@ export function useCodeHeaders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["codes", "headers"] });
+      // isActive 토글 등으로 헤더가 N→Y 전환되면 PageSizeSelect 등 lookup 소비처가
+      // 즉시 노출되어야 한다. ["common-code"] prefix 로 모든 공통코드 캐시 무효화 →
+      // 5분 staleTime 대기 없이 다음 컴포넌트 마운트 시 재페치.
+      queryClient.invalidateQueries({ queryKey: ["common-code"] });
     },
   });
 

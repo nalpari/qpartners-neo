@@ -23,7 +23,9 @@ export function MenusContents() {
   const [formState, setFormState] = useState<MenuFormState>(EMPTY_FORM);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeOnly, setActiveOnly] = useState(false);
+  // 코드/권한관리와 일관 — 진입 시 활성(Y) 항목만 표시. 비활성 메뉴 확인이
+  // 필요한 경우(409 충돌 원인 파악 등) 운영자가 체크박스를 해제해 노출.
+  const [activeOnly, setActiveOnly] = useState(true);
   // 정렬 순서 변경값은 ref 에 누적 — state 로 두면 입력 1회마다 부모 리렌더 →
   // MenusTables 의 columnDefs 참조 갱신 → AG Grid 가 셀을 rebuild → uncontrolled
   // <input defaultValue> 의 타이핑값이 DOM 에서 손실되어 다중 행 일괄 변경이 불가했음.
@@ -117,6 +119,11 @@ export function MenusContents() {
       if (variables.isLevel1) {
         setSelectedLevel1Id(null);
       }
+      // 삭제된 행이 사라지면서 selectedLevel1Id/editingId 변경이 동시에 일어나면
+      // AG Grid 의 row teardown 과 React cellRenderer 의 commit phase 가 같은
+      // 사이클에 충돌해 "removeChild ... not a child of this node" 가 재발한다.
+      // 그리드 자체를 key 변경으로 remount 시켜 두 측면 모두 새로 시작 → race 차단.
+      setSortRefreshVersion((v) => v + 1);
       await queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "削除されました。", confirmLabel: "確認" });
     },

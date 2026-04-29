@@ -242,6 +242,9 @@ export function Gnb() {
 
   // RBAC — GNB 메뉴 클릭 시 매트릭스 canRead 가 false 면 이동 차단 + alert.
   // 비로그인 상태는 기존 Link 동작(서버 가드가 /login 유도)을 그대로 사용.
+  //
+  // admin → 일반 이동 시 캐시 강제 무효화는 layout 의 <AdminTransitionRefresh /> 가
+  // pathname 변화를 감지해 모든 진입점에 일괄 적용 — 헤더 측은 RBAC 만 담당.
   const { has } = useMenuPermissionMap();
   const { openAlert } = useAlertStore();
   const handleGnbMenuClick = (e: React.MouseEvent<HTMLAnchorElement>, menuCode: string) => {

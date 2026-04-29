@@ -141,9 +141,14 @@ export function DataGrid<T>({
         suppressCellFocus
         suppressRowHoverHighlight={false}
         // 셀 텍스트 드래그 선택·복사 허용 (기본은 AG Grid range selection 때문에 막혀 있음)
-        // ensureDomOrder 는 드래그 선택 시 DOM 순서와 화면 순서 일치 보장 → 복사 결과가 올바르게 정렬됨
+        //
+        // ⚠️ ensureDomOrder 는 의도적으로 비활성화. AG Grid 35 + React 19 환경에서 행
+        // 삭제·rowData 교체 시 AG Grid 가 DOM 순서를 강제로 재배치하면서 React fiber
+        // 가 추적하던 cellRenderer 의 부모-자식 관계가 깨져 commit phase 에서
+        // "removeChild ... not a child of this node" NotFoundError 가 재발한다.
+        // 텍스트 선택 시 가상화된 행에서 복사 순서가 어긋날 수 있는 트레이드오프가
+        // 있으나, 본 프로젝트의 그리드는 행 수가 적어 가상화 영향이 미미함.
         enableCellTextSelection
-        ensureDomOrder
         headerHeight={57}
         rowHeight={57}
         overlayNoRowsTemplate={noRowsTemplate}

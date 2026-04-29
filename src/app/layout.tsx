@@ -7,6 +7,7 @@ import { Footer } from "@/components/layout/footer";
 import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
 import { AlertDialog } from "@/components/common/alert-dialog";
+import { AdminTransitionRefresh } from "@/components/common/admin-transition-refresh";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -47,6 +48,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <QueryProvider>
+          <AdminTransitionRefresh />
           <div className="wrap">
             <Gnb />
             <Location />

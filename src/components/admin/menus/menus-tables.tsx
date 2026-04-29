@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useCallback, useRef, useEffect } from "react";
-import type { ColDef, ICellRendererParams, GridApi, GridReadyEvent } from "ag-grid-community";
-import type { RowClassParams } from "ag-grid-community";
+import type { ColDef, ICellRendererParams, GridApi, GridReadyEvent, CellClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { MenuItem } from "./menus-types";
@@ -18,6 +17,7 @@ const centerCellStyle = {
 // --- AG Grid Context 타입 (as 캐스팅 1회로 집약) ---
 interface MenusGridContext {
   selectedLevel1Id?: string | null;
+  editingId?: string | null;
   onLevel1Click?: (id: string) => void;
   onLevel2Click?: (id: string) => void;
   onSortValueChange?: (id: string, v: number) => void;
@@ -25,6 +25,23 @@ interface MenusGridContext {
 
 function toCtx(context: unknown): MenusGridContext {
   return (context ?? {}) as MenusGridContext;
+}
+
+// cell 단위 하이라이트 — context 의 매칭 id 와 같으면 selected class 부여.
+// row 전체에 클래스를 주는 getRowClass + redrawRows 조합은 React 19 와 충돌하므로,
+// 모든 cell 에 같은 클래스를 부여해 행 전체처럼 보이게 한다 (CSS 는 background-color).
+function level1SelectedCellClass(params: CellClassParams<MenuItem>): string | undefined {
+  const ctx = toCtx(params.context);
+  return ctx.selectedLevel1Id && params.data?.id === ctx.selectedLevel1Id
+    ? "ag-cell-selected-menu"
+    : undefined;
+}
+
+function level2SelectedCellClass(params: CellClassParams<MenuItem>): string | undefined {
+  const ctx = toCtx(params.context);
+  return ctx.editingId && params.data?.id === ctx.editingId
+    ? "ag-cell-selected-menu"
+    : undefined;
 }
 
 // --- Cell Renderers (컴포넌트 바깥 정의 — AG Grid 리렌더링 최적화) ---
@@ -143,6 +160,7 @@ export function MenusTables({
       field: "menuName",
       flex: 2,
       cellRenderer: MenuNameRenderer,
+      cellClass: level1SelectedCellClass,
       headerClass: "ag-header-cell-center",
     },
     {
@@ -150,6 +168,7 @@ export function MenusTables({
       field: "isActive",
       flex: 0.6,
       cellRenderer: TextRenderer,
+      cellClass: level1SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
     },
@@ -158,6 +177,7 @@ export function MenusTables({
       field: "showInMobile",
       flex: 0.6,
       cellRenderer: TextRenderer,
+      cellClass: level1SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
     },
@@ -166,6 +186,7 @@ export function MenusTables({
       field: "showInTopNav",
       flex: 0.6,
       cellRenderer: TextRenderer,
+      cellClass: level1SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
     },
@@ -174,6 +195,7 @@ export function MenusTables({
       field: "sortOrder",
       flex: 0.6,
       cellRenderer: SortCellRenderer,
+      cellClass: level1SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: () => true,
@@ -186,6 +208,7 @@ export function MenusTables({
       field: "menuName",
       flex: 2,
       cellRenderer: Level2MenuNameRenderer,
+      cellClass: level2SelectedCellClass,
       headerClass: "ag-header-cell-center",
     },
     {
@@ -193,6 +216,7 @@ export function MenusTables({
       field: "isActive",
       flex: 0.6,
       cellRenderer: TextRenderer,
+      cellClass: level2SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
     },
@@ -201,6 +225,7 @@ export function MenusTables({
       field: "showInMobile",
       flex: 0.6,
       cellRenderer: TextRenderer,
+      cellClass: level2SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
     },
@@ -209,87 +234,38 @@ export function MenusTables({
       field: "sortOrder",
       flex: 0.6,
       cellRenderer: SortCellRenderer,
+      cellClass: level2SelectedCellClass,
       cellStyle: centerCellStyle,
       headerClass: "ag-header-cell-center",
       suppressKeyboardEvent: () => true,
     },
   ], []);
 
-  // --- Row Class (선택 하이라이트) ---
-
-  const getLevel1RowClass = useCallback((params: RowClassParams<MenuItem>) => {
-    if (params.data?.id === selectedLevel1Id) return "ag-row-selected-menu";
-    return undefined;
-  }, [selectedLevel1Id]);
-
-  // 2-Level 하이라이트 — 현재 폼에 바인딩된 자식(editingId)만 강조. editingId 가
-  // 1-Level 인 경우엔 level2 row id 와 매칭되지 않아 자연스럽게 하이라이트 없음.
-  const getLevel2RowClass = useCallback((params: RowClassParams<MenuItem>) => {
-    if (editingId && params.data?.id === editingId) return "ag-row-selected-menu";
-    return undefined;
-  }, [editingId]);
-
-  // AG Grid 의 getRowClass 는 행 생성 시점에 한 번만 평가되고 prop 변경 시 자동
-  // 재평가되지 않는다. selectedLevel1Id / editingId 가 바뀌어도 이전 선택 행의
-  // 하이라이트가 그대로 남는 현상을 redrawRows() 로 강제 재평가해 해소.
+  // --- 선택 하이라이트 갱신 ---
   //
-  // ⚠️ redrawRows() 는 row DOM 을 즉시 teardown→recreate 하는데, React cellRenderer
-  // (MenuNameRenderer 등) 가 같은 노드를 관리해 React 의 commit phase 와 충돌해
-  // "removeChild ... not a child of this node" 런타임 에러가 발생할 수 있다.
-  // queueMicrotask 로 React commit 직후 다음 마이크로태스크에서 호출해 회피.
-  // grid 가 unmount 된 시점이면 ref 가 유효해도 호출이 noop 이 되도록 in-flight 가드.
+  // cellClass 콜백은 행 생성 시점에 한 번만 평가되고 context 변경 만으로는 자동
+  // 재평가되지 않는다. selectedLevel1Id / editingId 가 바뀌면 refreshCells 로
+  // cell 단위 재평가만 트리거 — row destroy 가 일어나지 않아 React 19 commit phase
+  // 와 충돌하지 않는다 (홈 공지 패턴 참고).
   const level1GridApiRef = useRef<GridApi<MenuItem> | null>(null);
   const handleLevel1GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
     level1GridApiRef.current = event.api;
   }, []);
-  // 초기 마운트(selectedLevel1Id === null) 에는 빈 그리드에 redrawRows 가 호출되어
-  // noop 이지만 노이즈가 발생. 첫 변경(null → id) 부터 실행되도록 prev 추적 + 가드.
-  const prevLevel1HighlightIdRef = useRef<string | null>(selectedLevel1Id);
   useEffect(() => {
-    const prev = prevLevel1HighlightIdRef.current;
-    prevLevel1HighlightIdRef.current = selectedLevel1Id;
-    // 첫 마운트(prev === selectedLevel1Id) 시 스킵 — useEffect 는 mount 에도 실행됨.
-    if (prev === selectedLevel1Id) return;
-
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      const api = level1GridApiRef.current;
-      if (!api || api.isDestroyed()) return;
-      api.redrawRows();
-    });
-    return () => {
-      cancelled = true;
-    };
+    const api = level1GridApiRef.current;
+    if (!api || api.isDestroyed()) return;
+    api.refreshCells({ force: true });
   }, [selectedLevel1Id]);
 
   const level2GridApiRef = useRef<GridApi<MenuItem> | null>(null);
   const handleLevel2GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
     level2GridApiRef.current = event.api;
   }, []);
-  // Level2 redrawRows 게이팅:
-  //  - selectedLevel1Id 변경(다른 부모 클릭) → level2Data 자체가 새로 받아져 AG Grid 가
-  //    행을 자연 재생성. 이때 redrawRows 를 또 호출하면 React cellRenderer 의 commit 과
-  //    충돌해 "removeChild ..." 런타임 에러 재발.
-  //  - 같은 부모 내에서 자식 간 이동(editingId 만 변경, selectedLevel1Id 동일) 일 때만
-  //    rowData 가 그대로이므로 redrawRows 가 필요하다.
-  const prevSelectedLevel1IdRef = useRef(selectedLevel1Id);
   useEffect(() => {
-    const sameParent = prevSelectedLevel1IdRef.current === selectedLevel1Id;
-    prevSelectedLevel1IdRef.current = selectedLevel1Id;
-    if (!sameParent) return;
-
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      const api = level2GridApiRef.current;
-      if (!api || api.isDestroyed()) return;
-      api.redrawRows();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [editingId, selectedLevel1Id]);
+    const api = level2GridApiRef.current;
+    if (!api || api.isDestroyed()) return;
+    api.refreshCells({ force: true });
+  }, [editingId]);
 
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(
@@ -297,8 +273,8 @@ export function MenusTables({
     [selectedLevel1Id, onLevel1Click, onSortValueChange],
   );
   const level2Context = useMemo(
-    () => ({ onLevel2Click, onSortValueChange }),
-    [onLevel2Click, onSortValueChange],
+    () => ({ editingId, onLevel2Click, onSortValueChange }),
+    [editingId, onLevel2Click, onSortValueChange],
   );
 
   return (
@@ -341,7 +317,6 @@ export function MenusTables({
             columnDefs={level1Columns}
             rowData={level1Data}
             getRowId={(p) => p.data.id}
-            getRowClass={getLevel1RowClass}
             className="menus-grid"
             maxHeight={500}
             context={level1Context}
@@ -365,7 +340,6 @@ export function MenusTables({
             columnDefs={level2Columns}
             rowData={level2Data}
             getRowId={(p) => p.data.id}
-            getRowClass={getLevel2RowClass}
             className="menus-grid"
             maxHeight={500}
             context={level2Context}
