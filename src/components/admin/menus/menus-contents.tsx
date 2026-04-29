@@ -23,7 +23,7 @@ export function MenusContents() {
   const [formState, setFormState] = useState<MenuFormState>(EMPTY_FORM);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeOnly, setActiveOnly] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(true);
   // 정렬 순서 변경값은 ref 에 누적 — state 로 두면 입력 1회마다 부모 리렌더 →
   // MenusTables 의 columnDefs 참조 갱신 → AG Grid 가 셀을 rebuild → uncontrolled
   // <input defaultValue> 의 타이핑값이 DOM 에서 손실되어 다중 행 일괄 변경이 불가했음.

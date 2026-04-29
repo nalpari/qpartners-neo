@@ -32,7 +32,7 @@ interface UseCodeDetailsOptions {
 export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCodeDetailsOptions) {
   const queryClient = useQueryClient();
 
-  const [detailActiveOnly, setDetailActiveOnly] = useState(false);
+  const [detailActiveOnly, setDetailActiveOnly] = useState(true);
   const [detailNewRow, setDetailNewRow] = useState<DetailGridRow | null>(null);
   const detailNewRowRef = useRef<Record<string, string>>({ ...EMPTY_DETAIL_FIELDS });
 

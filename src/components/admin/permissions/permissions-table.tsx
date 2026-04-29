@@ -227,7 +227,7 @@ export function PermissionsTable() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
 
-  const [activeOnly, setActiveOnly] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(true);
   const [newRow, setNewRow] = useState(false);
   const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({
     code: "",

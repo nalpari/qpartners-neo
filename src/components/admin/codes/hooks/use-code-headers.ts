@@ -26,7 +26,7 @@ export function useCodeHeaders() {
   // 검색·필터 state
   const [searchKeyword, setSearchKeyword] = useState("");
   const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [headerActiveOnly, setHeaderActiveOnly] = useState(false);
+  const [headerActiveOnly, setHeaderActiveOnly] = useState(true);
 
   // 신규행 state
   const [headerNewRow, setHeaderNewRow] = useState<HeaderGridRow | null>(null);
