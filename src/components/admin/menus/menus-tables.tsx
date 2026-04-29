@@ -244,12 +244,22 @@ export function MenusTables({
   }, []);
   // 초기 마운트(selectedLevel1Id === null) 에는 빈 그리드에 redrawRows 가 호출되어
   // noop 이지만 노이즈가 발생. 첫 변경(null → id) 부터 실행되도록 prev 추적 + 가드.
+  //
+  // ⚠️ rowData(level1Data) reference 가 함께 변한 케이스(예: 1-level 메뉴 삭제 시
+  // selectedLevel1Id null 리셋 + level1Data 에서 삭제 행 제거) 에는 AG Grid 가 이미
+  // 행을 자연 재생성 중이라 redrawRows 가 cellRenderer commit 과 충돌해 "removeChild
+  // ... not a child of this node" 가 재발한다. data reference 변경 시 스킵.
   const prevLevel1HighlightIdRef = useRef<string | null>(selectedLevel1Id);
+  const prevLevel1DataRef = useRef(level1Data);
   useEffect(() => {
     const prev = prevLevel1HighlightIdRef.current;
     prevLevel1HighlightIdRef.current = selectedLevel1Id;
+    const prevData = prevLevel1DataRef.current;
+    prevLevel1DataRef.current = level1Data;
     // 첫 마운트(prev === selectedLevel1Id) 시 스킵 — useEffect 는 mount 에도 실행됨.
     if (prev === selectedLevel1Id) return;
+    // rowData 가 같이 변했으면 AG Grid 자연 재생성에 맡긴다 (DOM 충돌 회피).
+    if (prevData !== level1Data) return;
 
     let cancelled = false;
     queueMicrotask(() => {
@@ -261,7 +271,7 @@ export function MenusTables({
     return () => {
       cancelled = true;
     };
-  }, [selectedLevel1Id]);
+  }, [selectedLevel1Id, level1Data]);
 
   const level2GridApiRef = useRef<GridApi<MenuItem> | null>(null);
   const handleLevel2GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
@@ -273,11 +283,17 @@ export function MenusTables({
   //    충돌해 "removeChild ..." 런타임 에러 재발.
   //  - 같은 부모 내에서 자식 간 이동(editingId 만 변경, selectedLevel1Id 동일) 일 때만
   //    rowData 가 그대로이므로 redrawRows 가 필요하다.
+  //  - 추가: 같은 부모라도 자식 삭제로 level2Data reference 가 바뀐 케이스에는 AG Grid
+  //    가 이미 행을 재생성 중이므로 redrawRows 스킵 (cascade 삭제·자식 단독 삭제 둘 다 해당).
   const prevSelectedLevel1IdRef = useRef(selectedLevel1Id);
+  const prevLevel2DataRef = useRef(level2Data);
   useEffect(() => {
     const sameParent = prevSelectedLevel1IdRef.current === selectedLevel1Id;
     prevSelectedLevel1IdRef.current = selectedLevel1Id;
+    const prevData = prevLevel2DataRef.current;
+    prevLevel2DataRef.current = level2Data;
     if (!sameParent) return;
+    if (prevData !== level2Data) return;
 
     let cancelled = false;
     queueMicrotask(() => {
@@ -289,7 +305,7 @@ export function MenusTables({
     return () => {
       cancelled = true;
     };
-  }, [editingId, selectedLevel1Id]);
+  }, [editingId, selectedLevel1Id, level2Data]);
 
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(

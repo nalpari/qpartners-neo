@@ -117,6 +117,11 @@ export function MenusContents() {
       if (variables.isLevel1) {
         setSelectedLevel1Id(null);
       }
+      // 삭제된 행이 사라지면서 selectedLevel1Id/editingId 변경이 동시에 일어나면
+      // AG Grid 의 row teardown 과 React cellRenderer 의 commit phase 가 같은
+      // 사이클에 충돌해 "removeChild ... not a child of this node" 가 재발한다.
+      // 그리드 자체를 key 변경으로 remount 시켜 두 측면 모두 새로 시작 → race 차단.
+      setSortRefreshVersion((v) => v + 1);
       await queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "削除されました。", confirmLabel: "確認" });
     },
