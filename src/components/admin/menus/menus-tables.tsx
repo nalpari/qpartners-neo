@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { useMemo, useCallback, useRef, useEffect } from "react";
+import type { ColDef, ICellRendererParams, GridApi, GridReadyEvent } from "ag-grid-community";
 import type { RowClassParams } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
@@ -213,6 +213,17 @@ export function MenusTables({
     return undefined;
   }, [selectedLevel1Id]);
 
+  // AG Grid 의 getRowClass 는 행 생성 시점에 한 번만 평가되고 prop 변경 시 자동
+  // 재평가되지 않는다. selectedLevel1Id 가 바뀌어도 이전 선택 행의 하이라이트가
+  // 그대로 남는 현상을 redrawRows() 로 강제 재평가해 해소.
+  const level1GridApiRef = useRef<GridApi<MenuItem> | null>(null);
+  const handleLevel1GridReady = useCallback((event: GridReadyEvent<MenuItem>) => {
+    level1GridApiRef.current = event.api;
+  }, []);
+  useEffect(() => {
+    level1GridApiRef.current?.redrawRows();
+  }, [selectedLevel1Id]);
+
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(
     () => ({ selectedLevel1Id, onLevel1Click, onSortValueChange }),
@@ -258,6 +269,7 @@ export function MenusTables({
             className="menus-grid"
             maxHeight={500}
             context={level1Context}
+            onGridReady={handleLevel1GridReady}
           />
         </div>
 

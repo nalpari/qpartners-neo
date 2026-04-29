@@ -12,6 +12,7 @@ import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
 import type { MenuFormState } from "./menus-types";
 import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from "./menus-types";
+import type { MenuApiItem } from "./menus-types";
 
 export function MenusContents() {
   const { openAlert } = useAlertStore();
@@ -80,11 +81,16 @@ export function MenusContents() {
   // Plan R-05: PUT /api/menus/{id} — 메뉴 수정
   const updateMutation = useMutation({
     mutationFn: async ({ id, body }: { id: string; body: ReturnType<typeof toUpdateBody> }) => {
-      const res = await api.put(`/menus/${id}`, body);
-      return res.data;
+      const res = await api.put<{ data: MenuApiItem }>(`/menus/${id}`, body);
+      return res.data.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menus"] });
+    onSuccess: async (updatedMenu) => {
+      // 서버 확정 데이터로 폼 즉시 동기화 — menuTree 리페치 race 와 무관하게
+      // 같은 메뉴 재클릭 시 폼이 저장 전 값으로 회귀하는 현상 방지.
+      setFormState(toFormState(updatedMenu));
+      // alert 표시 전 리페치 완료를 보장 — 사용자가 alert 닫고 메뉴 클릭 시
+      // 항상 최신 menuTree 가 반영된 상태에서 handleLevel1Click 가 실행되도록.
+      await queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
