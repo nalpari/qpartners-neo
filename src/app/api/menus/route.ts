@@ -28,8 +28,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 요청자 role 의 canRead=true 메뉴만 필터 — 응답 range 를 매트릭스로 좁힌다.
+    // 관리 모드(activeOnly=false)에서는 비활성 메뉴도 포함해야 한다 — 비활성 메뉴를
+    // 숨기면 사용자는 이미 존재하는 비활성 menuCode 를 인지하지 못한 채 신규 등록을
+    // 시도해 409(Unique 충돌)를 받게 된다. 이때 화면 목록에는 보이지 않으니 원인 파악
+    // 불가. 관리 모드에선 isActive 필터를 제거해 모든 메뉴를 노출.
     const allowedPerms = await prisma.qpRoleMenuPermission.findMany({
-      where: { roleCode: user.role, canRead: true, menu: { isActive: true } },
+      where: {
+        roleCode: user.role,
+        canRead: true,
+        ...(activeOnly && { menu: { isActive: true } }),
+      },
       select: { menuCode: true },
     });
     const allowedSet = new Set(allowedPerms.map((p) => p.menuCode));
@@ -59,13 +67,20 @@ export async function GET(request: NextRequest) {
       orderBy: { sortOrder: "asc" },
     });
 
-    // 매트릭스에 없는 1-Level 메뉴는 통째로 제외, 2-Level 도 허용된 것만.
-    const filtered = menus
-      .filter((m) => allowedSet.has(m.menuCode))
-      .map((m) => ({
-        ...m,
-        children: m.children.filter((c) => allowedSet.has(c.menuCode)),
-      }));
+    // 네비게이션 모드(activeOnly=true): 매트릭스에 없는 1-Level 메뉴는 통째로 제외,
+    //   2-Level 도 허용된 것만. canRead 가 navigation 노출 권한이므로 적용.
+    // 관리 모드(activeOnly=false): ADM_MENU.read 게이트(위)만으로 검증 완료.
+    //   canRead 매트릭스는 navigation 가시성용이라 관리 화면에 적용하면 안 된다.
+    //   (적용 시 권한 매트릭스에 미등록된 메뉴가 화면에서 사라져, 사용자가 인지 못한
+    //    채 동일 menuCode 로 신규 등록 시 P2002 → 409 가 발생해 원인 파악 불가)
+    const filtered = activeOnly
+      ? menus
+          .filter((m) => allowedSet.has(m.menuCode))
+          .map((m) => ({
+            ...m,
+            children: m.children.filter((c) => allowedSet.has(c.menuCode)),
+          }))
+      : menus;
 
     return NextResponse.json({ data: filtered });
   } catch (error) {

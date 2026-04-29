@@ -122,13 +122,12 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    정책 (신규가입 유예 폐지, secAuthDt 단일 기준):
-  //      - 2FA 대상: 관리자 설정 secAuthYn !== "N" (Y/null/undefined 모두 대상)
-  //      - 비대상: pwdInitYn === "Y" (초기 비밀번호 상태, p.14 스펙) → 우선
+  //    정책 (secAuthDt 단일 기준 + 최초 인증 강제 우선):
+  //      - 최우선: secAuthDt 없음 → 무조건 필요 (한 번도 2FA 안 함, secAuthYn / pwdInitYn 무시)
+  //      - 비대상: pwdInitYn === "Y" (초기 비밀번호 상태, p.14 스펙)
   //      - 면제: secAuthYn === "N" (관리자 명시 해제)
   //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
   //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
-  //                   secAuthDt 없음 → 필요 (한 번도 2FA 안 함)
   //
   //    [공용 코드 정책]
   //      `SEC_AUTH_VALIDITY` 는 secAuthDt 재인증 주기 단일 용도로 사용한다.
@@ -147,9 +146,13 @@ export async function POST(request: NextRequest) {
     | "FAIL_CLOSED";
   let twoFactorReason: TwoFactorReason = "DISABLED_BY_ADMIN";
 
-  // 사양: "2단계 인증 대상 = 회원관리 데이터 중 2단계 인증 해제가 체크되지 않은 회원"
-  // → secAuthYn === "N" (해제 명시) 만 면제, "Y"/null/undefined 모두 대상.
-  if (qsp.data.pwdInitYn === "Y") {
+  // 0) 최우선 가드 — secAuthDt 가 없으면(한 번도 2FA 한 적 없음) 무조건 강제.
+  //    SUPER_ADMIN/ADMIN 포함 모든 권한이 최초 1회는 반드시 2FA 통과 후 secAuthDt 생성.
+  //    secAuthYn === "N" (관리자 면제) / pwdInitYn === "Y" (초기 비번) 보다 우선.
+  if (!qsp.data.secAuthDt) {
+    requireTwoFactor = true;
+    twoFactorReason = "FIRST_TIME_REQUIRED";
+  } else if (qsp.data.pwdInitYn === "Y") {
     twoFactorReason = "PWD_INIT_PRIORITY";
   } else if (qsp.data.secAuthYn !== "N") {
     // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
@@ -185,35 +188,29 @@ export async function POST(request: NextRequest) {
       const now = Date.now();
       const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-      // secAuthDt 단일 기준 — 신규가입 유예 폐지.
+      // 위 0번 분기에서 secAuthDt 가 truthy 임을 보장. 만료 판정만 수행.
       const secAuthDt = qsp.data.secAuthDt;
-      if (!secAuthDt) {
-        // 한 번도 2FA 안 함 → 필요
+      const authIso = parseQspDate(secAuthDt);
+      if (!authIso) {
+        // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
+        console.error(
+          "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
+          secAuthDt.length,
+        );
         requireTwoFactor = true;
-        twoFactorReason = "FIRST_TIME_REQUIRED";
+        twoFactorReason = "FAIL_CLOSED";
       } else {
-        const authIso = parseQspDate(secAuthDt);
-        if (!authIso) {
-          // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
+        const authMs = new Date(authIso).getTime();
+        if (Number.isNaN(authMs)) {
           console.error(
-            "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
+            "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
             secAuthDt.length,
           );
           requireTwoFactor = true;
           twoFactorReason = "FAIL_CLOSED";
         } else {
-          const authMs = new Date(authIso).getTime();
-          if (Number.isNaN(authMs)) {
-            console.error(
-              "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
-              secAuthDt.length,
-            );
-            requireTwoFactor = true;
-            twoFactorReason = "FAIL_CLOSED";
-          } else {
-            requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
-            twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
-          }
+          requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
+          twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
         }
       }
     }

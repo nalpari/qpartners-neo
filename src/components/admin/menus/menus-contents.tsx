@@ -2,7 +2,7 @@
 
 // Design Ref: §5.1 — 메인 컨테이너 (useQuery + useMutation 3개)
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
@@ -12,6 +12,7 @@ import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
 import type { MenuFormState } from "./menus-types";
 import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from "./menus-types";
+import type { MenuApiItem } from "./menus-types";
 
 export function MenusContents() {
   const { openAlert } = useAlertStore();
@@ -23,7 +24,15 @@ export function MenusContents() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeOnly, setActiveOnly] = useState(false);
-  const [sortValues, setSortValues] = useState<Record<string, number>>({});
+  // 정렬 순서 변경값은 ref 에 누적 — state 로 두면 입력 1회마다 부모 리렌더 →
+  // MenusTables 의 columnDefs 참조 갱신 → AG Grid 가 셀을 rebuild → uncontrolled
+  // <input defaultValue> 의 타이핑값이 DOM 에서 손실되어 다중 행 일괄 변경이 불가했음.
+  // ref 로 두면 타이핑은 부모 리렌더를 트리거하지 않으므로 모든 입력값이 보존된다.
+  const sortValuesRef = useRef<Record<string, number>>({});
+  // 정렬 저장 성공 시 증가 — input key 에 포함시켜 모든 sort input 을 강제 remount.
+  // 사용자가 친 값과 server 의 새 sortOrder 가 같은 경우 key={data.sortOrder} 만으로는
+  // remount 가 안 되어 typed 값이 DOM 에 남아 server 값과 불일치하는 표시 버그를 차단.
+  const [sortRefreshVersion, setSortRefreshVersion] = useState(0);
 
   // --- API 조회 ---
   // Plan R-01: GET /api/menus → useMenuTree 훅으로 공통화
@@ -72,11 +81,16 @@ export function MenusContents() {
   // Plan R-05: PUT /api/menus/{id} — 메뉴 수정
   const updateMutation = useMutation({
     mutationFn: async ({ id, body }: { id: string; body: ReturnType<typeof toUpdateBody> }) => {
-      const res = await api.put(`/menus/${id}`, body);
-      return res.data;
+      const res = await api.put<{ data: MenuApiItem }>(`/menus/${id}`, body);
+      return res.data.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["menus"] });
+    onSuccess: async (updatedMenu) => {
+      // 서버 확정 데이터로 폼 즉시 동기화 — menuTree 리페치 race 와 무관하게
+      // 같은 메뉴 재클릭 시 폼이 저장 전 값으로 회귀하는 현상 방지.
+      setFormState(toFormState(updatedMenu));
+      // alert 표시 전 리페치 완료를 보장 — 사용자가 alert 닫고 메뉴 클릭 시
+      // 항상 최신 menuTree 가 반영된 상태에서 handleLevel1Click 가 실행되도록.
+      await queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -89,6 +103,48 @@ export function MenusContents() {
     },
   });
 
+  // DELETE /api/menus/{id} — 메뉴 삭제 (하위 메뉴는 cascade 삭제)
+  //
+  // isLevel1 분기: 1-level(부모) 삭제 시에만 selectedLevel1Id 를 해제한다.
+  // 2-level(자식) 삭제 시에는 부모 선택을 유지해 사용자가 같은 부모의 다른 자식을
+  // 연속으로 관리할 수 있도록 함 — 부모 행 하이라이트 + 2-level 목록 컨텍스트 보존.
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id }: { id: string; isLevel1: boolean }) => {
+      await api.delete(`/menus/${id}`);
+    },
+    onSuccess: async (_data, variables) => {
+      handleNew();
+      if (variables.isLevel1) {
+        setSelectedLevel1Id(null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["menus"] });
+      openAlert({ type: "alert", message: "削除されました。", confirmLabel: "確認" });
+    },
+    onError: (error: unknown) => {
+      console.error("[DELETE /api/menus/:id] 메뉴 삭제 실패:", error);
+      if (isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 403) {
+          openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+          return;
+        }
+        if (status === 404) {
+          openAlert({ type: "alert", message: "メニューが見つかりません。画面を更新してください。", confirmLabel: "確認" });
+          return;
+        }
+        if (status === 409) {
+          openAlert({
+            type: "alert",
+            message: "孫メニューが存在するため削除できません。データ構造を確認してください。",
+            confirmLabel: "確認",
+          });
+          return;
+        }
+      }
+      openAlert({ type: "alert", message: "削除に失敗しました。", confirmLabel: "確認" });
+    },
+  });
+
   // Plan R-06: PUT /api/menus/sort — 정렬순서 일괄 저장
   const sortMutation = useMutation({
     mutationFn: async (items: { id: number; sortOrder: number }[]) => {
@@ -97,7 +153,9 @@ export function MenusContents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menus"] });
-      setSortValues({});
+      sortValuesRef.current = {};
+      // 모든 sort input 강제 remount → server 값으로 재동기화 (typed 값 잔존 방지)
+      setSortRefreshVersion((v) => v + 1);
       openAlert({ type: "alert", message: "整列が保存されました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -159,9 +217,9 @@ export function MenusContents() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Plan R-07: 정렬저장 — sortValues에 기록된 변경사항만 전송
+  // Plan R-07: 정렬저장 — sortValuesRef 에 기록된 변경사항만 전송
   const handleSortSave = () => {
-    const items = Object.entries(sortValues).map(([id, sortOrder]) => ({
+    const items = Object.entries(sortValuesRef.current).map(([id, sortOrder]) => ({
       id: Number(id),
       sortOrder,
     }));
@@ -170,9 +228,36 @@ export function MenusContents() {
     sortMutation.mutate(items);
   };
 
-  // Sort input 값 변경
+  // Sort input 값 변경 — ref 직접 업데이트 (리렌더 없음, 다중 행 입력값 보존)
   const handleSortValueChange = (id: string, value: number) => {
-    setSortValues((prev) => ({ ...prev, [id]: value }));
+    sortValuesRef.current[id] = value;
+  };
+
+  // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출.
+  // upperMenu 비어 있으면 1-level, 값 있으면 2-level (toFormState 가 parentId 를 매핑).
+  // 1-level 인데 자식이 있으면 cascade 삭제됨을 명시 — 사용자가 인지하고 진행하도록.
+  const handleDelete = () => {
+    if (!isEditing || !editingId) {
+      openAlert({
+        type: "alert",
+        message: "削除するメニューを選択してください。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
+    const targetName = formState.menuName || formState.menuCode;
+    const isLevel1 = formState.upperMenu === "";
+    const childCount = isLevel1
+      ? menuTree.find((m) => String(m.id) === editingId)?.children.length ?? 0
+      : 0;
+    const message = childCount > 0
+      ? `「${targetName}」と下位メニュー${childCount}件を削除しますか？`
+      : `「${targetName}」を削除しますか？`;
+    openAlert({
+      type: "confirm",
+      message,
+      onConfirm: () => deleteMutation.mutate({ id: editingId, isLevel1 }),
+    });
   };
 
   return (
@@ -198,14 +283,18 @@ export function MenusContents() {
             level2Data={level2Menus}
             selectedLevel1Id={selectedLevel1Id}
             selectedLevel1Name={selectedLevel1Name}
+            editingId={editingId}
             activeOnly={activeOnly}
             onActiveFilterChange={setActiveOnly}
             onLevel1Click={handleLevel1Click}
             onLevel2Click={handleLevel2Click}
             onSortSave={handleSortSave}
             onSortValueChange={handleSortValueChange}
-            sortValues={sortValues}
             isSortSaving={sortMutation.isPending}
+            sortRefreshVersion={sortRefreshVersion}
+            onDelete={handleDelete}
+            isDeleteEnabled={isEditing && editingId !== null}
+            isDeleting={deleteMutation.isPending}
           />
         </section>
       </div>

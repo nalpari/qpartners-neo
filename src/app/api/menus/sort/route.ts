@@ -77,11 +77,17 @@ export async function PUT(request: NextRequest) {
       requestedMap.set(item.id, { newSort: item.sortOrder, seq: index });
     });
 
-    // 삽입 정렬 방식 재번호 (그룹별 전체 형제 row 포함):
-    // 1) 그룹별 분리 (siblings = 요청 parentId 그룹들의 모든 row)
-    // 2) newSort asc (요청된 row 는 요청값, 미요청 row 는 현재 sortOrder 유지)
-    // 3) 동일값이면 이동 방향(위→앞 / 유지 / 아래→뒤) + 요청 row 우선 + 요청 배열 순서(stable)
-    // 4) 1..N 으로 재번호하여 변경 필요한 row 만 저장
+    // 그룹별 anchor + greedy 배치:
+    //  1) 요청 row 는 newSort 를 anchor 로 우선 점유 (1..N 으로 clamp).
+    //     동일 anchor 충돌 시: directionRank(위 이동 우선) → seq 순으로 다음 빈 슬롯 탐색.
+    //  2) 미요청 row 는 oldSort 순으로 남은 빈 슬롯을 채움 → 상대 순서 유지.
+    //
+    // 기존 알고리즘은 모든 row 를 newSort 로 함께 정렬해 1..N 으로 재번호했는데, 이 방식은
+    // 요청된 row 와 미요청 row 가 동일 newSort 에서 경쟁하면서 미요청 row 가 요청 row 의
+    // 다음 슬롯을 가로채 다른 요청 row 의 목표 위치를 침범하는 문제가 있었다.
+    //   예) A=1,B=2,C=3,D=4,E=5 에서 D→3, E→4 요청 시
+    //       기존: A=1,B=2,D=3,C=4,E=5 (E 변경 누락 — C 가 4 슬롯 가로챔)
+    //       신규: A=1,B=2,D=3,E=4,C=5 (요청 anchor 보존)
     type Entry = {
       id: number;
       newSort: number;
@@ -111,23 +117,53 @@ export async function PUT(request: NextRequest) {
 
     const updates: Array<{ id: number; sortOrder: number }> = [];
     for (const arr of groups.values()) {
-      arr.sort(
+      const N = arr.length;
+      if (N === 0) continue;
+
+      const requested = arr.filter((e) => e.requested);
+      const nonRequested = arr.filter((e) => !e.requested);
+
+      // 요청 row: newSort asc → directionRank asc → seq asc 로 anchor 우선순위 결정
+      requested.sort(
         (a, b) =>
           a.newSort - b.newSort ||
           directionRank(a) - directionRank(b) ||
-          // 동일 newSort/방향에서 요청된 row 가 미요청 row 보다 앞
-          (a.requested === b.requested ? 0 : a.requested ? -1 : 1) ||
-          // 요청된 row 끼리는 요청 배열 순서(seq asc), 미요청 row 끼리는 oldSort asc
-          (a.requested && b.requested
-            ? a.seq - b.seq
-            : a.oldSort - b.oldSort),
+          a.seq - b.seq,
       );
-      arr.forEach((e, idx) => {
-        const nextOrder = idx + 1;
-        if (nextOrder !== e.oldSort) {
-          updates.push({ id: e.id, sortOrder: nextOrder });
+      // 미요청 row: oldSort 순으로 남은 슬롯에 채울 순서
+      nonRequested.sort((a, b) => a.oldSort - b.oldSort);
+
+      // 1-indexed 슬롯 (placed[0] 미사용)
+      const placed: (Entry | null)[] = new Array(N + 1).fill(null);
+
+      const findNextEmpty = (from: number): number => {
+        for (let p = from; p <= N; p++) if (!placed[p]) return p;
+        for (let p = 1; p < from; p++) if (!placed[p]) return p;
+        return -1;
+      };
+
+      // 요청 row anchor 배치
+      for (const e of requested) {
+        const target = Math.max(1, Math.min(N, e.newSort));
+        const slot = placed[target] ? findNextEmpty(target + 1) : target;
+        if (slot >= 1) placed[slot] = e;
+      }
+
+      // 미요청 row 는 빈 슬롯에 oldSort 순으로 채움
+      let nrIdx = 0;
+      for (let pos = 1; pos <= N; pos++) {
+        if (placed[pos]) continue;
+        if (nrIdx < nonRequested.length) {
+          placed[pos] = nonRequested[nrIdx++];
         }
-      });
+      }
+
+      for (let pos = 1; pos <= N; pos++) {
+        const e = placed[pos];
+        if (e && pos !== e.oldSort) {
+          updates.push({ id: e.id, sortOrder: pos });
+        }
+      }
     }
 
     // 변경이 필요한 항목만 트랜잭션 업데이트

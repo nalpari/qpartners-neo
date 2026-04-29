@@ -7,8 +7,8 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { DetailGridRow } from "./codes-types";
 
-// 편집 불가 필드 — 첫번째 컬럼(headerCode) + 使用可否(isActive)
-const NON_EDITABLE_FIELDS = new Set(["headerCode", "isActive"]);
+// 편집 불가 필드 — headerCode·code(생성 후 불변, 신규행 입력만 허용) + 使用可否(isActive)
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "code", "isActive"]);
 
 const centerCellStyle = {
   display: "flex" as const,
