@@ -18,6 +18,15 @@ const centerCellStyle = {
   justifyContent: "center" as const,
 };
 
+// 使用可否 셀 전용 스타일 — native <select> 가 셀 폭을 거의 가득 사용하면서
+// 우측 화살표 아이콘(svg 24px + right-2=8px) 과 텍스트 사이 최소 여백 확보용 6px.
+// 편집 input 의 4px 와 의도적으로 다름(편집 input 은 border 까지 포함, select 는 absolute 화살표).
+const ACTIVE_CELL_STYLE = {
+  ...centerCellStyle,
+  paddingLeft: "6px",
+  paddingRight: "6px",
+};
+
 /**
  * 편집 중(신규행 / editingField 일치) 셀의 수평 패딩을 축소해 input 이 컬럼 폭을 거의
  * 가득 사용하되 셀 경계와 최소 여백(4px)을 유지하도록 한다. 테마 기본값
@@ -248,7 +257,7 @@ export function CodesDetailTable({
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("sortOrder"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "使用可否", field: "isActive", flex: 0.8, cellRenderer: ActiveSelectRendererFn, cellStyle: { ...centerCellStyle, paddingLeft: "6px", paddingRight: "6px" }, headerClass: "ag-header-cell-center" },
+    { headerName: "使用可否", field: "isActive", flex: 0.8, cellRenderer: ActiveSelectRendererFn, cellStyle: ACTIVE_CELL_STYLE, headerClass: "ag-header-cell-center" },
   ], []);
 
   const getRowClass = useCallback((params: RowClassParams<DetailGridRow>) => {
@@ -277,7 +286,7 @@ export function CodesDetailTable({
   }, [onCellEditStart]);
 
   return (
-    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
+    <div className="flex flex-col w-[1440px] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">Code Detail</h2>

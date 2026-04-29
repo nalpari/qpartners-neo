@@ -23,6 +23,8 @@ export function MenusContents() {
   const [formState, setFormState] = useState<MenuFormState>(EMPTY_FORM);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 코드/권한관리와 일관 — 진입 시 활성(Y) 항목만 표시. 비활성 메뉴 확인이
+  // 필요한 경우(409 충돌 원인 파악 등) 운영자가 체크박스를 해제해 노출.
   const [activeOnly, setActiveOnly] = useState(true);
   // 정렬 순서 변경값은 ref 에 누적 — state 로 두면 입력 1회마다 부모 리렌더 →
   // MenusTables 의 columnDefs 참조 갱신 → AG Grid 가 셀을 rebuild → uncontrolled
