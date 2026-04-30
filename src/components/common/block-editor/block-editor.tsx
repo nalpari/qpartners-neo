@@ -66,7 +66,7 @@ export function BlockEditor({
   return (
     <div
       aria-label={ariaLabel}
-      className="w-full border border-[#EBEBEB] rounded-[6px] bg-white transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]"
+      className="w-full min-h-[150px] border border-[#EBEBEB] rounded-[6px] bg-white transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]"
     >
       <BlockNoteView
         editor={editor}

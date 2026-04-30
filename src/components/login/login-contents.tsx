@@ -78,7 +78,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
       const requirePersonalInfo = "requirePersonalInfo" in userData && userData.requirePersonalInfo === true;
 
       if (requirePersonalInfo) {
-        // 회원정보 설정 필요: pwdInitYn === "Y" 또는 STORE + email 없음
+        // 회원정보 설정 필요: STORE + email 없음 등 서버 판정
         openPopup("personal-info", {
           currentEmail: userData.email,
           userId: userData.userId,

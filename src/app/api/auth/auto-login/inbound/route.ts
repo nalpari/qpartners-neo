@@ -210,13 +210,6 @@ export async function GET(request: NextRequest) {
     // 8. LoginUser 페이로드 구성
     //    - twoFactorVerified: ADMIN은 false(2FA 강제) — cipher replay 방어 + 고권한 보호
     //      그 외(STORE/SEKO/GENERAL)는 true — 외부 3사 SSO 경유 인증이라 2FA 재요구 시 UX 파괴
-    //    - pwdInitYn: userDetail 은 z.string().nullable() 로 수신되므로 "Y"/"N" 만 통과시키고 그 외는 null
-    const pwdInitYn: "Y" | "N" | null = detail.pwdInitYn === "Y"
-      ? "Y"
-      : detail.pwdInitYn === "N"
-        ? "N"
-        : null;
-
     const user: LoginUser = {
       userId: detail.userId,
       userNm: detail.userNm,
@@ -230,7 +223,6 @@ export async function GET(request: NextRequest) {
       statCd: detail.statCd,
       authRole,
       twoFactorVerified: authRole !== "ADMIN",
-      pwdInitYn,
       telNo: detail.compTelNo ?? null,
     };
 
