@@ -4,7 +4,6 @@ import { z } from "zod";
 
 import { resolveAuthRole } from "@/lib/auth";
 import { decryptAutoLogin } from "@/lib/auto-login-crypto";
-import { consumeCipher } from "@/lib/cipher-store";
 import { SITE_DEFAULTS } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
 import { COOKIE_NAME, signToken } from "@/lib/jwt";
@@ -17,7 +16,8 @@ import { userTpSchema } from "@/lib/schemas/common";
  * 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
  *
  * 흐름 (Q.Partners-neo 내부 완결, QSP 로그인 API 미경유):
- *   1. 외부 3사가 자체 AES-256-CBC 암호화로 cipher 생성 (userId 단독)
+ *   1. 외부 3사가 자체 AES-128-CBC 암호화로 cipher 생성 (userId 단독, 결정적 IV `YYYYMMDD_autoL!!`)
+ *      ※ 사양 상세는 `auto-login-crypto.ts` 또는 `docs/auto-login-inbound-guide.md` 참조.
  *   2. 사용자를 이 URL 로 리다이렉트: `?autoLoginParam1=<cipher>&userTp=<TYPE>`
  *   3. 본 핸들러가 cipher 복호화 → userId 획득 (cipher 유효 = 공유 키를 가진 신뢰된 3사 발급 증명)
  *   4. QSP userDetail (조회 전용) 로 사용자 정보·권한(authCd, storeLvl) 확보
@@ -34,12 +34,17 @@ import { userTpSchema } from "@/lib/schemas/common";
  *     그 외(STORE/SEKO/GENERAL)는 2FA 스킵 — 외부 3사 SSO 경유 인증이라 재요구 시 UX 파괴.
  *
  * 보안 방어 계층:
- *   - Cipher replay 방어: SHA-256(cipher) 해시로 1회용 소진 추적, 동일 cipher 재사용 차단 (25h TTL).
  *   - Rate Limit: IP 기반 20/분, IP 식별 불가 시 즉시 거부 (fail-closed). QSP DDoS 대행·AES 키 프로빙 차단.
  *   - Open Redirect 방어: request.url 대신 SITE_URL/SITE_DEFAULTS.url 을 base 로 사용 (Host 헤더 조작 무효화).
  *   - statCd 검증: 삭제("D")/탈퇴("R") 계정 자동로그인 차단.
  *   - authRole fail-closed: DB 조회 실패 시 ADMIN 경로는 거부, STORE 는 최소권한(2ND_STORE) 강제.
  *   - 리다이렉트 302: 307(메서드 보존·캐시 가능) 대신 302 로 SSO 폴백 의도 명확화.
+ *
+ * Cipher replay 정책 (2026-04-30 결정):
+ *   - inbound 측 1회용 소진 차단을 **제거** — outbound 받는 측 (외부 3사) 와 동일 정책으로 통일.
+ *   - 결정적 IV 사양상 같은 사용자·같은 날 cipher 가 동일하게 발생 → 정상 사용자도 차단되는 UX 부작용.
+ *   - 받아들인 위험: cipher 탈취 시 24h 내 재사용 가능 (외부 3사 inbound 도 동일 위험을 안고 있음).
+ *   - 대응: 외부 3사 측 cipher 노출 표면 (브라우저 히스토리·Referer·로그) 의 표준 보호에 의존.
  */
 
 const inboundQuerySchema = z.object({
@@ -133,16 +138,7 @@ export async function GET(request: NextRequest) {
       return failRedirect("user_id_invalid_format");
     }
 
-    // 3. Cipher replay 방어 — 복호화 성공 후 소진 등록 (1회용).
-    //    복호화 실패 cipher는 store에 적재하지 않아 무효 cipher 대량 전송으로 인한 store 오염 방지.
-    //    Rate Limit(20/분)이 AES 프로빙을 1차 차단하므로, 복호화 후 소진이 안전.
-    //    SHA-256(cipher) 해시로 저장하므로 원본 cipher 메모리 노출 없음.
-    if (!consumeCipher(autoLoginParam1)) {
-      console.warn(LOG, "Cipher replay 감지 — 이미 사용된 cipher:", { userTp });
-      return failRedirect("cipher_replay_detected");
-    }
-
-    // 4. QSP userDetail (조회 전용) — pwd 없이 메타데이터만 조회
+    // 3. QSP userDetail (조회 전용) — pwd 없이 메타데이터만 조회
     //    4번째 인수(로그용 userId) 는 생략 — qsp-member 내부에서 rawId 를 maskEmail 로 이미 마스킹하므로
     //    평문 userId 중복 전달은 PII 위험만 증가시킴.
     const userDetailResult = await fetchQspUserDetail(trimmedUserId, userTp, LOG);
@@ -151,7 +147,7 @@ export async function GET(request: NextRequest) {
     }
     const detail = userDetailResult.detail;
 
-    // 4-1. userTp 교차 검증 — cipher에는 userId만 포함되고 userTp는 평문 쿼리.
+    // 3-1. userTp 교차 검증 — cipher에는 userId만 포함되고 userTp는 평문 쿼리.
     //    공격자가 userTp를 변조하면 다른 계정 유형으로 QSP 조회 경로가 전환됨.
     //    QSP 응답의 userTp와 쿼리 파라미터 userTp가 일치하는지 검증.
     if (!detail.userTp || detail.userTp !== userTp) {
@@ -162,14 +158,14 @@ export async function GET(request: NextRequest) {
       return failRedirect("user_tp_mismatch");
     }
 
-    // 5. 계정 상태 검증 — statCd "A"(active) 만 자동로그인 허용.
+    // 4. 계정 상태 검증 — statCd "A"(active) 만 자동로그인 허용.
     //    "D"(deleted)/"R"(withdrawn) 계정은 비밀번호 없는 경로에서 특히 위험 — 거부.
     if (detail.statCd !== "A") {
       console.warn(LOG, "비활성 계정 자동로그인 거부:", { statCd: detail.statCd, userTp });
       return failRedirect("account_inactive");
     }
 
-    // 6. authRole 결정 — /api/auth/login 과 동일 규칙 (DB 우선, 실패 시 fail-closed 폴백)
+    // 5. authRole 결정 — /api/auth/login 과 동일 규칙 (DB 우선, 실패 시 fail-closed 폴백)
     //    catch 폴백 원칙:
     //      - ADMIN: DB 조회 실패 시 SUPER_ADMIN/ADMIN 구분 불가 → 자동로그인 거부 (최소 권한 원칙, fail-closed)
     //      - STORE: 항상 "2ND_STORE" (storeLvl 반영 생략, resolveAuthRole 의 "불명 → 2ND_STORE" 와 일치)
@@ -194,7 +190,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. 고권한 계정 자동로그인 정책 — SUPER_ADMIN 거부, ADMIN 은 감사 로그 남기고 허용.
+    // 6. 고권한 계정 자동로그인 정책 — SUPER_ADMIN 거부, ADMIN 은 감사 로그 남기고 허용.
     if (authRole === "SUPER_ADMIN") {
       console.warn(LOG, "SUPER_ADMIN 자동로그인 거부 — 일반 로그인 경로 사용 필요:", { userTp });
       return failRedirect("super_admin_auto_login_denied");
@@ -207,8 +203,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 8. LoginUser 페이로드 구성
-    //    - twoFactorVerified: ADMIN은 false(2FA 강제) — cipher replay 방어 + 고권한 보호
+    // 7. LoginUser 페이로드 구성
+    //    - twoFactorVerified: ADMIN은 false(2FA 강제) — cipher 24h 재사용 가능성에 대한 고권한 보호
     //      그 외(STORE/SEKO/GENERAL)는 true — 외부 3사 SSO 경유 인증이라 2FA 재요구 시 UX 파괴
     const user: LoginUser = {
       userId: detail.userId,
@@ -226,7 +222,7 @@ export async function GET(request: NextRequest) {
       telNo: detail.compTelNo ?? null,
     };
 
-    // 9. JWT 서명
+    // 8. JWT 서명
     //    - ConfigError(JWT_SECRET 미설정) 는 redirect 대신 500 — 운영자가 설정 누락을 즉시 인지해야 함
     //      (redirect 폴백으로 흡수하면 "사용자 자동로그인이 그냥 실패" 로만 보고되어 추적이 늦어짐)
     let token: string;
@@ -244,7 +240,7 @@ export async function GET(request: NextRequest) {
       return failRedirect("jwt_sign_failed");
     }
 
-    // 10. 홈 리다이렉트 + httpOnly 쿠키 (일반 로그인과 동일 속성)
+    // 9. 홈 리다이렉트 + httpOnly 쿠키 (일반 로그인과 동일 속성)
     //    base 는 BASE_URL (Host 헤더 조작 방어). 302 로 명시.
     const homeUrl = new URL("/", BASE_URL);
     const response = NextResponse.redirect(homeUrl.toString(), { status: 302 });
