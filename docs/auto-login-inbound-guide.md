@@ -42,6 +42,26 @@ aesKey = UTF-8(AUTO_LOGIN_INBOUND_AES_KEY)   // 정확히 16 byte
 - **SHA-256 해싱·날짜 결합 없이** env 값을 그대로 raw key 로 사용한다.
 - 길이가 16 byte 가 아니면 Q.Partners-neo 서버가 부팅 / 첫 요청 단계에서 즉시 거부한다.
 
+### 운영 키 생성 가이드
+
+raw 16 byte 를 직접 키로 사용하므로 (SHA-256 KDF 가 없음), **저엔트로피 시크릿은 사전 사전(dictionary) / 무차별 대입 공격에 취약**합니다. 운영 키는 반드시 OS 의 CSPRNG(`/dev/urandom`) 에서 직접 추출해 생성합니다.
+
+| 방식 | 명령 | 출력 길이 | 비고 |
+|---|---|---|---|
+| **권장** — hex 16자 | `openssl rand -hex 8` | 16 byte UTF-8 (16자 hex `[0-9a-f]`) | 모든 환경 호환, copy-paste 안전 |
+| 대안 — base64 12자 | `openssl rand -base64 9 \| head -c 12` | 12 byte UTF-8 ❌ | **사용 금지** — 12 byte 는 길이 검증에서 거부됨 |
+| 대안 — Node.js | `node -e "console.log(require('crypto').randomBytes(8).toString('hex'))"` | 16 byte UTF-8 | 권장과 동일한 출력 형식 |
+
+**금지 패턴**:
+- 사람이 만든 비밀번호류 (예: `MyCompany2026!!`) — 사전 공격 가능
+- 외부 가이드 문서·검증 스크립트의 샘플 키 — 운영 코드의 `timingSafeEqual` 가드로 즉시 거부됨
+- 길이 16 이 아닌 값 — 부팅 / 첫 요청 단계에서 ConfigError 로 거부됨
+
+**키 교체 절차** (외부 3사 협의 필요):
+1. 위 명령으로 새 키 생성 → 운영팀이 보안 채널로 외부 3사에 사전 공유.
+2. 사전 공지된 시각에 외부 3사 + Q.Partners-neo 양쪽 `AUTO_LOGIN_INBOUND_AES_KEY` env 값 교체.
+3. 교체 시점 직전에 발급된 cipher 는 자정 경계 fallback (§2 IV) 으로 24h 내 자동 흡수되지 않음 — 키 자체가 바뀌면 전일 IV 시도도 실패. 짧은 다운타임 발생 가능성을 운영팀이 사전 공지.
+
 ### IV 사용 방식
 
 ```
@@ -187,6 +207,14 @@ public static String encryptAutoLoginUserId(String userId, String autoLoginInbou
 | `201T01` | `20260424` | `20260424_autoL!!` | `GpvgC+3aY/fPBItoF6+Cdg==` |
 
 > 위 샘플은 키 `jpqcellQ123456!!` (16 byte 자바 원본 검증용 키) 기준이며, 실제 운영 키는 별도 협의된 값을 사용한다. 자체 구현 검증 시 위 키·IV·평문 조합으로 동일 cipher 가 나오는지 확인하면 알고리즘 정합성을 빠르게 검증할 수 있다.
+>
+> Q.Partners-neo 동봉 검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`)는 git 트리에 샘플 키를 박지 않고 **`VERIFY_SAMPLE_KEY` env 로 주입**받는다. 위 byte-level 일치를 재현하려면 다음과 같이 실행한다.
+>
+> ```bash
+> VERIFY_SAMPLE_KEY="jpqcellQ123456!!" node scripts/verify-auto-login-inbound-crypto.mjs
+> ```
+>
+> env 미설정 시 (A)/(B) 는 SKIP 되고 (C)/(D)/(E) 만 임시 랜덤 키로 실행된다 — 알고리즘 로직만 검증한다.
 
 ---
 
