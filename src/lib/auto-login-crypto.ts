@@ -51,11 +51,17 @@ function formatKstDate(date: Date): string {
   return `${y}${m}${d}`;
 }
 
-let _cachedKey: Buffer | null = null;
-
+/**
+ * 매 호출 시 env 에서 키를 읽어들인다 (모듈 레벨 캐싱 X).
+ *
+ * 캐싱하지 않는 이유:
+ *   - 키 침해(compromise) 시 프로세스 재시작 없이 교체 가능해야 함 (런타임 키 핫 로테이션 지원).
+ *   - Docker rolling restart 환경에서 일부 인스턴스만 구 키 보유 상태로 트래픽을 받아
+ *     간헐적 복호화 실패가 발생하는 시나리오 회피.
+ *   - 인바운드 호출 빈도(외부 3사 SSO 진입)는 분당 수십 건 수준이라
+ *     매 호출 시 process.env 읽기 + 16 byte Buffer 생성 비용은 무시 가능.
+ */
 function getInboundAesKey(): Buffer {
-  if (_cachedKey) return _cachedKey;
-
   const raw = process.env.AUTO_LOGIN_INBOUND_AES_KEY;
   if (!raw) {
     throw new ConfigError(
@@ -71,7 +77,6 @@ function getInboundAesKey(): Buffer {
       "AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — 16 byte 필요",
     );
   }
-  _cachedKey = buf;
   return buf;
 }
 
@@ -113,10 +118,11 @@ export function decryptAutoLogin(cipherText: string): string {
     return decryptWithIv(payload, buildIv(new Date()), key);
   } catch (todayError: unknown) {
     // 자정 직후(KST) 전일 IV 로 암호화된 cipher 유입은 정상 경로지만, 포맷 오류·키 교체 실수·
-    // 패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름. 프로덕션에서도 컨텍스트 유지.
+    // 패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름.
+    // errorMessage 는 로깅하지 않음 — OpenSSL 에러 메시지에 padding 정보가 포함되면
+    // 내부 로그 접근자에게 패딩 오라클 단서가 노출됨. errorName 만 남겨 분기 구분.
     console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 재시도:", {
       errorName: todayError instanceof Error ? todayError.name : typeof todayError,
-      errorMessage: todayError instanceof Error ? todayError.message : String(todayError),
     });
     const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
@@ -124,11 +130,8 @@ export function decryptAutoLogin(cipherText: string): string {
     } catch (yesterdayError: unknown) {
       console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패:", {
         todayErrorName: todayError instanceof Error ? todayError.name : typeof todayError,
-        todayErrorMessage: todayError instanceof Error ? todayError.message : String(todayError),
         yesterdayErrorName:
           yesterdayError instanceof Error ? yesterdayError.name : typeof yesterdayError,
-        yesterdayErrorMessage:
-          yesterdayError instanceof Error ? yesterdayError.message : String(yesterdayError),
       });
       throw yesterdayError;
     }

@@ -20,7 +20,21 @@ import crypto from "node:crypto";
 
 const ALGORITHM = "aes-128-cbc";
 const IV_SUFFIX = "_autoL!!"; // outbound 와 동일 (2026-04-30 Q2 결정)
-const TEST_KEY = "jpqcellQ123456!!"; // outbound 메모리 §3 의 자바 원본 샘플 키 (16 byte)
+
+/**
+ * ⚠️ 검증 전용 키 — 운영 키와 절대 동일하면 안 된다.
+ *
+ * 이 키 `jpqcellQ123456!!` 는 (A)/(B) 자바 원본 샘플 cipher 와 byte-level 일치를 검증하기 위한
+ * **하드코딩된 샘플 키**다. 실제 운영 환경은 `AUTO_LOGIN_INBOUND_AES_KEY` env 의
+ * 외부 3사와 합의된 별도 16 byte 값으로 동작한다.
+ *
+ * 만약 운영 환경에 이 값이 그대로 설정되면 외부 3사 가이드 문서에 노출된 샘플 키로
+ * cipher 가 발급/복호되어 자동로그인 인증이 무력화된다 — 즉 .env 검사 시 이 값과
+ * 일치하면 즉시 교체할 것.
+ *
+ * 본 스크립트는 검증 목적이므로 키를 고정한다 (env 주입 시 (A)/(B) 기대 cipher 가 어긋나 무의미).
+ */
+const JAVA_SAMPLE_VERIFY_KEY = "jpqcellQ123456!!";
 
 function buildIv(yyyymmdd) {
   const iv = `${yyyymmdd}${IV_SUFFIX}`;
@@ -51,7 +65,7 @@ const results = [];
 
 // (A) 자바 원본 샘플
 {
-  const got = encrypt("T01", "20260424", TEST_KEY);
+  const got = encrypt("T01", "20260424", JAVA_SAMPLE_VERIFY_KEY);
   const expected = "pQE3A9NO+KCt6q2hD/Bhzw==";
   results.push({
     case: "A. 자바 샘플 (T01, 20260424_autoL!!)",
@@ -63,7 +77,7 @@ const results = [];
 
 // (B) Q.Musubi 샘플
 {
-  const got = encrypt("201T01", "20260424", TEST_KEY);
+  const got = encrypt("201T01", "20260424", JAVA_SAMPLE_VERIFY_KEY);
   const expected = "GpvgC+3aY/fPBItoF6+Cdg==";
   results.push({
     case: "B. Q.Musubi 샘플 (201T01, 20260424_autoL!!)",
@@ -77,8 +91,8 @@ const results = [];
 {
   const userId = "1301011";
   const today = "20260430";
-  const cipher = encrypt(userId, today, TEST_KEY);
-  const restored = decrypt(cipher, today, TEST_KEY);
+  const cipher = encrypt(userId, today, JAVA_SAMPLE_VERIFY_KEY);
+  const restored = decrypt(cipher, today, JAVA_SAMPLE_VERIFY_KEY);
   results.push({
     case: "C. round-trip (1301011, 20260430)",
     expected: userId,
@@ -91,8 +105,8 @@ const results = [];
 {
   const userId = "GENERAL_USER";
   const yesterday = "20260429";
-  const cipher = encrypt(userId, yesterday, TEST_KEY);
-  const restored = decrypt(cipher, yesterday, TEST_KEY);
+  const cipher = encrypt(userId, yesterday, JAVA_SAMPLE_VERIFY_KEY);
+  const restored = decrypt(cipher, yesterday, JAVA_SAMPLE_VERIFY_KEY);
   results.push({
     case: "D. 자정 경계 fallback (GENERAL_USER, 20260429)",
     expected: userId,
@@ -104,7 +118,7 @@ const results = [];
 // (E) 음성 검증 — 다른 키는 복호 실패해야 함 (격리 검증)
 {
   const userId = "T01";
-  const cipher = encrypt(userId, "20260430", TEST_KEY);
+  const cipher = encrypt(userId, "20260430", JAVA_SAMPLE_VERIFY_KEY);
   const wrongKey = "differentKey123!"; // 16 byte
   let failed = false;
   try {

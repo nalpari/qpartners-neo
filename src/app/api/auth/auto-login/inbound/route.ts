@@ -60,6 +60,12 @@ const BASE_URL = process.env.SITE_URL ?? SITE_DEFAULTS.url;
 
 // Rate Limit — AES 복호화·QSP 외부 호출·JWT 서명은 모두 고비용이라 무제한 호출 시 QSP DDoS 대행,
 // AES 키 프로빙 벡터가 됨. IP 식별 불가 시 즉시 거부 (fail-closed).
+//
+// 한계(인지 사항): 인메모리 카운터(`@/lib/rate-limit`) — 다중 워커/다중 인스턴스 환경에서는
+// 워커 별로 독립 카운터가 작동하므로 실효 한도가 `20 × N(워커 수)` 로 증가한다.
+// 정확한 글로벌 레이트 제한이 필요하면 (1) 인프라 레벨(ALB/WAF) 보완 또는
+// (2) Redis 기반 공유 카운터로 전환을 검토. 현재 시점에는 기능 자체보다 비용 폭주 차단·
+// 키 프로빙 둔화가 1차 목적이라 인메모리 한계를 받아들임.
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_IP_MAX = 20;
 
@@ -113,7 +119,7 @@ export async function GET(request: NextRequest) {
     try {
       userId = decryptAutoLogin(autoLoginParam1);
     } catch (error: unknown) {
-      // 설정 에러(AUTO_LOGIN_AES_KEY 미설정 등) 는 redirect 대신 500 — 운영자 즉시 인지 필요
+      // 설정 에러(AUTO_LOGIN_INBOUND_AES_KEY 미설정·16 byte 길이 불일치 등) 는 redirect 대신 500 — 운영자 즉시 인지 필요
       if (error instanceof ConfigError) {
         console.error(LOG, "설정 에러:", error.message);
         return NextResponse.json(
