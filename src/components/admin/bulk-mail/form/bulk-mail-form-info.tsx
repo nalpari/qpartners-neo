@@ -27,9 +27,9 @@ interface BulkMailFormInfoProps {
   sentAt: string;
 }
 
-/** 등록자 표시: 이름(ID) 형식. 이름 없으면 ID만 표시 */
+/** 등록자 표시: 이름(ID) 형식. 이름 없으면 ID만, 둘 다 없으면 "—" */
 function formatRegistrant(createdBy: string, createdByName: string | null): string {
-  if (!createdBy) return "";
+  if (!createdBy) return "—";
   if (createdByName) return `${createdByName}(${createdBy})`;
   return createdBy;
 }

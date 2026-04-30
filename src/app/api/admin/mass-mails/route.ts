@@ -347,10 +347,13 @@ export async function GET(request: NextRequest) {
       where[targetField] = true;
     }
 
-    // 登録者 검색 (name → createdByName, id → userId)
+    // 登録者 검색 (name → createdByName OR senderName fallback, id → userId)
     if (authorQuery && authorSearchType) {
       if (authorSearchType === "name") {
-        where.createdByName = { contains: authorQuery };
+        where.OR = [
+          { createdByName: { contains: authorQuery } },
+          { createdByName: null, senderName: { contains: authorQuery } },
+        ];
       } else {
         where.userId = { contains: authorQuery };
       }
