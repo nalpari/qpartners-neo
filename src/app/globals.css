@@ -115,3 +115,29 @@ button{cursor: pointer;}
   display: none !important;
 }
 
+/*
+ * 콘텐츠 본문 표 렌더링 — BlockNote 에디터 외부(상세 페이지 등)에서도 보더 표시.
+ * BlockNote 자체 CSS는 `.bn-editor [data-content-type="table"]` 스코프라 prose 영역에는 적용되지 않는다.
+ * 저장된 본문은 `<div data-content-type="table"><table>…</table></div>` 구조이므로 같은 마커로 매칭한다.
+ */
+[data-content-type="table"] table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  word-break: break-word;
+}
+[data-content-type="table"] th,
+[data-content-type="table"] td {
+  border: 1px solid #ddd;
+  padding: 5px 10px;
+  vertical-align: top;
+}
+[data-content-type="table"] th {
+  font-weight: 700;
+  text-align: left;
+}
+[data-content-type="table"] th > p,
+[data-content-type="table"] td > p {
+  min-height: 1.5rem;
+  margin: 0;
+}
+
