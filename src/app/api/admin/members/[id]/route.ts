@@ -14,6 +14,7 @@ import {
   STATUS_TO_STAT_CD,
   lookupStatCd,
   normalizeAuthCdToUserRole,
+  fallbackUserRoleFromUserTp,
 } from "@/lib/schemas/member";
 import { getUserTypeLabelMap } from "@/lib/user-type-labels";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
@@ -130,7 +131,11 @@ function mapQspDetailToResponse(
     lastNameKana: d.user2ndNmKana ?? "",
     email: d.email ?? "",
     userType: (d.userTp ? userTypeLabelMap.get(d.userTp) : undefined) ?? "unknown",
-    userRole: normalizeAuthCdToUserRole(d.authCd),
+    // authCd 누락 회원(QSP 응답 결손) 은 userTp + storeLvl 기반으로 폴백 — display 한정.
+    // 권한 결정 경로는 JWT/QSP 직접 값을 사용하므로 본 폴백은 영향 없음 (member.ts 주석 참조).
+    userRole:
+      normalizeAuthCdToUserRole(d.authCd) ||
+      fallbackUserRoleFromUserTp(d.userTp, d.storeLvl),
     companyName: d.compNm ?? "",
     companyNameKana: d.compNmKana ?? "",
     zipcode: d.compPostCd ?? "",
