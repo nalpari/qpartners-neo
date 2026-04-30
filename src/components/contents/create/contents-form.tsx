@@ -217,6 +217,11 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       openAlert({ type: "alert", message: "内容は必須入力項目です。" });
       return;
     }
+    // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 함.
+    if (selectedCategoryIds.length === 0) {
+      openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
+      return;
+    }
 
     // 게시대상 배열 구성
     const targets = postTargets.targets
