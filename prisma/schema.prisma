@@ -139,6 +139,7 @@ model Content {
   updatedBy        String?               @map("updated_by") @db.VarChar(255)
   attachments      ContentAttachment[]
   categories       ContentCategory[]
+  inlineImages     ContentInlineImage[]
   targets          ContentTarget[]
   downloadLogs     DownloadLog[]
 
@@ -232,6 +233,27 @@ model ContentAttachment {
 
   @@index([contentId], map: "idx_content_id")
   @@map("qp_content_attachments")
+}
+
+/// 본문 임베드 이미지 (BlockNote 에디터 업로드)
+/// 첨부파일과 라이프사이클이 다름:
+///   - 폼 저장 전 contentId=null 상태로 디스크/DB에 선존재
+///   - 폼 저장 시 본문 HTML에 사용된 ID만 contentId로 stamp, 나머지 즉시 삭제
+model ContentInlineImage {
+  id          Int                                @id @default(autoincrement())
+  contentId   Int?                               @map("content_id")
+  ownerType   qp_content_inline_images_owner_type @map("owner_type")
+  ownerUserId String                             @map("owner_user_id") @db.VarChar(255)
+  fileName    String                             @map("file_name") @db.VarChar(255)
+  filePath    String                             @map("file_path") @db.VarChar(500)
+  fileSize    BigInt                             @map("file_size")
+  mimeType    String                             @map("mime_type") @db.VarChar(100)
+  createdAt   DateTime                           @default(now()) @map("created_at")
+  content     Content?                           @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([contentId], map: "idx_content_id")
+  @@index([ownerType, ownerUserId, contentId], map: "idx_owner")
+  @@map("qp_content_inline_images")
 }
 
 /// 비밀번호 재설정 토큰
@@ -497,6 +519,13 @@ enum qp_inquiries_user_type {
 }
 
 enum qp_contents_user_type {
+  ADMIN
+  STORE
+  SEKO
+  GENERAL
+}
+
+enum qp_content_inline_images_owner_type {
   ADMIN
   STORE
   SEKO

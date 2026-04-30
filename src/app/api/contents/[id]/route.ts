@@ -12,6 +12,10 @@ import {
   resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import {
+  reconcileInlineImages,
+  unlinkInlineImages,
+} from "@/lib/inline-image-cleanup";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { resolveUserName } from "@/lib/admin-name";
@@ -138,7 +142,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    console.error("[GET /api/contents/:id]", error);
+    logError("GET /api/contents/:id", error);
     return NextResponse.json(
       { error: "Failed to fetch content" },
       { status: 500 },
@@ -179,9 +183,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
     let body: unknown;
     try {
       body = await request.json();
-    } catch {
+    } catch (jsonError: unknown) {
+      console.warn("[PUT /api/contents/:id] Request body 파싱 실패:", jsonError);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: "リクエスト形式が正しくありません" },
         { status: 400 },
       );
     }
@@ -197,8 +202,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const { targets, categoryIds, ...contentData } = result.data;
 
-    // interactive transaction으로 원자적 처리
-    const content = await prisma.$transaction(async (tx) => {
+    const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
       if (targets) {
         await tx.contentTarget.deleteMany({
           where: { contentId: parsed.data },
@@ -211,7 +215,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         });
       }
 
-      return tx.content.update({
+      const updated = await tx.content.update({
         where: { id: parsed.data },
         data: {
           ...contentData,
@@ -231,7 +235,30 @@ export async function PUT(request: NextRequest, { params }: Params) {
           categories: { include: { category: CATEGORY_TREE_INCLUDE } },
         },
       });
+
+      // body 가 patch 본에 없으면(부분 수정) 본문이 그대로 — cleanup 생략하여 본문 이미지 누락 방지.
+      // body=null/""(삭제 의도)인 경우는 reconcile 에 그대로 전달 → 모든 inline image 삭제.
+      // 미포함 케이스는 cron sweep 도입 전이라 임시 행이 누적될 수 있어 운영 추적용 warn.
+      let inlineResult: { unlinkPaths: string[] } = { unlinkPaths: [] };
+      if (contentData.body !== undefined) {
+        inlineResult = await reconcileInlineImages({
+          kind: "update",
+          tx,
+          contentId: parsed.data,
+          body: contentData.body ?? null,
+          user: { userType: user.userType, userId: user.userId },
+        });
+      } else {
+        console.warn(
+          "[PUT /api/contents/:id] body 미포함 patch — inline image reconcile 생략",
+          { contentId: parsed.data },
+        );
+      }
+
+      return { content: updated, unlinkPaths: inlineResult.unlinkPaths };
     });
+
+    await unlinkInlineImages(unlinkPaths, "[PUT /api/contents/:id]");
 
     // PUT 은 requireMenuPermission("CONTENT","update") 통과자 = 사내 사용자이므로
     // includeInternal=true

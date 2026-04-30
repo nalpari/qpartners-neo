@@ -6,6 +6,7 @@ import { BlockNoteView } from "@blocknote/mantine";
 import * as locales from "@blocknote/core/locales";
 import "@blocknote/mantine/style.css";
 import "@blocknote/core/fonts/inter.css";
+import api from "@/lib/axios";
 import { allowedBlocksSchema } from "@/lib/block-editor/allowed-blocks";
 import { prepareBodyForEditor } from "@/lib/block-editor/prepare-body-for-editor";
 import type { BlockEditorProps } from "./block-editor.types";
@@ -14,19 +15,44 @@ export function BlockEditor({
   defaultValue,
   onChange,
   onParseError,
+  onUploadError,
   placeholder,
   editable = true,
   ariaLabel,
 }: BlockEditorProps) {
+  // 부모가 매 렌더마다 새 함수를 넘겨도 BlockNote schema/uploadFile이 재생성되지 않도록 ref로 잡는다.
+  const onUploadErrorRef = useRef(onUploadError);
+  useEffect(() => {
+    onUploadErrorRef.current = onUploadError;
+  }, [onUploadError]);
+
   const editor = useCreateBlockNote({
     schema: allowedBlocksSchema,
     dictionary: locales.ja,
+    uploadFile: async (file: File): Promise<string> => {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await api.post<{ data: { id: number; url: string } }>(
+          "/inline-images",
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } },
+        );
+        return res.data.data.url;
+      } catch (error: unknown) {
+        // BlockNote는 throw 시 슬래시 메뉴에서 상위로 에러를 전파만 하고 자체 alert을 띄우지 않는다.
+        // 호출자에게 알려 일본어 alert을 띄울 수 있게 한다.
+        console.error("[BlockEditor] inline image upload failed:", error);
+        onUploadErrorRef.current?.(error);
+        throw error;
+      }
+    },
   });
 
   // 마운트 시점의 defaultValue만 캡처 — 이후는 BlockNote 내부 상태가 진실의 원천.
   const initialValueRef = useRef(defaultValue);
 
-  // onParseError를 ref로 잡아 마운트 effect deps에 넣지 않는다 — 부모가 매 렌더마다 새 함수를 넘겨도 본문 재파싱이 일어나지 않게 한다.
+  // 동일 이유 — onParseError 도 ref 캡처해 마운트 effect 가 본문을 재파싱하지 않게 한다.
   const onParseErrorRef = useRef(onParseError);
   useEffect(() => {
     onParseErrorRef.current = onParseError;

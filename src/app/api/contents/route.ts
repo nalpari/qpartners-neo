@@ -5,6 +5,10 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import {
+  reconcileInlineImages,
+  unlinkInlineImages,
+} from "@/lib/inline-image-cleanup";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS, targetTypeValues } from "@/lib/schemas/common";
@@ -212,7 +216,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[GET /api/contents]", error);
+    logError("GET /api/contents", error);
     return NextResponse.json(
       { error: "Failed to fetch contents" },
       { status: 500 },
@@ -268,33 +272,47 @@ export async function POST(request: NextRequest) {
         ? (contentData.publishedAt ?? new Date())
         : undefined;
 
-    const content = await prisma.content.create({
-      data: {
-        ...contentData,
-        publishedAt,
-        userType: user.userType,
-        userId: user.userId,
-        createdBy: user.userId,
-        authorDepartment:
-          contentData.authorDepartment ?? user.department ?? undefined,
-        targets: targets
-          ? { create: targets }
-          : undefined,
-        categories: categoryIds
-          ? {
-              create: categoryIds.map((categoryId) => ({
-                categoryId,
-                createdBy: user.userId,
-              })),
-            }
-          : undefined,
-      },
-      include: {
-        targets: true,
-        // GET/PUT과 동일하게 트리 구조 응답을 위해 CATEGORY_TREE_INCLUDE 사용
-        categories: { include: { category: CATEGORY_TREE_INCLUDE } },
-      },
+    // 본문 임베드 이미지 cleanup 을 같은 트랜잭션 안에서 수행 — 콘텐츠 INSERT 가 롤백되면
+    // stamp/delete 도 자동 원복. 디스크 unlink 는 commit 후 별도 처리(실패해도 정합성 영향 없음).
+    const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
+      const created = await tx.content.create({
+        data: {
+          ...contentData,
+          publishedAt,
+          userType: user.userType,
+          userId: user.userId,
+          createdBy: user.userId,
+          authorDepartment:
+            contentData.authorDepartment ?? user.department ?? undefined,
+          targets: targets ? { create: targets } : undefined,
+          categories: categoryIds
+            ? {
+                create: categoryIds.map((categoryId) => ({
+                  categoryId,
+                  createdBy: user.userId,
+                })),
+              }
+            : undefined,
+        },
+        include: {
+          targets: true,
+          categories: { include: { category: CATEGORY_TREE_INCLUDE } },
+        },
+      });
+
+      const result = await reconcileInlineImages({
+        kind: "create",
+        tx,
+        contentId: created.id,
+        body: contentData.body ?? null,
+        user: { userType: user.userType, userId: user.userId },
+      });
+
+      return { content: created, unlinkPaths: result.unlinkPaths };
     });
+
+    // 트랜잭션 commit 후 디스크 unlink (실패해도 응답에는 영향 없음).
+    await unlinkInlineImages(unlinkPaths, "[POST /api/contents]");
 
     // POST는 requireMenuPermission("CONTENT","create") 통과자 = 사내 사용자이므로
     // includeInternal=true (PUT detail과 동일 정책)

@@ -17,4 +17,9 @@ export interface BlockEditorProps {
   editable?: boolean;
   /** 외곽 컨테이너에 부여할 aria-label. */
   ariaLabel?: string;
+  /**
+   * 본문 임베드 이미지 업로드 실패 시 호출.
+   * 호출자에서 사용자 노출 alert(일본어)을 띄워 데이터 손실 가능성을 안내해야 한다.
+   */
+  onUploadError?: (error: unknown) => void;
 }
