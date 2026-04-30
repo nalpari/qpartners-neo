@@ -1,20 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import { Checkbox, SelectBox, Button } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import type { CategoryNode, SearchFilters } from "./contents-contents";
 
-// 관리자용 게시대상 옵션
-const POST_TARGET_OPTIONS = [
-  { value: "", label: "掲示対象" },
-  { value: "first_store", label: "1次販売店" },
-  { value: "second_store", label: "2次以降の販売店" },
-  { value: "seko", label: "施工店" },
-  { value: "general", label: "一般" },
-  { value: "non_member", label: "非会員" },
-];
+// 게시대상 placeholder 옵션 — 권한관리 라벨은 useTargetLabels 훅으로 동적 주입
+const POST_TARGET_PLACEHOLDER = { value: "", label: "掲示対象" };
 
 // 관리자용 담당부門 옵션
 const DEPARTMENT_OPTIONS = [
@@ -55,6 +49,18 @@ export function ContentsSearch({
   const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
   const [department, setDepartment] = useState(initialFilters?.department ?? "");
   const [internalOnly, setInternalOnly] = useState(initialFilters?.internalOnly ?? false);
+
+  // 권한관리 라벨 동기화 — isActive=Y 만 검색 옵션 노출, 라벨은 권한명 사용.
+  // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
+  const { getAllOptions: getTargetOptions } = useTargetLabels();
+  const POST_TARGET_OPTIONS = useMemo(() => {
+    return [
+      POST_TARGET_PLACEHOLDER,
+      ...getTargetOptions()
+        .filter((o) => o.isActive)
+        .map((o) => ({ value: o.value, label: o.label })),
+    ];
+  }, [getTargetOptions]);
 
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>

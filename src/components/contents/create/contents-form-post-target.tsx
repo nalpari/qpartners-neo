@@ -1,28 +1,23 @@
 "use client";
 
 import { Checkbox, DatePicker } from "@/components/common";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 
-/** Figma 기준 행/열 배치 순서 */
-const POST_TARGET_ROWS = [
-  [
-    { key: "first_store", label: "一次点" },
-    { key: "seko", label: "施工店" },
-    { key: "non_member", label: "非会員" },
-  ],
-  [
-    { key: "second_store", label: "2次点以下" },
-    { key: "general", label: "一般会員" },
-    null, // 빈 셀
-  ],
-] as const;
+/**
+ * Figma 기준 행/열 배치 순서.
+ * 라벨은 useTargetLabels 훅으로 권한관리(`QpRole.roleName`) 와 동기화 — 여기서는 키만 정의.
+ */
+const POST_TARGET_ROW_KEYS: ReadonlyArray<ReadonlyArray<string | null>> = [
+  ["first_store", "seko", "non_member"],
+  ["second_store", "general", null],
+];
 
-const ALL_KEYS = POST_TARGET_ROWS.flat().flatMap((item) =>
-  item ? [item.key] : []
+const ALL_KEYS = POST_TARGET_ROW_KEYS.flat().filter(
+  (k): k is string => k !== null,
 );
 
 interface PostTargetItem {
   key: string;
-  label: string;
   checked: boolean;
   startDate: Date | null;
   endDate: Date | null;
@@ -46,16 +41,12 @@ export function getInitialPostTargets(): PostTargetState {
     selectAll: false,
     allStartDate: today,
     allEndDate: new Date("2999-12-31"),
-    targets: ALL_KEYS.map((key) => {
-      const row = POST_TARGET_ROWS.flat().find((r) => r?.key === key)!;
-      return {
-        key,
-        label: row.label,
-        checked: false,
-        startDate: new Date(today),
-        endDate: new Date(today),
-      };
-    }),
+    targets: ALL_KEYS.map((key) => ({
+      key,
+      checked: false,
+      startDate: new Date(today),
+      endDate: new Date(today),
+    })),
   };
 }
 
@@ -63,11 +54,20 @@ export function ContentsFormPostTarget({
   postTargets,
   onPostTargetsChange,
 }: ContentsFormPostTargetProps) {
+  // 권한관리 라벨/사용가능여부 — isActive=N 권한은 새로 체크할 수 없도록 disabled.
+  // (이미 체크된 상태로 들어온 데이터는 그대로 노출 — 수정 시 해제만 가능)
+  const { resolveLabel: resolveTargetLabel, isAvailable: isTargetAvailable } =
+    useTargetLabels();
+
   const handleSelectAll = (checked: boolean) => {
+    // 일괄 선택 시 비활성 권한은 새로 체크하지 않음 (해제는 모든 권한 대상)
     onPostTargetsChange({
       ...postTargets,
       selectAll: checked,
-      targets: postTargets.targets.map((t) => ({ ...t, checked })),
+      targets: postTargets.targets.map((t) => {
+        if (!checked) return { ...t, checked: false };
+        return { ...t, checked: isTargetAvailable(t.key) ? true : t.checked };
+      }),
     });
   };
 
@@ -167,40 +167,50 @@ export function ContentsFormPostTarget({
 
       {/* 대상 테이블 */}
       <div className="flex flex-col gap-1">
-        {POST_TARGET_ROWS.map((row, rowIdx) => (
+        {POST_TARGET_ROW_KEYS.map((row, rowIdx) => (
           <div key={rowIdx} className="flex gap-1">
-            {row.map((item, colIdx) => {
-              const target = item ? getTarget(item.key) : null;
+            {row.map((key, colIdx) => {
+              const target = key ? getTarget(key) : null;
+              // 비활성 권한이 이미 체크된 상태(기존 콘텐츠 수정)면 해제는 가능하도록 비활성화 안 함.
+              // 신규 체크만 막는다.
+              const available = key ? isTargetAvailable(key) : true;
+              const checkboxDisabled =
+                !!key && !available && !(target?.checked ?? false);
 
               return (
                 <div key={colIdx} className="flex flex-1 gap-1 h-[58px]">
                   {/* Th */}
                   <div
                     className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 rounded-[6px] border border-[#EAF0F6] ${
-                      item ? "bg-[#F7F9FB]" : "bg-white"
+                      key ? "bg-[#F7F9FB]" : "bg-white"
                     }`}
                   >
-                    {item && (
-                      <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap truncate">
-                        {item.label}
+                    {key && (
+                      <span
+                        className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
+                          available ? "text-[#45576F]" : "text-[#A0A8B0]"
+                        }`}
+                      >
+                        {resolveTargetLabel(key)}
                       </span>
                     )}
                   </div>
                   {/* Form */}
                   <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-                    {item && target && (
+                    {key && target && (
                       <>
                         <Checkbox
                           checked={target.checked}
                           onChange={(checked) =>
-                            handleTargetCheck(item.key, checked)
+                            handleTargetCheck(key, checked)
                           }
+                          disabled={checkboxDisabled}
                         />
                         <div className="flex flex-1 items-center gap-1">
                           <DatePicker
                             value={target.startDate}
                             onChange={(date) =>
-                              handleTargetDate(item.key, "startDate", date)
+                              handleTargetDate(key, "startDate", date)
                             }
                             disabled={!target.checked}
                           />
@@ -210,7 +220,7 @@ export function ContentsFormPostTarget({
                           <DatePicker
                             value={target.endDate}
                             onChange={(date) =>
-                              handleTargetDate(item.key, "endDate", date)
+                              handleTargetDate(key, "endDate", date)
                             }
                             disabled={!target.checked}
                           />

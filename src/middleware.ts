@@ -31,6 +31,7 @@ const PUBLIC_GET_PATTERNS = [
   /^\/api\/categories(\/\d+)?$/, // GET /api/categories, GET /api/categories/[id]
   /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
   /^\/api\/codes\/lookup$/, // GET /api/codes/lookup — 문의하기 문의유형 코드 조회
+  /^\/api\/role-labels$/, // GET /api/role-labels — 콘텐츠 게시대상 권한명 라벨 (비회원 포함 모든 화면 사용)
 ];
 
 /** 2차 인증 미완료 상태에서 접근 가능한 경로 */
