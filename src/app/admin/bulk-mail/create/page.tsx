@@ -4,8 +4,6 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/axios";
-import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
@@ -36,27 +34,13 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
   }
 }
 
-async function fetchAuthMe(): Promise<LoginUser | null> {
-  try {
-    const res = await api.get("/auth/login-user-info");
-    const parsed = loginUserSchema.safeParse(res.data?.data);
-    if (!parsed.success) {
-      console.error("[BulkMailCreatePage] 응답 스키마 불일치:", parsed.error.issues);
-      return null;
-    }
-    return parsed.data;
-  } catch (error: unknown) {
-    console.error("[BulkMailCreatePage] 인증 확인 실패:", error);
-    return null;
-  }
-}
-
 export default function AdminBulkMailCreatePage() {
   const [initial] = useState(loadCopyData);
-  const { data: user } = useQuery({
+  const { data: user = null } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
-    queryFn: fetchAuthMe,
-    staleTime: 5 * 60 * 1000,
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
   });
 
   const initialData: Partial<FormInitialData> = {
