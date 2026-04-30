@@ -29,6 +29,11 @@ const IV_LENGTH = 16;
 /** IV = `YYYYMMDD`(8) + IV_SUFFIX(8) = 16 byte. 외부 3사가 검증하는 고정 상수. */
 const IV_SUFFIX = "_autoL!!";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/**
+ * 외부 3사 가이드/예시에 노출된 샘플 키 — 운영 환경에 그대로 설정되면 공개 키로
+ * 자동로그인 cipher 가 발급되어 인증이 무력화된다. inbound 와 대칭으로 차단.
+ */
+const SAMPLE_KEY = "jpqcellQ123456!!";
 
 /** KST(UTC+9) 기준 YYYYMMDD */
 function formatKstDate(date: Date): string {
@@ -57,6 +62,13 @@ function getOutboundAesKey(): Buffer {
   if (buf.length !== KEY_LENGTH) {
     throw new ConfigError(
       "AUTO_LOGIN_OUTBOUND_AES_KEY 길이가 올바르지 않습니다 — 설정을 확인하세요",
+    );
+  }
+  // 운영 오설정 방어 — 외부 가이드/예시에 노출된 샘플 키가 그대로 설정된 경우 즉시 차단.
+  // 길이 동일(16 byte) 확인 후이므로 timingSafeEqual 사용 가능.
+  if (crypto.timingSafeEqual(buf, Buffer.from(SAMPLE_KEY, "utf8"))) {
+    throw new ConfigError(
+      "AUTO_LOGIN_OUTBOUND_AES_KEY 가 공개된 샘플 키로 설정되어 있습니다 — 운영 키로 교체 필요",
     );
   }
   _cachedKey = buf;

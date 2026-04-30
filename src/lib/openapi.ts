@@ -151,34 +151,38 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "외부 3사 → Q.Partners-neo 자동로그인 진입 (SSO inbound)",
         description: `HANASYS DESIGN / Q.Order / Q.Musubi 에서 Q.Partners-neo 로 유입 시 자동로그인 진입 라우트.
 
-외부 3사가 자체 AES-256-CBC 암호화로 cipher 를 만든 뒤 브라우저를 이 URL 로 리다이렉트하면,
+외부 3사가 자체 AES-128-CBC 암호화로 cipher 를 만든 뒤 브라우저를 이 URL 로 리다이렉트하면,
 서버가 cipher 를 복호화해 userId 를 얻고 QSP userDetail 로 사용자 정보를 조회한 뒤
 **Q.Partners-neo 자체 JWT 를 서명·발급**하여 세션 쿠키를 설정한다.
 (QSP 로그인 API 는 호출하지 않음 — QSP v1.0 은 자동로그인 모드 미지원이므로 cipher 소유 자체를 인증 증명으로 간주.)
 
-**cipher 규격 (AS-IS Q.Order 가이드 호환):**
-- 알고리즘: AES-256-CBC, PKCS5Padding
-- 키: \`SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY)\` — 32바이트
-- IV: 요청마다 \`crypto.randomBytes(16)\` — 결정적 IV 방지
-- 출력: \`Base64(IV || ciphertext)\` → \`encodeURIComponent\`
-- 자정 경계: 서버는 당일 키 실패 시 전일 키로 재시도
+**cipher 규격 (2026-04-30 outbound 사양과 통일):**
+- 알고리즘: AES-128-CBC, PKCS5/PKCS7 Padding
+- 키: \`AUTO_LOGIN_INBOUND_AES_KEY\` 환경변수 — UTF-8 raw 16 byte (해싱·날짜 결합 없음). outbound 키와 분리 운영하여 침해 시 영향 격리.
+- IV: \`UTF-8(\\\`\${YYYYMMDD_KST}_autoL!!\\\`)\` — 16 byte 결정적 IV (8+8). outbound 와 동일 상수.
+- 출력: \`Base64(ciphertext)\` → \`encodeURIComponent\` (IV prepend 없음 — 수신측이 재구성)
+- 자정 경계: 서버는 당일 IV 실패 시 전일 IV 로 재시도
 
 **응답:**
-- 성공: \`302\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵. SUPER_ADMIN 은 거부)
+- 성공: \`302\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵. SUPER_ADMIN 은 거부, ADMIN 은 2FA 강제)
 - 실패: \`302\` → \`/login?error=auto_login_failed\` (쿼리 검증·Rate Limit·복호화·QSP userDetail·계정상태·authRole·JWT 중 실패)
-- 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 등)
+- 설정 오류: \`500\` (AUTO_LOGIN_INBOUND_AES_KEY 미설정 또는 16 byte 길이 불일치)
 
 **보안 방어:**
-- Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed). 동일 cipher 재사용 차단 (1회용 소진).
+- Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed).
 - Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`SITE_URL\` env / \`SITE_DEFAULTS.url\` 을 base 로 고정
 - 계정 상태: \`statCd === "A"\` 만 허용 (삭제/탈퇴 차단)
-- 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용`,
+- 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용 (twoFactorVerified=false 로 2FA 강제)
+- userTp 교차 검증: cipher 평문은 userId 단독 → 쿼리 \`userTp\` 와 QSP 응답 \`userTp\` 일치 검증 (변조 방어)
+
+**받아들인 위험 (2026-04-30 결정):**
+- 결정적 IV 사양상 같은 사용자·같은 날 cipher 가 동일 → 24h 내 cipher 재사용 가능. inbound 1회용 소진 차단을 두지 않음 (외부 3사 inbound 정책과 통일).`,
         parameters: [
           {
             name: "autoLoginParam1",
             in: "query",
             required: true,
-            description: "URL 인코딩된 Base64(IV || AES-256-CBC ciphertext). 복호화 시 userId 문자열이 나와야 함.",
+            description: "URL 인코딩된 Base64(AES-128-CBC ciphertext). IV prepend 없음 — 수신측이 키와 KST 일자 규칙으로 동일 IV(`YYYYMMDD_autoL!!`) 재구성. 복호화 시 userId 문자열이 나와야 함.",
             schema: { type: "string" },
           },
           {
@@ -203,7 +207,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "500": errorResponse("서버 설정 오류 (AUTO_LOGIN_AES_KEY 미설정 등)"),
+          "500": errorResponse("서버 설정 오류 (AUTO_LOGIN_INBOUND_AES_KEY 미설정 또는 16 byte 길이 불일치, JWT_SECRET 미설정 등)"),
         },
       },
     },
@@ -318,147 +322,6 @@ export const openApiSpec: OpenAPIV3.Document = {
                   unexpected: {
                     summary: "예상치 못한 에러",
                     value: { error: "サーバーエラーが発生しました" },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    "/auth/auto-login/decrypt": {
-      get: {
-        tags: ["Auth"],
-        summary: "자동로그인 복호화 (외부 3사 역호출용)",
-        description:
-          "HANASYS / Q.Order / Q.Musubi 가 자동로그인 처리 중 Q.Partners를 역호출하여 cipher를 userId로 복원하는 M2M 엔드포인트. Q.Partners encrypt가 생성한 cipher 전용. 자정 경계(KST) 시 당일 키 → 전일 키 순으로 최대 2회 시도 후 모두 실패하면 500.",
-        parameters: [
-          {
-            name: "autoLoginParam1",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-            description: "URL 디코딩된 Base64 암호문",
-          },
-        ],
-        responses: {
-          "200": {
-            description: "복호화 성공 — data.userId는 복호화된 평문 로그인 ID(항상 문자열). 사용자 존재 여부는 검증하지 않음.",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", example: "T01" },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 200 },
-                    resultMessage: { type: "string", example: "decrypt success" },
-                  },
-                },
-              },
-            },
-          },
-          "400": {
-            description: "autoLoginParam1 누락",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", nullable: true, example: null },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 400 },
-                    resultMessage: { type: "string", example: "autoLoginParam1 is required" },
-                  },
-                },
-              },
-            },
-          },
-          "401": {
-            description: "호출자 검증 실패 — AUTO_LOGIN_DECRYPT_SECRET 설정 시 X-QSP-Auth 헤더 불일치",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", nullable: true, example: null },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 401 },
-                    resultMessage: { type: "string", example: "caller verification failed" },
-                  },
-                },
-              },
-            },
-          },
-          "403": {
-            description:
-              "IP 헤더 없음 — M2M 엔드포인트는 IP 식별이 필수이며 shared bucket 금지 원칙에 따라 즉시 거부 (fail-closed)",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", nullable: true, example: null },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 403 },
-                    resultMessage: { type: "string", example: "ip header required" },
-                  },
-                },
-              },
-            },
-          },
-          "429": {
-            description:
-              "rate limit 초과 — 정상 요청 IP 기준 분당 60회, 호출자 검증 실패(brute-force) IP 기준 분당 10회",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", nullable: true, example: null },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 429 },
-                    resultMessage: { type: "string", example: "too many requests" },
-                  },
-                },
-              },
-            },
-          },
-          "500": {
-            description: "복호화 실패 (손상된 cipher 또는 키 불일치)",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", nullable: true, example: null },
-                      },
-                    },
-                    resultCode: { type: "integer", example: 500 },
-                    resultMessage: { type: "string", example: "decrypt failed" },
                   },
                 },
               },
