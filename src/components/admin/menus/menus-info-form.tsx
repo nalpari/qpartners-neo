@@ -87,17 +87,21 @@ export function MenusInfoForm({
           メニュー情報
         </h2>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onNew}>
+          <Button
+            variant="outline"
+            onClick={onNew}
+            disabled={isSaving || isDeleting}
+          >
             新規
           </Button>
           <Button
             variant="secondary"
             onClick={onDelete}
-            disabled={!isDeleteEnabled || isDeleting}
+            disabled={!isDeleteEnabled || isSaving || isDeleting}
           >
             {isDeleting ? "削除中..." : "削除"}
           </Button>
-          <Button variant="primary" onClick={onSave} disabled={isSaving}>
+          <Button variant="primary" onClick={onSave} disabled={isSaving || isDeleting}>
             保存
           </Button>
         </div>

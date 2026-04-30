@@ -396,6 +396,10 @@ function MemberEditForm({
   // 복구 경로 + SEKO: SelectBox 에서 SEKO 옵션 부재로 빈 표시 → 관리자가 명시적 재선택 후 저장(미선택 저장 시 BE 400).
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
+  // ユーザー権限 편집 활성 조건 — DetailRow.isForm 과 children 분기에서 동일 식 중복 사용을 방지.
+  const canEditUserRole =
+    isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked;
+
   const handleSave = () => {
     // 화면설계서 기준 편집 허용 필드 (2026-04-28 정책 갱신):
     //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn / loginNotification — 전 회원 유형
@@ -417,7 +421,8 @@ function MemberEditForm({
     }
     // userRole 은 GENERAL 회원에게만 적용. 복구 경로에서도 userTp=GENERAL 한정으로 전송.
     // 기존 SEKO 권한은 새 옵션에서 제외되어 편집 불가 → 전송 제외(BE Zod 거부 방지 + 기존 값 보존).
-    if (isGeneral && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked) {
+    // 편집 가능 조건은 UI 의 SelectBox 활성 조건과 동일해야 한다 — canEditUserRole 단일 변수 재사용.
+    if (canEditUserRole) {
       payload.userRole = userRole;
     }
     onSave(payload);
@@ -480,8 +485,8 @@ function MemberEditForm({
                     label: "ユーザー権限",
                     // GENERAL 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
                     // 단, 기존 SEKO 권한(isUserRoleLocked) 은 신규 옵션에서 제외되어 읽기전용.
-                    isForm: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked,
-                    children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked ? (
+                    isForm: canEditUserRole,
+                    children: canEditUserRole ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
                         // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
@@ -491,15 +496,13 @@ function MemberEditForm({
                         onChange={setUserRole}
                         className="w-full"
                       />
-                    ) : isGeneral ? (
-                      // GENERAL 회원은 권한이 1ST_STORE/2ND_STORE/GENERAL 등으로 분화되므로
-                      // 라벨 매핑 → 원본 코드 → "-" 순으로 표시(읽기전용 경로).
-                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ) : (
-                      // 非GENERAL(ADMIN/STORE/SEKO 등) 은 권한이 회원유형과 사실상 1:1 대응이며
-                      // QSP 응답에 userRole 이 비어 도착할 수 있어 "-" 로 보이는 케이스가 있다.
-                      // 이 경로에서는 회원タイプ(일본어 라벨) 을 그대로 ユーザー権限 으로 노출.
-                      <TextValue value={member.userType || ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
+                      // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
+                      // 시 회원유형으로 폴백하면 의미론적으로 잘못된 표시가 된다(会員タイプ 행과
+                      // 중복 노출되기도 함). 라벨 매핑 → 원본 코드 → "-" 순으로 정직하게 표시.
+                      // TODO: 非GENERAL 의 userRole 이 QSP 응답에서 빈 값으로 도착하는 근본 원인을
+                      //       BE 에서 해결할 것 (다음 스프린트 추적 대상).
+                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ),
                   }}
                 />
