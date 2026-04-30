@@ -3,9 +3,12 @@
 // Design Ref: §5.2 — 등록 페이지 (복사 데이터 로드)
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/axios";
+import { loginUserSchema } from "@/lib/schemas/auth";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
-import { useAuthStore } from "@/lib/auth-store";
 
 function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
   if (typeof window === "undefined") return { mode: "create" };
@@ -33,9 +36,28 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
   }
 }
 
+async function fetchAuthMe(): Promise<LoginUser | null> {
+  try {
+    const res = await api.get("/auth/login-user-info");
+    const parsed = loginUserSchema.safeParse(res.data?.data);
+    if (!parsed.success) {
+      console.error("[BulkMailCreatePage] 응답 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
+    return parsed.data;
+  } catch (error: unknown) {
+    console.error("[BulkMailCreatePage] 인증 확인 실패:", error);
+    return null;
+  }
+}
+
 export default function AdminBulkMailCreatePage() {
   const [initial] = useState(loadCopyData);
-  const user = useAuthStore((s) => s.user);
+  const { data: user } = useQuery({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: fetchAuthMe,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const initialData: Partial<FormInitialData> = {
     ...initial.initialData,
