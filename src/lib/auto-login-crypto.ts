@@ -41,6 +41,12 @@ const IV_LENGTH = 16;
 /** IV = `YYYYMMDD`(8) + IV_SUFFIX(8) = 16 byte. outbound 와 동일 상수 — 양방향 가이드 통일. */
 const IV_SUFFIX = "_autoL!!";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/**
+ * 외부 3사 가이드 문서·검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`) 에
+ * 노출된 샘플 키. 운영자가 .env 설정 시 그대로 복사하면 공개 키로 cipher 가 발급/복호되어
+ * 자동로그인이 무력화된다. fail-closed 가드로 차단.
+ */
+const SAMPLE_KEY = "jpqcellQ123456!!";
 
 /** KST(UTC+9) 기준 YYYYMMDD */
 function formatKstDate(date: Date): string {
@@ -79,6 +85,13 @@ function getInboundAesKey(): Buffer {
       `AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — ${KEY_LENGTH} byte 필요, 실제 ${buf.length} byte (개행/공백 포함 여부 확인)`,
     );
   }
+  // 운영 오설정 방어 — 외부 가이드/검증 스크립트에 노출된 샘플 키가 그대로 설정된 경우 즉시 차단.
+  // 일치 비교는 이미 길이 동일(16 byte) 가 보장된 후이므로 timingSafeEqual 사용 가능.
+  if (crypto.timingSafeEqual(buf, Buffer.from(SAMPLE_KEY, "utf8"))) {
+    throw new ConfigError(
+      "AUTO_LOGIN_INBOUND_AES_KEY 가 공개된 샘플 키로 설정되어 있습니다 — 운영 키로 교체 필요",
+    );
+  }
   return buf;
 }
 
@@ -111,31 +124,53 @@ function decryptWithIv(payload: Buffer, iv: Buffer, key: Buffer): string {
  * @returns 평문 사용자 로그인 ID (ADMIN/STORE/SEKO=loginId, GENERAL=email)
  * @throws ConfigError — 환경변수 누락 / 키 길이 불일치 / IV 길이 불일치
  * @throws Error       — 당일·전일 IV 양쪽 모두 복호화 실패 (cipher 위변조·키 불일치 등)
+ *
+ * 응답 시간 균질화 (2026-04-30):
+ *   - 당일 IV 성공·실패에 관계 없이 항상 전일 IV 도 시도한다.
+ *   - 이전 구현은 당일 성공 시 1회, 실패 시 2회 복호화로 약 2배 응답 시간 차이가 발생해
+ *     "어떤 cipher 가 어느 날짜로 풀렸는가" 가 측면 정보로 누출될 여지가 있었다.
+ *   - AES-128 16-byte 복호화는 마이크로초 단위라 추가 비용은 무시 가능 — 라우트 레벨의 QSP/JWT
+ *     처리 비용이 압도적이므로 응답 시간 측면에서 의미 있는 차이가 사라진다.
  */
 export function decryptAutoLogin(cipherText: string): string {
   const key = getInboundAesKey();
   const payload = Buffer.from(cipherText, "base64");
+  const todayIv = buildIv(new Date());
+  const yesterdayIv = buildIv(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+  let todayResult: string | null = null;
+  let yesterdayResult: string | null = null;
+  let todayError: unknown = null;
+  let yesterdayError: unknown = null;
 
   try {
-    return decryptWithIv(payload, buildIv(new Date()), key);
-  } catch (todayError: unknown) {
-    // ConfigError(IV 길이 불일치 등 설정 결함) 는 전일 재시도해도 동일하게 실패하며,
-    // catch 말미에서 yesterdayError 를 throw 하면 원본 ConfigError 가 마스킹된다.
-    // 설정 결함은 즉시 표면화시켜 운영자가 원인을 빠르게 식별하도록 한다.
-    if (todayError instanceof ConfigError) {
-      throw todayError;
-    }
-    // 자정 직후(KST) 전일 IV 로 암호화된 cipher 유입은 정상 경로지만, 포맷 오류·키 교체 실수·
-    // 패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름.
-    // OpenSSL 에러는 message 뿐 아니라 name(예: "Error") 자체도 버전에 따라 padding 단서를
-    // 흘릴 여지가 있어 분기 식별용 고정 문자열만 남긴다.
-    console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 재시도");
-    const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    try {
-      return decryptWithIv(payload, buildIv(yesterdayDate), key);
-    } catch (yesterdayError: unknown) {
-      console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패");
-      throw yesterdayError;
-    }
+    todayResult = decryptWithIv(payload, todayIv, key);
+  } catch (err: unknown) {
+    todayError = err;
   }
+
+  // 당일 성공 여부와 무관하게 항상 시도 — 타이밍 균질화 목적.
+  try {
+    yesterdayResult = decryptWithIv(payload, yesterdayIv, key);
+  } catch (err: unknown) {
+    yesterdayError = err;
+  }
+
+  if (todayResult !== null) {
+    return todayResult;
+  }
+  if (yesterdayResult !== null) {
+    // 자정 직후(KST) 전일 IV 로 암호화된 cipher 흡수 경로 — 정상 운영 흐름이라 warn 으로만 기록.
+    console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 복호화 성공");
+    return yesterdayResult;
+  }
+
+  // 양쪽 모두 실패 — ConfigError(IV 길이 불일치 등 설정 결함) 는 우선 표면화하여
+  // 운영자가 일반 복호화 실패와 구분해서 원인을 식별하도록 한다.
+  if (todayError instanceof ConfigError) throw todayError;
+  if (yesterdayError instanceof ConfigError) throw yesterdayError;
+  // OpenSSL 에러는 message 뿐 아니라 name(예: "Error") 자체도 버전에 따라 padding 단서를
+  // 흘릴 여지가 있어 분기 식별용 고정 문자열만 남긴다.
+  console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패");
+  throw todayError ?? yesterdayError ?? new Error("decryption failed");
 }
