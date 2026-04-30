@@ -60,6 +60,11 @@ interface MenusInfoFormProps {
   onFormChange: (field: keyof MenuFormState, value: string) => void;
   onNew: () => void;
   onSave: () => void;
+  /** 삭제 버튼 클릭 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 삭제 confirm 진행. */
+  onDelete: () => void;
+  /** 폼이 편집 모드(editingId 존재)일 때만 활성. 신규 모드에서는 비활성 처리. */
+  isDeleteEnabled: boolean;
+  isDeleting: boolean;
 }
 
 export function MenusInfoForm({
@@ -70,6 +75,9 @@ export function MenusInfoForm({
   onFormChange,
   onNew,
   onSave,
+  onDelete,
+  isDeleteEnabled,
+  isDeleting,
 }: MenusInfoFormProps) {
   return (
     <div className="flex flex-col gap-4">
@@ -79,10 +87,21 @@ export function MenusInfoForm({
           メニュー情報
         </h2>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onNew}>
+          <Button
+            variant="outline"
+            onClick={onNew}
+            disabled={isSaving || isDeleting}
+          >
             新規
           </Button>
-          <Button variant="primary" onClick={onSave} disabled={isSaving}>
+          <Button
+            variant="secondary"
+            onClick={onDelete}
+            disabled={!isDeleteEnabled || isSaving || isDeleting}
+          >
+            {isDeleting ? "削除中..." : "削除"}
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={isSaving || isDeleting}>
             保存
           </Button>
         </div>

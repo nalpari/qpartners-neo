@@ -396,6 +396,10 @@ function MemberEditForm({
   // 복구 경로 + SEKO: SelectBox 에서 SEKO 옵션 부재로 빈 표시 → 관리자가 명시적 재선택 후 저장(미선택 저장 시 BE 400).
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
+  // ユーザー権限 편집 활성 조건 — DetailRow.isForm 과 children 분기에서 동일 식 중복 사용을 방지.
+  const canEditUserRole =
+    isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked;
+
   const handleSave = () => {
     // 화면설계서 기준 편집 허용 필드 (2026-04-28 정책 갱신):
     //   · twoFactorEnabled / attributeChangeNotification / newsRcptYn / loginNotification — 전 회원 유형
@@ -417,7 +421,8 @@ function MemberEditForm({
     }
     // userRole 은 GENERAL 회원에게만 적용. 복구 경로에서도 userTp=GENERAL 한정으로 전송.
     // 기존 SEKO 권한은 새 옵션에서 제외되어 편집 불가 → 전송 제외(BE Zod 거부 방지 + 기존 값 보존).
-    if (isGeneral && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked) {
+    // 편집 가능 조건은 UI 의 SelectBox 활성 조건과 동일해야 한다 — canEditUserRole 단일 변수 재사용.
+    if (canEditUserRole) {
       payload.userRole = userRole;
     }
     onSave(payload);
@@ -443,7 +448,9 @@ function MemberEditForm({
                   <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
                     {member.updatedAt ? formatDateTime(member.updatedAt) : "-"}
                   </span>
-                  {member.updatedBy && (
+                  {/* 갱신일시 없이 갱신자명만 표시되는 데이터 오류 방어:
+                      updatedAt 이 존재할 때만 updatedBy 를 함께 표시한다. */}
+                  {member.updatedAt && member.updatedBy && (
                     <span className="font-['Noto_Sans_JP'] font-normal text-[13px] text-[#bbb]">
                       ({member.updatedBy})
                     </span>
@@ -478,8 +485,8 @@ function MemberEditForm({
                     label: "ユーザー権限",
                     // GENERAL 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
                     // 단, 기존 SEKO 권한(isUserRoleLocked) 은 신규 옵션에서 제외되어 읽기전용.
-                    isForm: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked,
-                    children: isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked ? (
+                    isForm: canEditUserRole,
+                    children: canEditUserRole ? (
                       <SelectBox
                         options={[...ROLE_OPTIONS_GENERAL]}
                         // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
@@ -491,8 +498,10 @@ function MemberEditForm({
                       />
                     ) : (
                       // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
-                      // 시 회원유형(일본어 라벨) 으로 폴백하면 의미론적으로 잘못된 표시가 된다.
-                      // 라벨 매핑 → 원본 코드 → 명시적 빈값("-") 순으로 표시.
+                      // 시 회원유형으로 폴백하면 의미론적으로 잘못된 표시가 된다(会員タイプ 행과
+                      // 중복 노출되기도 함). 라벨 매핑 → 원본 코드 → "-" 순으로 정직하게 표시.
+                      // TODO: 非GENERAL 의 userRole 이 QSP 응답에서 빈 값으로 도착하는 근본 원인을
+                      //       BE 에서 해결할 것 (다음 스프린트 추적 대상).
                       <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ),
                   }}
