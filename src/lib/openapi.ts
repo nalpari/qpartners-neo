@@ -2528,7 +2528,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["MyPage"],
         summary: "프로필 수정",
-        description: "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능",
+        description:
+          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능. " +
+          "QSP 수정 성공 후 변경 직전 `attrChgYn === \"Y\"` 인 회원에게 속성 변경 알림 메일 발송 (fire-and-forget). " +
+          "메일 발송 결과는 응답에 영향 없음 (실패 시 warn 로깅만).",
         requestBody: {
           required: true,
           content: {
