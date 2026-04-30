@@ -27,24 +27,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
+    // SUPER_ADMIN/ADMIN 은 fail-open 정책 — 권한 매트릭스 필터를 우회해 모든 메뉴 노출.
+    // (관리자 탭/메뉴는 항상 표시 + 모든 CRUD 가능 정책과 정합)
+    // 신규 등록 메뉴는 매트릭스에 행이 아직 없어 일반 필터 경로에서 사라지므로,
+    // 관리자가 등록 직후 화면에서 확인할 수 있도록 elevated 분기에서 필터를 건너뛴다.
+    const isElevated = user.role === "SUPER_ADMIN" || user.role === "ADMIN";
+
     // 요청자 role 의 canRead=true 메뉴만 필터 — 응답 range 를 매트릭스로 좁힌다.
     // 관리 모드(activeOnly=false)에서는 비활성 메뉴도 포함해야 한다 — 비활성 메뉴를
     // 숨기면 사용자는 이미 존재하는 비활성 menuCode 를 인지하지 못한 채 신규 등록을
     // 시도해 409(Unique 충돌)를 받게 된다. 이때 화면 목록에는 보이지 않으니 원인 파악
     // 불가. 관리 모드에선 isActive 필터를 제거해 모든 메뉴를 노출.
-    const allowedPerms = await prisma.qpRoleMenuPermission.findMany({
-      where: {
-        roleCode: user.role,
-        canRead: true,
-        ...(activeOnly && { menu: { isActive: true } }),
-      },
-      select: { menuCode: true },
-    });
-    const allowedSet = new Set(allowedPerms.map((p) => p.menuCode));
+    // elevated 경로에서는 매트릭스가 필요 없어 DB 왕복 1회 절감.
+    const allowedSet = isElevated
+      ? null
+      : new Set(
+          (
+            await prisma.qpRoleMenuPermission.findMany({
+              where: {
+                roleCode: user.role,
+                canRead: true,
+                ...(activeOnly && { menu: { isActive: true } }),
+              },
+              select: { menuCode: true },
+            })
+          ).map((p) => p.menuCode),
+        );
 
     // 비활성 포함 조회는 메뉴관리 화면 전용 — ADM_MENU.read 가 allowedSet 에 포함되어야 허용.
+    // elevated 는 fail-open 으로 게이트 통과 (관리자 탭 항상 표시 정책).
     // 별도 findFirst 를 호출하지 않고 위 findMany 결과를 재사용해 쿼리 수를 줄인다.
-    if (!activeOnly && !allowedSet.has("ADM_MENU")) {
+    if (!activeOnly && !isElevated && !allowedSet?.has("ADM_MENU")) {
       return NextResponse.json(
         { error: "メニュー権限がありません" },
         { status: 403 },
@@ -73,7 +86,8 @@ export async function GET(request: NextRequest) {
     //   canRead 매트릭스는 navigation 가시성용이라 관리 화면에 적용하면 안 된다.
     //   (적용 시 권한 매트릭스에 미등록된 메뉴가 화면에서 사라져, 사용자가 인지 못한
     //    채 동일 menuCode 로 신규 등록 시 P2002 → 409 가 발생해 원인 파악 불가)
-    const filtered = activeOnly
+    // elevated(SUPER_ADMIN/ADMIN): 매트릭스 무시 — 신규 등록 메뉴 즉시 노출 보장.
+    const filtered = activeOnly && allowedSet
       ? menus
           .filter((m) => allowedSet.has(m.menuCode))
           .map((m) => ({
