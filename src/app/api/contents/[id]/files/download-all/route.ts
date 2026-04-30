@@ -27,6 +27,31 @@ function sanitizeHeaderBase(name: string): string {
     .replace(/[\/\\?%*:|"<>]/g, "_");
 }
 
+/**
+ * `Content-Disposition: filename=` 값은 ByteString(latin-1) 만 허용된다.
+ * 일본어/한국어 파일명을 그대로 넣으면 `Cannot convert argument to a ByteString` 으로 실패하므로
+ * non-ASCII 는 `_` 로 치환한 ASCII fallback 을 만든다. 원본명은 `filename*=UTF-8''` 로 별도 전달.
+ *
+ * 결과가 빈 문자열/공백뿐이면 `download${ext}` 로 generic fallback (브라우저가 빈 이름을 거부하지 않도록).
+ */
+function toAsciiHeaderFilename(name: string, fallbackExt: string): string {
+  const ascii = sanitizeHeaderBase(name).replace(/[^\x20-\x7e]/g, "_");
+  const trimmed = ascii.trim();
+  if (trimmed.length === 0 || /^_+$/.test(trimmed)) {
+    return `download${fallbackExt}`;
+  }
+  return ascii;
+}
+
+/** 다운로드 시점의 JST(UTC+9) 기준 YYYYMMDD. 일본 운영 사이트 정책. */
+function formatDateYYYYMMDDJst(): string {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
 // TODO(리뷰 후속 — 경합이 낮음): 동일 파일명 중복 처리를 O(N²) 최악 시나리오에서 O(1) 로 개선 가능
 //  (ID 기반 suffix 방식). 실 운영에서 콘텐츠당 첨부 수가 작아 영향 미미하므로 이번 PR 범위 밖.
 /** 동일 파일명 충돌 시 ` (1)`, ` (2)` 번호 부여 */
@@ -149,6 +174,86 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 첨부 1개 분기 — ZIP 생성 없이 원본 파일 직접 다운로드.
+    //
+    // 운영 정책: 첨부가 1개일 때 굳이 압축할 필요가 없고, 사용자가 ZIP 해제 단계 없이
+    // 즉시 사용 가능하도록 원본 그대로 응답한다.
+    // - Content-Disposition 의 fileName 은 sanitizeHeaderBase 로 ASCII fallback,
+    //   filename* 은 UTF-8 인코딩으로 원본 일본어/한국어 파일명 보존.
+    // - DownloadLog 는 단일 행 createMany 로 ZIP 분기와 일관 처리.
+    if (validFiles.length === 1) {
+      const file = validFiles[0];
+      const fileStream = createReadStream(file.absolutePath);
+
+      let singleLogFired = false;
+      const fireSingleDownloadLog = () => {
+        if (singleLogFired) return;
+        singleLogFired = true;
+        if (!user) return;
+        void prisma.downloadLog
+          .create({
+            data: {
+              userType: user.userType,
+              userId: user.userId,
+              contentId: parsedId.data,
+              attachmentId: file.id,
+            },
+          })
+          .catch((err: unknown) => {
+            console.error("[download-all] 단일 파일 DownloadLog 기록 실패:", {
+              attachmentId: file.id,
+              error: err,
+            });
+          });
+      };
+
+      const singleStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          // createReadStream 의 data 이벤트는 encoding 미지정 시 Buffer 만 emit 하지만,
+          // 타입스크립트 시그니처는 `string | Buffer` union 이라 명시적 narrowing 필요.
+          fileStream.on("data", (chunk: string | Buffer) => {
+            const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+            controller.enqueue(buf);
+            if ((controller.desiredSize ?? 0) <= 0) {
+              fileStream.pause();
+            }
+          });
+          fileStream.on("end", () => {
+            fireSingleDownloadLog();
+            controller.close();
+          });
+          fileStream.on("error", (err: Error) => {
+            console.error("[download-all] 단일 파일 stream 에러:", err);
+            controller.error(err);
+          });
+        },
+        pull() {
+          fileStream.resume();
+        },
+        cancel() {
+          if (!fileStream.destroyed) fileStream.destroy();
+        },
+      });
+
+      request.signal.addEventListener("abort", () => {
+        if (!fileStream.destroyed) fileStream.destroy();
+      });
+
+      // Content-Disposition: filename= 은 ByteString(latin-1) 한정 — 일본어/한국어는 ASCII fallback 으로
+      // 변환하고, 원본명은 filename*=UTF-8'' 로 별도 전달하여 모던 브라우저가 원본명을 사용한다.
+      const baseName = basename(file.fileName);
+      const dotIdx = baseName.lastIndexOf(".");
+      const ext = dotIdx >= 0 ? baseName.slice(dotIdx) : "";
+      const asciiFallback = toAsciiHeaderFilename(baseName, ext);
+      return new NextResponse(singleStream, {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(baseName)}`,
+          "Content-Length": String(file.size),
+        },
+      });
+    }
+
     // ZIP 스트림 생성
     const archive = archiver("zip", { zlib: { level: 6 } });
     const passThrough = new PassThrough();
@@ -180,8 +285,9 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // ZIP 파일명 생성 (안전한 ASCII fallback + UTF-8 인코딩)
     // 리뷰 대응: 제어 문자(CR/LF/NUL 등) 제거 → Content-Disposition 헤더 인젝션 방어
+    // 운영 정책: 형식 = "{콘텐츠 제목}_{YYYYMMDD(다운로드 일자, JST)}.zip"
     const safeBaseName = sanitizeHeaderBase(content.title || "content");
-    const zipFileName = `${safeBaseName}_attachments.zip`;
+    const zipFileName = `${safeBaseName}_${formatDateYYYYMMDDJst()}.zip`;
 
     // PassThrough → Web ReadableStream
     // - cancel(): 클라이언트가 응답 취소 시 archiver/stream 즉시 정리 (FD 누수 방지)

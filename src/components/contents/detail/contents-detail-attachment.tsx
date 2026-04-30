@@ -25,6 +25,25 @@ function isImageFile(mimeType: string | null): boolean {
   return mimeType != null && mimeType.startsWith("image/");
 }
 
+/**
+ * `Content-Disposition` 헤더에서 파일명 추출.
+ * RFC 5987 `filename*=UTF-8''<percent-encoded>` 우선 (일본어/한국어 보존),
+ * 미존재 시 `filename="..."` fallback.
+ */
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch (decodeError) {
+      console.warn("[Contents] filename* 디코딩 실패:", decodeError);
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : null;
+}
+
 /** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
 function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fileId: number; fileName: string }) {
   const [error, setError] = useState(false);
@@ -88,10 +107,18 @@ export function ContentsDetailAttachment({
       const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
         responseType: "blob",
       });
+      // blob URL 다운로드 시 a.download 가 비어 있으면 브라우저가 Content-Disposition 을
+      // 무시하고 blob URL 의 마지막 segment(UUID) 를 파일명으로 사용한다.
+      // 서버 응답 헤더(`{title}_{YYYYMMDD}.zip` 또는 단일 파일 원본명) 를 파싱해 명시한다.
+      const dispo =
+        typeof res.headers["content-disposition"] === "string"
+          ? res.headers["content-disposition"]
+          : null;
+      const fileName = parseContentDispositionFilename(dispo) ?? "download.zip";
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "";
+      a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
