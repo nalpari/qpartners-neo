@@ -1,8 +1,10 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import type { MenuCode } from "@/lib/schemas/common";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 
 /**
  * 로그인 사용자의 역할별 메뉴 CRUD 권한 훅.
@@ -51,16 +53,39 @@ async function fetchMyPermissions(): Promise<MePermissionsData> {
   return res.data.data;
 }
 
+/** localStorage AUTH_FLAG_KEY 구독 — 로그인 상태 변경 시 리렌더 트리거 */
+function subscribeAuthFlag(callback: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === AUTH_FLAG_KEY) callback();
+  };
+  window.addEventListener(AUTH_CHANGE_EVENT, callback);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, callback);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
 /**
  * 내부 공통 쿼리 — useMenuPermission / useMenuPermissionMap 공유.
  * queryKey 는 동일하므로 TanStack Query 캐시가 자동 머지되지만, queryFn 정의 중복 제거 목적.
+ *
+ * 비로그인 상태에서는 쿼리를 비활성화하여 불필요한 401 응답 방지.
+ * (AUTH_FLAG_KEY 로 로그인 여부를 SSR-safe 하게 판별)
  */
 function useMePermissionsQuery() {
+  const hasAuthFlag = useSyncExternalStore(
+    subscribeAuthFlag,
+    () => { try { return localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch { return false; } },
+    () => false,
+  );
+
   return useQuery<MePermissionsData>({
     queryKey: ["me", "permissions"],
     queryFn: fetchMyPermissions,
     staleTime: 5 * 60 * 1000,
     retry: false,
+    enabled: hasAuthFlag,
   });
 }
 
