@@ -72,15 +72,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2-1. Rate limiting — 동일 사용자 10분 내 3건 제한
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  // 2-1. Rate limiting — 동일 사용자 1분 내 3건 제한
+  const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000);
   let recentCount: number;
   try {
     recentCount = await prisma.twoFactorCode.count({
       where: {
         userType: userTp,
         userId,
-        createdAt: { gte: tenMinutesAgo },
+        createdAt: { gte: oneMinuteAgo },
       },
     });
   } catch (error) {

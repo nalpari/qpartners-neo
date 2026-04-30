@@ -130,9 +130,10 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
       },
       {
         headerName: "登録者名",
-        field: "senderName",
+        field: "createdByName",
         flex: 1,
         headerClass: "ag-header-cell-center",
+        valueFormatter: (params) => params.value ?? "—",
       },
       {
         headerName: "登録者ID",

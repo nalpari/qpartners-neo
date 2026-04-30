@@ -164,6 +164,9 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set("X-User-Type", user.userTp);
   requestHeaders.set("X-User-Id", user.userId);
   requestHeaders.set("X-User-Role", role);
+  if (user.userNm) {
+    requestHeaders.set("X-User-Name", encodeURIComponent(user.userNm));
+  }
   if (user.deptNm) {
     requestHeaders.set("X-User-Department", encodeURIComponent(user.deptNm));
   }

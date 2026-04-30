@@ -37,6 +37,7 @@ export interface MassMailListItem {
   hasAttachment: boolean;
   senderName: string;
   senderId: string;
+  createdByName: string | null;
   sentAt: string | null;
   createdAt: string;
 }
@@ -110,6 +111,7 @@ export interface MassMailDetail {
   /** true 면 실패 명단이 상한 초과로 잘림 — UI 에서 안내 필요 */
   failedRecipientsTruncated: boolean;
   createdBy: string;
+  createdByName: string | null;
   createdAt: string;
 }
 
@@ -140,6 +142,7 @@ export interface FormInitialData {
   body: string;
   sentAt: string | null;
   createdBy: string;
+  createdByName: string | null;
   createdAt: string;
   /** 작성자 userType (edit/detail 권한 판별용) */
   userType: string;
@@ -190,6 +193,7 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
     body: detail.body,
     sentAt: detail.sentAt,
     createdBy: detail.createdBy,
+    createdByName: detail.createdByName,
     createdAt: detail.createdAt,
     userType: detail.userType,
     userId: detail.userId,
