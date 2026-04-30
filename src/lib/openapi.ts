@@ -1953,6 +1953,92 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/inline-images": {
+      post: {
+        tags: ["Content"],
+        summary: "本文埋め込み画像アップロード (BlockNote uploadFile)",
+        description:
+          "BlockNote 에디터의 `uploadFile` 훅에서 호출. 폼 저장 전 `contentId=null` 상태로 디스크/DB에 선존재. 폼 저장(`POST/PUT /contents`) 시 본문이 참조한 ID만 stamp 되고 나머지는 즉시 정리.",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: {
+                    type: "string",
+                    format: "binary",
+                    description: "5MB 이하 jpg/jpeg/png/gif/webp 이미지",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "업로드 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        url: {
+                          type: "string",
+                          example: "/api/inline-images/42",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("파일 검증 실패 (확장자/MIME/빈 파일)"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("메뉴 권한 없음 (CONTENT.create / .update 모두 거부)"),
+          "411": errorResponse("Content-Length 헤더 누락"),
+          "413": errorResponse("Content-Length 초과 (5MB)"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/inline-images/{id}": {
+      get: {
+        tags: ["Content"],
+        summary: "本文埋め込み画像取得 (인증 사용자)",
+        description:
+          "BlockNote 본문 렌더 시 `<img>` 호출용. 인증 사용자 누구나 가능 (게시대상/published 검증 미적용 — 본문 렌더 폭주 방지). 다운로드 로그 미기록.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "이미지 바이너리",
+            content: {
+              "image/*": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("경로 검증 실패"),
+          "404": errorResponse("Not found / 디스크 부재"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
     "/mypage/download-logs": {
       get: {
         tags: ["DownloadLog"],

@@ -203,6 +203,23 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     });
   };
 
+  const handleContentUploadError = (error: unknown) => {
+    // 서버가 일본어 메시지를 내려주는 경우 그대로 노출 — 그 외에는 일반화 메시지.
+    let message = "画像のアップロードに失敗しました。しばらくしてからお試しください。";
+    if (isAxiosError(error) && error.response) {
+      const resData: unknown = error.response.data;
+      const serverMsg =
+        resData != null &&
+        typeof resData === "object" &&
+        "error" in resData &&
+        typeof (resData as { error: unknown }).error === "string"
+          ? ((resData as { error: string }).error)
+          : null;
+      if (serverMsg) message = serverMsg;
+    }
+    openAlert({ type: "alert", message });
+  };
+
   const handleSave = async () => {
     // 필수항목 검증
     if (!approver) {
@@ -332,6 +349,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           content={content}
           onContentChange={setContent}
           onContentParseError={handleContentParseError}
+          onContentUploadError={handleContentUploadError}
         />
 
         <ContentsFormAttachment
