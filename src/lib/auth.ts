@@ -36,8 +36,19 @@ export type UserInfo = {
   userType: (typeof userTpValues)[number];
   userId: string;
   role: AuthRole;
+  name?: string;
   department?: string;
 };
+
+/** percent-encoding 된 헤더 값을 안전하게 디코딩. 잘못된 인코딩 시 원본 반환. */
+function safeDecodeHeader(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    console.warn("[auth] 헤더 디코딩 실패, 원본 사용:", value.slice(0, 20));
+    return value;
+  }
+}
 
 /** 요청 헤더에서 사용자 정보 추출. 헤더 없으면 null (비회원). */
 export function getUserFromHeaders(headers: Headers): UserInfo | null {
@@ -49,11 +60,15 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   if (!VALID_USER_TYPES.has(userType)) return null;
   if (!VALID_ROLES.has(role)) return null;
 
+  const rawName = headers.get("X-User-Name");
+  const rawDepartment = headers.get("X-User-Department");
+
   return {
     userType: userType as UserInfo["userType"],
     userId,
     role: role as AuthRole,
-    department: headers.get("X-User-Department") ? decodeURIComponent(headers.get("X-User-Department")!) : undefined,
+    name: rawName ? safeDecodeHeader(rawName) : undefined,
+    department: rawDepartment ? safeDecodeHeader(rawDepartment) : undefined,
   };
 }
 

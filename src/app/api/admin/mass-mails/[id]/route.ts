@@ -130,6 +130,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       failedRecipientsTotal: failedTotal,
       failedRecipientsTruncated: failedTruncated,
       createdBy: mail.createdBy ?? "",
+      createdByName: mail.createdByName ?? null,
       createdAt: mail.createdAt.toISOString(),
     };
 

@@ -196,6 +196,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormInfo
           senderName={senderName}
           createdBy={initialData?.createdBy ?? ""}
+          createdByName={initialData?.createdByName ?? null}
           sentAt={showSentAt && initialData?.sentAt ? formatMailDate(initialData.sentAt) : (showSentAt && initialData?.createdAt ? formatMailDate(initialData.createdAt) : "")}
         />
       </section>
