@@ -66,10 +66,12 @@ export function ContentsDetailBody({
         </div>
       </div>
 
-      {/* 본문 — 렌더 전처리(prepareBodyForRender) → sanitize → 삽입 */}
+      {/* 본문 — 렌더 전처리(prepareBodyForRender) → sanitize → 삽입.
+          [&_table]:table-fixed: BlockNote가 저장한 <colgroup><col style="width:Npx"> 너비를
+          상세 화면에서도 그대로 유지하기 위함 (auto layout 이면 빈 셀이 0폭으로 줄어듦). */}
       {body && (
         <div
-          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none"
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none [&_table]:table-fixed [&_table]:w-auto [&_table]:max-w-full"
           dangerouslySetInnerHTML={{
             __html: sanitizeContentHtml(prepareBodyForRender(body)),
           }}
