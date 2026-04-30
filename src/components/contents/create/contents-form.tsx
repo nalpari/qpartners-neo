@@ -41,6 +41,8 @@ interface ContentDetailResponse {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** 서버에서 계산한 갱신 이력 여부 — createdAt !== updatedAt 시 true. */
+  hasBeenUpdated?: boolean;
   targets: { targetType: string; startAt: string | null; endAt: string | null }[];
   categories: {
     id: number;
@@ -147,9 +149,12 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const updater = mode === "edit" && existingData
     ? (existingData.createdBy ?? "")
     : "";
-  const updateDate = mode === "edit" && existingData
-    ? formatDate(new Date(existingData.updatedAt))
-    : "";
+  // 갱신일 — 실제로 수정·저장이 완료된 경우(서버 hasBeenUpdated=true)에만 표시.
+  // 최초 등록 직후 수정 화면 진입 시 createdAt===updatedAt 이므로 빈 값을 유지.
+  const updateDate =
+    mode === "edit" && existingData && existingData.hasBeenUpdated
+      ? formatDate(new Date(existingData.updatedAt))
+      : "";
   const department = mode === "edit" && existingData
     ? (existingData.authorDepartment ?? "")
     : (loginUser?.deptNm ?? "");

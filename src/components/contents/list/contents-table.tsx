@@ -79,7 +79,7 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
           NEW
         </span>
       )}
-      {data.isUpdated && (
+      {data.hasBeenUpdated && data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
         </span>
@@ -171,14 +171,14 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
 function renderMobileTitle(item: ContentListItem) {
   return (
     <div className="flex flex-col gap-2">
-      {(item.isNew || item.isUpdated) && (
+      {(item.isNew || (item.hasBeenUpdated && item.isUpdated)) && (
         <div className="flex items-center gap-1">
           {item.isNew && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2]">
               NEW
             </span>
           )}
-          {item.isUpdated && (
+          {item.hasBeenUpdated && item.isUpdated && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D]">
               UPDATE
             </span>
