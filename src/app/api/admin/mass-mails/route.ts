@@ -270,6 +270,7 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
         body: sanitizedBody,
         status: data.status,
         createdBy: user.userId,
+        createdByName: user.name ?? null,
         updatedBy: user.userId,
       },
     });
@@ -346,10 +347,10 @@ export async function GET(request: NextRequest) {
       where[targetField] = true;
     }
 
-    // 登録者 검색 (name → senderName, id → userId)
+    // 登録者 검색 (name → createdByName, id → userId)
     if (authorQuery && authorSearchType) {
       if (authorSearchType === "name") {
-        where.senderName = { contains: authorQuery };
+        where.createdByName = { contains: authorQuery };
       } else {
         where.userId = { contains: authorQuery };
       }
@@ -390,6 +391,7 @@ export async function GET(request: NextRequest) {
       hasAttachment: mail.attachments.length > 0,
       senderName: mail.senderName,
       senderId: mail.userId,
+      createdByName: mail.createdByName ?? null,
       sentAt: mail.sentAt?.toISOString() ?? null,
       createdAt: mail.createdAt.toISOString(),
     }));

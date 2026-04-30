@@ -315,6 +315,7 @@ model MassMail {
   sentFailed         Int                     @default(0) @map("sent_failed")
   createdAt          DateTime                @default(now()) @map("created_at")
   createdBy          String?                 @map("created_by") @db.VarChar(255)
+  createdByName      String?                 @map("created_by_name") @db.VarChar(255)
   updatedAt          DateTime                @updatedAt @map("updated_at")
   updatedBy          String?                 @map("updated_by") @db.VarChar(255)
   optOut             Boolean                 @default(false) @map("opt_out")

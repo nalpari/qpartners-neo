@@ -36,6 +36,7 @@ export type UserInfo = {
   userType: (typeof userTpValues)[number];
   userId: string;
   role: AuthRole;
+  name?: string;
   department?: string;
 };
 
@@ -53,6 +54,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
     userType: userType as UserInfo["userType"],
     userId,
     role: role as AuthRole,
+    name: headers.get("X-User-Name") ? decodeURIComponent(headers.get("X-User-Name")!) : undefined,
     department: headers.get("X-User-Department") ? decodeURIComponent(headers.get("X-User-Department")!) : undefined,
   };
 }
