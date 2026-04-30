@@ -122,11 +122,9 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 2차 인증 필요 여부 판별
-  //    정책 (secAuthDt 단일 기준 + 최초 인증 강제 우선):
-  //      - 최우선: secAuthDt 없음 → 무조건 필요 (한 번도 2FA 안 함, secAuthYn 무시)
-  //        → pwdInitYn 기반 2FA 면제 폐기: secAuthDt 유무만으로 판정 통일.
-  //          신규 사용자(secAuthDt=null)는 최초 1회 2FA 필수 — 이메일 미등록 시 설정 유도.
-  //      - 면제: secAuthYn === "N" (관리자 명시 해제)
+  //    정책 (관리자 명시 해제 최우선):
+  //      - 최우선 면제: secAuthYn === "N" (관리자 명시 해제) — secAuthDt 유무 무관 면제
+  //      - 신규(secAuthDt=null) + secAuthYn !== "N" → 최초 1회 2FA 필수
   //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
   //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
   //
@@ -146,13 +144,16 @@ export async function POST(request: NextRequest) {
     | "FAIL_CLOSED";
   let twoFactorReason: TwoFactorReason = "DISABLED_BY_ADMIN";
 
-  // 0) 최우선 가드 — secAuthDt 가 없으면(한 번도 2FA 한 적 없음) 무조건 강제.
-  //    SUPER_ADMIN/ADMIN 포함 모든 권한이 최초 1회는 반드시 2FA 통과 후 secAuthDt 생성.
-  //    secAuthYn === "N" (관리자 면제) 보다 우선.
-  if (!qsp.data.secAuthDt) {
+  // 0) 최우선 면제 — secAuthYn === "N" (관리자가 2FA 해제) 이면 secAuthDt 유무와 무관하게 면제.
+  //    "신규(secAuthDt=null) 무조건 강제" 보다 우선 — 운영자가 명시적으로 끈 회원은 첫 로그인도 통과.
+  if (qsp.data.secAuthYn === "N") {
+    requireTwoFactor = false;
+    twoFactorReason = "DISABLED_BY_ADMIN";
+  } else if (!qsp.data.secAuthDt) {
+    // 한 번도 2FA 안 함 + 관리자 해제 아님 → 최초 1회 강제 (이메일 미등록 시 설정 유도).
     requireTwoFactor = true;
     twoFactorReason = "FIRST_TIME_REQUIRED";
-  } else if (qsp.data.secAuthYn !== "N") {
+  } else {
     // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
     let validityDays: number | null = null;
     try {
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
       const now = Date.now();
       const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-      // 위 0번 분기에서 secAuthDt 가 truthy 임을 보장. 만료 판정만 수행.
+      // 위 두 분기에서 secAuthYn !== "N" + secAuthDt truthy 임을 보장. 만료 판정만 수행.
       const secAuthDt = qsp.data.secAuthDt;
       const authIso = parseQspDate(secAuthDt);
       if (!authIso) {
