@@ -1,39 +1,52 @@
 /**
- * 자동로그인 AES-256 암복호화 유틸리티
+ * Inbound 자동로그인 AES-128-CBC 복호화 유틸 (외부 3사 → Q.Partners-neo)
  *
- * 가이드 사양:
- *   plainUserId -> AES256 암호화(키: YYYYMMDD + AUTO_LOGIN_AES_KEY) -> cipherText
- *   encodeURIComponent(cipherText) -> URL_ENCODED_CIPHERTEXT
+ * 사양 (2026-04-30 outbound 사양 미러링으로 재정렬):
+ *   - 알고리즘 : AES/CBC/PKCS5Padding (Java) ↔ aes-128-cbc (Node.js, 기본 PKCS7 = 16B 블록에서 PKCS5 와 동등)
+ *   - Key     : AUTO_LOGIN_INBOUND_AES_KEY 환경변수 (16 byte UTF-8)
+ *               ※ outbound 키(AUTO_LOGIN_OUTBOUND_AES_KEY) 와 분리 운영 —
+ *                 한쪽 compromise 시 다른 방향 자동로그인에 영향 격리 (2026-04-30 Q1 결정).
+ *   - IV      : `YYYYMMDD` (KST) + `_autoL!!` = 16 byte (예: 20260430_autoL!!)
+ *               ※ outbound 와 동일 — 외부 3사 가이드 양방향 통일 (2026-04-30 Q2 결정).
+ *   - 평문    : 사용자 로그인 ID (string, ADMIN/STORE/SEKO=loginId, GENERAL=email)
+ *   - 입력    : Base64 ciphertext (URL 디코딩은 Next.js 쿼리 파서가 자동 수행)
  *
- * 구현 세부:
- *   - AES-256-CBC, PKCS5Padding(Node 기본)
- *   - 키: SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) → 32바이트
- *   - IV : 요청마다 crypto.randomBytes(16)로 새로 생성 (결정적 IV 방지)
- *   - 출력 포맷: Base64(IV || ciphertext) — 16바이트 IV를 cipher 앞에 prepend
+ * 자정 경계 (KST) 처리:
+ *   - 당일 IV 복호화 실패 시 전일 IV 로 1회 재시도.
+ *   - 외부 3사가 KST 23:59 직전에 발급해 KST 00:01 에 도착한 cipher 흡수.
+ *   - 키는 날짜 무관 (env 고정) — IV 만 전일로 교체.
  *
- * 자정 경계: 복호화 실패 시 전일 키로 재시도하여 KST 00:00 전후 오차를 흡수한다.
+ * 변경 이력:
+ *   - 2026-04-22 v1: 초안 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT))
+ *   - 2026-04-30 v2: 재구현 — outbound `auto-login-outbound-crypto.ts` 와 알고리즘·IV·평문·출력 통일.
+ *     키만 분리 (`AUTO_LOGIN_INBOUND_AES_KEY`). 3사 측 inbound encrypt 미구현 시점이라 호환 부담 0.
  *
- * 보안 배경: 이전 구현은 IV를 SHA-256(key) 앞 16바이트로 파생하여 (key, IV)가 하루 고정이었음.
- * 동일 userId → 동일 cipher가 되어 Codebook Attack / Replay / Correlation에 취약.
- * 랜덤 IV로 IND-CPA 안전성(NIST SP 800-38A) 요구사항을 충족한다.
+ * 보안 노트:
+ *   - IV 가 (KST 일자 + 고정 상수) 로 결정적 → 같은 userId 가 같은 날 동일 cipher 가 됨.
+ *     이는 외부 3사 호환을 위한 의도된 동작이며, replay 표면이 24h 단위로 노출됨.
+ *   - 받는 측 1회용 차단을 두지 않음 (2026-04-30 결정) — outbound 받는 측 (외부 3사) 와 동일 정책으로
+ *     통일. 같은 사용자가 같은 날 여러 번 inbound 진입을 정상 통과시킨다.
+ *     받아들인 위험: cipher 탈취 시 24h 내 재사용 가능 (외부 3사 inbound 도 동일 위험).
+ *     필요 시 평문에 nonce/타임스탬프를 포함하는 사양 확장으로 강화 가능 (현재 Out of Scope).
+ *   - outbound 와 키가 다르므로 outbound 발급 cipher 를 본 모듈로 복호 불가 (의도된 분리).
  */
 
 import crypto from "node:crypto";
 
 import { ConfigError } from "@/lib/errors";
 
-const ALGORITHM = "aes-256-cbc";
+const ALGORITHM = "aes-128-cbc";
+const KEY_LENGTH = 16;
 const IV_LENGTH = 16;
+/** IV = `YYYYMMDD`(8) + IV_SUFFIX(8) = 16 byte. outbound 와 동일 상수 — 양방향 가이드 통일. */
+const IV_SUFFIX = "_autoL!!";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 /**
- * AUTO_LOGIN_AES_KEY 최소 길이 — SHA-256 파생이라 길이 자체가 엔트로피 하한은 아니지만
- * 운영 사고(빈 값·오타) 방지용 가드.
- *
- * QSP 와 합의된 현행 시크릿은 8자(예: `_autoL!!`) 고정이라 임의로 키 길이를 늘릴 수 없음 —
- * 메모리 `project_auto_login_flow.md` 참조. 따라서 하한을 8로 설정해 가드를 유지하되
- * 현행 키를 배제하지 않도록 한다.
+ * 외부 3사 가이드 문서·검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`) 에
+ * 노출된 샘플 키. 운영자가 .env 설정 시 그대로 복사하면 공개 키로 cipher 가 발급/복호되어
+ * 자동로그인이 무력화된다. fail-closed 가드로 차단.
  */
-const MIN_AES_SECRET_LENGTH = 8;
+const SAMPLE_KEY = "jpqcellQ123456!!";
 
 /** KST(UTC+9) 기준 YYYYMMDD */
 function formatKstDate(date: Date): string {
@@ -44,77 +57,120 @@ function formatKstDate(date: Date): string {
   return `${y}${m}${d}`;
 }
 
-function getTodayKST(): string {
-  return formatKstDate(new Date());
-}
-
-function getYesterdayKST(): string {
-  return formatKstDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-}
-
-function deriveKey(keyString: string): Buffer {
-  return crypto.createHash("sha256").update(keyString, "utf8").digest();
-}
-
-function getAesSecret(): string {
-  const envKey = process.env.AUTO_LOGIN_AES_KEY;
-  if (!envKey) {
-    throw new ConfigError("AUTO_LOGIN_AES_KEY 환경변수가 설정되지 않았습니다");
-  }
-  const trimmed = envKey.trim();
-  if (trimmed.length === 0) {
-    throw new ConfigError("AUTO_LOGIN_AES_KEY 환경변수가 공백 문자로만 구성되어 있습니다");
-  }
-  if (trimmed.length < MIN_AES_SECRET_LENGTH) {
+/**
+ * 매 호출 시 env 에서 키를 읽어들인다 (모듈 레벨 캐싱 X).
+ *
+ * 캐싱하지 않는 이유:
+ *   - 키 침해(compromise) 시 프로세스 재시작 없이 교체 가능해야 함 (런타임 키 핫 로테이션 지원).
+ *   - Docker rolling restart 환경에서 일부 인스턴스만 구 키 보유 상태로 트래픽을 받아
+ *     간헐적 복호화 실패가 발생하는 시나리오 회피.
+ *   - 인바운드 호출 빈도(외부 3사 SSO 진입)는 분당 수십 건 수준이라
+ *     매 호출 시 process.env 읽기 + 16 byte Buffer 생성 비용은 무시 가능.
+ */
+function getInboundAesKey(): Buffer {
+  const raw = process.env.AUTO_LOGIN_INBOUND_AES_KEY;
+  if (!raw) {
     throw new ConfigError(
-      `AUTO_LOGIN_AES_KEY 길이가 최소 기준(${MIN_AES_SECRET_LENGTH}자) 미만입니다`,
+      "AUTO_LOGIN_INBOUND_AES_KEY 환경변수가 설정되지 않았습니다",
     );
   }
-  // 반드시 trimmed 반환 — env 값에 우연히 공백/개행이 섞이면 외부 3사와 SHA-256 결과가 달라져
-  // 간헐적 복호화 실패가 발생한다. 유효성 검사에 사용한 값으로 일관되게 내보낸다.
-  return trimmed;
+  // trim 하지 않음 — 외부 3사가 사용하는 정확한 byte 시퀀스를 유지해야 cipher 가 일치.
+  // env 에 우연히 따옴표/공백/개행이 섞이면 cipher 가 silent 로 어긋나 자동로그인이 무한 실패.
+  // length 검증으로 부팅 진단 비용 없이 첫 요청에서 즉시 차단.
+  const buf = Buffer.from(raw, "utf8");
+  if (buf.length !== KEY_LENGTH) {
+    // env 에 우연히 따옴표/공백/개행이 섞이면 buf.length 가 16 을 벗어남.
+    // 실제 byte 길이를 메시지에 포함해 운영자가 즉시 원인을 식별할 수 있게 함.
+    throw new ConfigError(
+      `AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — ${KEY_LENGTH} byte 필요, 실제 ${buf.length} byte (개행/공백 포함 여부 확인)`,
+    );
+  }
+  // 운영 오설정 방어 — 외부 가이드/검증 스크립트에 노출된 샘플 키가 그대로 설정된 경우 즉시 차단.
+  // 일치 비교는 이미 길이 동일(16 byte) 가 보장된 후이므로 timingSafeEqual 사용 가능.
+  if (crypto.timingSafeEqual(buf, Buffer.from(SAMPLE_KEY, "utf8"))) {
+    throw new ConfigError(
+      "AUTO_LOGIN_INBOUND_AES_KEY 가 공개된 샘플 키로 설정되어 있습니다 — 운영 키로 교체 필요",
+    );
+  }
+  return buf;
 }
 
-function decryptWithKey(payload: Buffer, keyString: string): string {
-  if (payload.length <= IV_LENGTH) {
-    throw new Error("cipher payload 길이가 IV 길이보다 짧음");
+function buildIv(date: Date): Buffer {
+  const iv = `${formatKstDate(date)}${IV_SUFFIX}`;
+  // YYYYMMDD(8) + IV_SUFFIX(8) = 16 byte 보장 — defense-in-depth.
+  // IV_SUFFIX 가 멀티바이트 문자로 잘못 변경될 경우 즉시 차단.
+  const byteLength = Buffer.byteLength(iv, "utf8");
+  if (byteLength !== IV_LENGTH) {
+    throw new ConfigError(
+      `Inbound IV 길이 불일치 (${IV_LENGTH} byte 기대, 실제 ${byteLength} byte)`,
+    );
   }
-  const iv = payload.subarray(0, IV_LENGTH);
-  const ciphertext = payload.subarray(IV_LENGTH);
-  const key = deriveKey(keyString);
+  return Buffer.from(iv, "utf8");
+}
 
+function decryptWithIv(payload: Buffer, iv: Buffer, key: Buffer): string {
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   const decrypted = Buffer.concat([
-    decipher.update(ciphertext),
+    decipher.update(payload),
     decipher.final(),
   ]);
   return decrypted.toString("utf8");
 }
 
-/** AES-256-CBC 복호화 — 자정 경계 대응: 당일 키 실패 시 전일 키로 재시도 */
+/**
+ * 외부 3사(HANASYS/Q.Order/Q.Musubi) 자동로그인 cipher 복호화.
+ *
+ * @param cipherText Base64 ciphertext (Next.js 쿼리 파서가 URL 디코딩 자동 수행)
+ * @returns 평문 사용자 로그인 ID (ADMIN/STORE/SEKO=loginId, GENERAL=email)
+ * @throws ConfigError — 환경변수 누락 / 키 길이 불일치 / IV 길이 불일치
+ * @throws Error       — 당일·전일 IV 양쪽 모두 복호화 실패 (cipher 위변조·키 불일치 등)
+ *
+ * 응답 시간 균질화 (2026-04-30):
+ *   - 당일 IV 성공·실패에 관계 없이 항상 전일 IV 도 시도한다.
+ *   - 이전 구현은 당일 성공 시 1회, 실패 시 2회 복호화로 약 2배 응답 시간 차이가 발생해
+ *     "어떤 cipher 가 어느 날짜로 풀렸는가" 가 측면 정보로 누출될 여지가 있었다.
+ *   - AES-128 16-byte 복호화는 마이크로초 단위라 추가 비용은 무시 가능 — 라우트 레벨의 QSP/JWT
+ *     처리 비용이 압도적이므로 응답 시간 측면에서 의미 있는 차이가 사라진다.
+ */
 export function decryptAutoLogin(cipherText: string): string {
-  const secret = getAesSecret();
+  const key = getInboundAesKey();
   const payload = Buffer.from(cipherText, "base64");
+  const todayIv = buildIv(new Date());
+  const yesterdayIv = buildIv(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+  let todayResult: string | null = null;
+  let yesterdayResult: string | null = null;
+  let todayError: unknown = null;
+  let yesterdayError: unknown = null;
+
   try {
-    return decryptWithKey(payload, getTodayKST() + secret);
-  } catch (todayError: unknown) {
-    // 자정 직후(KST) 전일 키로 암호화된 cipher 유입은 정상 경로지만, cipher 포맷 오류·
-    // 키 교체 실수·패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름. 프로덕션에서도 컨텍스트 유지.
-    console.warn("[auto-login-crypto] 당일 키 복호화 실패 — 전일 키로 재시도:", {
-      errorName: todayError instanceof Error ? todayError.name : typeof todayError,
-      errorMessage: todayError instanceof Error ? todayError.message : String(todayError),
-    });
-    try {
-      return decryptWithKey(payload, getYesterdayKST() + secret);
-    } catch (yesterdayError: unknown) {
-      // 당일·전일 키 모두 실패 — 두 에러 모두 기록해 원인 추적 가능하게 유지
-      console.error("[auto-login-crypto] 당일·전일 키 모두 복호화 실패:", {
-        todayErrorName: todayError instanceof Error ? todayError.name : typeof todayError,
-        todayErrorMessage: todayError instanceof Error ? todayError.message : String(todayError),
-        yesterdayErrorName: yesterdayError instanceof Error ? yesterdayError.name : typeof yesterdayError,
-        yesterdayErrorMessage: yesterdayError instanceof Error ? yesterdayError.message : String(yesterdayError),
-      });
-      throw yesterdayError;
-    }
+    todayResult = decryptWithIv(payload, todayIv, key);
+  } catch (err: unknown) {
+    todayError = err;
   }
+
+  // 당일 성공 여부와 무관하게 항상 시도 — 타이밍 균질화 목적.
+  try {
+    yesterdayResult = decryptWithIv(payload, yesterdayIv, key);
+  } catch (err: unknown) {
+    yesterdayError = err;
+  }
+
+  if (todayResult !== null) {
+    return todayResult;
+  }
+  if (yesterdayResult !== null) {
+    // 자정 직후(KST) 전일 IV 로 암호화된 cipher 흡수 경로 — 정상 운영 흐름이라 warn 으로만 기록.
+    console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 복호화 성공");
+    return yesterdayResult;
+  }
+
+  // 양쪽 모두 실패 — ConfigError(IV 길이 불일치 등 설정 결함) 는 우선 표면화하여
+  // 운영자가 일반 복호화 실패와 구분해서 원인을 식별하도록 한다.
+  if (todayError instanceof ConfigError) throw todayError;
+  if (yesterdayError instanceof ConfigError) throw yesterdayError;
+  // OpenSSL 에러는 message 뿐 아니라 name(예: "Error") 자체도 버전에 따라 padding 단서를
+  // 흘릴 여지가 있어 분기 식별용 고정 문자열만 남긴다.
+  console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패");
+  throw todayError ?? yesterdayError ?? new Error("decryption failed");
 }

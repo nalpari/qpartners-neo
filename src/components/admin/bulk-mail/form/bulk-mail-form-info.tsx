@@ -23,18 +23,27 @@ function InfoField({ label, value }: InfoFieldProps) {
 interface BulkMailFormInfoProps {
   senderName: string;
   createdBy: string;
+  createdByName: string | null;
   sentAt: string;
+}
+
+/** 등록자 표시: 이름(ID) 형식. 이름 없으면 ID만, 둘 다 없으면 "—" */
+function formatRegistrant(createdBy: string, createdByName: string | null): string {
+  if (!createdBy) return "—";
+  if (createdByName) return `${createdByName}(${createdBy})`;
+  return createdBy;
 }
 
 export function BulkMailFormInfo({
   senderName,
   createdBy,
+  createdByName,
   sentAt,
 }: BulkMailFormInfoProps) {
   return (
     <div className="flex flex-wrap gap-[18px]">
       <InfoField label="差出人表示名" value={senderName} />
-      <InfoField label="登録者" value={createdBy} />
+      <InfoField label="登録者" value={formatRegistrant(createdBy, createdByName)} />
       <InfoField label="配信日" value={sentAt} />
     </div>
   );

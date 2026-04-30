@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
+import { useAuthStore } from "@/lib/auth-store";
 
 function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
   if (typeof window === "undefined") return { mode: "create" };
@@ -34,6 +35,13 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
 
 export default function AdminBulkMailCreatePage() {
   const [initial] = useState(loadCopyData);
+  const user = useAuthStore((s) => s.user);
 
-  return <BulkMailForm mode={initial.mode} initialData={initial.initialData} />;
+  const initialData: Partial<FormInitialData> = {
+    ...initial.initialData,
+    createdBy: user?.userId ?? "",
+    createdByName: user?.userNm ?? null,
+  };
+
+  return <BulkMailForm mode={initial.mode} initialData={initialData} />;
 }
