@@ -222,6 +222,19 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
         ...(t.endDate && { endAt: t.endDate.toISOString() }),
       }));
 
+    // 게시대상 누락 가드:
+    // 비사내 사용자(GENERAL/STORE/SEKO/non_member) 의 GET /api/contents 는
+    // `targets: { some: { targetType: <user role> } }` 로 필터링되므로,
+    // ContentTarget 행이 0건인 콘텐츠는 회원 화면(홈/목록) 에서 영구 누락된다.
+    // 운영자의 체크박스 미선택 사고를 차단하기 위해 1개 이상 명시하도록 강제한다.
+    if (targets.length === 0) {
+      openAlert({
+        type: "alert",
+        message: "公開対象を1つ以上選択してください。\n選択しない場合、会員画面に表示されません。",
+      });
+      return;
+    }
+
     // 삭제된 첨부파일 ID 산출
     const currentFileIds = new Set(savedFiles.map((f) => f.id));
     const deleteAttachmentIds = initialFileIds.filter((id) => !currentFileIds.has(id));

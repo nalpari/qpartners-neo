@@ -63,17 +63,44 @@ export function ContentsFormPostTarget({
   postTargets,
   onPostTargetsChange,
 }: ContentsFormPostTargetProps) {
+  // 체크 활성화 시 상단 공통 기간(allStartDate/allEndDate)을 즉시 적용한다.
+  //
+  // root cause: 기존엔 checked 토글만 했고 startDate/endDate 는 `getInitialPostTargets` 가
+  // 부여한 "등록 시각" 그대로였다. 사용자가 「全選択」+ 상단 공통기간 변경 후 「選択の適用」
+  // 을 누르지 않으면, 각 ContentTarget.endAt 이 등록일 KST 자정(=UTC -9h, 즉 등록 시점보다
+  // 과거)으로 저장되어 GET 의 publication window(`endAt gte now`) 가 즉시 false 가 된다.
+  // 결과: 비사내 회원에게 노출되지 않음.
+  //
+  // 해제(checked=false) 시에는 기존 기간을 보존한다 — 사용자가 의도적으로 끈 케이스에서
+  // 다시 켰을 때 미세 조정값이 사라지지 않도록 한다.
+  const applyCommonPeriod = (
+    target: PostTargetItem,
+    checked: boolean,
+  ): PostTargetItem => {
+    if (!checked) return { ...target, checked };
+    return {
+      ...target,
+      checked,
+      startDate: postTargets.allStartDate
+        ? new Date(postTargets.allStartDate)
+        : target.startDate,
+      endDate: postTargets.allEndDate
+        ? new Date(postTargets.allEndDate)
+        : target.endDate,
+    };
+  };
+
   const handleSelectAll = (checked: boolean) => {
     onPostTargetsChange({
       ...postTargets,
       selectAll: checked,
-      targets: postTargets.targets.map((t) => ({ ...t, checked })),
+      targets: postTargets.targets.map((t) => applyCommonPeriod(t, checked)),
     });
   };
 
   const handleTargetCheck = (key: string, checked: boolean) => {
     const newTargets = postTargets.targets.map((t) =>
-      t.key === key ? { ...t, checked } : t
+      t.key === key ? applyCommonPeriod(t, checked) : t,
     );
     const allChecked = newTargets.every((t) => t.checked);
     onPostTargetsChange({
