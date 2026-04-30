@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
-import { MEMBER_TYPE_OPTIONS } from "@/components/admin/members/members-types";
 
 interface CodeDetailApi {
   code: string;
@@ -21,11 +20,12 @@ type SelectOption = { value: string; label: string };
  *
  * - 옵션 소스: `/api/codes/lookup?headerCode=USER_TYPE`
  *   매핑: `value = code` (예 "ADMIN"), `label = codeName` (예 "管理者")
- * - 검색 SelectBox 용 `options` 는 선두에 「全体(value="")」 항목 자동 부착
- * - 백엔드의 회원 응답이 `userType` 을 일본어 라벨로 내려주므로, 이 라벨을
- *   userTp 영문 코드로 되돌리는 `reverseMap` 도 함께 제공 (popup 진입용)
- * - 헤더 비활성/미등록(404) 또는 빈 옵션 시 `MEMBER_TYPE_OPTIONS` fallback 사용
- *   → 외부 데이터 부재에도 회원관리 화면이 정상 동작
+ * - 검색 SelectBox 용 `searchOptions` 는 옵션 존재 시 선두에 「全体(value="")」 prepend.
+ * - 백엔드의 회원 응답이 `userType` 을 일본어 라벨로 내려주므로, 라벨 → 영문 코드
+ *   `reverseMap` 도 함께 제공 (popup 진입용).
+ *
+ * - **fallback 제거**: 헤더 비활성/미등록(404) 또는 빈 옵션 시 `searchOptions=[]`,
+ *   `reverseMap={}` 반환. 소비측이 "-" 비활성 처리. 하드코딩 옵션·매핑 노출 금지.
  */
 export function useUserType() {
   const { data, isLoading } = useQuery({
@@ -49,25 +49,17 @@ export function useUserType() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // 검색용 옵션 — fallback 또는 동적 옵션 + 「全体」 prepend.
-  // hidden 여도 회원관리 검색은 동작해야 하므로 hardcoded fallback 으로 폴백.
+  // 검색용 옵션 — 옵션 존재 시 「全体」 prepend, 없으면 빈 배열 (소비측이 "-" 비활성 렌더).
   const searchOptions = useMemo<SelectOption[]>(() => {
-    const fallback = [...MEMBER_TYPE_OPTIONS] as SelectOption[];
-    if (!data?.options || data.options.length === 0) return fallback;
+    if (!data?.options || data.options.length === 0) return [];
     return [{ value: "", label: "全体" }, ...data.options];
   }, [data]);
 
-  // 일본어 라벨 → 영문 코드 역매핑. 동적 옵션 우선, 부재 시 hardcoded fallback.
+  // 일본어 라벨 → 영문 코드 역매핑. 옵션 부재 시 빈 객체 — 소비측이 매핑 실패를 감지해
+  // popup 진입 차단 / "-" 표기로 폴백한다 (하드코딩 매핑 사용 금지).
   const reverseMap = useMemo<Record<string, string>>(() => {
-    if (data?.options && data.options.length > 0) {
-      return Object.fromEntries(data.options.map((o) => [o.label, o.value]));
-    }
-    return {
-      "管理者": "ADMIN",
-      "販売店": "STORE",
-      "施工店": "SEKO",
-      "一般": "GENERAL",
-    };
+    if (!data?.options || data.options.length === 0) return {};
+    return Object.fromEntries(data.options.map((o) => [o.label, o.value]));
   }, [data]);
 
   return { searchOptions, reverseMap, isLoading };

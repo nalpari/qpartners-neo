@@ -91,8 +91,10 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
           <SearchField label="会員タイプ" width="w-[461px]">
             <SelectBox
               options={userTypeOptions}
-              value={local.userType}
+              value={userTypeOptions.length > 0 ? local.userType : ""}
               onChange={updateLocal("userType")}
+              disabled={userTypeOptions.length === 0}
+              placeholder="-"
               className="w-full"
             />
           </SearchField>

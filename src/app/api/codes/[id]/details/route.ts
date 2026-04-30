@@ -39,12 +39,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "ヘッダーコードが見つかりません" }, { status: 404 });
     }
 
+    // 보조 정렬: id asc — 동일 sortOrder 가 둘 이상일 때 결정적 순서 보장
+    // (관리자가 신규 행 추가 시 기존 행과 sortOrder 충돌해도 등록순으로 안정 정렬).
     const details = await prisma.codeDetail.findMany({
       where: {
         headerId: parsed.data,
         ...(activeOnly && { isActive: true }),
       },
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     });
 
     return NextResponse.json({ data: details });
@@ -104,11 +106,23 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: validity.message }, { status: 400 });
     }
 
-    const detail = await prisma.codeDetail.create({
-      data: {
-        ...result.data,
-        headerId: parsed.data,
-      },
+    // 자동 정렬: 신규 행의 sortOrder 와 같거나 큰 기존 행을 모두 +1 밀어 자리 확보.
+    // 예) 기존 [A:1, B:2, C:3] 에 sortOrder=2 신규 추가 → B/C 가 3/4 로 이동, NEW 는 2.
+    // 트랜잭션으로 shift + create 를 원자적으로 처리해 동시 등록 시 중간상태 노출 차단.
+    const detail = await prisma.$transaction(async (tx) => {
+      await tx.codeDetail.updateMany({
+        where: {
+          headerId: parsed.data,
+          sortOrder: { gte: result.data.sortOrder },
+        },
+        data: { sortOrder: { increment: 1 } },
+      });
+      return tx.codeDetail.create({
+        data: {
+          ...result.data,
+          headerId: parsed.data,
+        },
+      });
     });
 
     if (header.headerCode === "USER_TYPE") {

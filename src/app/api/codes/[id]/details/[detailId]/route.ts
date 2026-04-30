@@ -81,9 +81,45 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    const detail = await prisma.codeDetail.update({
-      where: { id: parsedDetailId.data, headerId: parsedId.data },
-      data: result.data,
+    // 자동 정렬: sortOrder 변경 시 사이 구간을 shift 해 충돌·중복 회피.
+    // - newSort < oldSort (위로 이동): [newSort, oldSort) 범위의 다른 행을 +1
+    // - newSort > oldSort (아래로 이동): (oldSort, newSort] 범위의 다른 행을 -1
+    // 예) [A:1, B:2, C:3] 에서 C 를 sort=2 로 수정 → B 가 3 으로 밀려 [A:1, C:2, B:3].
+    // findUnique 결과가 없거나 headerId 가 다르면 shift 를 건너뛰고 update 가 P2025 throw.
+    const detail = await prisma.$transaction(async (tx) => {
+      if (result.data.sortOrder !== undefined) {
+        const existing = await tx.codeDetail.findUnique({
+          where: { id: parsedDetailId.data },
+          select: { sortOrder: true, headerId: true },
+        });
+        if (existing && existing.headerId === parsedId.data) {
+          const oldSort = existing.sortOrder;
+          const newSort = result.data.sortOrder;
+          if (newSort < oldSort) {
+            await tx.codeDetail.updateMany({
+              where: {
+                headerId: parsedId.data,
+                id: { not: parsedDetailId.data },
+                sortOrder: { gte: newSort, lt: oldSort },
+              },
+              data: { sortOrder: { increment: 1 } },
+            });
+          } else if (newSort > oldSort) {
+            await tx.codeDetail.updateMany({
+              where: {
+                headerId: parsedId.data,
+                id: { not: parsedDetailId.data },
+                sortOrder: { gt: oldSort, lte: newSort },
+              },
+              data: { sortOrder: { decrement: 1 } },
+            });
+          }
+        }
+      }
+      return tx.codeDetail.update({
+        where: { id: parsedDetailId.data, headerId: parsedId.data },
+        data: result.data,
+      });
     });
 
     // USER_TYPE 헤더 디테일 변경 시 라벨 캐시 무효화 (코드/codeName/isActive 즉시 반영).

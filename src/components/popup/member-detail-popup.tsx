@@ -10,7 +10,6 @@ import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, SelectBox, Radio, Spinner } from "@/components/common";
 import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
-  USER_TYPE_REVERSE_MAP,
   ROLE_OPTIONS_GENERAL,
   ROLE_LABEL_MAP,
   API_TO_STATUS,
@@ -359,9 +358,10 @@ function MemberEditForm({
   onPasswordReset: () => void;
   onClose: () => void;
 }) {
-  // 동적 reverseMap 우선, 미매핑 시 hardcoded fallback (코드관리 USER_TYPE 미등록 대응)
+  // USER_TYPE 공통코드 reverseMap 만 사용 — 하드코딩 fallback 제거됨.
+  // 매핑 불가 시 memberTp="" → isGeneral=false → 편집 UI 비표시 (read-only).
   const { reverseMap: dynamicReverseMap } = useUserType();
-  const memberTp = dynamicReverseMap[member.userType] ?? USER_TYPE_REVERSE_MAP[member.userType] ?? "";
+  const memberTp = dynamicReverseMap[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
