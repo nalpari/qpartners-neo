@@ -94,12 +94,12 @@ export async function GET(request: NextRequest) {
       }
     } else {
       // 비사내 사용자:
-      // - 사내전용 카테고리 제외 (internalOnly 파라미터와 무관하게 강제 — 이전 bypass 차단)
+      // - 노출 결정은 게시대상(ContentTarget) 만으로 한다 (운영 정책 갱신).
+      //   카테고리는 분류 라벨일 뿐 노출 차단 기준이 아니며, 사내 전용 카테고리 라벨은
+      //   응답 시점의 buildCategoryTree({ includeInternal: false }) 가 자동 제외한다.
+      //   → 콘텐츠 자체는 게시대상 매칭 시 노출되되 사내 전용 카테고리 라벨만 숨김.
       // - 역할 기반으로 targetType 서버 강제 (쿼리 파라미터 무시)
       // - publication window 엄격 적용
-      andConditions.push({
-        categories: { none: { category: { isInternalOnly: true } } },
-      });
       andConditions.push({
         targets: {
           some: {
