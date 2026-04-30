@@ -447,6 +447,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
             subject: data.subject,
             body: sanitizedBody,
             status: data.status,
+            createdBy: user.userId,
+            createdByName: user.name ?? null,
             updatedBy: user.userId,
           },
         });
