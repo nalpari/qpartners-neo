@@ -280,6 +280,9 @@ export function MenusContents() {
             onFormChange={handleFormChange}
             onNew={handleNew}
             onSave={handleSave}
+            onDelete={handleDelete}
+            isDeleteEnabled={isEditing && editingId !== null}
+            isDeleting={deleteMutation.isPending}
           />
         </section>
 
@@ -299,9 +302,6 @@ export function MenusContents() {
             onSortValueChange={handleSortValueChange}
             isSortSaving={sortMutation.isPending}
             sortRefreshVersion={sortRefreshVersion}
-            onDelete={handleDelete}
-            isDeleteEnabled={isEditing && editingId !== null}
-            isDeleting={deleteMutation.isPending}
           />
         </section>
       </div>

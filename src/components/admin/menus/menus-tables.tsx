@@ -126,9 +126,6 @@ interface MenusTablesProps {
   onSortValueChange: (id: string, value: number) => void;
   isSortSaving: boolean;
   sortRefreshVersion: number;
-  onDelete: () => void;
-  isDeleteEnabled: boolean;
-  isDeleting: boolean;
 }
 
 export function MenusTables({
@@ -145,9 +142,6 @@ export function MenusTables({
   onSortValueChange,
   isSortSaving,
   sortRefreshVersion,
-  onDelete,
-  isDeleteEnabled,
-  isDeleting,
 }: MenusTablesProps) {
 
   // --- Column Defs ---
@@ -285,13 +279,6 @@ export function MenusTables({
           メニュー目録
         </h2>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={onDelete}
-            disabled={!isDeleteEnabled || isDeleting}
-          >
-            削除
-          </Button>
           <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
             整列保存
           </Button>
