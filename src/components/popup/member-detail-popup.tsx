@@ -443,7 +443,9 @@ function MemberEditForm({
                   <span className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#999]">
                     {member.updatedAt ? formatDateTime(member.updatedAt) : "-"}
                   </span>
-                  {member.updatedBy && (
+                  {/* 갱신일시 없이 갱신자명만 표시되는 데이터 오류 방어:
+                      updatedAt 이 존재할 때만 updatedBy 를 함께 표시한다. */}
+                  {member.updatedAt && member.updatedBy && (
                     <span className="font-['Noto_Sans_JP'] font-normal text-[13px] text-[#bbb]">
                       ({member.updatedBy})
                     </span>
@@ -489,11 +491,15 @@ function MemberEditForm({
                         onChange={setUserRole}
                         className="w-full"
                       />
-                    ) : (
-                      // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
-                      // 시 회원유형(일본어 라벨) 으로 폴백하면 의미론적으로 잘못된 표시가 된다.
-                      // 라벨 매핑 → 원본 코드 → 명시적 빈값("-") 순으로 표시.
+                    ) : isGeneral ? (
+                      // GENERAL 회원은 권한이 1ST_STORE/2ND_STORE/GENERAL 등으로 분화되므로
+                      // 라벨 매핑 → 원본 코드 → "-" 순으로 표시(읽기전용 경로).
                       <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
+                    ) : (
+                      // 非GENERAL(ADMIN/STORE/SEKO 등) 은 권한이 회원유형과 사실상 1:1 대응이며
+                      // QSP 응답에 userRole 이 비어 도착할 수 있어 "-" 로 보이는 케이스가 있다.
+                      // 이 경로에서는 회원タイプ(일본어 라벨) 을 그대로 ユーザー権限 으로 노출.
+                      <TextValue value={member.userType || ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
                     ),
                   }}
                 />
