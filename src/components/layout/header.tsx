@@ -300,6 +300,12 @@ export function Gnb() {
       closeMenu();
       return;
     }
+    // ADMIN + MUSUBI 는 자동로그인 미적용 — 기본 링크 동작(href = MUSUBI 베이스 URL)
+    // 으로 위임하여 미인증 redirect 로 로그인 페이지 진입.
+    if (site.value === "qmusubi" && user?.userTp === "ADMIN") {
+      closeMenu();
+      return;
+    }
     e.preventDefault();
     closeMenu();
     if (autoLoginInFlight) return; // 중복 호출 방어
