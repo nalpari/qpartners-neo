@@ -19,6 +19,9 @@ type Params = { params: Promise<{ id: string }> };
 // 값은 운영 초기 기본치. 추후 콘텐츠 실사용 통계를 바탕으로 조정 가능.
 const MAX_ZIP_FILE_COUNT = 200;
 const MAX_ZIP_TOTAL_BYTES = 500 * 1024 * 1024; // 500MB
+// 단일 파일 분기 상한 — ZIP 분기와 동일 정책으로 대용량 반복 요청에 의한 대역폭 소진을 차단.
+// (단일 파일은 ZIP 압축 단계가 없어도 스트리밍 자체로 부하 발생)
+const MAX_SINGLE_FILE_BYTES = MAX_ZIP_TOTAL_BYTES;
 
 // 리뷰 대응: Content-Disposition 헤더 인젝션 방어 — 제어 문자 제거 (CR/LF/NUL 등)
 function sanitizeHeaderBase(name: string): string {
@@ -183,6 +186,19 @@ export async function GET(request: NextRequest, { params }: Params) {
     // - DownloadLog 는 단일 행 createMany 로 ZIP 분기와 일관 처리.
     if (validFiles.length === 1) {
       const file = validFiles[0];
+
+      // 단일 파일 분기에도 ZIP 분기와 동일한 크기 상한 적용 — 대역폭 소진 공격 방어.
+      if (file.size > MAX_SINGLE_FILE_BYTES) {
+        console.warn("[download-all] 단일 파일 용량 초과:", {
+          attachmentId: file.id,
+          size: file.size,
+        });
+        return NextResponse.json(
+          { error: "ファイルサイズが上限を超えました" },
+          { status: 413 },
+        );
+      }
+
       const fileStream = createReadStream(file.absolutePath);
 
       let singleLogFired = false;

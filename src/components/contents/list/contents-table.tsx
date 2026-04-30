@@ -23,6 +23,7 @@ import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { usePageSize } from "@/hooks/use-page-size";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
 function renderCategoryCell(
@@ -86,25 +87,6 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
       )}
     </div>
   );
-}
-
-/**
- * `Content-Disposition` 헤더에서 파일명 추출.
- * RFC 5987 `filename*=UTF-8''<percent-encoded>` 우선 (일본어/한국어 보존),
- * 미존재 시 `filename="..."` fallback.
- */
-function parseContentDispositionFilename(header: string | null): string | null {
-  if (!header) return null;
-  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
-  if (star) {
-    try {
-      return decodeURIComponent(star[1].trim());
-    } catch (decodeError) {
-      console.warn("[Contents] filename* 디코딩 실패:", decodeError);
-    }
-  }
-  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
-  return plain ? plain[1].trim() : null;
 }
 
 /** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */

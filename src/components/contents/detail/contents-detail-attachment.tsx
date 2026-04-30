@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
+import { parseContentDispositionFilename } from "@/lib/content-disposition";
 import { getFileIconByMime } from "@/lib/file-icon";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
@@ -23,25 +24,6 @@ interface ContentsDetailAttachmentProps {
 
 function isImageFile(mimeType: string | null): boolean {
   return mimeType != null && mimeType.startsWith("image/");
-}
-
-/**
- * `Content-Disposition` 헤더에서 파일명 추출.
- * RFC 5987 `filename*=UTF-8''<percent-encoded>` 우선 (일본어/한국어 보존),
- * 미존재 시 `filename="..."` fallback.
- */
-function parseContentDispositionFilename(header: string | null): string | null {
-  if (!header) return null;
-  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
-  if (star) {
-    try {
-      return decodeURIComponent(star[1].trim());
-    } catch (decodeError) {
-      console.warn("[Contents] filename* 디코딩 실패:", decodeError);
-    }
-  }
-  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
-  return plain ? plain[1].trim() : null;
 }
 
 /** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
