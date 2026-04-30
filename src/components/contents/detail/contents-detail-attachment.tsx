@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
+import { parseContentDispositionFilename } from "@/lib/content-disposition";
 import { getFileIconByMime } from "@/lib/file-icon";
 
 // Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
@@ -88,10 +89,18 @@ export function ContentsDetailAttachment({
       const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
         responseType: "blob",
       });
+      // blob URL 다운로드 시 a.download 가 비어 있으면 브라우저가 Content-Disposition 을
+      // 무시하고 blob URL 의 마지막 segment(UUID) 를 파일명으로 사용한다.
+      // 서버 응답 헤더(`{title}_{YYYYMMDD}.zip` 또는 단일 파일 원본명) 를 파싱해 명시한다.
+      const dispo =
+        typeof res.headers["content-disposition"] === "string"
+          ? res.headers["content-disposition"]
+          : null;
+      const fileName = parseContentDispositionFilename(dispo) ?? "download.zip";
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "";
+      a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {

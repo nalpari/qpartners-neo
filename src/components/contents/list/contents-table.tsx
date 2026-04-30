@@ -22,6 +22,8 @@ import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { usePageSize } from "@/hooks/use-page-size";
 import { useApprover } from "@/hooks/use-approver";
+import { useTargetLabels } from "@/hooks/use-target-labels";
+import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
 function renderCategoryCell(
@@ -78,7 +80,7 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
           NEW
         </span>
       )}
-      {data.isUpdated && (
+      {data.hasBeenUpdated && data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
         </span>
@@ -94,10 +96,18 @@ async function downloadAllAttachments(contentId: number): Promise<boolean> {
     const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
       responseType: "blob",
     });
+    // blob URL 다운로드 시 a.download 가 비어 있으면 브라우저가 Content-Disposition 을
+    // 무시하고 blob URL 의 마지막 segment(UUID) 를 파일명으로 사용한다.
+    // 서버 응답 헤더(`{title}_{YYYYMMDD}.zip` 또는 단일 파일 원본명) 를 파싱해 명시한다.
+    const dispo =
+      typeof res.headers["content-disposition"] === "string"
+        ? res.headers["content-disposition"]
+        : null;
+    const fileName = parseContentDispositionFilename(dispo) ?? "download.zip";
     const url = URL.createObjectURL(res.data);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "";
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
     return true;
@@ -143,14 +153,14 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
 function renderMobileTitle(item: ContentListItem) {
   return (
     <div className="flex flex-col gap-2">
-      {(item.isNew || item.isUpdated) && (
+      {(item.isNew || (item.hasBeenUpdated && item.isUpdated)) && (
         <div className="flex items-center gap-1">
           {item.isNew && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2]">
               NEW
             </span>
           )}
-          {item.isUpdated && (
+          {item.hasBeenUpdated && item.isUpdated && (
             <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D]">
               UPDATE
             </span>
@@ -188,32 +198,7 @@ function MobileAttachmentButton({ item }: { item: ContentListItem }) {
   );
 }
 
-/** 게시대상 targetType → 표시명 매핑 */
-const TARGET_TYPE_LABELS: Record<string, string> = {
-  first_store: "1次販売店",
-  second_store: "2次以降の販売店",
-  seko: "施工店",
-  general: "一般",
-  non_member: "非会員",
-};
-
-/** 게시대상 표시 순서 — 1차 → 2차 → 시공점 → 일반 → 비회원 */
-const TARGET_TYPE_ORDER: Record<string, number> = {
-  first_store: 1,
-  second_store: 2,
-  seko: 3,
-  general: 4,
-  non_member: 5,
-};
-
-/** 고정 순서로 정렬된 targets 반환 (원본 불변) */
-function sortTargets<T extends { targetType: string }>(targets: readonly T[]): T[] {
-  return [...targets].sort(
-    (a, b) =>
-      (TARGET_TYPE_ORDER[a.targetType] ?? 99) -
-      (TARGET_TYPE_ORDER[b.targetType] ?? 99),
-  );
-}
+// 게시대상 라벨/순서 — useTargetLabels 훅으로 통합. 정적 fallback 은 훅 내부에서 처리.
 
 interface ContentsTableProps {
   isInternal?: boolean;
@@ -245,10 +230,14 @@ export function ContentsTable({
   // 서버 POST /api/contents 도 requireMenuPermission(CONTENT, create) 로 최종 검증하므로 FE 는 UX 전용.
   const { canCreate: canCreateContent } = useMenuPermission(MENU.CONTENT);
 
+  // 권한관리 라벨 동기화 — 게시대상 셀/CSV export 표시명을 권한명으로 동적 변환.
+  // 비활성된 권한도 표시는 유지(기존 콘텐츠 호환). 옵션 노출 필터는 검색/등록 컴포넌트에서만 적용.
+  const { resolveLabel: resolveTargetLabel, sortByOrder: sortTargets } = useTargetLabels();
+
   // 행 데이터에 정렬된 targets 를 미리 계산 (cellRenderer 매 호출마다 sort 비용 회피)
   const rowData = useMemo<ContentListItem[]>(
     () => data.map((item) => ({ ...item, targets: sortTargets(item.targets) })),
-    [data],
+    [data, sortTargets],
   );
 
   const totalCount = meta?.total ?? 0;
@@ -328,7 +317,7 @@ export function ContentsTable({
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
                 {targets.map((t, i) => (
-                  <span key={i} className="text-xs">{TARGET_TYPE_LABELS[t.targetType] ?? t.targetType}</span>
+                  <span key={i} className="text-xs">{resolveTargetLabel(t.targetType)}</span>
                 ))}
               </div>
             );
@@ -367,7 +356,7 @@ export function ContentsTable({
     }
 
     return baseCols;
-  }, [isInternal, categories, approverLabelMap, isLoadingApprover]);
+  }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
@@ -408,7 +397,7 @@ export function ContentsTable({
           render: (item) => {
             // rowData 에서 이미 정렬된 targets 사용
             if (item.targets.length === 0) return "-";
-            return item.targets.map((t) => TARGET_TYPE_LABELS[t.targetType] ?? t.targetType).join(", ");
+            return item.targets.map((t) => resolveTargetLabel(t.targetType)).join(", ");
           },
         },
         {
@@ -430,7 +419,7 @@ export function ContentsTable({
     }
 
     return base;
-  }, [isInternal, categories, approverLabelMap, isLoadingApprover]);
+  }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });

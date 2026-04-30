@@ -22,6 +22,8 @@ export interface HomeContentItem {
   title: string;
   createdAt: string;
   updatedAt: string;
+  /** 서버 단일 출처 — updatedAt !== createdAt (최초 등록 이후 1회 이상 갱신 여부) */
+  hasBeenUpdated: boolean;
   isNew: boolean;
   isUpdated: boolean;
   categories: CategoryGroup[];
@@ -89,7 +91,7 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
                     NEW
                   </span>
                 )}
-                {item.isUpdated && (
+                {item.hasBeenUpdated && item.isUpdated && (
                   <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
                     UPDATE
                   </span>

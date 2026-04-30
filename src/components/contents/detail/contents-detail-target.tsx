@@ -1,13 +1,16 @@
 "use client";
 
-// Design Ref: §4.3 — 게시대상 사내 전용, 5타입 전체 표시
+import { useTargetLabels } from "@/hooks/use-target-labels";
 
-const ALL_TARGET_TYPES = [
-  { key: "first_store", label: "一次点" },
-  { key: "second_store", label: "2次点以下" },
-  { key: "seko", label: "施工店" },
-  { key: "general", label: "一般会員" },
-  { key: "non_member", label: "非会員" },
+// Design Ref: §4.3 — 게시대상 사내 전용, 5타입 전체 표시
+// 라벨은 useTargetLabels 훅으로 권한관리(`QpRole.roleName`) 와 동기화 — 비회원만 고정 라벨.
+
+const ALL_TARGET_KEYS = [
+  "first_store",
+  "second_store",
+  "seko",
+  "general",
+  "non_member",
 ] as const;
 
 interface TargetItem {
@@ -31,6 +34,7 @@ function formatPeriod(startAt: string | null, endAt: string | null): string {
 
 export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
   const targetMap = new Map(targets.map((t) => [t.targetType, t]));
+  const { resolveLabel: resolveTargetLabel } = useTargetLabels();
 
   return (
     <>
@@ -43,13 +47,13 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
               投稿対象
             </span>
           </div>
-          {ALL_TARGET_TYPES.map((type, idx) => {
-            const matched = targetMap.get(type.key);
+          {ALL_TARGET_KEYS.map((key, idx) => {
+            const matched = targetMap.get(key);
             const active = !!matched;
 
             return (
               <div
-                key={type.key}
+                key={key}
                 className={`flex flex-col gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 self-stretch justify-center ${
                   idx < 2 ? "flex-1" : "w-[254px] shrink-0"
                 } py-3`}
@@ -61,7 +65,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                       : "bg-[#F3F3F3] text-[#101010] font-normal"
                   }`}
                 >
-                  {type.label}
+                  {resolveTargetLabel(key)}
                 </span>
                 <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
                   {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}
@@ -75,12 +79,12 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
       {/* MO: 세로 나열 */}
       <div className="block lg:hidden bg-white px-6 py-[34px] w-full">
         <div className="flex flex-col gap-6">
-          {ALL_TARGET_TYPES.map((type, idx) => {
-            const matched = targetMap.get(type.key);
+          {ALL_TARGET_KEYS.map((key, idx) => {
+            const matched = targetMap.get(key);
             const active = !!matched;
 
             return (
-              <div key={type.key} className="flex flex-col gap-2">
+              <div key={key} className="flex flex-col gap-2">
                 {idx === 0 && (
                   <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] mb-1">
                     投稿対象
@@ -93,7 +97,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                       : "bg-[#F3F3F3] text-[#101010] font-normal"
                   }`}
                 >
-                  {type.label}
+                  {resolveTargetLabel(key)}
                 </span>
                 <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
                   {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}

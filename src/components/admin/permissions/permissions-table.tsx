@@ -304,6 +304,9 @@ export function PermissionsTable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
+      // 콘텐츠 게시대상 라벨 캐시(useTargetLabels) 도 즉시 갱신 — 권한명 변경이 사용자 화면에
+      // 바로 반영되도록 한다. (PAGE_SIZE/USER_TYPE 의 ["common-code"] invalidate 패턴과 동일)
+      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
       setNewRow(false);
       newRowFieldsRef.current = { code: "", name: "", description: "" };
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
@@ -326,6 +329,8 @@ export function PermissionsTable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
+      // 콘텐츠 게시대상 라벨 캐시도 즉시 갱신 — 권한명/사용가능여부 변경 즉시 반영.
+      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
     },
     onError: (error: unknown) => {
       const status = isAxiosError(error) ? error.response?.status : undefined;

@@ -195,6 +195,41 @@ export function normalizeAuthCdToUserRole(
   return authCd;
 }
 
+/**
+ * authCd 누락 회원의 userRole 폴백 — userTp + storeLvl 기반.
+ *
+ * QSP 응답에서 authCd 가 빈 값으로 도착하는 회원이 존재 (TODO: BE 정합성 추적 대상).
+ * normalizeAuthCdToUserRole 가 빈 문자열을 반환할 때, 회원 상세 화면의 ユーザー権限 셀이
+ * "-" 로만 표시되어 운영자가 권한 식별 불가.
+ *
+ * 매핑 정책 — `resolveAuthRole` (login/auto-login) 과 동일 (SSoT):
+ *   - ADMIN  → "ADMIN"  (SUPER_ADMIN 정확도 필요한 경로는 별도 ADMIN_ROLE 코드 조회 사용)
+ *   - STORE  → storeLvl=="1" → "1ST_STORE", 그 외 → "2ND_STORE" (최소 권한 폴백)
+ *   - SEKO   → "SEKO"
+ *   - GENERAL → "GENERAL"
+ *   - 기타/null → "" (호출측이 "-" 표시)
+ *
+ * 보안 — 본 함수는 표시(display) 용 폴백이며 권한 부여 결정에 사용하지 않는다.
+ * 권한 결정 경로는 JWT/QSP 의 authCd 직접 사용, 매트릭스 기반 가드를 거친다.
+ */
+export function fallbackUserRoleFromUserTp(
+  userTp: string | null | undefined,
+  storeLvl: string | null | undefined,
+): string {
+  switch (userTp) {
+    case "ADMIN":
+      return "ADMIN";
+    case "STORE":
+      return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";
+    case "SEKO":
+      return "SEKO";
+    case "GENERAL":
+      return "GENERAL";
+    default:
+      return "";
+  }
+}
+
 // ─── 회원 수정 요청 ───
 
 /** 관리자가 일반회원에게 부여 가능한 권한 코드.

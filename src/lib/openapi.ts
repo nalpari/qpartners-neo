@@ -3627,7 +3627,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "categories", "targets", "attachmentCount",
+          "hasBeenUpdated", "isNew", "isUpdated", "categories", "targets", "attachmentCount",
         ],
         properties: {
           id: { type: "integer" },
@@ -3638,6 +3638,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           publishedAt: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
+          hasBeenUpdated: {
+            type: "boolean",
+            description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
+          },
           isNew: { type: "boolean", description: "생성 후 5일 이내" },
           isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
           categories: {
@@ -3663,7 +3667,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "categories", "targets", "attachments",
+          "hasBeenUpdated", "isNew", "isUpdated", "categories", "targets", "attachments",
         ],
         properties: {
           id: { type: "integer" },
@@ -3681,6 +3685,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           publishedAt: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
+          hasBeenUpdated: {
+            type: "boolean",
+            description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
+          },
           isNew: { type: "boolean", description: "생성 후 5일 이내" },
           isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
           categories: {
