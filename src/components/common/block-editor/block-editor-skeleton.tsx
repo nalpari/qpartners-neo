@@ -9,7 +9,7 @@ export function BlockEditorSkeleton() {
     <div
       role="status"
       aria-label="エディタを読み込み中"
-      className="w-full min-h-[300px] px-4 py-4 border border-[#EBEBEB] rounded-[6px] bg-white"
+      className="w-full min-h-[150px] px-4 py-4 border border-[#EBEBEB] rounded-[6px] bg-white"
     >
       <div className="animate-pulse space-y-3">
         <div className="h-4 bg-[#EEE] rounded w-1/3" />
