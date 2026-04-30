@@ -3,9 +3,10 @@
 // Design Ref: §5.2 — 등록 페이지 (복사 데이터 로드)
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
 import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
-import { useAuthStore } from "@/lib/auth-store";
 
 function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
   if (typeof window === "undefined") return { mode: "create" };
@@ -35,7 +36,12 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
 
 export default function AdminBulkMailCreatePage() {
   const [initial] = useState(loadCopyData);
-  const user = useAuthStore((s) => s.user);
+  const { data: user = null } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   const initialData: Partial<FormInitialData> = {
     ...initial.initialData,
