@@ -123,7 +123,9 @@ const results = [];
   let failed = false;
   try {
     decrypt(cipher, "20260430", wrongKey);
-  } catch {
+  } catch (error) {
+    // 다른 키로 복호 시도 → 패딩 검증 실패가 정상 경로. 에러 객체는 분기 식별 후 무시.
+    void error;
     failed = true;
   }
   results.push({

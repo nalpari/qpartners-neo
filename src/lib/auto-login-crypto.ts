@@ -73,8 +73,10 @@ function getInboundAesKey(): Buffer {
   // length 검증으로 부팅 진단 비용 없이 첫 요청에서 즉시 차단.
   const buf = Buffer.from(raw, "utf8");
   if (buf.length !== KEY_LENGTH) {
+    // env 에 우연히 따옴표/공백/개행이 섞이면 buf.length 가 16 을 벗어남.
+    // 실제 byte 길이를 메시지에 포함해 운영자가 즉시 원인을 식별할 수 있게 함.
     throw new ConfigError(
-      "AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — 16 byte 필요",
+      `AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — ${KEY_LENGTH} byte 필요, 실제 ${buf.length} byte (개행/공백 포함 여부 확인)`,
     );
   }
   return buf;
@@ -117,22 +119,22 @@ export function decryptAutoLogin(cipherText: string): string {
   try {
     return decryptWithIv(payload, buildIv(new Date()), key);
   } catch (todayError: unknown) {
+    // ConfigError(IV 길이 불일치 등 설정 결함) 는 전일 재시도해도 동일하게 실패하며,
+    // catch 말미에서 yesterdayError 를 throw 하면 원본 ConfigError 가 마스킹된다.
+    // 설정 결함은 즉시 표면화시켜 운영자가 원인을 빠르게 식별하도록 한다.
+    if (todayError instanceof ConfigError) {
+      throw todayError;
+    }
     // 자정 직후(KST) 전일 IV 로 암호화된 cipher 유입은 정상 경로지만, 포맷 오류·키 교체 실수·
     // 패딩 오라클 프로빙 등 실제 장애도 같은 분기로 흐름.
-    // errorMessage 는 로깅하지 않음 — OpenSSL 에러 메시지에 padding 정보가 포함되면
-    // 내부 로그 접근자에게 패딩 오라클 단서가 노출됨. errorName 만 남겨 분기 구분.
-    console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 재시도:", {
-      errorName: todayError instanceof Error ? todayError.name : typeof todayError,
-    });
+    // OpenSSL 에러는 message 뿐 아니라 name(예: "Error") 자체도 버전에 따라 padding 단서를
+    // 흘릴 여지가 있어 분기 식별용 고정 문자열만 남긴다.
+    console.warn("[auto-login-crypto] 당일 IV 복호화 실패 — 전일 IV 로 재시도");
     const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
       return decryptWithIv(payload, buildIv(yesterdayDate), key);
     } catch (yesterdayError: unknown) {
-      console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패:", {
-        todayErrorName: todayError instanceof Error ? todayError.name : typeof todayError,
-        yesterdayErrorName:
-          yesterdayError instanceof Error ? yesterdayError.name : typeof yesterdayError,
-      });
+      console.error("[auto-login-crypto] 당일·전일 IV 모두 복호화 실패");
       throw yesterdayError;
     }
   }
