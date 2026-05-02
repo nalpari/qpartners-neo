@@ -10,7 +10,7 @@ import api from "@/lib/axios";
 import { performLogout } from "@/lib/auth-client";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 import { useMenuTree } from "@/hooks/use-menu-tree";
 import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
 import { useAlertStore } from "@/lib/store";
@@ -62,11 +62,9 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
     }
     return parsed.data;
   } catch (err) {
-    // 401(세션 만료)만 플래그 정리 — 서버 일시 장애 시 강제 로그아웃 방지
-    if (err instanceof AxiosError && err.response?.status === 401) {
-      try { localStorage.removeItem(AUTH_FLAG_KEY); } catch (e) { console.warn("[fetchAuthMe] localStorage.removeItem 실패:", e); }
-      dispatchAuthChange();
-    } else {
+    // 401(세션 만료) 처리는 axios 응답 인터셉터(src/lib/axios.ts)가 일원화 —
+    // AUTH_FLAG_KEY 정리 + AUTH_CHANGE_EVENT 발행. 여기서는 401 외 에러만 로깅.
+    if (!(err instanceof AxiosError) || err.response?.status !== 401) {
       console.error("[fetchAuthMe] 인증 확인 실패:", err);
     }
     return null;

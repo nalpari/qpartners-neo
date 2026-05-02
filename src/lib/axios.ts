@@ -1,4 +1,4 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 
 const api = axios.create({
@@ -18,25 +18,33 @@ const api = axios.create({
  * 누락이 재발하므로 axios 응답 인터셉터에 일원화한다.
  *
  * 동작:
- * - 모든 /api/* 호출의 401 응답에서 AUTH_FLAG_KEY 제거 + AUTH_CHANGE_EVENT 발행
+ * - AUTH_FLAG_KEY === "1" 일 때만 정리 + AUTH_CHANGE_EVENT 발행 (idempotent 가드)
+ *   → 로그인 실패 401 / 2FA 미스매치 401 등 AUTH_FLAG 가 set 되지 않은 상태에서는
+ *     불필요한 dispatch 가 발생하지 않아 다탭 비로그인 오인식을 차단한다.
  * - useSyncExternalStore 구독 컴포넌트(Gnb 등)가 즉시 리렌더 → enabled false → 후속 호출 차단
  * - 원본 에러는 그대로 reject — 호출측 onError / 401 분기 흐름 유지
  *
  * 안전성:
  * - baseURL "/api" same-origin 만 사용 → 401 의도는 단일(인증 부재). 권한 부족은 403.
- * - 로그인 API 401(잘못된 비번) 시점에도 정리되지만 어차피 비로그인 상태라 무해
  * - SSR/RSC 컨텍스트는 typeof window 가드로 통과
+ * - axios.isAxiosError 로 비-axios throw(타임아웃·abort·사용자 throw) 까지 안전 narrowing
  */
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
+  (error: unknown) => {
+    if (
+      axios.isAxiosError(error)
+      && error.response?.status === 401
+      && typeof window !== "undefined"
+    ) {
       try {
-        localStorage.removeItem(AUTH_FLAG_KEY);
+        if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
+          localStorage.removeItem(AUTH_FLAG_KEY);
+          window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+        }
       } catch (e) {
         console.warn("[axios] AUTH_FLAG_KEY 정리 실패:", e);
       }
-      window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
     }
     return Promise.reject(error);
   },
