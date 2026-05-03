@@ -70,16 +70,22 @@ export const restrictedMenuCodeSet: ReadonlySet<string> = new Set(restrictedMenu
  * 위반 케이스별로 메시지를 분리해 사용자가 어떤 부분이 잘못됐는지 즉시 인지하도록 한다 (Redmine #2164).
  * Zod chain 순서대로 issues 가 채워지므로 route handler 가 issues[0].message 만 노출해도
  * 가장 우선 위반 사유가 정확히 전달된다.
+ *
+ * preprocess 단계: 사용자가 소문자/혼합 케이스로 입력해도 검증 전 자동으로 대문자로 정규화.
+ * UX 친화 + DB 저장값 일관성 (모든 menuCode 가 대문자) 양쪽 보장.
  */
-export const menuCodeFormatSchema = z
-  .string()
-  .min(1, "メニューコードは必須です")
-  .max(50, "メニューコードは50文字以内で入力してください")
-  .regex(/^[A-Z]/, "メニューコードは英大文字で始めてください")
-  .regex(
-    /^[A-Z][A-Z0-9_]*$/,
-    "メニューコードには英大文字・数字・アンダースコア(_)のみ使用できます",
-  );
+export const menuCodeFormatSchema = z.preprocess(
+  (val) => (typeof val === "string" ? val.toUpperCase() : val),
+  z
+    .string()
+    .min(1, "メニューコードは必須です")
+    .max(50, "メニューコードは50文字以内で入力してください")
+    .regex(/^[A-Z]/, "メニューコードは英大文字で始めてください")
+    .regex(
+      /^[A-Z][A-Z0-9_]*$/,
+      "メニューコードには英大文字・数字・アンダースコア(_)のみ使用できます",
+    ),
+);
 
 /**
  * 권한(role) 등록/수정 시 roleCode 의 형식 제약 — DB `qp_roles.role_code VARCHAR(50)` 과 1:1.
@@ -93,16 +99,22 @@ export const menuCodeFormatSchema = z
  * 신규 등록 권한도 매트릭스 기반 RBAC 로 자동 동작 — SUPER_ADMIN/ADMIN 외는 매트릭스가 단일 진실 원천.
  *
  * 위반 케이스별로 메시지를 분리해 사용자가 어떤 부분이 잘못됐는지 즉시 인지하도록 한다.
+ *
+ * preprocess 단계: 사용자가 소문자/혼합 케이스로 입력해도 검증 전 자동으로 대문자로 정규화.
+ * UX 친화 + DB 저장값 일관성 (모든 roleCode 가 대문자) 양쪽 보장.
  */
-export const roleCodeFormatSchema = z
-  .string()
-  .min(1, "権限コードは必須です")
-  .max(50, "権限コードは50文字以内で入力してください")
-  .regex(/^[A-Z0-9]/, "権限コードは英大文字または数字で始めてください")
-  .regex(
-    /^[A-Z0-9][A-Z0-9_]*$/,
-    "権限コードには英大文字・数字・アンダースコア(_)のみ使用できます",
-  );
+export const roleCodeFormatSchema = z.preprocess(
+  (val) => (typeof val === "string" ? val.toUpperCase() : val),
+  z
+    .string()
+    .min(1, "権限コードは必須です")
+    .max(50, "権限コードは50文字以内で入力してください")
+    .regex(/^[A-Z0-9]/, "権限コードは英大文字または数字で始めてください")
+    .regex(
+      /^[A-Z0-9][A-Z0-9_]*$/,
+      "権限コードには英大文字・数字・アンダースコア(_)のみ使用できます",
+    ),
+);
 
 /**
  * RBAC 메뉴 액션 — QpRoleMenuPermission 의 can{Read,Create,Update,Delete} 컬럼과 1:1.
