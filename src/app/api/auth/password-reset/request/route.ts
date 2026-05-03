@@ -36,14 +36,15 @@ export async function POST(request: NextRequest) {
 
   const result = passwordResetRequestSchema.safeParse(body);
   if (!result.success) {
-    const fields = result.error.issues.map((i) => ({
-      field: i.path.join("."),
-      message: i.message,
-    }));
-    // Issue #2156 — 클라이언트가 error 필드를 그대로 alert 하므로 영문 "Validation failed" 노출 방지.
-    // 첫 번째 필드 메시지(일본어)를 우선 노출, fallback 으로 일반 메시지 사용.
+    // Issue #2156 — 입력 형식 오류·필수 누락 등 모든 검증 실패는 회원 미존재와 동일한 안내 메시지로 통일.
+    // (테스터 의도: 사용자가 형식 오류 vs 미존재 케이스를 구분하지 못하도록 일관된 메시지 노출)
+    // 디버깅용 fields 는 서버 로그에만 기록.
+    console.warn(
+      "[POST /api/auth/password-reset/request] Zod 검증 실패:",
+      result.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
+    );
     return NextResponse.json(
-      { error: fields[0]?.message ?? "入力内容に誤りがあります。", fields },
+      { error: "一致する会員情報がありません。入力情報を再度ご確認ください。" },
       { status: 400 },
     );
   }

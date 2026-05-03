@@ -489,14 +489,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": {
-            description: "입력값 검증 실패 (error 필드에 첫 번째 항목의 일본어 메시지 노출)",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
-              },
-            },
-          },
+          "400": errorResponse("입력값 검증 실패 — 회원 미존재와 동일한 일본어 메시지로 통일 (Issue #2156)"),
           "404": errorResponse("일치하는 회원 정보 없음 (一致する会員情報がありません。入力情報を再度ご確認ください。)"),
           "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
           "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
