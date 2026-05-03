@@ -36,12 +36,15 @@ export async function POST(request: NextRequest) {
 
   const result = passwordResetRequestSchema.safeParse(body);
   if (!result.success) {
-    const fields = result.error.issues.map((i) => ({
-      field: i.path.join("."),
-      message: i.message,
-    }));
+    // Issue #2156 — 입력 형식 오류·필수 누락 등 모든 검증 실패는 회원 미존재와 동일한 안내 메시지로 통일.
+    // (테스터 의도: 사용자가 형식 오류 vs 미존재 케이스를 구분하지 못하도록 일관된 메시지 노출)
+    // 디버깅용 fields 는 서버 로그에만 기록.
+    console.warn(
+      "[POST /api/auth/password-reset/request] Zod 검증 실패:",
+      result.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
+    );
     return NextResponse.json(
-      { error: "Validation failed", fields },
+      { error: "一致する会員情報がありません。入力情報を再度ご確認ください。" },
       { status: 400 },
     );
   }
@@ -158,12 +161,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 유저 미존재 시에도 동일 성공 응답 반환 — 이메일 열거 공격 방지
+  // Issue #2156 (테스터 요구) — 회원 미존재 시 명확한 안내 메시지 반환 (404).
+  // 설계 원본(password-reset.design.md §2 p.85, p.107) 과 일치. 사용자 열거 방어는 후순위로 미루며,
+  // IP/이메일 기반 rate limit(2-a, 2-b) 으로 일부 완화.
   if (!userExists) {
     console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — userTp: ${userTp}`);
-    return NextResponse.json({
-      data: { message: "パスワード変更リンクをメールで送信しました。" },
-    });
+    return NextResponse.json(
+      { error: "一致する会員情報がありません。入力情報を再度ご確認ください。" },
+      { status: 404 },
+    );
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)

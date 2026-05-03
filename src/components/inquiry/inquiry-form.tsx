@@ -57,6 +57,8 @@ function PcUserInfoRow({ fields }: { fields: [UserInfoField, UserInfoField] }) {
           <div className="flex items-center w-[160px] h-full bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] pl-4 pr-2 py-2">
             <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
               {field.label}
+              {/* Issue #2170 — 미로그인(입력 가능) 시 필수 별표 표시. 로그인 readonly 케이스에는 표시 X. */}
+              {field.input && <span className="text-[#ff1a1a]">*</span>}
             </span>
           </div>
           {field.input ? (
@@ -87,6 +89,8 @@ function MoUserInfoField({ field, isFirst }: { field: UserInfoField; isFirst?: b
     <div className={`flex flex-col gap-[8px] ${isFirst ? "" : "border-t border-[#eff4f8] pt-[18px] mt-[18px]"}`}>
       <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f]">
         {field.label}
+        {/* Issue #2170 — 미로그인(입력 가능) 시 필수 별표 표시. 로그인 readonly 케이스에는 표시 X. */}
+        {field.input && <span className="text-[#ff1a1a]">*</span>}
       </p>
       {field.input ? (
         <InputBox
