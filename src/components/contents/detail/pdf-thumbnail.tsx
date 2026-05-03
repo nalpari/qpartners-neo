@@ -17,12 +17,14 @@ interface PdfThumbnailProps {
   fileName: string;
   /** PDF 로드/렌더 실패 시 호출 — 부모가 fileId 기준으로 PDF 아이콘 fallback 처리 */
   onError: (fileId: number) => void;
+  /** PDF 첫페이지 렌더링 완료 시 호출 — 부모가 fileId 기준으로 로딩 skeleton 제거 */
+  onLoaded?: (fileId: number) => void;
 }
 
 /** 컨테이너 한 변 길이 — `contents-detail-attachment.tsx` 의 size-[180px] 박스에 맞춤 */
 const CONTAINER_SIZE = 180;
 
-export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbnailProps) {
+export function PdfThumbnail({ contentId, fileId, fileName, onError, onLoaded }: PdfThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -94,6 +96,9 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
         });
         renderTask = task;
         await task.promise;
+        if (cancelled) return;
+        // 첫페이지 렌더 완료 — 부모가 skeleton overlay 제거 (Boston Code Review MEDIUM #2).
+        onLoaded?.(fileId);
       } catch (err) {
         if (cancelled) return;
         // RenderingCancelledException 은 cleanup 정상 흐름 — 로깅 제외.
@@ -123,11 +128,17 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
       renderTask?.cancel();
       void pdfDoc?.destroy();
     };
-  }, [contentId, fileId, onError]);
+  }, [contentId, fileId, onError, onLoaded]);
 
   return (
+    // width/height attribute 1×1 — Safari 등 일부 브라우저에서 크기 0 요소의
+    // IntersectionObserver `isIntersecting` 이 false 로 떨어져 lazy loading 이
+    // 트리거되지 않는 케이스 방어 (Boston Code Review MEDIUM #1).
+    // 실제 픽셀 크기는 useEffect 안에서 viewport 기준으로 덮어쓴다.
     <canvas
       ref={canvasRef}
+      width={1}
+      height={1}
       role="img"
       aria-label={fileName}
       className="max-w-full max-h-full object-contain"
