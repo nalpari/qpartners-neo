@@ -117,7 +117,8 @@ export function NoticeFormPopup() {
     if (targets.length === 0) errs.targets = "掲示対象を1つ以上選択してください";
     if (!startDate) errs.startDate = "開始日を選択してください";
     if (!endDate) errs.endDate = "終了日を選択してください";
-    if (startDate && endDate && startDate >= endDate) {
+    // Issue #2176 (2) — 동일 날짜 선택 가능 (`>=` → `>`).
+    if (startDate && endDate && startDate > endDate) {
       errs.dateRange = "開始日は終了日より前に設定してください";
     }
     if (!title.trim()) errs.title = "タイトルを入力してください";
@@ -276,8 +277,25 @@ export function NoticeFormPopup() {
     });
   };
 
+  // Issue #2176 (1) — 과거일자 차단. alert 으로 즉시 알림.
+  // 오늘 자정 기준 비교 — 시작/종료 어느 쪽이든 과거면 차단.
+  const isPastDate = (d: Date | null): boolean => {
+    if (!d) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d.getTime() < today.getTime();
+  };
+
   // Design Ref: §4.3 — handleSave 통합
   const handleSave = () => {
+    if (isPastDate(startDate) || isPastDate(endDate)) {
+      openAlert({
+        type: "alert",
+        message: "過去の日付は選択できません。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
