@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Checkbox, SelectBox, Button } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
@@ -49,6 +49,10 @@ export function ContentsSearch({
   const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
   const [department, setDepartment] = useState(initialFilters?.department ?? "");
   const [internalOnly, setInternalOnly] = useState(initialFilters?.internalOnly ?? false);
+  // [x] 클릭 후 input 으로 focus 복귀용 — 클릭으로 button 이 focus 보유 시
+  // 이어진 Enter 가 input 의 onKeyDown 이 아니라 button 의 click 을 다시 트리거하여
+  // 검색이 동작하지 않던 결함을 차단 (Redmine #2169).
+  const keywordInputRef = useRef<HTMLInputElement>(null);
 
   // 권한관리 라벨 동기화 — isActive=Y 만 검색 옵션 노출, 라벨은 권한명 사용.
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
@@ -86,6 +90,27 @@ export function ContentsSearch({
     });
   };
 
+  /**
+   * [x] 클릭 — keyword 비우고 즉시 빈 키워드로 onSearch 트리거.
+   *
+   * setState 비동기 특성상 setKeyword 직후 handleSearch() 를 호출하면 keyword 가
+   * 아직 이전 값이라 빈 문자열로 검색되지 않는다. onSearch 에 직접 빈 문자열을 명시.
+   * 이어서 input 으로 focus 복귀 — 사용자가 추가로 Enter 를 쳐도 button 의 click 이
+   * 다시 트리거되지 않고 input 의 onKeyDown 으로 정상 처리된다 (Redmine #2169 결함).
+   * 다른 필터(카테고리/대상/부서/사내전용) 는 보존 — 사용자가 키워드만 지운 의도 유지.
+   */
+  const handleClearKeyword = () => {
+    setKeyword("");
+    onSearch({
+      keyword: "",
+      categoryIds: selectedCategoryIds,
+      targetType: postTarget,
+      department,
+      internalOnly,
+    });
+    keywordInputRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
   };
@@ -97,6 +122,7 @@ export function ContentsSearch({
         <div className="flex items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">
           <div className="flex flex-1 items-center h-[60px] pl-5">
             <input
+              ref={keywordInputRef}
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -108,7 +134,7 @@ export function ContentsSearch({
           <button
             type="button"
             className="flex items-center justify-center size-[60px] shrink-0"
-            onClick={() => setKeyword("")}
+            onClick={handleClearKeyword}
             aria-label="検索クリア"
           >
             <Image
