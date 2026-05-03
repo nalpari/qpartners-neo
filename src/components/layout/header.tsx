@@ -339,12 +339,29 @@ export function Gnb() {
     }
   };
 
+  // 로고 클릭은 SPA navigation 대신 풀 페이지 reload — F5 와 동일한 효과.
+  // 다른 화면에서의 다운로드/등록 등 mutation 이 홈 위젯(最近ダウンロード 등)에
+  // 즉시 반영되지 않던 결함 해결 (Redmine #2181).
+  const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Cmd/Ctrl/Shift+Click 및 좌클릭(button=0) 외 입력은 a 의 기본 동작을 유지 —
+    // 새 탭/창 열기, 즐겨찾기 드래그 등 표준 브라우저 UX 가 막히던 회귀 제거.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    window.location.assign("/");
+  };
+
   return (
     <div className="relative h-[68px] lg:h-[78px]">
       <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5" style={{ viewTransitionName: "header" }}>
         <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
-          {/* PC 로고 — 가로 1줄 */}
-          <Link href="/" className="hidden lg:flex items-center gap-2 shrink-0 relative">
+          {/* PC 로고 — 가로 1줄. 클릭 시 SPA 캐시 우회 풀 리로드 (Redmine #2181):
+              다운로드 이력 위젯 등 다른 화면에서의 mutation 이 홈 위젯에 즉시 반영되지
+              않던 문제(F5 로만 갱신) 해결. 우클릭/Cmd-클릭은 a 의 기본 동작 유지. */}
+          <Link
+            href="/"
+            onClick={handleLogoClick}
+            className="hidden lg:flex items-center gap-2 shrink-0 relative"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/asset/images/layout/logo_hanwha.svg"
@@ -359,7 +376,11 @@ export function Gnb() {
           </Link>
 
           {/* 모바일 로고 — 세로 2줄 */}
-          <Link href="/" className="flex lg:hidden flex-col shrink-0">
+          <Link
+            href="/"
+            onClick={handleLogoClick}
+            className="flex lg:hidden flex-col shrink-0"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/asset/images/layout/logo_hanwha.svg"

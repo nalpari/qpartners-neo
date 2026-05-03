@@ -11,12 +11,13 @@ import { Button, SelectBox, Radio, Spinner } from "@/components/common";
 import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
   USER_TYPE_REVERSE_MAP,
-  ROLE_OPTIONS_GENERAL,
   ROLE_LABEL_MAP,
   API_TO_STATUS,
   formatDateTime,
   formatDate,
 } from "@/components/admin/members/members-types";
+import type { RoleApiItem, RolesResponse } from "@/components/admin/permissions/permissions-types";
+import { rolesQueryKey } from "@/components/admin/permissions/permissions-types";
 import { useUserType } from "@/hooks/use-user-type";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -159,6 +160,12 @@ export function MemberDetailPopup() {
       openAlert({ type: "alert", message: "ユーザー権限の変更は一般会員のみ可能です。" });
     } else if (status === 400 && msg.includes("アクティブ")) {
       openAlert({ type: "alert", message: "アクティブな会員のみパスワード初期化が可能です。" });
+    // 권한 부여 불가(SUPER_ADMIN/ADMIN) — 백엔드 메시지 그대로 노출해 운영자 원인 파악 가능 (Redmine #2178).
+    } else if (status === 400 && msg.includes("付与できません")) {
+      openAlert({ type: "alert", message: "この権限はユーザーに付与できません。" });
+    // 미존재/비활성 권한 — 권한관리 화면에서 사용여부 확인 필요.
+    } else if (status === 400 && msg.includes("存在しないか無効")) {
+      openAlert({ type: "alert", message: "指定された権限は存在しないか無効です。" });
     } else if (status === 429) {
       openAlert({ type: "alert", message: "リクエストが多すぎます。しばらくしてからお試しください。" });
     } else {
@@ -371,9 +378,26 @@ function MemberEditForm({
   // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
   const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
 
-  // SEKO 는 신규 부여 불가(2026-04-23 정책) 이지만 기존 SEKO 권한 회원이 있을 수 있으므로
-  // 표시값은 그대로 보존. SEKO 상태에서는 SelectBox 대신 TextValue 로 읽기전용 표시.
-  const editableRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
+  // 권한 옵션은 권한관리 테이블에서 동적으로 가져온다 — SUPER_ADMIN/ADMIN 제외 + 활성(Y) 만
+  // (Redmine #2178). 부여 불가 권한은 권한관리 화면에서 사용여부=N 으로 운영자가 제어.
+  // 옵션 외 기존 권한(예: 비활성 처리된 SEKO 잔존)은 safeRole 폴백으로 보존되며 편집 UI 미노출.
+  // 쿼리키는 권한관리 화면(activeOnly=true)과 동일 헬퍼를 공유 — 캐시 미스/invalidate 누락 방지.
+  const {
+    data: roles = [],
+    isLoading: isRolesLoading,
+    isError: isRolesError,
+  } = useQuery<RoleApiItem[]>({
+    queryKey: rolesQueryKey(true),
+    queryFn: async () => {
+      const res = await api.get<RolesResponse>("/roles", { params: { activeOnly: "true" } });
+      return res.data.data;
+    },
+    staleTime: 60_000,
+  });
+  const roleOptions = roles
+    .filter((r) => r.roleCode !== "SUPER_ADMIN" && r.roleCode !== "ADMIN")
+    .map((r) => ({ value: r.roleCode, label: r.roleName }));
+  const editableRoleValues = roleOptions.map((o) => o.value);
   const safeRole = (role: string | undefined) => {
     if (!role) return "GENERAL";
     if (editableRoleValues.includes(role)) return role;
@@ -397,8 +421,15 @@ function MemberEditForm({
   const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
 
   // ユーザー権限 편집 활성 조건 — DetailRow.isForm 과 children 분기에서 동일 식 중복 사용을 방지.
+  // 옵션 로딩 실패 시(isRolesError) 편집 UI 자체를 숨겨 빈 SelectBox 로 인한 권한 누락 저장을 차단(PR #130 리뷰).
   const canEditUserRole =
-    isGeneral && !isReadOnly && (!isQspNotFound || isRestoringToActive) && !isUserRoleLocked;
+    isGeneral &&
+    !isReadOnly &&
+    (!isQspNotFound || isRestoringToActive) &&
+    !isUserRoleLocked &&
+    !isRolesError;
+  // 옵션 로딩 중 SelectBox disabled — 첫 진입 race window 의 빈 옵션 깜빡임 방지.
+  const isRoleSelectDisabled = isRolesLoading;
 
   const handleSave = () => {
     // 화면설계서 기준 편집 허용 필드 (2026-04-28 정책 갱신):
@@ -488,14 +519,21 @@ function MemberEditForm({
                     isForm: canEditUserRole,
                     children: canEditUserRole ? (
                       <SelectBox
-                        options={[...ROLE_OPTIONS_GENERAL]}
+                        options={roleOptions}
                         // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
                         // "선택 없음" 상태를 명시적으로 표시 → 관리자가 반드시 재선택하게 유도.
                         // 실제 state(userRole) 는 그대로 보존되어 저장 시 서버 검증(400) 과 조합됨.
                         value={editableRoleValues.includes(userRole) ? userRole : ""}
                         onChange={setUserRole}
+                        // 옵션 로딩 중 disabled — 빈 옵션 상태로 "GENERAL" 자동선택되는 race 차단.
+                        disabled={isRoleSelectDisabled}
                         className="w-full"
                       />
+                    ) : isRolesError ? (
+                      // /api/roles 호출 실패 시 SelectBox 미표시 + 운영자에게 원인 명시.
+                      // (드롭다운 강제 노출 금지: 빈 옵션으로 권한 변경 시도되면 BE 400 으로 반려되지만
+                      //  사용자에게 "이유 없는 실패" 로 보여 운영성 저하)
+                      <TextValue value="権限一覧を取得できませんでした" />
                     ) : (
                       // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
                       // 시 회원유형으로 폴백하면 의미론적으로 잘못된 표시가 된다(会員タイプ 행과

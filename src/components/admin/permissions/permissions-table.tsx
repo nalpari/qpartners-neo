@@ -28,7 +28,7 @@ import { Button, Checkbox } from "@/components/common";
 import { useAlertStore, usePopupStore } from "@/lib/store";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type { RoleApiItem, RolesResponse, PermissionItem } from "./permissions-types";
-import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody } from "./permissions-types";
+import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody, rolesQueryKey } from "./permissions-types";
 
 // 편집 불가 필드 — roleCode(첫번째 컬럼) + isActive(별도 select 흐름) + Available Menu Setting
 const NON_EDITABLE_FIELDS = new Set(["roleCode", "isActive"]);
@@ -265,7 +265,7 @@ export function PermissionsTable() {
 
   // --- API 조회 (Plan R-01) ---
   const { data: roles = [], isError } = useQuery<RoleApiItem[]>({
-    queryKey: ["roles", activeOnly],
+    queryKey: rolesQueryKey(activeOnly),
     queryFn: async () => {
       const res = await api.get<RolesResponse>("/roles", {
         params: { activeOnly: String(activeOnly) },
@@ -304,7 +304,7 @@ export function PermissionsTable() {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: rolesQueryKey() });
       // 콘텐츠 게시대상 라벨 캐시(useTargetLabels) 도 즉시 갱신 — 권한명 변경이 사용자 화면에
       // 바로 반영되도록 한다. (PAGE_SIZE/USER_TYPE 의 ["common-code"] invalidate 패턴과 동일)
       queryClient.invalidateQueries({ queryKey: ["role-labels"] });
@@ -332,7 +332,7 @@ export function PermissionsTable() {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: rolesQueryKey() });
       // 콘텐츠 게시대상 라벨 캐시도 즉시 갱신 — 권한명/사용가능여부 변경 즉시 반영.
       queryClient.invalidateQueries({ queryKey: ["role-labels"] });
     },

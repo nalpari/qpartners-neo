@@ -43,7 +43,8 @@ export const createHomeNoticeSchema = z
       data.targetGeneral,
     { message: "掲載対象を1つ以上選択してください" },
   )
-  .refine((data) => data.startAt < data.endAt, {
+  // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
+  .refine((data) => data.startAt <= data.endAt, {
     message: "開始日は終了日より前に設定してください",
     path: ["startAt"],
   });
@@ -99,7 +100,8 @@ export const updateHomeNoticeSchema = z
   )
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
+      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
     { message: "開始日は終了日より前に設定してください", path: ["startAt"] },

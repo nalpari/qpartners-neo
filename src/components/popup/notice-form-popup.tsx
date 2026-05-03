@@ -117,7 +117,8 @@ export function NoticeFormPopup() {
     if (targets.length === 0) errs.targets = "掲示対象を1つ以上選択してください";
     if (!startDate) errs.startDate = "開始日を選択してください";
     if (!endDate) errs.endDate = "終了日を選択してください";
-    if (startDate && endDate && startDate >= endDate) {
+    // Issue #2176 (2) — 동일 날짜 선택 가능 (`>=` → `>`).
+    if (startDate && endDate && startDate > endDate) {
       errs.dateRange = "開始日は終了日より前に設定してください";
     }
     if (!title.trim()) errs.title = "タイトルを入力してください";
@@ -160,12 +161,19 @@ export function NoticeFormPopup() {
       // createdBy 가 등록자ID 단일 진실 원천 — userId fallback 제거.
       if (typeof r.createdBy === "string") setAuthorId(r.createdBy);
     }
-    if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
-    if (r.updatedBy === null) {
+    // 갱신자/갱신일은 한 쌍 — updatedBy 가 null 이면 갱신 이력 없음으로 갱신일도 비운다.
+    // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 자동 채워지면서 최초 저장 직후
+    // 갱신일에 등록일과 같은 값이 표시되던 문제 해결 (Redmine #2175).
+    // updatedBy === undefined 케이스(응답 키 누락)는 기존 표시값 유지(stale 방지) 가 아닌
+    // 명시적 초기화 — Zod 가 nullable().optional() 이라 키가 빠지면 undefined 로 도달하므로
+    // 이전 회차의 값이 남아 화면에 잘못 표시되는 회귀를 PR #130 리뷰 후속으로 차단.
+    if (r.updatedBy === null || r.updatedBy === undefined) {
       setUpdaterId("");
       setUpdater("");
-    } else if (typeof r.updatedBy === "string") {
+      setUpdatedAt("");
+    } else {
       setUpdaterId(r.updatedBy);
+      if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
     }
     return r;
   };
@@ -272,8 +280,25 @@ export function NoticeFormPopup() {
     });
   };
 
+  // Issue #2176 (1) — 과거일자 차단. alert 으로 즉시 알림.
+  // 오늘 자정 기준 비교 — 시작/종료 어느 쪽이든 과거면 차단.
+  const isPastDate = (d: Date | null): boolean => {
+    if (!d) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d.getTime() < today.getTime();
+  };
+
   // Design Ref: §4.3 — handleSave 통합
   const handleSave = () => {
+    if (isPastDate(startDate) || isPastDate(endDate)) {
+      openAlert({
+        type: "alert",
+        message: "過去の日付は選択できません。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
