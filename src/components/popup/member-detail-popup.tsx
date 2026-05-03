@@ -11,12 +11,12 @@ import { Button, SelectBox, Radio, Spinner } from "@/components/common";
 import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
   USER_TYPE_REVERSE_MAP,
-  ROLE_OPTIONS_GENERAL,
   ROLE_LABEL_MAP,
   API_TO_STATUS,
   formatDateTime,
   formatDate,
 } from "@/components/admin/members/members-types";
+import type { RoleApiItem, RolesResponse } from "@/components/admin/permissions/permissions-types";
 import { useUserType } from "@/hooks/use-user-type";
 
 const CLOSE_ANIMATION_MS = 200;
@@ -371,9 +371,21 @@ function MemberEditForm({
   // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
   const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
 
-  // SEKO 는 신규 부여 불가(2026-04-23 정책) 이지만 기존 SEKO 권한 회원이 있을 수 있으므로
-  // 표시값은 그대로 보존. SEKO 상태에서는 SelectBox 대신 TextValue 로 읽기전용 표시.
-  const editableRoleValues = ROLE_OPTIONS_GENERAL.map((o) => o.value as string);
+  // 권한 옵션은 권한관리 테이블에서 동적으로 가져온다 — SUPER_ADMIN/ADMIN 제외 + 활성(Y) 만
+  // (Redmine #2178). 부여 불가 권한은 권한관리 화면에서 사용여부=N 으로 운영자가 제어.
+  // 옵션 외 기존 권한(예: 비활성 처리된 SEKO 잔존)은 safeRole 폴백으로 보존되며 편집 UI 미노출.
+  const { data: roles = [] } = useQuery<RoleApiItem[]>({
+    queryKey: ["roles", "activeOnly"],
+    queryFn: async () => {
+      const res = await api.get<RolesResponse>("/roles", { params: { activeOnly: "true" } });
+      return res.data.data;
+    },
+    staleTime: 60_000,
+  });
+  const roleOptions = roles
+    .filter((r) => r.roleCode !== "SUPER_ADMIN" && r.roleCode !== "ADMIN")
+    .map((r) => ({ value: r.roleCode, label: r.roleName }));
+  const editableRoleValues = roleOptions.map((o) => o.value);
   const safeRole = (role: string | undefined) => {
     if (!role) return "GENERAL";
     if (editableRoleValues.includes(role)) return role;
@@ -488,7 +500,7 @@ function MemberEditForm({
                     isForm: canEditUserRole,
                     children: canEditUserRole ? (
                       <SelectBox
-                        options={[...ROLE_OPTIONS_GENERAL]}
+                        options={roleOptions}
                         // 복구 경로 + 기존 SEKO 처럼 옵션 외 값은 SelectBox value 로 빈 문자열을 전달해
                         // "선택 없음" 상태를 명시적으로 표시 → 관리자가 반드시 재선택하게 유도.
                         // 실제 state(userRole) 는 그대로 보존되어 저장 시 서버 검증(400) 과 조합됨.

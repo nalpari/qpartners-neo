@@ -232,24 +232,20 @@ export function fallbackUserRoleFromUserTp(
 
 // ─── 회원 수정 요청 ───
 
-/** 관리자가 일반회원에게 부여 가능한 권한 코드.
- *  시공점(SEKO) 제외 — 일반회원 수정 시 시공점 권한 부여 불가 정책 (2026-04-23).
- *  FE `ROLE_OPTIONS_GENERAL` 와 SSoT 동기. UI 에서 옵션이 숨겨져도 서버에서 재검증.
- */
-const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "GENERAL"] as const;
-
 /**
  * 회원 수정 요청 스키마.
  *
- * ※ string/enum 필드(userRole, newsRcptYn, status)는 모두 `z.enum(...)` 으로 제약되어
- *   빈 문자열("") 이 입력값으로 통과되지 않는다 — route.ts 의 `??` 체인이 의도치 않게
- *   빈 값을 QSP 로 전송할 가능성은 enum 단계에서 차단된다.
+ * userRole 은 권한관리(qp_roles) 테이블의 동적 데이터로 검증한다 (Redmine #2178):
+ *   - 빈 문자열은 정규식으로 차단
+ *   - 실제 활성·SUPER_ADMIN/ADMIN 외 검증은 라우트에서 prisma.qpRole 조회로 수행
+ *
+ * ※ enum 필드(newsRcptYn, status)는 빈 문자열이 입력값으로 통과되지 않는다.
  * ※ boolean 필드는 `.optional()` 로 `undefined` 판별 가능 — route.ts 에서 `!== undefined`
  *   검사로 `false` 를 정상 처리(??로 쓰면 false 가 폴백으로 빠짐).
  * ※ `status` 의 enum 은 `WRITABLE_STATUSES` 를 참조해 `STATUS_TO_STAT_CD` 와 SSoT 동기.
  */
 export const memberUpdateSchema = z.object({
-  userRole: z.enum(assignableRoleValues).optional(),
+  userRole: z.string().min(1, "userRole は必須です").max(50).optional(),
   twoFactorEnabled: z.boolean().optional(),
   loginNotification: z.boolean().optional(),
   attributeChangeNotification: z.boolean().optional(),
