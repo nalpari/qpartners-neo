@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Image from "next/image";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 import { getFileIconByMime } from "@/lib/file-icon";
+import { PdfThumbnail } from "./pdf-thumbnail";
 
-// Design Ref: §4.6 — 첨부파일 다운로드 + 이미지 미리보기
+// Design Ref: §4.6 — 첨부파일 다운로드 + 이미지/PDF 미리보기 (Redmine #2168)
 
 interface AttachmentItem {
   id: number;
@@ -24,6 +25,12 @@ interface ContentsDetailAttachmentProps {
 
 function isImageFile(mimeType: string | null): boolean {
   return mimeType != null && mimeType.startsWith("image/");
+}
+
+/** PDF 판정 — mimeType 우선, 누락 시 확장자(.pdf) fallback (서버에서 mimeType 누락된 레거시 데이터 대비) */
+function isPdfFile(mimeType: string | null, fileName: string): boolean {
+  if (mimeType === "application/pdf") return true;
+  return mimeType == null && fileName.toLowerCase().endsWith(".pdf");
 }
 
 /** 이미지 파일 썸네일 — 브라우저가 직접 로드 (API 중복 호출 방지) */
@@ -55,6 +62,20 @@ export function ContentsDetailAttachment({
 }: ContentsDetailAttachmentProps) {
   const { openAlert } = useAlertStore();
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  // PDF 렌더 실패한 fileId 누적 — 자식 useEffect 내부에서 setState 직접 호출(set-state-in-effect 룰)
+  // 회피 위해 부모로 에러를 끌어올림. 동일 PDF 가 다시 mount 되면 그 fileId 는 이미 set 에 포함되어
+  // 처음부터 PDF 아이콘으로 폴백 → 재시도 무한 루프 차단.
+  const [pdfErrorIds, setPdfErrorIds] = useState<ReadonlySet<number>>(() => new Set());
+
+  // useCallback 으로 안정 reference 보장 — PdfThumbnail 의 useEffect 의존성 변경으로 인한 재실행 방지.
+  const handlePdfError = useCallback((fileId: number) => {
+    setPdfErrorIds((prev) => {
+      if (prev.has(fileId)) return prev;
+      const next = new Set(prev);
+      next.add(fileId);
+      return next;
+    });
+  }, []);
 
   if (attachments.length === 0) return null;
 
@@ -143,6 +164,13 @@ export function ContentsDetailAttachment({
                   contentId={contentId}
                   fileId={file.id}
                   fileName={file.fileName}
+                />
+              ) : isPdfFile(file.mimeType, file.fileName) && !pdfErrorIds.has(file.id) ? (
+                <PdfThumbnail
+                  contentId={contentId}
+                  fileId={file.id}
+                  fileName={file.fileName}
+                  onError={handlePdfError}
                 />
               ) : (
                 <Image
