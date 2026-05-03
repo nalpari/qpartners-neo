@@ -135,7 +135,7 @@ export function ContentsSearch({
             type="button"
             className="flex items-center justify-center size-[60px] shrink-0"
             onClick={handleClearKeyword}
-            aria-label="検索クリア"
+            aria-label="キーワードをクリア"
           >
             <Image
               src="/asset/images/layout/search_delete.svg"

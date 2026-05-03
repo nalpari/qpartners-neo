@@ -26,11 +26,18 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
     let cancelled = false;
+    let started = false;
     let renderTask: { cancel: (extraDelay?: number) => void } | null = null;
     let pdfDoc: { destroy: () => Promise<void> } | null = null;
 
-    void (async () => {
+    // 화면에 들어올 때만 PDF 다운로드/렌더 — 콘텐츠 상세에 PDF 첨부가 여러 건일 때
+    // 페이지 진입 즉시 모든 파일을 arrayBuffer 로 fetch 하지 않도록 lazy loading.
+    // rootMargin 200px 로 스크롤 진입 직전부터 prefetch 해 사용자 체감 지연을 줄인다.
+    const load = async () => {
       try {
         const pdfjsLib = await import("pdfjs-dist");
         // Worker URL — `new URL(..., import.meta.url)` 패턴으로 번들러(Next.js 의 webpack/turbopack)
@@ -60,9 +67,6 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
 
         const page = await pdf.getPage(1);
         if (cancelled) return;
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
 
         // 컨테이너(180×180) 안에 letterbox 없이 fit — PDF 가로/세로 비율에 맞춰 작은 쪽 기준 scale.
         const baseViewport = page.getViewport({ scale: 1 });
@@ -98,10 +102,24 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
         console.error(`[PdfThumbnail] PDF 렌더링 실패: fileId=${fileId}`, err);
         onError(fileId);
       }
-    })();
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (started) return;
+        if (entries.some((entry) => entry.isIntersecting)) {
+          started = true;
+          observer.disconnect();
+          void load();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(canvas);
 
     return () => {
       cancelled = true;
+      observer.disconnect();
       renderTask?.cancel();
       void pdfDoc?.destroy();
     };
@@ -110,6 +128,7 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError }: PdfThumbn
   return (
     <canvas
       ref={canvasRef}
+      role="img"
       aria-label={fileName}
       className="max-w-full max-h-full object-contain"
     />
