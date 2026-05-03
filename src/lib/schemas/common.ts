@@ -59,6 +59,29 @@ export type RestrictedMenuCode = (typeof restrictedMenuCodes)[number];
 export const restrictedMenuCodeSet: ReadonlySet<string> = new Set(restrictedMenuCodes);
 
 /**
+ * 메뉴 등록/수정 시 menuCode 의 형식 제약 — DB `qp_menus.menu_code VARCHAR(50)` 과 1:1.
+ * 대문자 시작 + 대문자/숫자/언더스코어, 50자 이내.
+ *
+ * `menuCodeSchema` (z.enum) 는 RBAC 가드용 18개 화이트리스트 코드 검증용,
+ * 본 schema 는 메뉴관리 화면에서 신규 메뉴 자유 등록 시 형식 강제용 — 용도가 다름:
+ * - menuCodeSchema: 매트릭스/가드 enum (불변 코드만 허용)
+ * - menuCodeFormatSchema: 메뉴 CRUD + 권한관리 PUT (사용자 자유 등록 + 형식 강제)
+ *
+ * 위반 케이스별로 메시지를 분리해 사용자가 어떤 부분이 잘못됐는지 즉시 인지하도록 한다 (Redmine #2164).
+ * Zod chain 순서대로 issues 가 채워지므로 route handler 가 issues[0].message 만 노출해도
+ * 가장 우선 위반 사유가 정확히 전달된다.
+ */
+export const menuCodeFormatSchema = z
+  .string()
+  .min(1, "メニューコードは必須です")
+  .max(50, "メニューコードは50文字以内で入力してください")
+  .regex(/^[A-Z]/, "メニューコードは英大文字で始めてください")
+  .regex(
+    /^[A-Z][A-Z0-9_]*$/,
+    "メニューコードには英大文字・数字・アンダースコア(_)のみ使用できます",
+  );
+
+/**
  * RBAC 메뉴 액션 — QpRoleMenuPermission 의 can{Read,Create,Update,Delete} 컬럼과 1:1.
  * requireMenuPermission 가드와 403 응답 바디의 `action` 필드 값으로 공용.
  */

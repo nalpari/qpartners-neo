@@ -1,21 +1,6 @@
 import { z } from "zod";
 
-import { authRoleValues } from "@/lib/schemas/common";
-
-/**
- * menuCode 형식 제약 — DB `qp_menus.menu_code VARCHAR(50)` 과 일치.
- * 대문자 + 숫자 + 언더스코어, 영문자로 시작. 신규 메뉴(TEST2 등) 생성도 허용.
- *
- * 주의: 본 정규식은 **형식 검증만** 수행. 실제 존재 여부는 route handler 에서 DB 조회로
- * 확인한다 (qp_menus FK). 정규식만으로 허용하면 존재하지 않는 menuCode 가 upsert 시
- * P2003(FK violation) 으로 떨어지므로, 호출부에서 사전에 일괄 검증해 400 으로 친절히 거부.
- *
- * 보안: enum 고정을 해제해도 lockout 가드는 `restrictedMenuCodeSet` (ADM_PERMISSION /
- * ADM_MENU / ADM_CODE) 의 값-기반 `.has()` 비교로 판정하므로, 임의 문자열 주입 공격이
- * 이 3종과 정확히 일치하지 않는 한 우회 불가. RESTRICTED 식별은 enum 이 아니라 Set 이
- * 단일 진실 원천 (`src/lib/schemas/common.ts`).
- */
-const MENU_CODE_REGEX = /^[A-Z][A-Z0-9_]{0,49}$/;
+import { authRoleValues, menuCodeFormatSchema } from "@/lib/schemas/common";
 
 // ─── Role ───
 
@@ -54,13 +39,9 @@ export const updatePermissionsSchema = z
           .object({
             // menuCode 는 메뉴관리 UI 에서 신규 등록 가능하므로 enum 하드코딩 대신 형식만 검증.
             // 존재 여부는 route handler 가 DB 조회(qp_menus) 로 일괄 확인 — 임의 문자열 주입은
-            // FK + route 검증 두 단계에서 막힌다.
-            // `.max(50)` 은 정규식이 이미 50자 강제하지만, 향후 정규식만 완화될 때도 길이 제약이
-            // 남도록 Defense in Depth 로 병행.
-            menuCode: z
-              .string()
-              .max(50, "メニューコードが長すぎます")
-              .regex(MENU_CODE_REGEX, "メニューコードの形式が正しくありません"),
+            // FK + route 검증 두 단계에서 막힌다. 메뉴 등록 schema 와 형식 정의를 공유 (common.ts)
+            // 하여 등록·수정·매트릭스 PUT 의 검증 기준을 단일화 (Redmine #2164).
+            menuCode: menuCodeFormatSchema,
             canRead: z.boolean().default(false),
             canCreate: z.boolean().default(false),
             canUpdate: z.boolean().default(false),

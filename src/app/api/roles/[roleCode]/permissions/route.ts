@@ -194,8 +194,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
             2,
           ),
       );
+      // 첫 위반 메시지를 그대로 노출 — 사용자가 어떤 menuCode 의 어떤 규칙을 위반했는지 즉시 인지.
+      // menuCodeFormatSchema 의 단계별 메시지(`英大文字で始めてください` 등) 가 그대로 전달됨 (Redmine #2164).
+      const firstMessage = result.error.issues[0]?.message ?? "バリデーションエラー";
       return NextResponse.json(
-        { error: "バリデーションエラー", issues: result.error.issues },
+        { error: firstMessage, issues: result.error.issues },
         { status: 400 },
       );
     }

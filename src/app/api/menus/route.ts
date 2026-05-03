@@ -145,8 +145,11 @@ export async function POST(request: NextRequest) {
     const result = createMenuSchema.safeParse(body);
 
     if (!result.success) {
+      // 첫 위반 메시지를 그대로 노출 — 사용자가 어떤 필드의 어떤 규칙을 위반했는지 즉시 인지.
+      // menuCode 형식 위반의 경우 menuCodeFormatSchema 의 단계별 메시지가 그대로 전달됨 (Redmine #2164).
+      const firstMessage = result.error.issues[0]?.message ?? "入力値が不正です";
       return NextResponse.json(
-        { error: "入力値が不正です", issues: result.error.issues },
+        { error: firstMessage, issues: result.error.issues },
         { status: 400 },
       );
     }
