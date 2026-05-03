@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { roleCodeFormatSchema } from "@/lib/schemas/common";
+
 // ─── QSP statCd ↔ TO-BE status 매핑 (공용) ───
 
 /** QSP statCd → TO-BE status (사양서 기준: A=정상, D=삭제, R=탈퇴) */
@@ -236,8 +238,11 @@ export function fallbackUserRoleFromUserTp(
  * 회원 수정 요청 스키마.
  *
  * userRole 은 권한관리(qp_roles) 테이블의 동적 데이터로 검증한다 (Redmine #2178):
- *   - 빈 문자열은 정규식으로 차단
- *   - 실제 활성·SUPER_ADMIN/ADMIN 외 검증은 라우트에서 prisma.qpRole 조회로 수행
+ *   - 형식 가드는 권한등록 schema 와 동일한 `roleCodeFormatSchema` 재사용 (PR #130 리뷰 후속).
+ *     첫 글자 A-Z/0-9 허용으로 시드의 `1ST_STORE` / `2ND_STORE` 거부 회귀 차단.
+ *     이상값을 라우트 진입 전 컷팅해 매 PUT 마다 prisma.qpRole 조회 라운드트립 절감 +
+ *     enumeration 시도(임의 문자열 주입) 차단.
+ *   - 실제 매트릭스 부합 여부는 라우트의 `prisma.qpRole.findUnique` + isActive 검증으로 fail-closed.
  *
  * ※ enum 필드(newsRcptYn, status)는 빈 문자열이 입력값으로 통과되지 않는다.
  * ※ boolean 필드는 `.optional()` 로 `undefined` 판별 가능 — route.ts 에서 `!== undefined`
@@ -245,7 +250,7 @@ export function fallbackUserRoleFromUserTp(
  * ※ `status` 의 enum 은 `WRITABLE_STATUSES` 를 참조해 `STATUS_TO_STAT_CD` 와 SSoT 동기.
  */
 export const memberUpdateSchema = z.object({
-  userRole: z.string().min(1, "userRole は必須です").max(50).optional(),
+  userRole: roleCodeFormatSchema.optional(),
   twoFactorEnabled: z.boolean().optional(),
   loginNotification: z.boolean().optional(),
   attributeChangeNotification: z.boolean().optional(),

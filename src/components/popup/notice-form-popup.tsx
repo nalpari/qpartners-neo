@@ -164,11 +164,14 @@ export function NoticeFormPopup() {
     // 갱신자/갱신일은 한 쌍 — updatedBy 가 null 이면 갱신 이력 없음으로 갱신일도 비운다.
     // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 자동 채워지면서 최초 저장 직후
     // 갱신일에 등록일과 같은 값이 표시되던 문제 해결 (Redmine #2175).
-    if (r.updatedBy === null) {
+    // updatedBy === undefined 케이스(응답 키 누락)는 기존 표시값 유지(stale 방지) 가 아닌
+    // 명시적 초기화 — Zod 가 nullable().optional() 이라 키가 빠지면 undefined 로 도달하므로
+    // 이전 회차의 값이 남아 화면에 잘못 표시되는 회귀를 PR #130 리뷰 후속으로 차단.
+    if (r.updatedBy === null || r.updatedBy === undefined) {
       setUpdaterId("");
       setUpdater("");
       setUpdatedAt("");
-    } else if (typeof r.updatedBy === "string") {
+    } else {
       setUpdaterId(r.updatedBy);
       if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
     }

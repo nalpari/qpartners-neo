@@ -343,6 +343,9 @@ export function Gnb() {
   // 다른 화면에서의 다운로드/등록 등 mutation 이 홈 위젯(最近ダウンロード 등)에
   // 즉시 반영되지 않던 결함 해결 (Redmine #2181).
   const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Cmd/Ctrl/Shift+Click 및 좌클릭(button=0) 외 입력은 a 의 기본 동작을 유지 —
+    // 새 탭/창 열기, 즐겨찾기 드래그 등 표준 브라우저 UX 가 막히던 회귀 제거.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
     window.location.assign("/");
   };
