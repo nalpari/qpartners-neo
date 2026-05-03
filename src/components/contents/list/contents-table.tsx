@@ -25,18 +25,22 @@ import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
-/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-") */
+/** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-")
+ * 비사내 사용자(`isInternal = false`)에게는 사내전용 카테고리 라벨을 숨긴다.
+ * Issue: #2160 — 비회원 화면에서 사내전용 카테고리 라벨이 노출되던 문제 차단.
+ */
 function renderCategoryCell(
   item: ContentListItem,
   parentCategoryCode: string,
-  inlineStyle?: boolean,
+  inlineStyle: boolean,
+  isInternal: boolean,
 ): React.ReactNode {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
   if (!matched || matched.children.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
   }
   const normal = matched.children.filter((c) => !c.isInternalOnly);
-  const internal = matched.children.filter((c) => c.isInternalOnly);
+  const internal = isInternal ? matched.children.filter((c) => c.isInternalOnly) : [];
   if (normal.length === 0 && internal.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
   }
@@ -255,7 +259,7 @@ export function ContentsTable({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
-        return renderCategoryCell(params.data, parent.categoryCode, true);
+        return renderCategoryCell(params.data, parent.categoryCode, true, isInternal);
       },
       flex: 1,
       minWidth: 90,
@@ -362,7 +366,7 @@ export function ContentsTable({
     const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
       label: parent.name,
       key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode),
+      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode, false, isInternal),
       ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
     }));
 
