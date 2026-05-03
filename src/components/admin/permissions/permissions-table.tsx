@@ -22,6 +22,7 @@ import type {
   GridReadyEvent,
 } from "ag-grid-community";
 import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import { useAlertStore, usePopupStore } from "@/lib/store";
@@ -316,7 +317,10 @@ export function PermissionsTable() {
       if (isAxiosError(error) && error.response?.status === 409) {
         openAlert({ type: "alert", message: "既に存在する権限コードです。", confirmLabel: "確認" });
       } else {
-        openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+        // 서버 응답의 첫 위반 메시지(예: "権限コードは英大文字で始めてください") 를 그대로 노출 (Redmine #2165).
+        // 응답 본문 형식이 예상과 다르면 일반 메시지로 폴백.
+        const msg = extractApiError(error) ?? "保存に失敗しました。";
+        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
       }
     },
   });
@@ -440,7 +444,9 @@ export function PermissionsTable() {
     } catch (error: unknown) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2165 — 일관성).
+      const msg = extractApiError(error) ?? "保存に失敗しました。";
+      openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
     }
   }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel]);
 
