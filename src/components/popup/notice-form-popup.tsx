@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { isAxiosError } from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
@@ -12,6 +13,20 @@ import api from "@/lib/axios";
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
 
 const CLOSE_ANIMATION_MS = 200;
+const CONTENT_MAX_LENGTH = 200;
+
+// 응답 메타 스키마 — POST/PUT 응답의 메타 필드 검증.
+// `as Record<string, unknown>` 단언 대신 safeParse 로 타입 안전성 확보.
+const noticeMetaSchema = z.object({
+  id: z.number().optional(),
+  createdAt: z.string().optional(),
+  createdBy: z.string().optional(),
+  updatedAt: z.string().optional(),
+  // updatedBy 는 명시적으로 null 가능 (등록 직후 미갱신 상태)
+  updatedBy: z.string().nullable().optional(),
+});
+
+type NoticeMeta = z.infer<typeof noticeMetaSchema>;
 
 const TARGET_OPTIONS = [
   { value: "super_admin", label: "スーパー管理者" },
@@ -60,9 +75,15 @@ export function NoticeFormPopup() {
   const [isClosing, setIsClosing] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
 
-  const mode = (popupData.mode as "create" | "edit") ?? "create";
   const initialData = popupData.notice as NoticeFormData | undefined;
-  const noticeId = initialData?.id;
+
+  // mode/noticeId/메타데이터를 state 로 보유 — Issue #2146
+  // 신규 등록(POST) 성공 시 closePopup 대신 mode→edit 로 전환하고 메타데이터(등록일/등록자/갱신일/갱신자)를
+  // 응답 데이터로 갱신해야 사용자가 동일 팝업에서 추가 수정·재저장 가능.
+  const [mode, setMode] = useState<"create" | "edit">(
+    (popupData.mode as "create" | "edit") ?? "create",
+  );
+  const [noticeId, setNoticeId] = useState<number | undefined>(initialData?.id);
 
   const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
   const [startDate, setStartDate] = useState<Date | null>(parseDate(initialData?.startDate ?? ""));
@@ -70,6 +91,17 @@ export function NoticeFormPopup() {
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [content, setContent] = useState(initialData?.content ?? "");
   const [url, setUrl] = useState(initialData?.url ?? "");
+
+  // 표시 메타 — 등록자/등록일/갱신자/갱신일. Issue #2146 (2)(3)
+  // create 모드 진입 시 createdAt 미리 채우지 않음 → 폼이 표시하는 등록일이 실제 DB 저장 시각과 어긋나는 문제 차단.
+  // 저장 응답 후 응답 데이터(notice.createdAt 등)로 갱신. author/updater 이름은 응답 본문에 포함되지
+  // 않으므로(QSP 외부 호출 회피) 초기값 그대로 const 유지 — 페이지 새로고침 시 list API 가 정식으로 해결.
+  const author = initialData?.author ?? "";
+  const [authorId, setAuthorId] = useState(initialData?.authorId ?? "");
+  const [createdAt, setCreatedAt] = useState(initialData?.createdAt ?? "");
+  const [updater, setUpdater] = useState(initialData?.updater ?? "");
+  const [updaterId, setUpdaterId] = useState(initialData?.updaterId ?? "");
+  const [updatedAt, setUpdatedAt] = useState(initialData?.updatedAt ?? "");
 
   const handleClose = () => {
     setIsClosing(true);
@@ -91,6 +123,9 @@ export function NoticeFormPopup() {
     if (!title.trim()) errs.title = "タイトルを入力してください";
     else if (title.length > 100) errs.title = "タイトルは100文字以内で入力してください";
     if (!content.trim()) errs.content = "お知らせ内容を入力してください";
+    // Issue #2146 (1) — 내용 200자 제한 (BE createHomeNoticeSchema/updateHomeNoticeSchema 와 일치).
+    else if (content.length > CONTENT_MAX_LENGTH)
+      errs.content = `お知らせ内容は${CONTENT_MAX_LENGTH}文字以内で入力してください`;
     // BE 스키마(createHomeNoticeSchema/updateHomeNoticeSchema) 와 일치 — http(s) 모두 허용.
     if (url && !/^https?:\/\//.test(url)) {
       errs.url = "URLはhttp:// または https:// で始めてください";
@@ -109,16 +144,53 @@ export function NoticeFormPopup() {
     return code === "LIMIT_EXCEEDED";
   };
 
-  // Design Ref: §4.1 — 등록 mutation
+  // 응답 body 형태: `{ data: notice }`. notice 의 메타데이터(createdAt 등)를 폼 표시값에 반영한다.
+  // PII/외부 API 호출(QSP 이름 조회) 회피를 위해 이름은 응답으로 받지 않으므로, 본인 자신이 등록자인
+  // 신규 등록 직후엔 이름 미해결 상태(authorId 만 표시) — 다음 페이지 새로고침 시 정확히 표시됨.
+  // skipAuthor: PUT 응답 시 등록자/등록일은 갱신하지 않음 (authorId 만 바뀌고 author 이름은 그대로 남는 비대칭 방지).
+  const applyNoticeMeta = (raw: unknown, opts?: { skipAuthor?: boolean }): NoticeMeta | null => {
+    const parsed = noticeMetaSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn("[NoticeFormPopup] 응답 메타 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
+    const r = parsed.data;
+    if (!opts?.skipAuthor) {
+      if (typeof r.createdAt === "string") setCreatedAt(r.createdAt);
+      // createdBy 가 등록자ID 단일 진실 원천 — userId fallback 제거.
+      if (typeof r.createdBy === "string") setAuthorId(r.createdBy);
+    }
+    if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
+    if (r.updatedBy === null) {
+      setUpdaterId("");
+      setUpdater("");
+    } else if (typeof r.updatedBy === "string") {
+      setUpdaterId(r.updatedBy);
+    }
+    return r;
+  };
+
+  // Design Ref: §4.1 — 등록 mutation. Issue #2146 (3) — 저장 후 팝업 유지 + 메타 갱신.
   const createMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const res = await api.post("/home-notices", payload);
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (response: unknown) => {
       void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
+      // 응답 데이터로 등록일/등록자 갱신 후 mode=edit 로 전환 → 사용자가 동일 팝업에서 추가 수정 가능.
+      const notice = (response as { data?: unknown } | undefined)?.data;
+      const meta = applyNoticeMeta(notice);
+      // 본인이 등록자 → 갱신자 표시는 비워둠 (DB 에 updatedBy null).
+      setUpdater("");
+      setUpdaterId("");
+      // id 가 응답에 정상 포함된 경우에만 edit 모드 전환 — 누락 시 후속 PUT 이 /home-notices/undefined 로
+      // 호출되는 잠재 버그 차단. id 누락 시 list refetch 를 통해 사용자에게 결과만 알린다.
+      if (typeof meta?.id === "number") {
+        setNoticeId(meta.id);
+        setMode("edit");
+      }
       openAlert({ type: "alert", message: "登録しました。", confirmLabel: "確認" });
-      closePopup();
     },
     onError: (error: unknown) => {
       if (isLimitExceeded(error)) {
@@ -133,16 +205,18 @@ export function NoticeFormPopup() {
     },
   });
 
-  // Design Ref: §4.2 — 수정 mutation
+  // Design Ref: §4.2 — 수정 mutation. Issue #2146 (3) — 저장 후 팝업 유지 + 메타 갱신.
   const updateMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const res = await api.put(`/home-notices/${noticeId}`, payload);
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (response: unknown) => {
       void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
+      const notice = (response as { data?: unknown } | undefined)?.data;
+      // PUT 응답에서는 등록자/등록일을 갱신하지 않음 — authorId 만 바뀌고 author(이름) 은 그대로 남는 비대칭 방지.
+      applyNoticeMeta(notice, { skipAuthor: true });
       openAlert({ type: "alert", message: "保存しました。", confirmLabel: "確認" });
-      closePopup();
     },
     onError: (error: unknown) => {
       if (isLimitExceeded(error)) {
@@ -302,7 +376,8 @@ export function NoticeFormPopup() {
             {errors.title && <p className={errorText}>{errors.title}</p>}
           </div>
 
-          {/* 공지내용 */}
+          {/* 공지내용 — IME(일본어/한국어) 조합 입력 잘림 방지를 위해 textarea maxLength 미사용.
+              200자 제한은 validate() + BE Zod 스키마(createHomeNoticeSchema/updateHomeNoticeSchema) 로 강제. */}
           <div className="flex flex-col gap-3">
             <label className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#101010]">
               お知らせ内容<span className="text-[#FF1A1A]">*</span>
@@ -313,7 +388,21 @@ export function NoticeFormPopup() {
               className="w-full min-h-[150px] p-4 border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#101010] outline-none bg-white hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
               style={{ resize: "none" }}
             />
-            {errors.content && <p className={errorText}>{errors.content}</p>}
+            <div className="flex items-center justify-between">
+              {errors.content ? (
+                <p className={errorText}>{errors.content}</p>
+              ) : (
+                <span />
+              )}
+              <span
+                className={`font-['Noto_Sans_JP'] text-[12px] ${
+                  content.length > CONTENT_MAX_LENGTH ? "text-[#FF1A1A]" : "text-[#999]"
+                }`}
+                aria-live="polite"
+              >
+                {content.length}/{CONTENT_MAX_LENGTH}
+              </span>
+            </div>
           </div>
 
           {/* URL */}
@@ -325,13 +414,13 @@ export function NoticeFormPopup() {
             {errors.url && <p className={errorText}>{errors.url}</p>}
           </div>
 
-          {/* 하단 정보 */}
+          {/* 하단 정보 — Issue #2146 (2)(3) state 기반 표시. 응답 후 mutation onSuccess 에서 갱신. */}
           <div className="flex flex-wrap gap-[18px]">
             <div className="flex flex-col gap-2 flex-1 min-w-[180px]">
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">登録者</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {formatUserLabel(initialData?.author, initialData?.authorId)}
+                  {formatUserLabel(author, authorId)}
                 </span>
               </div>
             </div>
@@ -339,7 +428,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">登録日</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {formatDateTime(initialData?.createdAt)}
+                  {formatDateTime(createdAt)}
                 </span>
               </div>
             </div>
@@ -347,7 +436,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">更新者</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {formatUserLabel(initialData?.updater, initialData?.updaterId)}
+                  {formatUserLabel(updater, updaterId)}
                 </span>
               </div>
             </div>
@@ -355,7 +444,7 @@ export function NoticeFormPopup() {
               <span className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#45576F]">更新日</span>
               <div className="flex items-center h-[42px] px-4 bg-[#F5F5F5] border border-[#E0E0E0] rounded-[4px]">
                 <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
-                  {formatDateTime(initialData?.updatedAt)}
+                  {formatDateTime(updatedAt)}
                 </span>
               </div>
             </div>
