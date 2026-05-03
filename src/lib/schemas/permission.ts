@@ -1,23 +1,24 @@
 import { z } from "zod";
 
-import { authRoleValues, menuCodeFormatSchema } from "@/lib/schemas/common";
+import { menuCodeFormatSchema, roleCodeFormatSchema } from "@/lib/schemas/common";
 
 // ─── Role ───
 
 /**
- * roleCode path parameter 검증.
- * authRole ↔ QpRole.roleCode 는 1:1 동일 (authRoleValues 6개).
- * enum 으로 좁혀 알 수 없는 roleCode 는 path param 파싱 단계에서 400 거부.
+ * roleCode path parameter 검증 — 형식 제약 (영대문자 시작 + 영대문자/숫자/_, 50자 이내).
+ *
+ * 과거 `z.enum(authRoleValues)` 로 6개에 좁혀 신규 등록 권한이 path param 파싱에서 400 이 되어
+ * GET/PUT 자체가 막히는 좀비 상태가 됐다 (Redmine #2165). authRoleValues 는 RBAC 가드의 하드코딩
+ * 분기 식별자로 유지하되, path param 은 형식 검증만 수행해 신규 등록 권한도 정상 조회·수정 가능.
  */
-export const roleCodeParamSchema = z.enum(authRoleValues);
+export const roleCodeParamSchema = roleCodeFormatSchema;
 
 /**
- * roleCode 는 authRoleValues 6개 외 생성을 허용하지 않는다.
- * enum 밖으로 등록하면 이후 GET/PUT /api/roles/:roleCode(/permissions) 는 path param 파싱에서 400 이 되어
- * 좀비 row 가 된다. 초기 설계상 역할 스키마는 고정이므로 생성 단계에서도 enum 으로 좁힌다.
+ * 권한 등록 schema — roleCode 자유 등록 허용 (formatSchema 형식 검증만).
+ * authRoleValues 6개 외에도 사용자 정의 권한을 등록할 수 있고, 매트릭스 기반 RBAC 로 자동 동작 (Redmine #2165).
  */
 export const createRoleSchema = z.object({
-  roleCode: z.enum(authRoleValues),
+  roleCode: roleCodeFormatSchema,
   roleName: z.string().min(1, "roleName은 필수입니다").max(100),
   description: z.string().max(500).nullable().default(null),
   isActive: z.boolean().default(true),

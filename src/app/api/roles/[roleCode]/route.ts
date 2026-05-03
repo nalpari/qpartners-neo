@@ -21,8 +21,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const { roleCode } = await params;
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
+      const firstMessage = parsedCode.error.issues[0]?.message ?? "roleCodeが不正です";
       return NextResponse.json(
-        { error: "roleCodeが不正です" },
+        { error: firstMessage, issues: parsedCode.error.issues },
         { status: 400 },
       );
     }
@@ -41,8 +42,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const result = updateRoleSchema.safeParse(body);
 
     if (!result.success) {
+      const firstMessage = result.error.issues[0]?.message ?? "入力値が不正です";
       return NextResponse.json(
-        { error: "入力値が不正です", issues: result.error.issues },
+        { error: firstMessage, issues: result.error.issues },
         { status: 400 },
       );
     }
