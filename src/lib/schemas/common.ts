@@ -82,8 +82,11 @@ export const menuCodeFormatSchema = z
   );
 
 /**
- * 권한(role) 등록/수정 시 roleCode 의 형식 제약 — DB `qp_role.role_code VARCHAR(50)` 과 1:1.
- * 형식 정책은 menuCodeFormatSchema 와 동일 (영대문자 시작 + 영대문자/숫자/_, 50자 이내) — F1.
+ * 권한(role) 등록/수정 시 roleCode 의 형식 제약 — DB `qp_roles.role_code VARCHAR(50)` 과 1:1.
+ *
+ * 첫 글자는 **영대문자 또는 숫자** 모두 허용 — `1ST_STORE` / `2ND_STORE` 처럼 숫자로 시작하는
+ * 기존 권한 코드의 PUT(수정/활성 토글) 이 거부되지 않도록 한다 (PR #126 회귀 수정).
+ * 두 번째 글자 이후도 영대문자/숫자/언더스코어만 허용하는 정책은 유지.
  *
  * `authRoleValues` (`SUPER_ADMIN` 등 6개) 는 RBAC 가드의 하드코딩 분기 식별자로 유지하되,
  * 본 schema 는 권한관리 UI 에서 신규 권한 자유 등록 + path param 검증용 (Redmine #2165).
@@ -95,9 +98,9 @@ export const roleCodeFormatSchema = z
   .string()
   .min(1, "権限コードは必須です")
   .max(50, "権限コードは50文字以内で入力してください")
-  .regex(/^[A-Z]/, "権限コードは英大文字で始めてください")
+  .regex(/^[A-Z0-9]/, "権限コードは英大文字または数字で始めてください")
   .regex(
-    /^[A-Z][A-Z0-9_]*$/,
+    /^[A-Z0-9][A-Z0-9_]*$/,
     "権限コードには英大文字・数字・アンダースコア(_)のみ使用できます",
   );
 
