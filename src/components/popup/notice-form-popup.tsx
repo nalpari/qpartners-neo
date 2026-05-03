@@ -160,12 +160,16 @@ export function NoticeFormPopup() {
       // createdBy 가 등록자ID 단일 진실 원천 — userId fallback 제거.
       if (typeof r.createdBy === "string") setAuthorId(r.createdBy);
     }
-    if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
+    // 갱신자/갱신일은 한 쌍 — updatedBy 가 null 이면 갱신 이력 없음으로 갱신일도 비운다.
+    // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 자동 채워지면서 최초 저장 직후
+    // 갱신일에 등록일과 같은 값이 표시되던 문제 해결 (Redmine #2175).
     if (r.updatedBy === null) {
       setUpdaterId("");
       setUpdater("");
+      setUpdatedAt("");
     } else if (typeof r.updatedBy === "string") {
       setUpdaterId(r.updatedBy);
+      if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
     }
     return r;
   };

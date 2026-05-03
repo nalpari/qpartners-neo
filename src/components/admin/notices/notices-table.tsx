@@ -413,10 +413,12 @@ export function NoticesTable({
         headerClass: "ag-header-cell-center",
       },
       {
+        // updatedBy 가 null 이면 갱신 이력 없음으로 갱신일도 비운다 (Redmine #2175).
+        // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 채워지는 부수 효과 차단.
         headerName: "更新日",
-        field: "updatedAt",
         flex: 0.8,
-        valueFormatter: (p) => formatDate(p.value as string),
+        valueGetter: (p) => (p.data?.updatedBy ? p.data.updatedAt : ""),
+        valueFormatter: (p) => (p.value ? formatDate(p.value as string) : "-"),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
