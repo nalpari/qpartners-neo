@@ -6,6 +6,7 @@ import { useState, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
+import { extractApiError } from "@/lib/api-error";
 import { useAlertStore } from "@/lib/store";
 import { useMenuTree } from "@/hooks/use-menu-tree";
 import { MenusInfoForm } from "./menus-info-form";
@@ -75,7 +76,10 @@ export function MenusContents() {
       if (isAxiosError(error) && error.response?.status === 409) {
         openAlert({ type: "alert", message: "既に存在するMenu Codeです。", confirmLabel: "確認" });
       } else {
-        openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+        // 서버 응답의 첫 위반 메시지(예: "メニューコードは英大文字で始めてください") 를
+        // 그대로 노출 (Redmine #2164). 응답 본문 형식이 예상과 다르면 일반 메시지로 폴백.
+        const msg = extractApiError(error) ?? "保存に失敗しました。";
+        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
       }
     },
   });
@@ -100,7 +104,9 @@ export function MenusContents() {
       if (isAxiosError(error) && error.response?.status === 404) {
         openAlert({ type: "alert", message: "メニューが見つかりません。画面を更新してください。", confirmLabel: "確認" });
       } else {
-        openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+        // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2164 — 수정 시에도 일관성 유지).
+        const msg = extractApiError(error) ?? "保存に失敗しました。";
+        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
       }
     },
   });

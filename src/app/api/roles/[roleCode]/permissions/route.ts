@@ -196,9 +196,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
       // 첫 위반 메시지를 그대로 노출 — 사용자가 어떤 menuCode 의 어떤 규칙을 위반했는지 즉시 인지.
       // menuCodeFormatSchema 의 단계별 메시지(`英大文字で始めてください` 등) 가 그대로 전달됨 (Redmine #2164).
+      // issues 는 message+path 만 노출 — `received`/`expected`/`code` 등 내부 스키마 구조 정보 차단.
       const firstMessage = result.error.issues[0]?.message ?? "バリデーションエラー";
       return NextResponse.json(
-        { error: firstMessage, issues: result.error.issues },
+        {
+          error: firstMessage,
+          issues: result.error.issues.map((i) => ({ message: i.message, path: i.path })),
+        },
         { status: 400 },
       );
     }

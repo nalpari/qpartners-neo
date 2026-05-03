@@ -21,11 +21,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const { roleCode } = await params;
     const parsedCode = roleCodeParamSchema.safeParse(roleCode);
     if (!parsedCode.success) {
+      // path param 검증 실패는 단순 포맷(`{ error }`) 으로 통일 —
+      // GET/permissions 등 다른 path param 검증과 응답 형태 일관성 유지.
       const firstMessage = parsedCode.error.issues[0]?.message ?? "roleCodeが不正です";
-      return NextResponse.json(
-        { error: firstMessage, issues: parsedCode.error.issues },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: firstMessage }, { status: 400 });
     }
 
     let body: unknown;
@@ -42,9 +41,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const result = updateRoleSchema.safeParse(body);
 
     if (!result.success) {
+      // issues 는 message+path 만 노출 — `received`/`expected`/`code` 등 내부 스키마 구조 정보 차단.
       const firstMessage = result.error.issues[0]?.message ?? "入力値が不正です";
       return NextResponse.json(
-        { error: firstMessage, issues: result.error.issues },
+        {
+          error: firstMessage,
+          issues: result.error.issues.map((i) => ({ message: i.message, path: i.path })),
+        },
         { status: 400 },
       );
     }
@@ -53,6 +56,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "更新対象のフィールドがありません" },
         { status: 400 },
+      );
+    }
+
+    // enum 완화(authRole 6종 고정 → regex)로 인한 방어선 보완 — 명시적 존재 확인.
+    // P2025(Record not found) 처리에 의존하지 않고 미존재 시 즉시 404 로 분기해
+    // unique 제약/감사 로그 등 update 사이드이펙트 발생 가능성을 차단.
+    const exists = await prisma.qpRole.findUnique({
+      where: { roleCode: parsedCode.data },
+      select: { roleCode: true },
+    });
+    if (!exists) {
+      return NextResponse.json(
+        { error: "指定された権限が見つかりません" },
+        { status: 404 },
       );
     }
 

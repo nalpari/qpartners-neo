@@ -55,9 +55,13 @@ export async function POST(request: NextRequest) {
     if (!result.success) {
       // 첫 위반 메시지를 그대로 노출 — 사용자가 어떤 필드의 어떤 규칙을 위반했는지 즉시 인지.
       // roleCode 형식 위반 케이스별 메시지가 그대로 전달됨 (Redmine #2165).
+      // issues 는 message+path 만 노출 — `received`/`expected`/`code` 등 내부 스키마 구조 정보 차단.
       const firstMessage = result.error.issues[0]?.message ?? "入力値が不正です";
       return NextResponse.json(
-        { error: firstMessage, issues: result.error.issues },
+        {
+          error: firstMessage,
+          issues: result.error.issues.map((i) => ({ message: i.message, path: i.path })),
+        },
         { status: 400 },
       );
     }
