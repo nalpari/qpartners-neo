@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { isAxiosError } from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
@@ -12,6 +13,20 @@ import api from "@/lib/axios";
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
 
 const CLOSE_ANIMATION_MS = 200;
+const CONTENT_MAX_LENGTH = 200;
+
+// 응답 메타 스키마 — POST/PUT 응답의 메타 필드 검증.
+// `as Record<string, unknown>` 단언 대신 safeParse 로 타입 안전성 확보.
+const noticeMetaSchema = z.object({
+  id: z.number().optional(),
+  createdAt: z.string().optional(),
+  createdBy: z.string().optional(),
+  updatedAt: z.string().optional(),
+  // updatedBy 는 명시적으로 null 가능 (등록 직후 미갱신 상태)
+  updatedBy: z.string().nullable().optional(),
+});
+
+type NoticeMeta = z.infer<typeof noticeMetaSchema>;
 
 const TARGET_OPTIONS = [
   { value: "super_admin", label: "スーパー管理者" },
@@ -109,7 +124,8 @@ export function NoticeFormPopup() {
     else if (title.length > 100) errs.title = "タイトルは100文字以内で入力してください";
     if (!content.trim()) errs.content = "お知らせ内容を入力してください";
     // Issue #2146 (1) — 내용 200자 제한 (BE createHomeNoticeSchema/updateHomeNoticeSchema 와 일치).
-    else if (content.length > 200) errs.content = "お知らせ内容は200文字以内で入力してください";
+    else if (content.length > CONTENT_MAX_LENGTH)
+      errs.content = `お知らせ内容は${CONTENT_MAX_LENGTH}文字以内で入力してください`;
     // BE 스키마(createHomeNoticeSchema/updateHomeNoticeSchema) 와 일치 — http(s) 모두 허용.
     if (url && !/^https?:\/\//.test(url)) {
       errs.url = "URLはhttp:// または https:// で始めてください";
@@ -131,12 +147,19 @@ export function NoticeFormPopup() {
   // 응답 body 형태: `{ data: notice }`. notice 의 메타데이터(createdAt 등)를 폼 표시값에 반영한다.
   // PII/외부 API 호출(QSP 이름 조회) 회피를 위해 이름은 응답으로 받지 않으므로, 본인 자신이 등록자인
   // 신규 등록 직후엔 이름 미해결 상태(authorId 만 표시) — 다음 페이지 새로고침 시 정확히 표시됨.
-  const applyNoticeMeta = (raw: unknown) => {
-    if (typeof raw !== "object" || raw === null) return;
-    const r = raw as Record<string, unknown>;
-    if (typeof r.createdAt === "string") setCreatedAt(r.createdAt);
-    if (typeof r.createdBy === "string") setAuthorId(r.createdBy);
-    else if (typeof r.userId === "string") setAuthorId(r.userId);
+  // skipAuthor: PUT 응답 시 등록자/등록일은 갱신하지 않음 (authorId 만 바뀌고 author 이름은 그대로 남는 비대칭 방지).
+  const applyNoticeMeta = (raw: unknown, opts?: { skipAuthor?: boolean }): NoticeMeta | null => {
+    const parsed = noticeMetaSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn("[NoticeFormPopup] 응답 메타 스키마 불일치:", parsed.error.issues);
+      return null;
+    }
+    const r = parsed.data;
+    if (!opts?.skipAuthor) {
+      if (typeof r.createdAt === "string") setCreatedAt(r.createdAt);
+      // createdBy 가 등록자ID 단일 진실 원천 — userId fallback 제거.
+      if (typeof r.createdBy === "string") setAuthorId(r.createdBy);
+    }
     if (typeof r.updatedAt === "string") setUpdatedAt(r.updatedAt);
     if (r.updatedBy === null) {
       setUpdaterId("");
@@ -144,6 +167,7 @@ export function NoticeFormPopup() {
     } else if (typeof r.updatedBy === "string") {
       setUpdaterId(r.updatedBy);
     }
+    return r;
   };
 
   // Design Ref: §4.1 — 등록 mutation. Issue #2146 (3) — 저장 후 팝업 유지 + 메타 갱신.
@@ -156,15 +180,16 @@ export function NoticeFormPopup() {
       void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
       // 응답 데이터로 등록일/등록자 갱신 후 mode=edit 로 전환 → 사용자가 동일 팝업에서 추가 수정 가능.
       const notice = (response as { data?: unknown } | undefined)?.data;
-      applyNoticeMeta(notice);
-      if (notice && typeof notice === "object" && "id" in notice) {
-        const id = (notice as { id: unknown }).id;
-        if (typeof id === "number") setNoticeId(id);
-      }
+      const meta = applyNoticeMeta(notice);
       // 본인이 등록자 → 갱신자 표시는 비워둠 (DB 에 updatedBy null).
       setUpdater("");
       setUpdaterId("");
-      setMode("edit");
+      // id 가 응답에 정상 포함된 경우에만 edit 모드 전환 — 누락 시 후속 PUT 이 /home-notices/undefined 로
+      // 호출되는 잠재 버그 차단. id 누락 시 list refetch 를 통해 사용자에게 결과만 알린다.
+      if (typeof meta?.id === "number") {
+        setNoticeId(meta.id);
+        setMode("edit");
+      }
       openAlert({ type: "alert", message: "登録しました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -189,7 +214,8 @@ export function NoticeFormPopup() {
     onSuccess: (response: unknown) => {
       void queryClient.invalidateQueries({ queryKey: ["home-notices"], refetchType: "all" });
       const notice = (response as { data?: unknown } | undefined)?.data;
-      applyNoticeMeta(notice);
+      // PUT 응답에서는 등록자/등록일을 갱신하지 않음 — authorId 만 바뀌고 author(이름) 은 그대로 남는 비대칭 방지.
+      applyNoticeMeta(notice, { skipAuthor: true });
       openAlert({ type: "alert", message: "保存しました。", confirmLabel: "確認" });
     },
     onError: (error: unknown) => {
@@ -350,7 +376,8 @@ export function NoticeFormPopup() {
             {errors.title && <p className={errorText}>{errors.title}</p>}
           </div>
 
-          {/* 공지내용 */}
+          {/* 공지내용 — IME(일본어/한국어) 조합 입력 잘림 방지를 위해 textarea maxLength 미사용.
+              200자 제한은 validate() + BE Zod 스키마(createHomeNoticeSchema/updateHomeNoticeSchema) 로 강제. */}
           <div className="flex flex-col gap-3">
             <label className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#101010]">
               お知らせ内容<span className="text-[#FF1A1A]">*</span>
@@ -358,11 +385,24 @@ export function NoticeFormPopup() {
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              maxLength={200}
               className="w-full min-h-[150px] p-4 border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#101010] outline-none bg-white hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
               style={{ resize: "none" }}
             />
-            {errors.content && <p className={errorText}>{errors.content}</p>}
+            <div className="flex items-center justify-between">
+              {errors.content ? (
+                <p className={errorText}>{errors.content}</p>
+              ) : (
+                <span />
+              )}
+              <span
+                className={`font-['Noto_Sans_JP'] text-[12px] ${
+                  content.length > CONTENT_MAX_LENGTH ? "text-[#FF1A1A]" : "text-[#999]"
+                }`}
+                aria-live="polite"
+              >
+                {content.length}/{CONTENT_MAX_LENGTH}
+              </span>
+            </div>
           </div>
 
           {/* URL */}
