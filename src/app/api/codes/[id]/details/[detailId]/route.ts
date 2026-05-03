@@ -81,6 +81,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
+    // 같은 헤더 내 sortOrder 중복 차단 — 자기 자신 제외 (Redmine #2174, 활성/비활성 무관)
+    if (result.data.sortOrder !== undefined) {
+      const sortDup = await prisma.codeDetail.findFirst({
+        where: {
+          headerId: parsedId.data,
+          sortOrder: result.data.sortOrder,
+          id: { not: parsedDetailId.data },
+        },
+        select: { id: true },
+      });
+      if (sortDup) {
+        return NextResponse.json(
+          { error: `ソート順序が重複しています (sortOrder=${result.data.sortOrder})` },
+          { status: 400 },
+        );
+      }
+    }
+
     const detail = await prisma.codeDetail.update({
       where: { id: parsedDetailId.data, headerId: parsedId.data },
       data: result.data,

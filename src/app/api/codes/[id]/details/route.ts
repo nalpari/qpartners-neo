@@ -104,6 +104,18 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: validity.message }, { status: 400 });
     }
 
+    // 같은 헤더 내 sortOrder 중복 차단 — 운영자 수동 입력 충돌 방지 (Redmine #2174, 활성/비활성 무관)
+    const sortDup = await prisma.codeDetail.findFirst({
+      where: { headerId: parsed.data, sortOrder: result.data.sortOrder },
+      select: { id: true },
+    });
+    if (sortDup) {
+      return NextResponse.json(
+        { error: `ソート順序が重複しています (sortOrder=${result.data.sortOrder})` },
+        { status: 400 },
+      );
+    }
+
     const detail = await prisma.codeDetail.create({
       data: {
         ...result.data,
