@@ -40,8 +40,10 @@ export async function POST(request: NextRequest) {
       field: i.path.join("."),
       message: i.message,
     }));
+    // Issue #2156 — 클라이언트가 error 필드를 그대로 alert 하므로 영문 "Validation failed" 노출 방지.
+    // 첫 번째 필드 메시지(일본어)를 우선 노출, fallback 으로 일반 메시지 사용.
     return NextResponse.json(
-      { error: "Validation failed", fields },
+      { error: fields[0]?.message ?? "入力内容に誤りがあります。", fields },
       { status: 400 },
     );
   }
@@ -158,12 +160,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 유저 미존재 시에도 동일 성공 응답 반환 — 이메일 열거 공격 방지
+  // Issue #2156 (테스터 요구) — 회원 미존재 시 명확한 안내 메시지 반환 (404).
+  // 설계 원본(password-reset.design.md §2 p.85, p.107) 과 일치. 사용자 열거 방어는 후순위로 미루며,
+  // IP/이메일 기반 rate limit(2-a, 2-b) 으로 일부 완화.
   if (!userExists) {
     console.info(`[POST /api/auth/password-reset/request] 회원 미존재 — userTp: ${userTp}`);
-    return NextResponse.json({
-      data: { message: "パスワード変更リンクをメールで送信しました。" },
-    });
+    return NextResponse.json(
+      { error: "一致する会員情報がありません。入力情報を再度ご確認ください。" },
+      { status: 404 },
+    );
   }
 
   // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)

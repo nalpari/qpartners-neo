@@ -13,6 +13,31 @@ import { Button } from "@/components/common";
 type SubmitStatus = "idle" | "submitting" | "done";
 type PageStatus = "loading" | "invalid" | "ready" | SubmitStatus;
 
+// Issue #2077 — 비밀번호 표시/숨김 토글 아이콘 (눈/눈-가림). aria-label 일본어, type=button 으로 form submit 차단.
+// React Compiler `static-components` 룰 — 모듈 scope 로 정의 (다른 컴포넌트 본문 내 정의 금지).
+function PasswordToggleButton({ show, onToggle }: { show: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={show ? "パスワードを隠す" : "パスワードを表示"}
+      className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 text-[#999] hover:text-[#101010] cursor-pointer"
+    >
+      {show ? (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+      ) : (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export function PasswordResetClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -24,6 +49,9 @@ export function PasswordResetClient() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [autoLoginOk, setAutoLoginOk] = useState(false);
+  // Issue #2077 — 비밀번호 표시/숨김 토글 (입력창 우측 아이콘)
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // 1. 토큰 검증 (TanStack Query)
   const { data: verifyData, error: verifyError, isLoading } = useQuery({
@@ -126,7 +154,7 @@ export function PasswordResetClient() {
   };
 
   const inputClass =
-    "w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
+    "w-full h-[42px] px-4 pr-11 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none transition-colors duration-150 hover:border-[#D1D1D1] focus:border-[#101010]";
   const labelClass =
     "font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] font-medium leading-[1.5] text-[#101010]";
 
@@ -178,13 +206,19 @@ export function PasswordResetClient() {
           <label className={labelClass}>
             新しいパスワード<span className="text-[#FF1A1A]">*</span>
           </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              type={showNewPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className={inputClass}
+            />
+            <PasswordToggleButton
+              show={showNewPassword}
+              onToggle={() => setShowNewPassword((v) => !v)}
+            />
+          </div>
           <p className="font-['Noto_Sans_JP'] text-[12px] text-[#999] leading-[1.5]">
             ※ 英大文字、英小文字、数字を組み合わせて8文字以上で設定
           </p>
@@ -194,13 +228,19 @@ export function PasswordResetClient() {
           <label className={labelClass}>
             新しいパスワード再入力<span className="text-[#FF1A1A]">*</span>
           </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className={inputClass}
+            />
+            <PasswordToggleButton
+              show={showConfirmPassword}
+              onToggle={() => setShowConfirmPassword((v) => !v)}
+            />
+          </div>
         </div>
 
         {error && (

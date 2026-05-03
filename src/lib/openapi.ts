@@ -461,7 +461,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시에도 동일 200 응답 (이메일 열거 공격 방지).",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156).",
         requestBody: {
           required: true,
           content: {
@@ -490,13 +490,14 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "Validation failed",
+            description: "입력값 검증 실패 (error 필드에 첫 번째 항목의 일본어 메시지 노출)",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
               },
             },
           },
+          "404": errorResponse("일치하는 회원 정보 없음 (一致する会員情報がありません。入力情報を再度ご確認ください。)"),
           "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
           "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
           "502": errorResponse("외부 서버 연결 실패"),
