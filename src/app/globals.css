@@ -181,6 +181,16 @@ button{cursor: pointer;}
   min-height: 1.5rem;
   margin: 0;
 }
+/*
+ * @tailwindcss/typography(prose)는 thead·tbody tr에 border-bottom-width:1px를 일괄 부여한다.
+ * .rich-editor-table는 셀 단위 border로 그리드를 표현하므로, prose가 추가로 그리는 행 단위
+ * border가 우리 셀 border와 겹쳐 시각적으로 부정확한 보더가 된다.
+ * 동등 specificity 후행 룰로 0 처리해 우리 셀 border만 살린다.
+ */
+.rich-editor-table thead,
+.rich-editor-table tbody tr {
+  border-bottom-width: 0;
+}
 
 .rich-editor-inline-image {
   max-width: 100%;
@@ -194,4 +204,49 @@ button{cursor: pointer;}
   height: 0;
   pointer-events: none;
   color: #AAAAAA;
+}
+
+/*
+ * Tiptap @tiptap/extension-table 표 + 컬럼 리사이즈 — Tiptap 공식 권장 CSS.
+ * resizable: true로 켜져 있어도 .column-resize-handle / .tableWrapper /
+ * .selectedCell / .resize-cursor 등 핵심 클래스에 CSS가 없으면 핸들 폭이 0이라
+ * 보이지도, 클릭/드래그도 잡히지 않는다.
+ */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 1em;
+  position: relative;
+}
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+.ProseMirror .selectedCell::after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
 }
