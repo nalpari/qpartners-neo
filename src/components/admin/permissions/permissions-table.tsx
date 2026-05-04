@@ -253,6 +253,7 @@ export function PermissionsTable() {
     commitEdit,
     setPendingField,
     discardRowPending,
+    clearPending,
   } = cellEdit;
 
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
@@ -406,7 +407,8 @@ export function PermissionsTable() {
   const handleSave = useCallback(async () => {
     if (isSaving) return;
 
-    // 1) 신규행
+    // 1) 신규행 — 단건 POST. 신규행 분기에도 isSaving 가드 적용으로 중복 클릭 차단
+    // (createMutation.isPending 만으로는 alert/네트워크 race 시 짧은 틈 존재).
     if (newRow) {
       const fields = newRowFieldsRef.current;
       if (!fields.code.trim()) {
@@ -417,23 +419,30 @@ export function PermissionsTable() {
         openAlert({ type: "alert", message: "権限名は必須です。", confirmLabel: "確認" });
         return;
       }
-      createMutation.mutate(toCreateRoleBody(fields));
+      setIsSaving(true);
+      try {
+        await createMutation.mutateAsync(toCreateRoleBody(fields));
+      } finally {
+        setIsSaving(false);
+      }
       return;
     }
 
-    // 2) 편집중 셀 → pending commit
-    if (editingCell && !editingCell.rowId.startsWith("new-")) {
-      commitEdit();
-    }
-
-    // 3) pending 일괄 저장. commit 직후 setState 가 비동기라 ref 에서 한번 더 추출 후 머지.
+    // 2) 편집중 셀 → 스냅샷 추출 후 commitEdit.
+    // 주의: commitEdit() 가 detailEditRef 를 동기 초기화하므로(use-cell-edit.ts:49),
+    // ref 스냅샷은 반드시 commitEdit 호출 전에 확보해야 한다. 호출 후에 읽으면 빈 객체라
+    // 편집 중인 셀의 입력값이 PUT 에 누락된다 (PR #139 리뷰 HIGH 지적).
     const extra: Record<string, Record<string, string>> = {};
     if (editingCell && !editingCell.rowId.startsWith("new-")) {
       const v = editValuesRef.current[editingCell.field];
       if (v !== undefined) {
         extra[editingCell.rowId] = { [editingCell.field]: v };
       }
+      commitEdit();
     }
+
+    // 3) pending + extra 머지 — extra 는 현재 렌더의 pendingChanges 에 아직 반영 안 됐으므로
+    // 호출 측에서 명시적으로 합쳐 jobs 를 구성한다.
     const jobs: Record<string, Record<string, string>> = { ...pendingChanges };
     for (const [rowId, fields] of Object.entries(extra)) {
       jobs[rowId] = { ...jobs[rowId], ...fields };
@@ -482,16 +491,20 @@ export function PermissionsTable() {
       }
 
       if (failures.length === 0) {
+        // 전체 성공 — pending 완전 정리 (skipped 행이 잔류하지 않도록 clearPending 호출).
+        clearPending();
         handleEditCancel();
         openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
       } else {
+        const successCount = results.length - failures.length;
         const firstError = failures[0];
         const status = isAxiosError(firstError) ? firstError.response?.status : undefined;
         console.error(
           `[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"} (${failures.length}/${results.length})`,
         );
-        // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2165 — 일관성).
-        const msg = extractApiError(firstError) ?? "保存に失敗しました。";
+        // 서버 응답의 첫 위반 메시지 + 부분 성공 카운트 표시 (PR #139 리뷰 MEDIUM 지적).
+        const baseMsg = extractApiError(firstError) ?? "保存に失敗しました。";
+        const msg = `${baseMsg}\n(${successCount}/${results.length}件保存済み)`;
         openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
       }
     } finally {
@@ -507,6 +520,7 @@ export function PermissionsTable() {
     updateMutation,
     commitEdit,
     discardRowPending,
+    clearPending,
     handleEditCancel,
     editValuesRef,
     openAlert,

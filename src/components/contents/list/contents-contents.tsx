@@ -93,17 +93,17 @@ export function ContentsContents() {
   const isInternal = useIsInternal();
 
   // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
-  // queryKey 시드용으로만 사용 — 권한·계정 변동 시 캐시가 분리되어 stale 응답 재사용 차단.
-  // userTp 만으로는 동일 권한의 다른 계정 전환 시 이전 사용자 캐시가 재사용될 수 있어
-  // userId 도 결합 (PR #139 리뷰 MEDIUM 지적). 비로그인 → 로그인 전환 시도 키가
-  // 달라져 새로고침 전까지 잘못된 결과(예: 7개)가 유지되던 결함을 함께 차단.
+  // queryKey 시드용으로만 사용 — 권한 변동 시 캐시가 분리되어 stale 응답 재사용 차단.
+  // home-contents.tsx 와 동일 패턴: userTp + authRole 만 결합 (userId 는 이메일 PII 라
+  // 의도적으로 제외 — TanStack Query DevTools 등에서 queryKey 평문 노출 위험 회피).
+  // 동일 권한의 다른 계정 전환은 role 단위 응답이 동일하므로 캐시 공유해도 무해.
   const { data: user } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
     queryFn: () => null,
     staleTime: Infinity,
     enabled: false,
   });
-  const userScope = user ? `${user.userTp}:${user.userId}` : "anon";
+  const userScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "anon";
 
   // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
