@@ -252,7 +252,7 @@ export function PermissionsTable() {
     handleEditFieldChange,
     commitEdit,
     setPendingField,
-    clearPending,
+    discardRowPending,
   } = cellEdit;
 
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
@@ -317,7 +317,9 @@ export function PermissionsTable() {
     });
     return newRow
       ? [
-          { id: "new", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
+          // id prefix "new-" 통일 — useCellEdit 의 신규행 가드(startsWith("new-")) 와 일치시켜
+          // 더블클릭 가드 우회로 편집 모드 진입하는 결함 차단 (PR #139 리뷰 MEDIUM 지적).
+          { id: "new-row", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
           ...mapped,
         ]
       : mapped;
@@ -420,13 +422,13 @@ export function PermissionsTable() {
     }
 
     // 2) 편집중 셀 → pending commit
-    if (editingCell && !editingCell.rowId.startsWith("new")) {
+    if (editingCell && !editingCell.rowId.startsWith("new-")) {
       commitEdit();
     }
 
     // 3) pending 일괄 저장. commit 직후 setState 가 비동기라 ref 에서 한번 더 추출 후 머지.
     const extra: Record<string, Record<string, string>> = {};
-    if (editingCell && !editingCell.rowId.startsWith("new")) {
+    if (editingCell && !editingCell.rowId.startsWith("new-")) {
       const v = editValuesRef.current[editingCell.field];
       if (v !== undefined) {
         extra[editingCell.rowId] = { [editingCell.field]: v };
@@ -443,32 +445,55 @@ export function PermissionsTable() {
 
     setIsSaving(true);
     try {
-      for (const [rowId, fields] of Object.entries(jobs)) {
-        const original = items.find((i) => i.id === rowId);
-        if (!original) continue;
-        const merged: PermissionItem = { ...original };
-        for (const [field, value] of Object.entries(fields)) {
-          if (field === "isActive") {
-            if (value === "Y" || value === "N") merged.isActive = value;
-          } else if (field === "roleName" || field === "description") {
-            merged[field] = value;
+      // Promise.allSettled 로 병렬 PUT — RTT × N 직렬 대기 회피.
+      // 성공한 행은 즉시 discardRowPending 으로 제거하여, 부분 실패 시 다음 「保存」 클릭 시
+      // 이미 반영된 행의 중복 PUT 발생을 차단한다 (PR #139 리뷰 HIGH 지적).
+      const entries = Object.entries(jobs);
+      const results = await Promise.allSettled(
+        entries.map(async ([rowId, fields]) => {
+          const original = items.find((i) => i.id === rowId);
+          if (!original) {
+            return { rowId, skipped: true as const };
           }
+          const merged: PermissionItem = { ...original };
+          for (const [field, value] of Object.entries(fields)) {
+            if (field === "isActive") {
+              if (value === "Y" || value === "N") merged.isActive = value;
+            } else if (field === "roleName" || field === "description") {
+              merged[field] = value;
+            }
+          }
+          await updateMutation.mutateAsync({
+            roleCode: original.roleCode,
+            body: toUpdateRoleBody(merged),
+          });
+          return { rowId, skipped: false as const };
+        }),
+      );
+
+      // 성공 행만 pending 제거 — 실패/skip 행은 잔류시켜 사용자가 재시도해도 안전.
+      const failures: unknown[] = [];
+      for (const result of results) {
+        if (result.status === "fulfilled" && !result.value.skipped) {
+          discardRowPending(result.value.rowId);
+        } else if (result.status === "rejected") {
+          failures.push(result.reason);
         }
-        await updateMutation.mutateAsync({
-          roleCode: original.roleCode,
-          body: toUpdateRoleBody(merged),
-        });
       }
-      // 4) 성공 — pending + 편집 state 정리
-      clearPending();
-      handleEditCancel();
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch (error: unknown) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
-      // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2165 — 일관성).
-      const msg = extractApiError(error) ?? "保存に失敗しました。";
-      openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
+
+      if (failures.length === 0) {
+        handleEditCancel();
+        openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+      } else {
+        const firstError = failures[0];
+        const status = isAxiosError(firstError) ? firstError.response?.status : undefined;
+        console.error(
+          `[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"} (${failures.length}/${results.length})`,
+        );
+        // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2165 — 일관성).
+        const msg = extractApiError(firstError) ?? "保存に失敗しました。";
+        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -481,7 +506,7 @@ export function PermissionsTable() {
     createMutation,
     updateMutation,
     commitEdit,
-    clearPending,
+    discardRowPending,
     handleEditCancel,
     editValuesRef,
     openAlert,
