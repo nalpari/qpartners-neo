@@ -39,12 +39,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "ヘッダーコードが見つかりません" }, { status: 404 });
     }
 
+    // 보조 정렬: id asc — 동일 sortOrder 가 둘 이상일 때 결정적 순서 보장
+    // (관리자가 신규 행 추가 시 기존 행과 sortOrder 충돌해도 등록순으로 안정 정렬).
     const details = await prisma.codeDetail.findMany({
       where: {
         headerId: parsed.data,
         ...(activeOnly && { isActive: true }),
       },
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     });
 
     return NextResponse.json({ data: details });
@@ -104,23 +106,33 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: validity.message }, { status: 400 });
     }
 
-    // 같은 헤더 내 sortOrder 중복 차단 — 운영자 수동 입력 충돌 방지 (Redmine #2174, 활성/비활성 무관)
-    const sortDup = await prisma.codeDetail.findFirst({
-      where: { headerId: parsed.data, sortOrder: result.data.sortOrder },
-      select: { id: true },
-    });
-    if (sortDup) {
-      return NextResponse.json(
-        { error: `ソート順序が重複しています (sortOrder=${result.data.sortOrder})` },
-        { status: 400 },
-      );
-    }
+    // 자동 정렬: 신규 행의 sortOrder 와 같거나 큰 기존 행을 모두 +1 밀어 자리 확보.
+    // 예) 기존 [A:1, B:2, C:3] 에 sortOrder=2 신규 추가 → B/C 가 3/4 로 이동, NEW 는 2.
+    // 트랜잭션으로 count + shift + create 를 원자적으로 처리해 동시 등록 시 중간상태 노출 차단.
+    //
+    // sortOrder 클램프: [1, count+1] 범위로 강제. 사용자가 1561 같은 큰 숫자나 0/음수 입력 시
+    // 자동으로 마지막 자리(count+1) 또는 첫 자리(1)로 보정 — 운영자 실수 방지.
+    const detail = await prisma.$transaction(async (tx) => {
+      const currentCount = await tx.codeDetail.count({
+        where: { headerId: parsed.data },
+      });
+      const maxSort = currentCount + 1;
+      const clampedSort = Math.max(1, Math.min(result.data.sortOrder, maxSort));
 
-    const detail = await prisma.codeDetail.create({
-      data: {
-        ...result.data,
-        headerId: parsed.data,
-      },
+      await tx.codeDetail.updateMany({
+        where: {
+          headerId: parsed.data,
+          sortOrder: { gte: clampedSort },
+        },
+        data: { sortOrder: { increment: 1 } },
+      });
+      return tx.codeDetail.create({
+        data: {
+          ...result.data,
+          sortOrder: clampedSort,
+          headerId: parsed.data,
+        },
+      });
     });
 
     if (header.headerCode === "USER_TYPE") {

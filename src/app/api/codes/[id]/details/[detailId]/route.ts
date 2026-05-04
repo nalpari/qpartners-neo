@@ -81,27 +81,59 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 같은 헤더 내 sortOrder 중복 차단 — 자기 자신 제외 (Redmine #2174, 활성/비활성 무관)
-    if (result.data.sortOrder !== undefined) {
-      const sortDup = await prisma.codeDetail.findFirst({
-        where: {
-          headerId: parsedId.data,
-          sortOrder: result.data.sortOrder,
-          id: { not: parsedDetailId.data },
-        },
-        select: { id: true },
-      });
-      if (sortDup) {
-        return NextResponse.json(
-          { error: `ソート順序が重複しています (sortOrder=${result.data.sortOrder})` },
-          { status: 400 },
-        );
-      }
-    }
+    // 자동 정렬: sortOrder 변경 시 사이 구간을 shift 해 충돌·중복 회피.
+    // - newSort < oldSort (위로 이동): [newSort, oldSort) 범위의 다른 행을 +1
+    // - newSort > oldSort (아래로 이동): (oldSort, newSort] 범위의 다른 행을 -1
+    // 예) [A:1, B:2, C:3] 에서 C 를 sort=2 로 수정 → B 가 3 으로 밀려 [A:1, C:2, B:3].
+    // findUnique 결과가 없거나 headerId 가 다르면 shift 를 건너뛰고 update 가 P2025 throw.
+    //
+    // sortOrder 클램프: [1, count] 범위로 강제 (현재 행 포함). 1561 같은 큰 숫자/0/음수 입력 시
+    // 자동으로 마지막(count) 또는 첫 자리(1)로 보정 — 운영자 실수 방지.
+    const detail = await prisma.$transaction(async (tx) => {
+      const updateData = { ...result.data };
+      if (updateData.sortOrder !== undefined) {
+        // findUnique(headerId 검증용) + count(클램프 max) 병렬 실행 — 트랜잭션 소요 단축.
+        // headerId 불일치 시 findUnique 결과로 즉시 거부하므로 병렬 count 결과는 그대로 폐기 가능.
+        const [existing, currentCount] = await Promise.all([
+          tx.codeDetail.findUnique({
+            where: { id: parsedDetailId.data },
+            select: { sortOrder: true, headerId: true },
+          }),
+          tx.codeDetail.count({
+            where: { headerId: parsedId.data },
+          }),
+        ]);
+        if (existing && existing.headerId === parsedId.data) {
+          const clampedSort = Math.max(1, Math.min(updateData.sortOrder, currentCount));
+          updateData.sortOrder = clampedSort;
 
-    const detail = await prisma.codeDetail.update({
-      where: { id: parsedDetailId.data, headerId: parsedId.data },
-      data: result.data,
+          const oldSort = existing.sortOrder;
+          const newSort = clampedSort;
+          if (newSort < oldSort) {
+            await tx.codeDetail.updateMany({
+              where: {
+                headerId: parsedId.data,
+                id: { not: parsedDetailId.data },
+                sortOrder: { gte: newSort, lt: oldSort },
+              },
+              data: { sortOrder: { increment: 1 } },
+            });
+          } else if (newSort > oldSort) {
+            await tx.codeDetail.updateMany({
+              where: {
+                headerId: parsedId.data,
+                id: { not: parsedDetailId.data },
+                sortOrder: { gt: oldSort, lte: newSort },
+              },
+              data: { sortOrder: { decrement: 1 } },
+            });
+          }
+        }
+      }
+      return tx.codeDetail.update({
+        where: { id: parsedDetailId.data, headerId: parsedId.data },
+        data: updateData,
+      });
     });
 
     // USER_TYPE 헤더 디테일 변경 시 라벨 캐시 무효화 (코드/codeName/isActive 즉시 반영).

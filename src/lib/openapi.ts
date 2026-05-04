@@ -1630,7 +1630,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "콘텐츠 목록 조회",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
-          { name: "pageSize", in: "query", schema: { type: "integer", enum: [20, 50, 100], default: 20 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
           { name: "keyword", in: "query", schema: { type: "string" } },
           { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },

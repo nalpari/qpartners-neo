@@ -10,7 +10,7 @@ import type { HeaderGridRow, DetailGridRow } from "./codes-types";
 import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS, HEADER_NULLABLE_FIELDS, HEADER_NUMERIC_FIELDS } from "./codes-types";
 import { useCodeHeaders } from "./hooks/use-code-headers";
 import { useCodeDetails } from "./hooks/use-code-details";
-import { useCellEdit } from "./hooks/use-cell-edit";
+import { useCellEdit } from "@/hooks/use-cell-edit";
 
 /**
  * 클라이언트 검증 실패를 나타내는 커스텀 에러.
@@ -35,6 +35,75 @@ function throwWithStage(err: unknown, stage: string): never {
   const wrapped = new Error(`${stage} failed`, { cause: err });
   (wrapped as Error & { _stage?: string })._stage = stage;
   throw wrapped;
+}
+
+// pending 변경값을 row 위에 overlay — 셀 표시·재진입 편집 시 default 값이 pending 으로 노출.
+// 문자열 필드는 그대로, sortOrder 는 number, isActive 는 "Y"|"N" 로 타입 변환.
+//
+// 모듈 스코프 정의 — 매 렌더 함수 identity 안정화 + React Compiler 메모이제이션 명시화.
+function applyHeaderPending(row: HeaderGridRow, pending: Record<string, string>): HeaderGridRow {
+  const merged: HeaderGridRow = { ...row };
+  for (const [field, value] of Object.entries(pending)) {
+    if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
+      // 숫자 필드(relNum1~3) — 표시용으로만 string 보관 (저장 시점에 number 변환).
+      // HeaderGridRow.relNum1/2/3 은 string 이라 그대로 대입.
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    } else if (field === "isActive") {
+      if (value === "Y" || value === "N") merged.isActive = value;
+    } else if (field in merged) {
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  return merged;
+}
+
+function applyDetailPending(row: DetailGridRow, pending: Record<string, string>): DetailGridRow {
+  const merged: DetailGridRow = { ...row };
+  for (const [field, value] of Object.entries(pending)) {
+    if (field === "sortOrder") {
+      const n = Number(value);
+      if (Number.isFinite(n) && Number.isInteger(n)) merged.sortOrder = n;
+    } else if (field === "isActive") {
+      if (value === "Y" || value === "N") merged.isActive = value;
+    } else if (field in merged) {
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  return merged;
+}
+
+// 단일 필드 raw 값 → API body 값 변환 (Header/Detail 분리).
+// isActive 는 "Y"/"N" 문자열로 pending 에 저장되므로 boolean 변환.
+function convertHeaderField(field: string, raw: string): unknown {
+  if (field === "isActive") return raw === "Y";
+  if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
+    return raw || null;
+  }
+  return raw;
+}
+
+/**
+ * convertDetailField — sortOrder 변환은 잘못된 입력(빈 문자열·NaN·음수)을 0 으로
+ * 강제하던 패턴(`Number(raw) || 0`)이 BE 클램프와 결합해 의도치 않은 sortOrder=1
+ * 강제 이동을 유발하던 버그를 차단한다 (PR #132 리뷰).
+ *
+ * 유효하지 않은 sortOrder 입력은 `undefined` 반환 → 호출측이 data 객체에 포함하지
+ * 않아 BE 가 해당 필드를 미수정 처리.
+ */
+function convertDetailField(field: string, raw: string): unknown {
+  if (field === "isActive") return raw === "Y";
+  if (field === "sortOrder") {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return undefined;
+    return n;
+  }
+  if ((DETAIL_NULLABLE_FIELDS as readonly string[]).includes(field)) return raw || null;
+  return raw;
 }
 
 // API 에러 → 유저 대면 메시지 변환 (단계 prefix 부착)
@@ -100,22 +169,34 @@ export function CodesContents() {
   const {
     editingCell,
     detailEditRef,
+    pendingChanges: detailPending,
     handleEditCancel,
     handleRequestEditCancel,
+    commitEdit: commitDetailEdit,
+    setPendingField: setDetailPendingField,
+    clearPending: clearDetailPending,
+    discardRowPending: discardDetailRowPending,
   } = detailEdit;
   const {
     editingCell: headerEditingCell,
     detailEditRef: headerEditRef,
+    pendingChanges: headerPending,
     handleCellEditStart: handleHeaderCellEditStart,
     handleEditCancel: handleHeaderEditCancel,
     handleEditFieldChange: handleHeaderEditFieldChange,
+    commitEdit: commitHeaderEdit,
+    setPendingField: setHeaderPendingField,
+    clearPending: clearHeaderPending,
+    discardRowPending: discardHeaderRowPending,
   } = headerEdit;
 
-  // Grid 표시용 데이터 (spread로 immutable 처리, editingField 주입)
+  // Grid 표시용 데이터 — pending overlay + editingField 주입
   const headerRows: HeaderGridRow[] = [
     ...(headerNewRow ? [headerNewRow] : []),
     ...headers.headersRaw.map((h) => {
-      const row = toHeaderGridRow(h);
+      const baseRow = toHeaderGridRow(h);
+      const pending = headerPending[baseRow.id];
+      const row = pending ? applyHeaderPending(baseRow, pending) : baseRow;
       if (headerEditingCell && row.id === headerEditingCell.rowId) {
         return { ...row, editingField: headerEditingCell.field };
       }
@@ -126,7 +207,9 @@ export function CodesContents() {
   const detailRows: DetailGridRow[] = [
     ...(detailNewRow ? [detailNewRow] : []),
     ...details.detailsRaw.map((d) => {
-      const row = toDetailGridRow(d, selectedHeaderCode);
+      const baseRow = toDetailGridRow(d, selectedHeaderCode);
+      const pending = detailPending[baseRow.id];
+      const row = pending ? applyDetailPending(baseRow, pending) : baseRow;
       if (editingCell && row.id === editingCell.rowId) {
         return { ...row, editingField: editingCell.field };
       }
@@ -145,43 +228,32 @@ export function CodesContents() {
     });
   }, [handleRequestEditCancel, resetDetailNewRow]);
 
-  // 使用可否(isActive) 즉시 토글 — Header 행. SelectBox onChange 콜백.
-  // 셀 편집 패턴(detailEditRef)을 거치지 않고 바로 PUT mutation 호출 → 토글 즉시 반영.
-  // 비활성으로 전환하면 /api/codes/lookup 이 isActive=true 만 응답하므로 dropdown
-  // (PAGE_SIZE 등) 에서 자동 제외 — 별도 작업 불필요.
-  const handleHeaderActiveChange = useCallback(async (id: string, isActive: boolean) => {
+  // 使用可否(isActive) 변경 — pending 누적 (즉시 PUT 안 함, 「保存」 버튼에서 일괄 처리).
+  // 신규행은 pending 비대상 (등록 시 BE default true 적용).
+  const handleHeaderActiveChange = useCallback((id: string, isActive: boolean) => {
     if (id.startsWith("new-")) return;
-    const headerId = Number(id);
-    if (!Number.isFinite(headerId)) return;
-    try {
-      await headerUpdateMutation.mutateAsync({ headerId, data: { isActive } });
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch (err: unknown) {
-      console.error(`[Codes] Header 사用可否 変更 失敗: id=${id}`);
-      openAlert({ type: "alert", message: getApiErrorMessage(err, "Header修正") });
-    }
-  }, [headerUpdateMutation, openAlert]);
+    if (!Number.isFinite(Number(id))) return;
+    setHeaderPendingField(id, "isActive", isActive ? "Y" : "N");
+  }, [setHeaderPendingField]);
 
-  // 使用可否(isActive) 즉시 토글 — Detail 행
-  const handleDetailActiveChange = useCallback(async (id: string, isActive: boolean) => {
+  const handleDetailActiveChange = useCallback((id: string, isActive: boolean) => {
     if (id.startsWith("new-")) return;
-    const detailId = Number(id);
-    if (!Number.isFinite(detailId)) return;
-    try {
-      await detailUpdateMutation.mutateAsync({ detailId, data: { isActive } });
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch (err: unknown) {
-      console.error(`[Codes] Detail 使用可否 変更 失敗: id=${id}`);
-      openAlert({ type: "alert", message: getApiErrorMessage(err, "Detail修正") });
-    }
-  }, [detailUpdateMutation, openAlert]);
+    if (!Number.isFinite(Number(id))) return;
+    setDetailPendingField(id, "isActive", isActive ? "Y" : "N");
+  }, [setDetailPendingField]);
 
-  // 통합 저장 — 중복 호출 가드 + validation → ValidationError, API 실패 → _stage 부착 throw
+  // 통합 저장 — 신규행 + 편집중 셀 commit + 누적 pending 일괄 저장.
+  // 처리 순서:
+  //   1) Header/Detail 신규행 등록 (validation → ValidationError)
+  //   2) 편집중 셀이 있으면 pending 으로 commit (사용자가 保存 클릭 직전 입력값 누락 방지)
+  //   3) Header pending 행별 PUT
+  //   4) Detail pending 행별 PUT
+  //   5) 모든 단계 성공 시 pending 클리어 + alert
   const handleSave = useCallback(async () => {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      // Header 신규행 저장
+      // 1) 신규행 — Header
       if (headerNewRow) {
         const f = headerNewRowRef.current;
         if (!f.headerCode || !f.headerAlias || !f.headerName) {
@@ -193,7 +265,7 @@ export function CodesContents() {
           throwWithStage(err, "Header登録");
         }
       }
-      // Detail 신규행 저장
+      // 1) 신규행 — Detail
       if (detailNewRow) {
         const f = detailNewRowRef.current;
         if (!f.code || !f.displayCode || !f.codeName) {
@@ -205,62 +277,85 @@ export function CodesContents() {
           throwWithStage(err, "Detail登録");
         }
       }
-      // Header 편집행 저장 (modal save 트리거)
+
+      // 2) 편집중 셀의 마지막 입력값은 ref 에서 직접 캡처 (아래 extra 머지).
+      //    여기서 commitHeaderEdit/commitDetailEdit 을 호출하면 ref 가 비워져
+      //    extra 가 항상 빈 값이 되므로 마지막 셀 저장이 누락됨 (이전 패치 회귀 방지).
+      //    ref/editingCell 정리는 성공 분기의 handleHeaderEditCancel/handleEditCancel 가 담당.
+
+      // 3) Header pending 일괄 저장 — 행별 PUT (필드 변환은 convertHeaderField).
+      //    closure 의 headerPending 은 이전 셀 전환 시 commitEdit 으로 누적된 분만 포함하므로,
+      //    현재 편집중인 셀의 입력값은 ref 에서 직접 추출해 머지한다.
+      const headerExtra: Record<string, Record<string, string>> = {};
       if (headerEditingCell && !headerEditingCell.rowId.startsWith("new-")) {
-        const editValues = headerEditRef.current;
-        const field = headerEditingCell.field;
-        const data: Record<string, unknown> = {};
-        if (editValues[field] !== undefined) {
-          // 숫자 필드는 nullable 분기보다 먼저 처리 — 빈값·NaN은 null, 유효 숫자는 Number 변환
-          if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
-            const raw = editValues[field];
-            if (raw === "" || raw === undefined) {
-              data[field] = null;
-            } else {
-              const n = Number(raw);
-              data[field] = Number.isFinite(n) ? n : null;
-            }
-          } else if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
-            data[field] = editValues[field] || null;
-          } else {
-            data[field] = editValues[field];
-          }
-        }
-        if (Object.keys(data).length > 0) {
-          try {
-            await headerUpdateMutation.mutateAsync({
-              headerId: Number(headerEditingCell.rowId),
-              data,
-            });
-            handleHeaderEditCancel();
-          } catch (err: unknown) {
-            throwWithStage(err, "Header修正");
-          }
+        const v = headerEditRef.current[headerEditingCell.field];
+        if (v !== undefined) {
+          headerExtra[headerEditingCell.rowId] = { [headerEditingCell.field]: v };
         }
       }
-      // Detail 편집행 저장 (NaN 가드)
+      const headerJobs: Record<string, Record<string, string>> = { ...headerPending };
+      for (const [rowId, fields] of Object.entries(headerExtra)) {
+        headerJobs[rowId] = { ...headerJobs[rowId], ...fields };
+      }
+      for (const [rowId, fields] of Object.entries(headerJobs)) {
+        const data: Record<string, unknown> = {};
+        for (const [field, raw] of Object.entries(fields)) {
+          const converted = convertHeaderField(field, raw);
+          // undefined 는 변환 실패(현재 Header 분기 없음, 향후 확장 대비) → 미수정 의미로 제외.
+          if (converted === undefined) continue;
+          data[field] = converted;
+        }
+        if (Object.keys(data).length === 0) continue;
+        try {
+          await headerUpdateMutation.mutateAsync({ headerId: Number(rowId), data });
+        } catch (err: unknown) {
+          throwWithStage(err, "Header修正");
+        }
+        // 부분 실패 회피 — 행 PUT 성공 시 즉시 해당 행 pending 제거.
+        // catch 블록까지 도달했다면 throwWithStage 가 throw 했으므로 여기엔 도달 안 함.
+        // 신규행 prefix(`new-`)는 setPendingField 단계에서 차단되어 jobs 에 들어오지 않음.
+        if (!rowId.startsWith("new-")) {
+          discardHeaderRowPending(rowId);
+        }
+      }
+
+      // 4) Detail pending 일괄 저장
+      const detailExtra: Record<string, Record<string, string>> = {};
       if (editingCell && !editingCell.rowId.startsWith("new-")) {
-        const editValues = detailEditRef.current;
-        const field = editingCell.field;
-        const data: Record<string, unknown> = {};
-        if (editValues[field] !== undefined) {
-          if (field === "sortOrder") data[field] = Number(editValues[field]) || 0;
-          else if ((DETAIL_NULLABLE_FIELDS as readonly string[]).includes(field)) data[field] = editValues[field] || null;
-          else data[field] = editValues[field];
-        }
-        if (Object.keys(data).length > 0) {
-          try {
-            await detailUpdateMutation.mutateAsync({
-              detailId: Number(editingCell.rowId),
-              data,
-            });
-            // 성공 시 편집 state 정리 — update mutation의 onSuccess는 query invalidate만 담당
-            handleEditCancel();
-          } catch (err: unknown) {
-            throwWithStage(err, "Detail修正");
-          }
+        const v = detailEditRef.current[editingCell.field];
+        if (v !== undefined) {
+          detailExtra[editingCell.rowId] = { [editingCell.field]: v };
         }
       }
+      const detailJobs: Record<string, Record<string, string>> = { ...detailPending };
+      for (const [rowId, fields] of Object.entries(detailExtra)) {
+        detailJobs[rowId] = { ...detailJobs[rowId], ...fields };
+      }
+      for (const [rowId, fields] of Object.entries(detailJobs)) {
+        const data: Record<string, unknown> = {};
+        for (const [field, raw] of Object.entries(fields)) {
+          const converted = convertDetailField(field, raw);
+          // undefined → 잘못된 sortOrder 입력 등. data 에 포함하지 않아 BE 가 미수정 처리.
+          if (converted === undefined) continue;
+          data[field] = converted;
+        }
+        if (Object.keys(data).length === 0) continue;
+        try {
+          await detailUpdateMutation.mutateAsync({ detailId: Number(rowId), data });
+        } catch (err: unknown) {
+          throwWithStage(err, "Detail修正");
+        }
+        // 부분 실패 회피 — 행 PUT 성공 시 즉시 해당 행 pending 제거.
+        if (!rowId.startsWith("new-")) {
+          discardDetailRowPending(rowId);
+        }
+      }
+
+      // 5) 성공 — pending + 편집 state 정리
+      clearHeaderPending();
+      clearDetailPending();
+      handleHeaderEditCancel();
+      handleEditCancel();
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
     } catch (err: unknown) {
       // ValidationError는 userMessage를 그대로 표시하고 status 로깅은 skip
@@ -285,15 +380,21 @@ export function CodesContents() {
     headerCreateMutation,
     headerEditingCell,
     headerEditRef,
+    headerPending,
     headerUpdateMutation,
     handleHeaderEditCancel,
+    clearHeaderPending,
+    discardHeaderRowPending,
     detailNewRow,
     detailNewRowRef,
     detailCreateMutation,
     detailUpdateMutation,
     editingCell,
     detailEditRef,
+    detailPending,
     handleEditCancel,
+    clearDetailPending,
+    discardDetailRowPending,
     openAlert,
     selectedHeaderId,
   ]);
@@ -320,12 +421,13 @@ export function CodesContents() {
         onCellEditStart={handleHeaderCellEditStart}
         onEditFieldChange={handleHeaderEditFieldChange}
         onEditCancel={handleHeaderEditCancel}
+        onCommitEdit={commitHeaderEdit}
         onNewRowFieldChange={headers.handleHeaderNewRowFieldChange}
         newRowFieldsRef={headers.headerNewRowRef}
         activeOnly={headers.headerActiveOnly}
         onActiveOnlyChange={headers.setHeaderActiveOnly}
         onActiveChange={handleHeaderActiveChange}
-        isActiveBusy={headerUpdateMutation.isPending}
+        isActiveBusy={isSaving}
       />
 
       <CodesDetailTable
@@ -338,14 +440,14 @@ export function CodesContents() {
         onCancelAdd={details.handleDetailCancelAdd}
         onCellEditStart={detailEdit.handleCellEditStart}
         onEditCancel={handleEditCancel}
-        onSave={handleSave}
+        onCommitEdit={commitDetailEdit}
         onNewRowFieldChange={details.handleDetailNewRowFieldChange}
         onEditFieldChange={detailEdit.handleEditFieldChange}
         newRowFieldsRef={details.detailNewRowRef}
         activeOnly={details.detailActiveOnly}
         onActiveOnlyChange={details.setDetailActiveOnly}
         onActiveChange={handleDetailActiveChange}
-        isActiveBusy={detailUpdateMutation.isPending}
+        isActiveBusy={isSaving}
       />
     </main>
   );

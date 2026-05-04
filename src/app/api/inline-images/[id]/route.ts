@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import { relative, resolve } from "path";
 
-import { getUserFromHeaders } from "@/lib/auth";
+import { canAccessContent, getUserFromHeaders } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import { logError } from "@/lib/log-error";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
@@ -15,20 +15,15 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * GET /api/inline-images/:id — BlockNote 본문 임베드 이미지 조회.
  *
- * 접근 정책: 인증된 사용자 누구나. 게시대상/published 검증은 의도적으로 생략 — 본문 렌더 시점에
- * `<img>` 직렬 호출이 폭주하므로 매 요청마다 콘텐츠 권한 검증을 수행하면 비용이 폭주한다.
- * (인증된 사용자만 접근 가능 + autoincrement ID 는 추측 가능하지만, 본문 임베드 이미지의 기밀성은
- *  부모 Content ACL 에 위임 — 본문이 보이지 않으면 ID 도 노출되지 않는다.)
+ * 접근 정책: 부모 Content 의 게시대상(targets) 기반으로 canAccessContent 검증.
+ * 비회원 공개 콘텐츠의 본문 inline image 는 비회원도 fetch 가능해야 하므로
+ * 첨부 다운로드와 동일하게 미들웨어 통과 후 핸들러에서 ACL 분기한다.
+ * contentId=null (폼 저장 전 임시 업로드) 인 image 는 fail-closed 로 404.
  *
  * 본문 임베드는 페이지뷰 × N개 단위로 호출 빈도가 높아 DownloadLog 와 의미가 달라 로그 미기록.
  */
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const user = getUserFromHeaders(request.headers);
-    if (!user) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-
     const { id } = await params;
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) {
@@ -37,11 +32,30 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const image = await prisma.contentInlineImage.findUnique({
       where: { id: parsed.data },
-      select: { filePath: true, mimeType: true },
+      select: {
+        filePath: true,
+        mimeType: true,
+        content: {
+          select: {
+            status: true,
+            targets: { select: { targetType: true, startAt: true, endAt: true } },
+          },
+        },
+      },
     });
 
     if (!image) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // contentId=null (폼 저장 전 임시 inline image) 또는 미게시 콘텐츠 → 노출 차단
+    if (!image.content || image.content.status !== "published") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const user = getUserFromHeaders(request.headers);
+    if (!canAccessContent(user, image.content.targets)) {
+      return NextResponse.json({ error: "アクセス権限がありません" }, { status: 403 });
     }
 
     const storageRoot = resolve(UPLOAD_DIR);

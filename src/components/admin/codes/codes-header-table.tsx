@@ -211,6 +211,8 @@ interface CodesHeaderTableProps {
   onCellEditStart: (rowId: string, field: string) => void;
   onEditFieldChange: (field: string, value: string) => void;
   onEditCancel: () => void;
+  /** blur·다른 셀 클릭 시 호출 — 입력값을 pending 으로 commit 하고 편집 종료 */
+  onCommitEdit: () => void;
   onNewRowFieldChange: (field: string, value: string) => void;
   newRowFieldsRef: React.RefObject<Record<string, string>>;
   activeOnly: boolean;
@@ -232,6 +234,7 @@ export function CodesHeaderTable({
   onCellEditStart,
   onEditFieldChange,
   onEditCancel,
+  onCommitEdit,
   onNewRowFieldChange,
   newRowFieldsRef,
   activeOnly,
@@ -261,16 +264,17 @@ export function CodesHeaderTable({
     prevEditingRowIdRef.current = editingCell?.rowId ?? null;
   }, [editingCell]);
 
-  // 키보드 — Enter 저장 / Escape 취소
+  // 키보드 — Enter: 현재 셀 commit (pending 누적) / Escape: 입력 폐기.
+  // 서버 저장은 상단 「保存」 버튼만 트리거.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      onSave();
+      onCommitEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       onEditCancel();
     }
-  }, [onSave, onEditCancel]);
+  }, [onCommitEdit, onEditCancel]);
 
   const gridContext = useMemo<HeaderGridContext>(() => ({
     newRowFieldsRef,
@@ -300,14 +304,14 @@ export function CodesHeaderTable({
     return undefined;
   }, []);
 
-  // 편집 중 외부 클릭 → 즉시 취소·복원
+  // 편집 중 외부 클릭 → 입력값을 pending 으로 commit 하고 편집 종료
   const handleCellClicked = useCallback((event: CellClickedEvent<HeaderGridRow>) => {
     if (!editingCell) return;
     const data = event.data;
     const field = event.colDef.field;
     if (data?.id === editingCell.rowId && field === editingCell.field) return;
-    onEditCancel();
-  }, [editingCell, onEditCancel]);
+    onCommitEdit();
+  }, [editingCell, onCommitEdit]);
 
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<HeaderGridRow>) => {
     const data = event.data;

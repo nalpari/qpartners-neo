@@ -26,8 +26,14 @@ const PUBLIC_PATHS = [
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
+// 첨부 다운로드 2개 경로는 route handler 가 canAccessContent(user, targets) 로
+// 게시대상(비회원/회원) 분기를 직접 수행한다. middleware 가 401 로 선차단하면
+// 비회원에게 공개된 콘텐츠의 첨부도 항상 차단되어 의도와 모순되므로 통과시킨다.
 const PUBLIC_GET_PATTERNS = [
   /^\/api\/contents(\/\d+)?$/, // GET /api/contents, GET /api/contents/[id]
+  /^\/api\/contents\/\d+\/files\/\d+\/download$/, // GET 단일 파일 다운로드 — 핸들러에서 게시대상 검증
+  /^\/api\/contents\/\d+\/files\/download-all$/, // GET ZIP 일괄 다운로드 — 핸들러에서 게시대상 검증
+  /^\/api\/inline-images\/\d+$/, // GET 본문 임베드 이미지 — 핸들러에서 부모 콘텐츠 게시대상 검증
   /^\/api\/categories(\/\d+)?$/, // GET /api/categories, GET /api/categories/[id]
   /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
   /^\/api\/codes\/lookup$/, // GET /api/codes/lookup — 문의하기 문의유형 코드 조회
