@@ -30,6 +30,18 @@ export const editorI18n = {
       redo: "Cmd/Ctrl+Shift+Z",
     },
   },
+  tableInsert: {
+    sizeHint: "サイズを選択（最大 10 × 10）",
+  },
+  tableMenu: {
+    rowAddBefore: "上に行を追加",
+    rowAddAfter: "下に行を追加",
+    rowDelete: "行を削除",
+    colAddBefore: "左に列を追加",
+    colAddAfter: "右に列を追加",
+    colDelete: "列を削除",
+    deleteTable: "テーブル削除",
+  },
   slash: {
     empty: "該当する項目がありません",
     items: {
@@ -48,6 +60,7 @@ export const editorI18n = {
   ariaLabels: {
     toolbar: "リッチテキストツールバー",
     editor: "リッチテキスト本文",
+    tableMenu: "テーブル編集メニュー",
   },
 } as const;
 

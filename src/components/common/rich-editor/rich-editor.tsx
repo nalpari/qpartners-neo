@@ -7,6 +7,7 @@ import api from "@/lib/axios";
 import { prepareBodyForEditor } from "@/lib/rich-editor/prepare-body-for-editor";
 import { buildExtensions } from "./editor-extensions";
 import { EditorToolbar } from "./editor-toolbar";
+import { TableBubbleMenu } from "./table-bubble-menu";
 import { editorI18n } from "./editor-i18n";
 import type { RichEditorProps } from "./rich-editor.types";
 
@@ -140,6 +141,7 @@ export function RichEditor({
         <div className="rich-editor-progress h-full bg-[#101010]" />
       </div>
       <EditorToolbar editor={editor} onImageRequest={triggerImagePicker} />
+      <TableBubbleMenu editor={editor} />
       <EditorContent
         editor={editor}
         className="px-4 py-3 prose prose-sm max-w-none font-['Noto_Sans_JP'] [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[120px]"
