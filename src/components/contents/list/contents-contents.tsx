@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
+import { usePageSize } from "@/hooks/use-page-size";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -34,12 +35,18 @@ interface CategoryNode {
 
 export type { CategoryNode, SearchFilters };
 
-/** URL 쿼리 → SearchParams 파싱 */
-function parseSearchParams(urlParams: URLSearchParams): SearchParams {
+/**
+ * URL 쿼리 → SearchParams 파싱.
+ * pageSize 가 URL 에 명시되지 않은 첫 조회에서는 PAGE_SIZE 공통코드 sort=1 값
+ * (`defaultPageSize`) 을 사용한다 — 회원관리/공지사항 등 다른 테이블의 usePageSize
+ * 직접 사용 패턴과 동일한 정책. 운영자가 코드관리에서 첫 옵션을 변경하면 모든 목록의
+ * 초기 표시 건수가 일관되게 바뀐다.
+ */
+function parseSearchParams(urlParams: URLSearchParams, defaultPageSize: number): SearchParams {
   const categoryIdsStr = urlParams.get("categoryIds") ?? "";
   return {
     page: Number(urlParams.get("page")) || 1,
-    pageSize: Number(urlParams.get("pageSize")) || 20,
+    pageSize: Number(urlParams.get("pageSize")) || defaultPageSize,
     keyword: urlParams.get("keyword") ?? "",
     categoryIds: categoryIdsStr ? categoryIdsStr.split(",").map(Number).filter((n) => !isNaN(n)) : [],
     targetType: urlParams.get("targetType") ?? "",
@@ -49,10 +56,11 @@ function parseSearchParams(urlParams: URLSearchParams): SearchParams {
 }
 
 /** SearchParams → URL 쿼리 문자열 (빈 값 제외) */
-function buildQueryString(params: SearchParams): string {
+function buildQueryString(params: SearchParams, defaultPageSize: number): string {
   const qs = new URLSearchParams();
   if (params.page > 1) qs.set("page", String(params.page));
-  if (params.pageSize !== 20) qs.set("pageSize", String(params.pageSize));
+  // 기본값과 동일하면 URL 에 직렬화하지 않아 깨끗한 URL 유지. 사용자가 명시 선택한 값만 노출.
+  if (params.pageSize !== defaultPageSize) qs.set("pageSize", String(params.pageSize));
   if (params.keyword) qs.set("keyword", params.keyword);
   if (params.categoryIds.length > 0) qs.set("categoryIds", params.categoryIds.join(","));
   if (params.targetType) qs.set("targetType", params.targetType);
@@ -66,8 +74,12 @@ export function ContentsContents() {
   const router = useRouter();
   const urlParams = useSearchParams();
 
-  // URL 쿼리에서 검색 상태 파싱
-  const searchParams = parseSearchParams(urlParams);
+  // PAGE_SIZE 공통코드 sort=1 값 — URL 에 pageSize 가 없을 때 첫 조회 기본값.
+  // 옵션 로딩 전에는 usePageSize 가 안전 기본값(20)을 반환하므로 SSR/초기 hydration 도 문제 없음.
+  const { pageSize: defaultPageSize } = usePageSize();
+
+  // URL 쿼리에서 검색 상태 파싱 (pageSize 미지정 시 defaultPageSize 사용)
+  const searchParams = parseSearchParams(urlParams, defaultPageSize);
 
   // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음).
   // `scroll: false` — 검색·페이지 이동·페이지 사이즈 변경 모두에서 현재 스크롤 위치 유지.
@@ -76,9 +88,9 @@ export function ContentsContents() {
   // 화면 위치는 그대로 — 긴 필터 패널 아래에서 검색해도 다시 스크롤할 필요 없다.
   const updateParams = useCallback(
     (next: SearchParams) => {
-      router.replace(`/contents${buildQueryString(next)}`, { scroll: false });
+      router.replace(`/contents${buildQueryString(next, defaultPageSize)}`, { scroll: false });
     },
-    [router],
+    [router, defaultPageSize],
   );
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
