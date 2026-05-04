@@ -1,5 +1,5 @@
 import { MAIL_FOOTER_TEXT } from "@/lib/mail-templates/footer";
-import { formatReceivedAt } from "@/lib/mail-templates/utils";
+import { escapeHtml, formatReceivedAt } from "@/lib/mail-templates/utils";
 
 import { LOGIN_NOTIFICATION_MAIL_SUBJECT } from "./constants";
 import { sendNotificationMail } from "./send-notification";
@@ -36,15 +36,6 @@ export interface LoginNotificationContext {
   clientIp: string | null;
   /** 호출부 식별 prefix — 로깅용 */
   callerRoute: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function buildBodyHtml(args: {

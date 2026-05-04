@@ -35,7 +35,11 @@ export function inquiryConfirmationMailHtml({
   receivedAt,
 }: InquiryConfirmationMailParams): string {
   const safeUserName = escapeHtml(userName);
-  const safeCompanyName = escapeHtml(companyName);
+  // 비로그인/회사명 미입력 시 인사말 첫 줄이 비는 레이아웃 이슈 회피 — 빈값이면 회사명 행 자체 생략.
+  // 표 내부 회사명 셀은 fallback "(未入力)" 로 일관성 유지.
+  const trimmedCompanyName = companyName.trim();
+  const safeCompanyNameLine = trimmedCompanyName ? `${escapeHtml(trimmedCompanyName)}<br>` : "";
+  const safeCompanyNameCell = trimmedCompanyName ? escapeHtml(trimmedCompanyName) : "(未入力)";
   const safeEmail = escapeHtml(email);
   const safeTel = tel ? escapeHtml(tel) : "(未入力)";
   const safeTitle = escapeHtml(title);
@@ -49,7 +53,7 @@ export function inquiryConfirmationMailHtml({
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:20px;">
   <tr><td style="text-align:left;">
-    <p>${safeCompanyName}<br>${safeUserName} 様</p>
+    <p>${safeCompanyNameLine}${safeUserName} 様</p>
 
     <p>いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。<br>
     以下の通り、お問い合わせを受け付けました。</p>
@@ -58,7 +62,7 @@ export function inquiryConfirmationMailHtml({
     <table cellpadding="6" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:8px 0 16px;">
       <tr><td style="background:#f5f5f5;width:30%;">お問い合わせ受付日</td><td>${safeReceivedAt}</td></tr>
       <tr><td style="background:#f5f5f5;">タイトル</td><td>${safeTitle}</td></tr>
-      <tr><td style="background:#f5f5f5;">会社名</td><td>${safeCompanyName}</td></tr>
+      <tr><td style="background:#f5f5f5;">会社名</td><td>${safeCompanyNameCell}</td></tr>
       <tr><td style="background:#f5f5f5;">氏名</td><td>${safeUserName}</td></tr>
       <tr><td style="background:#f5f5f5;">メールアドレス</td><td>${safeEmail}</td></tr>
       <tr><td style="background:#f5f5f5;">TEL</td><td>${safeTel}</td></tr>

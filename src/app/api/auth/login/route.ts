@@ -288,12 +288,17 @@ export async function POST(request: NextRequest) {
   //    fire-and-forget — sendNotificationMail 내부 try-catch 흡수, 본 응답 무영향.
   //    inbound 자동로그인은 정책상 발송 제외 (Q3) — 본 라우트(`/api/auth/login`) 만 발송 진입점.
   if (qsp.data.loginNotiYn === "Y" && qsp.data.email) {
+    // sendNotificationMail 내부 try-catch 가 SMTP/네트워크 예외를 흡수하지만
+    // buildBodyHtml/formatReceivedAt 등 본 함수 내 동기 단계에서 예상 외 throw 시
+    // unhandled rejection 가 발생할 수 있어 보강.
     void sendLoginNotification({
       to: qsp.data.email,
       userNm: qsp.data.userNm,
       loginAt: new Date(),
       clientIp: extractClientIp(request),
       callerRoute: "[POST /api/auth/login]",
+    }).catch((error: unknown) => {
+      console.warn("[POST /api/auth/login] 로그인 알림 메일 발송 처리 중 예외:", error);
     });
   }
 
