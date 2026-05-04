@@ -2,18 +2,15 @@
 
 // Design Ref: §3.3 — 검색 UI + onSearch/onReset 콜백
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InputBox, SelectBox, Radio, Button, DatePicker } from "@/components/common";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import type { MassMailSearchParams } from "./bulk-mail-types";
 
-const TARGET_OPTIONS = [
-  { value: "", label: "全体" },
+/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
+const FIXED_TARGET_OPTIONS = [
   { value: "super_admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
-  { value: "first_store", label: "1次販売店" },
-  { value: "second_store", label: "2次以降販売店" },
-  { value: "seko", label: "施工店" },
-  { value: "general", label: "一般" },
 ];
 
 interface BulkMailSearchProps {
@@ -22,6 +19,16 @@ interface BulkMailSearchProps {
 }
 
 export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
+  // 배신대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
+  const { allOptions } = useTargetLabels();
+  const targetOptions = useMemo(() => [
+    { value: "", label: "全体" },
+    ...FIXED_TARGET_OPTIONS,
+    ...allOptions
+      .filter((o) => o.isActive)
+      .map((o) => ({ value: o.value, label: o.label })),
+  ], [allOptions]);
+
   const [title, setTitle] = useState("");
   const [authorSearchType, setAuthorSearchType] = useState<"name" | "id">("name");
   const [authorQuery, setAuthorQuery] = useState("");
@@ -113,7 +120,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <SelectBox options={TARGET_OPTIONS} value={target} onChange={setTarget} className="w-full" />
+              <SelectBox options={targetOptions} value={target} onChange={setTarget} className="w-full" />
             </div>
           </div>
 
