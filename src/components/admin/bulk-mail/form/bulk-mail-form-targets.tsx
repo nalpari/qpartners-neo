@@ -1,15 +1,23 @@
 "use client";
 
-import { Checkbox, Radio } from "@/components/common";
+import { useMemo } from "react";
 
-const TARGET_OPTIONS = [
+import { Checkbox, Radio } from "@/components/common";
+import { useTargetLabels } from "@/hooks/use-target-labels";
+
+/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
+const FIXED_TARGET_OPTIONS = [
   { value: "super-admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
-  { value: "first-dealer", label: "1次販売店" },
-  { value: "second-dealer", label: "2次以降販売店" },
-  { value: "installer", label: "施工店" },
-  { value: "general", label: "一般会員" },
 ];
+
+/** useTargetLabels targetType → 대량메일 UI value 매핑 */
+const TARGET_TYPE_TO_UI_VALUE: Record<string, string> = {
+  first_store: "first-dealer",
+  second_store: "second-dealer",
+  seko: "installer",
+  general: "general",
+};
 
 interface BulkMailFormTargetsProps {
   targets: string[];
@@ -22,6 +30,15 @@ export function BulkMailFormTargets({
   onTargetsChange,
   disabled,
 }: BulkMailFormTargetsProps) {
+  // 발송대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super-admin/admin)
+  const { getAllOptions } = useTargetLabels();
+  const targetOptions = useMemo(() => [
+    ...FIXED_TARGET_OPTIONS,
+    ...getAllOptions()
+      .filter((o) => o.isActive && TARGET_TYPE_TO_UI_VALUE[o.value])
+      .map((o) => ({ value: TARGET_TYPE_TO_UI_VALUE[o.value], label: o.label })),
+  ], [getAllOptions]);
+
   const handleToggle = (value: string, checked: boolean) => {
     if (checked) {
       onTargetsChange([...targets, value]);
@@ -37,7 +54,7 @@ export function BulkMailFormTargets({
         <span className="text-[#FF1A1A]">*</span>
       </h3>
       <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
-        {TARGET_OPTIONS.map((opt) => (
+        {targetOptions.map((opt) => (
           <Checkbox
             key={opt.value}
             checked={targets.includes(opt.value)}

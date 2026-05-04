@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InputBox, Checkbox, Button, DatePicker } from "@/components/common";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import type { NoticeSearchFilters } from "./notices-types";
 
 // Design Ref: §4.2 — NoticesSearch props + TARGET_OPTIONS API value 통일
@@ -12,13 +13,10 @@ const STATUS_OPTIONS = [
   { value: "ended", label: "終了" },
 ];
 
-const TARGET_OPTIONS = [
+/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
+const FIXED_TARGET_OPTIONS = [
   { value: "super_admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
-  { value: "first_store", label: "1次店" },
-  { value: "second_store", label: "2次店以下" },
-  { value: "seko", label: "施工店" },
-  { value: "general", label: "一般会員" },
 ];
 
 interface NoticesSearchProps {
@@ -36,6 +34,15 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
   // 게시대상은 멀티 선택 — statuses 와 동일한 toggle 패턴 (OR 조건).
   const [targetTypes, setTargetTypes] = useState<string[]>(filters.targetTypes);
+
+  // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
+  const { getAllOptions } = useTargetLabels();
+  const targetOptions = useMemo(() => [
+    ...FIXED_TARGET_OPTIONS,
+    ...getAllOptions()
+      .filter((o) => o.isActive)
+      .map((o) => ({ value: o.value, label: o.label })),
+  ], [getAllOptions]);
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
@@ -143,7 +150,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               </span>
             </div>
             <div className="flex flex-1 items-center gap-[18px] h-full bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
-              {TARGET_OPTIONS.map((opt) => (
+              {targetOptions.map((opt) => (
                 <Checkbox
                   key={opt.value}
                   checked={targetTypes.includes(opt.value)}
