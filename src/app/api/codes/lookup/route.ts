@@ -51,10 +51,12 @@ export async function GET(request: NextRequest) {
     // 공개 응답 projection — code/codeName 만 내려보냄.
     // displayCode/codeNameEtc/sortOrder 등 내부 운영 필드 제외 (조직구조·순서 유출 방어).
     // sortOrder 는 서버 정렬에만 사용, 클라이언트엔 노출 안 함.
+    // 보조 정렬: id asc — 동일 sortOrder 가 둘 이상일 때 결정적 순서 보장
+    // (신규 추가 시 기존 항목과 sortOrder 충돌하더라도 등록 순서대로 안정 정렬).
     const details = await prisma.codeDetail.findMany({
       where: { headerId: header.id, isActive: true },
       select: { code: true, codeName: true },
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     });
 
     return NextResponse.json({ data: details });

@@ -49,14 +49,6 @@ export const STATUS_OPTIONS = [
   { value: "withdrawn", label: "退会済" },
 ] as const;
 
-/** 회원타입 검색 필터 옵션 (Plan §4.2) */
-export const MEMBER_TYPE_OPTIONS = [
-  { value: "", label: "全体" },
-  { value: "ADMIN", label: "管理者" },
-  { value: "STORE", label: "販売店" },
-  { value: "GENERAL", label: "一般" },
-] as const;
-
 // ISO 문자열의 wall-clock을 직접 슬라이싱 — SSR/UTC 환경에서도 동일 결과 보장
 // (new Date(iso).getDate() 는 로컬 타임존 의존이라 JST 오프셋 ISO가 UTC로 해석되면 하루 밀림)
 const ISO_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
@@ -138,14 +130,6 @@ export interface MemberUpdatePayload {
   status?: string;
   newsRcptYn?: string;
 }
-
-/** userType 일본어 → userTp 영문 역매핑 */
-export const USER_TYPE_REVERSE_MAP: Record<string, string> = {
-  "管理者": "ADMIN",
-  "販売店": "STORE",
-  "施工店": "SEKO",
-  "一般": "GENERAL",
-};
 
 /** 권한 코드 → 표시 레이블 */
 export const ROLE_LABEL_MAP: Record<string, string> = {

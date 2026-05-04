@@ -175,7 +175,8 @@ interface CodesDetailTableProps {
   onCancelAdd: () => void;
   onCellEditStart: (rowId: string, field: string) => void;
   onEditCancel: () => void;
-  onSave?: () => void;
+  /** blur·다른 셀 클릭 시 호출 — 입력값을 pending 으로 commit 하고 편집 종료 */
+  onCommitEdit: () => void;
   onNewRowFieldChange: (field: string, value: string) => void;
   onEditFieldChange: (field: string, value: string) => void;
   newRowFieldsRef: React.RefObject<Record<string, string>>;
@@ -195,7 +196,7 @@ export function CodesDetailTable({
   onCancelAdd,
   onCellEditStart,
   onEditCancel,
-  onSave,
+  onCommitEdit,
   onNewRowFieldChange,
   onEditFieldChange,
   newRowFieldsRef,
@@ -226,16 +227,17 @@ export function CodesDetailTable({
     prevEditingRowIdRef.current = editingCell?.rowId ?? null;
   }, [editingCell]);
 
-  // 키보드 — Enter 저장 / Escape 취소
+  // 키보드 — Enter: 현재 셀 commit (pending 누적) / Escape: 입력 폐기.
+  // 서버 저장은 상단 「保存」 버튼만 트리거. Enter 저장 → 누적 저장 의도와 충돌하므로 분리.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      onSave?.();
+      onCommitEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       onEditCancel();
     }
-  }, [onSave, onEditCancel]);
+  }, [onCommitEdit, onEditCancel]);
 
   // ag-grid context로 핸들러 주입
   const gridContext = useMemo<DetailGridContext>(() => ({
@@ -265,16 +267,16 @@ export function CodesDetailTable({
     return undefined;
   }, []);
 
-  // 편집 중인 셀 외 다른 영역 클릭 → 즉시 취소·복원 (확인 다이얼로그 없음)
+  // 편집 중인 셀 외 다른 영역 클릭 → 입력값을 pending 으로 commit 하고 편집 종료.
   // 같은 셀 다시 클릭은 무시. 다른 셀 더블클릭 시는 handleCellDoubleClicked 가 우선
-  // 처리 후 onCellEditStart → 부모가 이전 편집을 자동 정리(같은 hook 인스턴스).
+  // 처리 후 onCellEditStart → 부모가 이전 편집을 자동 commit (같은 hook 인스턴스).
   const handleCellClicked = useCallback((event: CellClickedEvent<DetailGridRow>) => {
     if (!editingCell) return;
     const data = event.data;
     const field = event.colDef.field;
     if (data?.id === editingCell.rowId && field === editingCell.field) return;
-    onEditCancel();
-  }, [editingCell, onEditCancel]);
+    onCommitEdit();
+  }, [editingCell, onCommitEdit]);
 
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<DetailGridRow>) => {
     const data = event.data;

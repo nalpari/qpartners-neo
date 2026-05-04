@@ -43,13 +43,10 @@ export const updateContentSchema = z.object({
 
 export const listContentsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce
-    .number()
-    .int()
-    .refine((v) => [20, 50, 100].includes(v), {
-      message: "pageSize must be 20, 50, or 100",
-    })
-    .default(20),
+  // pageSize 는 PAGE_SIZE 공통코드(/api/codes/lookup)가 단일 출처로, 운영자가 코드관리 UI 에서
+  // 자유 등록(5/20/50/100 등) 하므로 서버 측 화이트리스트(`[20,50,100]`) 강제는 운영 불가.
+  // downloadLogsQuerySchema 와 동일하게 양의 정수 + 상한(100) 만 둔다 — 상한은 단일 요청 폭주 방지.
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
   keyword: z.string().max(100).optional(),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),

@@ -94,7 +94,11 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
 
   const handleDetailAdd = useCallback(() => {
     if (detailNewRow || !selectedHeaderId) return;
-    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS };
+    // 기본 sortOrder: 현재 detailsRaw 중 max(sortOrder) + 1 (append 의도).
+    // BE 가 자동 shift 하므로 충돌해도 안전하지만, 끝번호로 두면 무의미한 shift 회피 + UX 명확.
+    const maxSort = detailsRaw.reduce((acc, d) => Math.max(acc, d.sortOrder), 0);
+    const nextSort = maxSort + 1;
+    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort) };
     setDetailNewRow({
       id: `new-${Date.now()}`,
       headerId: String(selectedHeaderId),
@@ -106,11 +110,11 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
       relCode1: "",
       relCode2: "",
       relNum1: "",
-      sortOrder: 0,
+      sortOrder: nextSort,
       isActive: "Y",
       isNew: true,
     });
-  }, [detailNewRow, selectedHeaderId, selectedHeaderCode]);
+  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, detailsRaw]);
 
   const handleDetailCancelAdd = useCallback(() => {
     setDetailNewRow(null);

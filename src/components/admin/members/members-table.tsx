@@ -10,7 +10,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, PageSizeSelect } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
-import { STATUS_LABEL_MAP, USER_TYPE_REVERSE_MAP, formatDateTime, formatDate } from "./members-types";
+import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
 import { useUserType } from "@/hooks/use-user-type";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 
@@ -24,11 +24,9 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
 
   const openPopup = usePopupStore.getState().openPopup;
   const ctx = (params.context ?? {}) as MembersGridContext;
-  // 동적 reverseMap(코드관리 USER_TYPE) 우선 시도, 미매핑 시 hardcoded fallback.
-  // BE 서버 캐시(5분 TTL) ↔ FE TanStack Query 캐시(5분 staleTime) 의 갱신 타이밍이
-  // 어긋나 동적 reverseMap 만으로는 영문 코드를 못 찾는 케이스를 차단하기 위함.
-  // 두 경로 모두 실패 시에만 미매핑 처리(차단) — 기존 라벨 변경 운영 시 팝업 진입 보장.
-  const userTp = ctx.userTypeReverseMap[data.userType] ?? USER_TYPE_REVERSE_MAP[data.userType];
+  // USER_TYPE 공통코드 reverseMap 만 사용 — 하드코딩 fallback 제거됨.
+  // 매핑 불가 시 (공통코드 미등록·API 실패) 버튼을 비활성 + "-" 처럼 표시해 popup 진입 차단.
+  const userTp = ctx.userTypeReverseMap[data.userType];
 
   const handleClick = () => {
     if (!userTp) {
@@ -37,6 +35,14 @@ function NameCellRenderer(params: ICellRendererParams<MemberListItem>) {
     }
     openPopup("member-detail", { userId: data.userId, userTp, listItem: data });
   };
+
+  if (!userTp) {
+    return (
+      <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#AAAAAA]">
+        {data.userName}
+      </span>
+    );
+  }
 
   return (
     <button

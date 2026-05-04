@@ -39,8 +39,8 @@ interface BulkMailTableProps {
 
 export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const router = useRouter();
-  // 대량메일 목록은 기본 100건 (기존 useState("100") 동작 유지)
-  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize(100);
+  // 페이지 사이즈 default 는 PAGE_SIZE 공통코드 sortOrder=1 항목을 따른다 (운영자 제어).
+  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
   const [currentPage, setCurrentPage] = useState(1);
   const [draftOnly, setDraftOnly] = useState(false);
 

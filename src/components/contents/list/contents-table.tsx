@@ -9,7 +9,6 @@ import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
-  Spinner,
   Pagination,
   PageSizeSelect,
   MobileCardList,
@@ -451,14 +450,6 @@ export function ContentsTable({
     </div>
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center w-full py-20">
-        <Spinner size={48} />
-      </div>
-    );
-  }
-
   return (
     <>
       {/* 데스크톱 */}
@@ -471,6 +462,7 @@ export function ContentsTable({
               columnDefs={columnDefs}
               rowData={rowData}
               className="contents-grid"
+              loading={isLoading}
               emptyMessage="該当するコンテンツがありません。"
             />
             {totalPages > 0 && (
