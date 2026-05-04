@@ -31,13 +31,13 @@ export function BulkMailFormTargets({
   disabled,
 }: BulkMailFormTargetsProps) {
   // 발송대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super-admin/admin)
-  const { getAllOptions } = useTargetLabels();
+  const { allOptions } = useTargetLabels();
   const targetOptions = useMemo(() => [
     ...FIXED_TARGET_OPTIONS,
-    ...getAllOptions()
+    ...allOptions
       .filter((o) => o.isActive && TARGET_TYPE_TO_UI_VALUE[o.value])
       .map((o) => ({ value: TARGET_TYPE_TO_UI_VALUE[o.value], label: o.label })),
-  ], [getAllOptions]);
+  ], [allOptions]);
 
   const handleToggle = (value: string, checked: boolean) => {
     if (checked) {

@@ -171,21 +171,19 @@ export function ContentsFormPostTarget({
           <div key={rowIdx} className="flex gap-1">
             {row.map((key, colIdx) => {
               const target = key ? getTarget(key) : null;
-              // 비활성 권한이 이미 체크된 상태(기존 콘텐츠 수정)면 해제는 가능하도록 비활성화 안 함.
-              // 신규 체크만 막는다.
+              // 비활성(isActive=N) 권한은 미노출 — 단, 기존 콘텐츠 수정 시 이미 체크된 경우 해제 가능하도록 표시.
               const available = key ? isTargetAvailable(key) : true;
-              const checkboxDisabled =
-                !!key && !available && !(target?.checked ?? false);
+              const shouldRender = !key || available || (target?.checked ?? false);
 
               return (
                 <div key={colIdx} className="flex flex-1 gap-1 h-[58px]">
                   {/* Th */}
                   <div
                     className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 rounded-[6px] border border-[#EAF0F6] ${
-                      key ? "bg-[#F7F9FB]" : "bg-white"
+                      shouldRender && key ? "bg-[#F7F9FB]" : "bg-white"
                     }`}
                   >
-                    {key && (
+                    {shouldRender && key && (
                       <span
                         className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
                           available ? "text-[#45576F]" : "text-[#A0A8B0]"
@@ -197,14 +195,13 @@ export function ContentsFormPostTarget({
                   </div>
                   {/* Form */}
                   <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-                    {key && target && (
+                    {shouldRender && key && target && (
                       <>
                         <Checkbox
                           checked={target.checked}
                           onChange={(checked) =>
                             handleTargetCheck(key, checked)
                           }
-                          disabled={checkboxDisabled}
                         />
                         <div className="flex flex-1 items-center gap-1">
                           <DatePicker
