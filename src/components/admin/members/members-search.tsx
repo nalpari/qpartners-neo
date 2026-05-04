@@ -2,11 +2,12 @@
 
 // Design Ref: §4.2 — 검색 필터 (2행 6필드 레이아웃)
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InputBox, SelectBox, Button } from "@/components/common";
 import { STATUS_OPTIONS } from "./members-types";
 import type { MemberSearchFilters } from "./members-types";
 import { useUserType } from "@/hooks/use-user-type";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 
 interface MembersSearchProps {
   onSearch: (filters: MemberSearchFilters) => void;
@@ -34,7 +35,15 @@ const INITIAL_LOCAL: LocalFields = {
 export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
   const [local, setLocal] = useState<LocalFields>(INITIAL_LOCAL);
   // USER_TYPE 공통코드에서 동적으로 옵션 수급 (코드관리 변경 즉시 반영). fallback 내장.
-  const { searchOptions: userTypeOptions } = useUserType();
+  const { searchOptions: rawUserTypeOptions } = useUserType();
+  // 권한관리 isActive=N인 roleCode를 회원유형 옵션에서 제외
+  const { allOptions } = useTargetLabels();
+  const userTypeOptions = useMemo(() => {
+    const inactiveRoleCodes = new Set(
+      allOptions.filter((o) => !o.isActive && o.roleCode).map((o) => o.roleCode!),
+    );
+    return rawUserTypeOptions.filter((o) => !inactiveRoleCodes.has(o.value));
+  }, [rawUserTypeOptions, allOptions]);
 
   const updateLocal = (key: keyof LocalFields) => (value: string) => {
     setLocal((prev) => ({ ...prev, [key]: value }));
