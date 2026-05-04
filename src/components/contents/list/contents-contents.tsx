@@ -76,7 +76,8 @@ export function ContentsContents() {
 
   // PAGE_SIZE 공통코드 sort=1 값 — URL 에 pageSize 가 없을 때 첫 조회 기본값.
   // 옵션 로딩 전에는 usePageSize 가 안전 기본값(20)을 반환하므로 SSR/초기 hydration 도 문제 없음.
-  const { pageSize: defaultPageSize } = usePageSize();
+  // isLoading 동안 contents 쿼리를 게이트해 두 번 fetch (20 → sort=1) 되는 것을 회피 (PR #132 리뷰).
+  const { pageSize: defaultPageSize, isLoading: isPageSizeLoading } = usePageSize();
 
   // URL 쿼리에서 검색 상태 파싱 (pageSize 미지정 시 defaultPageSize 사용)
   const searchParams = parseSearchParams(urlParams, defaultPageSize);
@@ -106,7 +107,10 @@ export function ContentsContents() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // 컨텐츠 목록 조회
+  // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트.
+  // URL 에 pageSize 가 명시된 경우(사용자 직접 선택값 또는 외부 링크)는 즉시 조회 가능.
+  const hasExplicitPageSize = urlParams.has("pageSize");
+  const isContentsQueryEnabled = hasExplicitPageSize || !isPageSizeLoading;
   const { data: contentsResponse, isLoading } = useQuery({
     queryKey: ["contents", searchParams],
     queryFn: async () => {
@@ -126,6 +130,7 @@ export function ContentsContents() {
       }>("/contents", { params });
       return res.data;
     },
+    enabled: isContentsQueryEnabled,
   });
 
   const handleSearch = (filters: SearchFilters) => {
@@ -153,7 +158,9 @@ export function ContentsContents() {
         categories={categories}
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}
-        isLoading={isLoading}
+        // 쿼리 게이트(enabled=false) 시 isLoading=false 로 떨어지므로,
+        // PAGE_SIZE 공통코드 로딩 중인 빈 시간을 로딩 상태로 표시 — 빈 화면 방지.
+        isLoading={isLoading || !isContentsQueryEnabled}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
       />

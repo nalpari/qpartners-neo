@@ -37,6 +37,75 @@ function throwWithStage(err: unknown, stage: string): never {
   throw wrapped;
 }
 
+// pending 변경값을 row 위에 overlay — 셀 표시·재진입 편집 시 default 값이 pending 으로 노출.
+// 문자열 필드는 그대로, sortOrder 는 number, isActive 는 "Y"|"N" 로 타입 변환.
+//
+// 모듈 스코프 정의 — 매 렌더 함수 identity 안정화 + React Compiler 메모이제이션 명시화.
+function applyHeaderPending(row: HeaderGridRow, pending: Record<string, string>): HeaderGridRow {
+  const merged: HeaderGridRow = { ...row };
+  for (const [field, value] of Object.entries(pending)) {
+    if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
+      // 숫자 필드(relNum1~3) — 표시용으로만 string 보관 (저장 시점에 number 변환).
+      // HeaderGridRow.relNum1/2/3 은 string 이라 그대로 대입.
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    } else if (field === "isActive") {
+      if (value === "Y" || value === "N") merged.isActive = value;
+    } else if (field in merged) {
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  return merged;
+}
+
+function applyDetailPending(row: DetailGridRow, pending: Record<string, string>): DetailGridRow {
+  const merged: DetailGridRow = { ...row };
+  for (const [field, value] of Object.entries(pending)) {
+    if (field === "sortOrder") {
+      const n = Number(value);
+      if (Number.isFinite(n) && Number.isInteger(n)) merged.sortOrder = n;
+    } else if (field === "isActive") {
+      if (value === "Y" || value === "N") merged.isActive = value;
+    } else if (field in merged) {
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  return merged;
+}
+
+// 단일 필드 raw 값 → API body 값 변환 (Header/Detail 분리).
+// isActive 는 "Y"/"N" 문자열로 pending 에 저장되므로 boolean 변환.
+function convertHeaderField(field: string, raw: string): unknown {
+  if (field === "isActive") return raw === "Y";
+  if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
+    return raw || null;
+  }
+  return raw;
+}
+
+/**
+ * convertDetailField — sortOrder 변환은 잘못된 입력(빈 문자열·NaN·음수)을 0 으로
+ * 강제하던 패턴(`Number(raw) || 0`)이 BE 클램프와 결합해 의도치 않은 sortOrder=1
+ * 강제 이동을 유발하던 버그를 차단한다 (PR #132 리뷰).
+ *
+ * 유효하지 않은 sortOrder 입력은 `undefined` 반환 → 호출측이 data 객체에 포함하지
+ * 않아 BE 가 해당 필드를 미수정 처리.
+ */
+function convertDetailField(field: string, raw: string): unknown {
+  if (field === "isActive") return raw === "Y";
+  if (field === "sortOrder") {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return undefined;
+    return n;
+  }
+  if ((DETAIL_NULLABLE_FIELDS as readonly string[]).includes(field)) return raw || null;
+  return raw;
+}
+
 // API 에러 → 유저 대면 메시지 변환 (단계 prefix 부착)
 function getApiErrorMessage(err: unknown, stage?: string): string {
   const prefix = stage ? `${stage}: ` : "";
@@ -106,6 +175,7 @@ export function CodesContents() {
     commitEdit: commitDetailEdit,
     setPendingField: setDetailPendingField,
     clearPending: clearDetailPending,
+    discardRowPending: discardDetailRowPending,
   } = detailEdit;
   const {
     editingCell: headerEditingCell,
@@ -117,39 +187,8 @@ export function CodesContents() {
     commitEdit: commitHeaderEdit,
     setPendingField: setHeaderPendingField,
     clearPending: clearHeaderPending,
+    discardRowPending: discardHeaderRowPending,
   } = headerEdit;
-
-  // pending 변경값을 row 위에 overlay — 셀 표시·재진입 편집 시 default 값이 pending 으로 노출.
-  // 문자열 필드는 그대로, sortOrder 는 number, isActive 는 "Y"|"N" 로 타입 변환.
-  const applyHeaderPending = (row: HeaderGridRow, pending: Record<string, string>): HeaderGridRow => {
-    const merged: HeaderGridRow = { ...row };
-    for (const [field, value] of Object.entries(pending)) {
-      if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
-        // 숫자 필드(relNum1~3) — 표시용으로만 string 보관 (저장 시점에 number 변환).
-        // HeaderGridRow.relNum1/2/3 은 string 이라 그대로 대입.
-        (merged as unknown as Record<string, unknown>)[field] = value;
-      } else if (field === "isActive") {
-        if (value === "Y" || value === "N") merged.isActive = value;
-      } else if (field in merged) {
-        (merged as unknown as Record<string, unknown>)[field] = value;
-      }
-    }
-    return merged;
-  };
-  const applyDetailPending = (row: DetailGridRow, pending: Record<string, string>): DetailGridRow => {
-    const merged: DetailGridRow = { ...row };
-    for (const [field, value] of Object.entries(pending)) {
-      if (field === "sortOrder") {
-        const n = Number(value);
-        if (Number.isFinite(n) && Number.isInteger(n)) merged.sortOrder = n;
-      } else if (field === "isActive") {
-        if (value === "Y" || value === "N") merged.isActive = value;
-      } else if (field in merged) {
-        (merged as unknown as Record<string, unknown>)[field] = value;
-      }
-    }
-    return merged;
-  };
 
   // Grid 표시용 데이터 — pending overlay + editingField 주입
   const headerRows: HeaderGridRow[] = [
@@ -202,27 +241,6 @@ export function CodesContents() {
     if (!Number.isFinite(Number(id))) return;
     setDetailPendingField(id, "isActive", isActive ? "Y" : "N");
   }, [setDetailPendingField]);
-
-  // 단일 필드 raw 값 → API body 값 변환 (Header/Detail 공용).
-  // isActive 는 "Y"/"N" 문자열로 pending 에 저장되므로 boolean 변환.
-  const convertHeaderField = (field: string, raw: string): unknown => {
-    if (field === "isActive") return raw === "Y";
-    if ((HEADER_NUMERIC_FIELDS as readonly string[]).includes(field)) {
-      if (raw === "") return null;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : null;
-    }
-    if ((HEADER_NULLABLE_FIELDS as readonly string[]).includes(field)) {
-      return raw || null;
-    }
-    return raw;
-  };
-  const convertDetailField = (field: string, raw: string): unknown => {
-    if (field === "isActive") return raw === "Y";
-    if (field === "sortOrder") return Number(raw) || 0;
-    if ((DETAIL_NULLABLE_FIELDS as readonly string[]).includes(field)) return raw || null;
-    return raw;
-  };
 
   // 통합 저장 — 신규행 + 편집중 셀 commit + 누적 pending 일괄 저장.
   // 처리 순서:
@@ -282,13 +300,22 @@ export function CodesContents() {
       for (const [rowId, fields] of Object.entries(headerJobs)) {
         const data: Record<string, unknown> = {};
         for (const [field, raw] of Object.entries(fields)) {
-          data[field] = convertHeaderField(field, raw);
+          const converted = convertHeaderField(field, raw);
+          // undefined 는 변환 실패(현재 Header 분기 없음, 향후 확장 대비) → 미수정 의미로 제외.
+          if (converted === undefined) continue;
+          data[field] = converted;
         }
         if (Object.keys(data).length === 0) continue;
         try {
           await headerUpdateMutation.mutateAsync({ headerId: Number(rowId), data });
         } catch (err: unknown) {
           throwWithStage(err, "Header修正");
+        }
+        // 부분 실패 회피 — 행 PUT 성공 시 즉시 해당 행 pending 제거.
+        // catch 블록까지 도달했다면 throwWithStage 가 throw 했으므로 여기엔 도달 안 함.
+        // 신규행 prefix(`new-`)는 setPendingField 단계에서 차단되어 jobs 에 들어오지 않음.
+        if (!rowId.startsWith("new-")) {
+          discardHeaderRowPending(rowId);
         }
       }
 
@@ -307,13 +334,20 @@ export function CodesContents() {
       for (const [rowId, fields] of Object.entries(detailJobs)) {
         const data: Record<string, unknown> = {};
         for (const [field, raw] of Object.entries(fields)) {
-          data[field] = convertDetailField(field, raw);
+          const converted = convertDetailField(field, raw);
+          // undefined → 잘못된 sortOrder 입력 등. data 에 포함하지 않아 BE 가 미수정 처리.
+          if (converted === undefined) continue;
+          data[field] = converted;
         }
         if (Object.keys(data).length === 0) continue;
         try {
           await detailUpdateMutation.mutateAsync({ detailId: Number(rowId), data });
         } catch (err: unknown) {
           throwWithStage(err, "Detail修正");
+        }
+        // 부분 실패 회피 — 행 PUT 성공 시 즉시 해당 행 pending 제거.
+        if (!rowId.startsWith("new-")) {
+          discardDetailRowPending(rowId);
         }
       }
 
@@ -350,6 +384,7 @@ export function CodesContents() {
     headerUpdateMutation,
     handleHeaderEditCancel,
     clearHeaderPending,
+    discardHeaderRowPending,
     detailNewRow,
     detailNewRowRef,
     detailCreateMutation,
@@ -359,6 +394,7 @@ export function CodesContents() {
     detailPending,
     handleEditCancel,
     clearDetailPending,
+    discardDetailRowPending,
     openAlert,
     selectedHeaderId,
   ]);

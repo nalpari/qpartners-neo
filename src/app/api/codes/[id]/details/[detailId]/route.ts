@@ -92,14 +92,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const detail = await prisma.$transaction(async (tx) => {
       const updateData = { ...result.data };
       if (updateData.sortOrder !== undefined) {
-        const existing = await tx.codeDetail.findUnique({
-          where: { id: parsedDetailId.data },
-          select: { sortOrder: true, headerId: true },
-        });
-        if (existing && existing.headerId === parsedId.data) {
-          const currentCount = await tx.codeDetail.count({
+        // findUnique(headerId 검증용) + count(클램프 max) 병렬 실행 — 트랜잭션 소요 단축.
+        // headerId 불일치 시 findUnique 결과로 즉시 거부하므로 병렬 count 결과는 그대로 폐기 가능.
+        const [existing, currentCount] = await Promise.all([
+          tx.codeDetail.findUnique({
+            where: { id: parsedDetailId.data },
+            select: { sortOrder: true, headerId: true },
+          }),
+          tx.codeDetail.count({
             where: { headerId: parsedId.data },
-          });
+          }),
+        ]);
+        if (existing && existing.headerId === parsedId.data) {
           const clampedSort = Math.max(1, Math.min(updateData.sortOrder, currentCount));
           updateData.sortOrder = clampedSort;
 
