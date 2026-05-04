@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Image from "next/image";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
@@ -87,6 +87,7 @@ function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
 
 // Design Ref: §3 — 메인 컴포넌트
 export function DownloadHistory() {
+  const queryClient = useQueryClient();
   const { openAlert } = useAlertStore();
   const { pageSize, setPageSize } = usePageSize();
 
@@ -181,6 +182,8 @@ export function DownloadHistory() {
       a.download = item.fileName;
       a.click();
       URL.revokeObjectURL(url);
+      // 다운로드 로그가 서버에 기록되었으므로 목록 갱신
+      await queryClient.invalidateQueries({ queryKey: ["download-logs"] });
     } catch (err: unknown) {
       console.error("[DownloadHistory] 다운로드 실패:", err);
       openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
