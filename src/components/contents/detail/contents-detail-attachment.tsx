@@ -169,7 +169,9 @@ export function ContentsDetailAttachment({
       {/* PC: 썸네일 그리드 */}
       <div className="hidden lg:flex gap-[22px] flex-wrap">
         {attachments.map((file) => (
-          <div key={file.id} className="flex flex-col gap-4 items-center">
+          // 카드 너비를 썸네일과 동일한 180px 로 고정 — 파일명 truncate 의 기준 폭이 일정해야
+          // 좌측 정렬 + 우측 다운로드 아이콘 고정 + ... 처리가 의도대로 동작.
+          <div key={file.id} className="flex flex-col gap-4 items-center w-[180px]">
             <div className="relative size-[180px] border border-[#EAF0F6] bg-[#FDFEFE] flex items-center justify-center overflow-hidden">
               {isImageFile(file.mimeType) ? (
                 <ImageThumbnail
@@ -212,13 +214,17 @@ export function ContentsDetailAttachment({
               <button
                 type="button"
                 onClick={() => { void handleDownload(file.id, file.fileName); }}
-                className="flex-1 text-left font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010] cursor-pointer hover:underline truncate"
+                title={file.fileName}
+                // min-w-0: flex 항목 기본 min-width=auto 가 truncate 를 무력화하는 결함 회피.
+                // title: 마우스 오버 시 전체 파일명 툴팁 노출 (브라우저 기본 동작).
+                className="flex-1 min-w-0 text-left font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010] cursor-pointer hover:underline truncate"
               >
                 {file.fileName}
               </button>
               <button
                 type="button"
                 onClick={() => { void handleDownload(file.id, file.fileName); }}
+                aria-label={`${file.fileName} ダウンロード`}
                 className="shrink-0 flex items-center justify-center size-8 bg-[#F7F9FB] rounded-full cursor-pointer transition-colors hover:bg-[#EAF0F6]"
               >
                 <Image
