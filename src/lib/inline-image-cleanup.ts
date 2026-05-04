@@ -18,7 +18,7 @@ import { relative, resolve } from "path";
 
 import type { Prisma } from "@/generated/prisma/client";
 import { UPLOAD_DIR } from "@/lib/config";
-import { extractInlineImageIds } from "@/lib/block-editor/extract-inline-image-ids";
+import { extractInlineImageIds } from "@/lib/rich-editor/extract-inline-image-ids";
 import { logError } from "@/lib/log-error";
 import { isInsideDir } from "@/lib/path-safety";
 import type { UserInfo } from "@/lib/auth";

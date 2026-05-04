@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { isHtmlEmpty } from "@/lib/block-editor/is-html-empty";
+import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";

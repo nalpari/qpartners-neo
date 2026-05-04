@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * BlockEditor 동적 import 로딩 중 표시되는 placeholder.
+ * RichEditor 동적 import 로딩 중 표시되는 placeholder.
  * 본문 영역과 같은 최소 높이를 잡아 layout shift를 최소화한다.
  */
-export function BlockEditorSkeleton() {
+export function RichEditorSkeleton() {
   return (
     <div
       role="status"

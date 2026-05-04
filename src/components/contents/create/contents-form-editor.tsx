@@ -1,7 +1,7 @@
 "use client";
 
 import { InputBox } from "@/components/common";
-import { BlockEditorLoader } from "@/components/common/block-editor";
+import { RichEditorLoader } from "@/components/common/rich-editor";
 
 interface ContentsFormEditorProps {
   title: string;
@@ -41,7 +41,7 @@ export function ContentsFormEditor({
           内容
           <span className="text-[#FF1A1A]">*</span>
         </h2>
-        <BlockEditorLoader
+        <RichEditorLoader
           defaultValue={content}
           onChange={onContentChange}
           onParseError={onContentParseError}

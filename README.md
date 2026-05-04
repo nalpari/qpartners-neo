@@ -12,7 +12,7 @@
 | State (server) | TanStack Query |
 | Package Manager | pnpm |
 | Containerization | Docker (multi-stage build, standalone output) |
-| Rich Text Editor | BlockNote (`@blocknote/mantine`, ja locale) — content body 입력 |
+| Rich Text Editor | Tiptap headless (`@tiptap/react` + StarterKit, Image, Table, Placeholder, Suggestion + tippy.js) — content body 입력 |
 
 ## Prerequisites
 
@@ -104,9 +104,9 @@ src/
 │   ├── page.tsx          # Home page
 │   └── globals.css       # Tailwind config & theme tokens
 ├── components/common/
-│   └── block-editor/     # BlockNote wrapper (client-only via next/dynamic)
+│   └── rich-editor/      # Tiptap wrapper (client-only via next/dynamic, toolbar·slash menu·inline image)
 ├── lib/
-│   ├── block-editor/     # 본문 정규화·sanitize·empty 검증 유틸
+│   ├── rich-editor/      # 본문 정규화·sanitize·empty 검증·inline image id 추출 유틸
 │   ├── prisma.ts         # Prisma client singleton (MariaDB adapter)
 │   ├── query-provider.tsx # TanStack Query provider (client component)
 │   └── store.ts          # Zustand store
