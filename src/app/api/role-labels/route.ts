@@ -15,9 +15,12 @@ import { prisma } from "@/lib/prisma";
 //
 // 캐시:
 // - 준정적 데이터(4개 고정 역할). 권한관리 mutation 시 클라이언트가 ["role-labels"] invalidate.
-// - 서버측 캐시는 짧은 s-maxage + stale-while-revalidate 로 폴링 부하 완화 (CDN/Edge 활용 시).
+// - 단, HTTP 캐시는 사용하지 않음 — 브라우저 disk cache 가 stale 응답을 반환하면 권한관리에서
+//   권한명 변경 후 공지/대량메일 화면 mount 시 React Query 가 refetch 를 트리거해도
+//   axios GET 이 캐시 hit 하여 새 권한명이 반영되지 않음 (사용자 새로고침 강요 결함).
+//   서버 부하는 4개 역할 단순 조회로 무시 가능하므로 캐시 제거가 안전.
 const CACHE_HEADERS = {
-  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+  "Cache-Control": "no-store",
 } as const;
 
 /** AUTH_ROLE_TO_TARGET 의 키가 실제로 매핑 정의되어 있는지 검증 (런타임 가드) */
