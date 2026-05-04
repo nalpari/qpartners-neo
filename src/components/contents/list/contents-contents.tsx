@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import { usePageSize } from "@/hooks/use-page-size";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -91,6 +92,18 @@ export function ContentsContents() {
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
 
+  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
+  // queryKey 시드용으로만 사용 — 권한(userTp) 변동 시 캐시가 분리되어 stale 응답 재사용 차단.
+  // 비로그인 → 로그인 전환(또는 그 반대) 시 서버 응답이 달라지는데 같은 키로 hit 되어
+  // 새로고침 전까지 잘못된 결과(예: 7개)가 유지되던 결함 대응.
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
+  const userScope = user?.userTp ?? "anon";
+
   // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
@@ -104,7 +117,7 @@ export function ContentsContents() {
   // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트하여 두 번 fetch (20 → sort=1) 회피.
   const isContentsQueryEnabled = !isPageSizeLoading;
   const { data: contentsResponse, isLoading } = useQuery({
-    queryKey: ["contents", searchParams, pageSize],
+    queryKey: ["contents", searchParams, pageSize, userScope],
     queryFn: async () => {
       const params: Record<string, string | number | boolean> = {
         page: searchParams.page,
