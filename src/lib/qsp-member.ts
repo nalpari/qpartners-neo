@@ -34,6 +34,29 @@ const QSP_PRESERVED_KEYS = [
 export type QspPreservedFieldKeys = (typeof QSP_PRESERVED_KEYS)[number];
 
 /**
+ * QSP `userNm` / `userNmKana` 합본을 [성, 이름] 으로 분리.
+ *
+ * QSP 가 `user1stNm`/`user2ndNm` 을 null 로 주고 합본 `userNm`("姓 名") 만 내려주는
+ * 케이스 대응. 마이페이지 GET 응답의 sei/mei 폴백, 변경 알림 메일의 preDetail 매핑에서
+ * 둘 다 동일 로직으로 사용해야 mismatch (= 변경 안 했는데 변경 알림 발송) 가 발생하지 않음.
+ *
+ * 분리 규칙:
+ *   - null/빈문자 → [null, null]
+ *   - 공백/전각공백 기준 split (앞 2 토큰만 사용)
+ *   - 단일어("山田" 등 공백 없음) → [원본, null]
+ *     · GET 응답: sei="山田", mei=null → 프론트 input 표기와 mapPreFieldValue 결과가 일치
+ *     · #2171: 단일어 사용자 마이페이지 [저장] 시 false-positive 변경 메일 발송 방지
+ */
+export function splitQspUserName(
+  nm: string | null | undefined,
+): [string | null, string | null] {
+  if (!nm) return [null, null];
+  const parts = nm.split(/[\s　]+/, 2);
+  if (parts.length < 2) return [parts[0], null];
+  return [parts[0], parts[1]];
+}
+
+/**
  * preDetail 존재 시 보존 필드를 QSP 페이로드용 객체로 조립.
  * null 값은 빈 문자열로 변환 — QSP full-replace 가 null 로 덮어쓰지 않도록.
  * preDetail null(F_NOT_USER) 이면 빈 객체 반환.

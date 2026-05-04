@@ -248,6 +248,10 @@ export async function GET(request: NextRequest) {
 
     // 9. 홈 리다이렉트 + httpOnly 쿠키 (일반 로그인과 동일 속성)
     //    base 는 BASE_URL (Host 헤더 조작 방어). 302 로 명시.
+    //
+    //    [정책 #2125 / Q3 결정] inbound 자동로그인 시 로그인 알림 메일 발송 제외.
+    //      외부 3사(HANASYS/Q.Order/Q.Musubi) SSO 경유는 본인 의도된 진입이므로 알림 노이즈.
+    //      이상 동작 인지는 /api/auth/login 경로가 커버한다. (loginNotiYn 분기 없음 — 의도적 누락)
     const homeUrl = new URL("/", BASE_URL);
     const response = NextResponse.redirect(homeUrl.toString(), { status: 302 });
     response.cookies.set(COOKIE_NAME, token, {
