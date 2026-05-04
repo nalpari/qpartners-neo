@@ -12,9 +12,11 @@ interface CategoriesTreeProps {
   expandedIds: Record<number, true>;
   totalCount: number;
   filterInternalOnly: boolean;
+  filterActiveOnly: boolean;
   onSelect: (id: number) => void;
   onToggle: (id: number) => void;
   onFilterChange: (checked: boolean) => void;
+  onActiveOnlyChange: (checked: boolean) => void;
 }
 
 export function CategoriesTree({
@@ -23,9 +25,11 @@ export function CategoriesTree({
   expandedIds,
   totalCount,
   filterInternalOnly,
+  filterActiveOnly,
   onSelect,
   onToggle,
   onFilterChange,
+  onActiveOnlyChange,
 }: CategoriesTreeProps) {
   return (
     <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_0px_rgba(0,0,0,0.05)] pt-[34px] px-[42px] pb-[42px]">
@@ -40,6 +44,11 @@ export function CategoriesTree({
             <span className="font-semibold text-[#e97923]">{totalCount}</span>
           </p>
           <Checkbox
+            checked={filterActiveOnly}
+            onChange={onActiveOnlyChange}
+            label="使用中のみ表示"
+          />
+          <Checkbox
             checked={filterInternalOnly}
             onChange={onFilterChange}
             label="社内会員専用カテゴリのみ表示"
@@ -52,6 +61,11 @@ export function CategoriesTree({
         <div className="flex-1 flex items-center justify-center h-full bg-[#506273] pl-[16px] pr-[8px] rounded-l-[6px]">
           <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             カテゴリ名
+          </span>
+        </div>
+        <div className="flex items-center justify-center h-full bg-[#506273] w-[100px] pl-[16px] pr-[8px]">
+          <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+            社内専用
           </span>
         </div>
         <div className="flex items-center justify-center h-full bg-[#506273] w-[100px] pl-[16px] pr-[8px]">
@@ -115,7 +129,10 @@ export function CategoriesTree({
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-end w-[270px] gap-[34px]">
+              <div className="flex items-center justify-end w-[370px] gap-[34px]">
+                <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                  {parent.isInternalOnly ? "Y" : "N"}
+                </span>
                 <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.isActive ? "Y" : "N"}
                 </span>
@@ -157,7 +174,10 @@ export function CategoriesTree({
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-end w-[270px] gap-[34px]">
+                    <div className="flex items-center justify-end w-[370px] gap-[34px]">
+                      <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                        {child.isInternalOnly ? "Y" : "N"}
+                      </span>
                       <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.isActive ? "Y" : "N"}
                       </span>
