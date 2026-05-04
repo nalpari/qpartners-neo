@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --background: #ffffff;
@@ -153,4 +154,100 @@ button{cursor: pointer;}
 
 .rich-editor-progress {
   animation: rich-editor-progress-indeterminate 1.2s linear infinite;
+}
+
+/*
+ * RichEditor 표 스타일 — 에디터 본문(prose)과 상세 페이지(prose) 양쪽 동시 매칭.
+ *
+ * Tiptap @tiptap/extension-table은 resizable: true일 때 prosemirror-tables의
+ * TableView(NodeView)로 <table>을 직접 createElement한다. 이 경로에서는
+ * Table.configure의 HTMLAttributes(class)가 적용되지 않아 .rich-editor-table
+ * 셀렉터로는 에디터 내부 표를 매칭할 수 없다(저장 후 직렬화 경로에서만 클래스가
+ * 붙음). 따라서 prose 컨테이너 안의 모든 <table>을 대상으로 셀 보더를 부여한다.
+ *
+ * 동시에 typography plugin이 추가하는 thead/tbody tr의 border-bottom은 우리
+ * 셀 보더와 겹쳐 시각적으로 부정확한 보더를 만들므로 0으로 무력화한다.
+ */
+.prose table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  word-break: break-word;
+}
+.prose th,
+.prose td {
+  border: 1px solid #ddd;
+  padding: 5px 10px;
+  vertical-align: top;
+}
+.prose th {
+  font-weight: 700;
+  text-align: left;
+}
+.prose th > p,
+.prose td > p {
+  min-height: 1.5rem;
+  margin: 0;
+}
+.prose thead,
+.prose tbody tr {
+  border-bottom-width: 0;
+}
+
+.rich-editor-inline-image {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Tiptap Placeholder extension — 빈 문서 첫 단락에 data-placeholder 표시 */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #AAAAAA;
+}
+
+/*
+ * Tiptap @tiptap/extension-table 표 + 컬럼 리사이즈 — Tiptap 공식 권장 CSS.
+ * resizable: true로 켜져 있어도 .column-resize-handle / .tableWrapper /
+ * .selectedCell / .resize-cursor 등 핵심 클래스에 CSS가 없으면 핸들 폭이 0이라
+ * 보이지도, 클릭/드래그도 잡히지 않는다.
+ */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 1em;
+  position: relative;
+}
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+.ProseMirror .selectedCell::after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
 }

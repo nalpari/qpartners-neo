@@ -259,11 +259,11 @@ export function NoticesTable({
           author: d.createdByName ?? "",
           authorId: d.createdBy ?? d.userId,
           createdAt: d.createdAt,
-          updater: d.updatedByName ?? "",
+          // updatedBy 가 null 이면 갱신 이력 없음으로 갱신자/갱신일 모두 비운다 (Redmine #2175).
+          // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 채워지는 부수 효과 차단 —
+          // applyNoticeMeta · 목록 컬럼과 동일한 가드를 단건 상세 진입 경로에도 적용.
+          updater: d.updatedBy ? (d.updatedByName ?? "") : "",
           updaterId: d.updatedBy ?? "",
-          // updatedBy 가 null 이면 갱신 이력 없음 — Prisma @updatedAt 이 INSERT 시
-          // createdAt 과 동일 시각으로 자동 채운 값을 상세에 표시하지 않도록 updatedAt
-          // 도 빈 문자열로 통일 (목록 valueGetter 와 동일 정책, Redmine #2175 후속).
           updatedAt: d.updatedBy ? d.updatedAt : "",
         };
         openPopup("notice-form", { mode: "edit", notice: formData });

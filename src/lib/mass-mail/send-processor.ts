@@ -23,11 +23,6 @@ import { escapeHtml } from "@/lib/mail-templates/utils";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
-import {
-  assertRedirectConfiguredForNonProd,
-  getRedirectEmails,
-  isRedirectActive,
-} from "@/lib/mass-mail/test-redirect";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import type { RecipientAuthRole } from "@/generated/prisma/client";
@@ -197,39 +192,7 @@ function sanitizeErrorMessage(message: string): string {
 }
 
 /**
- * redirect 모드 fan-out 부분 실패 시 throw 되는 전용 에러.
- *
- * - sendLoop 의 catch 가 isPermanentSmtpFailure / 일반 에러 분류 전에 식별해 retry 를
- *   비활성화한다. redirect 활성 시에는 1차에서 일부가 성공하고 일부가 실패한 상태로 throw
- *   하므로, 같은 recipient 를 재시도하면 이미 성공한 redirect 대상에게 SMTP 가 한 번 더
- *   나가서 중복 발송이 발생함 (코드리뷰 HIGH #6). 검증 환경 한정이지만 PR 본문에 명시된
- *   counter drift 의 직접 원인 → fail-fast 로 즉시 영구 실패 마킹.
- */
-class RedirectPartialFanoutError extends Error {
-  readonly successCount: number;
-  readonly totalCount: number;
-  constructor(successCount: number, totalCount: number, cause?: unknown) {
-    super(
-      `[redirect-partial: sent ${successCount}/${totalCount}] redirect fan-out 부분 실패 — ` +
-        `이미 성공한 대상에 대한 중복 발송을 방지하기 위해 retry 를 비활성화하고 즉시 영구 실패로 마킹.`,
-      cause === undefined ? undefined : { cause },
-    );
-    this.name = "RedirectPartialFanoutError";
-    this.successCount = successCount;
-    this.totalCount = totalCount;
-  }
-}
-
-/**
- * 단일 recipient 에 대한 SMTP 발송 — 테스트 redirect 적용.
- *
- * - redirect 비활성: 원본 이메일 1건 발송
- * - redirect 활성 + 매핑 없음: throw (assertRedirectConfiguredForNonProd 가 부분 매핑을
- *   사전 차단하므로 여기까지 오면 안 되지만, 다중 방어 fail-closed)
- * - redirect 활성 + 매핑 있음: Promise.allSettled 로 N개 모두 시도 후, 1건이라도 실패하면
- *   RedirectPartialFanoutError 로 throw → sendLoop 가 retry 비활성화 + 영구 실패 마킹.
- *
- * 모든 SMTP 가 성공해야 sendLoop 가 sent 로 마킹.
+ * 단일 recipient 에 대한 SMTP 발송 — 권한별 실 회원 이메일로 1건 발송.
  */
 async function sendOneRecipient(
   recipient: { email: string; authRole: RecipientAuthRole },
@@ -237,50 +200,12 @@ async function sendOneRecipient(
   html: string,
   attachments: SendMailAttachment[],
 ): Promise<void> {
-  const redirectTargets = getRedirectEmails(recipient.authRole);
-
-  // 다중 방어: redirect 활성인데 이 role 매핑이 없으면 원본 이메일로 fan-out 되는 fail-open 갭.
-  // assertRedirectConfiguredForNonProd 가 부분 매핑을 차단하지만, 동시 트리거 / 타이밍 race
-  // 등으로 우회될 가능성에 대비해 발송 직전에 한 번 더 차단.
-  if (isRedirectActive() && !redirectTargets) {
-    throw new Error(
-      `[test-redirect] REDIRECT_ROLE_NOT_MAPPED — authRole=${recipient.authRole} 매핑 없음. ` +
-        `원본 이메일 발송 차단 (fail-closed).`,
-    );
-  }
-
-  if (!redirectTargets) {
-    await sendMail({
-      to: recipient.email,
-      subject,
-      html,
-      ...(attachments.length > 0 ? { attachments } : {}),
-    });
-    return;
-  }
-
-  // redirect 모드 — Promise.allSettled 로 모든 대상 시도 후 부분 실패 검사.
-  // 직렬 await 로 N=1 실패 시 N=2..N 미시도가 되는 기존 동작을 제거 → 부분 실패 정보 보존.
-  const results = await Promise.allSettled(
-    redirectTargets.map(async (to) => {
-      console.log(
-        `${LOG_TAG} [test-redirect] ${maskEmail(recipient.email)} (${recipient.authRole}) → ${maskEmail(to)}`,
-      );
-      await sendMail({
-        to,
-        subject,
-        html,
-        ...(attachments.length > 0 ? { attachments } : {}),
-      });
-    }),
-  );
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-  if (failures.length === 0) return;
-
-  const successCount = results.length - failures.length;
-  // 첫 실패 사유를 cause 로 보존 — sendLoop 가 errorMessage 로 저장.
-  throw new RedirectPartialFanoutError(successCount, results.length, failures[0].reason);
+  await sendMail({
+    to: recipient.email,
+    subject,
+    html,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  });
 }
 
 function buildMailHtml(body: string, senderName: string): string {
@@ -355,32 +280,6 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
         // 예: "550 5.1.1 <user@example.com> User unknown" → "550 5.1.1 <u***@example.com> User unknown"
         // (코드리뷰 HIGH #5: failedRecipients 응답으로 노출 시 PII 노출).
         const persistedMessage = sanitizeErrorMessage(rawMessage);
-
-        // redirect fan-out 부분 실패 — retry 시 이미 성공한 redirect 대상에 중복 발송이 되므로
-        // retry 비활성화 + 즉시 영구 실패 마킹 (코드리뷰 HIGH #6).
-        if (error instanceof RedirectPartialFanoutError) {
-          try {
-            await prisma.massMailRecipient.update({
-              where: { id: recipient.id },
-              data: {
-                status: "failed",
-                retryCount: maxRetry,
-                errorMessage: persistedMessage.slice(0, 500),
-              },
-            });
-            failedCount++;
-          } catch (dbError: unknown) {
-            console.error(
-              `${LOG_TAG} CRITICAL — recipient ${recipient.id} redirect 부분 실패 DB 마킹 실패. 다음 cycle 에서 복구 시도.`,
-              dbError,
-            );
-          }
-          console.warn(
-            `${LOG_TAG} recipient ${recipient.id} redirect fan-out 부분 실패 (sent ${error.successCount}/${error.totalCount}) — retry skip.`,
-          );
-          resolved = true;
-          break;
-        }
 
         // SMTP 5xx 영구 실패 → retry 무의미 → 즉시 failed 마킹 (30초 대기 + 재시도 skip).
         // retry_count 는 max 로 설정하여 다음 cycle 의 sendLoop where 절 (retryCount<max) 에서 자동 제외.
@@ -576,10 +475,6 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
   try {
     await runWithInFlightGuard(massMailId, async () => {
   try {
-    // 사고 방지 — dev/non-production 환경에서 redirect 미설정이면 발송 자체 거부
-    // (collect-recipients 의 QSP 호출 + DB INSERT 도 안 일어남, fail-fast)
-    assertRedirectConfiguredForNonProd();
-
     const mail = await prisma.massMail.findUnique({
       where: { id: massMailId },
       select: { id: true, status: true },
@@ -652,9 +547,6 @@ export async function processMassMailRetry(massMailId: number): Promise<void> {
   try {
     await runWithInFlightGuard(massMailId, async () => {
   try {
-    // 사고 방지 — dev/non-production 환경에서 redirect 미설정이면 재발송도 거부
-    assertRedirectConfiguredForNonProd();
-
     const existingRecipients = await prisma.massMailRecipient.count({ where: { massMailId } });
     if (existingRecipients === 0) {
       console.warn(

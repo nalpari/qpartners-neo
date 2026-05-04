@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { editorI18n } from "./editor-i18n";
+import { InsertTablePopover } from "./insert-table-popover";
 
 export interface EditorToolbarProps {
   editor: Editor;
@@ -17,6 +19,8 @@ export interface EditorToolbarProps {
  */
 export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
   const t = editorI18n.toolbar;
+  const [tablePopoverOpen, setTablePopoverOpen] = useState(false);
+  const tableButtonRef = useRef<HTMLButtonElement>(null);
 
   const blockValue: "paragraph" | "h1" | "h2" | "h3" = editor.isActive("heading", { level: 1 })
     ? "h1"
@@ -170,22 +174,27 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
       >
         🖼
       </button>
-      <button
-        type="button"
-        aria-label={t.table}
-        title={t.table}
-        className={btn(false)}
-        onClick={() =>
-          editor
-            .chain()
-            .focus()
-            .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-            .run()
-        }
-        disabled={!isEditable}
-      >
-        ▦
-      </button>
+      <div className="relative">
+        <button
+          ref={tableButtonRef}
+          type="button"
+          aria-label={t.table}
+          title={t.table}
+          aria-haspopup="dialog"
+          aria-expanded={tablePopoverOpen}
+          className={btn(tablePopoverOpen)}
+          onClick={() => setTablePopoverOpen((o) => !o)}
+          disabled={!isEditable}
+        >
+          ▦
+        </button>
+        <InsertTablePopover
+          editor={editor}
+          open={tablePopoverOpen}
+          onClose={() => setTablePopoverOpen(false)}
+          triggerRef={tableButtonRef}
+        />
+      </div>
 
       {divider}
 
