@@ -22,6 +22,7 @@ export function CategoriesContents() {
   const [expandedIds, setExpandedIds] = useState<Record<number, true>>({});
   const [isNewMode, setIsNewMode] = useState(false);
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
+  const [filterActiveOnly, setFilterActiveOnly] = useState(false);
   const [hasUserToggled, setHasUserToggled] = useState(false);
   // CategoriesDetail 내부 form state 를 리마운트로 재초기화하기 위한 토큰.
   // 초기화 버튼 클릭 시 증가 → key 변경 → CategoriesDetail 이 selectedCategory/INITIAL_FORM 으로 재생성.
@@ -48,16 +49,20 @@ export function CategoriesContents() {
   });
 
   // ─── 파생 데이터 ───
-  // Plan SC: SC-07 — 사내전용 필터
+  // Plan SC: SC-07 — 사내전용 필터 + 사용여부 필터(#2103)
+  // 두 필터는 AND 결합. 자식이 모두 필터아웃되면 부모도 자체 조건을 만족할 때만 노출.
   const filteredTree = useMemo(() => {
-    if (!filterInternalOnly) return treeData;
+    if (!filterInternalOnly && !filterActiveOnly) return treeData;
+    const matchSelf = (n: { isInternalOnly: boolean; isActive: boolean }) =>
+      (!filterInternalOnly || n.isInternalOnly) &&
+      (!filterActiveOnly || n.isActive);
     return treeData
       .map((parent) => ({
         ...parent,
-        children: parent.children.filter((c) => c.isInternalOnly),
+        children: parent.children.filter(matchSelf),
       }))
-      .filter((p) => p.isInternalOnly || p.children.length > 0);
-  }, [treeData, filterInternalOnly]);
+      .filter((p) => matchSelf(p) || p.children.length > 0);
+  }, [treeData, filterInternalOnly, filterActiveOnly]);
 
   const totalCount = filteredTree.reduce(
     (sum, p) => sum + 1 + p.children.length,
@@ -229,9 +234,11 @@ export function CategoriesContents() {
         expandedIds={expandedWithDefaults}
         totalCount={totalCount}
         filterInternalOnly={filterInternalOnly}
+        filterActiveOnly={filterActiveOnly}
         onSelect={handleSelect}
         onToggle={handleToggle}
         onFilterChange={setFilterInternalOnly}
+        onActiveOnlyChange={setFilterActiveOnly}
       />
       <CategoriesDetail
         key={`${isNewMode ? "new" : String(selectedId)}-${resetToken}`}
