@@ -62,7 +62,7 @@ export function signupCompleteMailHtml({
         <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
           以下のリンクよりログインし、サービスをご利用ください。
         </p>
-        <table cellpadding="0" cellspacing="0" align="left" style="margin:0 0 20px;">
+        <table cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
           <tr>
             <td style="padding:12px 30px;background-color:#003d7a;border-radius:4px;">
               <a href="${loginUrl}" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;">ログインはこちら</a>
