@@ -157,38 +157,39 @@ button{cursor: pointer;}
 }
 
 /*
- * RichEditor — Tiptap이 출력하는 표·이미지 클래스 스타일.
- * editor-extensions.ts에서 부여한 .rich-editor-table / .rich-editor-inline-image와 매칭.
- * 에디터 본문(prose 영역)과 상세 페이지(prose 영역) 양쪽에서 동일하게 동작.
+ * RichEditor 표 스타일 — 에디터 본문(prose)과 상세 페이지(prose) 양쪽 동시 매칭.
+ *
+ * Tiptap @tiptap/extension-table은 resizable: true일 때 prosemirror-tables의
+ * TableView(NodeView)로 <table>을 직접 createElement한다. 이 경로에서는
+ * Table.configure의 HTMLAttributes(class)가 적용되지 않아 .rich-editor-table
+ * 셀렉터로는 에디터 내부 표를 매칭할 수 없다(저장 후 직렬화 경로에서만 클래스가
+ * 붙음). 따라서 prose 컨테이너 안의 모든 <table>을 대상으로 셀 보더를 부여한다.
+ *
+ * 동시에 typography plugin이 추가하는 thead/tbody tr의 border-bottom은 우리
+ * 셀 보더와 겹쳐 시각적으로 부정확한 보더를 만들므로 0으로 무력화한다.
  */
-.rich-editor-table {
+.prose table {
   border-collapse: collapse;
   table-layout: fixed;
   word-break: break-word;
 }
-.rich-editor-table th,
-.rich-editor-table td {
+.prose th,
+.prose td {
   border: 1px solid #ddd;
   padding: 5px 10px;
   vertical-align: top;
 }
-.rich-editor-table th {
+.prose th {
   font-weight: 700;
   text-align: left;
 }
-.rich-editor-table th > p,
-.rich-editor-table td > p {
+.prose th > p,
+.prose td > p {
   min-height: 1.5rem;
   margin: 0;
 }
-/*
- * @tailwindcss/typography(prose)는 thead·tbody tr에 border-bottom-width:1px를 일괄 부여한다.
- * .rich-editor-table는 셀 단위 border로 그리드를 표현하므로, prose가 추가로 그리는 행 단위
- * border가 우리 셀 border와 겹쳐 시각적으로 부정확한 보더가 된다.
- * 동등 specificity 후행 룰로 0 처리해 우리 셀 border만 살린다.
- */
-.rich-editor-table thead,
-.rich-editor-table tbody tr {
+.prose thead,
+.prose tbody tr {
   border-bottom-width: 0;
 }
 
