@@ -81,10 +81,14 @@ export function ContentsSearch({
     enabled: isInternal,
   });
 
+  // 콘텐츠 검색의 backend 매칭은 `Content.authorDepartment` (= 작성 시 `user.deptNm` 일본어 부서명)
+  // 으로 동등 비교한다. 따라서 SelectBox value 도 deptCd 가 아닌 **deptNm** 을 사용해야 매칭됨.
+  // 동일 부서명이 여러 deptCd 를 갖는 비정상 케이스만 옵션 중복으로 보일 수 있으나,
+  // 그 경우에도 검색 결과는 동일(부서명 매칭)하므로 기능상 문제 없음.
   const DEPARTMENT_OPTIONS = useMemo(() => {
     return [
       DEPARTMENT_PLACEHOLDER,
-      ...deptItems.map((d) => ({ value: d.deptCd, label: d.deptNm })),
+      ...deptItems.map((d) => ({ value: d.deptNm, label: d.deptNm })),
     ];
   }, [deptItems]);
 
