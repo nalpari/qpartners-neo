@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --background: #ffffff;
@@ -153,4 +154,44 @@ button{cursor: pointer;}
 
 .rich-editor-progress {
   animation: rich-editor-progress-indeterminate 1.2s linear infinite;
+}
+
+/*
+ * RichEditor — Tiptap이 출력하는 표·이미지 클래스 스타일.
+ * editor-extensions.ts에서 부여한 .rich-editor-table / .rich-editor-inline-image와 매칭.
+ * 에디터 본문(prose 영역)과 상세 페이지(prose 영역) 양쪽에서 동일하게 동작.
+ */
+.rich-editor-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  word-break: break-word;
+}
+.rich-editor-table th,
+.rich-editor-table td {
+  border: 1px solid #ddd;
+  padding: 5px 10px;
+  vertical-align: top;
+}
+.rich-editor-table th {
+  font-weight: 700;
+  text-align: left;
+}
+.rich-editor-table th > p,
+.rich-editor-table td > p {
+  min-height: 1.5rem;
+  margin: 0;
+}
+
+.rich-editor-inline-image {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Tiptap Placeholder extension — 빈 문서 첫 단락에 data-placeholder 표시 */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #AAAAAA;
 }
