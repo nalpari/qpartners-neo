@@ -202,13 +202,13 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
   addProseMirrorPlugins() {
     const triggerImagePicker = this.options.triggerImagePicker;
     return [
-      Suggestion({
+      Suggestion<SlashItem>({
         editor: this.editor,
         char: "/",
         startOfLine: false,
         items: ({ query }) => filterItems(query, buildItems(triggerImagePicker)).slice(0, 10),
         command: ({ editor, range, props }) => {
-          (props as SlashItem).command({ editor, range });
+          props.command({ editor, range });
         },
         render: () => {
           let component: ReactRenderer<MenuListHandle, MenuListProps> | null = null;
@@ -218,7 +218,7 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
             onStart: (props) => {
               component = new ReactRenderer(MenuList, {
                 props: {
-                  items: props.items as SlashItem[],
+                  items: props.items,
                   command: (item: SlashItem) => props.command(item),
                 },
                 editor: props.editor,
@@ -227,7 +227,9 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
               if (!props.clientRect) return;
 
               popup = tippy("body", {
-                getReferenceClientRect: () => props.clientRect?.() as DOMRect,
+                // Suggestion API는 () => DOMRect | null, tippy는 () => DOMRect를 기대 →
+                // null 케이스를 빈 0×0 rect로 폴백해 타입 일치.
+                getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
                 appendTo: () => document.body,
                 content: component.element,
                 showOnCreate: true,
@@ -239,12 +241,12 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
             },
             onUpdate(props) {
               component?.updateProps({
-                items: props.items as SlashItem[],
+                items: props.items,
                 command: (item: SlashItem) => props.command(item),
               });
               if (props.clientRect) {
                 popup?.[0]?.setProps({
-                  getReferenceClientRect: () => props.clientRect?.() as DOMRect,
+                  getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
                 });
               }
             },
