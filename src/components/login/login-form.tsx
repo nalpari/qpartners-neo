@@ -184,12 +184,21 @@ export function LoginForm({
                 checked={agreeTerms}
                 onChange={onAgreeTermsChange}
               />
-              <span className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5]">
+              {/* 중첩 <label> 회피 — docs/fix-checkbox-nested-label.md 참조.
+                  span 자체에 onClick 을 걸어 텍스트 영역 클릭으로도 체크 토글 가능하게 한다.
+                  내부 (表示) 버튼은 stopPropagation 으로 토글 트리거를 차단한다. */}
+              <span
+                onClick={() => onAgreeTermsChange(!agreeTerms)}
+                className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5] cursor-pointer"
+              >
                 利用規約に同意する必要があります
                 <button
                   type="button"
-                  onClick={(e) => { e.preventDefault(); openPopup("terms"); }
-                  }
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openPopup("terms");
+                  }}
                   className="font-['Noto_Sans_JP'] font-semibold text-[#E97923] underline cursor-pointer"
                 >
                   (表示)
