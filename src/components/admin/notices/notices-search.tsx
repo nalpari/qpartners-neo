@@ -36,13 +36,13 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   const [targetTypes, setTargetTypes] = useState<string[]>(filters.targetTypes);
 
   // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
-  const { getAllOptions } = useTargetLabels();
+  const { allOptions } = useTargetLabels();
   const targetOptions = useMemo(() => [
     ...FIXED_TARGET_OPTIONS,
-    ...getAllOptions()
+    ...allOptions
       .filter((o) => o.isActive)
       .map((o) => ({ value: o.value, label: o.label })),
-  ], [getAllOptions]);
+  ], [allOptions]);
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));

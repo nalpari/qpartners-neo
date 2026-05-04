@@ -93,8 +93,8 @@ export function useTargetLabels() {
 
     const isAvailable = (targetType: string): boolean => {
       if (targetType === "non_member") return true;
-      // 데이터 미수신 시 기본 활성 — 첫 렌더에서 옵션이 모두 사라지는 깜빡임 방지
-      return byTargetType.get(targetType)?.isActive ?? true;
+      // 데이터 미수신 시 비활성 — 로딩 완료 전 비활성 옵션 일시 노출 방지 (fail-closed)
+      return byTargetType.get(targetType)?.isActive ?? false;
     };
 
     const getRoleCode = (targetType: string): string | null => {
@@ -106,13 +106,15 @@ export function useTargetLabels() {
      * 모든 게시대상 옵션 (등록/표시용 — 정적 순서 보장).
      * 비회원 포함, 비활성도 포함 (옵션 노출 필터는 컴포넌트에서 isActive 로 결정).
      */
-    const getAllOptions = (): TargetTypeOption[] =>
-      ALL_TARGET_TYPES.map((tt) => ({
-        value: tt,
-        label: resolveLabel(tt),
-        isActive: isAvailable(tt),
-        roleCode: getRoleCode(tt),
-      }));
+    const allOptions: TargetTypeOption[] = ALL_TARGET_TYPES.map((tt) => ({
+      value: tt,
+      label: resolveLabel(tt),
+      isActive: isAvailable(tt),
+      roleCode: getRoleCode(tt),
+    }));
+
+    /** @deprecated getAllOptions() 대신 allOptions 배열 직접 참조 권장 */
+    const getAllOptions = (): TargetTypeOption[] => allOptions;
 
     /** 표시 순서 정렬 (cellRenderer 등에서 사용) */
     const sortByOrder = <T extends { targetType: string }>(
@@ -129,6 +131,7 @@ export function useTargetLabels() {
       isAvailable,
       getRoleCode,
       getAllOptions,
+      allOptions,
       sortByOrder,
       isLoading,
     };

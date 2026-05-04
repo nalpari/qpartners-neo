@@ -15,6 +15,14 @@ import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
 
+/** QpRole 검증 대상 authRole → roleCode 매핑 (SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님) */
+const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
+  "1ST_STORE": "1ST_STORE",
+  "2ND_STORE": "2ND_STORE",
+  "SEKO": "SEKO",
+  "GENERAL": "GENERAL",
+};
+
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
  try {
@@ -253,13 +261,7 @@ export async function POST(request: NextRequest) {
       : "GENERAL";
   }
 
-  // 6-1. 권한 사용가능여부(QpRole.isActive) 검증 — SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님
-  const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
-    "1ST_STORE": "1ST_STORE",
-    "2ND_STORE": "2ND_STORE",
-    "SEKO": "SEKO",
-    "GENERAL": "GENERAL",
-  };
+  // 6-1. 권한 사용가능여부(QpRole.isActive) 검증
   const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole];
   if (roleCodeToCheck) {
     try {
@@ -267,7 +269,17 @@ export async function POST(request: NextRequest) {
         where: { roleCode: roleCodeToCheck },
         select: { isActive: true },
       });
-      if (role && !role.isActive) {
+      if (role === null) {
+        // QpRole 레코드 미존재 — DB 데이터 정합성 문제. fail-closed 차단.
+        console.error("[POST /api/auth/login] QpRole 레코드 미존재 — 로그인 차단 (fail-closed)", {
+          roleCode: roleCodeToCheck,
+          authRole,
+        });
+        return NextResponse.json(
+          { error: "権限情報が存在しないためログインできません" },
+          { status: 403 },
+        );
+      } else if (!role.isActive) {
         console.warn("[POST /api/auth/login] 비활성 권한 로그인 차단", {
           userTp: qsp.data.userTp,
           authRole,

@@ -56,15 +56,15 @@ export function ContentsSearch({
 
   // 권한관리 라벨 동기화 — isActive=Y 만 검색 옵션 노출, 라벨은 권한명 사용.
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
-  const { getAllOptions: getTargetOptions } = useTargetLabels();
+  const { allOptions: targetAllOptions } = useTargetLabels();
   const POST_TARGET_OPTIONS = useMemo(() => {
     return [
       POST_TARGET_PLACEHOLDER,
-      ...getTargetOptions()
+      ...targetAllOptions
         .filter((o) => o.isActive)
         .map((o) => ({ value: o.value, label: o.label })),
     ];
-  }, [getTargetOptions]);
+  }, [targetAllOptions]);
 
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
