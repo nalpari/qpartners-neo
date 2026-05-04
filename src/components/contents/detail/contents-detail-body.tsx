@@ -1,7 +1,7 @@
 "use client";
 
-import { prepareBodyForRender } from "@/lib/block-editor/prepare-body-for-render";
-import { sanitizeContentHtml } from "@/lib/block-editor/sanitize-html";
+import { prepareBodyForRender } from "@/lib/rich-editor/prepare-body-for-render";
+import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 
 import { formatDate } from "@/lib/format";
 

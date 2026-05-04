@@ -7,11 +7,11 @@ import * as locales from "@blocknote/core/locales";
 import "@blocknote/mantine/style.css";
 import "@blocknote/core/fonts/inter.css";
 import api from "@/lib/axios";
-import { allowedBlocksSchema } from "@/lib/block-editor/allowed-blocks";
-import { prepareBodyForEditor } from "@/lib/block-editor/prepare-body-for-editor";
-import type { BlockEditorProps } from "./block-editor.types";
+import { allowedBlocksSchema } from "@/lib/rich-editor/allowed-blocks";
+import { prepareBodyForEditor } from "@/lib/rich-editor/prepare-body-for-editor";
+import type { RichEditorProps } from "./rich-editor.types";
 
-export function BlockEditor({
+export function RichEditor({
   defaultValue,
   onChange,
   onParseError,
@@ -19,7 +19,7 @@ export function BlockEditor({
   placeholder,
   editable = true,
   ariaLabel,
-}: BlockEditorProps) {
+}: RichEditorProps) {
   // 부모가 매 렌더마다 새 함수를 넘겨도 BlockNote schema/uploadFile이 재생성되지 않도록 ref로 잡는다.
   const onUploadErrorRef = useRef(onUploadError);
   useEffect(() => {
@@ -42,7 +42,7 @@ export function BlockEditor({
       } catch (error: unknown) {
         // BlockNote는 throw 시 슬래시 메뉴에서 상위로 에러를 전파만 하고 자체 alert을 띄우지 않는다.
         // 호출자에게 알려 일본어 alert을 띄울 수 있게 한다.
-        console.error("[BlockEditor] inline image upload failed:", error);
+        console.error("[RichEditor] inline image upload failed:", error);
         onUploadErrorRef.current?.(error);
         throw error;
       }
@@ -71,7 +71,7 @@ export function BlockEditor({
       } catch (error: unknown) {
         // 비정상 HTML(레거시 본문, 예상 외 구조)로 파싱이 실패하면 에디터가 빈 상태로 시작한다.
         // 호출자에게 알려 사용자에게 데이터 손실 가능성을 안내해야 한다.
-        console.error("[BlockEditor] 초기 본문 파싱 실패:", error);
+        console.error("[RichEditor] 초기 본문 파싱 실패:", error);
         onParseErrorRef.current?.(error);
       }
     }
@@ -85,7 +85,7 @@ export function BlockEditor({
       onChange(html);
     } catch (error: unknown) {
       // 한 번의 콜백 실패가 BlockNote listener loop를 침묵시키지 않도록 가둔다.
-      console.error("[BlockEditor] onChange 처리 실패:", error);
+      console.error("[RichEditor] onChange 처리 실패:", error);
     }
   }, editor);
 
@@ -104,4 +104,4 @@ export function BlockEditor({
   );
 }
 
-export default BlockEditor;
+export default RichEditor;
