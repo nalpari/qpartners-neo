@@ -213,8 +213,12 @@ export async function POST(request: NextRequest) {
           subject: INQUIRY_CONFIRMATION_SUBJECT,
           html: inquiryConfirmationMailHtml({
             userName: finalUserName,
-            inquiryTypeName,
+            companyName: finalCompanyName,
+            email: finalEmail,
+            tel: result.data.tel,
             title: result.data.title,
+            content: result.data.content,
+            receivedAt: inquiry.createdAt,
           }),
         });
       } catch (confirmError: unknown) {
