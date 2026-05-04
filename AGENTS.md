@@ -13,6 +13,8 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 - 커밋시에 접두사는 영어로 나머지 타이틀과 내용은 한국어로 작성한다.
 - task 완료시 CLAUDE.md 및 README.md 문서에 업데이트가 필요하면 진행한다.
 - 에이전트 팀을 활용할 경우 @docs/agent-teams-guild.md 문서를 참조한다.
+- 코드가 수정된 경우 필요하다면 CLAUDE.md, AGENTS.md, README.md 문서를 반드시 업데이트한다.
+- 코드가 수정되었을 경우 필요하다면 graphify update . 명령어를 실행한다.
 
 ## graphify
 
