@@ -522,6 +522,8 @@ export function PermissionsTable() {
     discardRowPending,
     clearPending,
     handleEditCancel,
+    // editValuesRef: useRef 객체로 렌더 간 reference 동일 — 실질 deps 효과 없으나
+    // react-hooks/exhaustive-deps 룰 충족 + 컨벤션 일관성 위해 명시.
     editValuesRef,
     openAlert,
   ]);
@@ -641,7 +643,7 @@ export function PermissionsTable() {
           <Button
             variant="primary"
             onClick={() => { void handleSave(); }}
-            disabled={isSaving || createMutation.isPending}
+            disabled={isSaving || createMutation.isPending || updateMutation.isPending}
           >
             保存
           </Button>
