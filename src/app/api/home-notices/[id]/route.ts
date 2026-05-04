@@ -171,8 +171,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
         const finalStartAt = result.data.startAt ?? existing.startAt;
         const finalEndAt = result.data.endAt ?? existing.endAt;
 
-        if (finalStartAt >= finalEndAt) {
+        if (finalStartAt > finalEndAt) {
           // schema refine 은 양쪽이 다 전달된 경우만 검사 — 한쪽만 보낸 케이스는 여기서 cross-validation.
+          // Issue #2176 (2) — 시작일==종료일 허용 (`>=` → `>`).
           throw new HomeNoticeUpdateError("INVALID_RANGE");
         }
 
