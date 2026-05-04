@@ -43,6 +43,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "MyPage", description: "마이페이지 (프로필/비밀번호/탈퇴/시공점)" },
     { name: "Member", description: "회원관리 (관리자 전용)" },
     { name: "MassMail", description: "대량메일 발송 (관리자 전용)" },
+    { name: "Master", description: "QSP 마스터 데이터 (부서 등)" },
   ],
 
   paths: {
@@ -3267,6 +3268,47 @@ export const openApiSpec: OpenAPIV3.Document = {
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 재발송으로 상태 전이 실패"),
           "500": errorResponse("재발송 실패"),
+        },
+      },
+    },
+
+    // ─── Master (QSP 마스터 데이터) ───
+    "/master/deptList": {
+      get: {
+        tags: ["Master"],
+        summary: "부서(担当部門) 목록 조회",
+        description:
+          "관리자 전용 — QSP 부서 마스터 조회. 콘텐츠 검색 화면의 担当部門 셀렉트 옵션용. " +
+          "loginId 는 인증 세션의 userId 를 그대로 사용 (클라이언트 페이로드 아님). " +
+          "QSP 의 result envelope 은 노출하지 않고 `{ data: [{ deptCd, deptNm }] }` 형태로 정규화.",
+        responses: {
+          "200": {
+            description: "부서 목록",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          deptCd: { type: "string", maxLength: 50, description: "部署コード" },
+                          deptNm: { type: "string", maxLength: 100, description: "部署名" },
+                        },
+                        required: ["deptCd", "deptNm"],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("管理者権限が必要です (SUPER_ADMIN || ADMIN)"),
+          "500": errorResponse("서버 에러"),
+          "502": errorResponse("외부 서버 오류 (QSP 응답 비정상/스키마 불일치/resultCode≠S)"),
         },
       },
     },

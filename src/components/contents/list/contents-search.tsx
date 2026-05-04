@@ -2,29 +2,23 @@
 
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useQuery } from "@tanstack/react-query";
 import { Checkbox, SelectBox, Button } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import api from "@/lib/axios";
 import type { CategoryNode, SearchFilters } from "./contents-contents";
 
 // 게시대상 placeholder 옵션 — 권한관리 라벨은 useTargetLabels 훅으로 동적 주입
 const POST_TARGET_PLACEHOLDER = { value: "", label: "掲示対象" };
 
-// 관리자용 담당부門 옵션
-const DEPARTMENT_OPTIONS = [
-  { value: "", label: "担当部門" },
-  { value: "sales", label: "営業" },
-  { value: "marketing", label: "マーケティング" },
-  { value: "tech", label: "技術" },
-  { value: "construction", label: "施工" },
-  { value: "cumulative", label: "累積" },
-  { value: "quality", label: "品質保証" },
-  { value: "cs", label: "CS" },
-  { value: "ppa", label: "PPAサービス" },
-  { value: "management", label: "経営企画" },
-  { value: "planning", label: "企画管理" },
-  { value: "it", label: "IT管理" },
-];
+// 担当部門 placeholder — QSP 부서 목록은 useQuery 로 동적 주입 (관리자 전용 필터)
+const DEPARTMENT_PLACEHOLDER = { value: "", label: "担当部門" };
+
+interface DeptItem {
+  deptCd: string;
+  deptNm: string;
+}
 
 interface ContentsSearchProps {
   isInternal?: boolean;
@@ -65,6 +59,39 @@ export function ContentsSearch({
         .map((o) => ({ value: o.value, label: o.label })),
     ];
   }, [getTargetOptions]);
+
+  // 担当部門 옵션 — 관리자(isInternal) 노출 영역에서만 호출 (enabled 가드).
+  // /codes/lookup 패턴과 동일: queryKey 도메인 네임스페이스 + 5분 staleTime + retry 2.
+  const {
+    data: deptItems = [],
+    isPending: isDeptLoading,
+    isError: isDeptLoadError,
+  } = useQuery({
+    queryKey: ["master", "deptList"],
+    queryFn: async () => {
+      const res = await api.get<{ data: DeptItem[] }>("/master/deptList");
+      const items = res.data?.data;
+      if (!Array.isArray(items)) {
+        throw new Error("Unexpected response shape from /master/deptList");
+      }
+      return items;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 2,
+    enabled: isInternal,
+  });
+
+  const DEPARTMENT_OPTIONS = useMemo(() => {
+    return [
+      DEPARTMENT_PLACEHOLDER,
+      ...deptItems.map((d) => ({ value: d.deptCd, label: d.deptNm })),
+    ];
+  }, [deptItems]);
+
+  // 부서 데이터가 비어 있는 정상 응답(`{ data: [] }`) — placeholder 만 가진 SelectBox 가
+  // 띄워지는 fallback UI 를 없애고 "-" 텍스트로 표시한다. 로딩/에러 상태와는 별개.
+  const isDeptEmpty =
+    isInternal && !isDeptLoading && !isDeptLoadError && deptItems.length === 0;
 
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
@@ -223,13 +250,25 @@ export function ContentsSearch({
                 </div>
                 <div className="flex-1 flex items-center gap-[18px] bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
                   <div className="w-full lg:max-w-[300px]">
-                    <SelectBox
-                      options={DEPARTMENT_OPTIONS}
-                      value={department}
-                      onChange={setDepartment}
-                      className="w-full"
-                    />
+                    {isDeptEmpty ? (
+                      <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+                        -
+                      </span>
+                    ) : (
+                      <SelectBox
+                        options={DEPARTMENT_OPTIONS}
+                        value={department}
+                        onChange={setDepartment}
+                        disabled={isDeptLoading || isDeptLoadError}
+                        className="w-full"
+                      />
+                    )}
                   </div>
+                  {isDeptLoadError && (
+                    <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#ff1a1a]">
+                      担当部門の読み込みに失敗しました。
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -299,11 +338,23 @@ export function ContentsSearch({
                 <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
                   担当部門
                 </p>
-                <SelectBox
-                  options={DEPARTMENT_OPTIONS}
-                  value={department}
-                  onChange={setDepartment}
-                />
+                {isDeptEmpty ? (
+                  <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+                    -
+                  </span>
+                ) : (
+                  <SelectBox
+                    options={DEPARTMENT_OPTIONS}
+                    value={department}
+                    onChange={setDepartment}
+                    disabled={isDeptLoading || isDeptLoadError}
+                  />
+                )}
+                {isDeptLoadError && (
+                  <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#ff1a1a]">
+                    担当部門の読み込みに失敗しました。
+                  </p>
+                )}
               </div>
             )}
           </div>
