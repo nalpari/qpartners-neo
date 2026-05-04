@@ -46,12 +46,12 @@ export function CategoriesTree({
           <Checkbox
             checked={filterActiveOnly}
             onChange={onActiveOnlyChange}
-            label="使用中のみ表示"
+            label="使用可否Yのみ表示"
           />
           <Checkbox
             checked={filterInternalOnly}
             onChange={onFilterChange}
-            label="社内会員専用カテゴリのみ表示"
+            label="社内専用のみ表示"
           />
         </div>
       </div>
