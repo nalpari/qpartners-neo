@@ -334,11 +334,14 @@ export function PermissionsTable() {
       const res = await api.post("/roles", body);
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: rolesQueryKey() });
-      // 콘텐츠 게시대상 라벨 캐시(useTargetLabels) 도 즉시 갱신 — 권한명 변경이 사용자 화면에
-      // 바로 반영되도록 한다. (PAGE_SIZE/USER_TYPE 의 ["common-code"] invalidate 패턴과 동일)
-      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
+    onSuccess: async () => {
+      // refetch 완료까지 대기 — onSuccess 가 Promise 를 반환하면 mutateAsync 가 그 resolve 까지
+      // wait 하므로 handleSave 의 후속 clearPending/alert 시점에 새 server data 가 이미 반영됨.
+      // 콘텐츠 게시대상 라벨 캐시(useTargetLabels) 도 함께 갱신 — 공지/대량메일 화면에 즉시 반영.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: rolesQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: ["role-labels"] }),
+      ]);
       setNewRow(false);
       newRowFieldsRef.current = { code: "", name: "", description: "" };
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
@@ -362,10 +365,14 @@ export function PermissionsTable() {
       const res = await api.put(`/roles/${encodeURIComponent(roleCode)}`, body);
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: rolesQueryKey() });
-      // 콘텐츠 게시대상 라벨 캐시도 즉시 갱신 — 권한명/사용가능여부 변경 즉시 반영.
-      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
+    onSuccess: async () => {
+      // refetch 완료까지 대기 — handleSave 가 mutateAsync 결과 후 clearPending/alert 를 호출하므로
+      // 그 시점에 새 server data 가 반영되어 있어야 권한관리 화면이 즉시 새 권한명을 표시.
+      // ["role-labels"] 도 함께 invalidate 해 공지/대량메일 화면 mount 시 fresh fetch.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: rolesQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: ["role-labels"] }),
+      ]);
     },
     onError: (error: unknown) => {
       const status = isAxiosError(error) ? error.response?.status : undefined;
