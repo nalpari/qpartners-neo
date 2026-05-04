@@ -29,10 +29,9 @@ export const NOTIFICATION_MAIL_BCC: string[] = process.env.NOTIFICATION_MAIL_BCC
 export const ATTR_CHANGE_MAIL_SUBJECT = "【Q.PARTNERS】会員情報変更完了のお知らせ";
 
 /**
- * 로그인 알림 메일 제목.
- * 담당자 회신 후 확정 — 본 모듈 v0.1 시점에는 사용하지 않음.
+ * 로그인 알림 메일 제목 (Redmine #2125 사양 확정, 2026-05-04).
  */
-export const LOGIN_NOTIFICATION_MAIL_SUBJECT = "【Q.PARTNERS】ログイン通知";
+export const LOGIN_NOTIFICATION_MAIL_SUBJECT = "【Q.PARTNERS】ログインのお知らせ";
 
 /**
  * 마이페이지 URL fallback.

@@ -9,6 +9,8 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
+import { extractClientIp } from "@/lib/notification-mail/utils";
 import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
@@ -281,7 +283,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 8. httpOnly 쿠키 설정.
+  // 8. 로그인 알림 메일 발송 (Redmine #2125, Q2 결정 — 1차 로그인 성공 시 즉시 발송).
+  //    조건: qsp.data.loginNotiYn === "Y" && email 등록됨
+  //    fire-and-forget — sendNotificationMail 내부 try-catch 흡수, 본 응답 무영향.
+  //    inbound 자동로그인은 정책상 발송 제외 (Q3) — 본 라우트(`/api/auth/login`) 만 발송 진입점.
+  if (qsp.data.loginNotiYn === "Y" && qsp.data.email) {
+    void sendLoginNotification({
+      to: qsp.data.email,
+      userNm: qsp.data.userNm,
+      loginAt: new Date(),
+      clientIp: extractClientIp(request),
+      callerRoute: "[POST /api/auth/login]",
+    });
+  }
+
+  // 9. httpOnly 쿠키 설정.
   //    응답 페이로드: twoFactorVerified 단일 SSoT (= !requireTwoFactor).
   //    dev 환경에 한해 _twoFactorReason 진단 메타 노출 — production 에서는 절대 노출 안 함.
   const debugMeta = process.env.APP_ENV === "development"
