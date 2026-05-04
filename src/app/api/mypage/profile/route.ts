@@ -179,7 +179,8 @@ export async function GET(request: NextRequest) {
     profile.department = d.deptNm;
     profile.jobTitle = d.pstnNm;
     if (userType === "STORE" || userType === "ADMIN") {
-      profile.corporateNo = d.corporateNo;
+      // QSP userDetail 실제 응답 필드명 `compBizNo` 단일 매핑 — 미존재 시 null (FE "-" 표시).
+      profile.corporateNo = d.compBizNo ?? null;
     }
     if (userType === "GENERAL") {
       profile.withdrawAvailable = true;
