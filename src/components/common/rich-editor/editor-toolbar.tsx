@@ -72,6 +72,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.bold}
         title={`${t.bold} (${t.shortcuts.bold})`}
+        disabled={!isEditable}
         className={btn(editor.isActive("bold"))}
         onClick={() => editor.chain().focus().toggleBold().run()}
       >
@@ -81,6 +82,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.italic}
         title={`${t.italic} (${t.shortcuts.italic})`}
+        disabled={!isEditable}
         className={btn(editor.isActive("italic"))}
         onClick={() => editor.chain().focus().toggleItalic().run()}
       >
@@ -90,6 +92,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.strike}
         title={`${t.strike} (${t.shortcuts.strike})`}
+        disabled={!isEditable}
         className={btn(editor.isActive("strike"))}
         onClick={() => editor.chain().focus().toggleStrike().run()}
       >
@@ -99,6 +102,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.inlineCode}
         title={`${t.inlineCode} (${t.shortcuts.inlineCode})`}
+        disabled={!isEditable}
         className={btn(editor.isActive("code"))}
         onClick={() => editor.chain().focus().toggleCode().run()}
       >
@@ -112,6 +116,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.bulletList}
         title={t.bulletList}
+        disabled={!isEditable}
         className={btn(editor.isActive("bulletList"))}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
       >
@@ -121,6 +126,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.orderedList}
         title={t.orderedList}
+        disabled={!isEditable}
         className={btn(editor.isActive("orderedList"))}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
       >
@@ -134,6 +140,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.blockquote}
         title={t.blockquote}
+        disabled={!isEditable}
         className={btn(editor.isActive("blockquote"))}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
       >
@@ -143,6 +150,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.codeBlock}
         title={t.codeBlock}
+        disabled={!isEditable}
         className={btn(editor.isActive("codeBlock"))}
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
       >
