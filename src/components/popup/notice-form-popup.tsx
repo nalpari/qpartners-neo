@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { isAxiosError } from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
 import { targetsToPayload, formatUserLabel } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
 
@@ -28,13 +29,10 @@ const noticeMetaSchema = z.object({
 
 type NoticeMeta = z.infer<typeof noticeMetaSchema>;
 
-const TARGET_OPTIONS = [
+/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
+const FIXED_TARGET_OPTIONS = [
   { value: "super_admin", label: "スーパー管理者" },
   { value: "admin", label: "管理者" },
-  { value: "first_store", label: "1次店" },
-  { value: "second_store", label: "2次店以下" },
-  { value: "seko", label: "施工店" },
-  { value: "general", label: "一般会員" },
 ];
 
 interface FormErrors {
@@ -74,6 +72,15 @@ export function NoticeFormPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
+  const { getAllOptions } = useTargetLabels();
+  const targetOptions = useMemo(() => [
+    ...FIXED_TARGET_OPTIONS,
+    ...getAllOptions()
+      .filter((o) => o.isActive)
+      .map((o) => ({ value: o.value, label: o.label })),
+  ], [getAllOptions]);
 
   const initialData = popupData.notice as NoticeFormData | undefined;
 
@@ -365,7 +372,7 @@ export function NoticeFormPopup() {
               掲示対象<span className="text-[#FF1A1A]">*</span>
             </label>
             <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
-              {TARGET_OPTIONS.map((opt) => (
+              {targetOptions.map((opt) => (
                 <Checkbox
                   key={opt.value}
                   checked={targets.includes(opt.value)}

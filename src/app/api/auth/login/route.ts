@@ -253,6 +253,37 @@ export async function POST(request: NextRequest) {
       : "GENERAL";
   }
 
+  // 6-1. 권한 사용가능여부(QpRole.isActive) 검증 — SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님
+  const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
+    "1ST_STORE": "1ST_STORE",
+    "2ND_STORE": "2ND_STORE",
+    "SEKO": "SEKO",
+    "GENERAL": "GENERAL",
+  };
+  const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole];
+  if (roleCodeToCheck) {
+    try {
+      const role = await prisma.qpRole.findUnique({
+        where: { roleCode: roleCodeToCheck },
+        select: { isActive: true },
+      });
+      if (role && !role.isActive) {
+        console.warn("[POST /api/auth/login] 비활성 권한 로그인 차단", {
+          userTp: qsp.data.userTp,
+          authRole,
+        });
+        return NextResponse.json(
+          { error: "権限が無効のためログインできません" },
+          { status: 403 },
+        );
+      }
+    } catch (error) {
+      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 서비스 가용성 우선
+      // (권한 테이블 장애로 전체 사용자 로그인 불가 방지)
+      console.error("[POST /api/auth/login] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    }
+  }
+
   // 7. 클라이언트에 전달할 사용자 정보 추출
   const user: LoginUser = {
     userId: qsp.data.userId,

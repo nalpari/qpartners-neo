@@ -525,6 +525,7 @@ function MemberEditForm({
                         // 실제 state(userRole) 는 그대로 보존되어 저장 시 서버 검증(400) 과 조합됨.
                         value={editableRoleValues.includes(userRole) ? userRole : ""}
                         onChange={setUserRole}
+                        placeholder="選択"
                         // 옵션 로딩 중 disabled — 빈 옵션 상태로 "GENERAL" 자동선택되는 race 차단.
                         disabled={isRoleSelectDisabled}
                         className="w-full"
