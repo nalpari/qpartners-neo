@@ -1,9 +1,21 @@
+import { MAIL_FOOTER_TEXT } from "@/lib/mail-templates/footer";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import type { ProfileUpdateInput } from "@/lib/schemas/mypage";
 
 import { ATTR_CHANGE_MAIL_SUBJECT, SITE_URL_FALLBACK } from "./constants";
 import { COMPANY_FIELD_LABELS, USER_FIELD_LABELS } from "./field-labels";
 import { sendNotificationMail } from "./send-notification";
+
+/**
+ * QSP 가 user2ndNm/user1stNm 을 null 로 주고 userNm("姓 名") 만 내려주는 케이스 fallback.
+ * 마이페이지 GET (`/api/mypage/profile`) 의 splitName 과 동일 로직 — 공백/전각공백 기준 2-split.
+ */
+function splitName(nm: string | null | undefined): [string | null, string | null] {
+  if (!nm) return [null, null];
+  const parts = nm.split(/[\s　]+/, 2);
+  if (parts.length < 2) return [null, null];
+  return [parts[0], parts[1]];
+}
 
 /**
  * 속성 변경 알림 메일 빌더 + 발송 헬퍼.
@@ -35,10 +47,14 @@ export interface AttrChangeMailContext {
  */
 function mapPreFieldValue(preDetail: QspMemberDetail, toBeField: string): unknown {
   switch (toBeField) {
-    case "sei": return preDetail.user2ndNm;
-    case "mei": return preDetail.user1stNm;
-    case "seiKana": return preDetail.user2ndNmKana;
-    case "meiKana": return preDetail.user1stNmKana;
+    // 성명 4필드: QSP 가 user1stNm/user2ndNm 을 null 로 주고 userNm 합본만 내려주는 케이스를 위해
+    // splitName fallback 적용 (Redmine #2171 — "수정 안 했는데 성명 4행 표시" 버그 픽스).
+    // GET 응답이 splitName 결과로 sei/mei 를 채워서 프론트로 보내고, 사용자가 그대로 [저장]하면
+    // request.sei 와 preDetail.user2ndNm(null) 비교에서 mismatch → 변경됐다고 잘못 판정되는 문제.
+    case "sei": return preDetail.user2ndNm ?? splitName(preDetail.userNm)[0];
+    case "mei": return preDetail.user1stNm ?? splitName(preDetail.userNm)[1];
+    case "seiKana": return preDetail.user2ndNmKana ?? splitName(preDetail.userNmKana)[0];
+    case "meiKana": return preDetail.user1stNmKana ?? splitName(preDetail.userNmKana)[1];
     case "compNm": return preDetail.compNm;
     case "compNmKana": return preDetail.compNmKana;
     case "zipcode": return preDetail.compPostCd;
@@ -130,8 +146,6 @@ function buildBodyHtml(args: {
     "●会員情報変更",
     ...args.userChanges,
     "",
-    "※メールアドレスを変更された場合は、変更後のメールアドレスがログインIDとなります。",
-    "",
     "もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。",
     "",
     "お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。",
@@ -143,15 +157,7 @@ function buildBodyHtml(args: {
     "「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。",
     "--------------------------------------------------------------------------------",
     "",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "　ハンファジャパン株式会社",
-    "　Q.PARTNERS事務局",
-    "　Tel:03-5441-5976",
-    "　Email : q-partners@hqj.co.jp",
-    "　問い合わせ受付時間：平日10：00-12：00　13：00-17：00",
-    "※土曜、日曜、祝日にお問合せをいただいた場合は、",
-    "　翌営業日以降に順次対応いたします。",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    MAIL_FOOTER_TEXT,
   ];
 
   return `<pre style="font-family: 'Hiragino Sans', 'Meiryo', sans-serif; white-space: pre-wrap;">${lines.join("\n")}</pre>`;
