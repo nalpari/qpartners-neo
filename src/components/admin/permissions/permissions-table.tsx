@@ -27,6 +27,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import { useAlertStore, usePopupStore } from "@/lib/store";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
+import { useCellEdit } from "@/hooks/use-cell-edit";
 import type { RoleApiItem, RolesResponse, PermissionItem } from "./permissions-types";
 import { toPermissionItem, toCreateRoleBody, toUpdateRoleBody, rolesQueryKey } from "./permissions-types";
 
@@ -230,16 +231,30 @@ export function PermissionsTable() {
 
   const [activeOnly, setActiveOnly] = useState(true);
   const [newRow, setNewRow] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const newRowFieldsRef = useRef<{ code: string; name: string; description: string }>({
     code: "",
     name: "",
     description: "",
   });
 
-  // codes-header-table 패턴: 단일 cell 편집 state + 임시 입력값 ref
-  // 입력 중 부모 setState 미발생 → focus 유지 (저장 시점에만 ref 에서 읽어감)
-  const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
-  const editValuesRef = useRef<Record<string, string>>({});
+  // 코드관리와 동일 패턴: useCellEdit 훅으로 단일 셀 편집 + 다중 행 pending 누적 관리.
+  // - 더블클릭 → editingCell 설정 / blur·다른 셀 클릭 → commitEdit 으로 pending 이동
+  // - Y/N select onChange → setPendingField 로 직접 누적 (즉시 PUT 안 함)
+  // - 「保存」 클릭 → pending 행별 PUT 일괄 처리 후 clearPending
+  const cellEdit = useCellEdit({ openAlert });
+  const {
+    editingCell,
+    detailEditRef: editValuesRef,
+    pendingChanges,
+    handleCellEditStart,
+    handleEditCancel,
+    handleEditFieldChange,
+    commitEdit,
+    setPendingField,
+    discardRowPending,
+    clearPending,
+  } = cellEdit;
 
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
@@ -275,25 +290,41 @@ export function PermissionsTable() {
     staleTime: 60_000,
   });
 
-  // 변환 + editingField 주입 — items 를 useMemo 로 안정화하여 rowData 캐싱 무효화 방지
+  // 변환 + pending overlay + editingField 주입.
+  // pending 값(roleName/description: string, isActive: "Y"|"N") 을 row 위에 덮어 그리드가
+  // 누적 수정 상태를 즉시 반영하도록 한다.
   const items: PermissionItem[] = useMemo(
     () => roles.map(toPermissionItem),
     [roles],
   );
   const rowData: PermissionItem[] = useMemo(() => {
     const mapped = items.map((item) => {
-      if (editingCell && item.id === editingCell.rowId) {
-        return { ...item, editingField: editingCell.field as "roleName" | "description" };
+      const pending = pendingChanges[item.id];
+      let merged: PermissionItem = item;
+      if (pending) {
+        merged = { ...item };
+        for (const [field, value] of Object.entries(pending)) {
+          if (field === "isActive") {
+            if (value === "Y" || value === "N") merged.isActive = value;
+          } else if (field === "roleName" || field === "description") {
+            merged[field] = value;
+          }
+        }
       }
-      return item;
+      if (editingCell && merged.id === editingCell.rowId) {
+        return { ...merged, editingField: editingCell.field as "roleName" | "description" };
+      }
+      return merged;
     });
     return newRow
       ? [
-          { id: "new", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
+          // id prefix "new-" 통일 — useCellEdit 의 신규행 가드(startsWith("new-")) 와 일치시켜
+          // 더블클릭 가드 우회로 편집 모드 진입하는 결함 차단 (PR #139 리뷰 MEDIUM 지적).
+          { id: "new-row", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
           ...mapped,
         ]
       : mapped;
-  }, [items, editingCell, newRow]);
+  }, [items, editingCell, newRow, pendingChanges]);
 
   // --- Mutations ---
 
@@ -316,12 +347,12 @@ export function PermissionsTable() {
       console.error("[POST /api/roles] 권한 추가 실패:", error);
       if (isAxiosError(error) && error.response?.status === 409) {
         openAlert({ type: "alert", message: "既に存在する権限コードです。", confirmLabel: "確認" });
-      } else {
-        // 서버 응답의 첫 위반 메시지(예: "権限コードは英大文字で始めてください") 를 그대로 노출 (Redmine #2165).
-        // 응답 본문 형식이 예상과 다르면 일반 메시지로 폴백.
-        const msg = extractApiError(error) ?? "保存に失敗しました。";
-        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
+        return;
       }
+      // 서버 응답의 첫 위반 메시지(예: "権限コードは英大文字で始めてください") 를 그대로 노출 (Redmine #2165).
+      // 응답 본문 형식이 예상과 다르면 일반 메시지로 폴백.
+      const msg = extractApiError(error) ?? "保存に失敗しました。";
+      openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
     },
   });
 
@@ -342,23 +373,6 @@ export function PermissionsTable() {
     },
   });
 
-  // --- 편집 state 핸들러 ---
-
-  const handleCellEditStart = useCallback((rowId: string, field: string) => {
-    if (rowId.startsWith("new")) return;
-    editValuesRef.current = {};
-    setEditingCell({ rowId, field });
-  }, []);
-
-  const handleEditCancel = useCallback(() => {
-    setEditingCell(null);
-    editValuesRef.current = {};
-  }, []);
-
-  const handleEditFieldChange = useCallback((field: string, value: string) => {
-    editValuesRef.current[field] = value;
-  }, []);
-
   // --- 신규행/저장 핸들러 ---
 
   const handleAdd = () => {
@@ -373,32 +387,28 @@ export function PermissionsTable() {
     newRowFieldsRef.current = { code: "", name: "", description: "" };
   };
 
-  // 활성 토글 — 즉시 PUT (편집 모드 무관)
-  const handleActiveChange = useCallback(async (item: PermissionItem, value: "Y" | "N") => {
+  // Y/N select 변경 — 즉시 PUT 안 함, pending 누적. 「保存」 클릭 시 일괄 처리.
+  const handleActiveChange = useCallback((item: PermissionItem, value: "Y" | "N") => {
     if (item.isNew) return;
-    const merged: PermissionItem = { ...item, isActive: value };
-    try {
-      await updateMutation.mutateAsync({
-        roleCode: item.roleCode,
-        body: toUpdateRoleBody(merged),
-      });
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch (error: unknown) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      console.error(`[PermissionsTable] 활성 토글 실패: status=${status ?? "unknown"}`);
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
-    }
-  }, [updateMutation, openAlert]);
+    setPendingField(item.id, "isActive", value);
+  }, [setPendingField]);
 
   const onNewRowFieldChange = useCallback((field: string, value: string) => {
     const ref = newRowFieldsRef.current as Record<string, string>;
     ref[field] = value;
   }, []);
 
-  // 통합 저장 — 신규행 등록 OR 단일 셀 편집 commit
-  // useCallback 으로 안정화하여 handleKeyDown deps 에 정상 포함 (stale closure 회피)
+  // 통합 저장 — 신규행 등록 + 편집중 셀 commit + 누적 pending 일괄 PUT.
+  // 처리 순서:
+  //   1) 신규행 등록 (validation 후 createMutation)
+  //   2) 편집중 셀이 있으면 commitEdit 으로 pending 에 옮김
+  //   3) pending 행별로 toUpdateRoleBody 변환 후 updateMutation 호출
+  //   4) 모두 성공 시 pending + 편집 state 정리 + 단일 alert
   const handleSave = useCallback(async () => {
-    // 신규행 저장
+    if (isSaving) return;
+
+    // 1) 신규행 — 단건 POST. 신규행 분기에도 isSaving 가드 적용으로 중복 클릭 차단
+    // (createMutation.isPending 만으로는 alert/네트워크 race 시 짧은 틈 존재).
     if (newRow) {
       const fields = newRowFieldsRef.current;
       if (!fields.code.trim()) {
@@ -409,57 +419,126 @@ export function PermissionsTable() {
         openAlert({ type: "alert", message: "権限名は必須です。", confirmLabel: "確認" });
         return;
       }
-      createMutation.mutate(toCreateRoleBody(fields));
+      setIsSaving(true);
+      try {
+        await createMutation.mutateAsync(toCreateRoleBody(fields));
+      } finally {
+        setIsSaving(false);
+      }
       return;
     }
 
-    // 편집 중인 셀 저장
-    if (!editingCell) return;
-    const editValues = editValuesRef.current;
-    const field = editingCell.field;
-    if (editValues[field] === undefined) {
-      // 변경 없음 → 편집만 종료
+    // 2) 편집중 셀 → 스냅샷 추출 후 commitEdit.
+    // 주의: commitEdit() 가 detailEditRef 를 동기 초기화하므로(use-cell-edit.ts:49),
+    // ref 스냅샷은 반드시 commitEdit 호출 전에 확보해야 한다. 호출 후에 읽으면 빈 객체라
+    // 편집 중인 셀의 입력값이 PUT 에 누락된다 (PR #139 리뷰 HIGH 지적).
+    const extra: Record<string, Record<string, string>> = {};
+    if (editingCell && !editingCell.rowId.startsWith("new-")) {
+      const v = editValuesRef.current[editingCell.field];
+      if (v !== undefined) {
+        extra[editingCell.rowId] = { [editingCell.field]: v };
+      }
+      commitEdit();
+    }
+
+    // 3) pending + extra 머지 — extra 는 현재 렌더의 pendingChanges 에 아직 반영 안 됐으므로
+    // 호출 측에서 명시적으로 합쳐 jobs 를 구성한다.
+    const jobs: Record<string, Record<string, string>> = { ...pendingChanges };
+    for (const [rowId, fields] of Object.entries(extra)) {
+      jobs[rowId] = { ...jobs[rowId], ...fields };
+    }
+    if (Object.keys(jobs).length === 0) {
       handleEditCancel();
       return;
     }
 
-    const original = items.find((i) => i.id === editingCell.rowId);
-    if (!original) {
-      handleEditCancel();
-      return;
-    }
-
-    const merged: PermissionItem = {
-      ...original,
-      [field]: editValues[field],
-    };
-
+    setIsSaving(true);
     try {
-      await updateMutation.mutateAsync({
-        roleCode: original.roleCode,
-        body: toUpdateRoleBody(merged),
-      });
-      handleEditCancel();
-      openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-    } catch (error: unknown) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      console.error(`[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"}`);
-      // 서버 응답의 첫 위반 메시지를 그대로 노출 (Redmine #2165 — 일관성).
-      const msg = extractApiError(error) ?? "保存に失敗しました。";
-      openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
-    }
-  }, [newRow, editingCell, items, openAlert, createMutation, updateMutation, handleEditCancel]);
+      // Promise.allSettled 로 병렬 PUT — RTT × N 직렬 대기 회피.
+      // 성공한 행은 즉시 discardRowPending 으로 제거하여, 부분 실패 시 다음 「保存」 클릭 시
+      // 이미 반영된 행의 중복 PUT 발생을 차단한다 (PR #139 리뷰 HIGH 지적).
+      const entries = Object.entries(jobs);
+      const results = await Promise.allSettled(
+        entries.map(async ([rowId, fields]) => {
+          const original = items.find((i) => i.id === rowId);
+          if (!original) {
+            return { rowId, skipped: true as const };
+          }
+          const merged: PermissionItem = { ...original };
+          for (const [field, value] of Object.entries(fields)) {
+            if (field === "isActive") {
+              if (value === "Y" || value === "N") merged.isActive = value;
+            } else if (field === "roleName" || field === "description") {
+              merged[field] = value;
+            }
+          }
+          await updateMutation.mutateAsync({
+            roleCode: original.roleCode,
+            body: toUpdateRoleBody(merged),
+          });
+          return { rowId, skipped: false as const };
+        }),
+      );
 
-  // 키보드 — Enter 저장 / Escape 취소 (handleSave useCallback 으로 stale closure 회피)
+      // 성공 행만 pending 제거 — 실패/skip 행은 잔류시켜 사용자가 재시도해도 안전.
+      const failures: unknown[] = [];
+      for (const result of results) {
+        if (result.status === "fulfilled" && !result.value.skipped) {
+          discardRowPending(result.value.rowId);
+        } else if (result.status === "rejected") {
+          failures.push(result.reason);
+        }
+      }
+
+      if (failures.length === 0) {
+        // 전체 성공 — pending 완전 정리 (skipped 행이 잔류하지 않도록 clearPending 호출).
+        clearPending();
+        handleEditCancel();
+        openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
+      } else {
+        const successCount = results.length - failures.length;
+        const firstError = failures[0];
+        const status = isAxiosError(firstError) ? firstError.response?.status : undefined;
+        console.error(
+          `[PermissionsTable] 권한 수정 실패: status=${status ?? "unknown"} (${failures.length}/${results.length})`,
+        );
+        // 서버 응답의 첫 위반 메시지 + 부분 성공 카운트 표시 (PR #139 리뷰 MEDIUM 지적).
+        const baseMsg = extractApiError(firstError) ?? "保存に失敗しました。";
+        const msg = `${baseMsg}\n(${successCount}/${results.length}件保存済み)`;
+        openAlert({ type: "alert", message: msg, confirmLabel: "確認" });
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    isSaving,
+    newRow,
+    editingCell,
+    items,
+    pendingChanges,
+    createMutation,
+    updateMutation,
+    commitEdit,
+    discardRowPending,
+    clearPending,
+    handleEditCancel,
+    // editValuesRef: useRef 객체로 렌더 간 reference 동일 — 실질 deps 효과 없으나
+    // react-hooks/exhaustive-deps 룰 충족 + 컨벤션 일관성 위해 명시.
+    editValuesRef,
+    openAlert,
+  ]);
+
+  // 키보드 — Enter: 현재 셀 commit (pending 누적) / Escape: 입력 폐기.
+  // 서버 저장은 상단 「保存」 버튼만 트리거.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      void handleSave();
+      commitEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleEditCancel();
     }
-  }, [handleSave, handleEditCancel]);
+  }, [commitEdit, handleEditCancel]);
 
   // --- AG Grid 이벤트 ---
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<PermissionItem>) => {
@@ -472,13 +551,14 @@ export function PermissionsTable() {
     handleCellEditStart(data.id, field);
   }, [handleCellEditStart]);
 
+  // 편집 중 외부 셀 클릭 → 입력값을 pending 으로 commit 하고 편집 종료
   const handleCellClicked = useCallback((event: CellClickedEvent<PermissionItem>) => {
     if (!editingCell) return;
     const data = event.data;
     const field = event.colDef.field;
     if (data?.id === editingCell.rowId && field === editingCell.field) return;
-    handleEditCancel();
-  }, [editingCell, handleEditCancel]);
+    commitEdit();
+  }, [editingCell, commitEdit]);
 
   const getRowClass = useCallback((params: RowClassParams<PermissionItem>) => {
     if (params.data?.isNew) return "ag-row-new";
@@ -563,7 +643,7 @@ export function PermissionsTable() {
           <Button
             variant="primary"
             onClick={() => { void handleSave(); }}
-            disabled={createMutation.isPending || updateMutation.isPending}
+            disabled={isSaving || createMutation.isPending || updateMutation.isPending}
           >
             保存
           </Button>

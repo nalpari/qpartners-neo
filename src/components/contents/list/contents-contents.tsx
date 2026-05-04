@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import { usePageSize } from "@/hooks/use-page-size";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
 
@@ -17,9 +18,13 @@ interface SearchFilters {
   internalOnly: boolean;
 }
 
+/**
+ * URL 쿼리 영속 대상 — page + filters.
+ * pageSize 는 URL 에서 분리해 usePageSize 로컬 state 로 관리한다 — 회원관리/공지사항 등
+ * 다른 테이블과 동일한 정책. 새로고침 시 PAGE_SIZE 공통코드 sort=1 값으로 초기화 (URL 영속 X).
+ */
 interface SearchParams extends SearchFilters {
   page: number;
-  pageSize: number;
 }
 
 interface CategoryNode {
@@ -35,18 +40,11 @@ interface CategoryNode {
 
 export type { CategoryNode, SearchFilters };
 
-/**
- * URL 쿼리 → SearchParams 파싱.
- * pageSize 가 URL 에 명시되지 않은 첫 조회에서는 PAGE_SIZE 공통코드 sort=1 값
- * (`defaultPageSize`) 을 사용한다 — 회원관리/공지사항 등 다른 테이블의 usePageSize
- * 직접 사용 패턴과 동일한 정책. 운영자가 코드관리에서 첫 옵션을 변경하면 모든 목록의
- * 초기 표시 건수가 일관되게 바뀐다.
- */
-function parseSearchParams(urlParams: URLSearchParams, defaultPageSize: number): SearchParams {
+/** URL 쿼리 → SearchParams 파싱 — pageSize 는 별도 (usePageSize) 관리. */
+function parseSearchParams(urlParams: URLSearchParams): SearchParams {
   const categoryIdsStr = urlParams.get("categoryIds") ?? "";
   return {
     page: Number(urlParams.get("page")) || 1,
-    pageSize: Number(urlParams.get("pageSize")) || defaultPageSize,
     keyword: urlParams.get("keyword") ?? "",
     categoryIds: categoryIdsStr ? categoryIdsStr.split(",").map(Number).filter((n) => !isNaN(n)) : [],
     targetType: urlParams.get("targetType") ?? "",
@@ -55,12 +53,10 @@ function parseSearchParams(urlParams: URLSearchParams, defaultPageSize: number):
   };
 }
 
-/** SearchParams → URL 쿼리 문자열 (빈 값 제외) */
-function buildQueryString(params: SearchParams, defaultPageSize: number): string {
+/** SearchParams → URL 쿼리 문자열 (빈 값 제외) — pageSize 미직렬화. */
+function buildQueryString(params: SearchParams): string {
   const qs = new URLSearchParams();
   if (params.page > 1) qs.set("page", String(params.page));
-  // 기본값과 동일하면 URL 에 직렬화하지 않아 깨끗한 URL 유지. 사용자가 명시 선택한 값만 노출.
-  if (params.pageSize !== defaultPageSize) qs.set("pageSize", String(params.pageSize));
   if (params.keyword) qs.set("keyword", params.keyword);
   if (params.categoryIds.length > 0) qs.set("categoryIds", params.categoryIds.join(","));
   if (params.targetType) qs.set("targetType", params.targetType);
@@ -74,13 +70,12 @@ export function ContentsContents() {
   const router = useRouter();
   const urlParams = useSearchParams();
 
-  // PAGE_SIZE 공통코드 sort=1 값 — URL 에 pageSize 가 없을 때 첫 조회 기본값.
-  // 옵션 로딩 전에는 usePageSize 가 안전 기본값(20)을 반환하므로 SSR/초기 hydration 도 문제 없음.
-  // isLoading 동안 contents 쿼리를 게이트해 두 번 fetch (20 → sort=1) 되는 것을 회피 (PR #132 리뷰).
-  const { pageSize: defaultPageSize, isLoading: isPageSizeLoading } = usePageSize();
+  // pageSize 는 usePageSize 로컬 state 로 관리 (URL 미영속) — 새로고침 시 PAGE_SIZE 공통코드
+  // sort=1 값으로 초기화. 회원관리/공지사항 등 다른 테이블과 동일한 정책.
+  const { pageSize, setPageSize, isLoading: isPageSizeLoading } = usePageSize();
 
-  // URL 쿼리에서 검색 상태 파싱 (pageSize 미지정 시 defaultPageSize 사용)
-  const searchParams = parseSearchParams(urlParams, defaultPageSize);
+  // URL 쿼리에서 검색 상태 파싱 (page/keyword/filters)
+  const searchParams = parseSearchParams(urlParams);
 
   // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음).
   // `scroll: false` — 검색·페이지 이동·페이지 사이즈 변경 모두에서 현재 스크롤 위치 유지.
@@ -89,13 +84,26 @@ export function ContentsContents() {
   // 화면 위치는 그대로 — 긴 필터 패널 아래에서 검색해도 다시 스크롤할 필요 없다.
   const updateParams = useCallback(
     (next: SearchParams) => {
-      router.replace(`/contents${buildQueryString(next, defaultPageSize)}`, { scroll: false });
+      router.replace(`/contents${buildQueryString(next)}`, { scroll: false });
     },
-    [router, defaultPageSize],
+    [router],
   );
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
+
+  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
+  // queryKey 시드용으로만 사용 — 권한 변동 시 캐시가 분리되어 stale 응답 재사용 차단.
+  // home-contents.tsx 와 동일 패턴: userTp + authRole 만 결합 (userId 는 이메일 PII 라
+  // 의도적으로 제외 — TanStack Query DevTools 등에서 queryKey 평문 노출 위험 회피).
+  // 동일 권한의 다른 계정 전환은 role 단위 응답이 동일하므로 캐시 공유해도 무해.
+  const { data: user } = useQuery<LoginUser | null>({
+    queryKey: ["auth", "login-user-info"],
+    queryFn: () => null,
+    staleTime: Infinity,
+    enabled: false,
+  });
+  const userScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "anon";
 
   // 카테고리 트리 조회
   const { data: categories = [] } = useQuery({
@@ -107,16 +115,14 @@ export function ContentsContents() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트.
-  // URL 에 pageSize 가 명시된 경우(사용자 직접 선택값 또는 외부 링크)는 즉시 조회 가능.
-  const hasExplicitPageSize = urlParams.has("pageSize");
-  const isContentsQueryEnabled = hasExplicitPageSize || !isPageSizeLoading;
+  // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트하여 두 번 fetch (20 → sort=1) 회피.
+  const isContentsQueryEnabled = !isPageSizeLoading;
   const { data: contentsResponse, isLoading } = useQuery({
-    queryKey: ["contents", searchParams],
+    queryKey: ["contents", searchParams, pageSize, userScope],
     queryFn: async () => {
       const params: Record<string, string | number | boolean> = {
         page: searchParams.page,
-        pageSize: searchParams.pageSize,
+        pageSize,
       };
       if (searchParams.keyword) params.keyword = searchParams.keyword;
       if (searchParams.categoryIds.length > 0) params.categoryIds = searchParams.categoryIds.join(",");
@@ -141,8 +147,10 @@ export function ContentsContents() {
     updateParams({ ...searchParams, page });
   };
 
-  const handlePageSizeChange = (pageSize: number) => {
-    updateParams({ ...searchParams, pageSize, page: 1 });
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    // 페이지 사이즈 변경 시 page 만 1 로 리셋 (URL 영속) — pageSize 자체는 URL 미영속.
+    updateParams({ ...searchParams, page: 1 });
   };
 
   return (
@@ -161,6 +169,7 @@ export function ContentsContents() {
         // 쿼리 게이트(enabled=false) 시 isLoading=false 로 떨어지므로,
         // PAGE_SIZE 공통코드 로딩 중인 빈 시간을 로딩 상태로 표시 — 빈 화면 방지.
         isLoading={isLoading || !isContentsQueryEnabled}
+        pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
       />

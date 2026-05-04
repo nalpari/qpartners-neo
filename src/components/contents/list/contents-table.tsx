@@ -19,7 +19,6 @@ import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
-import { usePageSize } from "@/hooks/use-page-size";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
@@ -209,6 +208,8 @@ interface ContentsTableProps {
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
+  /** 부모(ContentsContents) 의 usePageSize 단일 출처 — URL 미영속이라 새로고침 시 sort=1 복귀. */
+  pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
 }
@@ -219,12 +220,12 @@ export function ContentsTable({
   data,
   meta,
   isLoading,
+  pageSize,
   onPageChange,
   onPageSizeChange,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
   // APPROVER 공통코드는 사내 사용자에게만 최종확인자 컬럼 표시 — 비사내 fetch 생략
   const { labelMap: approverLabelMap, isLoading: isLoadingApprover } = useApprover({
     enabled: isInternal,
@@ -247,10 +248,6 @@ export function ContentsTable({
   const currentPage = meta?.page ?? 1;
   const totalPages = meta?.totalPages ?? 1;
 
-  const handlePerPageChange = (value: number) => {
-    setPerPage(value);
-    onPageSizeChange(value);
-  };
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
@@ -445,7 +442,7 @@ export function ContentsTable({
             </Button>
           </Link>
         )}
-        <PageSizeSelect value={perPage} onChange={handlePerPageChange} />
+        <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
       </div>
     </div>
   );
