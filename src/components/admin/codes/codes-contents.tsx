@@ -260,17 +260,14 @@ export function CodesContents() {
         }
       }
 
-      // 2) 편집중 셀 → pending commit (저장 직전 입력값 캡처)
-      if (headerEditingCell && !headerEditingCell.rowId.startsWith("new-")) {
-        commitHeaderEdit();
-      }
-      if (editingCell && !editingCell.rowId.startsWith("new-")) {
-        commitDetailEdit();
-      }
+      // 2) 편집중 셀의 마지막 입력값은 ref 에서 직접 캡처 (아래 extra 머지).
+      //    여기서 commitHeaderEdit/commitDetailEdit 을 호출하면 ref 가 비워져
+      //    extra 가 항상 빈 값이 되므로 마지막 셀 저장이 누락됨 (이전 패치 회귀 방지).
+      //    ref/editingCell 정리는 성공 분기의 handleHeaderEditCancel/handleEditCancel 가 담당.
 
       // 3) Header pending 일괄 저장 — 행별 PUT (필드 변환은 convertHeaderField).
-      //    React state 동기 batch 갱신 후 next render 가 아닌 현 호출 시점에서 즉시 사용해야 하므로,
-      //    바로 위 commit 직후에 발생할 수 있는 누락분은 ref 에서 직접 한 번 더 추출해 머지한다.
+      //    closure 의 headerPending 은 이전 셀 전환 시 commitEdit 으로 누적된 분만 포함하므로,
+      //    현재 편집중인 셀의 입력값은 ref 에서 직접 추출해 머지한다.
       const headerExtra: Record<string, Record<string, string>> = {};
       if (headerEditingCell && !headerEditingCell.rowId.startsWith("new-")) {
         const v = headerEditRef.current[headerEditingCell.field];
@@ -352,7 +349,6 @@ export function CodesContents() {
     headerPending,
     headerUpdateMutation,
     handleHeaderEditCancel,
-    commitHeaderEdit,
     clearHeaderPending,
     detailNewRow,
     detailNewRowRef,
@@ -362,7 +358,6 @@ export function CodesContents() {
     detailEditRef,
     detailPending,
     handleEditCancel,
-    commitDetailEdit,
     clearDetailPending,
     openAlert,
     selectedHeaderId,
