@@ -5,6 +5,10 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { AUTH_ROLE_TO_TARGET, getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import {
+  reconcileInlineImages,
+  unlinkInlineImages,
+} from "@/lib/inline-image-cleanup";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS, targetTypeValues } from "@/lib/schemas/common";
@@ -56,19 +60,44 @@ export async function GET(request: NextRequest) {
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
     const andConditions: Prisma.ContentWhereInput[] = [];
 
-    // 카테고리 필터 — 사용자가 지정한 categoryIds 로 some 매칭.
+    // 카테고리 필터 — 멀티 선택 시 한 콘텐츠가 여러 categoryId 와 매핑되어 있으면
+    // `categories: { some: { categoryId: { in: [...] } } }` 가 SQL JOIN 으로 컴파일되며
+    // count/findMany 모두 매핑 행 수만큼 콘텐츠가 중복 카운트되는 현상이 관측됨
+    // (예: 営業 단일 0건, 技術 단일 1건인데 멀티 선택 시 2건).
+    //
+    // 따라서 `ContentCategory` 에서 `distinct contentId` 를 먼저 조회해 `id IN [...]` 로
+    // 변환한다. 이렇게 하면 count/findMany 모두 콘텐츠 단위로 정확히 집계된다.
+    // 추가 쿼리 1회 비용은 contentId 만 select 하므로 가볍다.
+    //
     // Number("")==0, !isNaN(0)==true 로 0 이 통과되는 것을 막기 위해 양의 정수만 허용.
     // Number.isInteger 는 NaN/Infinity 도 제외하므로 isFinite 중복 불필요.
+    let categoryEmpty = false;
     if (categoryIds) {
       const parsedIds = categoryIds
         .split(",")
         .map(Number)
         .filter((n) => Number.isInteger(n) && n > 0);
       if (parsedIds.length > 0) {
-        andConditions.push({
-          categories: { some: { categoryId: { in: parsedIds } } },
+        const ccRows = await prisma.contentCategory.findMany({
+          where: { categoryId: { in: parsedIds } },
+          select: { contentId: true },
+          distinct: ["contentId"],
         });
+        const filteredContentIds = ccRows.map((r) => r.contentId);
+        if (filteredContentIds.length === 0) {
+          // 매핑된 콘텐츠가 없음 → fast-path 0 응답
+          categoryEmpty = true;
+        } else {
+          andConditions.push({ id: { in: filteredContentIds } });
+        }
       }
+    }
+
+    if (categoryEmpty) {
+      return NextResponse.json({
+        data: [],
+        meta: { total: 0, page, pageSize, totalPages: 0 },
+      });
     }
 
     // publication window 경계값 일관성 — 동일 where 절 안의 now 를 상수화.
@@ -94,12 +123,12 @@ export async function GET(request: NextRequest) {
       }
     } else {
       // 비사내 사용자:
-      // - 사내전용 카테고리 제외 (internalOnly 파라미터와 무관하게 강제 — 이전 bypass 차단)
+      // - 노출 결정은 게시대상(ContentTarget) 만으로 한다 (운영 정책 갱신).
+      //   카테고리는 분류 라벨일 뿐 노출 차단 기준이 아니며, 사내 전용 카테고리 라벨은
+      //   응답 시점의 buildCategoryTree({ includeInternal: false }) 가 자동 제외한다.
+      //   → 콘텐츠 자체는 게시대상 매칭 시 노출되되 사내 전용 카테고리 라벨만 숨김.
       // - 역할 기반으로 targetType 서버 강제 (쿼리 파라미터 무시)
       // - publication window 엄격 적용
-      andConditions.push({
-        categories: { none: { category: { isInternalOnly: true } } },
-      });
       andConditions.push({
         targets: {
           some: {
@@ -187,7 +216,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[GET /api/contents]", error);
+    logError("GET /api/contents", error);
     return NextResponse.json(
       { error: "Failed to fetch contents" },
       { status: 500 },
@@ -243,33 +272,47 @@ export async function POST(request: NextRequest) {
         ? (contentData.publishedAt ?? new Date())
         : undefined;
 
-    const content = await prisma.content.create({
-      data: {
-        ...contentData,
-        publishedAt,
-        userType: user.userType,
-        userId: user.userId,
-        createdBy: user.userId,
-        authorDepartment:
-          contentData.authorDepartment ?? user.department ?? undefined,
-        targets: targets
-          ? { create: targets }
-          : undefined,
-        categories: categoryIds
-          ? {
-              create: categoryIds.map((categoryId) => ({
-                categoryId,
-                createdBy: user.userId,
-              })),
-            }
-          : undefined,
-      },
-      include: {
-        targets: true,
-        // GET/PUT과 동일하게 트리 구조 응답을 위해 CATEGORY_TREE_INCLUDE 사용
-        categories: { include: { category: CATEGORY_TREE_INCLUDE } },
-      },
+    // 본문 임베드 이미지 cleanup 을 같은 트랜잭션 안에서 수행 — 콘텐츠 INSERT 가 롤백되면
+    // stamp/delete 도 자동 원복. 디스크 unlink 는 commit 후 별도 처리(실패해도 정합성 영향 없음).
+    const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
+      const created = await tx.content.create({
+        data: {
+          ...contentData,
+          publishedAt,
+          userType: user.userType,
+          userId: user.userId,
+          createdBy: user.userId,
+          authorDepartment:
+            contentData.authorDepartment ?? user.department ?? undefined,
+          targets: targets ? { create: targets } : undefined,
+          categories: categoryIds
+            ? {
+                create: categoryIds.map((categoryId) => ({
+                  categoryId,
+                  createdBy: user.userId,
+                })),
+              }
+            : undefined,
+        },
+        include: {
+          targets: true,
+          categories: { include: { category: CATEGORY_TREE_INCLUDE } },
+        },
+      });
+
+      const result = await reconcileInlineImages({
+        kind: "create",
+        tx,
+        contentId: created.id,
+        body: contentData.body ?? null,
+        user: { userType: user.userType, userId: user.userId },
+      });
+
+      return { content: created, unlinkPaths: result.unlinkPaths };
     });
+
+    // 트랜잭션 commit 후 디스크 unlink (실패해도 응답에는 영향 없음).
+    await unlinkInlineImages(unlinkPaths, "[POST /api/contents]");
 
     // POST는 requireMenuPermission("CONTENT","create") 통과자 = 사내 사용자이므로
     // includeInternal=true (PUT detail과 동일 정책)

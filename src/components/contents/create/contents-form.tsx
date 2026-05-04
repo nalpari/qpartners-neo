@@ -41,6 +41,8 @@ interface ContentDetailResponse {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** 서버에서 계산한 갱신 이력 여부 — createdAt !== updatedAt 시 true. */
+  hasBeenUpdated?: boolean;
   targets: { targetType: string; startAt: string | null; endAt: string | null }[];
   categories: {
     id: number;
@@ -147,9 +149,12 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
   const updater = mode === "edit" && existingData
     ? (existingData.createdBy ?? "")
     : "";
-  const updateDate = mode === "edit" && existingData
-    ? formatDate(new Date(existingData.updatedAt))
-    : "";
+  // 갱신일 — 실제로 수정·저장이 완료된 경우(서버 hasBeenUpdated=true)에만 표시.
+  // 최초 등록 직후 수정 화면 진입 시 createdAt===updatedAt 이므로 빈 값을 유지.
+  const updateDate =
+    mode === "edit" && existingData && existingData.hasBeenUpdated
+      ? formatDate(new Date(existingData.updatedAt))
+      : "";
   const department = mode === "edit" && existingData
     ? (existingData.authorDepartment ?? "")
     : (loginUser?.deptNm ?? "");
@@ -198,6 +203,23 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     });
   };
 
+  const handleContentUploadError = (error: unknown) => {
+    // 서버가 일본어 메시지를 내려주는 경우 그대로 노출 — 그 외에는 일반화 메시지.
+    let message = "画像のアップロードに失敗しました。しばらくしてからお試しください。";
+    if (isAxiosError(error) && error.response) {
+      const resData: unknown = error.response.data;
+      const serverMsg =
+        resData != null &&
+        typeof resData === "object" &&
+        "error" in resData &&
+        typeof (resData as { error: unknown }).error === "string"
+          ? ((resData as { error: string }).error)
+          : null;
+      if (serverMsg) message = serverMsg;
+    }
+    openAlert({ type: "alert", message });
+  };
+
   const handleSave = async () => {
     // 필수항목 검증
     if (!approver) {
@@ -210,6 +232,11 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     }
     if (isHtmlEmpty(content)) {
       openAlert({ type: "alert", message: "内容は必須入力項目です。" });
+      return;
+    }
+    // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 함.
+    if (selectedCategoryIds.length === 0) {
+      openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
       return;
     }
 
@@ -322,6 +349,7 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
           content={content}
           onContentChange={setContent}
           onContentParseError={handleContentParseError}
+          onContentUploadError={handleContentUploadError}
         />
 
         <ContentsFormAttachment

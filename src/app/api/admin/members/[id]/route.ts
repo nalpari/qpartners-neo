@@ -5,6 +5,7 @@ import { requireMenuPermission } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { logError } from "@/lib/log-error";
+import { prisma } from "@/lib/prisma";
 import { fetchQspUserDetail, parseQspDate, buildQspPreservedFields } from "@/lib/qsp-member";
 import type { QspMemberDetail } from "@/lib/qsp-member";
 import {
@@ -14,6 +15,7 @@ import {
   STATUS_TO_STAT_CD,
   lookupStatCd,
   normalizeAuthCdToUserRole,
+  fallbackUserRoleFromUserTp,
 } from "@/lib/schemas/member";
 import { getUserTypeLabelMap } from "@/lib/user-type-labels";
 import type { MemberUpdateInput } from "@/lib/schemas/member";
@@ -130,7 +132,11 @@ function mapQspDetailToResponse(
     lastNameKana: d.user2ndNmKana ?? "",
     email: d.email ?? "",
     userType: (d.userTp ? userTypeLabelMap.get(d.userTp) : undefined) ?? "unknown",
-    userRole: normalizeAuthCdToUserRole(d.authCd),
+    // authCd 누락 회원(QSP 응답 결손) 은 userTp + storeLvl 기반으로 폴백 — display 한정.
+    // 권한 결정 경로는 JWT/QSP 직접 값을 사용하므로 본 폴백은 영향 없음 (member.ts 주석 참조).
+    userRole:
+      normalizeAuthCdToUserRole(d.authCd) ||
+      fallbackUserRoleFromUserTp(d.userTp, d.storeLvl),
     companyName: d.compNm ?? "",
     companyNameKana: d.compNmKana ?? "",
     zipcode: d.compPostCd ?? "",
@@ -306,6 +312,35 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // userRole 동적 검증 — 권한관리(qp_roles) 테이블 기반 (Redmine #2178).
+    // SUPER_ADMIN/ADMIN 은 일반회원에게 부여 불가, 비활성(isActive=false) 도 차단.
+    // 부여 불가 권한(예: SEKO 정책)은 권한관리 화면에서 사용여부=N 으로 운영자가 제어.
+    if (result.data.userRole !== undefined) {
+      const roleCode = result.data.userRole;
+      if (roleCode === "SUPER_ADMIN" || roleCode === "ADMIN") {
+        return NextResponse.json(
+          {
+            error: "この権限はユーザーに付与できません",
+            details: [{ field: "userRole", message: "SUPER_ADMIN/ADMIN 付与不可" }],
+          },
+          { status: 400 },
+        );
+      }
+      const role = await prisma.qpRole.findUnique({
+        where: { roleCode },
+        select: { isActive: true },
+      });
+      if (!role || !role.isActive) {
+        return NextResponse.json(
+          {
+            error: "指定された権限は存在しないか無効です",
+            details: [{ field: "userRole", message: "存在しない/無効な権限コード" }],
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // 4. userTp 파라미터 검증 + 대상 회원 QSP 상세 조회
     const userTpResult = userTpSchema.safeParse(request.nextUrl.searchParams.get("userTp"));
     if (!userTpResult.success) {
@@ -377,8 +412,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
       if (isRestoringToActive) {
         // 복구 경로: userRole + twoFactorEnabled 둘 다 필수.
-        // `result.data.userRole` 은 `z.enum(assignableRoleValues).optional()` 이므로
-        // `undefined` 또는 유효 enum 값 — 빈 문자열("") 우회는 구조적으로 불가.
+        // `result.data.userRole` 은 위 동적 DB 검증을 이미 통과했으므로 활성 + SUPER_ADMIN/ADMIN
+        // 외 권한 코드 — `undefined` 또는 검증 통과한 문자열만 도달.
         const missingRequired: string[] = [];
         if (result.data.userRole === undefined) missingRequired.push("userRole");
         if (result.data.twoFactorEnabled === undefined) missingRequired.push("twoFactorEnabled");

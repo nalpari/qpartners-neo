@@ -71,13 +71,24 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   const draftMutation = useMutation({
     mutationFn: submitToApi,
-    onSuccess: () => {
+    onSuccess: (res) => {
       void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      // Issue #2177 (1) — 임시저장 후 현재 화면 유지.
+      // create/copy 모드: 같은 ID 의 편집 화면으로 replace (URL 만 갱신, 폼 유지).
+      // edit 모드: 라우팅 없이 상세 쿼리만 invalidate 하여 첨부/메타 갱신 반영.
+      const { id } = res.data.data;
       openAlert({
         type: "alert",
         message: "下書き保存しました。",
         onConfirm: () => {
-          router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
+          if (mode === "edit") {
+            void queryClient.invalidateQueries({
+              queryKey: ["mass-mails", String(editId)],
+              refetchType: "all",
+            });
+          } else {
+            router.replace(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
+          }
         },
       });
     },
@@ -88,11 +99,12 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   });
 
   // Design Ref: §3.3 — 필수항목 검증
+  // Issue #2177 (2) — 메시지 형식 통일: "{項目名}は必須入力項目です。"
   function validate(): string | null {
-    if (!senderName.trim()) return "送信者名は必須です。";
-    if (targets.length === 0) return "配信対象を1つ以上選択してください。";
-    if (!subject.trim()) return "件名は必須です。";
-    if (!body.trim()) return "本文は必須です。";
+    if (!senderName.trim()) return "送信者名は必須入力項目です。";
+    if (targets.length === 0) return "配信対象は必須入力項目です。";
+    if (!subject.trim()) return "件名は必須入力項目です。";
+    if (!body.trim()) return "本文は必須入力項目です。";
     return null;
   }
 
@@ -123,8 +135,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     });
   };
 
-  // Plan SC: 下書き保存 → status: draft (임시저장은 빈 필드 허용 — 의도적 미검증)
+  // Plan SC: 下書き保存 → status: draft
+  // Issue #2177 (2) — 필수항목 미입력 시 alert 으로 항목별 메시지 표시.
   const handleDraft = () => {
+    const error = validate();
+    if (error) {
+      openAlert({ type: "alert", message: error });
+      return;
+    }
     const fd = buildFormData({
       senderName, targets, optOut, subject, body,
       status: "draft", files,

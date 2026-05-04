@@ -19,7 +19,10 @@ export const createHomeNoticeSchema = z
     startAt: z.coerce.date(),
     endAt: z.coerce.date(),
     title: z.string().min(1, "タイトルは必須です").max(100, "タイトルは100文字以内で入力してください"),
-    content: z.string().min(1, "内容は必須です"),
+    content: z
+      .string()
+      .min(1, "内容は必須です")
+      .max(200, "内容は200文字以内で入力してください"),
     url: z
       .string()
       .url()
@@ -40,7 +43,8 @@ export const createHomeNoticeSchema = z
       data.targetGeneral,
     { message: "掲載対象を1つ以上選択してください" },
   )
-  .refine((data) => data.startAt < data.endAt, {
+  // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
+  .refine((data) => data.startAt <= data.endAt, {
     message: "開始日は終了日より前に設定してください",
     path: ["startAt"],
   });
@@ -60,7 +64,11 @@ export const updateHomeNoticeSchema = z
       .min(1, "タイトルは必須です")
       .max(100, "タイトルは100文字以内で入力してください")
       .optional(),
-    content: z.string().min(1, "内容は必須です").optional(),
+    content: z
+      .string()
+      .min(1, "内容は必須です")
+      .max(200, "内容は200文字以内で入力してください")
+      .optional(),
     url: z
       .string()
       .url()
@@ -92,7 +100,8 @@ export const updateHomeNoticeSchema = z
   )
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) return data.startAt < data.endAt;
+      // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
+      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
     { message: "開始日は終了日より前に設定してください", path: ["startAt"] },

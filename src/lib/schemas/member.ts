@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { roleCodeFormatSchema } from "@/lib/schemas/common";
+
 // ─── QSP statCd ↔ TO-BE status 매핑 (공용) ───
 
 /** QSP statCd → TO-BE status (사양서 기준: A=정상, D=삭제, R=탈퇴) */
@@ -195,26 +197,60 @@ export function normalizeAuthCdToUserRole(
   return authCd;
 }
 
-// ─── 회원 수정 요청 ───
-
-/** 관리자가 일반회원에게 부여 가능한 권한 코드.
- *  시공점(SEKO) 제외 — 일반회원 수정 시 시공점 권한 부여 불가 정책 (2026-04-23).
- *  FE `ROLE_OPTIONS_GENERAL` 와 SSoT 동기. UI 에서 옵션이 숨겨져도 서버에서 재검증.
+/**
+ * authCd 누락 회원의 userRole 폴백 — userTp + storeLvl 기반.
+ *
+ * QSP 응답에서 authCd 가 빈 값으로 도착하는 회원이 존재 (TODO: BE 정합성 추적 대상).
+ * normalizeAuthCdToUserRole 가 빈 문자열을 반환할 때, 회원 상세 화면의 ユーザー権限 셀이
+ * "-" 로만 표시되어 운영자가 권한 식별 불가.
+ *
+ * 매핑 정책 — `resolveAuthRole` (login/auto-login) 과 동일 (SSoT):
+ *   - ADMIN  → "ADMIN"  (SUPER_ADMIN 정확도 필요한 경로는 별도 ADMIN_ROLE 코드 조회 사용)
+ *   - STORE  → storeLvl=="1" → "1ST_STORE", 그 외 → "2ND_STORE" (최소 권한 폴백)
+ *   - SEKO   → "SEKO"
+ *   - GENERAL → "GENERAL"
+ *   - 기타/null → "" (호출측이 "-" 표시)
+ *
+ * 보안 — 본 함수는 표시(display) 용 폴백이며 권한 부여 결정에 사용하지 않는다.
+ * 권한 결정 경로는 JWT/QSP 의 authCd 직접 사용, 매트릭스 기반 가드를 거친다.
  */
-const assignableRoleValues = ["1ST_STORE", "2ND_STORE", "GENERAL"] as const;
+export function fallbackUserRoleFromUserTp(
+  userTp: string | null | undefined,
+  storeLvl: string | null | undefined,
+): string {
+  switch (userTp) {
+    case "ADMIN":
+      return "ADMIN";
+    case "STORE":
+      return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";
+    case "SEKO":
+      return "SEKO";
+    case "GENERAL":
+      return "GENERAL";
+    default:
+      return "";
+  }
+}
+
+// ─── 회원 수정 요청 ───
 
 /**
  * 회원 수정 요청 스키마.
  *
- * ※ string/enum 필드(userRole, newsRcptYn, status)는 모두 `z.enum(...)` 으로 제약되어
- *   빈 문자열("") 이 입력값으로 통과되지 않는다 — route.ts 의 `??` 체인이 의도치 않게
- *   빈 값을 QSP 로 전송할 가능성은 enum 단계에서 차단된다.
+ * userRole 은 권한관리(qp_roles) 테이블의 동적 데이터로 검증한다 (Redmine #2178):
+ *   - 형식 가드는 권한등록 schema 와 동일한 `roleCodeFormatSchema` 재사용 (PR #130 리뷰 후속).
+ *     첫 글자 A-Z/0-9 허용으로 시드의 `1ST_STORE` / `2ND_STORE` 거부 회귀 차단.
+ *     이상값을 라우트 진입 전 컷팅해 매 PUT 마다 prisma.qpRole 조회 라운드트립 절감 +
+ *     enumeration 시도(임의 문자열 주입) 차단.
+ *   - 실제 매트릭스 부합 여부는 라우트의 `prisma.qpRole.findUnique` + isActive 검증으로 fail-closed.
+ *
+ * ※ enum 필드(newsRcptYn, status)는 빈 문자열이 입력값으로 통과되지 않는다.
  * ※ boolean 필드는 `.optional()` 로 `undefined` 판별 가능 — route.ts 에서 `!== undefined`
  *   검사로 `false` 를 정상 처리(??로 쓰면 false 가 폴백으로 빠짐).
  * ※ `status` 의 enum 은 `WRITABLE_STATUSES` 를 참조해 `STATUS_TO_STAT_CD` 와 SSoT 동기.
  */
 export const memberUpdateSchema = z.object({
-  userRole: z.enum(assignableRoleValues).optional(),
+  userRole: roleCodeFormatSchema.optional(),
   twoFactorEnabled: z.boolean().optional(),
   loginNotification: z.boolean().optional(),
   attributeChangeNotification: z.boolean().optional(),

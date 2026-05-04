@@ -148,11 +148,17 @@ export function TwoFactorAuthPopup() {
     if (sendCalledRef.current || missingAuthData) return;
     sendCalledRef.current = true;
     sendMutateRef.current();
+  }, [missingAuthData]);
 
+  // Issue #2157 — timer cleanup 을 unmount 전용 useEffect 로 분리.
+  // 기존: send useEffect 의 cleanup 에서 clearInterval → StrictMode 의 첫 mount cleanup 시점에
+  //       빠른 mutate 응답이 이미 onSuccess→startTimer 를 호출했다면 timer 가 즉시 죽고 재시작 X (race).
+  // 해결: 컴포넌트 unmount 시에만 timer 정리하도록 빈 deps 의 useEffect 분리.
+  useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [missingAuthData]);
+  }, []);
 
   const timerMinutes = Math.floor(remainingSeconds / 60);
   const timerSeconds = remainingSeconds % 60;

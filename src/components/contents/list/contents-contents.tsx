@@ -69,10 +69,14 @@ export function ContentsContents() {
   // URL 쿼리에서 검색 상태 파싱
   const searchParams = parseSearchParams(urlParams);
 
-  // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음)
+  // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음).
+  // `scroll: false` — 검색·페이지 이동·페이지 사이즈 변경 모두에서 현재 스크롤 위치 유지.
+  // Next.js `router.replace` 기본값이 `scroll: true` 라 URL 변경마다 상단으로 점프하던
+  // 결함을 차단 (Redmine #2163). 사용자가 필터/페이지를 조작해도 결과만 갱신되고
+  // 화면 위치는 그대로 — 긴 필터 패널 아래에서 검색해도 다시 스크롤할 필요 없다.
   const updateParams = useCallback(
     (next: SearchParams) => {
-      router.replace(`/contents${buildQueryString(next)}`);
+      router.replace(`/contents${buildQueryString(next)}`, { scroll: false });
     },
     [router],
   );

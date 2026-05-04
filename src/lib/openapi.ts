@@ -461,7 +461,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시에도 동일 200 응답 (이메일 열거 공격 방지).",
+        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156).",
         requestBody: {
           required: true,
           content: {
@@ -489,14 +489,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": {
-            description: "Validation failed",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
-              },
-            },
-          },
+          "400": errorResponse("입력값 검증 실패 — 회원 미존재와 동일한 일본어 메시지로 통일 (Issue #2156)"),
+          "404": errorResponse("일치하는 회원 정보 없음 (一致する会員情報がありません。入力情報を再度ご確認ください。)"),
           "429": errorResponse("요청 횟수 초과 (시간당 3건)"),
           "500": errorResponse("서버 오류 (메일 발송 실패 포함)"),
           "502": errorResponse("외부 서버 연결 실패"),
@@ -1949,6 +1943,92 @@ export const openApiSpec: OpenAPIV3.Document = {
           "409": errorResponse("동시성 충돌 — 다른 요청에 의해 첨부파일이 변경됨"),
           "411": errorResponse("Content-Length 헤더 누락"),
           "413": errorResponse("Content-Length 초과"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/inline-images": {
+      post: {
+        tags: ["Content"],
+        summary: "本文埋め込み画像アップロード (BlockNote uploadFile)",
+        description:
+          "BlockNote 에디터의 `uploadFile` 훅에서 호출. 폼 저장 전 `contentId=null` 상태로 디스크/DB에 선존재. 폼 저장(`POST/PUT /contents`) 시 본문이 참조한 ID만 stamp 되고 나머지는 즉시 정리.",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["file"],
+                properties: {
+                  file: {
+                    type: "string",
+                    format: "binary",
+                    description: "5MB 이하 jpg/jpeg/png/gif/webp 이미지",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "업로드 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        url: {
+                          type: "string",
+                          example: "/api/inline-images/42",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("파일 검증 실패 (확장자/MIME/빈 파일)"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("메뉴 권한 없음 (CONTENT.create / .update 모두 거부)"),
+          "411": errorResponse("Content-Length 헤더 누락"),
+          "413": errorResponse("Content-Length 초과 (5MB)"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+    "/inline-images/{id}": {
+      get: {
+        tags: ["Content"],
+        summary: "本文埋め込み画像取得 (인증 사용자)",
+        description:
+          "BlockNote 본문 렌더 시 `<img>` 호출용. 인증 사용자 누구나 가능 (게시대상/published 검증 미적용 — 본문 렌더 폭주 방지). 다운로드 로그 미기록.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "이미지 바이너리",
+            content: {
+              "image/*": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("경로 검증 실패"),
+          "404": errorResponse("Not found / 디스크 부재"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -3627,7 +3707,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "categories", "targets", "attachmentCount",
+          "hasBeenUpdated", "isNew", "isUpdated", "categories", "targets", "attachmentCount",
         ],
         properties: {
           id: { type: "integer" },
@@ -3638,6 +3718,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           publishedAt: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
+          hasBeenUpdated: {
+            type: "boolean",
+            description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
+          },
           isNew: { type: "boolean", description: "생성 후 5일 이내" },
           isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
           categories: {
@@ -3663,7 +3747,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: [
           "id", "title", "status", "viewCount", "createdAt", "updatedAt",
-          "isNew", "isUpdated", "categories", "targets", "attachments",
+          "hasBeenUpdated", "isNew", "isUpdated", "categories", "targets", "attachments",
         ],
         properties: {
           id: { type: "integer" },
@@ -3681,6 +3765,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           publishedAt: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
+          hasBeenUpdated: {
+            type: "boolean",
+            description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
+          },
           isNew: { type: "boolean", description: "생성 후 5일 이내" },
           isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
           categories: {
@@ -3949,7 +4037,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           startAt: { type: "string", format: "date-time", example: "2026-03-20T00:00:00Z" },
           endAt: { type: "string", format: "date-time", example: "2026-03-30T23:59:59Z" },
           title: { type: "string", maxLength: 100, example: "システムメンテナンスのお知らせ" },
-          content: { type: "string", example: "공지 내용 텍스트" },
+          content: { type: "string", maxLength: 200, example: "공지 내용 텍스트" },
           url: { type: "string", maxLength: 500, nullable: true, example: "https://example.com" },
         },
       },
@@ -3966,7 +4054,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
           title: { type: "string", maxLength: 100 },
-          content: { type: "string" },
+          content: { type: "string", maxLength: 200 },
           url: { type: "string", maxLength: 500, nullable: true },
         },
       },

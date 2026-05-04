@@ -45,7 +45,10 @@ const ALLOWED_ATTR = [
 ];
 
 const SAFE_HREF_PATTERN = /^(https?:|mailto:|#)/i;
-const SAFE_IMG_SRC_PATTERN = /^(https?:|data:image\/(png|jpe?g|gif|webp);base64,)/i;
+// 본문 임베드 이미지: `/api/inline-images/{id}` 절대 경로 (BlockNote uploadFile 결과)
+//   - 다른 상대 경로는 차단 — 임의 경로 src 우회 방지
+const SAFE_IMG_SRC_PATTERN =
+  /^(https?:|data:image\/(png|jpe?g|gif|webp);base64,|\/api\/inline-images\/\d+$)/i;
 
 // 표 컬럼 너비 보존용 — BlockNote가 출력하는 `<col style="width: Npx">` 만 허용한다.
 // 다른 inline style 을 허용하면 XSS(예: `expression(...)`, `background:url(javascript:...)`) 위험이 있으므로

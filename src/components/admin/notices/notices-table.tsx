@@ -272,8 +272,8 @@ export function NoticesTable({
     [user, openPopup],
   );
 
-  // 내용 셀 — 클릭 시 상세 팝업 오픈. (タイトル 컬럼은 일단 비노출 — 사용자 요청 §1)
-  const ContentCellRenderer = useMemo(() => {
+  // 제목 셀 — 클릭 시 상세 팝업 오픈. Issue #2148 — 표시값을 content → title 로 변경.
+  const TitleCellRenderer = useMemo(() => {
     const Renderer = (params: ICellRendererParams<NoticeListItem>) => {
       const rowData = params.data;
       if (!rowData) return null;
@@ -283,7 +283,7 @@ export function NoticesTable({
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] underline cursor-pointer text-left"
           onClick={() => openNoticeDetail(rowData.id)}
         >
-          {rowData.content}
+          {rowData.title}
         </button>
       );
     };
@@ -330,6 +330,8 @@ export function NoticesTable({
   }, [allVisibleSelected, someVisibleSelected, toggleAllVisible]);
 
   const handleRegister = () => {
+    // Issue #2146 (2) — createdAt 을 미리 채우지 않는다. 폼 표시값이 실제 DB 저장 시각과 어긋나는 문제
+    // 차단. 신규 등록 모달에서 등록일은 "—" 로 표시되고, 저장 응답 후 실제 createdAt 으로 갱신된다.
     const emptyForm: NoticeFormData = {
       targets: [],
       startDate: "",
@@ -339,7 +341,7 @@ export function NoticesTable({
       url: "",
       author: "",
       authorId: "",
-      createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      createdAt: "",
       updater: "",
       updaterId: "",
       updatedAt: "",
@@ -372,10 +374,10 @@ export function NoticesTable({
         headerClass: "ag-header-cell-center",
       },
       {
-        headerName: "お知らせ内容",
-        field: "content",
+        headerName: "タイトル",
+        field: "title",
         flex: 2,
-        cellRenderer: ContentCellRenderer,
+        cellRenderer: TitleCellRenderer,
         headerClass: "ag-header-cell-center",
       },
       {
@@ -411,10 +413,12 @@ export function NoticesTable({
         headerClass: "ag-header-cell-center",
       },
       {
+        // updatedBy 가 null 이면 갱신 이력 없음으로 갱신일도 비운다 (Redmine #2175).
+        // Prisma @updatedAt 이 INSERT 시 createdAt 과 동일 시각으로 채워지는 부수 효과 차단.
         headerName: "更新日",
-        field: "updatedAt",
         flex: 0.8,
-        valueFormatter: (p) => formatDate(p.value as string),
+        valueGetter: (p) => (p.data?.updatedBy ? p.data.updatedAt : ""),
+        valueFormatter: (p) => (p.value ? formatDate(p.value as string) : "-"),
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
       },
@@ -427,7 +431,7 @@ export function NoticesTable({
         headerClass: "ag-header-cell-center",
       },
     ],
-    [ContentCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
+    [TitleCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
   );
 
   // 그리드 context — cell renderer 가 최신 selectedIds / 토글 핸들러를 참조하도록 매 렌더 갱신.

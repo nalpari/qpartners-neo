@@ -1,5 +1,17 @@
 // Design Ref: §2, §3 — API 응답 타입 + boolean↔Y/N 변환 유틸
 
+/**
+ * 권한 목록 useQuery 쿼리키 SSoT (PR #130 리뷰 후속).
+ * 권한관리 화면(전체 목록)과 회원수정 팝업(activeOnly=true) 가 동일 헬퍼를 사용해
+ * 캐시 키 충돌·invalidate 누락 회귀를 차단한다.
+ *
+ * @example
+ *   useQuery({ queryKey: rolesQueryKey(true), ... })
+ *   queryClient.invalidateQueries({ queryKey: rolesQueryKey() }); // 모든 activeOnly variant
+ */
+export const rolesQueryKey = (activeOnly?: boolean) =>
+  activeOnly === undefined ? (["roles"] as const) : (["roles", activeOnly] as const);
+
 /** API 응답 권한 아이템 */
 export interface RoleApiItem {
   id: number;

@@ -1,12 +1,16 @@
 import { z } from "zod";
 
+import { menuCodeFormatSchema } from "@/lib/schemas/common";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Menu ───
 
 export const createMenuSchema = z.object({
   parentId: z.number().int().positive().nullable().default(null),
-  menuCode: z.string().min(1, "menuCode는 필수입니다").max(50),
+  // menuCode 형식 강제 — 권한관리 PUT 의 `menuCodeFormatSchema` 와 동일 정규식 공유.
+  // 등록 단계에서 막지 않으면 잘못된 menuCode 가 DB 에 남아 권한관리 저장이 차단됨 (Redmine #2164).
+  menuCode: menuCodeFormatSchema,
   menuName: z.string().min(1, "menuName은 필수입니다").max(100),
   pageUrl: z.string().max(500).nullable().default(null),
   isActive: z.boolean().default(true),
