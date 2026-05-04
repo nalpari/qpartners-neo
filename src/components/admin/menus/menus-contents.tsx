@@ -15,6 +15,21 @@ import type { MenuFormState } from "./menus-types";
 import { EMPTY_FORM, toMenuItem, toCreateBody, toUpdateBody, toFormState } from "./menus-types";
 import type { MenuApiItem } from "./menus-types";
 
+/**
+ * (id → sortOrder) 맵에서 중복된 sortOrder 값들을 오름차순으로 반환.
+ * 빈 배열이면 중복 없음. 정렬 일괄 저장 전 검증용.
+ */
+function findDuplicateSortOrders(sorts: Map<number, number>): number[] {
+  const occurrences = new Map<number, number>();
+  for (const sort of sorts.values()) {
+    occurrences.set(sort, (occurrences.get(sort) ?? 0) + 1);
+  }
+  return Array.from(occurrences.entries())
+    .filter(([, count]) => count > 1)
+    .map(([sort]) => sort)
+    .sort((a, b) => a - b);
+}
+
 export function MenusContents() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
@@ -231,6 +246,9 @@ export function MenusContents() {
   };
 
   // Plan R-07: 정렬저장 — sortValuesRef 에 기록된 변경사항만 전송
+  // sortOrder 중복 검증 — 같은 부모(레벨) 내에서 sortOrder 가 충돌하면 저장 차단 + 안내.
+  // 변경 행만 보면 미변경 행과의 충돌을 놓치므로, 동일 레벨의 모든 행에 변경값을
+  // 적용한 최종 (id → sortOrder) 맵을 만들어 검사한다.
   const handleSortSave = () => {
     const items = Object.entries(sortValuesRef.current).map(([id, sortOrder]) => ({
       id: Number(id),
@@ -238,6 +256,42 @@ export function MenusContents() {
     }));
 
     if (items.length === 0) return;
+
+    const itemMap = new Map(items.map((it) => [it.id, it.sortOrder]));
+
+    // 1-Level 중복 체크
+    const level1Sorts = new Map<number, number>();
+    for (const m of menuTree) {
+      level1Sorts.set(m.id, itemMap.get(m.id) ?? m.sortOrder);
+    }
+    const level1Dup = findDuplicateSortOrders(level1Sorts);
+    if (level1Dup.length > 0) {
+      openAlert({
+        type: "alert",
+        message: `1-Levelの整列順序が重複しています (${level1Dup.join(", ")})。他の値を入力してください。`,
+        confirmLabel: "確認",
+      });
+      return;
+    }
+
+    // 2-Level 부모별 중복 체크
+    for (const parent of menuTree) {
+      if (parent.children.length === 0) continue;
+      const childSorts = new Map<number, number>();
+      for (const c of parent.children) {
+        childSorts.set(c.id, itemMap.get(c.id) ?? c.sortOrder);
+      }
+      const childDup = findDuplicateSortOrders(childSorts);
+      if (childDup.length > 0) {
+        openAlert({
+          type: "alert",
+          message: `「${parent.menuName}」配下の整列順序が重複しています (${childDup.join(", ")})。他の値を入力してください。`,
+          confirmLabel: "確認",
+        });
+        return;
+      }
+    }
+
     sortMutation.mutate(items);
   };
 
