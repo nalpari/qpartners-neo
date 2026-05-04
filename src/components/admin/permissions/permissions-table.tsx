@@ -338,11 +338,36 @@ export function PermissionsTable() {
     },
     onError: (error: unknown) => {
       console.error("[POST /api/roles] 권한 추가 실패:", error);
-      if (isAxiosError(error) && error.response?.status === 409) {
-        openAlert({ type: "alert", message: "既に存在する権限コードです。", confirmLabel: "確認" });
-      } else {
+      if (!isAxiosError(error)) {
         openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+        return;
       }
+      const status = error.response?.status;
+      if (status === 409) {
+        openAlert({ type: "alert", message: "既に存在する権限コードです。", confirmLabel: "確認" });
+        return;
+      }
+      if (status === 400) {
+        // 서버 Zod issues 의 첫 메시지를 노출 — 형식 위반/필수 누락 등을 사용자가 인지 가능.
+        const data = error.response?.data;
+        const issues = data && typeof data === "object" && "issues" in data
+          ? (data as { issues: unknown }).issues : undefined;
+        let detail = "";
+        if (Array.isArray(issues) && issues.length > 0) {
+          const first = issues[0];
+          if (first && typeof first === "object" && "message" in first
+              && typeof (first as { message: unknown }).message === "string") {
+            detail = (first as { message: string }).message;
+          }
+        }
+        openAlert({
+          type: "alert",
+          message: detail ? `入力値を確認してください。\n${detail}` : "入力値を確認してください。",
+          confirmLabel: "確認",
+        });
+        return;
+      }
+      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
     },
   });
 
