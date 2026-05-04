@@ -86,15 +86,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // - newSort > oldSort (아래로 이동): (oldSort, newSort] 범위의 다른 행을 -1
     // 예) [A:1, B:2, C:3] 에서 C 를 sort=2 로 수정 → B 가 3 으로 밀려 [A:1, C:2, B:3].
     // findUnique 결과가 없거나 headerId 가 다르면 shift 를 건너뛰고 update 가 P2025 throw.
+    //
+    // sortOrder 클램프: [1, count] 범위로 강제 (현재 행 포함). 1561 같은 큰 숫자/0/음수 입력 시
+    // 자동으로 마지막(count) 또는 첫 자리(1)로 보정 — 운영자 실수 방지.
     const detail = await prisma.$transaction(async (tx) => {
-      if (result.data.sortOrder !== undefined) {
+      const updateData = { ...result.data };
+      if (updateData.sortOrder !== undefined) {
         const existing = await tx.codeDetail.findUnique({
           where: { id: parsedDetailId.data },
           select: { sortOrder: true, headerId: true },
         });
         if (existing && existing.headerId === parsedId.data) {
+          const currentCount = await tx.codeDetail.count({
+            where: { headerId: parsedId.data },
+          });
+          const clampedSort = Math.max(1, Math.min(updateData.sortOrder, currentCount));
+          updateData.sortOrder = clampedSort;
+
           const oldSort = existing.sortOrder;
-          const newSort = result.data.sortOrder;
+          const newSort = clampedSort;
           if (newSort < oldSort) {
             await tx.codeDetail.updateMany({
               where: {
@@ -118,7 +128,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
       return tx.codeDetail.update({
         where: { id: parsedDetailId.data, headerId: parsedId.data },
-        data: result.data,
+        data: updateData,
       });
     });
 
