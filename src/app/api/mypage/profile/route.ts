@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
-import { getUserFromRequest } from "@/lib/jwt";
+import { COOKIE_NAME, getUserFromRequest, signToken } from "@/lib/jwt";
+import type { LoginUser } from "@/lib/schemas/auth";
 import { sendAttrChangeNotification } from "@/lib/notification-mail/attr-change-mail";
 import {
   fetchQspUserDetail,
@@ -468,9 +469,51 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    // ─── JWT 재발급 (GENERAL 한정) ───
+    // GENERAL 회원이 회사명/성명/전화번호/부서를 수정한 경우, 변경된 값을 토큰에 반영하여
+    // /api/auth/login-user-info 가 verifyToken 결과로 새 값을 반환하도록 한다.
+    // 이렇게 하지 않으면 mypage 수정 후 GNB·홈 등 LoginUser 캐시가 stale 토큰 값으로 덮이며,
+    // 사용자가 새로고침하거나 staleTime 경과 후 refetch 시 옛 회사명/성명이 재표시된다.
+    //
+    // ADMIN/STORE: 회사명/성명 수정 권한 없음 (서버에서 strip) — JWT 재발급 불필요
+    // SEKO: 본 API 미지원 (early return) — 해당 없음
+    let newToken: string | null = null;
+    if (user.userTp === "GENERAL") {
+      const newUserNm = [d.sei, d.mei]
+        .map((v) => v?.trim() ?? "")
+        .filter(Boolean)
+        .join(" ");
+      const updatedUser: LoginUser = {
+        ...user,
+        compNm: d.compNm?.trim() ? d.compNm.trim() : user.compNm,
+        userNm: newUserNm || user.userNm,
+        telNo: d.telNo?.trim() ? d.telNo.trim() : user.telNo,
+        deptNm: d.department?.trim() ? d.department.trim() : user.deptNm,
+      };
+      try {
+        newToken = await signToken(updatedUser);
+      } catch (error) {
+        // 토큰 재발급 실패는 본 응답을 막지 않음 — 사용자가 새로고침하면 옛 값 표시될 수
+        // 있으나, mypage 수정 자체는 QSP 에 이미 반영됨 (재로그인 시 새 토큰 발급).
+        console.error("[PUT /api/mypage/profile] JWT 재발급 실패:", error);
+      }
+    }
+
+    const response = NextResponse.json({
       data: { message: "保存されました" },
     });
+
+    if (newToken) {
+      response.cookies.set(COOKIE_NAME, newToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8, // 8시간 — 로그인 라우트와 동일 정책
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error("[PUT /api/mypage/profile]", error);
     return NextResponse.json(
