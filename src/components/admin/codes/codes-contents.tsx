@@ -296,9 +296,8 @@ export function CodesContents() {
           .map(([sort]) => sort)
           .sort((a, b) => a - b);
         if (duplicates.length > 0) {
-          throw new ValidationError(
-            `Sort Order が重複しています (${duplicates.join(", ")})。他の値を入力してください。`,
-          );
+          // 메시지 통일 — 공통코드/메뉴관리 양쪽에서 동일 문구 사용 (사용자 요청).
+          throw new ValidationError("順序が重複しています。");
         }
       }
 

@@ -264,13 +264,12 @@ export function MenusContents() {
     for (const m of menuTree) {
       level1Sorts.set(m.id, itemMap.get(m.id) ?? m.sortOrder);
     }
+    // 메시지 통일 — 공통코드/메뉴관리 양쪽에서 동일 문구 사용 (사용자 요청).
+    const DUPLICATE_MSG = "順序が重複しています。";
+
     const level1Dup = findDuplicateSortOrders(level1Sorts);
     if (level1Dup.length > 0) {
-      openAlert({
-        type: "alert",
-        message: `1-Levelの整列順序が重複しています (${level1Dup.join(", ")})。他の値を入力してください。`,
-        confirmLabel: "確認",
-      });
+      openAlert({ type: "alert", message: DUPLICATE_MSG, confirmLabel: "確認" });
       return;
     }
 
@@ -283,11 +282,7 @@ export function MenusContents() {
       }
       const childDup = findDuplicateSortOrders(childSorts);
       if (childDup.length > 0) {
-        openAlert({
-          type: "alert",
-          message: `「${parent.menuName}」配下の整列順序が重複しています (${childDup.join(", ")})。他の値を入力してください。`,
-          confirmLabel: "確認",
-        });
+        openAlert({ type: "alert", message: DUPLICATE_MSG, confirmLabel: "確認" });
         return;
       }
     }
