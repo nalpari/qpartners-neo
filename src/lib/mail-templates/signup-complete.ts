@@ -1,3 +1,5 @@
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
+
 /** HTML 특수문자 이스케이프 (XSS 방지) */
 function escapeHtml(str: string): string {
   return str
@@ -45,12 +47,12 @@ export function signupCompleteMailHtml({
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;background-color:#f5f5f5;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background-color:#ffffff;">
     <tr>
-      <td style="padding:30px 40px 20px;border-bottom:3px solid #003d7a;">
+      <td style="padding:30px 40px 20px;border-bottom:3px solid #003d7a;text-align:left;">
         <h1 style="margin:0;font-size:20px;color:#003d7a;">Q.PARTNERS</h1>
       </td>
     </tr>
     <tr>
-      <td style="padding:30px 40px;">
+      <td style="padding:30px 40px;text-align:left;">
         <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
           ${safeUserNm} 様
         </p>
@@ -69,7 +71,7 @@ export function signupCompleteMailHtml({
         <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
           以下のリンクよりログインし、サービスをご利用ください。
         </p>
-        <table cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+        <table cellpadding="0" cellspacing="0" align="left" style="margin:0 0 20px;">
           <tr>
             <td style="padding:12px 30px;background-color:#003d7a;border-radius:4px;">
               <a href="${loginUrl}" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;">ログインはこちら</a>
@@ -81,16 +83,15 @@ export function signupCompleteMailHtml({
         </p>
         <hr style="margin:20px 0;border:none;border-top:1px solid #eeeeee;">
         <p style="margin:0 0 20px;font-size:13px;line-height:1.8;color:#999999;">
-          ※このメールに心当たりがない場合は、お手数ですが破棄してください。<br>
-          ※본 메일은 Q.PARTNERS 회원가입 완료 안내입니다. 관련 없는 경우 삭제해 주세요.
+          ※本メールにお心当たりのない場合はご利用状況をご確認の上、ご不明な場合は下記連絡先までお問い合わせ下さい。<br>
+          ※本メールアドレスは送信専用です。返信いただきましてもお返事できませんので、ご了承ください
         </p>
       </td>
     </tr>
     <tr>
-      <td style="padding:20px 40px;background-color:#f8f9fa;text-align:center;">
-        <p style="margin:0;font-size:12px;color:#999999;">
-          Q.PARTNERS事務局<br>
-          &copy; Hanwha Qcells Japan
+      <td style="padding:20px 40px;background-color:#f8f9fa;text-align:left;">
+        <p style="margin:0;font-size:12px;line-height:1.8;color:#999999;">
+          ${MAIL_FOOTER_HTML}
         </p>
       </td>
     </tr>
