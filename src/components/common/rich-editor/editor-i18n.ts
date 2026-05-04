@@ -1,0 +1,54 @@
+/**
+ * RichEditor 내부에서 사용하는 일본어 라벨/메시지 사전.
+ * 변경/번역이 한 곳에서 일어나도록 모든 사용자 대면 문자열을 모은다.
+ */
+export const editorI18n = {
+  toolbar: {
+    blockType: "ブロックタイプ",
+    paragraph: "段落",
+    heading1: "見出し 1",
+    heading2: "見出し 2",
+    heading3: "見出し 3",
+    bold: "太字",
+    italic: "斜体",
+    strike: "取消線",
+    inlineCode: "インラインコード",
+    bulletList: "箇条書きリスト",
+    orderedList: "番号付きリスト",
+    blockquote: "引用",
+    codeBlock: "コードブロック",
+    image: "画像",
+    table: "テーブル",
+    undo: "元に戻す",
+    redo: "やり直し",
+    shortcuts: {
+      bold: "Cmd/Ctrl+B",
+      italic: "Cmd/Ctrl+I",
+      strike: "Cmd/Ctrl+Shift+S",
+      inlineCode: "Cmd/Ctrl+E",
+      undo: "Cmd/Ctrl+Z",
+      redo: "Cmd/Ctrl+Shift+Z",
+    },
+  },
+  slash: {
+    empty: "該当する項目がありません",
+    items: {
+      paragraph: { title: "段落", keywords: ["paragraph", "p", "text"] },
+      heading1: { title: "見出し 1", keywords: ["h1", "heading"] },
+      heading2: { title: "見出し 2", keywords: ["h2", "heading"] },
+      heading3: { title: "見出し 3", keywords: ["h3", "heading"] },
+      bulletList: { title: "箇条書きリスト", keywords: ["bullet", "ul", "list"] },
+      orderedList: { title: "番号付きリスト", keywords: ["number", "ol", "list"] },
+      blockquote: { title: "引用", keywords: ["quote", "blockquote"] },
+      codeBlock: { title: "コードブロック", keywords: ["code", "codeblock"] },
+      image: { title: "画像", keywords: ["image", "img"] },
+      table: { title: "テーブル", keywords: ["table"] },
+    },
+  },
+  ariaLabels: {
+    toolbar: "リッチテキストツールバー",
+    editor: "リッチテキスト本文",
+  },
+} as const;
+
+export type SlashItemKey = keyof typeof editorI18n.slash.items;
