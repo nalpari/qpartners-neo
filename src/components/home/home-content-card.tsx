@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 
@@ -68,12 +69,16 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
   const grouped = item.categories.filter((g) => g.children.length > 0);
   const hasAttachments = item.attachmentCount > 0;
   const downloadingRef = useRef(false);
+  const queryClient = useQueryClient();
 
   const handleDownloadAll = () => {
     if (downloadingRef.current) return;
     downloadingRef.current = true;
     void downloadAllAttachments(item.id)
-      .finally(() => { downloadingRef.current = false; });
+      .finally(() => {
+        downloadingRef.current = false;
+        void queryClient.invalidateQueries({ queryKey: ["home-downloads"] });
+      });
   };
 
   return (
