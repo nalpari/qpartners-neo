@@ -365,6 +365,9 @@ function MemberEditForm({
   onPasswordReset: () => void;
   onClose: () => void;
 }) {
+  // 빈 SelectBox("選択") 상태 저장 시도를 클라이언트에서 차단하기 위해 alert 직접 호출.
+  // 부모(MemberDetailPopup) 의 동일 store 인스턴스를 공유 — 별도 props drilling 불필요.
+  const { openAlert } = useAlertStore();
   // USER_TYPE 공통코드 reverseMap 만 사용 — 하드코딩 fallback 제거됨.
   // 매핑 불가 시 memberTp="" → isGeneral=false → 편집 UI 비표시 (read-only).
   const { reverseMap: dynamicReverseMap } = useUserType();
@@ -415,18 +418,16 @@ function MemberEditForm({
   // 백엔드는 이 경로에서 userRole + twoFactorEnabled 명시 필수(복구 후 QSP 잔존 값 silent 부활 방어).
   const isRestoringToActive = isQspNotFound && isStatusEditable && memberStatus === "Active";
 
-  // 기존 SEKO 권한은 편집 UI 제공 안함 (옵션에 SEKO 없어 SelectBox 값 공백 방지).
-  // 단, 복구 경로(isRestoringToActive)는 관리자가 SEKO → 다른 권한 재부여가 필수이므로 lock 해제.
-  // 복구 경로 + SEKO: SelectBox 에서 SEKO 옵션 부재로 빈 표시 → 관리자가 명시적 재선택 후 저장(미선택 저장 시 BE 400).
-  const isUserRoleLocked = !editableRoleValues.includes(userRole) && !isRestoringToActive;
-
   // ユーザー権限 편집 활성 조건 — DetailRow.isForm 과 children 분기에서 동일 식 중복 사용을 방지.
-  // 옵션 로딩 실패 시(isRolesError) 편집 UI 자체를 숨겨 빈 SelectBox 로 인한 권한 누락 저장을 차단(PR #130 리뷰).
+  // 회원유형이 GENERAL 이면 권한관리에서 사용여부=N 으로 비활성화된 권한을 보유한 회원이라도
+  // SelectBox 를 노출해 활성 권한으로 전환 가능하게 한다 (Redmine: ck_choi 같은 GENERAL=N 회원
+  // 의 권한을 관리자가 변경할 수 있어야 함). SelectBox value 는 비활성 권한일 때 빈값으로
+  // 매핑되어 "選択" placeholder 가 표시된다 (아래 SelectBox value 분기 참고).
+  // 옵션 로딩 실패(isRolesError) 시에는 편집 UI 자체를 숨겨 빈 SelectBox 로 인한 권한 누락 저장을 차단(PR #130 리뷰).
   const canEditUserRole =
     isGeneral &&
     !isReadOnly &&
     (!isQspNotFound || isRestoringToActive) &&
-    !isUserRoleLocked &&
     !isRolesError;
   // 옵션 로딩 중 SelectBox disabled — 첫 진입 race window 의 빈 옵션 깜빡임 방지.
   const isRoleSelectDisabled = isRolesLoading;
@@ -451,9 +452,15 @@ function MemberEditForm({
       payload.status = memberStatus === "Active" ? "active" : "deleted";
     }
     // userRole 은 GENERAL 회원에게만 적용. 복구 경로에서도 userTp=GENERAL 한정으로 전송.
-    // 기존 SEKO 권한은 새 옵션에서 제외되어 편집 불가 → 전송 제외(BE Zod 거부 방지 + 기존 값 보존).
     // 편집 가능 조건은 UI 의 SelectBox 활성 조건과 동일해야 한다 — canEditUserRole 단일 변수 재사용.
+    // 비활성(N) 권한 회원의 SelectBox 가 빈값("選択") 상태에서 저장되는 경우를 클라이언트에서 차단:
+    //   - BE round-trip + 일반화된 400 응답 메시지 노출 회피
+    //   - "권한을 선택해주세요" 명확한 안내로 운영자 UX 개선
     if (canEditUserRole) {
+      if (!userRole || !editableRoleValues.includes(userRole)) {
+        openAlert({ type: "alert", message: "ユーザー権限を選択してください。" });
+        return;
+      }
       payload.userRole = userRole;
     }
     onSave(payload);
@@ -514,8 +521,8 @@ function MemberEditForm({
                   left={{ label: "氏名ひらがな", children: <TextValue value={member.userNameKana} /> }}
                   right={{
                     label: "ユーザー権限",
-                    // GENERAL 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
-                    // 단, 기존 SEKO 권한(isUserRoleLocked) 은 신규 옵션에서 제외되어 읽기전용.
+                    // GENERAL 회원 일반 수정 경로 + 복구 경로(isRestoringToActive) 에서 편집 가능.
+                    // 비활성(N) 권한 보유 회원도 SelectBox 노출 → "選択" placeholder + 활성 권한 변경.
                     isForm: canEditUserRole,
                     children: canEditUserRole ? (
                       <SelectBox
