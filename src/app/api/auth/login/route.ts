@@ -270,11 +270,15 @@ export async function POST(request: NextRequest) {
         select: { isActive: true },
       });
       if (role === null) {
-        // QpRole 레코드 미존재 — DB 데이터 정합성 문제. 통과 처리하되 모니터링 대상.
-        console.warn("[POST /api/auth/login] QpRole 레코드 미존재 — 통과 처리", {
+        // QpRole 레코드 미존재 — DB 데이터 정합성 문제. fail-closed 차단.
+        console.error("[POST /api/auth/login] QpRole 레코드 미존재 — 로그인 차단 (fail-closed)", {
           roleCode: roleCodeToCheck,
           authRole,
         });
+        return NextResponse.json(
+          { error: "権限情報が存在しないためログインできません" },
+          { status: 403 },
+        );
       } else if (!role.isActive) {
         console.warn("[POST /api/auth/login] 비활성 권한 로그인 차단", {
           userTp: qsp.data.userTp,
