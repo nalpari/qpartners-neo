@@ -56,7 +56,26 @@ export interface EditFormData {
   newsRcptYn: "Y" | "N";
 }
 
+/**
+ * 풀네임(userNm) 우선 split — BE 의 splitQspUserName 이 limit=2 로 자르면서 잃어버린
+ * 회원명 후반부(예: `金 志映(2차인증:Y, 로그인:Y, 속성변경:Y, 뉴스레터 :Y)` 의 mei 측)를
+ * 프론트에서 직접 풀텍스트로부터 첫 공백 1회만 분리해 복원한다.
+ * userName 없을 때만 BE 의 sei/mei 폴백.
+ */
+function splitFullName(
+  full: string | null,
+  fallbackSei: string,
+  fallbackMei: string,
+): { sei: string; mei: string } {
+  if (!full) return { sei: fallbackSei, mei: fallbackMei };
+  const idx = full.search(/[\s　]/);
+  if (idx < 0) return { sei: full, mei: "" };
+  return { sei: full.slice(0, idx), mei: full.slice(idx + 1) };
+}
+
 function createEditFormData(profile: ProfileData): EditFormData {
+  const name = splitFullName(profile.userName, profile.sei || "", profile.mei || "");
+  const kana = splitFullName(profile.userNameKana, profile.seiKana || "", profile.meiKana || "");
   return {
     compNm: profile.compNm || "",
     compNmKana: profile.compNmKana || "",
@@ -65,10 +84,10 @@ function createEditFormData(profile: ProfileData): EditFormData {
     address2: profile.address2 || "",
     telNo: profile.telNo || "",
     fax: profile.fax || "",
-    sei: profile.sei || "",
-    mei: profile.mei || "",
-    seiKana: profile.seiKana || "",
-    meiKana: profile.meiKana || "",
+    sei: name.sei,
+    mei: name.mei,
+    seiKana: kana.sei,
+    meiKana: kana.mei,
     department: profile.department || "",
     jobTitle: profile.jobTitle || "",
     newsRcptYn: profile.newsRcptYn,
