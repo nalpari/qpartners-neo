@@ -10,10 +10,12 @@ import type {
   ICellRendererParams,
 } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, PageSizeSelect, Button, Checkbox } from "@/components/common";
+import { Pagination, PageSizeSelect, Button, Checkbox, PermissionGate } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
@@ -78,6 +80,16 @@ export function NoticesTable({
   const { openPopup } = usePopupStore();
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
+
+  // RBAC 표준 패턴 — ADM_NOTICE 매트릭스 가드. 권한관리 UI 토글이 즉시 버튼/액션에 반영됨.
+  // 로딩 중 fail-closed (isPermLoading 시 false) — 클릭 race window 차단.
+  // 서버 API 도 requireMenuPermission(ADM_NOTICE, ...) 로 최종 검증하므로 FE 는 UX 전용.
+  // canCreate 는 「お知らせ登録」 버튼의 PermissionGate 가 자체 조회하므로 분해 불요.
+  const {
+    canUpdate: canUpdateNotice,
+    canDelete: canDeleteNotice,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.NOTICES);
 
   // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
   // canModifyClient 권한 판정에 사용 — user 변경 시 renderer 가 재생성돼 클로저가 최신 사용자 참조.
@@ -213,6 +225,15 @@ export function NoticesTable({
   });
 
   const handleBulkDelete = () => {
+    // RBAC 패턴 E — 핸들러 본체 권한 가드. disabled 는 UI 힌트일 뿐 키보드/race 우회 가능하므로
+    // 핸들러 진입 즉시 매트릭스 가드 재확인. 로딩 중은 silent return — 권한 응답 도착 전
+    // 사용자 의도와 무관한 alert 노출을 막아 동일 PR 의 다른 핸들러(notice-form-popup.handleSave/Delete,
+    // permissions-table.handleSave 등)와 정책 통일.
+    if (isPermLoading) return;
+    if (!canDeleteNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (selectedIds.size === 0) {
       openAlert({
         type: "alert",
@@ -238,7 +259,11 @@ export function NoticesTable({
         const res = await api.get<NoticeDetailResponse>(`/home-notices/${id}`);
         const d = res.data.data;
 
-        if (!canModifyClient(user, d)) {
+        // 작성자 가드(canModifyClient) AND 매트릭스 가드(canUpdate) — 둘 다 통과해야 편집 진입.
+        // 패턴 E (클릭 시점 alert) — 행 클릭이 라우트 이동 대신 모달 오픈이라 추가 안전장치.
+        // RBAC 가드(isPermLoading / canUpdateNotice) 선행 평가 — 권한 응답 도착 전에는 작성자라도
+        // 일괄 차단(fail-closed). canModifyClient 는 RBAC 통과 후의 작성자 OR 관리자 보조 가드.
+        if (isPermLoading || !canUpdateNotice || !canModifyClient(user, d)) {
           useAlertStore.getState().openAlert({
             type: "alert",
             message: "このお知らせを編集する権限がありません。",
@@ -272,7 +297,7 @@ export function NoticesTable({
         useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
       }
     },
-    [user, openPopup],
+    [user, openPopup, isPermLoading, canUpdateNotice],
   );
 
   // 제목 셀 — 클릭 시 상세 팝업 오픈. Issue #2148 — 표시값을 content → title 로 변경.
@@ -451,16 +476,20 @@ export function NoticesTable({
           {selectedIds.size > 0 ? `${selectedIds.size}件選択中` : ""}
         </div>
         <div className="flex items-center gap-[8px]">
+          {/* 일괄삭제 — 패턴 B (canDelete=false 시 disabled) */}
           <Button
             variant="secondary"
             onClick={handleBulkDelete}
-            disabled={bulkDeleteMutation.isPending}
+            disabled={isPermLoading || !canDeleteNotice || bulkDeleteMutation.isPending}
           >
             {bulkDeleteMutation.isPending ? "削除中..." : "削除"}
           </Button>
-          <Button variant="primary" onClick={handleRegister}>
-            お知らせ登録
-          </Button>
+          {/* 등록 — 패턴 A (PermissionGate 로 canCreate=false 시 버튼 자체 숨김) */}
+          <PermissionGate menuCode={ADMIN_MENU.NOTICES} action="create" fallback={null}>
+            <Button variant="primary" onClick={handleRegister}>
+              お知らせ登録
+            </Button>
+          </PermissionGate>
           <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
         </div>
       </div>
