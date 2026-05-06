@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 interface LoginPageProps {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; "reset-token"?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -30,5 +30,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const rawError = typeof params.error === "string" ? params.error : null;
   const initialError = rawError ? LOGIN_QUERY_ERROR_MESSAGES[rawError] ?? null : null;
 
-  return <LoginLoader initialError={initialError} />;
+  // 비밀번호 초기화 메일에서 진입 시 reset-token 쿼리 감지 → 클라이언트에서 verify 후 PersonalInfoPopup 오픈.
+  const rawResetToken = typeof params["reset-token"] === "string" ? params["reset-token"] : null;
+
+  return <LoginLoader initialError={initialError} initialResetToken={rawResetToken} />;
 }

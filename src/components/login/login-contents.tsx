@@ -28,9 +28,11 @@ interface LoginContentsProps {
   initialSavedTab?: TabType;
   /** 서버에서 전달된 초기 error 메시지 (자동로그인 실패 등 외부 유입 안내) */
   initialError?: string | null;
+  /** 비밀번호 초기화 메일 reset-token — verify 통과 시 PersonalInfoPopup(会員情報の設定) 자동 오픈 */
+  initialResetToken?: string | null;
 }
 
-export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null }: LoginContentsProps) {
+export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null, initialResetToken = null }: LoginContentsProps) {
   // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
   const prefillRef = useRef(useAppStore.getState().prefillEmail);
 
@@ -55,6 +57,41 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   const router = useRouter();
   const queryClient = useQueryClient();
   const openPopup = usePopupStore((s) => s.openPopup);
+
+  // 비밀번호 초기화 메일 → /login?reset-token=… 진입 시 verify 후 PersonalInfoPopup 자동 오픈.
+  // useRef 로 첫 마운트 시점의 token 만 캡처해 1회만 처리한다 (개발 모드 StrictMode 더블 마운트 방어).
+  const resetTokenRef = useRef(initialResetToken);
+  useEffect(() => {
+    if (!resetTokenRef.current) return;
+    const t = resetTokenRef.current;
+    resetTokenRef.current = null;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        await api.post("/auth/password-reset/verify", { token: t });
+        if (cancelled) return;
+        openPopup("personal-info", { token: t });
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[LoginContents] パスワード再設定リンク検証失敗:", err);
+        if (isAxiosError(err) && err.response) {
+          const data = err.response.data as Record<string, unknown> | undefined;
+          const serverMsg = typeof data?.error === "string" ? data.error : null;
+          setNotice(serverMsg ?? "無効または期限切れのリンクです。");
+        } else {
+          setNotice("サーバーに接続できません。しばらくしてからもう一度お試しください。");
+        }
+      } finally {
+        // 토큰을 URL 에서 즉시 제거 — 새로고침 시 재처리/노출/공유 방지.
+        if (!cancelled && typeof window !== "undefined") {
+          window.history.replaceState({}, "", "/login");
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [openPopup]);
 
   const loginMutation = useMutation({
     mutationFn: async (params: { loginId: string; pwd: string; userTp: string }) => {

@@ -22,6 +22,9 @@ export function PersonalInfoPopup() {
 
   const currentEmail = typeof popupData.currentEmail === "string" ? popupData.currentEmail : undefined;
   const hasExistingEmail = !!currentEmail;
+  // 비밀번호 초기화 메일 진입(reset-token) — 이메일은 토큰으로 이미 식별되므로 email 입력 단계 자체를 생략한다.
+  // verify 라우트가 보안상 email 을 노출하지 않으므로 안내문 외에 실제 주소는 표시하지 않는다.
+  const hasResetToken = typeof popupData.token === "string" && popupData.token.length > 0;
 
   const [email, setEmail] = useState("");
   const [emailChecked, setEmailChecked] = useState(false);
@@ -37,8 +40,9 @@ export function PersonalInfoPopup() {
   const isPasswordValid = validatePasswordPolicy(newPassword);
 
   // Design Ref: §3.5 — 저장 버튼 활성화 조건
+  // reset-token 모드는 email 입력을 받지 않으므로 email 검증을 자동 통과 처리.
   const isFormValid =
-    (hasExistingEmail || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
+    (hasResetToken || hasExistingEmail || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
     isPasswordValid &&
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
@@ -186,7 +190,8 @@ export function PersonalInfoPopup() {
         {/* 본문 */}
         <div className="flex flex-col gap-[24px] w-full">
           <div className="flex flex-col gap-[16px] w-full">
-            {/* Eメール 필드 */}
+            {/* Eメール 필드 — reset-token 모드에서는 이메일 단계 생략 (토큰으로 식별 완료) */}
+            {!hasResetToken && (
             <div className="flex flex-col gap-2 w-full">
               <label className={labelClass}>
                 Eメール
@@ -238,6 +243,7 @@ export function PersonalInfoPopup() {
                 </div>
               )}
             </div>
+            )}
 
             {/* 新規パスワード */}
             <div className="flex flex-col gap-2 w-full">
