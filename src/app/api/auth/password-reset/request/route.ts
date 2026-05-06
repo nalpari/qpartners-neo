@@ -168,18 +168,16 @@ export async function POST(request: NextRequest) {
 
     const { userTp, email, loginId } = result.data;
 
-    // 2-a. IP 기반 rate limiting — 열거 공격 방어 (토큰 미생성 이메일도 제한)
+    // 2. IP 기반 rate limiting — 열거 공격 방어 (QSP 호출 이전 1차 방어선).
     // [전제] 배포 환경의 리버스 프록시(Nginx/ALB)가 클라이언트 x-forwarded-for를 덮어씀.
     //        프록시 없이 직접 노출 시 클라이언트가 헤더를 스푸핑할 수 있으므로
-    //        이메일/입력값 기반 rate limit(2-b)이 최종 방어선 역할을 함.
+    //        DB count rate limit(QSP 매칭 이후, 회원 단위)이 최종 방어선 역할을 함.
     const forwarded = request.headers.get("x-forwarded-for");
     const ip =
       forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-    // rate limit 키 — 입력 식별자 (email 우선, 없으면 loginId).
-    // GENERAL 의 loginId 입력 케이스에서도 입력값 기준으로 일관되게 카운트.
-    const rateLimitKey = (email ?? loginId ?? "").trim();
-    // IP 없으면 입력 식별자 기반 fallback — 공용 버킷 차단 회피
-    const ipKey = ip ?? `account:${rateLimitKey}`;
+    // IP fallback key — 입력 식별자 (email 우선, 없으면 loginId). 공용 버킷 차단 회피용.
+    const inputIdentifier = (email ?? loginId ?? "").trim();
+    const ipKey = ip ?? `account:${inputIdentifier}`;
     if (!checkRateLimit(`pw-reset:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
       return NextResponse.json(
         {
@@ -195,46 +193,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2-b. Rate limiting — 동일 입력 식별자 시간당 3건 제한 (토큰 생성 기준)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    let recentCount: number;
-    try {
-      recentCount = await prisma.passwordResetToken.count({
-        where: {
-          userId: rateLimitKey,
-          createdAt: { gte: oneHourAgo },
-        },
-      });
-    } catch (error) {
-      console.error(`${LOG} rate limit 조회 실패:`, error);
-      return NextResponse.json(
-        {
-          error:
-            "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。",
-        },
-        { status: 500 },
-      );
-    }
-
-    if (recentCount >= 3) {
-      return NextResponse.json(
-        {
-          error:
-            "しばらく経ってから再度お試しください。（1時間以内の送信回数上限）",
-        },
-        { status: 429 },
-      );
-    }
-
     // 3. QSP /user/detail 회원 존재 확인 — Redmine #2156 userTp 분기 적용
     //
     //    STORE   : loginId 단독 조회 → 응답 email 평문이 입력 email 과 일치할 때만 통과 (AND)
     //    SEKO    : email 단독 조회 → hit 시 통과
-    //    GENERAL : 입력값 X 를 loginId 단독 / email 단독으로 dual-key 병렬 조회
-    //              어느 한쪽이라도 hit 시 통과 (OR). race + AbortController 로 hang 회피.
+    //    GENERAL : 입력값 X 를 loginId 단독 / email 단독으로 dual-key 병렬 조회 후 cross check.
+    //              한쪽만 hit → 통과. 양쪽 hit + 동일 회원 → 통과. 양쪽 hit + 다른 회원 → fail-closed (ambiguous).
     let resolvedDetail: QspUserDetail | null = null;
     let lookupBlocker:
       | "mismatch"
+      | "no-email"
       | "ambiguous"
       | "transport"
       | "schema"
@@ -273,11 +241,13 @@ export async function POST(request: NextRequest) {
       if (r.kind === "found" && r.detail.email) {
         resolvedDetail = r.detail;
       } else if (r.kind === "found" && !r.detail.email) {
-        // 정상 회원이지만 응답 email 평문 부재 → 메일 발송 불가, fail-closed
+        // 정상 회원이지만 응답 email 평문 부재 → 메일 발송 불가, fail-closed.
+        // STORE email 불일치(mismatch) 와 구분되도록 별도 blocker 로 분류
+        // (운영 로그 진단 시 원인 식별 — Boston Review MEDIUM #3, 2026-05-06).
         console.error(
           `${LOG} SEKO 응답 data.email 부재 — 메일 발송 불가, fail-closed`,
         );
-        lookupBlocker = "mismatch";
+        lookupBlocker = "no-email";
       } else if (r.kind === "ambiguous") {
         lookupBlocker = "ambiguous";
       } else if (r.kind === "transport-error") {
@@ -288,41 +258,47 @@ export async function POST(request: NextRequest) {
     } else if (userTp === "GENERAL") {
       // 입력값 X — loginId 우선, 없으면 email (Zod 가 둘 중 하나는 보장)
       const inputValue = (loginId ?? email ?? "").trim();
-      const ac = new AbortController();
-      const p1 = lookupQspUserForReset(
-        { loginId: inputValue, userTp: "GENERAL" },
-        " (lookup GENERAL #1 loginId)",
-        ac.signal,
-      );
-      const p2 = lookupQspUserForReset(
-        { email: inputValue, userTp: "GENERAL" },
-        " (lookup GENERAL #2 email)",
-        ac.signal,
-      );
-      const first = await Promise.race([p1, p2]);
-      if (first.kind === "found" && first.detail.email) {
-        ac.abort();
-        resolvedDetail = first.detail;
-      } else {
-        const [r1, r2] = await Promise.all([p1, p2]);
-        const winner =
-          r1.kind === "found" && r1.detail.email
-            ? r1
-            : r2.kind === "found" && r2.detail.email
-              ? r2
-              : null;
-        if (winner) {
-          resolvedDetail = winner.detail;
-        } else if (r1.kind === "ambiguous" || r2.kind === "ambiguous") {
+      // 양쪽(loginId·email) 으로 병렬 dual-key 조회 후 cross check.
+      // race winner 즉시 반환 패턴은 제거 — 입력값이 회원A 의 loginId 인 동시에
+      // 회원B 의 email 인 경우 한쪽만 보고 통과시키면 잘못된 회원에게 메일이
+      // 발송될 수 있어 항상 둘 다 await 후 동일 회원 여부 검증
+      // (Boston Review MEDIUM #1, 2026-05-06).
+      const [r1, r2] = await Promise.all([
+        lookupQspUserForReset(
+          { loginId: inputValue, userTp: "GENERAL" },
+          " (lookup GENERAL #1 loginId)",
+        ),
+        lookupQspUserForReset(
+          { email: inputValue, userTp: "GENERAL" },
+          " (lookup GENERAL #2 email)",
+        ),
+      ]);
+      const r1Found = r1.kind === "found" && r1.detail.email ? r1 : null;
+      const r2Found = r2.kind === "found" && r2.detail.email ? r2 : null;
+      if (r1Found && r2Found) {
+        if (r1Found.detail.userId === r2Found.detail.userId) {
+          // 동일 회원이 loginId·email 양쪽에서 매칭 — 정상 경로
+          resolvedDetail = r1Found.detail;
+        } else {
+          // 서로 다른 회원이 매칭됨 → 정확 판정 불가, fail-closed
+          console.error(
+            `${LOG} GENERAL 교차 매칭 — loginId/email 이 서로 다른 회원에 매칭, fail-closed`,
+          );
           lookupBlocker = "ambiguous";
-        } else if (
-          r1.kind === "transport-error" ||
-          r2.kind === "transport-error"
-        ) {
-          lookupBlocker = "transport";
-        } else if (r1.kind === "schema-error" || r2.kind === "schema-error") {
-          lookupBlocker = "schema";
         }
+      } else if (r1Found) {
+        resolvedDetail = r1Found.detail;
+      } else if (r2Found) {
+        resolvedDetail = r2Found.detail;
+      } else if (r1.kind === "ambiguous" || r2.kind === "ambiguous") {
+        lookupBlocker = "ambiguous";
+      } else if (
+        r1.kind === "transport-error" ||
+        r2.kind === "transport-error"
+      ) {
+        lookupBlocker = "transport";
+      } else if (r1.kind === "schema-error" || r2.kind === "schema-error") {
+        lookupBlocker = "schema";
       }
     }
     // ADMIN 또는 정의되지 않은 userTp — 분기 어디에도 진입하지 못해 resolvedDetail 가 null →
@@ -350,10 +326,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
-    //    토큰의 userId 는 매칭 회원의 평문 email 로 통일 — verify/confirm 라우트가 email 기준 조회.
+    // 4. Rate limit (DB) — 동일 회원(resolvedEmail + userTp) 1시간 3건 제한.
+    //    QSP 매칭 이후로 이동(Boston Review HIGH #3, 2026-05-06): GENERAL 의 loginId 입력
+    //    케이스에서도 카운트 키와 토큰 저장 키가 모두 resolvedEmail 로 통일되어
+    //    rate limit 이 정상 적용됨. userType 조건 포함 — 동일 email 이 다른 userType 에
+    //    존재하는 경우 토큰 카운트 합산 차단 + idx_user(userType, userId) 복합 인덱스 활용.
     const resolvedEmail = resolvedDetail.email;
     const resolvedLoginId = resolvedDetail.userId;
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    let recentCount: number;
+    try {
+      recentCount = await prisma.passwordResetToken.count({
+        where: {
+          userType: userTp,
+          userId: resolvedEmail,
+          createdAt: { gte: oneHourAgo },
+        },
+      });
+    } catch (error) {
+      console.error(`${LOG} rate limit 조회 실패:`, error);
+      return NextResponse.json(
+        {
+          error:
+            "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。",
+        },
+        { status: 500 },
+      );
+    }
+
+    if (recentCount >= 3) {
+      return NextResponse.json(
+        {
+          error:
+            "しばらく経ってから再度お試しください。（1時間以内の送信回数上限）",
+        },
+        { status: 429 },
+      );
+    }
+
+    // 5. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
+    //    토큰의 userId 는 매칭 회원의 평문 email 로 통일 — verify/confirm 라우트가 email 기준 조회.
+    //    updateMany where 에 userType 포함 — 동일 email 이 다른 userType 에 존재해도
+    //    해당 userType 토큰만 무효화 (Boston Review HIGH #2, 2026-05-06).
     const rawToken = generateRawResetToken();
     const token = hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
@@ -361,7 +375,7 @@ export async function POST(request: NextRequest) {
     try {
       await prisma.$transaction([
         prisma.passwordResetToken.updateMany({
-          where: { userId: resolvedEmail, used: false },
+          where: { userType: userTp, userId: resolvedEmail, used: false },
           data: { used: true },
         }),
         prisma.passwordResetToken.create({
@@ -382,7 +396,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. 비밀번호 변경 링크 메일 발송 — 수신자는 매칭 회원의 평문 email
+    // 6. 비밀번호 변경 링크 메일 발송 — 수신자는 매칭 회원의 평문 email
     //    /login 진입 시 reset-token 쿼리를 감지하여 PersonalInfoPopup(会員情報の設定)을 자동 오픈한다.
     //    (구 /password-reset 풀페이지 → 신 /login?reset-token=… popup 흐름 — PR #150 정책 흡수)
     const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
@@ -418,7 +432,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. 성공 응답
+    // 7. 성공 응답
     return NextResponse.json({
       data: { message: "パスワード変更リンクをメールで送信しました。" },
     });
