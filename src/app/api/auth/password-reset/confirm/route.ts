@@ -21,6 +21,7 @@ const qspUserDetailSchema = z.object({
     userNm: z.string().nullable().optional(),
     compCd: z.string().nullable().optional(),
     compNm: z.string().nullable().optional(),
+    compTelNo: z.string().nullable().optional(),
     deptNm: z.string().nullable().optional(),
     authCd: z.string().nullable().optional(),
     storeLvl: z.string().nullable().optional(),
@@ -112,7 +113,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
+  // 3. userType 검증 — 토큰 사용 처리(updateMany) 보다 먼저 수행하여 검증 실패 시 토큰을
+  //    소모하지 않도록 한다. (이전 위치는 토큰 사용 후 rollback 패턴이라 race window 가 컸음)
+  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
+  if (!userTpParsed.success) {
+    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
+    return NextResponse.json(
+      { error: "サーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
+  const validUserTp = userTpParsed.data;
+
+  // 4. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
   let updated;
   try {
     updated = await prisma.passwordResetToken.updateMany({
@@ -201,18 +214,6 @@ export async function POST(request: NextRequest) {
   if (!detailData && resetToken.userType === "GENERAL") {
     console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
   }
-
-  // 5. userType 검증 — QSP 호출 전에 수행 (실패 시 비밀번호 변경 방지)
-  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
-  if (!userTpParsed.success) {
-    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
-    return rollbackAndRespond(token,
-      "サーバーエラーが発生しました",
-      "サーバーエラーが発生しました",
-      500,
-    );
-  }
-  const validUserTp = userTpParsed.data;
 
   // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
@@ -313,6 +314,8 @@ export async function POST(request: NextRequest) {
     statCd: detailData?.statCd ?? null,
     authRole,
     twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
+    // QSP compTelNo(회사 전화번호) → telNo (login/auto-login 라우트와 동일 매핑)
+    telNo: detailData?.compTelNo ?? null,
   };
 
   let jwtToken: string;

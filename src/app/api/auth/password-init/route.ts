@@ -35,6 +35,7 @@ const qspUserDetailSchema = z.object({
     userNm: z.string().nullable().optional(),
     compCd: z.string().nullable().optional(),
     compNm: z.string().nullable().optional(),
+    compTelNo: z.string().nullable().optional(),
     deptNm: z.string().nullable().optional(),
     authCd: z.string().nullable().optional(),
     storeLvl: z.string().nullable().optional(),
@@ -63,15 +64,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. rate limit — 유저당 5분간 5회
-    if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
-        { status: 429 },
-      );
-    }
-
-    // 4. Request body 파싱 + Zod 검증
+    // 3. Request body 파싱 + Zod 검증
+    //    rate limit 보다 먼저 검증해 무효 페이로드(잘못된 JSON / 형식 오류) 가 카운터를 소모하지 않도록 한다.
     let body: unknown;
     try {
       body = await request.json();
@@ -96,6 +90,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { newPassword } = result.data;
+
+    // 4. rate limit — 유저당 5분간 5회 (검증 통과한 정상 시도만 카운터 소모)
+    if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+        { status: 429 },
+      );
+    }
 
     // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
     const detailParams = new URLSearchParams({
@@ -252,6 +254,8 @@ export async function POST(request: NextRequest) {
       statCd: detailData?.statCd ?? user.statCd,
       authRole,
       twoFactorVerified: true, // 비밀번호 변경 후 2FA Skip
+      // QSP compTelNo(회사 전화번호) → telNo (login/auto-login 라우트와 동일 매핑) — 마이페이지 telNo 의존 컴포넌트 stale-blank 방지
+      telNo: detailData?.compTelNo ?? user.telNo ?? null,
     };
 
     let jwtToken: string;

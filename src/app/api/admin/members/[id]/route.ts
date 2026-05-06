@@ -445,7 +445,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // self-edit 가드 해제 — ADMIN/SUPER_ADMIN 은 본인 포함 모든 사용자 정보 수정 허용
     // (정책: 관리자 영역 fail-open / full CRUD).
-    // 주의: self-lockout / self-escalation 위험은 운영 정책으로 관리되며 코드 차단은 적용하지 않는다.
+    // 단 self-lockout 회복 불능 케이스만 차단:
+    //   - 본인 status 를 deleted/withdrawn 으로 전환 시 자기 자신을 시스템에서 제외하는 결과가 되어
+    //     이후 본인이 어떠한 관리자 행위도 못 함. SUPER_ADMIN 1명만 있는 운영 환경에서 시스템 lockout.
+    //   - 본인이 본인 권한을 GENERAL 등 일반회원으로 강등시키는 케이스도 동일.
+    if (preDetail) {
+      const isSelf = user.userId.trim().toLowerCase() === preDetail.userId.trim().toLowerCase();
+      if (isSelf) {
+        // memberUpdateSchema.status 는 WRITABLE_STATUSES = ["active", "deleted"] — withdrawn 은 PUT 미허용
+        if (result.data.status === "deleted") {
+          return NextResponse.json(
+            { error: "自分自身のアカウントを削除状態に変更することはできません" },
+            { status: 400 },
+          );
+        }
+        if (result.data.userRole === "GENERAL") {
+          return NextResponse.json(
+            { error: "自分自身のアカウントを一般会員に降格することはできません" },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     // 4-a. userRole 변경은 일반회원에게만 허용 (사전 검증)
     // preDetail null + userRole 경로는 4-0-c 에서 **복구(status: "active")** 한정으로 허용됨.

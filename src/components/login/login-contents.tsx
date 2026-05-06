@@ -60,6 +60,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
 
   // 비밀번호 초기화 메일 → /login?reset-token=… 진입 시 verify 후 PersonalInfoPopup 자동 오픈.
   // useRef 로 첫 마운트 시점의 token 만 캡처해 1회만 처리한다 (개발 모드 StrictMode 더블 마운트 방어).
+  // openPopup 은 zustand store action 으로 일반적으로 안정 참조이지만, 의존성 배열에 두면 재실행 시
+  // cancelled cleanup 이 진행 중인 fetch 를 끊어버리는 race 가 있어 effect 외부에서 getState() 로 직접
+  // 참조한다. 의존성 배열은 mount-only 의도를 명시하기 위해 빈 배열 + eslint-disable 사용.
   const resetTokenRef = useRef(initialResetToken);
   useEffect(() => {
     if (!resetTokenRef.current) return;
@@ -74,10 +77,10 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           { token: t },
         );
         if (cancelled) return;
-        // verify 응답에 포함된 email 을 popup 의 read-only currentEmail 로 전달.
+        // verify 응답에 포함된 (마스킹된) email 을 popup 의 read-only currentEmail 로 전달.
         // pwdInitYn=Y 케이스(이미 정상 회원의 비번 재설정) 정책 — 검증 없이 read-only 노출.
         const verifiedEmail = verifyRes.data?.data?.email ?? undefined;
-        openPopup("personal-info", { token: t, currentEmail: verifiedEmail });
+        usePopupStore.getState().openPopup("personal-info", { token: t, currentEmail: verifiedEmail });
       } catch (err) {
         if (cancelled) return;
         console.error("[LoginContents] パスワード再設定リンク検証失敗:", err);
@@ -97,7 +100,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
     })();
 
     return () => { cancelled = true; };
-  }, [openPopup]);
+  }, []);
 
   const loginMutation = useMutation({
     mutationFn: async (params: { loginId: string; pwd: string; userTp: string }) => {
