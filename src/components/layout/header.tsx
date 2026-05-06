@@ -263,7 +263,6 @@ export function Gnb() {
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isMobileSitesOpen, setIsMobileSitesOpen] = useState(false);
   /**
    * 관련사이트 자동로그인 진행 상태 — 중복 클릭 방어용.
    * 값이 존재하면 해당 `SiteValue` 에 대해 POST /api/auth/auto-login/encrypt 호출 중.
@@ -676,7 +675,6 @@ export function Gnb() {
               aria-label="閉じる"
               onClick={() => {
                 setIsMobileMenuOpen(false);
-                setIsMobileSitesOpen(false);
               }}
             >
               <svg
@@ -733,67 +731,8 @@ export function Gnb() {
               </Link>
             ))}
 
-            {/* 関連サイト — 토글 (회원유형별 노출) */}
-            {showRelatedSites && (
-              <div className="border-b border-[#1a1a1a]">
-              <button
-                type="button"
-                className="flex items-center justify-between w-full px-3 py-[18px]"
-                onClick={() => setIsMobileSitesOpen((prev) => !prev)}
-              >
-                <span className="font-['Noto_Sans_JP'] font-semibold text-[15px] leading-[1.4] text-white">
-                  関連サイト
-                </span>
-                <svg
-                  width="6"
-                  height="10"
-                  viewBox="0 0 6 10"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`transition-transform duration-200 ${
-                    isMobileSitesOpen ? "rotate-90" : ""
-                  }`}
-                >
-                  <path
-                    d="M1 9L5 5L1 1"
-                    stroke="white"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-
-              {/* 2depth 사이트 링크 */}
-              <div
-                className={`overflow-hidden transition-all duration-200 ${
-                  isMobileSitesOpen ? "max-h-[300px] pb-4" : "max-h-0"
-                }`}
-              >
-                <ul className="flex flex-col gap-3 pl-6 pr-3">
-                  {relatedSites.map((site) => (
-                    <li key={site.value}>
-                      <a
-                        href={site.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex flex-wrap items-baseline gap-x-1 font-['Noto_Sans_JP'] leading-[1.5] transition-colors duration-200 text-[#999] font-normal"
-                        aria-busy={autoLoginInFlight === site.value || undefined}
-                        onClick={(e) => { void handleRelatedSiteClick(e, site, () => setIsMobileMenuOpen(false)); }}
-                      >
-                        <span className="text-[13px]">{site.label}</span>
-                        {site.note && (
-                          <span className="text-[11px] text-[#666]">
-                            {site.note}
-                          </span>
-                        )}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            )}
+            {/* 関連サイト 모바일 미노출 — Q.ORDER / Q.MUSUBI / HANASYS DESIGN 등 외부 사이트가
+                모바일을 지원하지 않아 바로가기를 제거한다. PC 영역에는 그대로 노출. */}
           </nav>
 
           {/* 하단 바 */}

@@ -22,6 +22,11 @@ export function PersonalInfoPopup() {
 
   const currentEmail = typeof popupData.currentEmail === "string" ? popupData.currentEmail : undefined;
   const hasExistingEmail = !!currentEmail;
+  // 진입 모드 — 분기:
+  //   pwdInitYn=N (최초 로그인): currentEmail 있으면 read-only / 없으면 입력+중복체크
+  //   pwdInitYn=Y (reset-token): verify 응답에서 받은 email 을 currentEmail 로 read-only 표시 (검증 X)
+  // 두 케이스 모두 hasExistingEmail 분기로 자연 흡수되므로 hasResetToken 별도 분기 불필요.
+  const hasResetToken = typeof popupData.token === "string" && popupData.token.length > 0;
 
   const [email, setEmail] = useState("");
   const [emailChecked, setEmailChecked] = useState(false);
@@ -37,8 +42,10 @@ export function PersonalInfoPopup() {
   const isPasswordValid = validatePasswordPolicy(newPassword);
 
   // Design Ref: §3.5 — 저장 버튼 활성화 조건
+  // currentEmail 있음 → read-only(자동 통과). 없음 → 입력 + 중복체크 통과 필요.
+  // hasResetToken 은 안전망: verify 응답 email 누락 시에도 token 만으로 confirm 가능하도록 통과 처리.
   const isFormValid =
-    (hasExistingEmail || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
+    (hasExistingEmail || hasResetToken || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
     isPasswordValid &&
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
@@ -138,11 +145,14 @@ export function PersonalInfoPopup() {
   };
 
   // Design Ref: §4.2.3 — 취소 시 로그아웃 + 로그인 이동
+  // reset-token 모드는 비로그인 상태에서 진입하므로 performLogout 불필요. 호출 시 401 + 콘솔 에러 노출만 발생.
   const handleCancel = async () => {
-    try {
-      await performLogout(queryClient);
-    } catch (err) {
-      console.error("[PersonalInfo] ログアウト失敗:", err);
+    if (!hasResetToken) {
+      try {
+        await performLogout(queryClient);
+      } catch (err) {
+        console.error("[PersonalInfo] ログアウト失敗:", err);
+      }
     }
     closePopup();
     router.replace("/login");
@@ -186,7 +196,26 @@ export function PersonalInfoPopup() {
         {/* 본문 */}
         <div className="flex flex-col gap-[24px] w-full">
           <div className="flex flex-col gap-[16px] w-full">
-            {/* Eメール 필드 */}
+            {/* Eメール 필드:
+                  - currentEmail 있음 (pwdInitYn=N + 등록된 email / pwdInitYn=Y reset-token) → read-only
+                  - currentEmail 없음 (pwdInitYn=N + 미등록) → 입력 + 중복체크
+                  - currentEmail 없음 + hasResetToken (안전망) → 안내 메시지만 표시.
+                    발화 경로: verify 응답이 200 이지만 `data.email` 이 누락된 비정상 케이스
+                    (스키마 변경 회귀 / 응답 부분 누락 / maskEmail 결과 빈 문자열 등). 정상 흐름에서는
+                    verify 가 항상 maskEmail(resetToken.userId) 을 반환하므로 거의 발화하지 않으나
+                    fail-open 으로 사용자에게 맥락만 제공하고 비번 입력은 진행 가능하게 둔다. */}
+            {!hasExistingEmail && hasResetToken && (
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>Eメール</label>
+                <p className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#999] leading-[1.5]">
+                  パスワード再設定リンクを受信したメールアドレスのアカウントです。
+                </p>
+                <p className="font-['Noto_Sans_JP'] text-[12px] lg:text-[13px] text-[#FF1A1A] leading-[1.5]">
+                  ※ メールアドレスの確認ができません。本メールを受信したご本人のアカウントであることをご確認の上、パスワードを変更してください。
+                </p>
+              </div>
+            )}
+            {(hasExistingEmail || !hasResetToken) && (
             <div className="flex flex-col gap-2 w-full">
               <label className={labelClass}>
                 Eメール
@@ -238,6 +267,7 @@ export function PersonalInfoPopup() {
                 </div>
               )}
             </div>
+            )}
 
             {/* 新規パスワード */}
             <div className="flex flex-col gap-2 w-full">

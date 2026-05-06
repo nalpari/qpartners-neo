@@ -247,10 +247,14 @@ export async function POST(request: NextRequest) {
         " (lookup STORE)",
       );
       if (r.kind === "found") {
-        if (r.detail.email && r.detail.email === email) {
+        // case-insensitive 비교 — `User@Example.com` vs `user@example.com` 같은 표기 차이로
+        // 정상 회원이 차단되는 false-negative 회피 (PR #150 정책 흡수).
+        const qspEmail = r.detail.email?.trim().toLowerCase() ?? null;
+        const inputEmail = email!.trim().toLowerCase();
+        if (qspEmail && qspEmail === inputEmail) {
           resolvedDetail = r.detail;
         } else {
-          // loginId 는 매칭됐으나 입력 email 과 불일치 → fail-closed
+          // loginId 는 매칭됐으나 입력 email 과 불일치 (또는 응답 email 누락) → fail-closed
           console.warn(`${LOG} STORE email mismatch — userTp=STORE`);
           lookupBlocker = "mismatch";
         }
@@ -379,8 +383,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. 비밀번호 변경 링크 메일 발송 — 수신자는 매칭 회원의 평문 email
+    //    /login 진입 시 reset-token 쿼리를 감지하여 PersonalInfoPopup(会員情報の設定)을 자동 오픈한다.
+    //    (구 /password-reset 풀페이지 → 신 /login?reset-token=… popup 흐름 — PR #150 정책 흡수)
     const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
-    const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
+    const resetUrl = `${siteUrl}/login?reset-token=${rawToken}`;
 
     try {
       await sendMail({

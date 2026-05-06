@@ -223,8 +223,14 @@ export async function GET(request: NextRequest) {
       authCd: detail.authCd,
       storeLvl: detail.storeLvl,
       statCd: detail.statCd,
+      // QSP 응답의 pwdInitYn — qspMemberDetailSchema 가 string 으로 받지만 LoginUser 는 "Y"/"N" enum.
+      // 알 수 없는 값은 null 로 폴백 (다음 로그인 시 personal-info 분기 통과 — 보수적 fail-open).
+      pwdInitYn: detail.pwdInitYn === "Y" || detail.pwdInitYn === "N" ? detail.pwdInitYn : null,
       authRole,
-      twoFactorVerified: authRole !== "ADMIN",
+      // login route 와 동일 정책 — pwdInitYn=N 회원은 ADMIN 아니어도 false 강제하여
+      // password-init 가드(`!twoFactorVerified || pwdInitYn==="N"`) 통과 가능. SSO 경유로 진입한
+      // 최초 로그인 회원도 personal-info popup 흐름이 정상 동작하도록 통일.
+      twoFactorVerified: authRole !== "ADMIN" && detail.pwdInitYn !== "N",
       telNo: detail.compTelNo ?? null,
     };
 

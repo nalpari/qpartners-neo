@@ -361,19 +361,15 @@ export function ContentsTable({
   }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
-    const categoryFields: MobileCardField<ContentListItem>[] = categories.map((parent, idx) => ({
-      label: parent.name,
-      key: "categories" as keyof ContentListItem,
-      render: (item: ContentListItem) => renderCategoryCell(item, parent.categoryCode, false, isInternal),
-      ...(idx === 0 ? { action: (item: ContentListItem) => <MobileAttachmentButton item={item} /> } : {}),
-    }));
-
+    // 모바일 목록은 카테고리 항목 비노출 — 사용자 요청에 따라 컴팩트 카드로 운영.
+    // 첨부 다운로드 버튼(MobileAttachmentButton)은 기존 첫 행(첫 카테고리)에 부여돼 있었으므로
+    // 카테고리 제거 후에는 첫 표시 필드인 タイトル 행으로 옮긴다.
     const base: MobileCardField<ContentListItem>[] = [
-      ...categoryFields,
       {
         label: "タイトル",
         key: "title",
         render: renderMobileTitle,
+        action: (item) => <MobileAttachmentButton item={item} />,
       },
       {
         label: "登録日",
@@ -421,7 +417,7 @@ export function ContentsTable({
     }
 
     return base;
-  }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
+  }, [isInternal, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
