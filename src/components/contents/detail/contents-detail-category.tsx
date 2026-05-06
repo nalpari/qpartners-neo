@@ -124,13 +124,9 @@ export function ContentsDetailCategory({
           aria-hidden={!categoryOpen}
         >
           <div className="overflow-hidden">
-            <div className="flex flex-col gap-4 mt-6">
-              <h3 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
-                カテゴリー
-              </h3>
-              <div className="flex flex-col gap-2">
-                {categoryGrid}
-              </div>
+            {/* 펼침 영역 — 토글 버튼에 이미 'カテゴリー' 타이틀이 있어 중복 표시 제거. */}
+            <div className="flex flex-col gap-2 mt-6">
+              {categoryGrid}
             </div>
           </div>
         </div>
