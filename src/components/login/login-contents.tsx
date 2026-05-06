@@ -69,9 +69,15 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
     let cancelled = false;
     void (async () => {
       try {
-        await api.post("/auth/password-reset/verify", { token: t });
+        const verifyRes = await api.post<{ data: { email?: string | null } }>(
+          "/auth/password-reset/verify",
+          { token: t },
+        );
         if (cancelled) return;
-        openPopup("personal-info", { token: t });
+        // verify 응답에 포함된 email 을 popup 의 read-only currentEmail 로 전달.
+        // pwdInitYn=Y 케이스(이미 정상 회원의 비번 재설정) 정책 — 검증 없이 read-only 노출.
+        const verifiedEmail = verifyRes.data?.data?.email ?? undefined;
+        openPopup("personal-info", { token: t, currentEmail: verifiedEmail });
       } catch (err) {
         if (cancelled) return;
         console.error("[LoginContents] パスワード再設定リンク検証失敗:", err);
@@ -110,16 +116,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         console.error("[LoginContents] localStorage 쓰기 실패:", storageErr);
       }
 
-      // Design Ref: §4.1 — requirePersonalInfo → 2FA → 홈 이동 순서
-      // NOTE: loginUserSchema에 requirePersonalInfo 미정의 — 서버 응답 raw 객체에서 직접 참조
-      const requirePersonalInfo = "requirePersonalInfo" in userData && userData.requirePersonalInfo === true;
-
-      if (requirePersonalInfo) {
-        // 회원정보 설정 필요: STORE + email 없음 등 서버 판정
+      // 분기 순서: pwdInitYn=N (최초 로그인) → personal-info popup 우선 + 2FA skip,
+      //            그 외 → 기존 2FA / 홈 이동.
+      // (Design Ref: §4.1 — pwdInitYn=N 회원정보 설정 우선 정책)
+      if (userData.pwdInitYn === "N") {
+        // 최초 로그인 — 회원정보 설정 popup 진입. 이메일 미등록도 popup 내부에서 입력+중복체크 처리.
         openPopup("personal-info", {
-          currentEmail: userData.email,
+          currentEmail: userData.email ?? undefined,
           userId: userData.userId,
           userTp: userData.userTp,
+          pwdInitYn: "N",
         });
       } else if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지.

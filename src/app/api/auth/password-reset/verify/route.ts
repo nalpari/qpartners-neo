@@ -66,11 +66,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. 유효한 토큰 (이메일 노출 방지 — userType만 반환)
+  // 4. 유효한 토큰 — popup 의 read-only 표시용으로 email 함께 반환.
+  //    토큰은 메일 수신 본인만 보유한다는 전제 + 1시간 TTL/사용 후 invalidate 로 노출 위험 제한적.
+  //    user_id 컬럼이 사실상 email(GENERAL/SEKO) 또는 email 형식 식별자 — 그대로 노출.
   return NextResponse.json({
     data: {
       valid: true,
       userType: resetToken.userType,
+      email: resetToken.userId,
     },
   });
 }

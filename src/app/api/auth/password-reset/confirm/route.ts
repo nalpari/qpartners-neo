@@ -307,6 +307,8 @@ export async function POST(request: NextRequest) {
     email: resetToken.userId,
     deptNm: detailData?.deptNm ?? null,
     authCd: detailData?.authCd ?? null,
+    // 비번 재설정 직후 → 항상 "Y" (다음 로그인부터 personal-info popup 우선 분기 통과)
+    pwdInitYn: "Y",
     storeLvl: detailData?.storeLvl ?? null,
     statCd: detailData?.statCd ?? null,
     authRole,

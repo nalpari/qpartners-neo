@@ -308,6 +308,8 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    // 최초 로그인 회원(N) → FE 가 personal-info popup 우선 표시 + 2FA 우회.
+    pwdInitYn: qsp.data.pwdInitYn,
     authRole,
     // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
     twoFactorVerified: !requireTwoFactor,

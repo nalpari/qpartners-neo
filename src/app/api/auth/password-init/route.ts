@@ -247,6 +247,8 @@ export async function POST(request: NextRequest) {
       deptNm: detailData?.deptNm ?? user.deptNm,
       authCd: detailData?.authCd ?? user.authCd,
       storeLvl: detailData?.storeLvl ?? user.storeLvl,
+      // 비번 설정 직후 → 항상 "Y" (다음 로그인부터 personal-info popup 우선 분기 통과)
+      pwdInitYn: "Y",
       statCd: detailData?.statCd ?? user.statCd,
       authRole,
       twoFactorVerified: true, // 비밀번호 변경 후 2FA Skip

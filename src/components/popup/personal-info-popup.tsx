@@ -22,8 +22,10 @@ export function PersonalInfoPopup() {
 
   const currentEmail = typeof popupData.currentEmail === "string" ? popupData.currentEmail : undefined;
   const hasExistingEmail = !!currentEmail;
-  // 비밀번호 초기화 메일 진입(reset-token) — 이메일은 토큰으로 이미 식별되므로 email 입력 단계 자체를 생략한다.
-  // verify 라우트가 보안상 email 을 노출하지 않으므로 안내문 외에 실제 주소는 표시하지 않는다.
+  // 진입 모드 — 분기:
+  //   pwdInitYn=N (최초 로그인): currentEmail 있으면 read-only / 없으면 입력+중복체크
+  //   pwdInitYn=Y (reset-token): verify 응답에서 받은 email 을 currentEmail 로 read-only 표시 (검증 X)
+  // 두 케이스 모두 hasExistingEmail 분기로 자연 흡수되므로 hasResetToken 별도 분기 불필요.
   const hasResetToken = typeof popupData.token === "string" && popupData.token.length > 0;
 
   const [email, setEmail] = useState("");
@@ -40,9 +42,10 @@ export function PersonalInfoPopup() {
   const isPasswordValid = validatePasswordPolicy(newPassword);
 
   // Design Ref: §3.5 — 저장 버튼 활성화 조건
-  // reset-token 모드는 email 입력을 받지 않으므로 email 검증을 자동 통과 처리.
+  // currentEmail 있음 → read-only(자동 통과). 없음 → 입력 + 중복체크 통과 필요.
+  // hasResetToken 은 안전망: verify 응답 email 누락 시에도 token 만으로 confirm 가능하도록 통과 처리.
   const isFormValid =
-    (hasResetToken || hasExistingEmail || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
+    (hasExistingEmail || hasResetToken || (email.trim() !== "" && emailChecked && emailCheckResult === "ok")) &&
     isPasswordValid &&
     confirmPassword.length > 0 &&
     confirmPassword === newPassword;
@@ -190,8 +193,11 @@ export function PersonalInfoPopup() {
         {/* 본문 */}
         <div className="flex flex-col gap-[24px] w-full">
           <div className="flex flex-col gap-[16px] w-full">
-            {/* Eメール 필드 — reset-token 모드에서는 이메일 단계 생략 (토큰으로 식별 완료) */}
-            {!hasResetToken && (
+            {/* Eメール 필드:
+                  - currentEmail 있음 (pwdInitYn=N + 등록된 email / pwdInitYn=Y reset-token) → read-only
+                  - currentEmail 없음 (pwdInitYn=N + 미등록) → 입력 + 중복체크
+                  - currentEmail 없음 + hasResetToken (verify 응답에 email 누락 안전망) → email 영역 자체 생략 */}
+            {(hasExistingEmail || !hasResetToken) && (
             <div className="flex flex-col gap-2 w-full">
               <label className={labelClass}>
                 Eメール

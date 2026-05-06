@@ -82,6 +82,8 @@ export const loginUserSchema = qspLoginUserSchema
     authCd: true,
     storeLvl: true,
     statCd: true,
+    // 최초 로그인(N) 시 회원정보 설정 popup 우선 표시 — 2FA 분기보다 우선.
+    pwdInitYn: true,
   })
   .extend({
     // optional: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
