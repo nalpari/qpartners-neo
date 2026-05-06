@@ -104,6 +104,9 @@ type HeaderGridContext = {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onActiveChange: (id: string, isActive: boolean) => void;
   isActiveBusy: boolean;
+  // RBAC — active select 가 update=false 시 disabled. 부모 핸들러(handleHeaderActiveChange) 도
+  // 패턴 E 본체 가드 적용 — UI/handler 이중 방어선.
+  isUpdateReadOnly: boolean;
 };
 
 // 첫번째 컬럼 — 신규행은 input, 기존행은 detail 진입 버튼 (편집 불가)
@@ -180,7 +183,7 @@ function ActiveSelectRendererFn(params: ICellRendererParams<HeaderGridRow>) {
     >
       <select
         value={data.isActive}
-        disabled={ctx.isActiveBusy}
+        disabled={ctx.isActiveBusy || ctx.isUpdateReadOnly}
         onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
         className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
       >
@@ -219,6 +222,12 @@ interface CodesHeaderTableProps {
   onActiveOnlyChange: (checked: boolean) => void;
   onActiveChange: (id: string, isActive: boolean) => void;
   isActiveBusy?: boolean;
+  // RBAC 표준 패턴 — 부모(CodesContents) 가 useMenuPermission 단일 호출 후 prop 으로 전달 (PR #148 리뷰 학습).
+  // 「追加」=create, 「保存」=신규/수정 양쪽, cell edit/active toggle=update.
+  // 부모 핸들러(handleHeaderCellEditStart, handleHeaderActiveChange) 가 본체 패턴 E 도 적용.
+  canCreate: boolean;
+  canUpdate: boolean;
+  isPermLoading: boolean;
 }
 
 export function CodesHeaderTable({
@@ -241,7 +250,16 @@ export function CodesHeaderTable({
   onActiveOnlyChange,
   onActiveChange,
   isActiveBusy = false,
+  canCreate,
+  canUpdate,
+  isPermLoading,
 }: CodesHeaderTableProps) {
+  // 「追加」 활성 조건 — create 권한 + 신규행 미존재.
+  const canAddNew = !isPermLoading && canCreate;
+  // 「保存」 활성 조건 — 신규행이 있으면 create 권한, 없으면 update 권한 (BE 가드와 동일 의미론).
+  // hasNewRow 유무에 따라 필요한 권한을 분기: 신규행 존재 시 create, 그 외 update.
+  const isSaveDisabledByPerm =
+    isPermLoading || (hasNewRow ? !canCreate : !canUpdate);
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
   //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
@@ -276,6 +294,7 @@ export function CodesHeaderTable({
     }
   }, [onCommitEdit, onEditCancel]);
 
+  const isUpdateReadOnly = isPermLoading || !canUpdate;
   const gridContext = useMemo<HeaderGridContext>(() => ({
     newRowFieldsRef,
     onNewRowFieldChange,
@@ -284,7 +303,8 @@ export function CodesHeaderTable({
     onKeyDown: handleKeyDown,
     onActiveChange,
     isActiveBusy,
-  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, onHeaderClick, handleKeyDown, onActiveChange, isActiveBusy]);
+    isUpdateReadOnly,
+  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, onHeaderClick, handleKeyDown, onActiveChange, isActiveBusy, isUpdateReadOnly]);
 
   const columnDefs = useMemo<ColDef<HeaderGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeRendererFn, cellStyle: makeEditableCellStyle("headerCode"), headerClass: "ag-header-cell-center" },
@@ -318,8 +338,11 @@ export function CodesHeaderTable({
     const field = event.colDef.field;
     if (!data || data.isNew || !field) return;
     if (NON_EDITABLE_FIELDS.has(field)) return;
+    // RBAC — 더블클릭으로 편집 시작 시도. 부모(handleHeaderCellEditStart) 가 패턴 E 본체 가드를
+    // 적용하지만, 여기서도 silent return 으로 alert 노출 횟수를 1회로 통일 (UX 일관성).
+    if (isPermLoading || !canUpdate) return;
     onCellEditStart(data.id, field);
-  }, [onCellEditStart]);
+  }, [onCellEditStart, isPermLoading, canUpdate]);
 
   return (
     <div className="flex flex-col w-[1440px] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
@@ -332,9 +355,15 @@ export function CodesHeaderTable({
           {hasNewRow ? (
             <Button variant="outline" onClick={onCancelAdd}>キャンセル</Button>
           ) : (
-            <Button variant="outline" onClick={onAdd}>追加</Button>
+            <Button variant="outline" onClick={onAdd} disabled={!canAddNew}>追加</Button>
           )}
-          <Button variant="primary" onClick={onSave} disabled={isSaving}>保存</Button>
+          <Button
+            variant="primary"
+            onClick={onSave}
+            disabled={isSaving || isSaveDisabledByPerm}
+          >
+            保存
+          </Button>
         </div>
       </div>
       <DataGrid<HeaderGridRow>

@@ -7,6 +7,8 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { Spinner } from "@/components/common";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
 import type { CategoryFormState, CascadePreview } from "./categories-types";
@@ -16,6 +18,17 @@ import { useCategoryMutations } from "./use-category-mutations";
 
 export function CategoriesContents() {
   const { openAlert } = useAlertStore();
+
+  // RBAC 표준 패턴 — ADM_CATEGORY 매트릭스 가드. 컨테이너 단일 호출 후 자식(detail) prop 주입
+  // 으로 부모/자식 중복 호출에 따른 isLoading 깜빡임 차단 (PR #148 리뷰 학습).
+  // 로딩 중 fail-closed (isPermLoading 시 readonly). 서버 가드 (requireMenuPermission) 가 최종 검증.
+  // mode 별 가드는 자식(CategoriesDetail) 에서 isNewMode 분기로 처리.
+  const {
+    canCreate: canCreateCategory,
+    canUpdate: canUpdateCategory,
+    canDelete: canDeleteCategory,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.CATEGORIES);
 
   // ─── Local State ───
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -117,7 +130,15 @@ export function CategoriesContents() {
   };
 
   // Plan SC: SC-04, SC-05 — 신규 등록 / 수정
+  // RBAC 패턴 E — 핸들러 본체 권한 가드 (PR #148 리뷰 학습). disabled 우회(키보드/race) 시
+  // mutate 도달 전 차단. 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지.
+  // mode (isNewMode) 별로 필요한 액션 분기 — create 또는 update.
   const handleSave = (form: CategoryFormState) => {
+    if (isPermLoading) return;
+    if (isNewMode ? !canCreateCategory : !canUpdateCategory) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     if (!form.categoryCode.trim()) {
       openAlert({ type: "alert", message: "カテゴリコードは必須入力項目です。" });
       return;
@@ -156,6 +177,13 @@ export function CategoriesContents() {
   const handleDelete = async () => {
     // 더블클릭/연타 가드 — preview API in-flight 중 재진입 차단.
     if (selectedId === null || isPreviewLoading) return;
+    // RBAC 패턴 E — cascade-preview API 자체가 ADM_CATEGORY.delete 가드를 갖는 BE 라우트.
+    // FE 도 호출 직전 동일 액션 가드로 일관성 유지 (PR #148 리뷰 학습).
+    if (isPermLoading) return;
+    if (!canDeleteCategory) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
 
     let preview: CascadePreview;
     setIsPreviewLoading(true);
@@ -201,6 +229,12 @@ export function CategoriesContents() {
   };
 
   const handleNew = () => {
+    // RBAC 패턴 E — 신규 모드 전환은 create 권한 필수. UI(disabled) 와 핸들러 본체 이중 가드.
+    if (isPermLoading) return;
+    if (!canCreateCategory) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     setIsNewMode(true);
     setSelectedId(null);
   };
@@ -263,6 +297,12 @@ export function CategoriesContents() {
         isNewMode={isNewMode}
         // preview 로딩 중에도 삭제/저장 버튼 disabled — 중복 요청 차단.
         isSaving={isSaving || isPreviewLoading}
+        // RBAC 표준 패턴 — 부모 단일 호출 + 자식 prop 주입. 자식 컴포넌트 내부에서
+        // useMenuPermission 중복 호출 시 발생하는 isLoading 깜빡임 회귀 차단 (PR #148 리뷰 학습).
+        canCreate={canCreateCategory}
+        canUpdate={canUpdateCategory}
+        canDelete={canDeleteCategory}
+        isPermLoading={isPermLoading}
         onSave={handleSave}
         onDelete={handleDelete}
         onNew={handleNew}

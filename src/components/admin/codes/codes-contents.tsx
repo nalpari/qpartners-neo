@@ -11,6 +11,8 @@ import { toHeaderGridRow, toDetailGridRow, DETAIL_NULLABLE_FIELDS, HEADER_NULLAB
 import { useCodeHeaders } from "./hooks/use-code-headers";
 import { useCodeDetails } from "./hooks/use-code-details";
 import { useCellEdit } from "@/hooks/use-cell-edit";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 /**
  * 클라이언트 검증 실패를 나타내는 커스텀 에러.
@@ -137,6 +139,17 @@ function getApiErrorMessage(err: unknown, stage?: string): string {
 export function CodesContents() {
   const { openAlert } = useAlertStore();
 
+  // RBAC 표준 패턴 — ADM_CODE 매트릭스 가드. 컨테이너 단일 호출 후 자식(header/detail table) prop 주입.
+  // 부모/자식 중복 호출에 따른 isLoading 깜빡임 차단 (PR #148 리뷰 학습).
+  // 로딩 중 fail-closed (isPermLoading 시 readonly). 서버 가드(requireMenuPermission) 가 최종 검증.
+  // codes 화면은 Header/Detail 양쪽 모두 ADM_CODE 단일 menuCode 로 BE 가 가드 (개별 menuCode 분리 없음).
+  const {
+    canCreate: canCreateCode,
+    canUpdate: canUpdateCode,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.CODES);
+  // codes 화면에는 FE 행 삭제 UI 가 없음 (isActive=N 비활성화 정책) — canDelete 미사용.
+
   // 공유 state — 두 훅의 연결점
   const [selectedHeaderId, setSelectedHeaderId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -182,7 +195,7 @@ export function CodesContents() {
     editingCell: headerEditingCell,
     detailEditRef: headerEditRef,
     pendingChanges: headerPending,
-    handleCellEditStart: handleHeaderCellEditStart,
+    handleCellEditStart: rawHandleHeaderCellEditStart,
     handleEditCancel: handleHeaderEditCancel,
     handleEditFieldChange: handleHeaderEditFieldChange,
     commitEdit: commitHeaderEdit,
@@ -190,6 +203,26 @@ export function CodesContents() {
     clearPending: clearHeaderPending,
     discardRowPending: discardHeaderRowPending,
   } = headerEdit;
+
+  // RBAC 패턴 E — cell editing 진입은 update 액션. canUpdate=false 시 진입 차단.
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지. permissions-table 의 동일 패턴 미러링.
+  const handleHeaderCellEditStart = useCallback((rowId: string, field: string) => {
+    if (isPermLoading) return;
+    if (!canUpdateCode) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
+    rawHandleHeaderCellEditStart(rowId, field);
+  }, [rawHandleHeaderCellEditStart, isPermLoading, canUpdateCode, openAlert]);
+
+  const handleDetailCellEditStart = useCallback((rowId: string, field: string) => {
+    if (isPermLoading) return;
+    if (!canUpdateCode) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
+    detailEdit.handleCellEditStart(rowId, field);
+  }, [detailEdit, isPermLoading, canUpdateCode, openAlert]);
 
   // Grid 표시용 데이터 — pending overlay + editingField 주입
   const headerRows: HeaderGridRow[] = [
@@ -231,17 +264,21 @@ export function CodesContents() {
 
   // 使用可否(isActive) 변경 — pending 누적 (즉시 PUT 안 함, 「保存」 버튼에서 일괄 처리).
   // 신규행은 pending 비대상 (등록 시 BE default true 적용).
+  // RBAC 패턴 E — active toggle 은 update 액션. canUpdate=false 시 pending 누적 자체 차단.
+  // disabled 우회(키보드/race) 시에도 pending 진입 전 silent 차단 (저장 버튼 disabled 와 이중 가드).
   const handleHeaderActiveChange = useCallback((id: string, isActive: boolean) => {
     if (id.startsWith("new-")) return;
     if (!Number.isFinite(Number(id))) return;
+    if (isPermLoading || !canUpdateCode) return;
     setHeaderPendingField(id, "isActive", isActive ? "Y" : "N");
-  }, [setHeaderPendingField]);
+  }, [setHeaderPendingField, isPermLoading, canUpdateCode]);
 
   const handleDetailActiveChange = useCallback((id: string, isActive: boolean) => {
     if (id.startsWith("new-")) return;
     if (!Number.isFinite(Number(id))) return;
+    if (isPermLoading || !canUpdateCode) return;
     setDetailPendingField(id, "isActive", isActive ? "Y" : "N");
-  }, [setDetailPendingField]);
+  }, [setDetailPendingField, isPermLoading, canUpdateCode]);
 
   // 통합 저장 — 신규행 + 편집중 셀 commit + 누적 pending 일괄 저장.
   // 처리 순서:
@@ -250,8 +287,25 @@ export function CodesContents() {
   //   3) Header pending 행별 PUT
   //   4) Detail pending 행별 PUT
   //   5) 모든 단계 성공 시 pending 클리어 + alert
+  // RBAC 패턴 E — 신규행이면 create 권한, pending 만 있으면 update 권한 필수. 둘 다 있으면 둘 다 필요.
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (PR #148 리뷰 학습).
   const handleSave = useCallback(async () => {
     if (isSaving) return;
+    if (isPermLoading) return;
+    const hasNewRow = !!headerNewRow || !!detailNewRow;
+    const hasUpdate =
+      Object.keys(headerPending).length > 0 ||
+      Object.keys(detailPending).length > 0 ||
+      headerEditingCell !== null ||
+      editingCell !== null;
+    if (hasNewRow && !canCreateCode) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
+    if (hasUpdate && !canUpdateCode) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     setIsSaving(true);
     try {
       // 0) Detail Sort Order 중복 검증 — 같은 Header 내 Detail 들 사이에서 충돌 금지.
@@ -423,6 +477,9 @@ export function CodesContents() {
     }
   }, [
     isSaving,
+    isPermLoading,
+    canCreateCode,
+    canUpdateCode,
     headerNewRow,
     headerNewRowRef,
     headerCreateMutation,
@@ -477,6 +534,12 @@ export function CodesContents() {
         onActiveOnlyChange={headers.setHeaderActiveOnly}
         onActiveChange={handleHeaderActiveChange}
         isActiveBusy={isSaving}
+        // RBAC — 부모 단일 호출 + 자식 prop 주입 (PR #148 리뷰 학습).
+        // 「追加」 버튼 disabled (canCreate), 「保存」 버튼 disabled (action 별 분기는 자식이 결정).
+        // active select / cell editing 도 update=false 시 disabled.
+        canCreate={canCreateCode}
+        canUpdate={canUpdateCode}
+        isPermLoading={isPermLoading}
       />
 
       <CodesDetailTable
@@ -487,7 +550,7 @@ export function CodesContents() {
         editingCell={editingCell}
         onAdd={details.handleDetailAdd}
         onCancelAdd={details.handleDetailCancelAdd}
-        onCellEditStart={detailEdit.handleCellEditStart}
+        onCellEditStart={handleDetailCellEditStart}
         onEditCancel={handleEditCancel}
         onCommitEdit={commitDetailEdit}
         onNewRowFieldChange={details.handleDetailNewRowFieldChange}
@@ -497,6 +560,10 @@ export function CodesContents() {
         onActiveOnlyChange={details.setDetailActiveOnly}
         onActiveChange={handleDetailActiveChange}
         isActiveBusy={isSaving}
+        // RBAC — Header 와 동일 매트릭스(ADM_CODE).
+        canCreate={canCreateCode}
+        canUpdate={canUpdateCode}
+        isPermLoading={isPermLoading}
       />
     </main>
   );
