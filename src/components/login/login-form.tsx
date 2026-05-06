@@ -195,9 +195,15 @@ export function LoginForm({
                 tabIndex={0}
                 onClick={() => onAgreeTermsChange(!agreeTerms)}
                 onKeyDown={(e) => {
-                  if (e.key === " " || e.key === "Enter") {
+                  // Space → 체크 토글 (표준 체크박스 키바인딩)
+                  // Enter → form submit 직접 트리거. span 에 focus 있는 상태에서는 브라우저가
+                  //         form 의 implicit submit 으로 전파해주지 않아 focus 이동처럼 보이는 문제 수정.
+                  if (e.key === " ") {
                     e.preventDefault();
                     onAgreeTermsChange(!agreeTerms);
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (canSubmit) onSubmit();
                   }
                 }}
                 className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5] cursor-pointer"

@@ -28,9 +28,11 @@ interface LoginContentsProps {
   initialSavedTab?: TabType;
   /** 서버에서 전달된 초기 error 메시지 (자동로그인 실패 등 외부 유입 안내) */
   initialError?: string | null;
+  /** 비밀번호 초기화 메일 reset-token — verify 통과 시 PersonalInfoPopup(会員情報の設定) 자동 오픈 */
+  initialResetToken?: string | null;
 }
 
-export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null }: LoginContentsProps) {
+export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null, initialResetToken = null }: LoginContentsProps) {
   // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
   const prefillRef = useRef(useAppStore.getState().prefillEmail);
 
@@ -56,6 +58,51 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   const queryClient = useQueryClient();
   const openPopup = usePopupStore((s) => s.openPopup);
 
+  // 비밀번호 초기화 메일 → /login?reset-token=… 진입 시 verify 후 PersonalInfoPopup 자동 오픈.
+  // useRef 로 첫 마운트 시점의 token 만 캡처해 1회만 처리한다 (개발 모드 StrictMode 더블 마운트 방어).
+  // openPopup 은 zustand store action 으로 일반적으로 안정 참조이지만, 의존성 배열에 두면 재실행 시
+  // cancelled cleanup 이 진행 중인 fetch 를 끊어버리는 race 가 있어 effect 외부에서 getState() 로 직접
+  // 참조한다. 의존성 배열은 mount-only 의도이므로 빈 배열 사용.
+  const resetTokenRef = useRef(initialResetToken);
+  useEffect(() => {
+    if (!resetTokenRef.current) return;
+    const t = resetTokenRef.current;
+    resetTokenRef.current = null;
+
+    // verify fetch 전에 URL 에서 토큰 즉시 제거 — fetch 와 popup open 사이 외부 리소스가 로드될 경우
+    // Referer 헤더로 토큰 유출되는 채널을 사전 차단. (성공/실패 어느 경로든 토큰 URL 잔존이 없음)
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", "/login");
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const verifyRes = await api.post<{ data: { email?: string | null } }>(
+          "/auth/password-reset/verify",
+          { token: t },
+        );
+        if (cancelled) return;
+        // verify 응답에 포함된 (마스킹된) email 을 popup 의 read-only currentEmail 로 전달.
+        // pwdInitYn=Y 케이스(이미 정상 회원의 비번 재설정) 정책 — 검증 없이 read-only 노출.
+        const verifiedEmail = verifyRes.data?.data?.email ?? undefined;
+        usePopupStore.getState().openPopup("personal-info", { token: t, currentEmail: verifiedEmail });
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[LoginContents] 비밀번호 재설정 링크 검증 실패:", err);
+        if (isAxiosError(err) && err.response) {
+          const data = err.response.data as Record<string, unknown> | undefined;
+          const serverMsg = typeof data?.error === "string" ? data.error : null;
+          setNotice(serverMsg ?? "無効または期限切れのリンクです。");
+        } else {
+          setNotice("サーバーに接続できません。しばらくしてからもう一度お試しください。");
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
   const loginMutation = useMutation({
     mutationFn: async (params: { loginId: string; pwd: string; userTp: string }) => {
       const res = await api.post<{ data: LoginUser }>("/auth/login", params);
@@ -73,16 +120,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         console.error("[LoginContents] localStorage 쓰기 실패:", storageErr);
       }
 
-      // Design Ref: §4.1 — requirePersonalInfo → 2FA → 홈 이동 순서
-      // NOTE: loginUserSchema에 requirePersonalInfo 미정의 — 서버 응답 raw 객체에서 직접 참조
-      const requirePersonalInfo = "requirePersonalInfo" in userData && userData.requirePersonalInfo === true;
-
-      if (requirePersonalInfo) {
-        // 회원정보 설정 필요: STORE + email 없음 등 서버 판정
+      // 분기 순서: pwdInitYn=N (최초 로그인) → personal-info popup 우선 + 2FA skip,
+      //            그 외 → 기존 2FA / 홈 이동.
+      // (Design Ref: §4.1 — pwdInitYn=N 회원정보 설정 우선 정책)
+      if (userData.pwdInitYn === "N") {
+        // 최초 로그인 — 회원정보 설정 popup 진입. 이메일 미등록도 popup 내부에서 입력+중복체크 처리.
         openPopup("personal-info", {
-          currentEmail: userData.email,
+          currentEmail: userData.email ?? undefined,
           userId: userData.userId,
           userTp: userData.userTp,
+          pwdInitYn: "N",
         });
       } else if (!userData.twoFactorVerified) {
         // 2FA 미완료: 인증 플래그 미설정, 헤더는 비로그인 유지.

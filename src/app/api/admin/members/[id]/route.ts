@@ -98,16 +98,6 @@ const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set
 ]);
 
 /**
- * 관리자가 대상 회원 자신인지 case-insensitive 로 판정.
- * MF-4: 단순 path rawId 비교 대신 QSP 의 canonical userId/loginId 를 사용해
- * 이메일 별칭·대소문자·공백 차이로 인한 self-guard 우회를 방지한다.
- */
-function isSelfTarget(adminUserId: string, detail: QspMemberDetail): boolean {
-  const admin = adminUserId.trim().toLowerCase();
-  return detail.userId.trim().toLowerCase() === admin;
-}
-
-/**
  * QSP userDetail 응답을 TO-BE MemberDetail 응답 shape 로 매핑.
  * GET / PUT 양쪽에서 동일 매핑을 사용해 DRY 유지.
  * 반환타입을 MemberDetail 로 명시 — 필드 drift 발생 시 컴파일 시점 탐지.
@@ -453,42 +443,39 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 자기 자신 수정 가드 — self-lockout / self-escalation 방지
-    // MF-4: 보호 대상을 status + userRole + twoFactorEnabled 로 확장한다.
-    //       관리자가 본인 계정을 무력화(비활성/2FA off)하거나 권한을 마음대로
-    //       조작할 수 없어야 한다.
-    // preDetail null 경로는 4-0-c 에서 userRole/2FA 가 이미 차단되므로,
-    // 여기서는 status 변경에 한해 rawId 기반 fallback 자기 비교만 수행한다.
-    const modifiesSelfCritical =
-      result.data.status !== undefined ||
-      result.data.userRole !== undefined ||
-      result.data.twoFactorEnabled !== undefined;
-    if (modifiesSelfCritical) {
-      if (preDetail) {
-        // canonical ID 비교로 self-target 판정
-        if (isSelfTarget(user.userId, preDetail)) {
+    // self-edit 가드 해제 — ADMIN/SUPER_ADMIN 은 본인 포함 모든 사용자 정보 수정 허용
+    // (정책: 관리자 영역 fail-open / full CRUD).
+    // 단 self-lockout 회복 불능 케이스만 차단:
+    //   - 본인 status 를 deleted 로 전환 시 자기 자신을 시스템에서 제외하는 결과가 되어
+    //     이후 본인이 어떠한 관리자 행위도 못 함. SUPER_ADMIN 1명만 있는 운영 환경에서 시스템 lockout.
+    //   - "withdrawn" 은 memberUpdateSchema.status 의 WRITABLE_STATUSES = ["active", "deleted"]
+    //     enum 에서 제외돼 스키마 레벨에서 거부되므로 별도 가드 불필요.
+    //   - 본인이 본인 권한을 GENERAL 등 일반회원으로 강등시키는 케이스도 동일.
+    // 운영 매뉴얼 권고:
+    //   - ADMIN/SUPER_ADMIN 항상 2명 이상 유지 (단일 ADMIN 락아웃 시 복구 불가)
+    //   - 본인 2FA 끄기 / 본인 비활성화는 신중히 수행 (코드 차단은 적용하지 않음)
+    if (preDetail) {
+      const isSelf = user.userId.trim().toLowerCase() === preDetail.userId.trim().toLowerCase();
+      if (isSelf) {
+        if (result.data.status === "deleted") {
           return NextResponse.json(
-            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { error: "自分自身のアカウントを削除状態に変更することはできません" },
             { status: 400 },
           );
         }
-      } else {
-        // preDetail null (F_NOT_USER): NFKC 정규화 후 rawId fallback 비교
-        // - 전각/반각, 한글 조합, invisible char(ZWSP 등) 우회 차단
-        // - 대소문자·좌우 공백 무시
-        // - 도달 가능한 케이스는 status 변경(복구) 에 한정됨 (4-0-c)
-        const normalize = (s: string) =>
-          s.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-        const adminNorm = normalize(user.userId);
-        const targetNorm = normalize(rawId);
-        if (adminNorm === targetNorm) {
-          // matched 케이스만 감사 로그 출력 (불일치는 정상 경로 — 노이즈 방지)
-          console.warn("[PUT /api/admin/members/:id] preDetail null — NFKC 정규화 rawId fallback 매칭(self-target 차단):", {
-            adminUserId: maskEmail(user.userId),
-            targetRawId: maskEmail(rawId),
-          });
+        if (result.data.userRole === "GENERAL") {
           return NextResponse.json(
-            { error: "自分自身のアカウントに対するこの変更は実行できません" },
+            { error: "自分自身のアカウントを一般会員に降格することはできません" },
+            { status: 400 },
+          );
+        }
+        // ADMIN 본인이 자기 권한을 SUPER_ADMIN 으로 승격하는 self-escalation 차단.
+        // (현재 매트릭스에서 userRole 변경은 GENERAL 회원 한정이라 ADMIN/SUPER_ADMIN 회원에 대한
+        // userRole 필드 자체가 위 가드(`preDetail.userTp !== "GENERAL"` L506)에서 차단되지만,
+        // 매트릭스 변경 시 회귀 방어 차원에서 self-escalation 도 명시 차단한다.)
+        if (result.data.userRole === "SUPER_ADMIN" && user.role !== "SUPER_ADMIN") {
+          return NextResponse.json(
+            { error: "自分自身の権限を昇格することはできません" },
             { status: 400 },
           );
         }

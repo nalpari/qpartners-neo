@@ -92,6 +92,12 @@ export const loginUserSchema = qspLoginUserSchema
     // nullish: 기존 JWT 호환 (undefined, 재로그인 전까지) + QSP 응답 null 허용
     // TODO: SEKO 사용자는 개인 전화번호(telNo) 별도 처리 필요
     telNo: z.string().nullish(),
+    // 최초 로그인(N) 시 회원정보 설정 popup 우선 표시 — 2FA 분기보다 우선.
+    // nullish 폴백 정책 (auto-login/inbound 와 동일):
+    //   - 본 필드 추가 이전에 발급된 구 JWT (필드 자체 미존재 → undefined) → 2FA 분기로 정상 폴백 (popup 미진입)
+    //   - QSP 응답 null (필드 미설정/이관 잔재) → 동일하게 2FA 분기로 폴백
+    //   - 클라이언트 분기 `userData.pwdInitYn === "N"` 가 false 가 되어 personal-info popup 미표시
+    pwdInitYn: z.enum(["Y", "N"]).nullish(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

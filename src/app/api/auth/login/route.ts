@@ -308,9 +308,13 @@ export async function POST(request: NextRequest) {
     authCd: qsp.data.authCd,
     storeLvl: qsp.data.storeLvl,
     statCd: qsp.data.statCd,
+    // 최초 로그인 회원(N) → FE 가 personal-info popup 우선 표시 + 2FA 우회.
+    pwdInitYn: qsp.data.pwdInitYn,
     authRole,
-    // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정
-    twoFactorVerified: !requireTwoFactor,
+    // fail-closed: 2FA 필요 시 false, 불필요 시 true 명시 설정.
+    // pwdInitYn=N 케이스(GENERAL/SEKO 도 2FA 미요구로 true 가 발급되던 충돌 방지) — false 강제하여
+    // password-init 가드(`!twoFactorVerified` 조건)를 통과시켜 최초 비밀번호 설정 흐름 진입 가능.
+    twoFactorVerified: !requireTwoFactor && qsp.data.pwdInitYn !== "N",
     // QSP compTelNo(회사 전화번호) → telNo로 전달 (문의하기 자동 입력용)
     telNo: qsp.data.compTelNo ?? null,
   };

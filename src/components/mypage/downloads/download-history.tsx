@@ -32,8 +32,6 @@ interface DownloadLogsData {
   list: DownloadLogItem[];
 }
 
-const MOBILE_PAGE_SIZE = 5;
-
 function formatDate(iso: string): string {
   return iso.slice(0, 10).replace(/-/g, ".");
 }
@@ -113,13 +111,14 @@ export function DownloadHistory() {
   });
 
   // 모바일 데이터: 첫 페이지는 PC 데이터 사용, 추가 페이지는 별도 fetch로 누적
+  // pageSize 셀렉트박스(20/50/100) 가 모바일 누적 단위에도 그대로 반영되도록 PC 와 동일한 pageSize 사용.
   const mobileData = mobilePage === 1
-    ? (data?.list.slice(0, MOBILE_PAGE_SIZE) ?? [])
+    ? (data?.list.slice(0, pageSize) ?? [])
     : mobileItems;
 
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.ceil(totalCount / pageSize);
-  const mobileHasMore = mobilePage * MOBILE_PAGE_SIZE < totalCount;
+  const mobileHasMore = mobilePage * pageSize < totalCount;
 
   // 검색 실행
   const handleSearch = () => {
@@ -157,10 +156,10 @@ export function DownloadHistory() {
     const nextPage = mobilePage + 1;
     setIsMobileLoading(true);
     try {
-      const params: Record<string, string | number> = { page: nextPage, pageSize: MOBILE_PAGE_SIZE };
+      const params: Record<string, string | number> = { page: nextPage, pageSize };
       if (searchKeyword) params.keyword = searchKeyword;
       const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
-      setMobileItems((prev) => [...(prev.length === 0 ? (data?.list.slice(0, MOBILE_PAGE_SIZE) ?? []) : prev), ...res.data.data.list]);
+      setMobileItems((prev) => [...(prev.length === 0 ? (data?.list.slice(0, pageSize) ?? []) : prev), ...res.data.data.list]);
       setMobilePage(nextPage);
     } catch (err: unknown) {
       console.error("[DownloadHistory] 추가 로드 실패:", err);

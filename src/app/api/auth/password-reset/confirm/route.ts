@@ -13,6 +13,7 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole, type AuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
 const qspUserDetailSchema = z.object({
@@ -21,6 +22,7 @@ const qspUserDetailSchema = z.object({
     userNm: z.string().nullable().optional(),
     compCd: z.string().nullable().optional(),
     compNm: z.string().nullable().optional(),
+    compTelNo: z.string().nullable().optional(),
     deptNm: z.string().nullable().optional(),
     authCd: z.string().nullable().optional(),
     storeLvl: z.string().nullable().optional(),
@@ -91,6 +93,25 @@ export async function POST(request: NextRequest) {
   // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회
   const token = hashResetToken(rawToken);
 
+  // 1-a. Rate limit — confirm 은 QSP 비밀번호 변경 API 를 호출하므로 무제한 시 외부 API 부하 유발.
+  //       verify 와 동일 패턴(IP 우선, 부재 시 token 해시 prefix) 으로 적용.
+  //       [전제] 배포 환경의 리버스 프록시(Nginx/ALB) 가 클라이언트 x-forwarded-for 를 덮어씀.
+  //       [보안] rawToken 원문 prefix 대신 hashResetToken 결과 prefix 를 사용 — 메모리 덤프/로그
+  //       유출 시 rate limit 키에서 원본 토큰 일부가 역추출되는 채널 차단.
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+  const tokenHashPrefix = token.slice(0, 16);
+  const ipKey = ip ?? `token:${tokenHashPrefix}`;
+  if (!checkRateLimit(`pw-confirm:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+      { status: 429 },
+    );
+  }
+  if (!ip) {
+    console.warn("[POST /api/auth/password-reset/confirm] IP 헤더 없음 — token hash prefix 기반 rate limit 적용");
+  }
+
   // 2. 토큰 재검증
   let resetToken;
   try {
@@ -112,7 +133,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
+  // 3. userType 검증 — 토큰 사용 처리(updateMany) 보다 먼저 수행하여 검증 실패 시 토큰을
+  //    소모하지 않도록 한다. (이전 위치는 토큰 사용 후 rollback 패턴이라 race window 가 컸음)
+  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
+  if (!userTpParsed.success) {
+    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
+    return NextResponse.json(
+      { error: "サーバーエラーが発生しました" },
+      { status: 500 },
+    );
+  }
+  const validUserTp = userTpParsed.data;
+
+  // 4. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
   let updated;
   try {
     updated = await prisma.passwordResetToken.updateMany({
@@ -201,18 +234,6 @@ export async function POST(request: NextRequest) {
   if (!detailData && resetToken.userType === "GENERAL") {
     console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
   }
-
-  // 5. userType 검증 — QSP 호출 전에 수행 (실패 시 비밀번호 변경 방지)
-  const userTpParsed = z.enum(userTpValues).safeParse(resetToken.userType);
-  if (!userTpParsed.success) {
-    console.error("[POST /api/auth/password-reset/confirm] DB userType 검증 실패:", resetToken.userType);
-    return rollbackAndRespond(token,
-      "サーバーエラーが発生しました",
-      "サーバーエラーが発生しました",
-      500,
-    );
-  }
-  const validUserTp = userTpParsed.data;
 
   // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
   let qspResponse: Response;
@@ -307,10 +328,14 @@ export async function POST(request: NextRequest) {
     email: resetToken.userId,
     deptNm: detailData?.deptNm ?? null,
     authCd: detailData?.authCd ?? null,
+    // 비번 재설정 직후 → 항상 "Y" (다음 로그인부터 personal-info popup 우선 분기 통과)
+    pwdInitYn: "Y",
     storeLvl: detailData?.storeLvl ?? null,
     statCd: detailData?.statCd ?? null,
     authRole,
     twoFactorVerified: true, // 비밀번호 초기화 후 자동 로그인은 2FA Skip (p.14 스펙)
+    // QSP compTelNo(회사 전화번호) → telNo (login/auto-login 라우트와 동일 매핑)
+    telNo: detailData?.compTelNo ?? null,
   };
 
   let jwtToken: string;

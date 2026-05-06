@@ -32,7 +32,7 @@ export function ContentsDetailActions({
         <Button
           variant="secondary"
           onClick={onDelete}
-          className="flex-1 lg:flex-none lg:w-[68px]"
+          className="!hidden lg:!inline-flex lg:w-[68px]"
         >
           削除
         </Button>

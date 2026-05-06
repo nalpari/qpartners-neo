@@ -146,6 +146,32 @@ export async function POST(request: NextRequest) {
     }
     userExists = parsed.data.result.resultCode === "S" && parsed.data.data != null;
 
+    // QSP 응답 email 정합성 검증 — QSP /user/detail 이 loginId / sekoId 단독 매칭으로 success
+    // 반환하는 사양이라 입력 email 이 가짜여도 userExists=true 로 떨어지는 결함 방어.
+    // (예: STORE 회원 A03 의 등록 메일이 a@x.kr 인데 b@y.kr 로 요청해도 토큰 생성·메일 발송됨)
+    // 응답 data.email 과 입력 email 을 case-insensitive 비교해 불일치 시 미존재로 처리한다.
+    if (userExists) {
+      const emailExtract = z.object({ email: z.string().nullable() }).safeParse(parsed.data.data);
+      const qspEmail = emailExtract.success
+        ? emailExtract.data.email?.trim().toLowerCase() ?? null
+        : null;
+      const inputEmail = email.trim().toLowerCase();
+      if (!qspEmail) {
+        // qspEmail=null 인 케이스: QSP 회원 row 자체에 email 컬럼이 비어있거나 응답 누락.
+        // 비밀번호 초기화는 메일 링크 발송 기반이라 등록 이메일이 없으면 절차 자체가 불가능 →
+        // 미존재로 처리. 운영에서 이 케이스가 빈번하면 회원 데이터 정비 또는 대안 안내 절차 필요.
+        console.warn(
+          `[POST /api/auth/password-reset/request] QSP 응답 email 누락(미등록 회원) — userTp: ${userTp}`,
+        );
+        userExists = false;
+      } else if (qspEmail !== inputEmail) {
+        console.warn(
+          `[POST /api/auth/password-reset/request] QSP 응답 email 불일치 — userTp: ${userTp}`,
+        );
+        userExists = false;
+      }
+    }
+
     // ADMIN/STORE: loginId≠email일 수 있으므로 userDetail 응답에서 userId(=loginId) 추출하여 토큰에 저장
     if (userExists && !resolvedLoginId) {
       const userIdResult = z.object({ userId: z.string() }).safeParse(parsed.data.data);
@@ -205,7 +231,9 @@ export async function POST(request: NextRequest) {
   // 5. 비밀번호 변경 링크 메일 발송
   const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
   // URL에는 원본 토큰을 전달 — 사용자가 링크를 열면 verify/confirm에서 해싱 후 DB 조회
-  const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
+  // /login 진입 시 reset-token 쿼리를 감지하여 PersonalInfoPopup(会員情報の設定)을 자동 오픈한다.
+  // (구 /password-reset 풀페이지 → 신 /login?reset-token=… popup 흐름)
+  const resetUrl = `${siteUrl}/login?reset-token=${rawToken}`;
 
   try {
     await sendMail({

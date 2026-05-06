@@ -35,6 +35,7 @@ const qspUserDetailSchema = z.object({
     userNm: z.string().nullable().optional(),
     compCd: z.string().nullable().optional(),
     compNm: z.string().nullable().optional(),
+    compTelNo: z.string().nullable().optional(),
     deptNm: z.string().nullable().optional(),
     authCd: z.string().nullable().optional(),
     storeLvl: z.string().nullable().optional(),
@@ -54,16 +55,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. 접근 제어 가드 — 최초 로그인(2FA 미완료) 상태에서만 호출 허용
-    //    pwdInitYn 제거 후 대체: twoFactorVerified === false 가 "아직 본인인증 미완료 최초 로그인" 상태를 표현
-    if (user.twoFactorVerified) {
+    // 2. 접근 제어 가드 — 최초 로그인 상태에서만 호출 허용.
+    //    twoFactorVerified === false 또는 pwdInitYn === "N" (login route 가 GENERAL/SEKO 의
+    //    twoFactorVerified=true 를 false 강제하므로 사실상 첫 조건만으로 충분하나, defense-in-depth
+    //    차원에서 pwdInitYn=N 도 명시적으로 통과 처리해 회귀 방어)
+    if (user.twoFactorVerified && user.pwdInitYn !== "N") {
       return NextResponse.json(
         { error: "この操作は初回ログイン時のみ有効です" },
         { status: 403 },
       );
     }
 
-    // 3. rate limit — 유저당 5분간 5회
+    // 3. rate limit — 유저당 5분간 5회. 보안 모범 사례에 따라 인증 직후 / 검증 전에 적용해
+    //    유효 페이로드 brute force 도 동일하게 차단되도록 한다 (Zod 파싱 비용 과다 발생 방지).
     if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
       return NextResponse.json(
         { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
@@ -247,9 +251,13 @@ export async function POST(request: NextRequest) {
       deptNm: detailData?.deptNm ?? user.deptNm,
       authCd: detailData?.authCd ?? user.authCd,
       storeLvl: detailData?.storeLvl ?? user.storeLvl,
+      // 비번 설정 직후 → 항상 "Y" (다음 로그인부터 personal-info popup 우선 분기 통과)
+      pwdInitYn: "Y",
       statCd: detailData?.statCd ?? user.statCd,
       authRole,
       twoFactorVerified: true, // 비밀번호 변경 후 2FA Skip
+      // QSP compTelNo(회사 전화번호) → telNo (login/auto-login 라우트와 동일 매핑) — 마이페이지 telNo 의존 컴포넌트 stale-blank 방지
+      telNo: detailData?.compTelNo ?? user.telNo ?? null,
     };
 
     let jwtToken: string;
