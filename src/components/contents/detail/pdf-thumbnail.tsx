@@ -21,8 +21,16 @@ interface PdfThumbnailProps {
   onLoaded?: (fileId: number) => void;
 }
 
-/** 컨테이너 한 변 길이 — `contents-detail-attachment.tsx` 의 size-[180px] 박스에 맞춤 */
-const CONTAINER_SIZE = 180;
+/** 컨테이너 한 변 길이 — `contents-detail-attachment.tsx` 의 size-[240px] 박스에 맞춤 */
+const CONTAINER_SIZE = 240;
+
+/**
+ * 썸네일 supersampling factor — 표시 크기는 240×240 그대로 유지하되 canvas backing store 를
+ * factor 배 크기로 렌더해 다운스케일 시 더 선명하게 보이도록 한다.
+ * devicePixelRatio 기반 HiDPI 대응에 추가로 곱해 1x 디스플레이에서도 효과 발생.
+ * 메모리 비용: 240×240 캔버스가 factor² 배 증가 (factor=3 → 9배, ~8MB/PDF @ DPR=2).
+ */
+const SUPERSAMPLE = 3;
 
 export function PdfThumbnail({ contentId, fileId, fileName, onError, onLoaded }: PdfThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -76,7 +84,8 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError, onLoaded }:
           CONTAINER_SIZE / baseViewport.width,
           CONTAINER_SIZE / baseViewport.height,
         );
-        const outputScale = window.devicePixelRatio || 1;
+        // HiDPI(devicePixelRatio) × supersampling 으로 backing 해상도 부스트 — 표시 크기는 viewport.width 기준 그대로.
+        const outputScale = (window.devicePixelRatio || 1) * SUPERSAMPLE;
         const viewport = page.getViewport({ scale: fitScale });
 
         canvas.width = Math.floor(viewport.width * outputScale);

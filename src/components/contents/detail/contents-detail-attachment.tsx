@@ -169,10 +169,11 @@ export function ContentsDetailAttachment({
       {/* PC: 썸네일 그리드 */}
       <div className="hidden lg:flex gap-[22px] flex-wrap">
         {attachments.map((file) => (
-          // 카드 너비를 썸네일과 동일한 180px 로 고정 — 파일명 truncate 의 기준 폭이 일정해야
+          // 카드 너비를 썸네일과 동일한 240px 로 고정 — 파일명 truncate 의 기준 폭이 일정해야
           // 좌측 정렬 + 우측 다운로드 아이콘 고정 + ... 처리가 의도대로 동작.
-          <div key={file.id} className="flex flex-col gap-4 items-center w-[180px]">
-            <div className="relative size-[180px] border border-[#EAF0F6] bg-[#FDFEFE] flex items-center justify-center overflow-hidden">
+          // (Redmine — PDF 미리보기 해상도 개선 요청으로 180→240 확대, supersample 3 적용)
+          <div key={file.id} className="flex flex-col gap-4 items-center w-[240px]">
+            <div className="relative size-[240px] border border-[#EAF0F6] bg-[#FDFEFE] flex items-center justify-center overflow-hidden">
               {isImageFile(file.mimeType) ? (
                 <ImageThumbnail
                   contentId={contentId}
