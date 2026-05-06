@@ -122,7 +122,9 @@ export const qspUserDetailSchema = z.object({
   compFaxNo: z.string().nullable(),
   deptNm: z.string().nullable(),
   pstnNm: z.string().nullable(),
-  corporateNo: z.string().nullish(),
+  // 법인번호(사업자번호) — QSP userDetail 실제 응답 필드명 `compBizNo` 단일 출처.
+  // 미존재 시 null → FE 에서 "-" 표시.
+  compBizNo: z.string().nullish(),
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
   /** 뉴스알림 수신 일시 — QSP 구(舊) 필드. 신규 `newsRcptChgDt` 로 교체되는 중이라
    *  당분간 둘 다 수신 가능하도록 유지하고 응답 매핑에서 newsRcptChgDt 우선. */

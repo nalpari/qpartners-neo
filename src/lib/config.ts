@@ -83,6 +83,8 @@ export const QSP_API = {
   /** 자동로그인 암호화 — QSP 가 16B cipher 를 발급하여 반환 (3사 공통).
    *  base URL 은 QSP_ENCRYPT_BASE_URL 로 별도 override 가능 (다른 API 와 분리) */
   autoLoginEncrypt: `${QSP_ENCRYPT_BASE_URL}/login/autoLoginEncryptData`,
+  /** Q.Partners 부서 목록 조회 — 관리자 콘텐츠 검색 필터 (担当部門) 셀렉트 옵션용 */
+  deptList: `${QSP_BASE_URL}/api/master/deptList`,
 } as const;
 
 // ─── Auto Login (HANASYS / Q.Order / Q.Musubi) ───

@@ -160,6 +160,7 @@ export function CodesContents() {
     headerUpdateMutation,
   } = headers;
   const {
+    detailsRaw,
     detailNewRow,
     detailNewRowRef,
     detailCreateMutation,
@@ -206,7 +207,7 @@ export function CodesContents() {
 
   const detailRows: DetailGridRow[] = [
     ...(detailNewRow ? [detailNewRow] : []),
-    ...details.detailsRaw.map((d) => {
+    ...detailsRaw.map((d) => {
       const baseRow = toDetailGridRow(d, selectedHeaderCode);
       const pending = detailPending[baseRow.id];
       const row = pending ? applyDetailPending(baseRow, pending) : baseRow;
@@ -253,6 +254,53 @@ export function CodesContents() {
     if (isSaving) return;
     setIsSaving(true);
     try {
+      // 0) Detail Sort Order 중복 검증 — 같은 Header 내 Detail 들 사이에서 충돌 금지.
+      //    이전엔 BE 가 자동 shift 했지만, 사용자 의도와 다른 결과(다른 행이 밀림) 회피를
+      //    위해 클라이언트에서 명시적으로 차단한다.
+      //    검증 대상: 기존 detailsRaw 에 신규행/수정행을 적용한 최종 (rowId → sortOrder) 맵.
+      {
+        const finalSorts = new Map<string, number>();
+        for (const d of detailsRaw) {
+          finalSorts.set(String(d.id), d.sortOrder);
+        }
+        if (detailNewRow) {
+          const ns = Number(detailNewRowRef.current.sortOrder);
+          if (Number.isFinite(ns) && Number.isInteger(ns) && ns > 0) {
+            finalSorts.set(String(detailNewRow.id), ns);
+          }
+        }
+        // 편집 중 셀(ref) + pending 머지 — 아직 PUT 전이지만 사용자가 변경 의도한 최종 값
+        const tempJobs: Record<string, Record<string, string>> = { ...detailPending };
+        if (editingCell && !editingCell.rowId.startsWith("new-")) {
+          const v = detailEditRef.current[editingCell.field];
+          if (v !== undefined) {
+            tempJobs[editingCell.rowId] = {
+              ...tempJobs[editingCell.rowId],
+              [editingCell.field]: v,
+            };
+          }
+        }
+        for (const [rowId, fields] of Object.entries(tempJobs)) {
+          if (fields.sortOrder === undefined) continue;
+          const n = Number(fields.sortOrder);
+          if (Number.isFinite(n) && Number.isInteger(n) && n > 0) {
+            finalSorts.set(rowId, n);
+          }
+        }
+        const occurrences = new Map<number, number>();
+        for (const sort of finalSorts.values()) {
+          occurrences.set(sort, (occurrences.get(sort) ?? 0) + 1);
+        }
+        const duplicates = Array.from(occurrences.entries())
+          .filter(([, count]) => count > 1)
+          .map(([sort]) => sort)
+          .sort((a, b) => a - b);
+        if (duplicates.length > 0) {
+          // 메시지 통일 — 공통코드/메뉴관리 양쪽에서 동일 문구 사용 (사용자 요청).
+          throw new ValidationError("順序が重複しています。");
+        }
+      }
+
       // 1) 신규행 — Header
       if (headerNewRow) {
         const f = headerNewRowRef.current;
@@ -385,6 +433,7 @@ export function CodesContents() {
     handleHeaderEditCancel,
     clearHeaderPending,
     discardHeaderRowPending,
+    detailsRaw,
     detailNewRow,
     detailNewRowRef,
     detailCreateMutation,

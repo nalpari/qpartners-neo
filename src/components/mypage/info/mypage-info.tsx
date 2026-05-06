@@ -160,6 +160,10 @@ export function MypageInfo() {
     setIsSaving(true);
     try {
       await api.put("/mypage/profile", payload);
+      // editData/userType 은 onConfirm 비동기 실행 시점에 setEditData(null) 로 비워질 수 있어
+      // alert 호출 전에 캐시 갱신용 스냅샷 확보.
+      const snapshot = editData;
+      const snapshotUserType = userType;
       openAlert({
         type: "alert",
         message: "保存されました。",
@@ -167,6 +171,38 @@ export function MypageInfo() {
           setIsEditing(false);
           setEditData(null);
           queryClient.invalidateQueries({ queryKey: ["mypage", "profile"] });
+
+          // GNB 회사명/성명 즉시 반영 — 재로그인 없이 헤더·홈·콘텐츠 작성 폼 등
+          // ["auth", "login-user-info"] 캐시 구독자 전체에 새 값 전파.
+          //
+          // setQueryData 만 사용 — invalidateQueries 는 사용하지 않는다:
+          // - PUT /api/mypage/profile 응답이 새 JWT 를 Set-Cookie 했지만, invalidate 가
+          //   트리거하는 fetchAuthMe refetch 가 일시적으로 cache 를 null 로 만들거나
+          //   axios 인터셉터의 401 처리로 비로그인 UI 가 깜빡이는 결함이 관찰됨.
+          // - 새 JWT 는 다음 새로고침/staleTime 경과 후 자연스럽게 적용되므로 invalidate
+          //   불필요. 즉시성은 setQueryData 로 충분.
+          //
+          // GENERAL 외 회원유형(ADMIN/STORE/SEKO) 은 회사명/성명 수정 권한이 없어 서버에서
+          // strip 되므로 클라이언트 캐시 갱신 대상 아님.
+          if (snapshot && snapshotUserType === "GENERAL") {
+            queryClient.setQueryData<LoginUser | null>(
+              ["auth", "login-user-info"],
+              (prev) => {
+                if (!prev) return prev;
+                const newUserNm = [snapshot.sei.trim(), snapshot.mei.trim()]
+                  .filter(Boolean)
+                  .join(" ");
+                return {
+                  ...prev,
+                  compNm: snapshot.compNm.trim() || prev.compNm,
+                  userNm: newUserNm || prev.userNm,
+                  // 서버가 발급하는 새 JWT 의 deptNm 와 동일하게 캐시도 즉시 갱신.
+                  // 누락 시 콘텐츠 작성 등 authorDepartment 참조 경로에서 stale 값 사용됨.
+                  deptNm: snapshot.department.trim() || prev.deptNm,
+                };
+              },
+            );
+          }
         },
       });
     } catch (err: unknown) {
