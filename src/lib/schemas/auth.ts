@@ -82,8 +82,6 @@ export const loginUserSchema = qspLoginUserSchema
     authCd: true,
     storeLvl: true,
     statCd: true,
-    // 최초 로그인(N) 시 회원정보 설정 popup 우선 표시 — 2FA 분기보다 우선.
-    pwdInitYn: true,
   })
   .extend({
     // optional: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
@@ -94,6 +92,9 @@ export const loginUserSchema = qspLoginUserSchema
     // nullish: 기존 JWT 호환 (undefined, 재로그인 전까지) + QSP 응답 null 허용
     // TODO: SEKO 사용자는 개인 전화번호(telNo) 별도 처리 필요
     telNo: z.string().nullish(),
+    // 최초 로그인(N) 시 회원정보 설정 popup 우선 표시 — 2FA 분기보다 우선.
+    // nullish: 본 필드 추가 이전에 발급된 구 JWT(필드 자체 미존재 → undefined) 호환 + QSP null 허용
+    pwdInitYn: z.enum(["Y", "N"]).nullish(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

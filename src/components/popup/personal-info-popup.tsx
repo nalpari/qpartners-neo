@@ -145,11 +145,14 @@ export function PersonalInfoPopup() {
   };
 
   // Design Ref: §4.2.3 — 취소 시 로그아웃 + 로그인 이동
+  // reset-token 모드는 비로그인 상태에서 진입하므로 performLogout 불필요. 호출 시 401 + 콘솔 에러 노출만 발생.
   const handleCancel = async () => {
-    try {
-      await performLogout(queryClient);
-    } catch (err) {
-      console.error("[PersonalInfo] ログアウト失敗:", err);
+    if (!hasResetToken) {
+      try {
+        await performLogout(queryClient);
+      } catch (err) {
+        console.error("[PersonalInfo] ログアウト失敗:", err);
+      }
     }
     closePopup();
     router.replace("/login");
@@ -196,7 +199,15 @@ export function PersonalInfoPopup() {
             {/* Eメール 필드:
                   - currentEmail 있음 (pwdInitYn=N + 등록된 email / pwdInitYn=Y reset-token) → read-only
                   - currentEmail 없음 (pwdInitYn=N + 미등록) → 입력 + 중복체크
-                  - currentEmail 없음 + hasResetToken (verify 응답에 email 누락 안전망) → email 영역 자체 생략 */}
+                  - currentEmail 없음 + hasResetToken (verify 응답에 email 누락 안전망) → 안내 메시지만 표시 */}
+            {!hasExistingEmail && hasResetToken && (
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>Eメール</label>
+                <p className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#999] leading-[1.5]">
+                  パスワード再設定リンクを受信したメールアドレスのアカウントです。
+                </p>
+              </div>
+            )}
             {(hasExistingEmail || !hasResetToken) && (
             <div className="flex flex-col gap-2 w-full">
               <label className={labelClass}>

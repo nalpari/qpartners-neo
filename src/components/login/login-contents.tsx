@@ -62,12 +62,18 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   // useRef 로 첫 마운트 시점의 token 만 캡처해 1회만 처리한다 (개발 모드 StrictMode 더블 마운트 방어).
   // openPopup 은 zustand store action 으로 일반적으로 안정 참조이지만, 의존성 배열에 두면 재실행 시
   // cancelled cleanup 이 진행 중인 fetch 를 끊어버리는 race 가 있어 effect 외부에서 getState() 로 직접
-  // 참조한다. 의존성 배열은 mount-only 의도를 명시하기 위해 빈 배열 + eslint-disable 사용.
+  // 참조한다. 의존성 배열은 mount-only 의도이므로 빈 배열 사용.
   const resetTokenRef = useRef(initialResetToken);
   useEffect(() => {
     if (!resetTokenRef.current) return;
     const t = resetTokenRef.current;
     resetTokenRef.current = null;
+
+    // verify fetch 전에 URL 에서 토큰 즉시 제거 — fetch 와 popup open 사이 외부 리소스가 로드될 경우
+    // Referer 헤더로 토큰 유출되는 채널을 사전 차단. (성공/실패 어느 경로든 토큰 URL 잔존이 없음)
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", "/login");
+    }
 
     let cancelled = false;
     void (async () => {
@@ -90,11 +96,6 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           setNotice(serverMsg ?? "無効または期限切れのリンクです。");
         } else {
           setNotice("サーバーに接続できません。しばらくしてからもう一度お試しください。");
-        }
-      } finally {
-        // 토큰을 URL 에서 즉시 제거 — 새로고침 시 재처리/노출/공유 방지.
-        if (!cancelled && typeof window !== "undefined") {
-          window.history.replaceState({}, "", "/login");
         }
       }
     })();

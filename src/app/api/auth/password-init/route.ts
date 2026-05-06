@@ -64,8 +64,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Request body 파싱 + Zod 검증
-    //    rate limit 보다 먼저 검증해 무효 페이로드(잘못된 JSON / 형식 오류) 가 카운터를 소모하지 않도록 한다.
+    // 3. rate limit — 유저당 5분간 5회. 보안 모범 사례에 따라 인증 직후 / 검증 전에 적용해
+    //    유효 페이로드 brute force 도 동일하게 차단되도록 한다 (Zod 파싱 비용 과다 발생 방지).
+    if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+        { status: 429 },
+      );
+    }
+
+    // 4. Request body 파싱 + Zod 검증
     let body: unknown;
     try {
       body = await request.json();
@@ -90,14 +98,6 @@ export async function POST(request: NextRequest) {
     }
 
     const { newPassword } = result.data;
-
-    // 4. rate limit — 유저당 5분간 5회 (검증 통과한 정상 시도만 카운터 소모)
-    if (!checkRateLimit(`pwd-change:${user.userId}`, 5, 5 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
-        { status: 429 },
-      );
-    }
 
     // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
     const detailParams = new URLSearchParams({

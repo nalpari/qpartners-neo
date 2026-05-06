@@ -74,14 +74,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (resetToken.used) {
-      return NextResponse.json(
-        { error: "既に使用済みのリンクです。" },
-        { status: 400 },
-      );
-    }
-
-    if (resetToken.expiresAt < new Date()) {
+    // used / expired 모두 동일 메시지 — 토큰 상태(=비밀번호 변경 완료 여부) 를 응답으로 구분 불가하게 차단.
+    if (resetToken.used || resetToken.expiresAt < new Date()) {
       return NextResponse.json(
         { error: "無効または期限切れのリンクです。" },
         { status: 400 },
@@ -92,10 +86,10 @@ export async function POST(request: NextRequest) {
     //    토큰 1건 유출 시 verify 무한 호출로 email 평문 enumerate 되는 것을 방지하기 위해
     //    `c***@interplug.co.kr` 형태로 부분 마스킹. 사용자 본인은 메일을 받은 시점에 자기 주소를
     //    이미 알고 있으므로 마스킹된 형태만으로도 read-only UX 가 성립한다.
+    //    userType 은 클라이언트에서 사용하지 않으므로 토큰 회원유형 추론 채널 차단을 위해 제외.
     return NextResponse.json({
       data: {
         valid: true,
-        userType: resetToken.userType,
         email: maskEmail(resetToken.userId),
       },
     });

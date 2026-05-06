@@ -523,7 +523,11 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         valid: { type: "boolean", example: true },
-                        userType: { type: "string", example: "GENERAL" },
+                        email: {
+                          type: "string",
+                          example: "c***@interplug.co.kr",
+                          description: "마스킹된 이메일 — popup read-only 표시용. 토큰 탈취 시 평문 enumerate 차단을 위해 maskEmail 적용.",
+                        },
                       },
                     },
                   },
@@ -532,6 +536,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("유효하지 않거나 만료된 링크입니다."),
+          "429": errorResponse("リクエストが多すぎます。しばらく経ってから再度お試しください。"),
+          "500": errorResponse("サーバーエラーが発生しました。"),
         },
       },
     },
