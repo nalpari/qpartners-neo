@@ -120,6 +120,10 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // CONTENT menuCode 의 canUpdate/canDelete 가 false 면 클릭 시 "権限がありません。"
   // 권한 로딩 중에는 서버 재검증이 최종 장벽이므로 진행 허용 (로딩 플래시 차단).
   const { canUpdate, canDelete, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
+  // 표준 패턴 B/E 적용 — 로딩 중에는 fail-closed 로 버튼 노출 차단 (클릭 race window 회피).
+  // 자식 ContentsDetailActions 는 props 받은 boolean 으로 단순 렌더 — 부모에서 isPermLoading 반영.
+  const effectiveCanUpdate = !isPermLoading && canUpdate;
+  const effectiveCanDelete = !isPermLoading && canDelete;
 
   const handleDelete = () => {
     if (!isPermLoading && !canDelete) {
@@ -213,8 +217,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           actions={
             <ContentsDetailActions
               canModify={canModify}
-              canUpdate={canUpdate}
-              canDelete={canDelete}
+              canUpdate={effectiveCanUpdate}
+              canDelete={effectiveCanDelete}
               onDelete={handleDelete}
               onEdit={handleEdit}
               onList={handleList}
@@ -248,8 +252,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
         {/* 하단 기능 버튼 */}
         <ContentsDetailActions
           canModify={canModify}
-          canUpdate={canUpdate}
-          canDelete={canDelete}
+          canUpdate={effectiveCanUpdate}
+          canDelete={effectiveCanDelete}
           onDelete={handleDelete}
           onEdit={handleEdit}
           onList={handleList}

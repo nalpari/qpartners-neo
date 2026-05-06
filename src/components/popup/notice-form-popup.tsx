@@ -10,6 +10,8 @@ import type { NoticeFormData } from "@/components/admin/notices/notices-types";
 import { targetsToPayload, formatUserLabel } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
 
@@ -72,6 +74,15 @@ export function NoticeFormPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // RBAC 표준 패턴 — ADM_NOTICE 매트릭스 가드. mode 별로 필요한 액션 분기.
+  // 로딩 중 fail-closed (isPermLoading 시 비활성). 서버 API 도 requireMenuPermission 으로 최종 검증.
+  const {
+    canCreate: canCreateNotice,
+    canUpdate: canUpdateNotice,
+    canDelete: canDeleteNotice,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.NOTICES);
 
   // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
   const { allOptions } = useTargetLabels();
@@ -483,6 +494,7 @@ export function NoticeFormPopup() {
           </div>
 
           {/* 버튼 — 순서: キャンセル → 削除(edit 모드만) → 保存 */}
+          {/* RBAC 표준 패턴 B — 매트릭스 가드 + 로딩 중 fail-closed. 서버 API 가 최종 방어선. */}
           <div className="popup-buttons--inline">
             <Button variant="secondary" onClick={handleClose} disabled={isSaving}>
               キャンセル
@@ -491,12 +503,20 @@ export function NoticeFormPopup() {
               <Button
                 variant="secondary"
                 onClick={handleDelete}
-                disabled={isSaving}
+                disabled={isSaving || isPermLoading || !canDeleteNotice}
               >
                 {deleteMutation.isPending ? "削除中..." : "削除"}
               </Button>
             )}
-            <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={
+                isSaving ||
+                isPermLoading ||
+                (mode === "create" ? !canCreateNotice : !canUpdateNotice)
+              }
+            >
               {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
             </Button>
           </div>

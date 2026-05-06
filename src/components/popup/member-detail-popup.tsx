@@ -18,6 +18,8 @@ import {
 import type { RoleApiItem, RolesResponse } from "@/components/admin/permissions/permissions-types";
 import { rolesQueryKey } from "@/components/admin/permissions/permissions-types";
 import { useUserType } from "@/hooks/use-user-type";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -368,6 +370,11 @@ function MemberEditForm({
   // 빈 SelectBox("選択") 상태 저장 시도를 클라이언트에서 차단하기 위해 alert 직접 호출.
   // 부모(MemberDetailPopup) 의 동일 store 인스턴스를 공유 — 별도 props drilling 불필요.
   const { openAlert } = useAlertStore();
+  // RBAC 표준 패턴 C — ADM_MEMBER.canUpdate 가 false 면 편집 UI 자체 비표시 (readonly 강제).
+  // 로딩 중 fail-closed (isPermLoading 시 readonly) — 권한 응답 도착 전 클릭 race window 차단.
+  // 서버 PUT /api/admin/members/[id] 도 requireMenuPermission(ADM_MEMBER, update) 로 최종 검증.
+  const { canUpdate: canUpdateMember, isLoading: isPermLoading } = useMenuPermission(ADMIN_MENU.MEMBERS);
+  const isPermReadOnly = isPermLoading || !canUpdateMember;
   // USER_TYPE 공통코드 reverseMap 만 사용 — 하드코딩 fallback 제거됨.
   // 매핑 불가 시 memberTp="" → isGeneral=false → 편집 UI 비표시 (read-only).
   const { reverseMap: dynamicReverseMap } = useUserType();
@@ -376,10 +383,10 @@ function MemberEditForm({
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
   // 편집 UI 자체를 표시하지 않는다 — 과거 `isGeneral || SEKO` 로직의 BE/FE 불일치 제거.
-  const isStatusEditable = isGeneral;
+  const isStatusEditable = isGeneral && !isPermReadOnly;
   const isWithdrawn = member.status === "withdrawn";
-  // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
-  const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
+  // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용 — RBAC 권한 매트릭스도 함께 OR.
+  const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown") || isPermReadOnly;
 
   // 권한 옵션은 권한관리 테이블에서 동적으로 가져온다 — SUPER_ADMIN/ADMIN 제외 + 활성(Y) 만
   // (Redmine #2178). 부여 불가 권한은 권한관리 화면에서 사용여부=N 으로 운영자가 제어.
