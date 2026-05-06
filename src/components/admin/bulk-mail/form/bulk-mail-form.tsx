@@ -9,6 +9,8 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
@@ -32,7 +34,24 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const queryClient = useQueryClient();
   const { openAlert } = useAlertStore();
 
+  // RBAC 표준 패턴 — ADM_BULK_MAIL 매트릭스 가드. 폼 컴포넌트 단일 호출 후 자식(form-info/targets/title/body/attachment) 에 prop 으로 readonly 전달.
+  // 자식 별도 호출 시 isLoading 깜빡임 발생 가능 — 부모 단일 호출로 통일 (PR #148 리뷰 학습).
+  // 로딩 중 fail-closed (isPermLoading 시 readonly). 서버 가드(requireMenuPermission) 가 최종 검증.
+  const {
+    canCreate: canCreateMail,
+    canUpdate: canUpdateMail,
+    canDelete: canDeleteMail,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.BULK_MAIL);
+
   const isDetail = mode === "detail";
+  // mode 별 가드 액션 — edit → update, 그 외(create/copy) → create.
+  // detail 모드는 입력 폼 비활성이라 mutate 자체가 호출되지 않음.
+  const isEditMode = mode === "edit";
+  const hasRequiredPerm = isEditMode ? canUpdateMail : canCreateMail;
+  // RBAC readonly — 폼 입력 필드 비활성. detail 은 항상 readonly, 그 외에는 권한 기반.
+  const isPermReadOnly = isPermLoading || !hasRequiredPerm;
+  const isFormDisabled = isDetail || isPermReadOnly;
 
   // ─── Form State ───
   const senderName = initialData?.senderName ?? DEFAULT_SENDER;
@@ -114,7 +133,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   };
 
   // Plan SC: 配信 → status: pending → 상세로 이동
+  // RBAC 패턴 E — mode 별 액션 분기 (edit=update, create/copy=create). 로딩 중은 silent return.
   const handleSend = () => {
+    if (isPermLoading) return;
+    if (!hasRequiredPerm) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const error = validate();
     if (error) {
       openAlert({ type: "alert", message: error });
@@ -137,7 +162,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   // Plan SC: 下書き保存 → status: draft
   // Issue #2177 (2) — 필수항목 미입력 시 alert 으로 항목별 메시지 표시.
+  // RBAC 패턴 E — handleSend 와 동일 액션 (draft 는 status 만 다름, BE 가드는 동일 menuCode/action).
   const handleDraft = () => {
+    if (isPermLoading) return;
+    if (!hasRequiredPerm) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const error = validate();
     if (error) {
       openAlert({ type: "alert", message: error });
@@ -177,7 +208,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     },
   });
 
+  // RBAC 패턴 E — 削除 액션 가드. 로딩 중은 silent return.
   const handleDelete = () => {
+    if (isPermLoading) return;
+    if (!canDeleteMail) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "下書きを削除しますか？",
@@ -190,7 +227,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   };
 
   // Plan SC: コピーして作成 → sessionStorage에 저장 → 등록 화면 이동
+  // RBAC 패턴 E — 새 메일 등록 화면 진입 시 create 권한 필수. 페이지 가드(server)가 최종 차단하지만
+  // sessionStorage 에 카피 데이터를 적재하기 전에 권한 없는 사용자 진입을 즉시 막아 UX 명확화.
   const handleCopy = () => {
+    if (isPermLoading) return;
+    if (!canCreateMail) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     const copyData = { senderName, targets, optOut, subject, body };
     try {
       sessionStorage.setItem("mass-mail-copy", JSON.stringify(copyData));
@@ -219,12 +263,12 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         />
       </section>
 
-      {/* 발송대상 카드 */}
+      {/* 발송대상 카드 — RBAC: detail 모드 또는 권한 readonly 시 비활성 (패턴 C) */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormTargets
           targets={targets}
           onTargetsChange={setTargets}
-          disabled={isDetail}
+          disabled={isFormDisabled}
         />
       </section>
 
@@ -233,7 +277,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormNewsletter
           optOut={optOut}
           onOptOutChange={setOptOut}
-          disabled={isDetail}
+          disabled={isFormDisabled}
         />
       </section>
 
@@ -242,7 +286,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormTitle
           title={subject}
           onTitleChange={setSubject}
-          disabled={isDetail}
+          disabled={isFormDisabled}
         />
       </section>
 
@@ -251,7 +295,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormBody
           content={body}
           onContentChange={setBody}
-          disabled={isDetail}
+          disabled={isFormDisabled}
         />
       </section>
 
@@ -261,15 +305,20 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           files={files}
           onFilesChange={setFiles}
           serverAttachments={initialData?.attachments}
-          disabled={isDetail}
+          disabled={isFormDisabled}
         />
       </section>
 
-      {/* 하단 버튼 — 모드별 분기 */}
+      {/* 하단 버튼 — 모드별 분기. RBAC 패턴 B (disabled) + 핸들러 본체 패턴 E 이중 가드. */}
       <div className="flex items-center justify-end gap-2 w-[1440px] pb-1">
         {isDetail ? (
           <>
-            <Button variant="outline" onClick={handleCopy}>
+            {/* コピーして作成 — create 권한 필요. 새 등록 화면 진입은 페이지 가드도 최종 차단. */}
+            <Button
+              variant="outline"
+              onClick={handleCopy}
+              disabled={isPermLoading || !canCreateMail}
+            >
               コピーして作成
             </Button>
             <Button variant="secondary" onClick={handleList}>
@@ -282,14 +331,28 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
               一覧
             </Button>
             {mode === "edit" && (
-              <Button variant="secondary" onClick={handleDelete} disabled={isPending}>
+              <Button
+                variant="secondary"
+                onClick={handleDelete}
+                disabled={isPending || isPermLoading || !canDeleteMail}
+              >
                 削除
               </Button>
             )}
-            <Button variant="primary" onClick={handleSend} disabled={isPending}>
+            {/* 登録 — mode 별 분기 (edit=update, create/copy=create) */}
+            <Button
+              variant="primary"
+              onClick={handleSend}
+              disabled={isPending || isPermReadOnly}
+            >
               登録
             </Button>
-            <Button variant="outline" onClick={handleDraft} disabled={isPending}>
+            {/* 下書き保存 — handleSend 와 동일 액션 */}
+            <Button
+              variant="outline"
+              onClick={handleDraft}
+              disabled={isPending || isPermReadOnly}
+            >
               下書き保存
             </Button>
           </>

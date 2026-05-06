@@ -21,6 +21,9 @@ interface MenusGridContext {
   onLevel1Click?: (id: string) => void;
   onLevel2Click?: (id: string) => void;
   onSortValueChange?: (id: string, v: number) => void;
+  // RBAC — sort input cell renderer 가 매트릭스 가드 적용 시 readonly 처리하도록 context 로 전달.
+  // canUpdate=false 거나 isPermLoading 시 input 비활성 (타이핑 차단).
+  isSortReadOnly?: boolean;
 }
 
 function toCtx(context: unknown): MenusGridContext {
@@ -100,13 +103,16 @@ function SortCellRenderer(params: ICellRendererParams<MenuItem>) {
       type="number"
       min={1}
       defaultValue={data.sortOrder}
+      // RBAC 패턴 C — canUpdate=false 시 sort input 비활성. 타이핑 자체 차단으로
+      // 整列保存 버튼 disabled 와 이중 가드 (값 변경 → ref 누적 후 저장 시도 우회 방지).
+      disabled={ctx.isSortReadOnly}
       onMouseDown={(e) => e.stopPropagation()}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => {
         const val = Number(e.target.value);
         if (Number.isInteger(val) && val >= 1) ctx.onSortValueChange?.(data.id, val);
       }}
-      className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner"
+      className="w-[60px] h-[38px] px-2 text-center bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] outline-none focus:border-[#101010] sort-input-no-spinner disabled:bg-[#f5f5f5] disabled:text-[#999]"
     />
   );
 }
@@ -126,9 +132,14 @@ interface MenusTablesProps {
   onSortValueChange: (id: string, value: number) => void;
   isSortSaving: boolean;
   sortRefreshVersion: number;
+  // RBAC — sort 액션은 update 권한. 부모(MenusContents) 단일 호출 후 prop 으로 전달.
+  canUpdate: boolean;
+  isPermLoading: boolean;
 }
 
 export function MenusTables({
+  canUpdate,
+  isPermLoading,
   level1Data,
   level2Data,
   selectedLevel1Id,
@@ -261,14 +272,17 @@ export function MenusTables({
     api.refreshCells({ force: true });
   }, [editingId]);
 
+  // RBAC — sort input 의 readonly 판정값. canUpdate=false 거나 로딩 중이면 input 비활성.
+  const isSortReadOnly = isPermLoading || !canUpdate;
+
   // 컨텍스트 객체도 memoize — 매 렌더 신규 객체가 AG Grid 로 흘러가는 것을 차단.
   const level1Context = useMemo(
-    () => ({ selectedLevel1Id, onLevel1Click, onSortValueChange }),
-    [selectedLevel1Id, onLevel1Click, onSortValueChange],
+    () => ({ selectedLevel1Id, onLevel1Click, onSortValueChange, isSortReadOnly }),
+    [selectedLevel1Id, onLevel1Click, onSortValueChange, isSortReadOnly],
   );
   const level2Context = useMemo(
-    () => ({ editingId, onLevel2Click, onSortValueChange }),
-    [editingId, onLevel2Click, onSortValueChange],
+    () => ({ editingId, onLevel2Click, onSortValueChange, isSortReadOnly }),
+    [editingId, onLevel2Click, onSortValueChange, isSortReadOnly],
   );
 
   return (
@@ -279,7 +293,12 @@ export function MenusTables({
           メニュー目録
         </h2>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onSortSave} disabled={isSortSaving}>
+          {/* 整列保存 — 패턴 B (canUpdate=false 시 disabled). 핸들러 본체 패턴 E 는 부모(handleSortSave). */}
+          <Button
+            variant="outline"
+            onClick={onSortSave}
+            disabled={isSortSaving || isPermLoading || !canUpdate}
+          >
             整列保存
           </Button>
         </div>

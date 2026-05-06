@@ -65,6 +65,11 @@ interface MenusInfoFormProps {
   /** 폼이 편집 모드(editingId 존재)일 때만 활성. 신규 모드에서는 비활성 처리. */
   isDeleteEnabled: boolean;
   isDeleting: boolean;
+  // RBAC 표준 패턴 — 부모(MenusContents) 단일 호출 후 prop 으로 전달 (PR #148 리뷰 학습).
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  isPermLoading: boolean;
 }
 
 export function MenusInfoForm({
@@ -78,7 +83,16 @@ export function MenusInfoForm({
   onDelete,
   isDeleteEnabled,
   isDeleting,
+  canCreate,
+  canUpdate,
+  canDelete,
+  isPermLoading,
 }: MenusInfoFormProps) {
+  // mode 별 분기 — 편집 모드는 update, 신규 모드는 create.
+  const isSaveDisabledByPerm =
+    isPermLoading || (isEditing ? !canUpdate : !canCreate);
+  const isFormDisabled =
+    isPermLoading || (isEditing ? !canUpdate : !canCreate);
   return (
     <div className="flex flex-col gap-4">
       {/* 섹션 헤더 */}
@@ -87,21 +101,30 @@ export function MenusInfoForm({
           メニュー情報
         </h2>
         <div className="flex items-center gap-2">
+          {/* 新規 — 패턴 B (canCreate=false 시 disabled) */}
           <Button
             variant="outline"
             onClick={onNew}
-            disabled={isSaving || isDeleting}
+            disabled={isSaving || isDeleting || isPermLoading || !canCreate}
           >
             新規
           </Button>
+          {/* 削除 — 패턴 B (canDelete=false 시 disabled). 핸들러 본체 패턴 E 는 부모에서. */}
           <Button
             variant="secondary"
             onClick={onDelete}
-            disabled={!isDeleteEnabled || isSaving || isDeleting}
+            disabled={
+              !isDeleteEnabled || isSaving || isDeleting || isPermLoading || !canDelete
+            }
           >
             {isDeleting ? "削除中..." : "削除"}
           </Button>
-          <Button variant="primary" onClick={onSave} disabled={isSaving || isDeleting}>
+          {/* 保存 — 패턴 B (mode 별 분기). 핸들러 본체 패턴 E 는 부모에서. */}
+          <Button
+            variant="primary"
+            onClick={onSave}
+            disabled={isSaving || isDeleting || isSaveDisabledByPerm}
+          >
             保存
           </Button>
         </div>
@@ -119,7 +142,7 @@ export function MenusInfoForm({
                 value={form.upperMenu}
                 onChange={(v) => onFormChange("upperMenu", v)}
                 placeholder="選択してください"
-                disabled={isEditing}
+                disabled={isEditing || isFormDisabled}
               />
             ),
           }}
@@ -131,6 +154,7 @@ export function MenusInfoForm({
                 value={form.menuCode}
                 onChange={(v) => onFormChange("menuCode", v)}
                 readOnly={isEditing}
+                disabled={isFormDisabled}
                 placeholder="コード入力"
               />
             ),
@@ -147,6 +171,7 @@ export function MenusInfoForm({
                 value={form.menuName}
                 onChange={(v) => onFormChange("menuName", v)}
                 placeholder="メニュー名入力"
+                disabled={isFormDisabled}
               />
             ),
           }}
@@ -157,6 +182,7 @@ export function MenusInfoForm({
                 value={form.pageUrl}
                 onChange={(v) => onFormChange("pageUrl", v)}
                 placeholder="/path"
+                disabled={isFormDisabled}
               />
             ),
           }}
@@ -174,6 +200,7 @@ export function MenusInfoForm({
                   checked={form.isActive === "Y"}
                   onChange={() => onFormChange("isActive", "Y")}
                   label="Y"
+                  disabled={isFormDisabled}
                 />
                 <Radio
                   name="isActive"
@@ -181,6 +208,7 @@ export function MenusInfoForm({
                   checked={form.isActive === "N"}
                   onChange={() => onFormChange("isActive", "N")}
                   label="N"
+                  disabled={isFormDisabled}
                 />
               </div>
             ),
@@ -195,6 +223,7 @@ export function MenusInfoForm({
                   checked={form.showInTopNav === "Y"}
                   onChange={() => onFormChange("showInTopNav", "Y")}
                   label="Y"
+                  disabled={isFormDisabled}
                 />
                 <Radio
                   name="showInTopNav"
@@ -202,6 +231,7 @@ export function MenusInfoForm({
                   checked={form.showInTopNav === "N"}
                   onChange={() => onFormChange("showInTopNav", "N")}
                   label="N"
+                  disabled={isFormDisabled}
                 />
               </div>
             ),
@@ -220,6 +250,7 @@ export function MenusInfoForm({
                   checked={form.showInMobile === "Y"}
                   onChange={() => onFormChange("showInMobile", "Y")}
                   label="Y"
+                  disabled={isFormDisabled}
                 />
                 <Radio
                   name="showInMobile"
@@ -227,6 +258,7 @@ export function MenusInfoForm({
                   checked={form.showInMobile === "N"}
                   onChange={() => onFormChange("showInMobile", "N")}
                   label="N"
+                  disabled={isFormDisabled}
                 />
               </div>
             ),

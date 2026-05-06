@@ -9,6 +9,8 @@ import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
 import { useAlertStore } from "@/lib/store";
 import { useMenuTree } from "@/hooks/use-menu-tree";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import { MenusInfoForm } from "./menus-info-form";
 import { MenusTables } from "./menus-tables";
 import type { MenuFormState } from "./menus-types";
@@ -33,6 +35,17 @@ function findDuplicateSortOrders(sorts: Map<number, number>): number[] {
 export function MenusContents() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
+
+  // RBAC 표준 패턴 — ADM_MENU 매트릭스 가드. 컨테이너 단일 호출 후 자식(form/tables) prop 주입.
+  // 부모/자식 중복 호출에 따른 isLoading 깜빡임 차단 (PR #148 리뷰 학습).
+  // 로딩 중 fail-closed (isPermLoading 시 readonly). 서버 가드(requireMenuPermission) 가 최종 검증.
+  // sort 액션은 update 권한 (BE: PUT /api/menus/sort → ADM_MENU.update).
+  const {
+    canCreate: canCreateMenu,
+    canUpdate: canUpdateMenu,
+    canDelete: canDeleteMenu,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.MENUS);
 
   // --- 로컬 state ---
   const [selectedLevel1Id, setSelectedLevel1Id] = useState<string | null>(null);
@@ -84,7 +97,8 @@ export function MenusContents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menus"] });
       openAlert({ type: "alert", message: "保存されました。", confirmLabel: "確認" });
-      handleNew();
+      // 등록 성공 후 폼 초기화 — 이미 권한 통과한 컨텍스트라 RBAC 재검증 우회 (resetFormAfterMutation 사용).
+      resetFormAfterMutation();
     },
     onError: (error: unknown) => {
       console.error("[POST /api/menus] 메뉴 등록 실패:", error);
@@ -136,7 +150,8 @@ export function MenusContents() {
       await api.delete(`/menus/${id}`);
     },
     onSuccess: async (_data, variables) => {
-      handleNew();
+      // 삭제 성공 후 폼 초기화 — RBAC 재검증 우회 (resetFormAfterMutation).
+      resetFormAfterMutation();
       if (variables.isLevel1) {
         setSelectedLevel1Id(null);
       }
@@ -195,14 +210,36 @@ export function MenusContents() {
   // --- 핸들러 ---
 
   // Plan R-05: 신규 버튼 → 폼 초기화
+  // RBAC 패턴 E — 신규 모드 전환은 create 권한 필수. UI(disabled) 와 핸들러 본체 이중 가드.
+  // mutation 의 onSuccess 콜백에서도 handleNew 를 호출하므로 가드 위치는 사용자 진입 경로(외부)에 둔다.
+  // 내부 호출(onSuccess) 은 이미 정상 권한으로 mutate 성공한 케이스라 권한 체크 불필요.
   const handleNew = () => {
+    if (isPermLoading) return;
+    if (!canCreateMenu) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
+    setFormState(EMPTY_FORM);
+    setIsEditing(false);
+    setEditingId(null);
+  };
+
+  // mutation onSuccess 에서 호출되는 폼 초기화 — 권한 체크 우회 경로 (이미 mutate 성공한 컨텍스트).
+  const resetFormAfterMutation = () => {
     setFormState(EMPTY_FORM);
     setIsEditing(false);
     setEditingId(null);
   };
 
   // Plan R-06: 저장 버튼 → 등록 또는 수정
+  // RBAC 패턴 E — mode 별로 필요한 액션 분기. disabled 우회(키보드/race) 차단.
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (PR #148 리뷰 학습).
   const handleSave = () => {
+    if (isPermLoading) return;
+    if (isEditing && editingId ? !canUpdateMenu : !canCreateMenu) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (!formState.menuCode.trim()) {
       openAlert({ type: "alert", message: "Menu Codeは必須です。", confirmLabel: "確認" });
       return;
@@ -249,7 +286,13 @@ export function MenusContents() {
   // sortOrder 중복 검증 — 같은 부모(레벨) 내에서 sortOrder 가 충돌하면 저장 차단 + 안내.
   // 변경 행만 보면 미변경 행과의 충돌을 놓치므로, 동일 레벨의 모든 행에 변경값을
   // 적용한 최종 (id → sortOrder) 맵을 만들어 검사한다.
+  // RBAC 패턴 E — sort 액션은 update 권한 (BE: PUT /api/menus/sort → ADM_MENU.update).
   const handleSortSave = () => {
+    if (isPermLoading) return;
+    if (!canUpdateMenu) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     const items = Object.entries(sortValuesRef.current).map(([id, sortOrder]) => ({
       id: Number(id),
       sortOrder,
@@ -298,7 +341,13 @@ export function MenusContents() {
   // 삭제 — 폼에 바인딩된 메뉴(editingId) 를 대상으로 confirm 후 DELETE 호출.
   // upperMenu 비어 있으면 1-level, 값 있으면 2-level (toFormState 가 parentId 를 매핑).
   // 1-level 인데 자식이 있으면 cascade 삭제됨을 명시 — 사용자가 인지하고 진행하도록.
+  // RBAC 패턴 E — disabled 우회 차단. 로딩 중은 silent return.
   const handleDelete = () => {
+    if (isPermLoading) return;
+    if (!canDeleteMenu) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (!isEditing || !editingId) {
       openAlert({
         type: "alert",
@@ -338,6 +387,11 @@ export function MenusContents() {
             onDelete={handleDelete}
             isDeleteEnabled={isEditing && editingId !== null}
             isDeleting={deleteMutation.isPending}
+            // RBAC — 부모 단일 호출 + 자식 prop 주입 (PR #148 리뷰 학습)
+            canCreate={canCreateMenu}
+            canUpdate={canUpdateMenu}
+            canDelete={canDeleteMenu}
+            isPermLoading={isPermLoading}
           />
         </section>
 
@@ -357,6 +411,9 @@ export function MenusContents() {
             onSortValueChange={handleSortValueChange}
             isSortSaving={sortMutation.isPending}
             sortRefreshVersion={sortRefreshVersion}
+            // RBAC — sort 액션은 update 권한. sort input 자체도 update=false 시 readonly.
+            canUpdate={canUpdateMenu}
+            isPermLoading={isPermLoading}
           />
         </section>
       </div>
