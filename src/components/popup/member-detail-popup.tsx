@@ -18,6 +18,8 @@ import {
 import type { RoleApiItem, RolesResponse } from "@/components/admin/permissions/permissions-types";
 import { rolesQueryKey } from "@/components/admin/permissions/permissions-types";
 import { useUserType } from "@/hooks/use-user-type";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 const CLOSE_ANIMATION_MS = 200;
 
@@ -102,6 +104,14 @@ export function MemberDetailPopup() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
+
+  // RBAC 표준 패턴 C — 부모에서 단일 호출 후 자식(MemberEditForm)에 prop 으로 전달.
+  // 자식이 useMenuPermission 을 별도 호출하면 부모/자식 isLoading 타이밍이 달라
+  // "편집 폼 → readonly → 편집 폼" 깜빡임이 발생할 수 있어 단일 source 로 통일.
+  // 로딩 중 fail-closed (isPermLoading 시 readonly) — 클릭 race window 차단.
+  // 서버 PUT /api/admin/members/[id] 도 requireMenuPermission(ADM_MEMBER, update) 로 최종 검증.
+  const { canUpdate: canUpdateMember, isLoading: isPermLoading } = useMenuPermission(ADMIN_MENU.MEMBERS);
+  const isPermReadOnly = isPermLoading || !canUpdateMember;
 
   const userId = typeof popupData.userId === "string" ? popupData.userId : undefined;
   const userTp = typeof popupData.userTp === "string" ? popupData.userTp : undefined;
@@ -203,7 +213,7 @@ export function MemberDetailPopup() {
       );
       return res.data.data;
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, payload) => {
       // 목록은 상태 뱃지/정렬 반영 위해 invalidate 유지
       await queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
       if (result.member) {
@@ -219,6 +229,14 @@ export function MemberDetailPopup() {
       // F_NOT_USER 응답은 백엔드가 notFoundInQsp=true 로 내려주고, 프론트는 listItem
       // fallback 으로 기본 필드를 채우므로 Delete 전환 시 공백 화면 재발 없음.
       await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      // userRole 변경 시 본인의 메뉴 매트릭스도 즉시 갱신 (Redmine #2183).
+      // 본인이 자기 권한을 변경하는 경우 5분 staleTime 동안 admin 화면 버튼 가시성이 stale 되는 회귀 방지.
+      // 의도적 over-invalidate — 다른 회원의 userRole 변경 시 invalidate 호출은 본인 매트릭스에
+      // 영향이 없어 무해(GET /me/permissions 응답 동일). PUT 응답에서 대상 회원이 본인인지 식별
+      // 하려면 추가 분기가 필요하므로, 단순화 + 본인 변경 케이스 안전성을 우선해 일괄 invalidate.
+      if (payload.userRole !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
+      }
       // TOCTOU 사후 검증 실패/불일치 경고만 노출 (userRole 변경 경로에서만 발생).
       // 경고 발생 시 운영자가 목록에서 재확인하도록 안내 문구 부가.
       const warningMsg = result.warning;
@@ -338,6 +356,7 @@ export function MemberDetailPopup() {
               member={member}
               isQspNotFound={isQspNotFound}
               isSaving={isSaving}
+              isPermReadOnly={isPermReadOnly}
               onSave={handleSave}
               onPasswordReset={handlePasswordReset}
               onClose={handleClose}
@@ -354,6 +373,7 @@ function MemberEditForm({
   member,
   isQspNotFound,
   isSaving,
+  isPermReadOnly,
   onSave,
   onPasswordReset,
   onClose,
@@ -361,6 +381,9 @@ function MemberEditForm({
   member: MemberDetail;
   isQspNotFound: boolean;
   isSaving: boolean;
+  // RBAC 표준 패턴 C — 부모(MemberDetailPopup) 가 useMenuPermission 단일 호출 후 prop 전달.
+  // 자식 중복 호출로 인한 isLoading 타이밍 차이(편집폼/readonly 깜빡임) 차단 + 서버 가드(requireMenuPermission)는 최종 방어선.
+  isPermReadOnly: boolean;
   onSave: (payload: MemberUpdatePayload) => void;
   onPasswordReset: () => void;
   onClose: () => void;
@@ -376,10 +399,10 @@ function MemberEditForm({
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
   // 편집 UI 자체를 표시하지 않는다 — 과거 `isGeneral || SEKO` 로직의 BE/FE 불일치 제거.
-  const isStatusEditable = isGeneral;
+  const isStatusEditable = isGeneral && !isPermReadOnly;
   const isWithdrawn = member.status === "withdrawn";
-  // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용
-  const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown");
+  // notFoundInQsp + listItem 없는(status unknown) 회원도 읽기전용 — RBAC 권한 매트릭스도 함께 OR.
+  const isReadOnly = isWithdrawn || (isQspNotFound && member.status === "unknown") || isPermReadOnly;
 
   // 권한 옵션은 권한관리 테이블에서 동적으로 가져온다 — SUPER_ADMIN/ADMIN 제외 + 활성(Y) 만
   // (Redmine #2178). 부여 불가 권한은 권한관리 화면에서 사용여부=N 으로 운영자가 제어.

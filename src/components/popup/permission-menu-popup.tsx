@@ -8,6 +8,8 @@ import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox } from "@/components/common";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 import type { RolePermissionsResponse, MenuPermissionRow } from "@/components/admin/permissions/permissions-types";
 import { flattenMenuTree, rowsToPermissions } from "@/components/admin/permissions/permissions-types";
 
@@ -66,6 +68,11 @@ export function PermissionMenuPopup() {
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
+
+  // RBAC 표준 패턴 — ADM_PERMISSION 매트릭스 가드. canUpdate=false 시 매트릭스 체크박스 비활성 + 「保存」 비활성.
+  // 로딩 중 fail-closed (isPermLoading 시 readonly). 서버 PUT /api/roles/:roleCode/permissions 가 최종 검증.
+  const { canUpdate: canUpdatePermission, isLoading: isPermLoading } = useMenuPermission(ADMIN_MENU.PERMISSIONS);
+  const isMatrixReadOnly = isPermLoading || !canUpdatePermission;
 
   // roleCode 런타임 검증 — popupData 가 unknown 이므로 string + non-empty 가드
   const rawRoleCode = popupData.roleCode;
@@ -145,11 +152,21 @@ export function PermissionMenuPopup() {
   };
 
   const handleSave = () => {
+    // RBAC 패턴 E — 핸들러 본체 권한 가드. disabled 는 UI 힌트일 뿐 키보드 Enter / DevTools 우회로
+    // mutate 도달 가능하므로 mutate 직전 매트릭스 가드 재확인. 로딩 중 fail-closed.
+    // 서버 PUT /api/roles/:roleCode/permissions 가 최종 방어선이지만 FE 일관성 차원에서 차단.
+    if (isMatrixReadOnly) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     saveMutation.mutate(rowsToPermissions(displayRows));
   };
 
   // Design Ref: §4.4 — Read↔CUD 무결성은 applyReadCudConstraints 로 위임
   const toggleCell = (menuCode: string, key: CrudKey) => {
+    // 패턴 E — disabled prop 우회(커스텀 Checkbox 의 prop 차단 미흡 / 키보드 토글) 시
+    // changes state 가 변경되어 handleSave 의 빈 가드가 무력화되는 race 차단.
+    if (isMatrixReadOnly) return;
     const current = displayRows.find((r) => r.menuCode === menuCode);
     if (!current) return;
     const newValue = !current[key];
@@ -166,6 +183,8 @@ export function PermissionMenuPopup() {
   };
 
   const toggleColumn = (key: CrudKey) => {
+    // 패턴 E — toggleCell 와 동일 사유. 헤더 일괄 토글도 가드.
+    if (isMatrixReadOnly) return;
     const state = getColumnState(key);
     const newValue = state !== "all";
     const newChanges = { ...changes };
@@ -221,6 +240,7 @@ export function PermissionMenuPopup() {
                       checked={state === "all"}
                       indeterminate={state === "some"}
                       onChange={() => toggleColumn(col.key)}
+                      disabled={isMatrixReadOnly}
                     />
                   </div>
                 );
@@ -267,6 +287,7 @@ export function PermissionMenuPopup() {
                       <Checkbox
                         checked={row[col.key]}
                         onChange={() => toggleCell(row.menuCode, col.key)}
+                        disabled={isMatrixReadOnly}
                       />
                     </div>
                   ))}
@@ -283,7 +304,7 @@ export function PermissionMenuPopup() {
             <Button
               variant="primary"
               onClick={handleSave}
-              disabled={isLoading || saveMutation.isPending || !roleCode}
+              disabled={isLoading || saveMutation.isPending || !roleCode || isMatrixReadOnly}
             >
               {saveMutation.isPending ? "保存中..." : "保存"}
             </Button>

@@ -10,6 +10,8 @@ import type { NoticeFormData } from "@/components/admin/notices/notices-types";
 import { targetsToPayload, formatUserLabel } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 // Design Ref: §5 — TARGET_OPTIONS API value 통일
 
@@ -72,6 +74,15 @@ export function NoticeFormPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // RBAC 표준 패턴 — ADM_NOTICE 매트릭스 가드. mode 별로 필요한 액션 분기.
+  // 로딩 중 fail-closed (isPermLoading 시 비활성). 서버 API 도 requireMenuPermission 으로 최종 검증.
+  const {
+    canCreate: canCreateNotice,
+    canUpdate: canUpdateNotice,
+    canDelete: canDeleteNotice,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.NOTICES);
 
   // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
   const { allOptions } = useTargetLabels();
@@ -276,8 +287,16 @@ export function NoticeFormPopup() {
     deleteMutation.isPending;
 
   // 삭제 버튼 클릭 — confirm 후에만 실제 삭제 mutation 호출.
+  // RBAC 패턴 E — disabled 우회(키보드/race) 차단을 위해 핸들러 본체에도 권한 가드 (PR #148 리뷰).
+  // 서버 DELETE 가 최종 방어선이지만 일관된 패턴 유지로 부주의한 회귀를 막는다.
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (permissions-table 핸들러와 일관).
   const handleDelete = () => {
     if (!noticeId) return;
+    if (isPermLoading) return;
+    if (!canDeleteNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "本当に削除してもよろしいですか？",
@@ -297,7 +316,15 @@ export function NoticeFormPopup() {
   };
 
   // Design Ref: §4.3 — handleSave 통합
+  // RBAC 패턴 E — 핸들러 본체 권한 가드. mode 별로 필요한 액션 분기 (create / update).
+  // disabled 우회(키보드/race) 차단 + 서버 가드(requireMenuPermission) 가 최종 방어선 (PR #148 리뷰).
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (permissions-table 핸들러와 일관).
   const handleSave = () => {
+    if (isPermLoading) return;
+    if (mode === "create" ? !canCreateNotice : !canUpdateNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (isPastDate(startDate) || isPastDate(endDate)) {
       openAlert({
         type: "alert",
@@ -483,6 +510,7 @@ export function NoticeFormPopup() {
           </div>
 
           {/* 버튼 — 순서: キャンセル → 削除(edit 모드만) → 保存 */}
+          {/* RBAC 표준 패턴 B — 매트릭스 가드 + 로딩 중 fail-closed. 서버 API 가 최종 방어선. */}
           <div className="popup-buttons--inline">
             <Button variant="secondary" onClick={handleClose} disabled={isSaving}>
               キャンセル
@@ -491,12 +519,20 @@ export function NoticeFormPopup() {
               <Button
                 variant="secondary"
                 onClick={handleDelete}
-                disabled={isSaving}
+                disabled={isSaving || isPermLoading || !canDeleteNotice}
               >
                 {deleteMutation.isPending ? "削除中..." : "削除"}
               </Button>
             )}
-            <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={
+                isSaving ||
+                isPermLoading ||
+                (mode === "create" ? !canCreateNotice : !canUpdateNotice)
+              }
+            >
               {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
             </Button>
           </div>

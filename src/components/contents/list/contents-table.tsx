@@ -232,7 +232,9 @@ export function ContentsTable({
   });
   // CONTENT.canCreate 매트릭스 가드 — 관리자가 권한관리 UI 에서 토글한 결과를 등록 버튼에 즉시 반영.
   // 서버 POST /api/contents 도 requireMenuPermission(CONTENT, create) 로 최종 검증하므로 FE 는 UX 전용.
-  const { canCreate: canCreateContent } = useMenuPermission(MENU.CONTENT);
+  // 로딩 중 fail-closed (isPermLoading 시 false) — RBAC 표준 패턴 B 준수.
+  const { canCreate: canCreateContent, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
+  const showCreateButton = !isPermLoading && canCreateContent;
 
   // 권한관리 라벨 동기화 — 게시대상 셀/CSV export 표시명을 권한명으로 동적 변환.
   // 비활성된 권한도 표시는 유지(기존 콘텐츠 호환). 옵션 노출 필터는 검색/등록 컴포넌트에서만 적용.
@@ -431,7 +433,7 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isInternal && canCreateContent && (
+        {isInternal && showCreateButton && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
             <Button variant="primary" className="w-[90px]">
               新規登録
