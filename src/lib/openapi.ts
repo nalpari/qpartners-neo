@@ -3532,7 +3532,12 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       PasswordResetRequest: {
         type: "object",
-        required: ["userTp", "email"],
+        required: ["userTp"],
+        description:
+          "userTp 별 입력 정책 (Redmine #2156): " +
+          "STORE = loginId + email 둘 다 필수 (서버에서 응답 email 평문과 사후 매칭으로 AND 검증). " +
+          "SEKO = email 만 필수. " +
+          "GENERAL = 단일 입력값을 loginId 필드로 전송 (서버가 dual-key 병렬 조회로 OR 매칭).",
         properties: {
           userTp: {
             type: "string",
@@ -3540,9 +3545,19 @@ export const openApiSpec: OpenAPIV3.Document = {
             example: "GENERAL",
             description: "사용자 유형",
           },
-          loginId: { type: "string", description: "로그인 ID (STORE 필수, 그 외 선택)" },
-          email: { type: "string", format: "email", maxLength: 100, example: "user@example.com", description: "비밀번호 변경 링크를 받을 이메일" },
-          sekoId: { type: "string", description: "시공점 ID (SEKO 선택 — QSP는 이메일만으로도 시공점 조회 가능)" },
+          loginId: {
+            type: "string",
+            description:
+              "STORE: 필수 (회원 ID). GENERAL: 단일 입력값(ID 또는 E-Mail) 운반 필드. SEKO: 미사용.",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            maxLength: 100,
+            example: "user@example.com",
+            description:
+              "STORE: 필수 (회원 E-Mail, 사후 매칭에 사용). SEKO: 필수. GENERAL: 미전송 (loginId 필드 사용).",
+          },
         },
       },
       PasswordResetVerify: {

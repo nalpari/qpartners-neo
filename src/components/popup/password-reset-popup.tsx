@@ -16,14 +16,12 @@ const MEMBER_TYPES: { key: TabType; label: string }[] = [
 interface ResetFormData {
   id: string;
   email: string;
-  sekoId: string;
   idEmail: string;
 }
 
 const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
-  sekoId: "",
   idEmail: "",
 };
 
@@ -68,7 +66,11 @@ export function PasswordResetPopup() {
     if (!isFormValid(activeTab, formData) || isSubmitting) return;
 
     const userTp = TAB_TO_USERTP[activeTab];
-    const payload: Record<string, string> = { userTp, email: "" };
+    // Redmine #2156 — userTp 별 입력 정책:
+    //   dealer (STORE)    : loginId + email 둘 다 전송 (서버에서 사후 매칭)
+    //   installer (SEKO)  : email 만 (sekoId 입력란 제거)
+    //   general (GENERAL) : 단일 입력값을 loginId 필드로 전송 (서버가 dual-key 로 OR 매칭)
+    const payload: Record<string, string> = { userTp };
 
     switch (activeTab) {
       case "dealer":
@@ -77,10 +79,9 @@ export function PasswordResetPopup() {
         break;
       case "installer":
         payload.email = formData.email;
-        if (formData.sekoId.trim()) payload.sekoId = formData.sekoId;
         break;
       case "general":
-        payload.email = formData.idEmail;
+        payload.loginId = formData.idEmail;
         break;
     }
 
@@ -201,39 +202,27 @@ export function PasswordResetPopup() {
             )}
 
             {activeTab === "installer" && (
-              <>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    施工店ID
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.sekoId}
-                    onChange={(e) => handleChange("sekoId", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 w-full">
-                  <label className={labelClass}>
-                    E-Mail<span className="text-[#FF1A1A]">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </>
+              <div className="flex flex-col gap-2 w-full">
+                <label className={labelClass}>
+                  E-Mail<span className="text-[#FF1A1A]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
             )}
 
             {activeTab === "general" && (
               <div className="flex flex-col gap-2 w-full">
                 <label className={labelClass}>
-                  ID(E-Mail)<span className="text-[#FF1A1A]">*</span>
+                  ID または E-Mail<span className="text-[#FF1A1A]">*</span>
                 </label>
                 <input
-                  type="email"
+                  type="text"
+                  autoComplete="username"
                   value={formData.idEmail}
                   onChange={(e) => handleChange("idEmail", e.target.value)}
                   className={inputClass}
