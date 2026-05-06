@@ -287,8 +287,16 @@ export function NoticeFormPopup() {
     deleteMutation.isPending;
 
   // 삭제 버튼 클릭 — confirm 후에만 실제 삭제 mutation 호출.
+  // RBAC 패턴 E — disabled 우회(키보드/race) 차단을 위해 핸들러 본체에도 권한 가드 (PR #148 리뷰).
+  // 서버 DELETE 가 최종 방어선이지만 일관된 패턴 유지로 부주의한 회귀를 막는다.
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (permissions-table 핸들러와 일관).
   const handleDelete = () => {
     if (!noticeId) return;
+    if (isPermLoading) return;
+    if (!canDeleteNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     openAlert({
       type: "confirm",
       message: "本当に削除してもよろしいですか？",
@@ -308,7 +316,15 @@ export function NoticeFormPopup() {
   };
 
   // Design Ref: §4.3 — handleSave 통합
+  // RBAC 패턴 E — 핸들러 본체 권한 가드. mode 별로 필요한 액션 분기 (create / update).
+  // disabled 우회(키보드/race) 차단 + 서버 가드(requireMenuPermission) 가 최종 방어선 (PR #148 리뷰).
+  // 로딩 중은 silent return — 권한 응답 도착 전 alert 노출 방지 (permissions-table 핸들러와 일관).
   const handleSave = () => {
+    if (isPermLoading) return;
+    if (mode === "create" ? !canCreateNotice : !canUpdateNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (isPastDate(startDate) || isPastDate(endDate)) {
       openAlert({
         type: "alert",

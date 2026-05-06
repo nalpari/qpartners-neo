@@ -235,10 +235,14 @@ export function PermissionsTable() {
   // 권한관리 화면 자체는 페이지 가드(requirePageMenuPermission)가 차단하지만, 매트릭스 토글로
   // ADMIN 의 ADM_PERMISSION.update=false 설정 시 진입은 가능하나 편집 비활성 (readonly 표시).
   // 서버 PUT/POST 도 requireMenuPermission(ADM_PERMISSION, ...) 으로 최종 검증.
-  // - canCreate 는 PermissionGate 가 직접 조회하므로 분해 불요.
+  // - 保存 버튼 disabled 분기에 newRow 시 canCreate 사용 — create 권한만 있는 운영자가 신규 행을
+  //   추가했음에도 保存 버튼이 비활성화되는 권한 의미론 불일치 차단 (PR #148 리뷰).
   // - canDelete 는 권한관리 화면에 DELETE 액션이 없어 분해 불요 (행 삭제는 isActive=N 토글로 대체).
-  const { canUpdate: canUpdatePermission, isLoading: isPermLoading } =
-    useMenuPermission(ADMIN_MENU.PERMISSIONS);
+  const {
+    canCreate: canCreatePermission,
+    canUpdate: canUpdatePermission,
+    isLoading: isPermLoading,
+  } = useMenuPermission(ADMIN_MENU.PERMISSIONS);
 
   const [activeOnly, setActiveOnly] = useState(true);
   const [newRow, setNewRow] = useState(false);
@@ -382,7 +386,11 @@ export function PermissionsTable() {
       // refetch 완료까지 대기 — handleSave 가 mutateAsync 결과 후 clearPending/alert 를 호출하므로
       // 그 시점에 새 server data 가 반영되어 있어야 권한관리 화면이 즉시 새 권한명을 표시.
       // ["role-labels"] 도 함께 invalidate 해 공지/대량메일 화면 mount 시 fresh fetch.
-      // ["me", "permissions"] 도 invalidate — 권한 CRUD 토글이 모든 admin 화면 버튼에 즉시 반영 (Redmine #2183).
+      // ["me", "permissions"] 는 isActive=Y/N 토글 케이스 때문에 항상 invalidate (Redmine #2183).
+      // - roleName/description 단순 수정만 일어난 경우엔 매트릭스 권한이 바뀌지 않아 불필요한 리페치이지만,
+      //   handleSave 가 isActive 변경과 텍스트 변경을 단일 PUT 일괄 처리 흐름으로 묶어 처리하므로
+      //   onSuccess 시점에 어느 필드가 바뀌었는지 식별이 어렵다. 본인 권한이 비활성화된 즉시 admin
+      //   화면 버튼 가시성을 갱신하는 것이 보안·UX 양 측면에서 우선이라 항상 invalidate 로 통일.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: rolesQueryKey() }),
         queryClient.invalidateQueries({ queryKey: ["role-labels"] }),
@@ -411,9 +419,12 @@ export function PermissionsTable() {
 
   // Y/N select 변경 — 즉시 PUT 안 함, pending 누적. 「保存」 클릭 시 일괄 처리.
   // RBAC 패턴 E — canUpdate=false 인 운영자가 토글 시도 시 차단 (편집 후 저장 거부 UX 회피).
+  // 로딩 중(isPermLoading) 은 silent return — 권한 응답 도착 전 사용자 의도와 무관한 alert 노출 방지 (PR #148 리뷰).
+  // canUpdate=false 확정 후의 시도만 alert 로 안내.
   const handleActiveChange = useCallback((item: PermissionItem, value: "Y" | "N") => {
     if (item.isNew) return;
-    if (isPermLoading || !canUpdatePermission) {
+    if (isPermLoading) return;
+    if (!canUpdatePermission) {
       openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
       return;
     }
@@ -433,6 +444,15 @@ export function PermissionsTable() {
   //   4) 모두 성공 시 pending + 편집 state 정리 + 단일 alert
   const handleSave = useCallback(async () => {
     if (isSaving) return;
+
+    // RBAC 패턴 E — 핸들러 본체 권한 가드. disabled 우회(키보드/race) 차단을 위해 본체에서도 재확인.
+    // newRow → POST(create), 그 외 → PUT(update). 로딩 중은 silent return (권한 응답 도착 전 alert 노출 방지).
+    if (isPermLoading) return;
+    const requiredCan = newRow ? canCreatePermission : canUpdatePermission;
+    if (!requiredCan) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
 
     // 1) 신규행 — 단건 POST. 신규행 분기에도 isSaving 가드 적용으로 중복 클릭 차단
     // (createMutation.isPending 만으로는 alert/네트워크 race 시 짧은 틈 존재).
@@ -549,6 +569,9 @@ export function PermissionsTable() {
     discardRowPending,
     clearPending,
     handleEditCancel,
+    isPermLoading,
+    canCreatePermission,
+    canUpdatePermission,
     // editValuesRef: useRef 객체로 렌더 간 reference 동일 — 실질 deps 효과 없으나
     // react-hooks/exhaustive-deps 룰 충족 + 컨벤션 일관성 위해 명시.
     editValuesRef,
@@ -569,6 +592,8 @@ export function PermissionsTable() {
 
   // --- AG Grid 이벤트 ---
   // RBAC 패턴 E — canUpdate=false 시 더블클릭으로 편집 진입 차단 (편집 후 저장 거부 UX 회피).
+  // 로딩 중(isPermLoading) 은 silent return — 권한 응답 도착 전 더블클릭에 alert 가 떠 사용자
+  // 흐름이 끊기는 UX 저해 방지 (PR #148 리뷰). canUpdate=false 확정 후의 시도만 alert 로 안내.
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<PermissionItem>) => {
     const data = event.data;
     const field = event.colDef.field;
@@ -576,7 +601,8 @@ export function PermissionsTable() {
     if (!data || data.isNew || !field) return;
     if (NON_EDITABLE_FIELDS.has(field)) return;
     if (colId === "menuSetting") return; // Available Menu Setting 컬럼 제외
-    if (isPermLoading || !canUpdatePermission) {
+    if (isPermLoading) return;
+    if (!canUpdatePermission) {
       openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
       return;
     }
@@ -676,14 +702,16 @@ export function PermissionsTable() {
               </Button>
             </PermissionGate>
           )}
-          {/* 保存 — 패턴 B. canUpdate=false 시 비활성. 신규 행 저장 시도는 BE 가 create 권한 검증. */}
+          {/* 保存 — 패턴 B. newRow 일 때는 createMutation 호출 경로이므로 canCreate 로 분기, 그 외는 canUpdate.
+              create 권한만 있는 운영자가 「追加」 → 입력 → 「保存」 흐름을 자연스럽게 완료할 수 있도록 함 (PR #148 리뷰).
+              서버 POST/PUT 도 requireMenuPermission 으로 최종 검증. */}
           <Button
             variant="primary"
             onClick={() => { void handleSave(); }}
             disabled={
               isSaving ||
               isPermLoading ||
-              !canUpdatePermission ||
+              (newRow ? !canCreatePermission : !canUpdatePermission) ||
               createMutation.isPending ||
               updateMutation.isPending
             }

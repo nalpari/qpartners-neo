@@ -225,6 +225,12 @@ export function NoticesTable({
   });
 
   const handleBulkDelete = () => {
+    // RBAC 패턴 E — 핸들러 본체 권한 가드. disabled 는 UI 힌트일 뿐 키보드/race 우회 가능하므로
+    // 핸들러 진입 즉시 매트릭스 가드 재확인. 로딩 중 fail-closed (서버 가드가 최종 방어선).
+    if (isPermLoading || !canDeleteNotice) {
+      openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
+      return;
+    }
     if (selectedIds.size === 0) {
       openAlert({
         type: "alert",

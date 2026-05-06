@@ -223,7 +223,9 @@ export function MemberDetailPopup() {
       await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
       // userRole 변경 시 본인의 메뉴 매트릭스도 즉시 갱신 (Redmine #2183).
       // 본인이 자기 권한을 변경하는 경우 5분 staleTime 동안 admin 화면 버튼 가시성이 stale 되는 회귀 방지.
-      // 다른 사용자의 권한을 변경한 경우에도 invalidate 호출은 무해 (응답 동일).
+      // 의도적 over-invalidate — 다른 회원의 userRole 변경 시 invalidate 호출은 본인 매트릭스에
+      // 영향이 없어 무해(GET /me/permissions 응답 동일). PUT 응답에서 대상 회원이 본인인지 식별
+      // 하려면 추가 분기가 필요하므로, 단순화 + 본인 변경 케이스 안전성을 우선해 일괄 invalidate.
       if (payload.userRole !== undefined) {
         await queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
       }
