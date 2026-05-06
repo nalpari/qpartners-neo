@@ -103,6 +103,8 @@ type DetailGridContext = {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onActiveChange: (id: string, isActive: boolean) => void;
   isActiveBusy: boolean;
+  // RBAC — active select 가 update=false 시 disabled (Header 와 동일).
+  isUpdateReadOnly: boolean;
 };
 
 // 컴포넌트 바깥 정의 — 매 렌더 함수 identity 안정화로 셀 재마운트 방지
@@ -147,7 +149,7 @@ function ActiveSelectRendererFn(params: ICellRendererParams<DetailGridRow>) {
     >
       <select
         value={data.isActive}
-        disabled={ctx.isActiveBusy}
+        disabled={ctx.isActiveBusy || ctx.isUpdateReadOnly}
         onChange={(e) => ctx.onActiveChange(data.id, e.target.value === "Y")}
         className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010] disabled:bg-[#F5F5F5] disabled:cursor-not-allowed"
       >
@@ -184,6 +186,11 @@ interface CodesDetailTableProps {
   onActiveOnlyChange: (checked: boolean) => void;
   onActiveChange: (id: string, isActive: boolean) => void;
   isActiveBusy?: boolean;
+  // RBAC 표준 패턴 — 부모(CodesContents) 단일 호출 후 prop 으로 전달 (PR #148 리뷰 학습).
+  // 「追加」=create, cell edit/active toggle=update. Detail 행 삭제 UI 없음 (isActive=N 정책).
+  canCreate: boolean;
+  canUpdate: boolean;
+  isPermLoading: boolean;
 }
 
 export function CodesDetailTable({
@@ -204,7 +211,12 @@ export function CodesDetailTable({
   onActiveOnlyChange,
   onActiveChange,
   isActiveBusy = false,
+  canCreate,
+  canUpdate,
+  isPermLoading,
 }: CodesDetailTableProps) {
+  const isUpdateReadOnly = isPermLoading || !canUpdate;
+  const canAddNew = !isPermLoading && canCreate;
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거 되어도 셀 value 자체는 변하지 않아
   //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
@@ -247,7 +259,8 @@ export function CodesDetailTable({
     onKeyDown: handleKeyDown,
     onActiveChange,
     isActiveBusy,
-  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown, onActiveChange, isActiveBusy]);
+    isUpdateReadOnly,
+  }), [newRowFieldsRef, onNewRowFieldChange, onEditFieldChange, handleKeyDown, onActiveChange, isActiveBusy, isUpdateReadOnly]);
 
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
@@ -283,9 +296,12 @@ export function CodesDetailTable({
     const field = event.colDef.field;
     if (!data || data.isNew || !field) return;
     if (NON_EDITABLE_FIELDS.has(field)) return;
+    // RBAC — 부모(handleDetailCellEditStart) 가 패턴 E 본체 가드를 적용하지만 여기서도
+    // silent return 으로 alert 노출 횟수를 1회로 통일.
+    if (isUpdateReadOnly) return;
     // 이전 편집이 있으면 onCellEditStart 내부에서 ref 가 reset 되며 자동 취소됨
     onCellEditStart(data.id, field);
-  }, [onCellEditStart]);
+  }, [onCellEditStart, isUpdateReadOnly]);
 
   return (
     <div className="flex flex-col w-[1440px] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
@@ -298,7 +314,13 @@ export function CodesDetailTable({
           {hasNewRow ? (
             <Button variant="outline" onClick={onCancelAdd}>キャンセル</Button>
           ) : (
-            <Button variant="outline" onClick={onAdd} disabled={!selectedHeaderCode}>追加</Button>
+            <Button
+              variant="outline"
+              onClick={onAdd}
+              disabled={!selectedHeaderCode || !canAddNew}
+            >
+              追加
+            </Button>
           )}
         </div>
       </div>

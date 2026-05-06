@@ -8,11 +8,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, PageSizeSelect, Checkbox, Button } from "@/components/common";
+import { Pagination, PageSizeSelect, Checkbox, Button, PermissionGate } from "@/components/common";
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import { usePageSize } from "@/hooks/use-page-size";
+import { ADMIN_MENU } from "@/lib/menu-codes";
 
 /** Design Ref: §3.4 — 제목 클릭 시 상세화면 이동 */
 function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
@@ -163,9 +164,12 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
           />
         </div>
         <div className="flex items-center gap-[6px]">
-          <Button variant="primary" onClick={handleSendMail}>
-            メール発送
-          </Button>
+          {/* 「メール発送」 — 패턴 A (PermissionGate). canCreate=false 시 버튼 자체 숨김 */}
+          <PermissionGate menuCode={ADMIN_MENU.BULK_MAIL} action="create" fallback={null}>
+            <Button variant="primary" onClick={handleSendMail}>
+              メール発送
+            </Button>
+          </PermissionGate>
           <PageSizeSelect value={perPage} onChange={handlePerPageChange} />
         </div>
       </div>

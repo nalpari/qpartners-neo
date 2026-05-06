@@ -1,53 +1,14 @@
-"use client";
+import { requirePageMenuPermission } from "@/lib/rbac-guard";
+import { BulkMailCreateClient } from "./bulk-mail-create-client";
 
-// Design Ref: §5.2 — 등록 페이지 (복사 데이터 로드)
-
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { LoginUser } from "@/lib/schemas/auth";
-import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
-import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
-
-function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
-  if (typeof window === "undefined") return { mode: "create" };
-
-  const stored = sessionStorage.getItem("mass-mail-copy");
-  if (!stored) return { mode: "create" };
-
-  sessionStorage.removeItem("mass-mail-copy");
-  try {
-    const parsed: unknown = JSON.parse(stored);
-    if (typeof parsed !== "object" || parsed === null) return { mode: "create" };
-    const data = parsed as Record<string, unknown>;
-    const initialData: Partial<FormInitialData> = {
-      senderName: typeof data.senderName === "string" ? data.senderName : undefined,
-      targets: Array.isArray(data.targets) ? data.targets.filter((t): t is string => typeof t === "string") : undefined,
-      optOut: typeof data.optOut === "boolean" ? data.optOut : undefined,
-      subject: typeof data.subject === "string" ? data.subject : undefined,
-      body: typeof data.body === "string" ? data.body : undefined,
-      attachments: [],
-    };
-    return { mode: "copy", initialData };
-  } catch (error: unknown) {
-    console.warn("[BulkMailCreatePage] mass-mail-copy 데이터 파싱 실패:", error);
-    return { mode: "create" };
-  }
-}
-
-export default function AdminBulkMailCreatePage() {
-  const [initial] = useState(loadCopyData);
-  const { data: user = null } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
-
-  const initialData: Partial<FormInitialData> = {
-    ...initial.initialData,
-    createdBy: user?.userId ?? "",
-    createdByName: user?.userNm ?? null,
-  };
-
-  return <BulkMailForm mode={initial.mode} initialData={initialData} />;
+/**
+ * RBAC — ADM_BULK_MAIL.canCreate 매트릭스 가드. server wrapper 로 진입 자체를 차단.
+ * 서버 최종 방어선은 `/api/admin/mass-mails (POST)` 의 `requireMenuPermission("ADM_BULK_MAIL", "create")`.
+ * 페이지 가드 미통과 시 fallback (`/admin/bulk-mail`) 으로 redirect — 화면 차단 명시화.
+ *
+ * client 본체는 sessionStorage 복사 데이터 로드가 필요해 별도 컴포넌트로 분리.
+ */
+export default async function AdminBulkMailCreatePage() {
+  await requirePageMenuPermission("ADM_BULK_MAIL", "create", { fallback: "/admin/bulk-mail" });
+  return <BulkMailCreateClient />;
 }

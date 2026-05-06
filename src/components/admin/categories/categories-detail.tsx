@@ -15,6 +15,14 @@ interface CategoriesDetailProps {
   treeData: CategoryNode[];
   isNewMode: boolean;
   isSaving: boolean;
+  // RBAC 표준 패턴 — 부모(CategoriesContents) 가 useMenuPermission 단일 호출 후 prop 으로 전달.
+  // 자식이 별도 호출하면 부모/자식 isLoading 타이밍 차이로 readonly→edit→readonly 깜빡임 발생 가능.
+  // 서버 API 도 requireMenuPermission(ADM_CATEGORY, ...) 로 최종 검증 — FE 는 UX 일관성 전용.
+  // mode (isNewMode) 별로 create/update 가드가 달라지므로 자식 내부에서 isFormDisabled 파생.
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  isPermLoading: boolean;
   onSave: (form: CategoryFormState) => void;
   onDelete: () => void;
   onNew: () => void;
@@ -48,6 +56,10 @@ export function CategoriesDetail({
   treeData,
   isNewMode,
   isSaving,
+  canCreate,
+  canUpdate,
+  canDelete,
+  isPermLoading,
   onSave,
   onDelete,
   onNew,
@@ -62,8 +74,16 @@ export function CategoriesDetail({
   const hasSelection = selectedCategory !== null || isNewMode;
   const depth = form.parentId === null ? 1 : 2;
 
+  // RBAC — mode 별로 필요한 액션 분기. 신규(isNewMode)면 create, 수정이면 update.
+  const isSaveDisabledByPerm =
+    isPermLoading || (isNewMode ? !canCreate : !canUpdate);
+  // 입력 필드 disabled 통일 — canUpdate=false 면 모든 폼 입력 차단 (저장 버튼만 막는 부분 적용 금지).
+  // 신규 모드는 canCreate 가 일차 가드, 수정 모드는 canUpdate 가 일차 가드.
+  const isFormDisabled =
+    isPermLoading || (isNewMode ? !canCreate : !canUpdate);
+
   // Design Ref: §4.3 — categoryCode 비활성화 조건
-  const isCodeDisabled = isEditMode || form.parentId !== null;
+  const isCodeDisabled = isEditMode || form.parentId !== null || isFormDisabled;
 
   const updateField = <K extends keyof CategoryFormState>(
     key: K,
@@ -100,22 +120,30 @@ export function CategoriesDetail({
           カテゴリ情報
         </h2>
         <div className="flex items-center gap-[6px]">
+          {/* 削除 — 패턴 B (canDelete=false 시 disabled). 핸들러 본체 패턴 E 는 부모(handleDelete) 에서 적용. */}
           <Button
             variant="secondary"
-            disabled={!isEditMode || isSaving}
+            disabled={!isEditMode || isSaving || isPermLoading || !canDelete}
             onClick={onDelete}
           >
             削除
           </Button>
+          {/* 初期化 — 폼 state reset 만 수행, RBAC 비대상 (read 영역) */}
           <Button variant="secondary" onClick={onReset}>
             初期化
           </Button>
-          <Button variant="point" onClick={onNew}>
+          {/* 新規 — 패턴 B (canCreate=false 시 disabled) */}
+          <Button
+            variant="point"
+            disabled={isPermLoading || !canCreate}
+            onClick={onNew}
+          >
             新規
           </Button>
+          {/* 保存 — 패턴 B (mode 별 분기). 핸들러 본체 패턴 E 는 부모(handleSave) 에서 적용. */}
           <Button
             variant="primary"
-            disabled={!hasSelection || isSaving}
+            disabled={!hasSelection || isSaving || isSaveDisabledByPerm}
             onClick={() => onSave(form)}
           >
             保存
@@ -125,7 +153,7 @@ export function CategoriesDetail({
 
       {/* Form Rows */}
       <div className="flex flex-col gap-[4px]">
-        {/* Row 1: 社内会員専用 — 제약 없이 항상 편집 가능 (2Depth/수정모드 모두) */}
+        {/* Row 1: 社内会員専用 — 제약 없이 항상 편집 가능 (2Depth/수정모드 모두) — 단, RBAC readonly 시 비활성 */}
         <FormRow label="社内会員専用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
@@ -133,17 +161,19 @@ export function CategoriesDetail({
               onChange={() => updateField("isInternalOnly", true)}
               label="Y"
               name="isInternalOnly"
+              disabled={isFormDisabled}
             />
             <Radio
               checked={!form.isInternalOnly}
               onChange={() => updateField("isInternalOnly", false)}
               label="N"
               name="isInternalOnly"
+              disabled={isFormDisabled}
             />
           </div>
         </FormRow>
 
-        {/* Row 2: 親カテゴリ — AutoCompleteSelect */}
+        {/* Row 2: 親カテゴリ — AutoCompleteSelect. 수정 모드 또는 RBAC readonly 시 비활성 */}
         <FormRow label="親カテゴリ">
           <div className="w-full p-[8px]">
             <AutoCompleteSelect
@@ -151,7 +181,7 @@ export function CategoriesDetail({
               value={form.parentId !== null ? String(form.parentId) : ""}
               onChange={(val) => handleParentChange(val ? Number(val) : null)}
               placeholder="カテゴリ名で検索"
-              disabled={isEditMode}
+              disabled={isEditMode || isFormDisabled}
             />
           </div>
         </FormRow>
@@ -180,6 +210,7 @@ export function CategoriesDetail({
             <InputBox
               value={form.name}
               onChange={(val) => updateField("name", val)}
+              disabled={isFormDisabled}
             />
           </div>
         </FormRow>
@@ -191,6 +222,7 @@ export function CategoriesDetail({
               value={String(form.sortOrder)}
               onChange={(val) => updateField("sortOrder", Number(val) || 0)}
               type="number"
+              disabled={isFormDisabled}
             />
           </div>
         </FormRow>
@@ -203,12 +235,14 @@ export function CategoriesDetail({
               onChange={() => updateField("isActive", true)}
               label="Y"
               name="isActive"
+              disabled={isFormDisabled}
             />
             <Radio
               checked={!form.isActive}
               onChange={() => updateField("isActive", false)}
               label="N"
               name="isActive"
+              disabled={isFormDisabled}
             />
           </div>
         </FormRow>
