@@ -176,7 +176,9 @@ export async function POST(request: NextRequest) {
     const ip =
       forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
     // IP fallback key — 입력 식별자 (email 우선, 없으면 loginId). 공용 버킷 차단 회피용.
-    const inputIdentifier = (email ?? loginId ?? "").trim();
+    // toLowerCase 적용 — `User@Example.com` vs `user@example.com` 가 다른 fallback 버킷으로
+    // 분리되어 5회 한도 우회되는 문제 방지 (Boston 재검증 MEDIUM, 2026-05-07).
+    const inputIdentifier = (email ?? loginId ?? "").trim().toLowerCase();
     const ipKey = ip ?? `account:${inputIdentifier}`;
     if (!checkRateLimit(`pw-reset:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
       return NextResponse.json(
@@ -275,8 +277,24 @@ export async function POST(request: NextRequest) {
       ]);
       const r1Found = r1.kind === "found" && r1.detail.email ? r1 : null;
       const r2Found = r2.kind === "found" && r2.detail.email ? r2 : null;
-      if (r1Found && r2Found) {
-        if (r1Found.detail.userId === r2Found.detail.userId) {
+      const r1Ambig = r1.kind === "ambiguous";
+      const r2Ambig = r2.kind === "ambiguous";
+      const r1Tx = r1.kind === "transport-error";
+      const r2Tx = r2.kind === "transport-error";
+      // ambiguous / transport 를 r1Found && r2Found 보다 먼저 평가 — 한쪽 hit + 반대편이
+      // ambiguous/transport 인 경우 잘못된 회원에게 메일이 발송되는 침묵 통과 차단
+      // (Boston 재검증 HIGH #1, 2026-05-07).
+      if (r1Ambig || r2Ambig) {
+        lookupBlocker = "ambiguous";
+      } else if (r1Tx || r2Tx) {
+        // 외부 일시 장애 vs 보안 일관성 트레이드오프 — 보안 우선 fail-closed
+        lookupBlocker = "transport";
+      } else if (r1Found && r2Found) {
+        // userId 비교 시 trim — QSP 응답 표기 차이로 동일 회원이 오판되지 않도록 보강
+        // (Boston 재검증 MEDIUM, 2026-05-07).
+        const id1 = (r1Found.detail.userId ?? "").trim();
+        const id2 = (r2Found.detail.userId ?? "").trim();
+        if (id1 && id1 === id2) {
           // 동일 회원이 loginId·email 양쪽에서 매칭 — 정상 경로
           resolvedDetail = r1Found.detail;
         } else {
@@ -290,13 +308,6 @@ export async function POST(request: NextRequest) {
         resolvedDetail = r1Found.detail;
       } else if (r2Found) {
         resolvedDetail = r2Found.detail;
-      } else if (r1.kind === "ambiguous" || r2.kind === "ambiguous") {
-        lookupBlocker = "ambiguous";
-      } else if (
-        r1.kind === "transport-error" ||
-        r2.kind === "transport-error"
-      ) {
-        lookupBlocker = "transport";
       } else if (r1.kind === "schema-error" || r2.kind === "schema-error") {
         lookupBlocker = "schema";
       }

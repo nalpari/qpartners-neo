@@ -237,7 +237,7 @@ export function PasswordResetPopup() {
               キャンセル
             </Button>
             <Button variant="primary" onClick={() => { void handleSubmit(); }} disabled={isSubmitting}>
-              パスワードの初期化
+              {isSubmitting ? "送信中…" : "パスワードの初期化"}
             </Button>
           </div>
         </div>
