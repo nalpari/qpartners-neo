@@ -10,7 +10,21 @@ import {
   createHomeNoticeSchema,
   computeStatus,
   toTargetArray,
+  TARGET_FIELD_TO_KEY,
+  type TargetField,
 } from "@/lib/schemas/home-notice";
+
+// 트랜잭션 내부에서 instanceof 기반 분기로 매핑하기 위한 도메인 에러.
+// 메시지 문자열 매칭 대신 instanceof 사용 — `.claude/rules/api.md` "문자열 매칭 금지" 정책.
+class HomeNoticeCreateError extends Error {
+  constructor(
+    public readonly kind: "LIMIT_EXCEEDED",
+    public readonly target?: TargetField,
+  ) {
+    super(kind);
+    this.name = "HomeNoticeCreateError";
+  }
+}
 
 // GET /api/home-notices — 공지 목록 (ADM_NOTICE.read 매트릭스 기반)
 export async function GET(request: NextRequest) {
@@ -284,18 +298,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 게시기간 겹치는 공지 5개 초과 체크 + 등록을 트랜잭션으로 처리
+    // 게시기간이 겹치는 공지가 동일 target 그룹 내에 5건 초과인지 검사 + 등록을 트랜잭션으로 처리.
+    // 권한별(target별) 5건 한도 — 각 target 그룹은 독립적으로 카운트되어 한 그룹의 한도가
+    // 다른 그룹의 노출을 막지 않도록 함.
     const notice = await prisma.$transaction(
       async (tx) => {
-        const overlapCount = await tx.homeNotice.count({
-          where: {
-            startAt: { lte: result.data.endAt },
-            endAt: { gte: result.data.startAt },
-          },
-        });
+        const selected: TargetField[] = [];
+        if (result.data.targetSuperAdmin) selected.push("targetSuperAdmin");
+        if (result.data.targetAdmin) selected.push("targetAdmin");
+        if (result.data.targetFirstStore) selected.push("targetFirstStore");
+        if (result.data.targetSecondStore) selected.push("targetSecondStore");
+        if (result.data.targetConstructor) selected.push("targetConstructor");
+        if (result.data.targetGeneral) selected.push("targetGeneral");
 
-        if (overlapCount >= 5) {
-          throw new Error("LIMIT_EXCEEDED");
+        for (const f of selected) {
+          const c = await tx.homeNotice.count({
+            where: {
+              startAt: { lte: result.data.endAt },
+              endAt: { gte: result.data.startAt },
+              [f]: true,
+            },
+          });
+          if (c >= 5) throw new HomeNoticeCreateError("LIMIT_EXCEEDED", f);
         }
 
         return tx.homeNotice.create({
@@ -318,9 +342,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: notice }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "LIMIT_EXCEEDED") {
+    if (error instanceof HomeNoticeCreateError && error.kind === "LIMIT_EXCEEDED") {
+      // FE 가 code 로 분기하고 target(외부 키) 로 사용자에게 어느 권한군이 초과인지 안내.
+      // DB 컬럼명이 아닌 toTargetArray 와 동일 외부 키로 정규화 (추상화 누수 방지).
+      const target = error.target ? TARGET_FIELD_TO_KEY[error.target] : undefined;
       return NextResponse.json(
-        { error: "同一期間に掲載できるお知らせは5件までです", code: "LIMIT_EXCEEDED" },
+        {
+          error: "同一期間に同じ送信先で掲載できるお知らせは5件までです",
+          code: "LIMIT_EXCEEDED",
+          ...(target ? { target } : {}),
+        },
         { status: 400 },
       );
     }

@@ -119,22 +119,28 @@ export function computeStatus(startAt: Date, endAt: Date): HomeNoticeStatus {
   return "active";
 }
 
+/** target Boolean 컬럼명 → 외부 API 키. 응답 본문에 DB 컬럼명을 노출하지 않기 위한 매핑. */
+export const TARGET_FIELD_TO_KEY = {
+  targetSuperAdmin: "super_admin",
+  targetAdmin: "admin",
+  targetFirstStore: "first_store",
+  targetSecondStore: "second_store",
+  targetConstructor: "seko",
+  targetGeneral: "general",
+} as const;
+
+export type TargetField = keyof typeof TARGET_FIELD_TO_KEY;
+export type TargetKey = (typeof TARGET_FIELD_TO_KEY)[TargetField];
+
 /** target Boolean 필드를 배열로 변환 */
-export function toTargetArray(row: {
-  targetSuperAdmin: boolean;
-  targetAdmin: boolean;
-  targetFirstStore: boolean;
-  targetSecondStore: boolean;
-  targetConstructor: boolean;
-  targetGeneral: boolean;
-}): string[] {
-  const targets: string[] = [];
-  if (row.targetSuperAdmin) targets.push("super_admin");
-  if (row.targetAdmin) targets.push("admin");
-  if (row.targetFirstStore) targets.push("first_store");
-  if (row.targetSecondStore) targets.push("second_store");
-  if (row.targetConstructor) targets.push("seko");
-  if (row.targetGeneral) targets.push("general");
+export function toTargetArray(row: Record<TargetField, boolean>): TargetKey[] {
+  const targets: TargetKey[] = [];
+  for (const [field, key] of Object.entries(TARGET_FIELD_TO_KEY) as [
+    TargetField,
+    TargetKey,
+  ][]) {
+    if (row[field]) targets.push(key);
+  }
   return targets;
 }
 

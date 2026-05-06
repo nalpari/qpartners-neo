@@ -12,15 +12,19 @@ import {
   updateHomeNoticeSchema,
   computeStatus,
   toTargetArray,
+  TARGET_FIELD_TO_KEY,
+  type TargetField,
 } from "@/lib/schemas/home-notice";
 
 type Params = { params: Promise<{ id: string }> };
 
 // 트랜잭션 내부에서 단일 catch 분기로 매핑하기 위한 도메인 에러.
 // throw 문자열 매칭 대신 instanceof 로 분기 → 메시지 변경/번역에 영향받지 않음.
+// LIMIT_EXCEEDED 의 경우 어느 target 그룹이 한도 초과인지 식별하기 위해 target 동봉.
 class HomeNoticeUpdateError extends Error {
   constructor(
     public readonly kind: "NOT_FOUND" | "FORBIDDEN" | "LIMIT_EXCEEDED" | "INVALID_RANGE",
+    public readonly target?: TargetField,
   ) {
     super(kind);
     this.name = "HomeNoticeUpdateError";
@@ -153,11 +157,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 존재 확인 → 권한 검증 → 한도 검증 → 갱신을 모두 동일 트랜잭션(Serializable) 안에서 수행해
     // findUnique 와 update 사이의 TOCTOU 윈도우(작성자/소유자가 다른 세션에서 변경되는 경우)를 닫음.
+    const TARGET_FIELDS = Object.keys(TARGET_FIELD_TO_KEY) as TargetField[];
+
     const notice = await prisma.$transaction(
       async (tx) => {
         const existing = await tx.homeNotice.findUnique({
           where: { id: parsed.data },
-          select: { startAt: true, endAt: true, userType: true, userId: true },
+          select: {
+            startAt: true,
+            endAt: true,
+            userType: true,
+            userId: true,
+            targetSuperAdmin: true,
+            targetAdmin: true,
+            targetFirstStore: true,
+            targetSecondStore: true,
+            targetConstructor: true,
+            targetGeneral: true,
+          },
         });
 
         if (!existing) throw new HomeNoticeUpdateError("NOT_FOUND");
@@ -177,29 +194,46 @@ export async function PUT(request: NextRequest, { params }: Params) {
           throw new HomeNoticeUpdateError("INVALID_RANGE");
         }
 
-        // 게시기간이 실제로 변경된 경우에만 5건 한도 재검사.
-        // 이유:
-        //   POST(create) 는 "신규 공지 자신의 기간" 만 검사하므로 긴 기간을 가진 기존 공지
-        //   안에 다른 공지가 누적되어 자신 기준 5건 초과 상태가 만들어질 수 있음. 이때
-        //   날짜 변경 없이 content/대상/URL 만 수정하는 것까지 막히는 UX 결함이 생김.
-        //   날짜를 그대로 두는 수정은 새로운 겹침 관계를 만들지 않으므로 한도 검사 불필요.
-        //   날짜가 바뀌는 경우에만 새 기간 기준으로 다시 검사 (period shift / expand / shrink).
+        // 권한별(target별) 5건 한도 재검사.
+        //   - dates 변경 시: 모든 final true 인 target 그룹에 대해 새 기간 기준으로 재검사
+        //   - dates 동일 + 새로 추가된 target 만: 추가된 target 그룹만 검사
+        //     (false → true 로 합류하는 그룹은 새 카운트에 추가되므로 한도 확인 필요)
+        //   - dates 동일 + target 그대로 또는 제거만: 검사 불필요
+        //     (이미 자기 포함 5건 이하인 그룹에서 자기를 빼고 다시 넣어도 동일 카운트)
         const datesUnchanged =
           finalStartAt.getTime() === existing.startAt.getTime() &&
           finalEndAt.getTime() === existing.endAt.getTime();
 
-        if (!datesUnchanged) {
-          const overlapCount = await tx.homeNotice.count({
+        const finalTargets: Record<TargetField, boolean> = {
+          targetSuperAdmin:
+            result.data.targetSuperAdmin ?? existing.targetSuperAdmin,
+          targetAdmin: result.data.targetAdmin ?? existing.targetAdmin,
+          targetFirstStore:
+            result.data.targetFirstStore ?? existing.targetFirstStore,
+          targetSecondStore:
+            result.data.targetSecondStore ?? existing.targetSecondStore,
+          targetConstructor:
+            result.data.targetConstructor ?? existing.targetConstructor,
+          targetGeneral: result.data.targetGeneral ?? existing.targetGeneral,
+        };
+
+        const targetsToCheck: TargetField[] = [];
+        for (const f of TARGET_FIELDS) {
+          if (!finalTargets[f]) continue;
+          const newlyAdded = !existing[f] && finalTargets[f];
+          if (!datesUnchanged || newlyAdded) targetsToCheck.push(f);
+        }
+
+        for (const f of targetsToCheck) {
+          const c = await tx.homeNotice.count({
             where: {
               id: { not: parsed.data },
               startAt: { lte: finalEndAt },
               endAt: { gte: finalStartAt },
+              [f]: true,
             },
           });
-
-          if (overlapCount >= 5) {
-            throw new HomeNoticeUpdateError("LIMIT_EXCEEDED");
-          }
+          if (c >= 5) throw new HomeNoticeUpdateError("LIMIT_EXCEEDED", f);
         }
 
         return tx.homeNotice.update({
@@ -228,9 +262,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json({ error: "修正する権限がありません" }, { status: 403 });
       }
       if (error.kind === "LIMIT_EXCEEDED") {
-        // FE 가 message 문자열이 아닌 code 로 분기할 수 있도록 식별자 동봉.
+        // FE 가 message 문자열이 아닌 code 로 분기할 수 있도록 식별자 동봉 + 어느
+        // target 그룹이 초과인지 안내용으로 외부 키(toTargetArray 와 동일) 정규화.
+        const target = error.target ? TARGET_FIELD_TO_KEY[error.target] : undefined;
         return NextResponse.json(
-          { error: "同一期間に掲載できるお知らせは5件までです", code: "LIMIT_EXCEEDED" },
+          {
+            error: "同一期間に同じ送信先で掲載できるお知らせは5件までです",
+            code: "LIMIT_EXCEEDED",
+            ...(target ? { target } : {}),
+          },
           { status: 400 },
         );
       }
