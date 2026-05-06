@@ -210,6 +210,9 @@ export function PersonalInfoPopup() {
                 <p className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#999] leading-[1.5]">
                   パスワード再設定リンクを受信したメールアドレスのアカウントです。
                 </p>
+                <p className="font-['Noto_Sans_JP'] text-[12px] lg:text-[13px] text-[#FF1A1A] leading-[1.5]">
+                  ※ メールアドレスの確認ができません。本メールを受信したご本人のアカウントであることをご確認の上、パスワードを変更してください。
+                </p>
               </div>
             )}
             {(hasExistingEmail || !hasResetToken) && (

@@ -34,8 +34,10 @@ export async function POST(request: NextRequest) {
 
     // 2. Rate limit — IP 기반 (token 단일 탈취 시 무한 호출로 email enumerate 차단)
     //    [전제] 배포 환경의 리버스 프록시(Nginx/ALB) 가 클라이언트 x-forwarded-for 를 덮어씀.
-    //    프록시 없이 직접 노출 시 헤더 스푸핑 가능하므로 token prefix 기반 보조 키 + 단일 공용
+    //    프록시 없이 직접 노출 시 헤더 스푸핑 가능하므로 token 해시 prefix 기반 보조 키 + 단일 공용
     //    버킷도 함께 적용 — 다수 토큰 보유 공격자가 prefix 별로 카운터를 분산해 우회하는 패턴 차단.
+    //    [보안] rawToken 원문 대신 hashResetToken 결과 prefix 를 사용 — 메모리 덤프/로그 유출 시
+    //    rate limit 키에서 원본 토큰 일부가 역추출되는 채널 차단.
     const forwarded = request.headers.get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
     if (ip) {
@@ -46,10 +48,10 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // IP 부재 시: token prefix 별 5회 + 공용 버킷 50회 동시 적용 (다수 토큰 분산 우회 차단)
-      const tokenPrefix = rawToken.slice(0, 8);
+      // IP 부재 시: token 해시 prefix 별 5회 + 공용 버킷 50회 동시 적용 (다수 토큰 분산 우회 차단)
+      const tokenHashPrefix = hashResetToken(rawToken).slice(0, 16);
       const ok =
-        checkRateLimit(`pw-verify:tp:${tokenPrefix}`, 5, 60 * 60 * 1000) &&
+        checkRateLimit(`pw-verify:tp:${tokenHashPrefix}`, 5, 60 * 60 * 1000) &&
         checkRateLimit("pw-verify:no-ip", 50, 60 * 60 * 1000);
       if (!ok) {
         return NextResponse.json(
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
           { status: 429 },
         );
       }
-      console.warn("[POST /api/auth/password-reset/verify] IP 헤더 없음 — token prefix + 공용 버킷 rate limit 적용");
+      console.warn("[POST /api/auth/password-reset/verify] IP 헤더 없음 — token hash prefix + 공용 버킷 rate limit 적용");
     }
 
     // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회

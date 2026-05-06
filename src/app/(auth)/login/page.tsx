@@ -31,7 +31,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const initialError = rawError ? LOGIN_QUERY_ERROR_MESSAGES[rawError] ?? null : null;
 
   // 비밀번호 초기화 메일에서 진입 시 reset-token 쿼리 감지 → 클라이언트에서 verify 후 PersonalInfoPopup 오픈.
+  // 포맷 검증 — generateRawResetToken 이 crypto.randomUUID 를 사용하므로 RFC 4122 v4 엄격 패턴만 허용.
+  // 3번째 그룹 `4xxx` (version 4 nibble), 4번째 그룹 `[89ab]xxx` (variant bits) 강제로 임의 16진수
+  // 토큰 변조 차단. RSC hydration payload 변조 방어 (XSS / 토큰 탈취 추적 회피).
+  const RESET_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const rawResetToken = typeof params["reset-token"] === "string" ? params["reset-token"] : null;
+  const initialResetToken = rawResetToken && RESET_TOKEN_PATTERN.test(rawResetToken) ? rawResetToken : null;
 
-  return <LoginLoader initialError={initialError} initialResetToken={rawResetToken} />;
+  return <LoginLoader initialError={initialError} initialResetToken={initialResetToken} />;
 }

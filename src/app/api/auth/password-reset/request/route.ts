@@ -156,9 +156,17 @@ export async function POST(request: NextRequest) {
         ? emailExtract.data.email?.trim().toLowerCase() ?? null
         : null;
       const inputEmail = email.trim().toLowerCase();
-      if (!qspEmail || qspEmail !== inputEmail) {
+      if (!qspEmail) {
+        // qspEmail=null 인 케이스: QSP 회원 row 자체에 email 컬럼이 비어있거나 응답 누락.
+        // 비밀번호 초기화는 메일 링크 발송 기반이라 등록 이메일이 없으면 절차 자체가 불가능 →
+        // 미존재로 처리. 운영에서 이 케이스가 빈번하면 회원 데이터 정비 또는 대안 안내 절차 필요.
         console.warn(
-          `[POST /api/auth/password-reset/request] QSP 응답 email 불일치 — userTp: ${userTp}, qspEmailPresent: ${qspEmail !== null}`,
+          `[POST /api/auth/password-reset/request] QSP 응답 email 누락(미등록 회원) — userTp: ${userTp}`,
+        );
+        userExists = false;
+      } else if (qspEmail !== inputEmail) {
+        console.warn(
+          `[POST /api/auth/password-reset/request] QSP 응답 email 불일치 — userTp: ${userTp}`,
         );
         userExists = false;
       }

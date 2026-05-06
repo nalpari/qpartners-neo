@@ -94,12 +94,14 @@ export async function POST(request: NextRequest) {
   const token = hashResetToken(rawToken);
 
   // 1-a. Rate limit — confirm 은 QSP 비밀번호 변경 API 를 호출하므로 무제한 시 외부 API 부하 유발.
-  //       verify 와 동일 패턴(IP 우선, 부재 시 token prefix) 으로 적용.
+  //       verify 와 동일 패턴(IP 우선, 부재 시 token 해시 prefix) 으로 적용.
   //       [전제] 배포 환경의 리버스 프록시(Nginx/ALB) 가 클라이언트 x-forwarded-for 를 덮어씀.
+  //       [보안] rawToken 원문 prefix 대신 hashResetToken 결과 prefix 를 사용 — 메모리 덤프/로그
+  //       유출 시 rate limit 키에서 원본 토큰 일부가 역추출되는 채널 차단.
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
-  const tokenPrefix = rawToken.slice(0, 8);
-  const ipKey = ip ?? `token:${tokenPrefix}`;
+  const tokenHashPrefix = token.slice(0, 16);
+  const ipKey = ip ?? `token:${tokenHashPrefix}`;
   if (!checkRateLimit(`pw-confirm:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
     return NextResponse.json(
       { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
     );
   }
   if (!ip) {
-    console.warn("[POST /api/auth/password-reset/confirm] IP 헤더 없음 — token prefix 기반 rate limit 적용");
+    console.warn("[POST /api/auth/password-reset/confirm] IP 헤더 없음 — token hash prefix 기반 rate limit 적용");
   }
 
   // 2. 토큰 재검증

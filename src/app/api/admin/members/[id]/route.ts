@@ -469,6 +469,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
             { status: 400 },
           );
         }
+        // ADMIN 본인이 자기 권한을 SUPER_ADMIN 으로 승격하는 self-escalation 차단.
+        // (현재 매트릭스에서 userRole 변경은 GENERAL 회원 한정이라 ADMIN/SUPER_ADMIN 회원에 대한
+        // userRole 필드 자체가 위 가드(`preDetail.userTp !== "GENERAL"` L506)에서 차단되지만,
+        // 매트릭스 변경 시 회귀 방어 차원에서 self-escalation 도 명시 차단한다.)
+        if (result.data.userRole === "SUPER_ADMIN" && user.role !== "SUPER_ADMIN") {
+          return NextResponse.json(
+            { error: "自分自身の権限を昇格することはできません" },
+            { status: 400 },
+          );
+        }
       }
     }
 
