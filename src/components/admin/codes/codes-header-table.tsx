@@ -257,10 +257,7 @@ export function CodesHeaderTable({
   // 「追加」 활성 조건 — create 권한 + 신규행 미존재.
   const canAddNew = !isPermLoading && canCreate;
   // 「保存」 활성 조건 — 신규행이 있으면 create 권한, 없으면 update 권한 (BE 가드와 동일 의미론).
-  // 단, 사용자가 신규행과 편집 변경을 동시에 가질 수 있으므로 둘 중 어느 권한이라도 없으면 disabled.
-  // 단순화 — canCreate AND canUpdate 둘 다 통과해야 安全 (운영 화면이 양쪽 시도 가능).
-  // 더 엄밀하게는 부모에서 hasNewRow/hasUpdate 분기 후 disable 가능하지만, 자식 입장에서는
-  // hasNewRow 만 알므로 보수적으로 둘 중 하나라도 없으면 disabled.
+  // hasNewRow 유무에 따라 필요한 권한을 분기: 신규행 존재 시 create, 그 외 update.
   const isSaveDisabledByPerm =
     isPermLoading || (hasNewRow ? !canCreate : !canUpdate);
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
