@@ -21,14 +21,14 @@ interface PdfThumbnailProps {
   onLoaded?: (fileId: number) => void;
 }
 
-/** 컨테이너 한 변 길이 — `contents-detail-attachment.tsx` 의 size-[240px] 박스에 맞춤 */
-const CONTAINER_SIZE = 240;
+/** 컨테이너 한 변 길이 — `contents-detail-attachment.tsx` 의 size-[180px] 박스에 맞춤 */
+const CONTAINER_SIZE = 180;
 
 /**
- * 썸네일 supersampling factor — 표시 크기는 240×240 그대로 유지하되 canvas backing store 를
+ * 썸네일 supersampling factor — 표시 크기는 180×180 그대로 유지하되 canvas backing store 를
  * factor 배 크기로 렌더해 다운스케일 시 더 선명하게 보이도록 한다.
  * devicePixelRatio 기반 HiDPI 대응에 추가로 곱해 1x 디스플레이에서도 효과 발생.
- * 메모리 비용: 240×240 캔버스가 factor² 배 증가 (factor=3 → 9배, ~8MB/PDF @ DPR=2).
+ * 메모리 비용: 180×180 캔버스가 factor² 배 증가 (factor=3 → 9배, ~5MB/PDF @ DPR=2).
  */
 const SUPERSAMPLE = 3;
 
