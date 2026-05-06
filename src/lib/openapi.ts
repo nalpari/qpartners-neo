@@ -19,6 +19,23 @@ const validationErrorResponse: OpenAPIV3.ResponseObject = {
   },
 };
 
+// HomeNotice 권한별(target별) 5건 한도 초과 응답 — POST/PUT 공용.
+// FE 는 `code === "LIMIT_EXCEEDED"` 로 분기, `target` 으로 어느 권한군 초과인지 안내.
+const homeNoticeLimitErrorResponse: OpenAPIV3.ResponseObject = {
+  description:
+    "검증 실패 또는 권한별(target별) 동일기간 5건 초과 (code=LIMIT_EXCEEDED)",
+  content: {
+    "application/json": {
+      schema: {
+        oneOf: [
+          { $ref: "#/components/schemas/ErrorResponse" },
+          { $ref: "#/components/schemas/HomeNoticeLimitExceededResponse" },
+        ],
+      },
+    },
+  },
+};
+
 export const openApiSpec: OpenAPIV3.Document = {
   openapi: "3.0.3",
   info: {
@@ -1430,7 +1447,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 등록",
-        description: "게시대상 최소 1개 필수. 활성(예정 포함) 공지 5개 초과 시 등록 불가.",
+        description:
+          "게시대상 최소 1개 필수. 권한별(target별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 등록 불가 (code=LIMIT_EXCEEDED, target=초과된 권한군 키).",
         requestBody: {
           required: true,
           content: {
@@ -1453,7 +1471,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": validationErrorResponse,
+          "400": homeNoticeLimitErrorResponse,
           "500": errorResponse("서버 에러"),
         },
       },
@@ -1489,6 +1507,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       put: {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 수정",
+        description:
+          "권한별(target별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 수정 불가 (code=LIMIT_EXCEEDED, target=초과된 권한군 키). 게시기간 미변경 + 새로 추가된 target 만 검사.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
         ],
@@ -1514,7 +1534,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("검증 실패 또는 동일기간 5건 초과"),
+          "400": homeNoticeLimitErrorResponse,
+          "403": errorResponse("修正する権限がありません"),
           "404": errorResponse("공지 없음"),
           "500": errorResponse("서버 에러"),
         },
@@ -4005,6 +4026,33 @@ export const openApiSpec: OpenAPIV3.Document = {
           menus: {
             type: "array",
             items: { $ref: "#/components/schemas/MenuPermissionItem" },
+          },
+        },
+      },
+      HomeNoticeLimitExceededResponse: {
+        type: "object",
+        required: ["error", "code"],
+        description:
+          "HomeNotice 등록/수정 시 권한별(target별) 동일기간 5건 초과로 거부된 응답.",
+        properties: {
+          error: {
+            type: "string",
+            example:
+              "同一期間に同じ送信先で掲載できるお知らせは5件までです",
+          },
+          code: { type: "string", enum: ["LIMIT_EXCEEDED"] },
+          target: {
+            type: "string",
+            enum: [
+              "super_admin",
+              "admin",
+              "first_store",
+              "second_store",
+              "seko",
+              "general",
+            ],
+            description:
+              "초과된 권한군 외부 키 (toTargetArray 와 동일 사전). 권한군 식별 불가능 시 누락.",
           },
         },
       },
