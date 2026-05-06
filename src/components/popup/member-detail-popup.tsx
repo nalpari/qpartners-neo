@@ -205,7 +205,7 @@ export function MemberDetailPopup() {
       );
       return res.data.data;
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, payload) => {
       // 목록은 상태 뱃지/정렬 반영 위해 invalidate 유지
       await queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
       if (result.member) {
@@ -221,6 +221,12 @@ export function MemberDetailPopup() {
       // F_NOT_USER 응답은 백엔드가 notFoundInQsp=true 로 내려주고, 프론트는 listItem
       // fallback 으로 기본 필드를 채우므로 Delete 전환 시 공백 화면 재발 없음.
       await queryClient.invalidateQueries({ queryKey: ["admin", "member", userId, userTp] });
+      // userRole 변경 시 본인의 메뉴 매트릭스도 즉시 갱신 (Redmine #2183).
+      // 본인이 자기 권한을 변경하는 경우 5분 staleTime 동안 admin 화면 버튼 가시성이 stale 되는 회귀 방지.
+      // 다른 사용자의 권한을 변경한 경우에도 invalidate 호출은 무해 (응답 동일).
+      if (payload.userRole !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: ["me", "permissions"] });
+      }
       // TOCTOU 사후 검증 실패/불일치 경고만 노출 (userRole 변경 경로에서만 발생).
       // 경고 발생 시 운영자가 목록에서 재확인하도록 안내 문구 부가.
       const warningMsg = result.warning;
