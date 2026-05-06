@@ -186,9 +186,20 @@ export function LoginForm({
               />
               {/* 중첩 <label> 회피 — docs/fix-checkbox-nested-label.md 참조.
                   span 자체에 onClick 을 걸어 텍스트 영역 클릭으로도 체크 토글 가능하게 한다.
+                  키보드 사용자(Tab → Space/Enter)도 토글 가능하도록 role="checkbox" + tabIndex
+                  + onKeyDown 을 부여한다. 약관 동의는 법적 유효성 관점에서 키보드 접근 필수.
                   내부 (表示) 버튼은 stopPropagation 으로 토글 트리거를 차단한다. */}
               <span
+                role="checkbox"
+                aria-checked={agreeTerms}
+                tabIndex={0}
                 onClick={() => onAgreeTermsChange(!agreeTerms)}
+                onKeyDown={(e) => {
+                  if (e.key === " " || e.key === "Enter") {
+                    e.preventDefault();
+                    onAgreeTermsChange(!agreeTerms);
+                  }
+                }}
                 className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5] cursor-pointer"
               >
                 利用規約に同意する必要があります

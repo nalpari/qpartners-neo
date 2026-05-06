@@ -196,6 +196,9 @@ export function MypageInfo() {
                   ...prev,
                   compNm: snapshot.compNm.trim() || prev.compNm,
                   userNm: newUserNm || prev.userNm,
+                  // 서버가 발급하는 새 JWT 의 deptNm 와 동일하게 캐시도 즉시 갱신.
+                  // 누락 시 콘텐츠 작성 등 authorDepartment 참조 경로에서 stale 값 사용됨.
+                  deptNm: snapshot.department.trim() || prev.deptNm,
                 };
               },
             );

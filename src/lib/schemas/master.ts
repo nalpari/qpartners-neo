@@ -6,7 +6,9 @@ import { z } from "zod";
  */
 export const qspDeptItemSchema = z.object({
   deptCd: z.string().max(50),
-  deptNm: z.string().max(100),
+  // 빈 문자열 거부 — SelectBox placeholder({ value: "", label: "担当部門" })와
+  // value 충돌하여 "전체" 검색과 구분 불가능해지는 문제 방지.
+  deptNm: z.string().min(1).max(100),
 });
 
 export type QspDeptItem = z.infer<typeof qspDeptItemSchema>;
