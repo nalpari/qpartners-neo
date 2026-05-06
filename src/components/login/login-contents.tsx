@@ -89,7 +89,7 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         usePopupStore.getState().openPopup("personal-info", { token: t, currentEmail: verifiedEmail });
       } catch (err) {
         if (cancelled) return;
-        console.error("[LoginContents] パスワード再設定リンク検証失敗:", err);
+        console.error("[LoginContents] 비밀번호 재설정 링크 검증 실패:", err);
         if (isAxiosError(err) && err.response) {
           const data = err.response.data as Record<string, unknown> | undefined;
           const serverMsg = typeof data?.error === "string" ? data.error : null;

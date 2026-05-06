@@ -199,7 +199,11 @@ export function PersonalInfoPopup() {
             {/* Eメール 필드:
                   - currentEmail 있음 (pwdInitYn=N + 등록된 email / pwdInitYn=Y reset-token) → read-only
                   - currentEmail 없음 (pwdInitYn=N + 미등록) → 입력 + 중복체크
-                  - currentEmail 없음 + hasResetToken (verify 응답에 email 누락 안전망) → 안내 메시지만 표시 */}
+                  - currentEmail 없음 + hasResetToken (안전망) → 안내 메시지만 표시.
+                    발화 경로: verify 응답이 200 이지만 `data.email` 이 누락된 비정상 케이스
+                    (스키마 변경 회귀 / 응답 부분 누락 / maskEmail 결과 빈 문자열 등). 정상 흐름에서는
+                    verify 가 항상 maskEmail(resetToken.userId) 을 반환하므로 거의 발화하지 않으나
+                    fail-open 으로 사용자에게 맥락만 제공하고 비번 입력은 진행 가능하게 둔다. */}
             {!hasExistingEmail && hasResetToken && (
               <div className="flex flex-col gap-2 w-full">
                 <label className={labelClass}>Eメール</label>

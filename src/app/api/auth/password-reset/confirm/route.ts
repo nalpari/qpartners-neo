@@ -13,6 +13,7 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole, type AuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
 const qspUserDetailSchema = z.object({
@@ -91,6 +92,23 @@ export async function POST(request: NextRequest) {
   const { token: rawToken, newPassword } = result.data;
   // DB에는 SHA-256 해시가 저장되어 있음 — 입력 토큰을 해싱 후 조회
   const token = hashResetToken(rawToken);
+
+  // 1-a. Rate limit — confirm 은 QSP 비밀번호 변경 API 를 호출하므로 무제한 시 외부 API 부하 유발.
+  //       verify 와 동일 패턴(IP 우선, 부재 시 token prefix) 으로 적용.
+  //       [전제] 배포 환경의 리버스 프록시(Nginx/ALB) 가 클라이언트 x-forwarded-for 를 덮어씀.
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+  const tokenPrefix = rawToken.slice(0, 8);
+  const ipKey = ip ?? `token:${tokenPrefix}`;
+  if (!checkRateLimit(`pw-confirm:${ipKey}`, ip ? 10 : 5, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "リクエストが多すぎます。しばらく経ってから再度お試しください。" },
+      { status: 429 },
+    );
+  }
+  if (!ip) {
+    console.warn("[POST /api/auth/password-reset/confirm] IP 헤더 없음 — token prefix 기반 rate limit 적용");
+  }
 
   // 2. 토큰 재검증
   let resetToken;

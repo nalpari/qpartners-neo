@@ -55,9 +55,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. 접근 제어 가드 — 최초 로그인(2FA 미완료) 상태에서만 호출 허용
-    //    pwdInitYn 제거 후 대체: twoFactorVerified === false 가 "아직 본인인증 미완료 최초 로그인" 상태를 표현
-    if (user.twoFactorVerified) {
+    // 2. 접근 제어 가드 — 최초 로그인 상태에서만 호출 허용.
+    //    twoFactorVerified === false 또는 pwdInitYn === "N" (login route 가 GENERAL/SEKO 의
+    //    twoFactorVerified=true 를 false 강제하므로 사실상 첫 조건만으로 충분하나, defense-in-depth
+    //    차원에서 pwdInitYn=N 도 명시적으로 통과 처리해 회귀 방어)
+    if (user.twoFactorVerified && user.pwdInitYn !== "N") {
       return NextResponse.json(
         { error: "この操作は初回ログイン時のみ有効です" },
         { status: 403 },

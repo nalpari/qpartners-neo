@@ -446,13 +446,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // self-edit 가드 해제 — ADMIN/SUPER_ADMIN 은 본인 포함 모든 사용자 정보 수정 허용
     // (정책: 관리자 영역 fail-open / full CRUD).
     // 단 self-lockout 회복 불능 케이스만 차단:
-    //   - 본인 status 를 deleted/withdrawn 으로 전환 시 자기 자신을 시스템에서 제외하는 결과가 되어
+    //   - 본인 status 를 deleted 로 전환 시 자기 자신을 시스템에서 제외하는 결과가 되어
     //     이후 본인이 어떠한 관리자 행위도 못 함. SUPER_ADMIN 1명만 있는 운영 환경에서 시스템 lockout.
+    //   - "withdrawn" 은 memberUpdateSchema.status 의 WRITABLE_STATUSES = ["active", "deleted"]
+    //     enum 에서 제외돼 스키마 레벨에서 거부되므로 별도 가드 불필요.
     //   - 본인이 본인 권한을 GENERAL 등 일반회원으로 강등시키는 케이스도 동일.
+    // 운영 매뉴얼 권고:
+    //   - ADMIN/SUPER_ADMIN 항상 2명 이상 유지 (단일 ADMIN 락아웃 시 복구 불가)
+    //   - 본인 2FA 끄기 / 본인 비활성화는 신중히 수행 (코드 차단은 적용하지 않음)
     if (preDetail) {
       const isSelf = user.userId.trim().toLowerCase() === preDetail.userId.trim().toLowerCase();
       if (isSelf) {
-        // memberUpdateSchema.status 는 WRITABLE_STATUSES = ["active", "deleted"] — withdrawn 은 PUT 미허용
         if (result.data.status === "deleted") {
           return NextResponse.json(
             { error: "自分自身のアカウントを削除状態に変更することはできません" },
