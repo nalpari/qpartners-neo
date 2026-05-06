@@ -178,6 +178,8 @@ button{cursor: pointer;}
   border: 1px solid #ddd;
   padding: 5px 10px;
   vertical-align: top;
+  /* 에디터(.ProseMirror table td)와 동일한 안전장치 — 빈 셀이 0폭으로 붕괴되는 것 방지 */
+  min-width: 1em;
 }
 .prose th {
   font-weight: 700;
