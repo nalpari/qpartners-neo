@@ -226,8 +226,11 @@ export function NoticesTable({
 
   const handleBulkDelete = () => {
     // RBAC 패턴 E — 핸들러 본체 권한 가드. disabled 는 UI 힌트일 뿐 키보드/race 우회 가능하므로
-    // 핸들러 진입 즉시 매트릭스 가드 재확인. 로딩 중 fail-closed (서버 가드가 최종 방어선).
-    if (isPermLoading || !canDeleteNotice) {
+    // 핸들러 진입 즉시 매트릭스 가드 재확인. 로딩 중은 silent return — 권한 응답 도착 전
+    // 사용자 의도와 무관한 alert 노출을 막아 동일 PR 의 다른 핸들러(notice-form-popup.handleSave/Delete,
+    // permissions-table.handleSave 등)와 정책 통일.
+    if (isPermLoading) return;
+    if (!canDeleteNotice) {
       openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
       return;
     }
@@ -258,7 +261,9 @@ export function NoticesTable({
 
         // 작성자 가드(canModifyClient) AND 매트릭스 가드(canUpdate) — 둘 다 통과해야 편집 진입.
         // 패턴 E (클릭 시점 alert) — 행 클릭이 라우트 이동 대신 모달 오픈이라 추가 안전장치.
-        if (!canModifyClient(user, d) || isPermLoading || !canUpdateNotice) {
+        // RBAC 가드(isPermLoading / canUpdateNotice) 선행 평가 — 권한 응답 도착 전에는 작성자라도
+        // 일괄 차단(fail-closed). canModifyClient 는 RBAC 통과 후의 작성자 OR 관리자 보조 가드.
+        if (isPermLoading || !canUpdateNotice || !canModifyClient(user, d)) {
           useAlertStore.getState().openAlert({
             type: "alert",
             message: "このお知らせを編集する権限がありません。",

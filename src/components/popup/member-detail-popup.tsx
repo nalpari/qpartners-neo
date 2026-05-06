@@ -105,6 +105,14 @@ export function MemberDetailPopup() {
   const queryClient = useQueryClient();
   const [isClosing, setIsClosing] = useState(false);
 
+  // RBAC 표준 패턴 C — 부모에서 단일 호출 후 자식(MemberEditForm)에 prop 으로 전달.
+  // 자식이 useMenuPermission 을 별도 호출하면 부모/자식 isLoading 타이밍이 달라
+  // "편집 폼 → readonly → 편집 폼" 깜빡임이 발생할 수 있어 단일 source 로 통일.
+  // 로딩 중 fail-closed (isPermLoading 시 readonly) — 클릭 race window 차단.
+  // 서버 PUT /api/admin/members/[id] 도 requireMenuPermission(ADM_MEMBER, update) 로 최종 검증.
+  const { canUpdate: canUpdateMember, isLoading: isPermLoading } = useMenuPermission(ADMIN_MENU.MEMBERS);
+  const isPermReadOnly = isPermLoading || !canUpdateMember;
+
   const userId = typeof popupData.userId === "string" ? popupData.userId : undefined;
   const userTp = typeof popupData.userTp === "string" ? popupData.userTp : undefined;
   const listItem = popupData.listItem as MemberListItem | undefined;
@@ -348,6 +356,7 @@ export function MemberDetailPopup() {
               member={member}
               isQspNotFound={isQspNotFound}
               isSaving={isSaving}
+              isPermReadOnly={isPermReadOnly}
               onSave={handleSave}
               onPasswordReset={handlePasswordReset}
               onClose={handleClose}
@@ -364,6 +373,7 @@ function MemberEditForm({
   member,
   isQspNotFound,
   isSaving,
+  isPermReadOnly,
   onSave,
   onPasswordReset,
   onClose,
@@ -371,6 +381,9 @@ function MemberEditForm({
   member: MemberDetail;
   isQspNotFound: boolean;
   isSaving: boolean;
+  // RBAC 표준 패턴 C — 부모(MemberDetailPopup) 가 useMenuPermission 단일 호출 후 prop 전달.
+  // 자식 중복 호출로 인한 isLoading 타이밍 차이(편집폼/readonly 깜빡임) 차단 + 서버 가드(requireMenuPermission)는 최종 방어선.
+  isPermReadOnly: boolean;
   onSave: (payload: MemberUpdatePayload) => void;
   onPasswordReset: () => void;
   onClose: () => void;
@@ -378,11 +391,6 @@ function MemberEditForm({
   // 빈 SelectBox("選択") 상태 저장 시도를 클라이언트에서 차단하기 위해 alert 직접 호출.
   // 부모(MemberDetailPopup) 의 동일 store 인스턴스를 공유 — 별도 props drilling 불필요.
   const { openAlert } = useAlertStore();
-  // RBAC 표준 패턴 C — ADM_MEMBER.canUpdate 가 false 면 편집 UI 자체 비표시 (readonly 강제).
-  // 로딩 중 fail-closed (isPermLoading 시 readonly) — 권한 응답 도착 전 클릭 race window 차단.
-  // 서버 PUT /api/admin/members/[id] 도 requireMenuPermission(ADM_MEMBER, update) 로 최종 검증.
-  const { canUpdate: canUpdateMember, isLoading: isPermLoading } = useMenuPermission(ADMIN_MENU.MEMBERS);
-  const isPermReadOnly = isPermLoading || !canUpdateMember;
   // USER_TYPE 공통코드 reverseMap 만 사용 — 하드코딩 fallback 제거됨.
   // 매핑 불가 시 memberTp="" → isGeneral=false → 편집 UI 비표시 (read-only).
   const { reverseMap: dynamicReverseMap } = useUserType();
