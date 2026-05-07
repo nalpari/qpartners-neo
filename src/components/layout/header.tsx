@@ -242,14 +242,15 @@ export function Gnb() {
   //
   // admin → 일반 이동 시 캐시 강제 무효화는 layout 의 <AdminTransitionRefresh /> 가
   // pathname 변화를 감지해 모든 진입점에 일괄 적용 — 헤더 측은 RBAC 만 담당.
-  const { has } = useMenuPermissionMap();
+  const { has, isLoading: isPermMapLoading } = useMenuPermissionMap();
   const { openAlert } = useAlertStore();
 
   // RBAC 매트릭스 단일화 — 관리자 진입(톱니바퀴)은 ADM_* 7개 중 1개라도 canRead=true 일 때만 노출.
   // 종전 `userTp === "ADMIN"` userTp 분기를 매트릭스 기반으로 교체 (권한관리 토글 결과 즉시 반영).
-  // 비로그인은 has() 가 데이터 미수신으로 permissive=true 폴백을 줄 수 있으므로 hasAuthFlag 로 1차 차단.
+  // 비로그인은 hasAuthFlag 로 1차 차단, 로딩 중에는 fail-closed(숨김) 로 UX 플래시 방지.
   const canShowAdminEntry =
     hasAuthFlag &&
+    !isPermMapLoading &&
     Object.values(ADMIN_MENU).some((menuCode) => has(menuCode, "read"));
 
   const handleGnbMenuClick = (e: React.MouseEvent<HTMLAnchorElement>, menuCode: string) => {
@@ -753,7 +754,8 @@ export function Gnb() {
                   className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap"
                   onClick={(e) => {
                     handleGnbMenuClick(e, MENU.MYPAGE);
-                    if (!e.defaultPrevented) setIsMobileMenuOpen(false);
+                    // 매트릭스 거부 시 preventDefault 된 상태 — 그래도 drawer 는 닫는 게 UX 자연스러움 (일반 GNB 패턴과 통일).
+                    setIsMobileMenuOpen(false);
                   }}
                 >
                   マイページ
