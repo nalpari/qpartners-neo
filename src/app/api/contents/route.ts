@@ -19,9 +19,13 @@ import {
 
 /**
  * 사내 권한 코드 — internalOnly 필터의 의미론적 기반.
+ * isInternalUser(auth.ts) 와 동일한 판정 기준(SUPER_ADMIN/ADMIN)을 하드코딩.
  * 사내 사용자는 canAccessContent fail-open 으로 모든 콘텐츠 접근 가능하므로
  * ContentTarget 에 사내 행이 등록될 일은 거의 없지만, 명시적 화이트리스트로
  * "외부 게시대상이 0건" 인 콘텐츠 = 사내 전용 의미를 강제한다.
+ *
+ * 주의: 신규 사내 권한(예: IT_ADMIN)을 추가할 경우 isInternalUser 와 함께 이 배열도
+ * 업데이트해야 한다. DB 동적 조회 도입은 Phase 5 에서 평가.
  */
 const INTERNAL_ROLE_CODES = ["SUPER_ADMIN", "ADMIN"] as const;
 

@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
-import { requireMenuPermission } from "@/lib/auth";
+import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
@@ -261,20 +261,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // targetRoleCodes DB 활성 검증 — 비활성/미존재 권한코드 차단
+    const activeRoles = await resolveActiveRoleCodes();
+    const inactiveRoles = result.data.targetRoleCodes.filter((c) => !activeRoles.has(c));
+    if (inactiveRoles.length > 0) {
+      return NextResponse.json(
+        { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
+        { status: 400 },
+      );
+    }
+
     // 게시기간이 겹치는 공지가 동일 권한별 5건 초과인지 검사 + 등록을 트랜잭션으로 처리.
     // 권한별(roleCode별) 5건 한도 — 각 권한은 독립적으로 카운트되어 한 권한의 한도가
     // 다른 권한의 노출을 막지 않도록 함.
     const notice = await prisma.$transaction(
       async (tx) => {
-        for (const code of result.data.targetRoleCodes) {
-          const c = await tx.homeNotice.count({
-            where: {
-              startAt: { lte: result.data.endAt },
-              endAt: { gte: result.data.startAt },
-              targets: { some: { roleCode: code } },
-            },
-          });
-          if (c >= 5) throw new HomeNoticeCreateError("LIMIT_EXCEEDED", code);
+        // 권한별 5건 한도 일괄 검사 — N+1 루프 대신 단일 GROUP BY 집계 쿼리
+        const overLimit = await tx.$queryRaw<{ role_code: string }[]>`
+          SELECT hnt.role_code
+          FROM qp_home_notice_targets hnt
+          JOIN qp_home_notices hn ON hn.id = hnt.home_notice_id
+          WHERE hnt.role_code IN (${Prisma.join(result.data.targetRoleCodes)})
+            AND hn.start_at <= ${result.data.endAt}
+            AND hn.end_at   >= ${result.data.startAt}
+          GROUP BY hnt.role_code
+          HAVING COUNT(DISTINCT hn.id) >= 5
+          LIMIT 1
+        `;
+        if (overLimit.length > 0) {
+          throw new HomeNoticeCreateError("LIMIT_EXCEEDED", overLimit[0].role_code);
         }
 
         return tx.homeNotice.create({

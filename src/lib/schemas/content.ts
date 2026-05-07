@@ -8,10 +8,16 @@ export { idParamSchema } from "@/lib/schemas/common";
  *  request body·query 양쪽에서 transform 으로 null 로 변환된다. (useTargetLabels.ts 코드 의도) */
 export const NON_MEMBER_SENTINEL = "__NON_MEMBER__";
 
-/** roleCode 스키마 — string | null 허용 + 비회원 sentinel 변환. */
+const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
+
+/** roleCode 스키マ — string | null 허용 + 비회원 sentinel 변換. 형식 검증 포함. */
 const roleCodeWithSentinel = z
   .union([z.string().max(50), z.null()])
-  .transform((v) => (v === NON_MEMBER_SENTINEL ? null : v));
+  .transform((v) => (v === NON_MEMBER_SENTINEL ? null : v))
+  .refine(
+    (v) => v === null || ROLE_CODE_FORMAT.test(v),
+    { message: "権限コードの形式が正しくありません" },
+  );
 
 const contentTargetSchema = z
   .object({
@@ -28,6 +34,27 @@ const contentTargetSchema = z
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
+/** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX は nullable roleCode の重複を許容するため、アプリ層で検証 */
+function validateUniqueRoleCodes(
+  targets: { roleCode: string | null }[] | undefined,
+  ctx: z.RefinementCtx,
+): void {
+  if (!targets) return;
+  const seen = new Set<string | null>();
+  for (const t of targets) {
+    const key = t.roleCode;
+    if (seen.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "同一の掲載対象が重複しています",
+        path: ["targets"],
+      });
+      return;
+    }
+    seen.add(key);
+  }
+}
+
 export const createContentSchema = z.object({
   title: z.string().min(1, "タイトルは必須です").max(500),
   body: z.string().max(100000).optional(),
@@ -37,6 +64,8 @@ export const createContentSchema = z.object({
   approverLevel: z.number().int().min(0).max(127).optional(),
   targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
+}).superRefine((data, ctx) => {
+  validateUniqueRoleCodes(data.targets, ctx);
 });
 
 export const updateContentSchema = z.object({
@@ -47,6 +76,8 @@ export const updateContentSchema = z.object({
   approverLevel: z.number().int().min(0).max(127).optional(),
   targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
+}).superRefine((data, ctx) => {
+  validateUniqueRoleCodes(data.targets, ctx);
 });
 
 export const listContentsQuerySchema = z.object({

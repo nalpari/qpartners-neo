@@ -259,14 +259,27 @@ export async function resolveAuthRole(
  *
  * - 6 기본 권한 (isSystem=true) + 운영자 정의 활성 추가 권한 (isSystem=false AND isActive=true)
  * - JWT 검증, 게시대상 등록 검증, 회원관리 권한 변경 검증 모두 공유
- * - 호출 시점 1회 DB 조회 (per-request 캐싱은 Phase 5 평가)
+ * - 프로세스 내 TTL 캐시 (60초) — 준정적 데이터이므로 per-request DB 조회 불필요.
+ *   권한 변경 시 invalidateActiveRoleCache() 호출로 즉시 갱신.
  */
+let _activeRoleCache: { codes: Set<string>; expiry: number } | null = null;
+const ROLE_CACHE_TTL = 60_000;
+
 export async function resolveActiveRoleCodes(): Promise<Set<string>> {
+  const now = Date.now();
+  if (_activeRoleCache && _activeRoleCache.expiry > now) return _activeRoleCache.codes;
   const rows = await prisma.qpRole.findMany({
     where: { isActive: true },
     select: { roleCode: true },
   });
-  return new Set(rows.map((r) => r.roleCode));
+  const codes = new Set(rows.map((r) => r.roleCode));
+  _activeRoleCache = { codes, expiry: now + ROLE_CACHE_TTL };
+  return codes;
+}
+
+/** 권한 변경 시 캐시 무효화 — PUT /api/roles/:roleCode, POST /api/roles 에서 호출 */
+export function invalidateActiveRoleCache(): void {
+  _activeRoleCache = null;
 }
 
 /**

@@ -16,10 +16,11 @@ const roleCodeSchema = z
 
 export const createHomeNoticeSchema = z
   .object({
-    /** 게시대상 권한코드 배열 — qp_roles 동적 (6 기본 + 추가 권한). 1 개 이상 필수. */
+    /** 게시대상 권한코드 배열 — qp_roles 동적 (6 기본 + 추가 권한). 1 개 이상 필수. 중복 자동 제거. */
     targetRoleCodes: z
       .array(roleCodeSchema)
-      .min(1, "掲載対象を1つ以上選択してください"),
+      .min(1, "掲載対象を1つ以上選択してください")
+      .transform((arr) => [...new Set(arr)]),
     startAt: z.coerce.date(),
     endAt: z.coerce.date(),
     title: z
@@ -48,10 +49,11 @@ export const createHomeNoticeSchema = z
 
 export const updateHomeNoticeSchema = z
   .object({
-    /** 게시대상 권한코드 배열 — 부분 수정 시 미전송 가능. 전송 시 1 개 이상 필수. */
+    /** 게시대상 권한코드 배열 — 부분 수정 시 미전송 가능. 전송 시 1 개 이상 필수. 중복 자동 제거. */
     targetRoleCodes: z
       .array(roleCodeSchema)
       .min(1, "掲載対象を1つ以上選択してください")
+      .transform((arr) => [...new Set(arr)])
       .optional(),
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),

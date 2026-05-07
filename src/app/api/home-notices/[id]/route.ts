@@ -1,10 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { Prisma } from "@/generated/prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
-import { canModifyResource, isInternalUser, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { canModifyResource, isInternalUser, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
@@ -136,6 +137,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // targetRoleCodes DB 활성 검증 — 비활성/미존재 권한코드 차단
+    if (result.data.targetRoleCodes) {
+      const activeRoles = await resolveActiveRoleCodes();
+      const inactiveRoles = result.data.targetRoleCodes.filter((c) => !activeRoles.has(c));
+      if (inactiveRoles.length > 0) {
+        return NextResponse.json(
+          { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
+          { status: 400 },
+        );
+      }
+    }
+
     const notice = await prisma.$transaction(
       async (tx) => {
         const existing = await tx.homeNotice.findUnique({
@@ -175,16 +188,23 @@ export async function PUT(request: NextRequest, { params }: Params) {
           if (!datesUnchanged || newlyAdded) codesToCheck.push(code);
         }
 
-        for (const code of codesToCheck) {
-          const c = await tx.homeNotice.count({
-            where: {
-              id: { not: parsed.data },
-              startAt: { lte: finalEndAt },
-              endAt: { gte: finalStartAt },
-              targets: { some: { roleCode: code } },
-            },
-          });
-          if (c >= 5) throw new HomeNoticeUpdateError("LIMIT_EXCEEDED", code);
+        // 권한별 5건 한도 일괄 검사 — N+1 루프 대신 단일 GROUP BY 집계 쿼리
+        if (codesToCheck.length > 0) {
+          const overLimit = await tx.$queryRaw<{ role_code: string }[]>`
+            SELECT hnt.role_code
+            FROM qp_home_notice_targets hnt
+            JOIN qp_home_notices hn ON hn.id = hnt.home_notice_id
+            WHERE hnt.role_code IN (${Prisma.join(codesToCheck)})
+              AND hn.id <> ${parsed.data}
+              AND hn.start_at <= ${finalEndAt}
+              AND hn.end_at   >= ${finalStartAt}
+            GROUP BY hnt.role_code
+            HAVING COUNT(DISTINCT hn.id) >= 5
+            LIMIT 1
+          `;
+          if (overLimit.length > 0) {
+            throw new HomeNoticeUpdateError("LIMIT_EXCEEDED", overLimit[0].role_code);
+          }
         }
 
         // 게시대상 갱신 — 전송된 경우에만 deleteMany + create
@@ -224,7 +244,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         targetRoleCodes: notice.targets.map((t) => t.roleCode),
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof HomeNoticeUpdateError) {
       if (error.kind === "NOT_FOUND") {
         return NextResponse.json({ error: "お知らせが見つかりません" }, { status: 404 });
@@ -301,7 +321,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     });
 
     return NextResponse.json({ data: { id: parsed.data } });
-  } catch (error) {
+  } catch (error: unknown) {
     if (
       error instanceof PrismaClientKnownRequestError &&
       error.code === "P2025"

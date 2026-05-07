@@ -5,7 +5,8 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { canModifyResource, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { canModifyResource, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
@@ -319,6 +320,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const data = result.data;
+
+    // targetRoleCodes DB 활성 검증 — 비활성/미존재 권한코드 차단
+    const activeRoles = await resolveActiveRoleCodes();
+    const inactiveRoles = data.targetRoleCodes.filter((c) => !activeRoles.has(c));
+    if (inactiveRoles.length > 0) {
+      return NextResponse.json(
+        { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
+        { status: 400 },
+      );
+    }
+
+    // 운영자 정의 추가 권한은 QSP 회원 매핑 미정 — 발송 불가 (silent skip 방지, 명시적 거부)
+    const unsupportedRoles = data.targetRoleCodes.filter((c) => !SYSTEM_ROLE_CODES.has(c));
+    if (unsupportedRoles.length > 0) {
+      return NextResponse.json(
+        { error: "カスタム権限への一括送信は現在対応していません", unsupportedRoleCodes: unsupportedRoles },
+        { status: 400 },
+      );
+    }
 
     // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
     if (data.targetRoleCodes.includes("SEKO")) {

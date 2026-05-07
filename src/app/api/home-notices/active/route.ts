@@ -23,7 +23,10 @@ export async function GET(request: NextRequest) {
 
     // 사용자 권한 → 매칭할 roleCode 목록
     const matchRoleCodes: string[] = (() => {
-      if (!userRole) return ["GENERAL"]; // 비로그인 → 일반 공지
+      // 비로그인 → GENERAL 공지 노출 (기존 동작 유지).
+      // ContentTarget 의 비회원 sentinel(roleCode=null) 과는 도메인 정책이 다름:
+      // 홈공지는 비로그인자에게 일반회원 대상 공지를 노출하는 것이 의도된 운영 정책.
+      if (!userRole) return ["GENERAL"];
       if (userRole === "SUPER_ADMIN") return ["SUPER_ADMIN", "ADMIN"];
       if (userRole === "ADMIN") return ["ADMIN"];
       if (userRole === "1ST_STORE" || userRole === "2ND_STORE") {

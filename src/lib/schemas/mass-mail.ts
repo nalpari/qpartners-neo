@@ -56,14 +56,14 @@ const targetRoleCodesField = z
       const parsed: unknown = JSON.parse(val);
       if (Array.isArray(parsed)) {
         const result = z.array(roleCodeSchema).min(1).safeParse(parsed);
-        if (result.success) return result.data;
+        if (result.success) return [...new Set(result.data)];
       }
-    } catch {
-      /* fallthrough */
+    } catch (jsonError: unknown) {
+      void jsonError; /* fallthrough — JSON 파싱 실패 시 comma split fallback */
     }
     const codes = val.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     const result = z.array(roleCodeSchema).min(1).safeParse(codes);
-    if (result.success) return result.data;
+    if (result.success) return [...new Set(result.data)];
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "送信先権限コードの形式が正しくありません",

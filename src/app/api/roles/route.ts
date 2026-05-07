@@ -5,21 +5,13 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import {
   getUserFromHeaders,
+  invalidateActiveRoleCache,
   requireMenuPermission,
   resolveMenuPermission,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { createRoleSchema } from "@/lib/schemas/permission";
-
-/**
- * 시스템 예약 권한 코드 — 6 기본 권한.
- * 운영자가 권한관리 UI 에서 동일 코드로 신규 권한 등록 시도 시 차단.
- * 마이그레이션에서 이미 isSystem=true 로 마킹되어 있으므로 동일 코드 등록은 unique 제약으로도
- * 차단되지만, 명시적 메시지(`予約された権限コード`) 노출 + 로그 추적성 확보 위해 사전 검증.
- */
-const SYSTEM_ROLE_CODES = new Set([
-  "SUPER_ADMIN", "ADMIN", "GENERAL", "1ST_STORE", "2ND_STORE", "SEKO",
-]);
 
 // GET /api/roles — 권한 목록
 //   · activeOnly=true (회원수정 팝업 드롭다운): ADM_PERMISSION.read OR ADM_MEMBER.update 허용.
@@ -113,6 +105,10 @@ export async function POST(request: NextRequest) {
     const role = await prisma.qpRole.create({
       data: { ...result.data, isSystem: false },
     });
+
+    // 신규 권한 추가 시 활성 권한 캐시 무효화
+    invalidateActiveRoleCache();
+
     return NextResponse.json({ data: role }, { status: 201 });
   } catch (error) {
     if (

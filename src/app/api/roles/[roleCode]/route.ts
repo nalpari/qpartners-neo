@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireMenuPermission } from "@/lib/auth";
+import { requireMenuPermission, invalidateActiveRoleCache } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   roleCodeParamSchema,
@@ -100,6 +100,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
       where: { roleCode: parsedCode.data },
       data: updateData,
     });
+
+    // isActive 변경 시 활성 권한 캐시 무효화 — resolveActiveRoleCodes TTL 캐시 즉시 갱신
+    if (result.data.isActive !== undefined) {
+      invalidateActiveRoleCache();
+    }
 
     return NextResponse.json({ data: role });
   } catch (error) {

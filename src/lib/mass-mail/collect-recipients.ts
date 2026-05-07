@@ -18,12 +18,8 @@
 import { QSP_API, SITE_DEFAULTS, MASS_MAIL_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
+import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { qspMemberListResponseSchema, lookupStatCd } from "@/lib/schemas/member";
-
-/** 시스템 6 기본 권한 — collect-recipients 가 매핑 가능한 roleCode */
-const SYSTEM_ROLE_CODES = new Set([
-  "SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL",
-]);
 
 export interface CollectTargets {
   /** 발송대상 권한코드 배열 — qp_roles FK */
