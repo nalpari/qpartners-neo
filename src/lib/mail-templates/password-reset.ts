@@ -20,7 +20,7 @@ export function passwordResetMailHtml({
 <html lang="ja">
 <head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:20px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
   <tr><td>
     <p>こんにちは。</p>
     <p>パスワード再設定のご依頼を受け付けましたので、ご案内いたします。<br>
