@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
           { body: { contains: keyword } },
         ],
       }),
-      ...(department && { authorDepartment: department }),
+      ...(department && department.length > 0 && { authorDepartment: { in: department } }),
       ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
