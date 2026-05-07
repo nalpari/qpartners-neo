@@ -11,6 +11,16 @@ import {
 import { prisma } from "@/lib/prisma";
 import { createRoleSchema } from "@/lib/schemas/permission";
 
+/**
+ * 시스템 예약 권한 코드 — 6 기본 권한.
+ * 운영자가 권한관리 UI 에서 동일 코드로 신규 권한 등록 시도 시 차단.
+ * 마이그레이션에서 이미 isSystem=true 로 마킹되어 있으므로 동일 코드 등록은 unique 제약으로도
+ * 차단되지만, 명시적 메시지(`予約された権限コード`) 노출 + 로그 추적성 확보 위해 사전 검증.
+ */
+const SYSTEM_ROLE_CODES = new Set([
+  "SUPER_ADMIN", "ADMIN", "GENERAL", "1ST_STORE", "2ND_STORE", "SEKO",
+]);
+
 // GET /api/roles — 권한 목록
 //   · activeOnly=true (회원수정 팝업 드롭다운): ADM_PERMISSION.read OR ADM_MEMBER.update 허용.
 //     "회원관리만 가능한 신규 권한" 운영 시 드롭다운이 빈 옵션으로 노출되던 회귀 방지(PR #130 리뷰).
@@ -88,7 +98,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const role = await prisma.qpRole.create({ data: result.data });
+    // 6 기본 권한 코드 충돌 차단 (예약 코드)
+    if (SYSTEM_ROLE_CODES.has(result.data.roleCode)) {
+      console.warn(
+        `[POST /api/roles] 시스템 예약 권한 코드 충돌 시도 차단: ${result.data.roleCode}`,
+      );
+      return NextResponse.json(
+        { error: "予約された権限コードは使用できません", roleCode: result.data.roleCode },
+        { status: 400 },
+      );
+    }
+
+    // isSystem 은 운영자 input 무시 — 서버에서 false 강제 (추가 권한은 시스템 권한 X)
+    const role = await prisma.qpRole.create({
+      data: { ...result.data, isSystem: false },
+    });
     return NextResponse.json({ data: role }, { status: 201 });
   } catch (error) {
     if (

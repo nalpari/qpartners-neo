@@ -1,14 +1,22 @@
 import { z } from "zod";
 
-import { targetTypeValues } from "@/lib/schemas/common";
-
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
 
+/** 비회원 sentinel — URL/JSON 직렬화 불가능한 null 을 FE 에서 안전히 전달하기 위한 마커.
+ *  request body·query 양쪽에서 transform 으로 null 로 변환된다. (useTargetLabels.ts 코드 의도) */
+export const NON_MEMBER_SENTINEL = "__NON_MEMBER__";
+
+/** roleCode 스키마 — string | null 허용 + 비회원 sentinel 변환. */
+const roleCodeWithSentinel = z
+  .union([z.string().max(50), z.null()])
+  .transform((v) => (v === NON_MEMBER_SENTINEL ? null : v));
+
 const contentTargetSchema = z
   .object({
-    targetType: z.enum(targetTypeValues),
+    /** 게시대상 권한코드 — null = 비회원 sentinel (qp_roles 외부, useTargetLabels.ts 코드 의도) */
+    roleCode: roleCodeWithSentinel,
     startAt: z.coerce.date().optional(),
     endAt: z.coerce.date().optional(),
   })
@@ -50,7 +58,12 @@ export const listContentsQuerySchema = z.object({
   keyword: z.string().max(100).optional(),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),
-  targetType: z.enum(targetTypeValues).optional(),
+  /** 검색 필터: 게시대상 권한코드 (null = 비회원, 신규 권한 D 도 검색 가능). 비회원은 sentinel `__NON_MEMBER__` 로 전달. */
+  roleCode: z
+    .string()
+    .max(50)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === NON_MEMBER_SENTINEL ? null : v)),
   department: z.string().optional(),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),

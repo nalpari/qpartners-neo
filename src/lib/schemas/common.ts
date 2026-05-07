@@ -13,13 +13,6 @@ export const authRoleValues = [
 
 export const authRoleSchema = z.enum(authRoleValues);
 
-/** 콘텐츠 게시대상 유형 */
-export const targetTypeValues = [
-  "first_store", "second_store", "seko", "general", "non_member",
-] as const;
-
-export const targetTypeSchema = z.enum(targetTypeValues);
-
 /**
  * RBAC 메뉴 코드 — DB 실제값 기준.
  * (1-Level) HOME / CONTENT / INQUIRY / MYPAGE / ADMIN

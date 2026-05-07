@@ -64,7 +64,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // unique 제약/감사 로그 등 update 사이드이펙트 발생 가능성을 차단.
     const exists = await prisma.qpRole.findUnique({
       where: { roleCode: parsedCode.data },
-      select: { roleCode: true },
+      select: { roleCode: true, isSystem: true, isActive: true },
     });
     if (!exists) {
       return NextResponse.json(
@@ -73,9 +73,32 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 6 기본 권한 (isSystem=true) 보호 가드 — 사용여부(isActive) 변경 거부, 권한명만 허용
+    if (exists.isSystem) {
+      if (
+        result.data.isActive !== undefined &&
+        result.data.isActive !== exists.isActive
+      ) {
+        console.warn(
+          `[PUT /api/roles/:roleCode] 시스템 권한 isActive 변경 시도 차단 — roleCode=${parsedCode.data}`,
+        );
+        return NextResponse.json(
+          { error: "システム権限の使用可否は変更できません", roleCode: parsedCode.data },
+          { status: 400 },
+        );
+      }
+    }
+
+    // isSystem 필드는 body input 무시 (서버 결정 — 운영자가 변경 불가)
+    // 6 기본 권한은 isActive 도 강제 보존
+    const updateData = {
+      ...result.data,
+      ...(exists.isSystem ? { isActive: exists.isActive } : {}),
+    };
+
     const role = await prisma.qpRole.update({
       where: { roleCode: parsedCode.data },
-      data: result.data,
+      data: updateData,
     });
 
     return NextResponse.json({ data: role });

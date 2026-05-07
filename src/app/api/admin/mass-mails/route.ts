@@ -19,15 +19,13 @@ import { userTpSchema } from "@/lib/schemas/common";
 import {
   massMailListQuerySchema,
   massMailCreateSchema,
-  TARGET_KEYS,
-  TARGET_FILTER_MAP,
-  buildTargetsObject,
-  buildTargetLabel,
 } from "@/lib/schemas/mass-mail";
 import type { Prisma } from "@/generated/prisma/client";
 
 /** 첨부파일 최대 개수 */
 const MAX_FILES = 10;
+
+const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 
 /** UserInfo → DB enum 매핑 — 미지의 userType은 에러 (fail-closed: ADMIN 폴백 금지) */
 function resolveUserType(user: UserInfo): "ADMIN" | "STORE" | "SEKO" | "GENERAL" {
@@ -49,12 +47,11 @@ interface ParsedRequest {
 }
 
 async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequest | NextResponse> {
-  // 1. 관리자 권한 확인 — BULK_MAIL.create 매트릭스 기반 (POST 전용 헬퍼)
   const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "create");
   if (authResult instanceof NextResponse) return authResult;
   const { user } = authResult;
 
-  // 2. Body size 사전 차단 — formData() 호출 전 Content-Length 확인
+  // Content-Length 사전 차단
   const rawContentLength = request.headers.get("content-length");
   if (rawContentLength === null) {
     console.warn("[POST /api/admin/mass-mails] Content-Length 누락 — chunked encoding 거부");
@@ -79,7 +76,7 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 3. FormData 파싱
+  // FormData 파싱
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -91,7 +88,7 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 4. 텍스트 필드 검증
+  // 텍스트 필드 검증
   const fields: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
     if (typeof value === "string") {
@@ -113,25 +110,17 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 발송대상 최소 1개 선택 확인 — TARGET_KEYS 기반 (OCP)
   const data = result.data;
-  const hasTarget = TARGET_KEYS.some((k) => data[k] === true);
-  if (!hasTarget) {
-    return NextResponse.json(
-      { error: "送信先を1つ以上選択してください" },
-      { status: 400 },
-    );
-  }
 
-  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
-  if (data.targetConstructor) {
+  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보
+  if (data.targetRoleCodes.includes("SEKO")) {
     return NextResponse.json(
       { error: "施工店(SEKO)向け一括送信は現在対応していません" },
       { status: 400 },
     );
   }
 
-  // 5. 첨부파일 검증
+  // 첨부파일 검증
   const rawFiles = formData.getAll("files");
   const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
 
@@ -149,10 +138,9 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     }
   }
 
-  // 6. HTML body sanitization (stored XSS 방어 — 공통 화이트리스트 설정 사용)
+  // HTML body sanitization (stored XSS 방어)
   const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
 
-  // sanitize 후 빈 body 검증
   if (!sanitizedBody.trim()) {
     return NextResponse.json(
       { error: "本文の内容が無効です" },
@@ -160,7 +148,7 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 7. userType 매핑
+  // userType 매핑
   let userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
   try {
     userType = resolveUserType(user);
@@ -203,9 +191,7 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       const filePath = `mass-mails/${tempId}/${safeFileName}`;
       const absolutePath = resolve(uploadDir, safeFileName);
 
-      // path traversal 방어 — isInsideDir (startsWith prefix bug 회피)
       if (!isInsideDir(absolutePath, uploadDirAbsolute)) {
-        // 보안 이벤트 — 포렌식 목적으로 절대경로 유지
         console.error("[POST /api/admin/mass-mails] PATH TRAVERSAL 감지:", {
           fileName: file.name,
           resolvedPath: absolutePath,
@@ -221,7 +207,6 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
 
     const results = await Promise.all(writePromises);
 
-    // 성공 파일 전체 수집 후 에러 체크 (레이스 컨디션 방지)
     const successes = results.filter((r): r is PersistedAttachment & { error: false } => !r.error);
     const hasTraversalError = results.some((r) => r.error);
 
@@ -232,7 +217,6 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
 
     return { writtenFiles: successes, uploadDir };
   } catch (error: unknown) {
-    // writeFile 부분 실패 시 업로드 디렉토리 전체 정리 (파일 누수 방지)
     await rm(uploadDir, { recursive: true, force: true }).catch((e: unknown) => {
       console.error("[POST /api/admin/mass-mails] 부분 실패 디렉토리 정리 실패:", uploadDir, e);
     });
@@ -259,12 +243,6 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
         userType,
         userId: user.userId,
         senderName: data.senderName,
-        targetSuperAdmin: data.targetSuperAdmin,
-        targetAdmin: data.targetAdmin,
-        targetFirstStore: data.targetFirstStore,
-        targetSecondStore: data.targetSecondStore,
-        targetConstructor: data.targetConstructor,
-        targetGeneral: data.targetGeneral,
         optOut: data.optOut,
         subject: data.subject,
         body: sanitizedBody,
@@ -272,6 +250,9 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
         createdBy: user.userId,
         createdByName: user.name ?? null,
         updatedBy: user.userId,
+        targets: {
+          create: data.targetRoleCodes.map((code) => ({ roleCode: code })),
+        },
       },
     });
 
@@ -297,15 +278,13 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
 // GET /api/admin/mass-mails — 대량메일 목록
 export async function GET(request: NextRequest) {
   try {
-    // 1. 관리자 권한 확인 — BULK_MAIL.read 매트릭스 기반
     const authResult = await requireMenuPermission(request.headers, "ADM_BULK_MAIL", "read");
     if (authResult instanceof NextResponse) return authResult;
 
-    // 2. 쿼리 파라미터 파싱
     const { searchParams } = request.nextUrl;
     const queryResult = massMailListQuerySchema.safeParse({
       keyword: searchParams.get("keyword") ?? undefined,
-      target: searchParams.get("target") ?? undefined,
+      roleCode: searchParams.get("roleCode") ?? undefined,
       draftOnly: searchParams.get("draftOnly") ?? undefined,
       authorSearchType: searchParams.get("authorSearchType") ?? undefined,
       authorQuery: searchParams.get("authorQuery") ?? undefined,
@@ -322,9 +301,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { keyword, target, draftOnly, authorSearchType, authorQuery, startDate, endDate, page, pageSize } = queryResult.data;
+    const { keyword, roleCode: roleCodeParam, draftOnly, authorSearchType, authorQuery, startDate, endDate, page, pageSize } = queryResult.data;
 
-    // 3. 검색 조건 구성
+    // roleCode 멀티 선택 (comma-separated)
+    const targetRoleCodes: string[] = [];
+    if (roleCodeParam) {
+      const codes = roleCodeParam.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      const seen = new Set<string>();
+      for (const code of codes) {
+        if (!ROLE_CODE_FORMAT.test(code) || code.length > 50) {
+          return NextResponse.json(
+            { error: "送信先フィルタの値が正しくありません" },
+            { status: 400 },
+          );
+        }
+        if (seen.has(code)) continue;
+        seen.add(code);
+        targetRoleCodes.push(code);
+      }
+    }
+
     const where: Prisma.MassMailWhereInput = {};
 
     if (keyword) {
@@ -335,19 +331,10 @@ export async function GET(request: NextRequest) {
       where.status = "draft";
     }
 
-    // 발송대상 필터: responseKey 기반 ASCII 키 ("super_admin", "admin" 등)
-    if (target) {
-      const targetField = TARGET_FILTER_MAP[target];
-      if (!targetField) {
-        return NextResponse.json(
-          { error: "送信先フィルタの値が正しくありません" },
-          { status: 400 },
-        );
-      }
-      where[targetField] = true;
+    if (targetRoleCodes.length > 0) {
+      where.targets = { some: { roleCode: { in: targetRoleCodes } } };
     }
 
-    // 登録者 검색 (name → createdByName OR senderName fallback, id → userId)
     if (authorQuery && authorSearchType) {
       if (authorSearchType === "name") {
         where.OR = [
@@ -359,7 +346,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 登録日 범위 검색 (JST 타임존 명시)
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) {
@@ -370,7 +356,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 조회 (최근 등록순 정렬)
     const [totalCount, list] = await Promise.all([
       prisma.massMail.count({ where }),
       prisma.massMail.findMany({
@@ -380,16 +365,16 @@ export async function GET(request: NextRequest) {
         take: pageSize,
         include: {
           attachments: { select: { id: true } },
+          targets: { select: { roleCode: true } },
         },
       }),
     ]);
 
-    // 5. 응답 매핑 — 목록도 targets를 object로 반환 (상세와 타입 통일)
     const mappedList = list.map((mail) => ({
       id: mail.id,
       status: mail.status,
-      targets: buildTargetsObject(mail),
-      targetsLabel: buildTargetLabel(mail),
+      /** 게시대상 권한코드 배열 — FE 가 useTargetLabels 로 라벨링 */
+      targetRoleCodes: mail.targets.map((t) => t.roleCode),
       subject: mail.subject,
       hasAttachment: mail.attachments.length > 0,
       senderName: mail.senderName,
@@ -424,18 +409,15 @@ export async function POST(request: NextRequest) {
   let uploadDir: string | undefined;
 
   try {
-    // 1. 요청 파싱/검증
     const parsed = await parseAndValidateRequest(request);
     if (parsed instanceof NextResponse) return parsed;
     const { user, data, sanitizedBody, userType, files } = parsed;
 
-    // 2. 첨부파일 디스크 기록
     const persistResult = await persistAttachments(files);
     if (persistResult instanceof NextResponse) return persistResult;
     writtenFiles = persistResult.writtenFiles;
     uploadDir = persistResult.uploadDir;
 
-    // 3. DB 레코드 생성
     let massMailId: number;
     try {
       massMailId = await createMassMailRecord({
@@ -454,8 +436,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${data.status}`);
 
-    // 비동기 발송 트리거 (Fire-and-Forget) — 발송 결과는 status/recipients 로 추적.
-    // processMassMailSend 가 자체 외부 안전망을 가지므로 이 catch 는 catastrophic 케이스 전용.
     if (data.status === "pending") {
       processMassMailSend({ massMailId }).catch((err: unknown) => {
         console.error(
