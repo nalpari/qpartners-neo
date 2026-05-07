@@ -176,7 +176,10 @@ export async function POST(request: NextRequest) {
 
   let loginId = resetToken.loginId ?? resetToken.userId; // 토큰에 loginId 있으면 우선, 없으면 email 폴백
   let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
-  if (resetToken.loginId && resetToken.userType === "STORE") {
+  // request 라우트가 모든 userType 에서 resolvedDetail.userId 를 loginId 컬럼에 저장하므로
+  // STORE 외 (SEKO/GENERAL/ADMIN) 도 동일하게 loginId+email 동시 매칭으로 정확도 보장.
+  // GENERAL 의 경우 loginId == email 이라 무해하고, SEKO/ADMIN 은 잘못된 회원 매칭 차단.
+  if (resetToken.loginId) {
     detailParams.set("loginId", resetToken.loginId);
   }
   try {
@@ -214,14 +217,15 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error(
-      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (non-GENERAL은 이후 에러 반환):",
+      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (이후 fail-closed 분기에서 에러 반환):",
       error instanceof Error ? { message: error.message } : error,
     );
-    // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
   }
 
-  // ADMIN/STORE/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
-  if (!detailData && resetToken.userType !== "GENERAL") {
+  // detailData 누락 시 fail-closed — JWT 에 부정확한 회원 정보(userNm/compNm null) 가
+  // 박혀 GNB 영역에 잘못된 회사명/사용자명이 표시되는 회귀를 차단.
+  // 종전 GENERAL 만 fail-open 으로 진행하던 분기 통일 (모든 userType 동일 동작).
+  if (!detailData) {
     console.error(
       `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
     );
@@ -230,9 +234,6 @@ export async function POST(request: NextRequest) {
       "ユーザー情報を確認できません。新しいパスワード初期化リンクをリクエストしてください。",
       500,
     );
-  }
-  if (!detailData && resetToken.userType === "GENERAL") {
-    console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
   }
 
   // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
