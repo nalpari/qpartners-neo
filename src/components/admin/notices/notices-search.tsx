@@ -5,18 +5,12 @@ import { InputBox, Checkbox, Button, DatePicker } from "@/components/common";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import type { NoticeSearchFilters } from "./notices-types";
 
-// Design Ref: §4.2 — NoticesSearch props + TARGET_OPTIONS API value 통일
+// Design Ref: §4.2 — NoticesSearch props (Target Dynamic from Role 후 — qp_roles 단일 출처)
 
 const STATUS_OPTIONS = [
   { value: "scheduled", label: "掲示予定" },
   { value: "active", label: "掲示中" },
   { value: "ended", label: "終了" },
-];
-
-/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
-const FIXED_TARGET_OPTIONS = [
-  { value: "super_admin", label: "スーパー管理者" },
-  { value: "admin", label: "管理者" },
 ];
 
 interface NoticesSearchProps {
@@ -32,25 +26,26 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
   const [author, setAuthor] = useState(filters.author);
   const [startDate, setStartDate] = useState<Date | null>(filters.startDate);
   const [endDate, setEndDate] = useState<Date | null>(filters.endDate);
-  // 게시대상은 멀티 선택 — statuses 와 동일한 toggle 패턴 (OR 조건).
-  const [targetTypes, setTargetTypes] = useState<string[]>(filters.targetTypes);
+  // 게시대상은 권한코드 멀티 선택 — statuses 와 동일한 toggle 패턴 (OR 조건).
+  const [roleCodes, setRoleCodes] = useState<string[]>(filters.roleCodes);
 
-  // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
-  const { allOptions } = useTargetLabels();
-  const targetOptions = useMemo(() => [
-    ...FIXED_TARGET_OPTIONS,
-    ...allOptions
-      .filter((o) => o.isActive)
-      .map((o) => ({ value: o.value, label: o.label })),
-  ], [allOptions]);
+  // 게시대상 옵션 — qp_roles.isActive=Y 만 동적 노출 (6 기본 + 추가 권한). 비회원 제외.
+  const { memberOptions } = useTargetLabels();
+  const targetOptions = useMemo(
+    () =>
+      memberOptions
+        .filter((o): o is typeof o & { roleCode: string } => o.roleCode !== null)
+        .map((o) => ({ value: o.roleCode, label: o.label })),
+    [memberOptions],
+  );
 
   const toggleStatus = (value: string, checked: boolean) => {
     setStatuses(checked ? [...statuses, value] : statuses.filter((s) => s !== value));
   };
 
-  const toggleTargetType = (value: string, checked: boolean) => {
-    setTargetTypes(
-      checked ? [...targetTypes, value] : targetTypes.filter((t) => t !== value),
+  const toggleRoleCode = (value: string, checked: boolean) => {
+    setRoleCodes(
+      checked ? [...roleCodes, value] : roleCodes.filter((t) => t !== value),
     );
   };
 
@@ -58,7 +53,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
     onSearch({
       keyword: content,
       statuses,
-      targetTypes,
+      roleCodes,
       startDate,
       endDate,
       author,
@@ -75,7 +70,7 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
     setAuthor("");
     setStartDate(null);
     setEndDate(null);
-    setTargetTypes([]);
+    setRoleCodes([]);
     onReset();
   };
 
@@ -153,8 +148,8 @@ export function NoticesSearch({ filters, onSearch, onReset }: NoticesSearchProps
               {targetOptions.map((opt) => (
                 <Checkbox
                   key={opt.value}
-                  checked={targetTypes.includes(opt.value)}
-                  onChange={(checked) => toggleTargetType(opt.value, checked)}
+                  checked={roleCodes.includes(opt.value)}
+                  onChange={(checked) => toggleRoleCode(opt.value, checked)}
                   label={opt.label}
                 />
               ))}

@@ -1,14 +1,12 @@
 // Design Ref: mass-mail.design.md §2 — API 응답 타입 + 검색 파라미터 + 상태 라벨
+// (Target Dynamic from Role 후 — qp_roles 단일 출처)
 
 // DB enum 단일 출처 — Prisma 가 schema.prisma 로부터 생성. 수동 string union 으로 중복 선언 시
 // schema 가 바뀌어도 컴파일러가 잡지 못해 silent drift 발생. 타입 전용 import 라 런타임 영향 없음.
-import type { MailStatus, RecipientAuthRole as PrismaRecipientAuthRole } from "@/generated/prisma/client";
+import type { MailStatus } from "@/generated/prisma/client";
 
 /** 메일 상태 — Prisma MailStatus 와 단일 출처. sending/send_failed 는 자동 처리 / 운영자 화면 노출. */
 export type MassMailStatus = MailStatus;
-
-/** 失敗確認 모달용 — 권한 코드 (Prisma RecipientAuthRole 과 단일 출처) */
-export type RecipientAuthRole = PrismaRecipientAuthRole;
 
 /** 失敗確認 모달용 — 실패 사유 카테고리 (SMTP 원문 노출 금지) */
 export type FailureCategory =
@@ -22,7 +20,8 @@ export interface FailedRecipient {
   /** 마스킹된 이메일 (local-part 첫 1자만 노출) */
   email: string;
   userName: string | null;
-  authRole: RecipientAuthRole;
+  /** 발송 시점 권한 코드 스냅샷 — qp_roles FK 가 아닌 String (권한 비활성/삭제 후에도 이력 보존) */
+  authRoleCode: string;
   errorCategory: FailureCategory;
   lastAttemptAt: string | null;
 }
@@ -31,8 +30,8 @@ export interface FailedRecipient {
 export interface MassMailListItem {
   id: number;
   status: MassMailStatus;
-  targets: Record<string, boolean>;
-  targetsLabel: string;
+  /** 게시대상 권한코드 배열 — useTargetLabels 로 라벨링 */
+  targetRoleCodes: string[];
   subject: string;
   hasAttachment: boolean;
   senderName: string;
@@ -55,7 +54,8 @@ export interface MassMailListResponse {
 /** 검색 파라미터 (BulkMailSearch → BulkMailContents → BulkMailTable) */
 export interface MassMailSearchParams {
   keyword?: string;
-  target?: string;
+  /** 게시대상 권한코드 (단일 선택) — qp_roles 동적 (6 기본 + 추가 권한) */
+  roleCode?: string;
   authorSearchType?: "name" | "id";
   authorQuery?: string;
   startDate?: string;
@@ -84,8 +84,8 @@ export interface MassMailAttachment {
 export interface MassMailDetail {
   id: number;
   senderName: string;
-  targets: Record<string, boolean>;
-  targetsLabel: string;
+  /** 게시대상 권한코드 배열 — useTargetLabels 로 라벨링 */
+  targetRoleCodes: string[];
   optOut: boolean;
   subject: string;
   body: string;
@@ -136,7 +136,8 @@ export interface FormInitialData {
   /** edit 모드 시 기존 레코드 ID */
   id?: number;
   senderName: string;
-  targets: string[];
+  /** 선택된 권한코드 배열 — qp_roles 동적 */
+  targetRoleCodes: string[];
   optOut: boolean;
   subject: string;
   body: string;
@@ -153,41 +154,12 @@ export interface FormInitialData {
   attachments: MassMailAttachment[];
 }
 
-/** UI 체크박스 value → API FormData boolean 필드 매핑 */
-export const TARGET_TO_API_FIELD: Record<string, string> = {
-  "super-admin": "targetSuperAdmin",
-  "admin": "targetAdmin",
-  "first-dealer": "targetFirstStore",
-  "second-dealer": "targetSecondStore",
-  "installer": "targetConstructor",
-  "general": "targetGeneral",
-};
-
-/** API targets responseKey → UI 체크박스 value 역매핑 */
-export const API_KEY_TO_TARGET: Record<string, string> = {
-  super_admin: "super-admin",
-  admin: "admin",
-  first_store: "first-dealer",
-  second_store: "second-dealer",
-  seko: "installer",
-  general: "general",
-};
-
 /** API 상세 응답 → 폼 초기 데이터 변환 */
 export function toFormInitialData(detail: MassMailDetail): FormInitialData {
-  const targets = Object.entries(detail.targets)
-    .filter(([, v]) => v)
-    .map(([k]) => {
-      const mapped = API_KEY_TO_TARGET[k];
-      if (!mapped) console.warn("[toFormInitialData] 알 수 없는 target key:", k);
-      return mapped;
-    })
-    .filter(Boolean);
-
   return {
     id: detail.id,
     senderName: detail.senderName,
-    targets,
+    targetRoleCodes: detail.targetRoleCodes,
     optOut: detail.optOut,
     subject: detail.subject,
     body: detail.body,
@@ -215,10 +187,10 @@ export function formatMailDate(iso: string | null): string {
   return `${y}.${m}.${day} ${h}:${min}`;
 }
 
-/** FormData 구성 (등록 API 전송용) */
+/** FormData 구성 (등록/수정 API 전송용) — targetRoleCodes 는 JSON 배열 직렬화 */
 export function buildFormData(params: {
   senderName: string;
-  targets: string[];
+  targetRoleCodes: string[];
   optOut: boolean;
   subject: string;
   body: string;
@@ -231,10 +203,9 @@ export function buildFormData(params: {
   fd.append("body", params.body);
   fd.append("status", params.status);
   fd.append("optOut", String(params.optOut));
-
-  for (const [uiValue, apiField] of Object.entries(TARGET_TO_API_FIELD)) {
-    fd.append(apiField, String(params.targets.includes(uiValue)));
-  }
+  // BE massMailCreateSchema.targetRoleCodesField 가 JSON parse → fallback comma split 양쪽 지원.
+  // JSON 직렬화 우선 — comma 가 포함된 권한코드(미래 예약문자) 안전.
+  fd.append("targetRoleCodes", JSON.stringify(params.targetRoleCodes));
 
   for (const file of params.files) {
     fd.append("files", file);

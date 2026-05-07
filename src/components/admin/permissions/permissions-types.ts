@@ -19,6 +19,8 @@ export interface RoleApiItem {
   roleName: string;
   description: string | null;
   isActive: boolean;
+  /** 시스템 예약 권한 (6 기본) — true 면 roleCode/isActive 변경 불가, 삭제 불가. roleName 만 편집 가능. */
+  isSystem: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +37,8 @@ export interface PermissionItem {
   roleName: string;
   description: string;
   isActive: "Y" | "N";
+  /** 시스템 예약 권한 (6 기본) — UI 가드: roleName 만 편집 가능, isActive select 비활성. */
+  isSystem: boolean;
   isNew?: boolean;
   editingField?: string | null;
 }
@@ -57,6 +61,7 @@ export function toPermissionItem(api: RoleApiItem): PermissionItem {
     roleName: api.roleName,
     description: api.description ?? "",
     isActive: boolToYN(api.isActive),
+    isSystem: api.isSystem,
   };
 }
 

@@ -7,65 +7,48 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 
 /**
- * 콘텐츠 게시대상 권한명 라벨 훅.
+ * 콘텐츠 게시대상 / 홈공지 / 대량메일 / 권한관리 공용 라벨 훅.
  *
- * 정책:
- * - `/api/role-labels` 에서 권한관리(`QpRole`)의 roleCode/roleName/isActive 를 받아와
- *   `targetType`(`first_store` 등) 키 기준으로 정규화한다.
- * - 비회원(`non_member`)은 권한관리 대상 아님 → 항상 고정 라벨 사용.
- * - API 미응답/지연 시에는 정적 fallback 라벨을 사용해 화면 깨짐을 방지.
- * - staleTime 5분: 권한명은 빈번히 바뀌지 않으므로 콘텐츠 페이지 전반에서 공유.
+ * 정책 (Target Dynamic from Role 후):
+ * - `/api/role-labels` 에서 권한관리(`QpRole`) 의 roleCode/roleName/isActive/isSystem 동적 조회.
+ * - 6 기본 + 운영자 정의 추가 권한 모두 처리.
+ * - 비회원(roleCode=null) 은 권한관리 외부 sentinel — 항상 고정 라벨 / 활성.
+ * - staleTime 5분.
  */
 
 interface RoleLabelApiItem {
   roleCode: string;
   roleName: string;
   isActive: boolean;
-  targetType: string;
+  isSystem: boolean;
 }
 
 interface RoleLabelsResponse {
   data: RoleLabelApiItem[];
 }
 
-/** API 미응답/지연 시 fallback 라벨 — 디자인 안 일본어 표기 */
-const FALLBACK_LABELS: Record<string, string> = {
-  first_store: "1次販売店",
-  second_store: "2次以降の販売店",
-  seko: "施工店",
-  general: "一般",
-  non_member: "非会員",
-};
-
-/** 비회원 라벨 (권한관리 미관리 — 항상 고정) */
+/** 비회원 라벨 (권한관리 외부 sentinel — 항상 고정) */
 const NON_MEMBER_LABEL = "非会員";
 
-/** 게시대상 표시 순서 — 1차 → 2차 → 시공점 → 일반 → 비회원 */
-const TARGET_TYPE_ORDER: Record<string, number> = {
-  first_store: 1,
-  second_store: 2,
-  seko: 3,
-  general: 4,
-  non_member: 5,
+/** 6 기본 권한 표시 우선 순서 — 그 외 추가 권한은 roleCode 알파벳 순으로 뒤에 배치. */
+const SYSTEM_ROLE_ORDER: Record<string, number> = {
+  SUPER_ADMIN: 1,
+  ADMIN: 2,
+  "1ST_STORE": 3,
+  "2ND_STORE": 4,
+  SEKO: 5,
+  GENERAL: 6,
 };
 
-const ALL_TARGET_TYPES = [
-  "first_store",
-  "second_store",
-  "seko",
-  "general",
-  "non_member",
-] as const;
-
-export interface TargetTypeOption {
-  /** ContentTarget.targetType 값 — DB 식별자 */
-  value: string;
-  /** 권한관리에서 설정한 권한명 (fallback 정적 라벨) */
-  label: string;
-  /** 사용가능여부 — 권한관리 isActive=Y 만 옵션 노출용. 비회원은 항상 true. */
-  isActive: boolean;
-  /** 권한코드 — 비회원은 null (권한관리 대상 아님) */
+export interface TargetRoleOption {
+  /** roleCode — null = 비회원 sentinel */
   roleCode: string | null;
+  /** 권한관리 roleName 또는 비회원 라벨 */
+  label: string;
+  /** isActive — 비회원은 항상 true */
+  isActive: boolean;
+  /** isSystem — 6 기본 권한 여부 (비회원은 true) */
+  isSystem: boolean;
 }
 
 export function useTargetLabels() {
@@ -79,59 +62,65 @@ export function useTargetLabels() {
   });
 
   return useMemo(() => {
-    const byTargetType = new Map<string, RoleLabelApiItem>();
-    for (const r of data ?? []) byTargetType.set(r.targetType, r);
+    const byCode = new Map<string, RoleLabelApiItem>();
+    for (const r of data ?? []) byCode.set(r.roleCode, r);
 
-    const resolveLabel = (targetType: string): string => {
-      if (targetType === "non_member") return NON_MEMBER_LABEL;
-      return (
-        byTargetType.get(targetType)?.roleName ??
-        FALLBACK_LABELS[targetType] ??
-        targetType
-      );
+    /** roleCode (null = 비회원) → 라벨 */
+    const resolveLabel = (roleCode: string | null): string => {
+      if (roleCode === null) return NON_MEMBER_LABEL;
+      return byCode.get(roleCode)?.roleName ?? roleCode;
     };
 
-    const isAvailable = (targetType: string): boolean => {
-      if (targetType === "non_member") return true;
-      // 데이터 미수신 시 비활성 — 로딩 완료 전 비활성 옵션 일시 노출 방지 (fail-closed)
-      return byTargetType.get(targetType)?.isActive ?? false;
+    /** roleCode (null = 비회원) → 사용 가능 여부 */
+    const isAvailable = (roleCode: string | null): boolean => {
+      if (roleCode === null) return true;
+      return byCode.get(roleCode)?.isActive ?? false;
     };
 
-    const getRoleCode = (targetType: string): string | null => {
-      if (targetType === "non_member") return null;
-      return byTargetType.get(targetType)?.roleCode ?? null;
+    /** 정렬 헬퍼 — 6 기본 권한 우선, 그 외 roleCode 알파벳 순 */
+    const orderRank = (roleCode: string | null): number => {
+      if (roleCode === null) return 999; // 비회원은 마지막
+      return SYSTEM_ROLE_ORDER[roleCode] ?? 100;
     };
 
-    /**
-     * 모든 게시대상 옵션 (등록/표시용 — 정적 순서 보장).
-     * 비회원 포함, 비활성도 포함 (옵션 노출 필터는 컴포넌트에서 isActive 로 결정).
-     */
-    const allOptions: TargetTypeOption[] = ALL_TARGET_TYPES.map((tt) => ({
-      value: tt,
-      label: resolveLabel(tt),
-      isActive: isAvailable(tt),
-      roleCode: getRoleCode(tt),
-    }));
+    /** 활성 옵션 (member 대상) — 홈공지/대량메일/회원관리/검색 필터용. 비회원 제외. */
+    const memberOptions: TargetRoleOption[] = (data ?? [])
+      .filter((r) => r.isActive)
+      .map((r) => ({
+        roleCode: r.roleCode,
+        label: r.roleName,
+        isActive: true,
+        isSystem: r.isSystem,
+      }))
+      .sort((a, b) => {
+        const ra = orderRank(a.roleCode);
+        const rb = orderRank(b.roleCode);
+        if (ra !== rb) return ra - rb;
+        return (a.roleCode ?? "").localeCompare(b.roleCode ?? "");
+      });
 
-    /** @deprecated getAllOptions() 대신 allOptions 배열 직접 참조 권장 */
-    const getAllOptions = (): TargetTypeOption[] => allOptions;
+    /** 활성 옵션 + 비회원 sentinel — 콘텐츠 게시대상 (비회원 공개 콘텐츠 지원) 용 */
+    const allOptions: TargetRoleOption[] = [
+      ...memberOptions,
+      { roleCode: null, label: NON_MEMBER_LABEL, isActive: true, isSystem: true },
+    ];
 
-    /** 표시 순서 정렬 (cellRenderer 등에서 사용) */
-    const sortByOrder = <T extends { targetType: string }>(
+    /** ContentTarget 행 표시 순서 정렬 — 6 기본 우선, 비회원 마지막 */
+    const sortByOrder = <T extends { roleCode: string | null }>(
       targets: readonly T[],
     ): T[] =>
-      [...targets].sort(
-        (a, b) =>
-          (TARGET_TYPE_ORDER[a.targetType] ?? 99) -
-          (TARGET_TYPE_ORDER[b.targetType] ?? 99),
-      );
+      [...targets].sort((a, b) => {
+        const ra = orderRank(a.roleCode);
+        const rb = orderRank(b.roleCode);
+        if (ra !== rb) return ra - rb;
+        return (a.roleCode ?? "").localeCompare(b.roleCode ?? "");
+      });
 
     return {
       resolveLabel,
       isAvailable,
-      getRoleCode,
-      getAllOptions,
       allOptions,
+      memberOptions,
       sortByOrder,
       isLoading,
     };

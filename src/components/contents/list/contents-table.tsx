@@ -319,7 +319,7 @@ export function ContentsTable({
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
                 {targets.map((t, i) => (
-                  <span key={i} className="text-xs">{resolveTargetLabel(t.targetType)}</span>
+                  <span key={i} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
                 ))}
               </div>
             );
@@ -395,7 +395,7 @@ export function ContentsTable({
           render: (item) => {
             // rowData 에서 이미 정렬된 targets 사용
             if (item.targets.length === 0) return "-";
-            return item.targets.map((t) => resolveTargetLabel(t.targetType)).join(", ");
+            return item.targets.map((t) => resolveTargetLabel(t.roleCode)).join(", ");
           },
         },
         {

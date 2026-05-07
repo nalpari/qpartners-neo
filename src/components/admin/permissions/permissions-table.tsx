@@ -176,6 +176,7 @@ function EditableTextRendererFn(params: ICellRendererParams<PermissionItem>) {
 }
 
 // 신규: 미표시 / 기존: select Y/N (즉시 commit, 별도 흐름)
+// 6 기본 권한(isSystem=true): "Y" 고정 노출 + select 비활성. 서버 PUT 도 동일 가드 (Target Dynamic from Role).
 function ActiveRenderer(params: ICellRendererParams<PermissionItem>) {
   const data = params.data;
   if (!data || data.isNew) return null;
@@ -189,7 +190,9 @@ function ActiveRenderer(params: ICellRendererParams<PermissionItem>) {
       <select
         value={data.isActive}
         onChange={(e) => ctx.onActiveChange(data, e.target.value as "Y" | "N")}
-        className="appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 bg-white border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010]"
+        disabled={data.isSystem}
+        title={data.isSystem ? "システム予約権限のため変更できません" : undefined}
+        className={`appearance-none w-full h-[38px] leading-[38px] pl-4 pr-10 ${data.isSystem ? "bg-[#F5F5F5] cursor-not-allowed text-[#999]" : "bg-white cursor-pointer hover:border-[#D1D1D1] focus:border-[#101010]"} border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] text-[#101010] outline-none`}
       >
         <option value="Y">Y</option>
         <option value="N">N</option>
@@ -335,7 +338,7 @@ export function PermissionsTable() {
       ? [
           // id prefix "new-" 통일 — useCellEdit 의 신규행 가드(startsWith("new-")) 와 일치시켜
           // 더블클릭 가드 우회로 편집 모드 진입하는 결함 차단 (PR #139 리뷰 MEDIUM 지적).
-          { id: "new-row", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isNew: true },
+          { id: "new-row", roleCode: "", roleName: "", description: "", isActive: "Y" as const, isSystem: false, isNew: true },
           ...mapped,
         ]
       : mapped;
@@ -423,6 +426,9 @@ export function PermissionsTable() {
   // canUpdate=false 확정 후의 시도만 alert 로 안내.
   const handleActiveChange = useCallback((item: PermissionItem, value: "Y" | "N") => {
     if (item.isNew) return;
+    // 6 기본 권한(isSystem=true) 은 isActive 변경 불가 — UI select 도 disabled 지만 키보드/race
+    // 우회 방어선으로 핸들러 본체에도 silent return 가드. 서버 PUT 가 최종 차단.
+    if (item.isSystem) return;
     if (isPermLoading) return;
     if (!canUpdatePermission) {
       openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });

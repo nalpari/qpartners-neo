@@ -40,7 +40,7 @@ export function ContentsSearch({
   const isFilterOpen = userToggled ?? !isMobile;
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
-  const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
+  const [postTarget, setPostTarget] = useState(initialFilters?.roleCode ?? "");
   const [department, setDepartment] = useState(initialFilters?.department ?? "");
   const [internalOnly, setInternalOnly] = useState(initialFilters?.internalOnly ?? false);
   // [x] 클릭 후 input 으로 focus 복귀용 — 클릭으로 button 이 focus 보유 시
@@ -50,13 +50,15 @@ export function ContentsSearch({
 
   // 권한관리 라벨 동기화 — isActive=Y 만 검색 옵션 노출, 라벨은 권한명 사용.
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
+  // 비회원(roleCode=null) 은 SelectBox value 로 null 을 다룰 수 없어 sentinel `__NON_MEMBER__` 사용.
+  // 서버 listContentsQuerySchema 가 transform 으로 null 변환.
   const { allOptions: targetAllOptions } = useTargetLabels();
   const POST_TARGET_OPTIONS = useMemo(() => {
     return [
       POST_TARGET_PLACEHOLDER,
       ...targetAllOptions
         .filter((o) => o.isActive)
-        .map((o) => ({ value: o.value, label: o.label })),
+        .map((o) => ({ value: o.roleCode ?? "__NON_MEMBER__", label: o.label })),
     ];
   }, [targetAllOptions]);
 
@@ -115,7 +117,7 @@ export function ContentsSearch({
     onSearch({
       keyword,
       categoryIds: selectedCategoryIds,
-      targetType: postTarget,
+      roleCode: postTarget,
       department,
       internalOnly,
     });
