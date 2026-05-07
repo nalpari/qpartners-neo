@@ -250,9 +250,16 @@ export async function POST(request: NextRequest) {
   }
 
   // 6. 세부 권한코드(authRole) 판별
+  // GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록 4번째 인자로 전달.
+  // (운영자가 권한관리 화면에서 정의한 동적 권한이 사용자 세션에 즉시 반영되도록 함)
   let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
   try {
-    authRole = await resolveAuthRole(qsp.data.userTp, qsp.data.userId, qsp.data.storeLvl);
+    authRole = await resolveAuthRole(
+      qsp.data.userTp,
+      qsp.data.userId,
+      qsp.data.storeLvl,
+      qsp.data.authCd ?? null,
+    );
   } catch (error) {
     console.error("[POST /api/auth/login] authRole 판별 실패, 기본값 사용:", error);
     authRole = qsp.data.userTp === "ADMIN" ? "ADMIN"

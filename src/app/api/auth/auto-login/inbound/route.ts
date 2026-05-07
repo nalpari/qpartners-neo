@@ -176,9 +176,10 @@ export async function GET(request: NextRequest) {
     //      - ADMIN: DB 조회 실패 시 SUPER_ADMIN/ADMIN 구분 불가 → 자동로그인 거부 (최소 권한 원칙, fail-closed)
     //      - STORE: 항상 "2ND_STORE" (storeLvl 반영 생략, resolveAuthRole 의 "불명 → 2ND_STORE" 와 일치)
     //      - SEKO/GENERAL: 결정적 매핑
+    // GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록 4번째 인자로 전달.
     let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
     try {
-      authRole = await resolveAuthRole(userTp, detail.userId, detail.storeLvl);
+      authRole = await resolveAuthRole(userTp, detail.userId, detail.storeLvl, detail.authCd ?? null);
     } catch (error: unknown) {
       const errorName = error instanceof Error ? error.name : typeof error;
       console.warn(LOG, "authRole 결정 실패 — fail-closed 폴백:", { userTp, errorName });

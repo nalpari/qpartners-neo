@@ -14,7 +14,7 @@ import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 import { useMenuTree } from "@/hooks/use-menu-tree";
 import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
 import { useAlertStore } from "@/lib/store";
-import { MENU } from "@/lib/menu-codes";
+import { ADMIN_MENU, MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
 /** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
@@ -217,7 +217,6 @@ export function Gnb() {
   const router = useRouter();
 
   const isLoggedIn = user != null;
-  const isAdmin = user?.userTp === "ADMIN";
   // SSR initial: "" → dev URL fallback. Client mount 후 운영 hostname 이면 prod URL 로 수렴.
   const hostname = useSyncExternalStore(subscribeNoop, getClientHostname, getServerHostname);
   const fallbackUrls = PROD_HOSTS.includes(hostname)
@@ -243,8 +242,17 @@ export function Gnb() {
   //
   // admin → 일반 이동 시 캐시 강제 무효화는 layout 의 <AdminTransitionRefresh /> 가
   // pathname 변화를 감지해 모든 진입점에 일괄 적용 — 헤더 측은 RBAC 만 담당.
-  const { has } = useMenuPermissionMap();
+  const { has, isLoading: isPermMapLoading } = useMenuPermissionMap();
   const { openAlert } = useAlertStore();
+
+  // RBAC 매트릭스 단일화 — 관리자 진입(톱니바퀴)은 ADM_* 7개 중 1개라도 canRead=true 일 때만 노출.
+  // 종전 `userTp === "ADMIN"` userTp 분기를 매트릭스 기반으로 교체 (권한관리 토글 결과 즉시 반영).
+  // 비로그인은 hasAuthFlag 로 1차 차단, 로딩 중에는 fail-closed(숨김) 로 UX 플래시 방지.
+  const canShowAdminEntry =
+    hasAuthFlag &&
+    !isPermMapLoading &&
+    Object.values(ADMIN_MENU).some((menuCode) => has(menuCode, "read"));
+
   const handleGnbMenuClick = (e: React.MouseEvent<HTMLAnchorElement>, menuCode: string) => {
     if (!hasAuthFlag) return;
     if (!has(menuCode, "read")) {
@@ -530,6 +538,7 @@ export function Gnb() {
                   <Link
                     href="/mypage"
                     transitionTypes={["fade"]}
+                    onClick={(e) => handleGnbMenuClick(e, MENU.MYPAGE)}
                     className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
                   >
                     <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
@@ -551,8 +560,8 @@ export function Gnb() {
                       ログアウト
                     </span>
                   </button>
-                  {/* 톱니바퀴 (管理者) — 관리자만 노출 */}
-                  {isAdmin && (
+                  {/* 톱니바퀴 (管理者) — ADM_* 매트릭스 중 하나라도 canRead=true 일 때만 노출 */}
+                  {canShowAdminEntry && (
                     <Link
                       href="/admin/members"
                       transitionTypes={["fade"]}
@@ -743,7 +752,11 @@ export function Gnb() {
                   href="/mypage"
                   transitionTypes={["fade"]}
                   className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={(e) => {
+                    handleGnbMenuClick(e, MENU.MYPAGE);
+                    // 매트릭스 거부 시 preventDefault 된 상태 — 그래도 drawer 는 닫는 게 UX 자연스러움 (일반 GNB 패턴과 통일).
+                    setIsMobileMenuOpen(false);
+                  }}
                 >
                   マイページ
                 </Link>
