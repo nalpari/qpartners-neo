@@ -256,19 +256,6 @@ export async function POST(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
-    // 보조 가드 — CONTENT.canCreate 매트릭스와 별개로 비사내 역할은 등록 불가.
-    // (SUPER_ADMIN 이 매트릭스 실수 토글로 GENERAL/SEKO/STORE 에 create 를 부여해도
-    //  `includeInternal=true` 응답·내부 카테고리 노출이 발생하지 않도록 두 번째 방어선.)
-    if (!isInternalUser(user.role)) {
-      console.warn(
-        `[POST /api/contents] 비사내 역할 create 시도 차단 — role=${user.role}`,
-      );
-      return NextResponse.json(
-        { error: "権限がありません" },
-        { status: 403 },
-      );
-    }
-
     let body: unknown;
     try {
       body = await request.json();
@@ -339,12 +326,12 @@ export async function POST(request: NextRequest) {
     // 트랜잭션 commit 후 디스크 unlink (실패해도 응답에는 영향 없음).
     await unlinkInlineImages(unlinkPaths, "[POST /api/contents]");
 
-    // POST는 requireMenuPermission("CONTENT","create") 통과자 = 사내 사용자이므로
-    // includeInternal=true (PUT detail과 동일 정책)
+    // POST 응답의 includeInternal은 요청자 역할에 따라 동적으로 판단.
+    // 매트릭스가 외부 역할에 create 권한을 부여하더라도 내부 카테고리 노출을 방지.
     return NextResponse.json({
       data: {
         ...content,
-        categories: buildCategoryTree(content.categories, { includeInternal: true }),
+        categories: buildCategoryTree(content.categories, { includeInternal: isInternalUser(user.role) }),
       },
     }, { status: 201 });
   } catch (error) {
