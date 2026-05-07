@@ -176,7 +176,15 @@ export async function POST(request: NextRequest) {
 
   let loginId = resetToken.loginId ?? resetToken.userId; // 토큰에 loginId 있으면 우선, 없으면 email 폴백
   let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
-  if (resetToken.loginId && resetToken.userType === "STORE") {
+  // request 라우트가 모든 userType 에서 resolvedDetail.userId 를 loginId 컬럼에 저장하므로
+  // STORE 외 (SEKO/GENERAL/ADMIN) 도 동일하게 loginId+email 동시 매칭으로 정확도 보장.
+  // - GENERAL: loginId == email (request 라우트 cross-check 후 단일 회원 확정) → 추가 무해.
+  // - SEKO/ADMIN: loginId 가 sekoId/adminId 등 email 과 다른 식별자 → email 단독 매칭 시
+  //   동일 email 을 가진 다른 사용자가 잘못 매칭되는 채널 차단.
+  // ※ QSP /user/detail 가 loginId+email 동시 파라미터를 AND 매칭으로 처리하는지는 request
+  //   라우트(lookupQspUserForReset)가 단일 키로만 호출하던 사용 패턴과 다름 — QSP 스펙 검증
+  //   권장 (양 키 동시 입력 시 어느 것을 우선/AND 처리하는지 명세 미확인).
+  if (resetToken.loginId) {
     detailParams.set("loginId", resetToken.loginId);
   }
   try {
@@ -214,14 +222,15 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error(
-      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (non-GENERAL은 이후 에러 반환):",
+      "[POST /api/auth/password-reset/confirm] userDetail 조회 실패 (이후 fail-closed 분기에서 에러 반환):",
       error instanceof Error ? { message: error.message } : error,
     );
-    // GENERAL은 email=loginId이므로 조회 실패해도 진행 가능
   }
 
-  // ADMIN/STORE/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
-  if (!detailData && resetToken.userType !== "GENERAL") {
+  // detailData 누락 시 fail-closed — JWT 에 부정확한 회원 정보(userNm/compNm null) 가
+  // 박혀 GNB 영역에 잘못된 회사명/사용자명이 표시되는 회귀를 차단.
+  // 종전 GENERAL 만 fail-open 으로 진행하던 분기 통일 (모든 userType 동일 동작).
+  if (!detailData) {
     console.error(
       `[POST /api/auth/password-reset/confirm] userDetail 조회 실패 — userTp=${resetToken.userType}`,
     );
@@ -231,8 +240,21 @@ export async function POST(request: NextRequest) {
       500,
     );
   }
-  if (!detailData && resetToken.userType === "GENERAL") {
-    console.warn("[POST /api/auth/password-reset/confirm] GENERAL userDetail 조회 실패 — email 기반으로 진행");
+
+  // statCd 검증 — 활성("A") 외 모든 상태값 차단 (deny-list → allow-list 전환).
+  // 종전 R 단일 차단은 향후 QSP 가 잠금/휴면 등 신규 상태 코드 추가 시 silent bypass 위험.
+  // statCd === null 은 QSP 응답 누락/명세 변경 가능성을 고려해 fail-open 으로 통과(정상 회원
+  // 회귀 차단 우선) — QSP statCd 도메인 명세 확정 시 strict allow-list 로 추가 강화 권장.
+  // 토큰은 이미 used=true 로 소모된 상태이므로 차단 시 롤백하여 재시도 가능하게 한다.
+  if (detailData.statCd != null && detailData.statCd !== "A") {
+    console.warn(
+      `[POST /api/auth/password-reset/confirm] 비활성 회원 비밀번호 초기화 차단 — statCd=${detailData.statCd}, userTp=${resetToken.userType}`,
+    );
+    return rollbackAndRespond(token,
+      "このアカウントはご利用いただけません。",
+      "このアカウントはご利用いただけません。",
+      403,
+    );
   }
 
   // 6. QSP 비밀번호 변경 API 호출 (chgType=I)
@@ -313,8 +335,11 @@ export async function POST(request: NextRequest) {
     authRole = await resolveAuthRole(validUserTp, loginId, detailData?.storeLvl ?? null);
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
+    // STORE 폴백은 항상 2ND_STORE 단일 매핑 — resolveAuthRole 실패 상황에서 storeLvl 만으로
+    // 1ST 승격을 허용하면 silent privilege escalation 채널이 열리므로 fail-closed 단일화.
+    // (.claude/rules/api.md "최소 권한 원칙" + password-init/route.ts 폴백 정책과 통일.)
     authRole = validUserTp === "ADMIN" ? "ADMIN"
-      : validUserTp === "STORE" ? (detailData?.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
+      : validUserTp === "STORE" ? "2ND_STORE"
       : validUserTp === "SEKO" ? "SEKO"
       : "GENERAL";
   }
