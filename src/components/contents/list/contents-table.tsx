@@ -234,9 +234,8 @@ export function ContentsTable({
   // 서버 POST /api/contents 도 requireMenuPermission(CONTENT, create) 로 최종 검증하므로 FE 는 UX 전용.
   // 로딩 중 fail-closed (isPermLoading 시 false) — RBAC 표준 패턴 B 준수.
   const { canCreate: canCreateContent, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
-  // 매트릭스 canCreate + isInternal 이중 가드 — 서버 POST /api/contents 의 isInternalUser() 와 일치.
-  // 외부 역할에 매트릭스 canCreate=true 가 잘못 설정되더라도 FE 에서 사전 차단.
-  const showCreateButton = !isPermLoading && canCreateContent && isInternal;
+  // 매트릭스가 유일한 권한 판단 기준 — isInternal 이중 가드 제거.
+  const showCreateButton = !isPermLoading && canCreateContent;
 
   // 권한관리 라벨 동기화 — 게시대상 셀/CSV export 표시명을 권한명으로 동적 변환.
   // 비활성된 권한도 표시는 유지(기존 콘텐츠 호환). 옵션 노출 필터는 검색/등록 컴포넌트에서만 적용.

@@ -256,19 +256,6 @@ export async function POST(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
     const user = auth.user;
 
-    // 보조 가드 — CONTENT.canCreate 매트릭스와 별개로 비사내 역할은 등록 불가.
-    // (SUPER_ADMIN 이 매트릭스 실수 토글로 GENERAL/SEKO/STORE 에 create 를 부여해도
-    //  `includeInternal=true` 응답·내부 카테고리 노출이 발생하지 않도록 두 번째 방어선.)
-    if (!isInternalUser(user.role)) {
-      console.warn(
-        `[POST /api/contents] 비사내 역할 create 시도 차단 — role=${user.role}`,
-      );
-      return NextResponse.json(
-        { error: "権限がありません" },
-        { status: 403 },
-      );
-    }
-
     let body: unknown;
     try {
       body = await request.json();
