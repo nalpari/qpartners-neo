@@ -31,6 +31,11 @@ UPDATE `qp_content_targets` SET `role_code` = 'SEKO'       WHERE `target_type` =
 UPDATE `qp_content_targets` SET `role_code` = 'GENERAL'    WHERE `target_type` = 'general';
 -- non_member 행은 role_code 가 NULL 로 유지됨 (비회원 sentinel)
 
+-- FK 잠시 DROP — `idx_content_target` (content_id, target_type) 가 FK supporting index 라
+-- 그대로 DROP 시 errno 1553 (Cannot drop index needed in a foreign key constraint).
+-- 인덱스/컬럼 정리 완료 후 새 unique index `(content_id, role_code)` 가 supporting index 가 되도록 재생성.
+ALTER TABLE `qp_content_targets` DROP FOREIGN KEY `qp_content_targets_content_id_fkey`;
+
 -- 기존 인덱스 제거
 DROP INDEX `idx_content_target` ON `qp_content_targets`;
 DROP INDEX `idx_target_period` ON `qp_content_targets`;
@@ -38,9 +43,14 @@ DROP INDEX `idx_target_period` ON `qp_content_targets`;
 -- target_type 컬럼 제거 (ENUM TargetType 자동 정리됨 — MySQL ENUM 은 컬럼 inline)
 ALTER TABLE `qp_content_targets` DROP COLUMN `target_type`;
 
--- 새 인덱스 + FK
+-- 새 인덱스 (FK supporting index 역할도 겸함 — 첫 컬럼 content_id 일치)
 CREATE UNIQUE INDEX `idx_content_target` ON `qp_content_targets`(`content_id`, `role_code`);
 CREATE INDEX `idx_target_period` ON `qp_content_targets`(`role_code`, `start_at`, `end_at`);
+
+-- FK 재생성 (Step 2 시작 시 DROP 한 content_id FK + 신규 role_code FK)
+ALTER TABLE `qp_content_targets`
+  ADD CONSTRAINT `qp_content_targets_content_id_fkey`
+  FOREIGN KEY (`content_id`) REFERENCES `qp_contents`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `qp_content_targets`
   ADD CONSTRAINT `qp_content_targets_role_code_fkey`
