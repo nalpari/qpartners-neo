@@ -95,7 +95,10 @@ export const listContentsQuerySchema = z.object({
     .max(50)
     .optional()
     .transform((v) => (v === undefined ? undefined : v === NON_MEMBER_SENTINEL ? null : v)),
-  department: z.string().optional(),
+  department: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(",").filter(Boolean) : undefined)),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
 });

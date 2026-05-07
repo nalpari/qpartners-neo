@@ -1663,7 +1663,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
-          { name: "department", in: "query", schema: { type: "string" } },
+          { name: "department", in: "query", description: "担当部門フィルター（複数選択時はカンマ区切り）", schema: { type: "string" } },
           {
             name: "internalOnly",
             in: "query",
