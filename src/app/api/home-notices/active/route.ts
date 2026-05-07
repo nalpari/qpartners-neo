@@ -18,6 +18,16 @@ export async function GET(request: NextRequest) {
   try {
     const now = new Date();
 
+    // 게시기간 date-only 비교용 — JST 기준 "오늘 자정"(UTC ms).
+    // 등록 시 FE 가 startAt/endAt 을 그 날 자정으로 저장하므로, day 단위 비교로 통일해야
+    // "노출기간 D~D" 공지가 그 날 종일 노출됨 (Redmine #2131).
+    // 운영 TZ(JST) 기준 명시 — 서버 컨테이너 TZ 의존성 제거.
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const todayStart = new Date(
+      Math.floor((now.getTime() + JST_OFFSET_MS) / ONE_DAY_MS) * ONE_DAY_MS - JST_OFFSET_MS,
+    );
+
     const user = getUserFromHeaders(request.headers);
     const userRole = user?.role ?? null;
 
@@ -38,8 +48,10 @@ export async function GET(request: NextRequest) {
 
     const notices = await prisma.homeNotice.findMany({
       where: {
-        startAt: { lte: now },
-        endAt: { gte: now },
+        // day 단위 비교 — endAt(JST D일 자정) 이 todayStart(JST 오늘 자정) 이상이면 오늘 종일 노출.
+        // timestamp(now) 비교 시 D~D 공지가 자정 직후만 통과되던 결함 차단 (Redmine #2131).
+        startAt: { lte: todayStart },
+        endAt: { gte: todayStart },
         targets: { some: { roleCode: { in: matchRoleCodes } } },
       },
       select: {

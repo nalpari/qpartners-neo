@@ -6,6 +6,8 @@ import { isAxiosError } from "axios";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import api from "@/lib/axios";
 
@@ -220,6 +222,11 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
   const { openAlert } = useAlertStore();
   const isLoggedIn = !!user;
 
+  // RBAC — 비회원은 PUBLIC 통과, 로그인 사용자만 INQUIRY.canCreate 매트릭스 적용.
+  // 비로그인 시 useMenuPermission 은 enabled=false 라 canCreate=false 반환 → isLoggedIn 분기로
+  // 비회원 가드 우회. 서버 POST /api/inquiry 가 최종 방어선이라 FE 는 UX 알림 전용.
+  const { canCreate: canCreateInquiry, isLoading: isPermLoading } = useMenuPermission(MENU.INQUIRY);
+
   const {
     data: inquiryTypeOptions = [],
     isPending: isCodeLoading,
@@ -307,6 +314,14 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
   };
 
   const handleSubmit = () => {
+    // RBAC — 로그인 사용자에 한해 INQUIRY.canCreate 매트릭스 검증.
+    // 권한 응답 도착 전 alert 노출 방지를 위해 로딩 중에는 silent return.
+    if (isLoggedIn && isPermLoading) return;
+    if (isLoggedIn && !canCreateInquiry) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
+
     if (!isLoggedIn) {
       if (!companyName.trim()) {
         openAlert({ type: "alert", message: "会社名を入力してください。" });

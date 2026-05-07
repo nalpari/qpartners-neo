@@ -433,7 +433,7 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isInternal && showCreateButton && (
+        {showCreateButton && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
             <Button variant="primary" className="w-[90px]">
               新規登録

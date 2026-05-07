@@ -108,6 +108,16 @@ export async function GET(request: NextRequest) {
     // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
     const now = new Date();
 
+    // 게시기간 date-only 비교용 — JST 기준 "오늘 자정"(UTC ms).
+    // 등록 시 FE 가 DatePicker → toISOString 으로 startAt/endAt 을 그 날 자정으로 저장하므로,
+    // 비교를 timestamp(now) 가 아닌 day(todayStart) 로 단위 통일해야 "노출기간 D~D" 게시글이 그 날 종일 노출됨.
+    // (Redmine #2131) — 운영 TZ(JST) 기준으로 명시 계산해 서버 컨테이너 TZ 에 의존하지 않음.
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const todayStart = new Date(
+      Math.floor((now.getTime() + JST_OFFSET_MS) / ONE_DAY_MS) * ONE_DAY_MS - JST_OFFSET_MS,
+    );
+
     if (internal) {
       // 사내 사용자 (관리 목적):
       // - internalOnly=true → 외부 게시대상(비-INTERNAL_ROLE_CODES 또는 null=비회원)이
@@ -146,8 +156,11 @@ export async function GET(request: NextRequest) {
           some: {
             roleCode: user ? user.role : null,
             AND: [
-              { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-              { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+              // 노출기간은 day 단위 비교 — endAt(JST D일 자정 저장) 이 todayStart(JST 오늘 자정)
+              // 이상이면 오늘 종일 노출. timestamp(now) 비교 시 D~D 게시글이 자정 직후만 통과되던
+              // 결함 차단 (Redmine #2131).
+              { OR: [{ startAt: null }, { startAt: { lte: todayStart } }] },
+              { OR: [{ endAt: null }, { endAt: { gte: todayStart } }] },
             ],
           },
         },
