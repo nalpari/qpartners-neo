@@ -1,17 +1,11 @@
 "use client";
 
-// Design Ref: §3.3 — 검색 UI + onSearch/onReset 콜백
+// Design Ref: §3.3 — 검색 UI + onSearch/onReset 콜백 (Target Dynamic from Role 후)
 
 import { useState, useMemo } from "react";
 import { InputBox, SelectBox, Radio, Button, DatePicker } from "@/components/common";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import type { MassMailSearchParams } from "./bulk-mail-types";
-
-/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
-const FIXED_TARGET_OPTIONS = [
-  { value: "super_admin", label: "スーパー管理者" },
-  { value: "admin", label: "管理者" },
-];
 
 interface BulkMailSearchProps {
   onSearch: (params: MassMailSearchParams) => void;
@@ -19,27 +13,29 @@ interface BulkMailSearchProps {
 }
 
 export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
-  // 배신대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
-  const { allOptions } = useTargetLabels();
-  const targetOptions = useMemo(() => [
-    { value: "", label: "全体" },
-    ...FIXED_TARGET_OPTIONS,
-    ...allOptions
-      .filter((o) => o.isActive)
-      .map((o) => ({ value: o.value, label: o.label })),
-  ], [allOptions]);
+  // 配信対象 옵션 — qp_roles.isActive=Y 만 동적 노출 (6 기본 + 추가 권한). 비회원 제외.
+  const { memberOptions } = useTargetLabels();
+  const targetOptions = useMemo(
+    () => [
+      { value: "", label: "全体" },
+      ...memberOptions
+        .filter((o): o is typeof o & { roleCode: string } => o.roleCode !== null)
+        .map((o) => ({ value: o.roleCode, label: o.label })),
+    ],
+    [memberOptions],
+  );
 
   const [title, setTitle] = useState("");
   const [authorSearchType, setAuthorSearchType] = useState<"name" | "id">("name");
   const [authorQuery, setAuthorQuery] = useState("");
-  const [target, setTarget] = useState("");
+  const [roleCode, setRoleCode] = useState("");
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
 
   const handleSearch = () => {
     onSearch({
       keyword: title.trim() || undefined,
-      target: target || undefined,
+      roleCode: roleCode || undefined,
       authorSearchType: authorQuery.trim() ? authorSearchType : undefined,
       authorQuery: authorQuery.trim() || undefined,
       startDate: startDate ? startDate.toISOString() : undefined,
@@ -55,7 +51,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
     setTitle("");
     setAuthorSearchType("name");
     setAuthorQuery("");
-    setTarget("");
+    setRoleCode("");
     setStartDate(null);
     setEndDate(null);
     onReset();
@@ -120,7 +116,7 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
               </span>
             </div>
             <div className="flex flex-1 items-center bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-              <SelectBox options={targetOptions} value={target} onChange={setTarget} className="w-full" />
+              <SelectBox options={targetOptions} value={roleCode} onChange={setRoleCode} className="w-full" />
             </div>
           </div>
 

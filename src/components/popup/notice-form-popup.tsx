@@ -7,13 +7,13 @@ import { z } from "zod";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, Checkbox, InputBox, DatePicker } from "@/components/common";
 import type { NoticeFormData } from "@/components/admin/notices/notices-types";
-import { targetsToPayload, formatUserLabel } from "@/components/admin/notices/notices-types";
+import { formatUserLabel } from "@/components/admin/notices/notices-types";
 import api from "@/lib/axios";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 
-// Design Ref: §5 — TARGET_OPTIONS API value 통일
+// Design Ref: §5 — Target Dynamic from Role 후 — qp_roles 단일 출처
 
 const CLOSE_ANIMATION_MS = 200;
 const CONTENT_MAX_LENGTH = 200;
@@ -30,12 +30,6 @@ const noticeMetaSchema = z.object({
 });
 
 type NoticeMeta = z.infer<typeof noticeMetaSchema>;
-
-/** QpRole 관리 대상 아닌 고정 옵션 — 항상 노출 */
-const FIXED_TARGET_OPTIONS = [
-  { value: "super_admin", label: "スーパー管理者" },
-  { value: "admin", label: "管理者" },
-];
 
 interface FormErrors {
   targets?: string;
@@ -84,14 +78,15 @@ export function NoticeFormPopup() {
     isLoading: isPermLoading,
   } = useMenuPermission(ADMIN_MENU.NOTICES);
 
-  // 게시대상 옵션 — QpRole.isActive=Y 만 동적 노출 + 고정 옵션(super_admin/admin)
-  const { allOptions } = useTargetLabels();
-  const targetOptions = useMemo(() => [
-    ...FIXED_TARGET_OPTIONS,
-    ...allOptions
-      .filter((o) => o.isActive)
-      .map((o) => ({ value: o.value, label: o.label })),
-  ], [allOptions]);
+  // 게시대상 옵션 — qp_roles.isActive=Y 만 동적 노출 (6 기본 + 추가 권한). 비회원 제외.
+  const { memberOptions } = useTargetLabels();
+  const targetOptions = useMemo(
+    () =>
+      memberOptions
+        .filter((o): o is typeof o & { roleCode: string } => o.roleCode !== null)
+        .map((o) => ({ value: o.roleCode, label: o.label })),
+    [memberOptions],
+  );
 
   const initialData = popupData.notice as NoticeFormData | undefined;
 
@@ -103,7 +98,9 @@ export function NoticeFormPopup() {
   );
   const [noticeId, setNoticeId] = useState<number | undefined>(initialData?.id);
 
-  const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
+  const [targetRoleCodes, setTargetRoleCodes] = useState<string[]>(
+    initialData?.targetRoleCodes ?? [],
+  );
   const [startDate, setStartDate] = useState<Date | null>(parseDate(initialData?.startDate ?? ""));
   const [endDate, setEndDate] = useState<Date | null>(parseDate(initialData?.endDate ?? ""));
   const [title, setTitle] = useState(initialData?.title ?? "");
@@ -132,7 +129,7 @@ export function NoticeFormPopup() {
   // Design Ref: §3 — 프론트 폼 검증
   function validate(): FormErrors {
     const errs: FormErrors = {};
-    if (targets.length === 0) errs.targets = "掲示対象を1つ以上選択してください";
+    if (targetRoleCodes.length === 0) errs.targets = "掲示対象を1つ以上選択してください";
     if (!startDate) errs.startDate = "開始日を選択してください";
     if (!endDate) errs.endDate = "終了日を選択してください";
     // Issue #2176 (2) — 동일 날짜 선택 가능 (`>=` → `>`).
@@ -346,7 +343,7 @@ export function NoticeFormPopup() {
     setErrors({});
 
     const payload = {
-      ...targetsToPayload(targets),
+      targetRoleCodes,
       startAt: startDate.toISOString(),
       endAt: endDate.toISOString(),
       title: title.trim(),
@@ -362,7 +359,11 @@ export function NoticeFormPopup() {
   };
 
   const toggleTarget = (value: string, checked: boolean) => {
-    setTargets(checked ? [...targets, value] : targets.filter((t) => t !== value));
+    setTargetRoleCodes(
+      checked
+        ? [...targetRoleCodes, value]
+        : targetRoleCodes.filter((t) => t !== value),
+    );
   };
 
   const errorText = "font-['Noto_Sans_JP'] text-[12px] text-[#FF1A1A] mt-1";
@@ -402,7 +403,7 @@ export function NoticeFormPopup() {
               {targetOptions.map((opt) => (
                 <Checkbox
                   key={opt.value}
-                  checked={targets.includes(opt.value)}
+                  checked={targetRoleCodes.includes(opt.value)}
                   onChange={(checked) => toggleTarget(opt.value, checked)}
                   label={opt.label}
                 />

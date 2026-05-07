@@ -126,12 +126,5 @@ export const DEPARTMENT_OPTIONS = [
   { value: "it", label: "IT管理" },
 ];
 
-// 관리자용 게시대상 옵션
-export const POST_TARGET_OPTIONS = [
-  { value: "", label: "掲示対象" },
-  { value: "first_store", label: "1次販売店" },
-  { value: "second_store", label: "2次以降の販売店" },
-  { value: "seko", label: "施工店" },
-  { value: "general", label: "一般" },
-  { value: "non_member", label: "非会員" },
-];
+// 관리자용 게시대상 옵션은 정적 제거됨 (Target Dynamic from Role).
+// 검색 화면에서 useTargetLabels.allOptions 동적 사용 — qp_roles 기반 6 기본 + 추가 권한 + 비회원.

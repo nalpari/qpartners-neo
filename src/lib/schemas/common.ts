@@ -13,13 +13,6 @@ export const authRoleValues = [
 
 export const authRoleSchema = z.enum(authRoleValues);
 
-/** 콘텐츠 게시대상 유형 */
-export const targetTypeValues = [
-  "first_store", "second_store", "seko", "general", "non_member",
-] as const;
-
-export const targetTypeSchema = z.enum(targetTypeValues);
-
 /**
  * RBAC 메뉴 코드 — DB 실제값 기준.
  * (1-Level) HOME / CONTENT / INQUIRY / MYPAGE / ADMIN
@@ -132,3 +125,11 @@ export const idParamSchema = z.coerce
 
 /** 신규/수정 여부 판단 기준 (5일) */
 export const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+
+/**
+ * 시스템 예약 권한 코드 — 6 기본 권한. 단일 정의.
+ * roles/route.ts (POST 충돌 차단), collect-recipients.ts (발송 매핑) 등에서 공유.
+ */
+export const SYSTEM_ROLE_CODES: ReadonlySet<string> = new Set([
+  "SUPER_ADMIN", "ADMIN", "GENERAL", "1ST_STORE", "2ND_STORE", "SEKO",
+]);

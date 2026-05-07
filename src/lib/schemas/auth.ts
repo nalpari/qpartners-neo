@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { userTpValues, authRoleValues } from "@/lib/schemas/common";
+import { userTpValues } from "@/lib/schemas/common";
 
 // ─── QSP 로그인 요청 ───
 
@@ -84,9 +84,15 @@ export const loginUserSchema = qspLoginUserSchema
     statCd: true,
   })
   .extend({
-    // optional: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
-    // TODO: 과도기 제거 — 전체 사용자 재로그인 후 optional 제거하고 required로 전환
-    authRole: z.enum(authRoleValues).optional(),
+    /**
+     * authRole 동적 권한 코드 — 6 기본 + 운영자 정의 추가 권한 모두 허용 (Target Dynamic from Role 후).
+     * 형식 제약은 schemas/common.ts roleCodeFormatSchema 와 동일 (영대문자/숫자/언더스코어 50자).
+     * 활성/비활성 검증은 resolveMenuPermission 의 role.isActive 분기에서 수행 — DB 단일 진실 원천.
+     *
+     * optional: 배포 전 발급된 JWT(authRole 없음)와의 호환성 유지
+     * TODO: 과도기 제거 — 전체 사용자 재로그인 후 optional 제거하고 required로 전환
+     */
+    authRole: z.string().min(1).max(50).regex(/^[A-Z0-9][A-Z0-9_]*$/).optional(),
     twoFactorVerified: z.boolean(),
     // 전화번호 — 현재는 QSP compTelNo(회사 전화번호) 단일 매핑
     // nullish: 기존 JWT 호환 (undefined, 재로그인 전까지) + QSP 응답 null 허용

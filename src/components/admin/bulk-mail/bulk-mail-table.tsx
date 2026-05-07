@@ -13,6 +13,7 @@ import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, Mass
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import { usePageSize } from "@/hooks/use-page-size";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 
 /** Design Ref: §3.4 — 제목 클릭 시 상세화면 이동 */
@@ -45,10 +46,13 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [draftOnly, setDraftOnly] = useState(false);
 
+  // 권한 라벨 동기화 — 配信対象 컬럼은 useTargetLabels 단일 출처. 비활성된 권한도 라벨 룩업 가능.
+  const { resolveLabel: resolveTargetLabel } = useTargetLabels();
+
   // Design Ref: §3.4 — useQuery API 호출
   const queryParams = {
     keyword: searchParams.keyword || undefined,
-    target: searchParams.target || undefined,
+    roleCode: searchParams.roleCode || undefined,
     authorSearchType: searchParams.authorSearchType || undefined,
     authorQuery: searchParams.authorQuery || undefined,
     startDate: searchParams.startDate || undefined,
@@ -108,10 +112,15 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
       },
       {
         headerName: "配信対象",
-        field: "targetsLabel",
+        field: "targetRoleCodes",
         flex: 1.2,
         cellStyle: CENTER_CELL_STYLE,
         headerClass: "ag-header-cell-center",
+        valueFormatter: (params) => {
+          const codes = params.value as string[] | undefined;
+          if (!codes || codes.length === 0) return "—";
+          return codes.map((c) => resolveTargetLabel(c)).join(", ");
+        },
       },
       {
         headerName: "タイトル",
@@ -143,7 +152,7 @@ export function BulkMailTable({ searchParams }: BulkMailTableProps) {
         headerClass: "ag-header-cell-center",
       },
     ],
-    [],
+    [resolveTargetLabel],
   );
 
   return (

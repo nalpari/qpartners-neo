@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { AUTH_ROLE_TO_TARGET, getFallbackRole, isInternalUser } from "@/lib/auth";
+import { getFallbackRole, isInternalUser } from "@/lib/auth";
 import { getUserFromRequest } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { downloadLogsQuerySchema } from "@/lib/schemas/content";
@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
             select: {
               title: true,
               status: true,
-              // targetType: 본인 그룹 매칭에 필수.
+              // roleCode: 본인 그룹 매칭에 필수 (null = 비회원 sentinel).
               // startAt: 향후 "公開予定" 표시 등 확장에 대비해 select 만 유지.
-              targets: { select: { targetType: true, startAt: true, endAt: true } },
+              targets: { select: { roleCode: true, startAt: true, endAt: true } },
             },
           },
           attachment: { select: { fileName: true } },
@@ -71,26 +71,25 @@ export async function GET(request: NextRequest) {
       prisma.downloadLog.count({ where }),
     ]);
 
-    // 사용자별 targetType 1회 산출 — loop 내 재계산 회피.
-    // - 사내(ADMIN/SUPER_ADMIN): 만료 개념 없음 → null (canAccessContent 와 동일 정책)
-    // - 외부 사용자: authRole(없으면 userTp 폴백) → AUTH_ROLE_TO_TARGET 매핑.
-    //   매핑 결과 없거나 userTp 폴백 실패(null) → "non_member"
+    // 사용자별 roleCode 1회 산출 — loop 내 재계산 회피.
+    // - 사내(ADMIN/SUPER_ADMIN): 만료 개념 없음 → undefined (만료 검사 skip)
+    // - 외부 사용자: authRole(없으면 userTp 폴백). null = 비회원 sentinel.
     const userRole = user.authRole ?? getFallbackRole(user.userTp);
-    const userTargetType = userRole && isInternalUser(userRole)
-      ? null
-      : (userRole ? AUTH_ROLE_TO_TARGET[userRole] ?? "non_member" : "non_member");
+    const userRoleCode: string | null | undefined = userRole && isInternalUser(userRole)
+      ? undefined
+      : (userRole ?? null);
 
     const now = new Date();
     const list = logs.map((log) => {
       // 取消線(사양): 열람기간이 지났거나 삭제된 경우에 한정.
       // - status !== "published" → 삭제/draft 로 간주
-      // - 사내 사용자(userTargetType === null): 항상 열람 가능 → false
+      // - 사내 사용자(userRoleCode === undefined): 항상 열람 가능 → false
       // - 외부 사용자: 본인 그룹 target 의 endAt 만으로 판정. "시작 전(startAt > now)" 은
       //   사양상 만료가 아니므로 false 처리. 본인 그룹 미지정도 더 이상 본인 자격 없음 → true.
       const isExpired = (() => {
         if (log.content.status !== "published") return true;
-        if (userTargetType === null) return false;
-        const myTarget = log.content.targets.find((t) => t.targetType === userTargetType);
+        if (userRoleCode === undefined) return false;
+        const myTarget = log.content.targets.find((t) => t.roleCode === userRoleCode);
         if (!myTarget) return true;
         if (myTarget.endAt !== null && myTarget.endAt < now) return true;
         return false;
