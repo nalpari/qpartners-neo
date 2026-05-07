@@ -219,12 +219,22 @@ export async function requireMenuPermission(
   return { user };
 }
 
-/** QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용 */
+/**
+ * QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용.
+ *
+ * GENERAL 사용자는 회원관리에서 운영자가 임의 권한 그룹을 할당할 수 있으므로,
+ * QSP `authCd` 가 활성 + 비SUPER/ADMIN 권한이면 우선 채택. 그 외는 GENERAL 폴백 (fail-closed).
+ *
+ * 반환 타입을 string 으로 확장 — 운영자 정의 동적 권한(예: "MANAGER_A") 도 그대로 흐르도록.
+ * AuthRole 6개 fixed 타입은 RBAC 가드의 hardcoded 분기 식별자로 그대로 사용 가능
+ * (string 비교는 type narrowing 영향 없음).
+ */
 export async function resolveAuthRole(
   userTp: UserTp,
   userId: string,
   storeLvl: string | null,
-): Promise<AuthRole> {
+  authCd: string | null = null,
+): Promise<string> {
   switch (userTp) {
     case "ADMIN": {
       const entry = await prisma.codeDetail.findFirst({
@@ -249,8 +259,29 @@ export async function resolveAuthRole(
       return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";
     case "SEKO":
       return "SEKO";
-    default:
+    default: {
+      // GENERAL: 운영자가 회원관리에서 할당한 authCd 우선 채택.
+      // 활성 권한 + SUPER_ADMIN/ADMIN 격상 차단 (member-detail-popup 의 옵션 필터링 보강).
+      // 무효/미설정/조회 실패 시 GENERAL 폴백 (최소 권한 원칙, rules/api.md 정책).
+      if (authCd) {
+        try {
+          const activeRoleCodes = await resolveActiveRoleCodes();
+          if (
+            activeRoleCodes.has(authCd) &&
+            authCd !== "SUPER_ADMIN" &&
+            authCd !== "ADMIN"
+          ) {
+            return authCd;
+          }
+          console.warn(
+            `[resolveAuthRole] GENERAL authCd 무효 또는 격상 차단 — GENERAL 폴백: authCd=${authCd}`,
+          );
+        } catch (error) {
+          console.error("[resolveAuthRole] qpRole 활성 목록 조회 실패 — GENERAL 폴백:", error);
+        }
+      }
       return "GENERAL";
+    }
   }
 }
 
