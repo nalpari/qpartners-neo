@@ -154,16 +154,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ADMIN/STORE/SEKO는 loginId≠email일 수 있으므로 조회 실패 시 에러
-    if (!detailData && user.userTp !== "GENERAL") {
+    // detailData 누락 시 fail-closed — JWT 에 stale/부정확한 회원 정보가 박혀
+    // GNB 에 잘못된 값이 표시되거나 권한 판정이 어긋나는 회귀 차단.
+    // password-reset/confirm 라우트와 동일 정책으로 통일 (PR #152 정책 일관성).
+    if (!detailData) {
       console.error(`[POST /api/auth/password-init] userDetail 조회 실패 — userTp=${user.userTp}`);
       return NextResponse.json(
         { error: "ユーザー情報を確認できません。しばらくしてから再度お試しください。" },
         { status: 500 },
       );
-    }
-    if (!detailData && user.userTp === "GENERAL") {
-      console.warn("[POST /api/auth/password-init] GENERAL userDetail 조회 실패 — JWT 기존 세션 데이터로 진행");
     }
 
     // 6. QSP 비밀번호 변경 API 호출 (chgType=I: 초기 설정)
