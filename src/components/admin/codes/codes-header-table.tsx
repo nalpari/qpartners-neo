@@ -146,12 +146,18 @@ function EnglishOnlyCellInput({
   const pattern = allowUnderscore ? /[^a-zA-Z_]/g : /[^a-zA-Z]/g;
 
   // 필터링 + DOM 보정 + 부모 통지를 한 함수로 합쳐 IME 분기에서 재사용.
+  // selection 위치 보존 — `el.value = filtered` 로 통째 교체하면 캐럿이 끝으로 이동해
+  // 한자 변환 후 추가 입력 시 캐럿이 점프하는 현상 발생. 사용자 시점 캐럿 위치를
+  // 유지하되 필터링으로 길이가 줄어든 경우 끝까지로 클램프.
   const applyFilter = (raw: string) => {
     let filtered = raw.replace(pattern, "").toUpperCase();
     if (maxLength) filtered = filtered.slice(0, maxLength);
     const el = ref.current;
     if (el && el.value !== filtered) {
+      const start = el.selectionStart ?? filtered.length;
       el.value = filtered;
+      const newPos = Math.min(start, filtered.length);
+      el.setSelectionRange(newPos, newPos);
     }
     onChange(filtered);
   };

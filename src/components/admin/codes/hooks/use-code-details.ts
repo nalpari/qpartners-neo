@@ -11,6 +11,11 @@ interface UseCodeDetailsOptions {
   selectedHeaderId: number | null;
   selectedHeaderCode: string;
   selectedHeaderAlias: string;
+  /**
+   * displayCode seq 가 999 상한에 도달해 신규행 생성을 중단할 때 호출되는 콜백.
+   * 호출측에서 사용자 안내 alert 노출을 담당. 미주입 시 조용히 abort.
+   */
+  onSeqLimitExceeded?: () => void;
 }
 
 /**
@@ -30,7 +35,7 @@ interface UseCodeDetailsOptions {
  * - mutation 실패 시 신규행 state는 정리하지 않고 그대로 유지 (retry-friendly)
  * - 호출측이 에러 alert를 띄운 뒤 같은 행을 재시도 가능
  */
-export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias }: UseCodeDetailsOptions) {
+export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, onSeqLimitExceeded }: UseCodeDetailsOptions) {
   const queryClient = useQueryClient();
 
   const [detailActiveOnly, setDetailActiveOnly] = useState(true);
@@ -123,9 +128,14 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
     }
     const nextSeq = maxSeq + 1;
 
-    // 999 상한 — 사양상 "3자리 seq" 보장. 초과 시 빈 displayCode 로 두면 handleSave
-    // 신규행 검증(displayCode 필수)에서 막혀 사용자에게 명확한 alert 노출.
-    const autoDisplayCode = nextSeq > 999 ? "" : `${prefix}${String(nextSeq).padStart(3, "0")}`;
+    // 999 상한 — 사양상 "3자리 seq" 보장. 초과 시 신규행 생성 자체를 중단하고 호출측에
+    // 알림 콜백으로 사용자 안내. 빈 displayCode 폴백은 handleSave 의 일반 "필수 입력"
+    // 메시지로 차단되어 사용자가 진짜 원인(seq 한계)을 알 수 없으므로 명시적 abort.
+    if (nextSeq > 999) {
+      onSeqLimitExceeded?.();
+      return;
+    }
+    const autoDisplayCode = `${prefix}${String(nextSeq).padStart(3, "0")}`;
 
     detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort), displayCode: autoDisplayCode };
     setDetailNewRow({
@@ -143,7 +153,7 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
       isActive: "Y",
       isNew: true,
     });
-  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, detailsRaw]);
+  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, detailsRaw, onSeqLimitExceeded]);
 
   const handleDetailCancelAdd = useCallback(() => {
     setDetailNewRow(null);

@@ -27,6 +27,16 @@ const ACTIVE_CELL_STYLE = {
   paddingRight: "6px",
 };
 
+// Display Code 셀 전용 스타일 — 자동 생성된 읽기 전용 필드임을 시각적으로 명시.
+// 더블클릭 silent ignored 로 사용자가 "왜 편집 안 되지?" 혼란하는 것을 회피.
+// 신규행(isNew)에서는 row-level `ag-row-new` 노란 배경(#FFFDE7)을 유지해야 신규행
+// 띠가 끊어지지 않으므로 회색을 적용하지 않는다 — text-[#999] 회색 텍스트로 편집 불가
+// 신호는 별도 유지.
+function makeDisplayCodeCellStyle(params: CellClassParams<DetailGridRow>) {
+  if (params.data?.isNew) return centerCellStyle;
+  return { ...centerCellStyle, backgroundColor: "#F5F5F5" };
+}
+
 /**
  * 편집 중(신규행 / editingField 일치) 셀의 수평 패딩을 축소해 input 이 컬럼 폭을 거의
  * 가득 사용하되 셀 경계와 최소 여백(4px)을 유지하도록 한다. 테마 기본값
@@ -124,13 +134,23 @@ function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
 
 // displayCode — 항상 읽기 전용. 신규행에서는 자동 생성된 값(headerAlias + 3자리 seq) 표시.
 // state 기반(data.displayCode) 으로 읽어 React Compiler `refs` 규칙(렌더 중 ref 읽기 지양) 준수.
+// title 속성 — 더블클릭 silent ignored 동작에 대한 hover 가이드 (회색 배경과 짝).
+const DISPLAY_CODE_TOOLTIP = "自動採番のため編集不可";
 function DisplayCodeRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const data = params.data;
   if (!data) return null;
   if (data.isNew) {
-    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">{data.displayCode ?? ""}</span>;
+    return (
+      <span title={DISPLAY_CODE_TOOLTIP} className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">
+        {data.displayCode ?? ""}
+      </span>
+    );
   }
-  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
+  return (
+    <span title={DISPLAY_CODE_TOOLTIP} className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">
+      {String(params.value ?? "")}
+    </span>
+  );
 }
 
 function HeaderCodeCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
@@ -206,6 +226,12 @@ interface CodesDetailTableProps {
   canCreate: boolean;
   canUpdate: boolean;
   isPermLoading: boolean;
+  /**
+   * Detail 신규행 추가 가능 여부 — headerAlias 가 영문 3자리일 때만 true.
+   * displayCode 자동 발급(`alias + 3자리 seq`) 의 prefix 가 없으면 추가 자체를 차단해
+   * 사용자가 alert → "어디 가서 등록?" 데드엔드에 빠지는 것을 회피.
+   */
+  canAddDetail: boolean;
 }
 
 export function CodesDetailTable({
@@ -229,9 +255,20 @@ export function CodesDetailTable({
   canCreate,
   canUpdate,
   isPermLoading,
+  canAddDetail,
 }: CodesDetailTableProps) {
   const isUpdateReadOnly = isPermLoading || !canUpdate;
   const canAddNew = !isPermLoading && canCreate;
+  // 「追加」 버튼 disabled 사유 분기 — headerAlias 미설정이면 tooltip 으로 명시.
+  // selectedHeaderCode 가 비어 있으면 헤더 미선택 (이전 비활성 사유), 그 외에는
+  // canAddDetail=false 가 alias 부재 사유. canAddNew 는 권한 부재.
+  const addButtonDisabled = !selectedHeaderCode || !canAddNew || !canAddDetail;
+  const addButtonTitle = (() => {
+    if (!selectedHeaderCode) return "Header を選択してください。";
+    if (!canAddNew) return "権限がありません。";
+    if (!canAddDetail) return "Header Id が空のため Detail を追加できません。新しい Header を作成してください。";
+    return undefined;
+  })();
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거 되어도 셀 value 자체는 변하지 않아
   //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
@@ -280,7 +317,7 @@ export function CodesDetailTable({
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
     { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("code"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: DisplayCodeRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: DisplayCodeRendererFn, cellStyle: makeDisplayCodeCellStyle, headerClass: "ag-header-cell-center" },
     { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeName"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeNameEtc"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
@@ -329,13 +366,17 @@ export function CodesDetailTable({
           {hasNewRow ? (
             <Button variant="outline" onClick={onCancelAdd}>キャンセル</Button>
           ) : (
-            <Button
-              variant="outline"
-              onClick={onAdd}
-              disabled={!selectedHeaderCode || !canAddNew}
-            >
-              追加
-            </Button>
+            // disabled 버튼은 pointer-events-none 이라 native title 이 무시됨.
+            // wrapper span 에 title 을 두어 disabled 상태에서도 hover tooltip 노출.
+            <span title={addButtonTitle} className="inline-block">
+              <Button
+                variant="outline"
+                onClick={onAdd}
+                disabled={addButtonDisabled}
+              >
+                追加
+              </Button>
+            </span>
           )}
         </div>
       </div>

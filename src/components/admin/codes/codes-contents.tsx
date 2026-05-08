@@ -164,7 +164,22 @@ export function CodesContents() {
   const selectedHeaderCode = selectedHeader?.headerCode ?? "";
   const selectedHeaderAlias = selectedHeader?.headerAlias ?? "";
 
-  const details = useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias });
+  // displayCode seq 999 상한 도달 시 안내 — 신규행 생성 자체가 abort 되므로 사용자
+  // 가이드 alert 가 유일한 단서 (handleSave 의 "필수 입력" 메시지로 일반화되는 것 차단).
+  const handleDetailSeqLimitExceeded = useCallback(() => {
+    openAlert({
+      type: "alert",
+      message: "Display Code の連番が上限(999)に達しました。Header を分割してください。",
+      confirmLabel: "確認",
+    });
+  }, [openAlert]);
+
+  const details = useCodeDetails({
+    selectedHeaderId,
+    selectedHeaderCode,
+    selectedHeaderAlias,
+    onSeqLimitExceeded: handleDetailSeqLimitExceeded,
+  });
 
   // useCallback deps 안정화를 위해 훅 반환값에서 실제 사용 필드만 구조분해
   const {
@@ -659,6 +674,9 @@ export function CodesContents() {
         canCreate={canCreateCode}
         canUpdate={canUpdateCode}
         isPermLoading={isPermLoading}
+        // headerAlias 가 영문 3자리일 때만 「追加」 활성화 — alert wrapping 만으로는
+        // 사용자가 데드엔드(헤더 alias 는 NON_EDITABLE) 에 빠지므로 버튼 자체에서 차단 + tooltip.
+        canAddDetail={canAddDetail}
       />
     </main>
   );
