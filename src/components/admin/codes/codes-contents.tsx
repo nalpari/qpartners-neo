@@ -162,8 +162,9 @@ export function CodesContents() {
 
   const selectedHeader = headers.headersRaw.find((h) => h.id === selectedHeaderId);
   const selectedHeaderCode = selectedHeader?.headerCode ?? "";
+  const selectedHeaderAlias = selectedHeader?.headerAlias ?? "";
 
-  const details = useCodeDetails({ selectedHeaderId, selectedHeaderCode });
+  const details = useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias });
 
   // useCallback deps 안정화를 위해 훅 반환값에서 실제 사용 필드만 구조분해
   const {
@@ -361,6 +362,27 @@ export function CodesContents() {
         if (!f.headerCode || !f.headerAlias || !f.headerName) {
           throw new ValidationError("Header Code、Header Id、Header Code Nameは必須です。");
         }
+        // headerCode 대문자 강제 변환 (영문 + 언더바 허용)
+        f.headerCode = f.headerCode.replace(/[^a-zA-Z_]/g, "").toUpperCase();
+        // headerCode 중복 체크
+        const isCodeDuplicate = headers.headersRaw.some(
+          (h) => h.headerCode.toUpperCase() === f.headerCode,
+        );
+        if (isCodeDuplicate) {
+          throw new ValidationError("既に存在するHeader Codeです。");
+        }
+        // headerAlias 대문자 강제 변환 + 영문 3자리 검증
+        f.headerAlias = f.headerAlias.replace(/[^a-zA-Z]/g, "").toUpperCase();
+        if (f.headerAlias.length !== 3) {
+          throw new ValidationError("Header Idは英文字3桁で入力してください。");
+        }
+        // headerAlias 중복 체크
+        const isAliasDuplicate = headers.headersRaw.some(
+          (h) => h.headerAlias.toUpperCase() === f.headerAlias,
+        );
+        if (isAliasDuplicate) {
+          throw new ValidationError("既に存在するHeader Idです。");
+        }
         try {
           await headerCreateMutation.mutateAsync(f);
         } catch (err: unknown) {
@@ -398,6 +420,23 @@ export function CodesContents() {
       const headerJobs: Record<string, Record<string, string>> = { ...headerPending };
       for (const [rowId, fields] of Object.entries(headerExtra)) {
         headerJobs[rowId] = { ...headerJobs[rowId], ...fields };
+      }
+      // 기존행 수정 시 headerAlias 중복 체크 — PUT 전 일괄 검증
+      for (const [rowId, fields] of Object.entries(headerJobs)) {
+        if (fields.headerAlias) {
+          const newAlias = fields.headerAlias.replace(/[^a-zA-Z]/g, "").toUpperCase();
+          if (newAlias.length !== 3) {
+            throw new ValidationError("Header Idは英文字3桁で入力してください。");
+          }
+          // 자기 자신을 제외하고 동일 headerAlias 존재 여부 체크
+          const aliasConflict = headers.headersRaw.some(
+            (h) => String(h.id) !== rowId && h.headerAlias.toUpperCase() === newAlias,
+          );
+          if (aliasConflict) {
+            throw new ValidationError("既に存在するHeader Idです。");
+          }
+          fields.headerAlias = newAlias;
+        }
       }
       for (const [rowId, fields] of Object.entries(headerJobs)) {
         const data: Record<string, unknown> = {};
@@ -503,6 +542,7 @@ export function CodesContents() {
     discardDetailRowPending,
     openAlert,
     selectedHeaderId,
+    headers.headersRaw,
   ]);
 
   return (
