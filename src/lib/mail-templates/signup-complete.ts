@@ -38,7 +38,14 @@ export function signupCompleteMailHtml({
     <p>${safeUserNm} 様</p>
     <p>この度は、Q.PARTNERSへの会員登録をいただき、誠にありがとうございます。<br>
     会員登録が完了いたしましたのでお知らせいたします。</p>
-    <p>登録メールアドレス：${safeEmail}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background-color:#f8f9fa;border-radius:4px;">
+      <tr>
+        <td style="padding:15px 20px;">
+          <p style="margin:0 0 8px;font-size:13px;color:#666;">登録メールアドレス</p>
+          <p style="margin:0;font-weight:bold;">${safeEmail}</p>
+        </td>
+      </tr>
+    </table>
     <p>以下のリンクよりログインし、サービスをご利用ください。</p>
     <p style="margin:20px 0;">
       <a href="${loginUrl}" style="display:inline-block;padding:12px 24px;background:#0066cc;color:#fff;text-decoration:none;border-radius:4px;">ログインはこちら</a>
