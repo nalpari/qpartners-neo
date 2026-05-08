@@ -73,7 +73,7 @@ const menus2UnderMypage = [
 // 역할 (authRole enum 과 1:1)
 const roles = [
   { roleCode: "SUPER_ADMIN", roleName: "スーパー管理者",   description: "全メニュー CRUD 許可" },
-  { roleCode: "ADMIN",       roleName: "管理者",           description: "管理メニュー操作可（権限・メニュー・コードの更新/削除は不可）" },
+  { roleCode: "ADMIN",       roleName: "管理者",           description: "管理メニュー全CRUD許可" },
   { roleCode: "1ST_STORE",   roleName: "1次販売店",        description: "一般メニュー閲覧のみ" },
   { roleCode: "2ND_STORE",   roleName: "2次販売店",        description: "一般メニュー閲覧のみ" },
   { roleCode: "SEKO",        roleName: "施工店",           description: "一般メニュー閲覧のみ" },
@@ -82,8 +82,7 @@ const roles = [
 
 // 권한 매트릭스 분류 (2-Level 메뉴는 `ADM_` prefix)
 // GENERAL_MENUS: 비관리자도 read 가능 (HOME/CONTENT/INQUIRY/MYPAGE 및 그 하위 열람 메뉴)
-// ADMIN_FULL_MENUS: ADMIN 전체 CRUD — CONTENT 계열은 사내 콘텐츠 작성 권한 포함
-// ADMIN_RESTRICTED_MENUS: ADMIN 은 read only, CUD 는 SUPER_ADMIN 전용
+// ADMIN_FULL_MENUS: ADMIN 전체 CRUD
 const GENERAL_MENUS = [
   "HOME", "CONTENT", "INQUIRY", "MYPAGE",
   "CONT_LIST", "INQ_FORM",
@@ -91,9 +90,9 @@ const GENERAL_MENUS = [
 ];
 const ADMIN_FULL_MENUS = [
   "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
+  "ADM_PERMISSION", "ADM_MENU", "ADM_CODE",
   "CONTENT", "CONT_LIST", "CONT_CREATE",
 ];
-const ADMIN_RESTRICTED_MENUS = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"];
 const ALL_MENU_CODES = [
   ...menus1.map((m) => m.menuCode),
   ...menus2UnderAdmin.map((m) => m.menuCode),
@@ -104,16 +103,13 @@ const ALL_MENU_CODES = [
 
 /**
  * 역할별 메뉴 권한 매트릭스 생성.
- * - SUPER_ADMIN: 전체 메뉴 CRUD (fail-open)
+ * - SUPER_ADMIN: 전체 메뉴 CRUD
  * - ADMIN:
- *   · MEMBERS / BULK_MAIL / NOTICES / CATEGORIES / CONTENT — 전체 CRUD (ADMIN_FULL_MENUS)
- *   · PERMISSIONS / MENUS / CODES — read only, create/update/delete 전부 false (ADMIN_RESTRICTED_MENUS)
+ *   · 관리 메뉴 전체 CRUD (ADMIN_FULL_MENUS)
  *   · HOME / INQUIRY / MYPAGE / ADMIN(parent) — 네비게이션용 read
  * - 1ST_STORE / 2ND_STORE / SEKO / GENERAL:
  *   · HOME / CONTENT / INQUIRY / MYPAGE — read only (GENERAL_MENUS)
  *   · 관리 메뉴 전체 — 모든 플래그 false
- * - Lockout: PERMISSIONS.canUpdate 는 SUPER_ADMIN 만 true. API (PUT /api/roles/:rc/permissions) 에서도
- *   상승 시도 차단하여 이중화.
  */
 function buildPermissions(roleCode) {
   return ALL_MENU_CODES.map((menuCode) => {
@@ -121,9 +117,6 @@ function buildPermissions(roleCode) {
       return { menuCode, canRead: true, canCreate: true, canUpdate: true, canDelete: true };
     }
     if (roleCode === "ADMIN") {
-      if (ADMIN_RESTRICTED_MENUS.includes(menuCode)) {
-        return { menuCode, canRead: true, canCreate: false, canUpdate: false, canDelete: false };
-      }
       if (ADMIN_FULL_MENUS.includes(menuCode)) {
         return { menuCode, canRead: true, canCreate: true, canUpdate: true, canDelete: true };
       }
