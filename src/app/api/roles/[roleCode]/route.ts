@@ -12,7 +12,7 @@ import {
 
 type Params = { params: Promise<{ roleCode: string }> };
 
-// PUT /api/roles/:roleCode — 권한 수정 (ADM_PERMISSION.update — SUPER_ADMIN 전용)
+// PUT /api/roles/:roleCode — 권한 수정 (ADM_PERMISSION.update 매트릭스 가드)
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "update");

@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/roles — 권한 추가 (ADM_PERMISSION.create — SUPER_ADMIN 전용, ADMIN 은 403)
+// POST /api/roles — 권한 추가 (ADM_PERMISSION.create 매트릭스 가드)
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "create");

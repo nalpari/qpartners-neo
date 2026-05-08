@@ -47,7 +47,8 @@ const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 export type UserInfo = {
   userType: (typeof userTpValues)[number];
   userId: string;
-  role: AuthRole;
+  /** 6 기본 AuthRole 또는 운영자 정의 동적 권한코드 (Target Dynamic from Role). */
+  role: string;
   name?: string;
   department?: string;
 };
@@ -78,7 +79,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   return {
     userType: userType as UserInfo["userType"],
     userId,
-    role: role as AuthRole,
+    role,
     name: rawName ? safeDecodeHeader(rawName) : undefined,
     department: rawDepartment ? safeDecodeHeader(rawDepartment) : undefined,
   };
@@ -104,31 +105,6 @@ export function requireAdmin(headers: Headers): { user: UserInfo } | NextRespons
   if (!isAdmin(user.role)) {
     return NextResponse.json(
       { error: "管理者権限が必要です" },
-      { status: 403 },
-    );
-  }
-  return { user };
-}
-
-/**
- * SUPER_ADMIN 전용 가드. 미인증 401, ADMIN 포함 SUPER_ADMIN 이외 403.
- *
- * 용도: 권한 매트릭스 변경과 같이 ADMIN 조차 수행해서는 안 되는 상위 운영 동작.
- * `requireAdmin` 은 SUPER_ADMIN || ADMIN 둘 다 통과시키므로 이 경로 전용으로 분리한다.
- */
-export function requireSuperAdmin(
-  headers: Headers,
-): { user: UserInfo } | NextResponse {
-  const user = getUserFromHeaders(headers);
-  if (!user) {
-    return NextResponse.json(
-      { error: "認証が必要です" },
-      { status: 401 },
-    );
-  }
-  if (user.role !== "SUPER_ADMIN") {
-    return NextResponse.json(
-      { error: "スーパー管理者権限が必要です" },
       { status: 403 },
     );
   }
@@ -291,7 +267,11 @@ export async function resolveAuthRole(
  * - 6 기본 권한 (isSystem=true) + 운영자 정의 활성 추가 권한 (isSystem=false AND isActive=true)
  * - JWT 검증, 게시대상 등록 검증, 회원관리 권한 변경 검증 모두 공유
  * - 프로세스 내 TTL 캐시 (60초) — 준정적 데이터이므로 per-request DB 조회 불필요.
- *   권한 변경 시 invalidateActiveRoleCache() 호출로 즉시 갱신.
+ *   권한 변경 시 invalidateActiveRoleCache() 호출로 동일 프로세스 내 즉시 갱신.
+ *
+ * ⚠ 단일 인스턴스 전제: 멀티 인스턴스(수평 스케일) 배포 시 다른 인스턴스의 캐시는
+ *   invalidate 되지 않으므로 최대 60초간 stale 데이터 사용 가능. 스케일아웃 시
+ *   Redis 기반 분산 캐시 무효화 또는 TTL 단축 검토 필요.
  */
 let _activeRoleCache: { codes: Set<string>; expiry: number } | null = null;
 const ROLE_CACHE_TTL = 60_000;
