@@ -37,40 +37,43 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
   // 단 옵션이 동적 길이라 grid 자동 wrapping.
   return (
     <>
-      {/* PC: 가로 셀 나열 (자동 wrapping) */}
+      {/* PC: th 한 줄 + td 5열 grid (옵션 6개 이상이면 아래 줄로 wrap) */}
       <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[1440px]">
-        <div className="flex gap-1 flex-wrap">
-          {/* Th: 投稿対象 */}
-          <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 self-stretch">
+        <div className="flex gap-1">
+          {/* Th: 投稿対象 — self-stretch 로 td grid 전체 높이만큼 늘어남 */}
+          <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-3 self-stretch">
             <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap">
               投稿対象
             </span>
           </div>
-          {allOptions.map((opt) => {
-            const key = opt.roleCode ?? "__NON_MEMBER__";
-            const matched = targetMap.get(key);
-            const active = !!matched;
+          {/* Td: 한 줄당 5칸, 옵션이 6개 이상이면 아래 줄로 자동 블록 배치 */}
+          <div className="flex-1 grid grid-cols-5 gap-1">
+            {allOptions.map((opt) => {
+              const key = opt.roleCode ?? "__NON_MEMBER__";
+              const matched = targetMap.get(key);
+              const active = !!matched;
 
-            return (
-              <div
-                key={key}
-                className="flex flex-col gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 self-stretch justify-center w-[254px] shrink-0 py-3"
-              >
-                <span
-                  className={`inline-flex items-center justify-center self-start px-2 py-[2px] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] truncate ${
-                    active
-                      ? "bg-[#EFF7FF] text-[#1060B4] font-medium"
-                      : "bg-[#F3F3F3] text-[#101010] font-normal"
-                  }`}
+              return (
+                <div
+                  key={key}
+                  className="flex flex-col gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 justify-center py-3"
                 >
-                  {opt.label}
-                </span>
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
-                  {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}
-                </p>
-              </div>
-            );
-          })}
+                  <span
+                    className={`inline-flex items-center justify-center self-start px-2 py-[2px] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] truncate ${
+                      active
+                        ? "bg-[#EFF7FF] text-[#1060B4] font-medium"
+                        : "bg-[#F3F3F3] text-[#101010] font-normal"
+                    }`}
+                  >
+                    {opt.label}
+                  </span>
+                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
+                    {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
