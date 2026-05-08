@@ -15,12 +15,16 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
             // 테이블 등이 깜빡이며 재조회되는 현상 방지. 명시적 갱신은 invalidateQueries
             // 또는 개별 useQuery 옵션(refetchOnWindowFocus: true)으로 활성화.
             refetchOnWindowFocus: false,
-            // 401(인증 부재)은 retry 해도 결과가 바뀌지 않으므로 즉시 중단.
-            // default 3회 retry 가 동작하면 다중 게이트 query 병렬 발사 시 같은 401 이 폭주하여
-            // axios 응답 인터셉터(src/lib/axios.ts)의 dispatch 가 누적될 수 있다.
-            // 401 외 에러는 default 3회 retry 유지.
+            // 4xx 클라이언트 에러는 retry 해도 결과가 바뀌지 않으므로 즉시 중단.
+            // - 401(인증 부재): 다중 게이트 query 병렬 발사 시 axios 인터셉터 dispatch 누적 방지
+            // - 403(권한 부족) / 404(없음): 비회원이 비공개 콘텐츠 접근 시 4번씩 호출되던 문제 차단
+            // - 기타 4xx(400/422 등): 입력/상태 문제라 retry 무의미
+            // 5xx 또는 네트워크 에러는 default 3회 retry 유지 (일시적 장애 복구 여지).
             retry: (failureCount, error) => {
-              if (axios.isAxiosError(error) && error.response?.status === 401) return false;
+              if (axios.isAxiosError(error)) {
+                const status = error.response?.status;
+                if (status && status >= 400 && status < 500) return false;
+              }
               return failureCount < 3;
             },
           },
