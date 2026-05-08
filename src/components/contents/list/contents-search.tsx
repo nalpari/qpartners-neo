@@ -222,7 +222,7 @@ export function ContentsSearch({
                   </span>
                 </div>
                 <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
-                  <div className="w-full lg:max-w-[300px]">
+                  <div className="w-full lg:max-w-[460px]">
                     <SelectBox
                       options={POST_TARGET_OPTIONS}
                       value={postTarget}
