@@ -1,3 +1,4 @@
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
 import { escapeHtml } from "@/lib/mail-templates/utils";
 
 interface PasswordResetMailParams {
@@ -31,13 +32,7 @@ export function passwordResetMailHtml({
     <p style="color:#666;font-size:12px;">※セキュリティ保護のため、本リンクは一定時間経過後に無効となります。</p>
     <p>よろしくお願いいたします。</p>
     <p style="font-size:11px;color:#999;">
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
-      ハンファジャパン株式会社<br>
-      Q.PARTNERS事務局<br>
-      Tel:03-5441-5976<br>
-      Email : q-partners@hqj.co.jp<br>
-      問い合わせ受付時間：平日10：00-12：00 13：00-17：00<br>
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>
 </table>
