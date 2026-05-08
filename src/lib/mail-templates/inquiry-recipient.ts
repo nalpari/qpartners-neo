@@ -1,3 +1,4 @@
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
 import { escapeHtml } from "@/lib/mail-templates/utils";
 
 interface InquiryRecipientMailParams {
@@ -12,7 +13,7 @@ interface InquiryRecipientMailParams {
 
 // 담당자/작성자 메일 제목 구분을 위해 담당자용에는 "【新規】" 접두사를 부여한다
 export const INQUIRY_RECIPIENT_SUBJECT =
-  "【Q.PARTNERS】お問い合わせを受け付けました";
+  "【新規】【Q.PARTNERS】お問い合わせを受け付けました";
 
 /**
  * 수신 담당자용 문의 알림 메일 HTML 템플릿 (화면설계서 p.42-43, design 2장)
@@ -32,7 +33,7 @@ export function inquiryRecipientMailHtml(params: InquiryRecipientMailParams): st
 <html lang="ja">
 <head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:20px;">
   <tr><td>
     <p>Q.PARTNERS事務局 ご担当者様</p>
     <p>お問い合わせフォームから新規のお問い合わせを受け付けましたのでご連絡いたします。<br>
@@ -50,14 +51,8 @@ export function inquiryRecipientMailHtml(params: InquiryRecipientMailParams): st
 
     <p>よろしくお願いいたします。</p>
 
-    <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="font-size:11px;color:#999;">
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
-      ハンファジャパン株式会社<br>
-      Q.PARTNERS事務局<br>
-      Tel:03-5441-5976<br>
-      Email : q-partners@hqj.co.jp<br>
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>
 </table>
