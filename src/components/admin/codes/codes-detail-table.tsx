@@ -10,7 +10,7 @@ import type { DetailGridRow } from "./codes-types";
 
 // 편집 불가 필드 — headerCode·code(생성 후 불변, 신규행 입력만 허용).
 // 使用可否(isActive) 는 native <select> 로 즉시 토글 가능.
-const NON_EDITABLE_FIELDS = new Set(["headerCode", "code", "displayCode"]);
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "code"]);
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -118,18 +118,6 @@ function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
   }
   if (data.editingField === field) {
     return <CellInput defaultValue={String(params.value ?? "")} placeholder="" onChange={(v) => ctx.onEditFieldChange(field, v)} onKeyDown={ctx.onKeyDown} />;
-  }
-  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
-}
-
-// displayCode — 항상 읽기 전용. 신규행에서는 자동 생성된 값(headerAlias + 3자리 seq) 표시.
-function DisplayCodeRendererFn(params: ICellRendererParams<DetailGridRow>) {
-  const data = params.data;
-  if (!data) return null;
-  const ctx = params.context as DetailGridContext;
-  if (data.isNew) {
-    const autoCode = ctx.newRowFieldsRef.current.displayCode ?? "";
-    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">{autoCode}</span>;
   }
   return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
 }
@@ -277,12 +265,12 @@ export function CodesDetailTable({
   const columnDefs = useMemo<ColDef<DetailGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeCellRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
     { headerName: "Code", field: "code", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("code"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: DisplayCodeRendererFn, cellStyle: centerCellStyle, headerClass: "ag-header-cell-center" },
+    { headerName: "Display Code", field: "displayCode", flex: 0.8, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("displayCode"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Code Name", field: "codeName", flex: 1.5, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeName"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Code Name\n(etc.)", field: "codeNameEtc", flex: 1, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("codeNameEtc"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
-    { headerName: "Rel\nCode3", field: "relCode3", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relCode3"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Rel\nNum1", field: "relNum1", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("relNum1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Sort\nOrder", field: "sortOrder", flex: 0.6, cellRenderer: EditableCellRendererFn, cellStyle: makeEditableCellStyle("sortOrder"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "使用可否", field: "isActive", flex: 0.8, cellRenderer: ActiveSelectRendererFn, cellStyle: ACTIVE_CELL_STYLE, headerClass: "ag-header-cell-center" },
   ], []);

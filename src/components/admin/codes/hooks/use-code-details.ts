@@ -10,7 +10,6 @@ import { EMPTY_DETAIL_FIELDS } from "../codes-types";
 interface UseCodeDetailsOptions {
   selectedHeaderId: number | null;
   selectedHeaderCode: string;
-  selectedHeaderAlias: string;
 }
 
 /**
@@ -30,7 +29,7 @@ interface UseCodeDetailsOptions {
  * - mutation 실패 시 신규행 state는 정리하지 않고 그대로 유지 (retry-friendly)
  * - 호출측이 에러 alert를 띄운 뒤 같은 행을 재시도 가능
  */
-export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias }: UseCodeDetailsOptions) {
+export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCodeDetailsOptions) {
   const queryClient = useQueryClient();
 
   const [detailActiveOnly, setDetailActiveOnly] = useState(true);
@@ -65,7 +64,7 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
         codeNameEtc: data.codeNameEtc || null,
         relCode1: data.relCode1 || null,
         relCode2: data.relCode2 || null,
-        relCode3: data.relCode3 || null,
+        relNum1: data.relNum1 || null,
         sortOrder: data.sortOrder ? Number(data.sortOrder) : 0,
       };
       return api.post(`/codes/${selectedHeaderId}/details`, body);
@@ -99,36 +98,23 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
     // BE 가 자동 shift 하므로 충돌해도 안전하지만, 끝번호로 두면 무의미한 shift 회피 + UX 명확.
     const maxSort = detailsRaw.reduce((acc, d) => Math.max(acc, d.sortOrder), 0);
     const nextSort = maxSort + 1;
-    // displayCode 자동 생성 — headerAlias + 3자리 seq
-    // 기존 displayCode 에서 headerAlias 접두사를 가진 것 중 최대 seq 추출
-    let maxSeq = 0;
-    const prefix = selectedHeaderAlias.toUpperCase();
-    for (const d of detailsRaw) {
-      if (d.displayCode.startsWith(prefix)) {
-        const seqStr = d.displayCode.slice(prefix.length);
-        const seq = Number(seqStr);
-        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-      }
-    }
-    const nextSeq = maxSeq + 1;
-    const autoDisplayCode = prefix ? `${prefix}${String(nextSeq).padStart(3, "0")}` : "";
-    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort), displayCode: autoDisplayCode };
+    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort) };
     setDetailNewRow({
       id: `new-${Date.now()}`,
       headerId: String(selectedHeaderId),
       headerCode: selectedHeaderCode,
       code: "",
-      displayCode: autoDisplayCode,
+      displayCode: "",
       codeName: "",
       codeNameEtc: "",
       relCode1: "",
       relCode2: "",
-      relCode3: "",
+      relNum1: "",
       sortOrder: nextSort,
       isActive: "Y",
       isNew: true,
     });
-  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, detailsRaw]);
+  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, detailsRaw]);
 
   const handleDetailCancelAdd = useCallback(() => {
     setDetailNewRow(null);
