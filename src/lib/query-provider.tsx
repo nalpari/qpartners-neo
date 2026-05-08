@@ -19,13 +19,14 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
             // - 401(인증 부재): 다중 게이트 query 병렬 발사 시 axios 인터셉터 dispatch 누적 방지
             // - 403(권한 부족) / 404(없음): 비회원이 비공개 콘텐츠 접근 시 4번씩 호출되던 문제 차단
             // - 기타 4xx(400/422 등): 입력/상태 문제라 retry 무의미
-            // 5xx 또는 네트워크 에러는 default 3회 retry 유지 (일시적 장애 복구 여지).
+            // 5xx 또는 네트워크 에러는 1회만 retry (총 2회 호출) — 일시 장애 흡수와
+            // 서버 부하 절감의 균형점. default 3회는 동일 장애 시 4배 트래픽이라 과함.
             retry: (failureCount, error) => {
               if (axios.isAxiosError(error)) {
                 const status = error.response?.status;
                 if (status && status >= 400 && status < 500) return false;
               }
-              return failureCount < 3;
+              return failureCount < 1;
             },
           },
         },
