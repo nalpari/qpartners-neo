@@ -56,6 +56,7 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
 
   // Detail 등록 mutation
   // isActive는 클라이언트에서 전송하지 않고 서버 Zod 기본값(.default(true))에 위임 — 신규 코드는 활성 상태로 생성
+  // relNum1 은 Detail UI 에서 deprecated 됐지만 BE 스키마에는 살아있어 명시적 null 로 전송한다.
   const detailCreateMutation = useMutation({
     mutationFn: async (data: Record<string, string>) => {
       const body = {
@@ -66,6 +67,7 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
         relCode1: data.relCode1 || null,
         relCode2: data.relCode2 || null,
         relCode3: data.relCode3 || null,
+        relNum1: null,
         sortOrder: data.sortOrder ? Number(data.sortOrder) : 0,
       };
       return api.post(`/codes/${selectedHeaderId}/details`, body);
@@ -93,25 +95,38 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
     },
   });
 
+  // displayCode 자동 생성 가능 여부 — prefix 가 영문 3자리일 때만 발급. CodesContents 가
+  // 「追加」 버튼 disabled / 안내 alert 분기에 사용한다.
+  const canAddDetail = /^[A-Z]{3}$/.test(selectedHeaderAlias.toUpperCase());
+
   const handleDetailAdd = useCallback(() => {
     if (detailNewRow || !selectedHeaderId) return;
+    // headerAlias 미설정/비정상 → 자동 displayCode 발급 불가 → 추가 차단 (방어층).
+    // CodesContents 의 wrapping handler 가 사용자에게 안내 alert 노출.
+    const prefix = selectedHeaderAlias.toUpperCase();
+    if (!/^[A-Z]{3}$/.test(prefix)) return;
+
     // 기본 sortOrder: 현재 detailsRaw 중 max(sortOrder) + 1 (append 의도).
     // BE 가 자동 shift 하므로 충돌해도 안전하지만, 끝번호로 두면 무의미한 shift 회피 + UX 명확.
     const maxSort = detailsRaw.reduce((acc, d) => Math.max(acc, d.sortOrder), 0);
     const nextSort = maxSort + 1;
-    // displayCode 자동 생성 — headerAlias + 3자리 seq
-    // 기존 displayCode 에서 headerAlias 접두사를 가진 것 중 최대 seq 추출
+
+    // displayCode 자동 생성 — `<prefix><3자리 seq>` 정확 매칭으로 maxSeq 추출.
+    // startsWith 부분 매칭은 alias 축소(USR→US)·legacy 4자리 seq 등에서 NaN/오버플로 위험.
+    const seqPattern = new RegExp(`^${prefix}(\\d{3})$`);
     let maxSeq = 0;
-    const prefix = selectedHeaderAlias.toUpperCase();
     for (const d of detailsRaw) {
-      if (d.displayCode.startsWith(prefix)) {
-        const seqStr = d.displayCode.slice(prefix.length);
-        const seq = Number(seqStr);
-        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-      }
+      const m = seqPattern.exec(d.displayCode);
+      if (!m) continue;
+      const seq = Number(m[1]);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
     }
     const nextSeq = maxSeq + 1;
-    const autoDisplayCode = prefix ? `${prefix}${String(nextSeq).padStart(3, "0")}` : "";
+
+    // 999 상한 — 사양상 "3자리 seq" 보장. 초과 시 빈 displayCode 로 두면 handleSave
+    // 신규행 검증(displayCode 필수)에서 막혀 사용자에게 명확한 alert 노출.
+    const autoDisplayCode = nextSeq > 999 ? "" : `${prefix}${String(nextSeq).padStart(3, "0")}`;
+
     detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort), displayCode: autoDisplayCode };
     setDetailNewRow({
       id: `new-${Date.now()}`,
@@ -156,6 +171,8 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedH
     // 신규행
     detailNewRow,
     detailNewRowRef,
+    // 가드 — CodesContents 가 「追加」 버튼 disabled / 안내 alert 분기에 사용
+    canAddDetail,
     // 핸들러
     handleDetailAdd,
     handleDetailCancelAdd,

@@ -8,9 +8,13 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { HeaderGridRow } from "./codes-types";
 
-// 편집 불가 필드 — 첫번째 컬럼(headerCode, detail 진입 링크) 만.
+// 편집 불가 필드 — headerCode(detail 진입 링크), headerAlias(기존행 displayCode 정합성 보호).
+// headerAlias 변경 시 발급된 displayCode(`alias + 3자리 seq`) 가 비동기화되어 같은 헤더에
+// 이전 alias 와 새 alias 가 혼재한 상태가 된다. 외부 시스템이 displayCode 를 외래키처럼 참조할
+// 수 있어 일괄 cascade 가 도입되기 전에는 기존행 alias 편집을 봉쇄한다 (보수적 정책).
+// 신규행은 isNew 분기로 별도 input 노출.
 // 使用可否(isActive) 는 native <select> 로 즉시 토글 가능.
-const NON_EDITABLE_FIELDS = new Set(["headerCode"]);
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "headerAlias"]);
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -112,6 +116,10 @@ type HeaderGridContext = {
 /**
  * 영문 전용 입력 — 비영문 문자를 제거하고 대문자로 변환.
  * allowUnderscore=true 시 언더바(_)도 허용 (headerCode 용).
+ *
+ * IME 가드 — 일본어/한국어 IME 조합 중에는 필터링/DOM 보정을 미루고 compositionEnd
+ * 시점에 한 번에 처리한다. 조합 중 input.value 를 덮으면 조합이 강제 종료되거나
+ * 문자가 잘리는 현상 회피.
  */
 function EnglishOnlyCellInput({
   defaultValue,
@@ -129,6 +137,7 @@ function EnglishOnlyCellInput({
   onKeyDown?: (e: React.KeyboardEvent) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
@@ -136,19 +145,34 @@ function EnglishOnlyCellInput({
 
   const pattern = allowUnderscore ? /[^a-zA-Z_]/g : /[^a-zA-Z]/g;
 
+  // 필터링 + DOM 보정 + 부모 통지를 한 함수로 합쳐 IME 분기에서 재사용.
+  const applyFilter = (raw: string) => {
+    let filtered = raw.replace(pattern, "").toUpperCase();
+    if (maxLength) filtered = filtered.slice(0, maxLength);
+    const el = ref.current;
+    if (el && el.value !== filtered) {
+      el.value = filtered;
+    }
+    onChange(filtered);
+  };
+
   return (
     <input
       ref={ref}
       type="text"
       defaultValue={defaultValue}
       maxLength={maxLength}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false;
+        applyFilter(e.currentTarget.value);
+      }}
       onChange={(e) => {
-        let filtered = e.target.value.replace(pattern, "").toUpperCase();
-        if (maxLength) filtered = filtered.slice(0, maxLength);
-        if (e.target.value !== filtered) {
-          e.target.value = filtered;
-        }
-        onChange(filtered);
+        // 조합 중 onChange 는 IME buffer 표시용 — 필터링 미루기.
+        if (composingRef.current) return;
+        applyFilter(e.target.value);
       }}
       onKeyDown={(e) => {
         if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
@@ -193,8 +217,8 @@ function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
 }
 
 /**
- * headerAlias(Header Id) — 영문 3자리, 입력 시 대문자 변환.
- * 신규행: input, 기존행: 더블클릭 편집 시 input.
+ * headerAlias(Header Id) — 신규행만 영문 3자리 input 노출.
+ * 기존행은 displayCode 정합성 보호를 위해 편집 봉쇄(NON_EDITABLE_FIELDS) — 텍스트만 표시.
  */
 function HeaderAliasRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   const data = params.data;
@@ -207,17 +231,6 @@ function HeaderAliasRendererFn(params: ICellRendererParams<HeaderGridRow>) {
         placeholder=""
         maxLength={3}
         onChange={(v) => ctx.onNewRowFieldChange("headerAlias", v)}
-      />
-    );
-  }
-  if (data.editingField === "headerAlias") {
-    return (
-      <EnglishOnlyCellInput
-        defaultValue={String(params.value ?? "")}
-        placeholder=""
-        maxLength={3}
-        onChange={(v) => ctx.onEditFieldChange("headerAlias", v)}
-        onKeyDown={ctx.onKeyDown}
       />
     );
   }

@@ -123,13 +123,12 @@ function EditableCellRendererFn(params: ICellRendererParams<DetailGridRow>) {
 }
 
 // displayCode — 항상 읽기 전용. 신규행에서는 자동 생성된 값(headerAlias + 3자리 seq) 표시.
+// state 기반(data.displayCode) 으로 읽어 React Compiler `refs` 규칙(렌더 중 ref 읽기 지양) 준수.
 function DisplayCodeRendererFn(params: ICellRendererParams<DetailGridRow>) {
   const data = params.data;
   if (!data) return null;
-  const ctx = params.context as DetailGridContext;
   if (data.isNew) {
-    const autoCode = ctx.newRowFieldsRef.current.displayCode ?? "";
-    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">{autoCode}</span>;
+    return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#999]">{data.displayCode ?? ""}</span>;
   }
   return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
 }
@@ -185,6 +184,10 @@ interface CodesDetailTableProps {
   hasNewRow: boolean;
   isLoading?: boolean;
   editingCell: { rowId: string; field: string } | null;
+  /**
+   * 「追加」 클릭 — 부모(CodesContents)의 wrapping handler 가 headerAlias 미설정 시
+   * 안내 alert 후 silent return, 정상이면 detail 신규행 생성.
+   */
   onAdd: () => void;
   onCancelAdd: () => void;
   onCellEditStart: (rowId: string, field: string) => void;

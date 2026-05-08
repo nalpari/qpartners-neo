@@ -74,7 +74,9 @@ export function toDetailGridRow(row: CodeDetailResponse, headerCode: string): De
 }
 
 // nullable 필드 상수 (Craftsman)
-export const DETAIL_NULLABLE_FIELDS = ["relCode1", "relCode2", "relCode3", "codeNameEtc"] as const;
+// relNum1 — Detail UI 컬럼은 제거됐지만 BE 스키마(decimalFieldUpdate)에는 살아있어
+// 어떤 경로로든 pending 에 빈 문자열이 들어오는 회귀를 막기 위해 nullable 폴백 유지.
+export const DETAIL_NULLABLE_FIELDS = ["relCode1", "relCode2", "relCode3", "relNum1", "codeNameEtc"] as const;
 export const HEADER_NULLABLE_FIELDS = ["relCode1", "relCode2", "relCode3", "relNum1", "relNum2", "relNum3"] as const;
 export const HEADER_NUMERIC_FIELDS = ["relNum1", "relNum2", "relNum3"] as const;
 export const DETAIL_NUMERIC_FIELDS = ["sortOrder"] as const;

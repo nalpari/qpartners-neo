@@ -180,6 +180,8 @@ export function CodesContents() {
     detailCreateMutation,
     detailUpdateMutation,
     resetDetailNewRow,
+    canAddDetail,
+    handleDetailAdd: rawHandleDetailAdd,
   } = details;
   const {
     editingCell,
@@ -192,6 +194,20 @@ export function CodesContents() {
     clearPending: clearDetailPending,
     discardRowPending: discardDetailRowPending,
   } = detailEdit;
+
+  // Detail 추가 — headerAlias 미설정 시 안내 alert 노출하고 추가 차단.
+  // displayCode 가 「alias + 3자리 seq」 구조라 prefix 없이는 자동 발급 불가.
+  const handleDetailAddWithGuard = useCallback(() => {
+    if (!canAddDetail) {
+      openAlert({
+        type: "alert",
+        message: "Header Id を先に登録してください。",
+        confirmLabel: "確認",
+      });
+      return;
+    }
+    rawHandleDetailAdd();
+  }, [canAddDetail, rawHandleDetailAdd, openAlert]);
   const {
     editingCell: headerEditingCell,
     detailEditRef: headerEditRef,
@@ -356,49 +372,47 @@ export function CodesContents() {
         }
       }
 
-      // 1) 신규행 — Header
+      // 1) 신규행 — Header (state 직접 변형 금지: ref 객체를 cleaned 사본으로 분리)
+      let cleanedHeaderNew: Record<string, string> | null = null;
       if (headerNewRow) {
-        const f = headerNewRowRef.current;
-        if (!f.headerCode || !f.headerAlias || !f.headerName) {
+        const raw = headerNewRowRef.current;
+        if (!raw.headerCode || !raw.headerAlias || !raw.headerName) {
           throw new ValidationError("Header Code、Header Id、Header Code Nameは必須です。");
         }
-        // headerCode 대문자 강제 변환 (영문 + 언더바 허용)
-        f.headerCode = f.headerCode.replace(/[^a-zA-Z_]/g, "").toUpperCase();
+        // 영문+언더바 정규화 — paste/외부 자동입력으로 비영문이 들어와도 변환 후 빈 문자열은 차단.
+        const normalizedCode = raw.headerCode.replace(/[^a-zA-Z_]/g, "").toUpperCase();
+        if (!normalizedCode) {
+          throw new ValidationError("Header Code は半角英字または下線で入力してください。");
+        }
         // headerCode 중복 체크
         const isCodeDuplicate = headers.headersRaw.some(
-          (h) => h.headerCode.toUpperCase() === f.headerCode,
+          (h) => h.headerCode.toUpperCase() === normalizedCode,
         );
         if (isCodeDuplicate) {
           throw new ValidationError("既に存在するHeader Codeです。");
         }
-        // headerAlias 대문자 강제 변환 + 영문 3자리 검증
-        f.headerAlias = f.headerAlias.replace(/[^a-zA-Z]/g, "").toUpperCase();
-        if (f.headerAlias.length !== 3) {
-          throw new ValidationError("Header Idは英文字3桁で入力してください。");
+        // headerAlias 정규화 + 빈 문자열 가드 + 영문 3자리 검증
+        const normalizedAlias = raw.headerAlias.replace(/[^a-zA-Z]/g, "").toUpperCase();
+        if (!normalizedAlias) {
+          throw new ValidationError("Header Id は半角英字3文字で入力してください。");
         }
-        // headerAlias 중복 체크
+        if (normalizedAlias.length !== 3) {
+          throw new ValidationError("Header Id は半角英字3文字で入力してください。");
+        }
+        // headerAlias 중복 체크 (기존 headers 와 비교)
         const isAliasDuplicate = headers.headersRaw.some(
-          (h) => h.headerAlias.toUpperCase() === f.headerAlias,
+          (h) => h.headerAlias.toUpperCase() === normalizedAlias,
         );
         if (isAliasDuplicate) {
           throw new ValidationError("既に存在するHeader Idです。");
         }
-        try {
-          await headerCreateMutation.mutateAsync(f);
-        } catch (err: unknown) {
-          throwWithStage(err, "Header登録");
-        }
+        cleanedHeaderNew = { ...raw, headerCode: normalizedCode, headerAlias: normalizedAlias };
       }
       // 1) 신규행 — Detail
       if (detailNewRow) {
         const f = detailNewRowRef.current;
         if (!f.code || !f.displayCode || !f.codeName) {
           throw new ValidationError("Code、Display Code、Code Nameは必須です。");
-        }
-        try {
-          await detailCreateMutation.mutateAsync(f);
-        } catch (err: unknown) {
-          throwWithStage(err, "Detail登録");
         }
       }
 
@@ -410,32 +424,72 @@ export function CodesContents() {
       // 3) Header pending 일괄 저장 — 행별 PUT (필드 변환은 convertHeaderField).
       //    closure 의 headerPending 은 이전 셀 전환 시 commitEdit 으로 누적된 분만 포함하므로,
       //    현재 편집중인 셀의 입력값은 ref 에서 직접 추출해 머지한다.
-      const headerExtra: Record<string, Record<string, string>> = {};
+      //    headerPending state 직접 변형 방지를 위해 모든 row 의 fields 객체를 사본으로 분리.
+      const headerJobs: Record<string, Record<string, string>> = Object.fromEntries(
+        Object.entries(headerPending).map(([k, v]) => [k, { ...v }]),
+      );
       if (headerEditingCell && !headerEditingCell.rowId.startsWith("new-")) {
         const v = headerEditRef.current[headerEditingCell.field];
         if (v !== undefined) {
-          headerExtra[headerEditingCell.rowId] = { [headerEditingCell.field]: v };
+          headerJobs[headerEditingCell.rowId] = {
+            ...headerJobs[headerEditingCell.rowId],
+            [headerEditingCell.field]: v,
+          };
         }
       }
-      const headerJobs: Record<string, Record<string, string>> = { ...headerPending };
-      for (const [rowId, fields] of Object.entries(headerExtra)) {
-        headerJobs[rowId] = { ...headerJobs[rowId], ...fields };
-      }
-      // 기존행 수정 시 headerAlias 중복 체크 — PUT 전 일괄 검증
-      for (const [rowId, fields] of Object.entries(headerJobs)) {
+      // 기존행 headerAlias 편집은 UI 에서 봉쇄(NON_EDITABLE_FIELDS)되어 이 분기는 dead path.
+      // 안전망 — 향후 cascade 정책이 도입되어 alias 편집이 풀릴 때 대비한 정규화/검증 유지.
+      for (const fields of Object.values(headerJobs)) {
         if (fields.headerAlias) {
           const newAlias = fields.headerAlias.replace(/[^a-zA-Z]/g, "").toUpperCase();
-          if (newAlias.length !== 3) {
-            throw new ValidationError("Header Idは英文字3桁で入力してください。");
+          if (!newAlias) {
+            throw new ValidationError("Header Id は半角英字3文字で入力してください。");
           }
-          // 자기 자신을 제외하고 동일 headerAlias 존재 여부 체크
-          const aliasConflict = headers.headersRaw.some(
-            (h) => String(h.id) !== rowId && h.headerAlias.toUpperCase() === newAlias,
-          );
-          if (aliasConflict) {
-            throw new ValidationError("既に存在するHeader Idです。");
+          if (newAlias.length !== 3) {
+            throw new ValidationError("Header Id は半角英字3文字で入力してください。");
           }
           fields.headerAlias = newAlias;
+        }
+      }
+
+      // batch 충돌 검출 — 같은 저장 단위에서 신규행 + 기존행 alias 중복 차단.
+      // 기존 headers 와 비교는 신규행 검증 단계에서 수행됐으므로 여기서는 batch 내부만 본다.
+      {
+        const aliasesInBatch = new Map<string, string>(); // alias -> rowId
+        if (cleanedHeaderNew?.headerAlias) {
+          aliasesInBatch.set(cleanedHeaderNew.headerAlias, "__new__");
+        }
+        for (const [rowId, fields] of Object.entries(headerJobs)) {
+          const a = fields.headerAlias;
+          if (!a) continue;
+          // 자기 자신을 제외하고 기존 headers 와 비교
+          const aliasConflictExisting = headers.headersRaw.some(
+            (h) => String(h.id) !== rowId && h.headerAlias.toUpperCase() === a,
+          );
+          if (aliasConflictExisting) {
+            throw new ValidationError("既に存在するHeader Idです。");
+          }
+          if (aliasesInBatch.has(a)) {
+            throw new ValidationError("既に存在するHeader Idです。");
+          }
+          aliasesInBatch.set(a, rowId);
+        }
+      }
+
+      // 신규행 Header create — 정규화·중복 검증 모두 통과한 시점에 호출.
+      if (cleanedHeaderNew) {
+        try {
+          await headerCreateMutation.mutateAsync(cleanedHeaderNew);
+        } catch (err: unknown) {
+          throwWithStage(err, "Header登録");
+        }
+      }
+      // 신규행 Detail create — detailNewRowRef 는 사용자가 입력한 ref 사본을 그대로 전달.
+      if (detailNewRow) {
+        try {
+          await detailCreateMutation.mutateAsync({ ...detailNewRowRef.current });
+        } catch (err: unknown) {
+          throwWithStage(err, "Detail登録");
         }
       }
       for (const [rowId, fields] of Object.entries(headerJobs)) {
@@ -460,17 +514,18 @@ export function CodesContents() {
         }
       }
 
-      // 4) Detail pending 일괄 저장
-      const detailExtra: Record<string, Record<string, string>> = {};
+      // 4) Detail pending 일괄 저장 — pending state 직접 변형 방지를 위해 사본 분리.
+      const detailJobs: Record<string, Record<string, string>> = Object.fromEntries(
+        Object.entries(detailPending).map(([k, v]) => [k, { ...v }]),
+      );
       if (editingCell && !editingCell.rowId.startsWith("new-")) {
         const v = detailEditRef.current[editingCell.field];
         if (v !== undefined) {
-          detailExtra[editingCell.rowId] = { [editingCell.field]: v };
+          detailJobs[editingCell.rowId] = {
+            ...detailJobs[editingCell.rowId],
+            [editingCell.field]: v,
+          };
         }
-      }
-      const detailJobs: Record<string, Record<string, string>> = { ...detailPending };
-      for (const [rowId, fields] of Object.entries(detailExtra)) {
-        detailJobs[rowId] = { ...detailJobs[rowId], ...fields };
       }
       for (const [rowId, fields] of Object.entries(detailJobs)) {
         const data: Record<string, unknown> = {};
@@ -588,7 +643,7 @@ export function CodesContents() {
         hasNewRow={!!detailNewRow}
         isLoading={details.detailsLoading}
         editingCell={editingCell}
-        onAdd={details.handleDetailAdd}
+        onAdd={handleDetailAddWithGuard}
         onCancelAdd={details.handleDetailCancelAdd}
         onCellEditStart={handleDetailCellEditStart}
         onEditCancel={handleEditCancel}
