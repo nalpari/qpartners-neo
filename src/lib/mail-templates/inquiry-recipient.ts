@@ -11,9 +11,8 @@ interface InquiryRecipientMailParams {
   content: string;
 }
 
-// 담당자/작성자 메일 제목 구분을 위해 담당자용에는 "【新規】" 접두사를 부여한다
 export const INQUIRY_RECIPIENT_SUBJECT =
-  "【新規】【Q.PARTNERS】お問い合わせを受け付けました";
+  "【Q.PARTNERS】お問い合わせを受け付けました";
 
 /**
  * 수신 담당자용 문의 알림 메일 HTML 템플릿 (화면설계서 p.42-43, design 2장)
