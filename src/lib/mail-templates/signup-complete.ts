@@ -81,7 +81,7 @@ export function signupCompleteMailHtml({
     </tr>
     <tr>
       <td style="padding:20px 40px;background-color:#f8f9fa;text-align:left;">
-        <p style="margin:0;font-size:12px;line-height:1.8;color:#999999;">
+        <p style="font-size:11px;color:#999;">
           ${MAIL_FOOTER_HTML}
         </p>
       </td>

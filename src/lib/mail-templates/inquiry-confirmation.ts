@@ -85,7 +85,7 @@ export function inquiryConfirmationMailHtml({
       本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに
       「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。
     </p>
-    <p style="font-size:11px;color:#999;line-height:1.8;margin:0;">
+    <p style="font-size:11px;color:#999;">
       ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>
