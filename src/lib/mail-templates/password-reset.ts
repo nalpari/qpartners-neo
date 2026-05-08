@@ -30,13 +30,6 @@ export function passwordResetMailHtml({
     </p>
     <p style="color:#666;font-size:12px;">※セキュリティ保護のため、本リンクは一定時間経過後に無効となります。</p>
     <p>よろしくお願いいたします。</p>
-    <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
-    <p style="font-size:12px;color:#999;">
-      このメールは、ご登録されたメールアドレス宛に自動的に送信されています。<br>
-      本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに
-      「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。
-    </p>
-    <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="font-size:11px;color:#999;">
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
       ハンファジャパン株式会社<br>
