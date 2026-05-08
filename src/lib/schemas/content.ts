@@ -28,12 +28,7 @@ const contentTargetSchema = z
   })
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) {
-        // 날짜 단위 비교 — 같은 날짜 허용 (시간 차이 무시)
-        const s = new Date(data.startAt.getFullYear(), data.startAt.getMonth(), data.startAt.getDate());
-        const e = new Date(data.endAt.getFullYear(), data.endAt.getMonth(), data.endAt.getDate());
-        return s <= e;
-      }
+      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },

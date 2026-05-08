@@ -9,7 +9,6 @@
 import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
-import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
@@ -333,18 +332,20 @@ export function canAccessContent(
   const userRoleCode: string | null = user ? user.role : null;
 
   // 게시기간 day 단위 비교 — 목록 API(contents/route, home-notices/active/route) 와 동일 기준.
-  // JST 기준 오늘/내일 자정을 명시 계산해 서버 컨테이너 TZ 의존성 제거 (Redmine #2131).
-  const todayStart = jstDayStart();
-  const tomorrowStart = jstNextDayStart();
+  // JST 기준 오늘 자정(UTC ms) 을 명시 계산해 서버 컨테이너 TZ 의존성 제거 (Redmine #2131).
+  const now = new Date();
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const todayStart = new Date(
+    Math.floor((now.getTime() + JST_OFFSET_MS) / ONE_DAY_MS) * ONE_DAY_MS - JST_OFFSET_MS,
+  );
 
   return targets.some((t) => {
     // 비로그인 사용자 → 비회원 게시대상(roleCode IS NULL)만 통과
     // 로그인 사용자 → roleCode 일치
     if (t.roleCode !== userRoleCode) return false;
-    // startAt 의 JST 날짜가 오늘 이하 = startAt < 내일 자정
-    if (t.startAt && t.startAt >= tomorrowStart) return false;
-    // endAt 의 JST 날짜가 오늘 이상 = endAt >= 오늘 자정
-    if (t.endAt && t.endAt < todayStart) return false;
+    if (t.startAt && todayStart < t.startAt) return false;
+    if (t.endAt && todayStart > t.endAt) return false;
     return true;
   });
 }

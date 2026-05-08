@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
-import { jstDayStart, jstNextDayStart, jstParseDateOnly, jstParseDateOnlyEnd } from "@/lib/jst-day";
 import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
@@ -64,9 +63,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // status 필터 → DB where 조건으로 변환 — day 단위 비교 (JST 기준).
-    const todayStart = jstDayStart();
-    const tomorrowStart = jstNextDayStart();
+    // status 필터 → DB where 조건으로 변환
+    const now = new Date();
     const VALID_STATUSES = new Set(["scheduled", "active", "ended"]);
     const statusSet = statusFilter
       ? new Set(statusFilter.split(",").map((s) => s.trim()))
@@ -86,11 +84,11 @@ export async function GET(request: NextRequest) {
     const statusWhere = statusSet
       ? {
           OR: [
-            ...(statusSet.has("scheduled") ? [{ startAt: { gte: tomorrowStart } }] : []),
+            ...(statusSet.has("scheduled") ? [{ startAt: { gt: now } }] : []),
             ...(statusSet.has("active")
-              ? [{ startAt: { lt: tomorrowStart }, endAt: { gte: todayStart } }]
+              ? [{ startAt: { lte: now }, endAt: { gte: now } }]
               : []),
-            ...(statusSet.has("ended") ? [{ endAt: { lt: todayStart } }] : []),
+            ...(statusSet.has("ended") ? [{ endAt: { lt: now } }] : []),
           ],
         }
       : undefined;
@@ -118,8 +116,8 @@ export async function GET(request: NextRequest) {
       ...(createdBy && { createdBy: { contains: createdBy } }),
       ...((startDate || endDate) && {
         createdAt: {
-          ...(startDate && { gte: jstParseDateOnly(startDate) }),
-          ...(endDate && { lte: jstParseDateOnlyEnd(endDate) }),
+          ...(startDate && { gte: new Date(startDate) }),
+          ...(endDate && { lte: new Date(`${endDate}T23:59:59.999+09:00`) }),
         },
       }),
       ...(andClauses.length > 0 ? { AND: andClauses } : {}),
