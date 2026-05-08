@@ -109,6 +109,10 @@ export async function GET(request: NextRequest, { params }: Params) {
  * 저장 전략: upsert (replace 아님).
  *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지.
  *   · `created_at` / `created_by` 감사 추적 보존.
+ *
+ * Lockout 가드 (SUPER_ADMIN 보호):
+ *   · SUPER_ADMIN 대상 + ADM_PERMISSION.canUpdate=false → 400 (self-demotion 차단)
+ *   · SUPER_ADMIN 대상 + ADM_PERMISSION/ADM_MENU/ADM_CODE canRead=false → 400 (관리 페이지 접근 불가 차단)
  */
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
@@ -202,6 +206,38 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: "存在しないメニューコードが含まれています", unknownMenuCodes: unknownCodes },
         { status: 400 },
       );
+    }
+
+    // Lockout 가드 — SUPER_ADMIN self-demotion 차단.
+    // ADM_PERMISSION.canUpdate=false 가 payload 에 포함되면 SUPER_ADMIN 이 권한 매트릭스를
+    // 수정할 수단이 사라져 DB 직접 수정 외 복구 불가능한 시스템 lockout 발생.
+    // ADM_PERMISSION/ADM_MENU/ADM_CODE 의 canRead=false 도 동일 — 관리 페이지 자체 접근 불가.
+    if (parsedCode.data === "SUPER_ADMIN") {
+      const permRow = result.data.permissions.find(
+        (p) => p.menuCode === "ADM_PERMISSION",
+      );
+      if (permRow && permRow.canUpdate === false) {
+        console.warn(
+          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN self-lockout 시도 차단 — ADM_PERMISSION.canUpdate=false",
+        );
+        return NextResponse.json(
+          { error: "スーパー管理者の「権限管理」更新権限は無効化できません" },
+          { status: 400 },
+        );
+      }
+      const restrictedMenus = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"];
+      const readRevocation = result.data.permissions.find(
+        (p) => restrictedMenus.includes(p.menuCode) && p.canRead === false,
+      );
+      if (readRevocation) {
+        console.warn(
+          `[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN 관리메뉴 canRead 회수 시도 차단 — menuCode=${readRevocation.menuCode}`,
+        );
+        return NextResponse.json(
+          { error: `スーパー管理者の「${readRevocation.menuCode}」閲覧権限は無効化できません` },
+          { status: 400 },
+        );
+      }
     }
 
     // upsert — payload 에 포함된 행만 갱신, 나머지는 기존 값 유지.

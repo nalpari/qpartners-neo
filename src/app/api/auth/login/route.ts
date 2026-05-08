@@ -269,7 +269,11 @@ export async function POST(request: NextRequest) {
   }
 
   // 6-1. 권한 사용가능여부(QpRole.isActive) 검증
-  const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole];
+  // SUPER_ADMIN/ADMIN 은 시스템 권한이라 isActive 검증 대상이 아님 (항상 활성).
+  // 나머지 시스템 역할 + 동적 권한(authCd 기반) 모두 검증 대상.
+  const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole] ?? (
+    authRole !== "SUPER_ADMIN" && authRole !== "ADMIN" ? authRole : undefined
+  );
   if (roleCodeToCheck) {
     try {
       const role = await prisma.qpRole.findUnique({

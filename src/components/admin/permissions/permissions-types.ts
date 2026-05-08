@@ -61,7 +61,7 @@ export function toPermissionItem(api: RoleApiItem): PermissionItem {
     roleName: api.roleName,
     description: api.description ?? "",
     isActive: boolToYN(api.isActive),
-    isSystem: api.isSystem,
+    isSystem: api.isSystem ?? false,
   };
 }
 
