@@ -72,7 +72,7 @@ export function ContentsDetailBody({
           빈 셀이 0폭으로 붕괴되는 현상을 막는다. */}
       {body && (
         <div
-          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none [&_table]:table-fixed [&_table]:w-full"
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"
           dangerouslySetInnerHTML={{
             __html: sanitizeContentHtml(prepareBodyForRender(body)),
           }}

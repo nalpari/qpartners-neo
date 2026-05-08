@@ -1,4 +1,4 @@
-import { MAIL_FOOTER_TEXT } from "@/lib/mail-templates/footer";
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
 import { escapeHtml, formatReceivedAt } from "@/lib/mail-templates/utils";
 
 import { LOGIN_NOTIFICATION_MAIL_SUBJECT } from "./constants";
@@ -22,7 +22,7 @@ import { sendNotificationMail } from "./send-notification";
  *   お心当たりのない方は、第三者のログインの可能性がありますので、
  *   ログインパスワードの再設定をお願い致します。
  *
- *   [공용 풋터 — MAIL_FOOTER_TEXT]
+ *   [공용 풋터 — MAIL_FOOTER_HTML]
  */
 
 export interface LoginNotificationContext {
@@ -43,20 +43,29 @@ function buildBodyHtml(args: {
   loginAtJst: string;
   ipText: string;
 }): string {
-  const lines: string[] = [
-    `${escapeHtml(args.userNm)}様`,
-    "",
-    "平素より格別のお引き立てありがとうございます。",
-    "以下ログインが確認されましたので、お知らせいたします。",
-    "",
-    `ログイン日時：${escapeHtml(args.loginAtJst)}`,
-    `IPアドレス：${escapeHtml(args.ipText)}`,
-    "",
-    "お心当たりのない方は、第三者のログインの可能性がありますので、ログインパスワードの再設定をお願い致します。",
-    "",
-    MAIL_FOOTER_TEXT,
-  ];
-  return `<pre style="font-family: 'Hiragino Sans', 'Meiryo', sans-serif; white-space: pre-wrap;">${lines.join("\n")}</pre>`;
+  const safeUserNm = escapeHtml(args.userNm);
+  const safeLoginAt = escapeHtml(args.loginAtJst);
+  const safeIp = escapeHtml(args.ipText);
+
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
+  <tr><td>
+    <p>${safeUserNm}様</p>
+    <p>平素より格別のお引き立てありがとうございます。<br>
+    以下ログインが確認されましたので、お知らせいたします。</p>
+    <p>ログイン日時：${safeLoginAt}<br>
+    IPアドレス：${safeIp}</p>
+    <p>お心当たりのない方は、第三者のログインの可能性がありますので、ログインパスワードの再設定をお願い致します。</p>
+    <p style="font-size:11px;color:#999;">
+      ${MAIL_FOOTER_HTML}
+    </p>
+  </td></tr>
+</table>
+</body>
+</html>`;
 }
 
 /**

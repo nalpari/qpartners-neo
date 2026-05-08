@@ -31,62 +31,36 @@ export function signupCompleteMailHtml({
 
   return `<!DOCTYPE html>
 <html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin:0;padding:0;font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;background-color:#f5f5f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;background-color:#ffffff;">
-    <tr>
-      <td style="padding:30px 40px 20px;border-bottom:3px solid #003d7a;text-align:left;">
-        <h1 style="margin:0;font-size:20px;color:#003d7a;">Q.PARTNERS</h1>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:30px 40px;text-align:left;">
-        <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
-          ${safeUserNm} 様
-        </p>
-        <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
-          この度は、Q.PARTNERSへの会員登録をいただき、誠にありがとうございます。<br>
-          会員登録が完了いたしましたのでお知らせいたします。
-        </p>
-        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;background-color:#f8f9fa;border-radius:4px;">
-          <tr>
-            <td style="padding:15px 20px;">
-              <p style="margin:0 0 8px;font-size:13px;color:#666666;">登録メールアドレス</p>
-              <p style="margin:0;font-size:14px;color:#333333;font-weight:bold;">${safeEmail}</p>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:0 0 20px;font-size:14px;line-height:1.8;color:#333333;">
-          以下のリンクよりログインし、サービスをご利用ください。
-        </p>
-        <table cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-          <tr>
-            <td style="padding:12px 30px;background-color:#003d7a;border-radius:4px;">
-              <a href="${loginUrl}" style="color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;">ログインはこちら</a>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:0 0 10px;font-size:13px;line-height:1.8;color:#666666;">
-          マイページ: <a href="${mypageUrl}" style="color:#003d7a;">${mypageUrl}</a>
-        </p>
-        <hr style="margin:20px 0;border:none;border-top:1px solid #eeeeee;">
-        <p style="margin:0 0 20px;font-size:13px;line-height:1.8;color:#999999;">
-          ※本メールにお心当たりのない場合はご利用状況をご確認の上、ご不明な場合は下記連絡先までお問い合わせ下さい。<br>
-          ※本メールアドレスは送信専用です。返信いただきましてもお返事できませんので、ご了承ください
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:20px 40px;background-color:#f8f9fa;text-align:left;">
-        <p style="margin:0;font-size:12px;line-height:1.8;color:#999999;">
-          ${MAIL_FOOTER_HTML}
-        </p>
-      </td>
-    </tr>
-  </table>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
+  <tr><td>
+    <p>${safeUserNm} 様</p>
+    <p>この度は、Q.PARTNERSへの会員登録をいただき、誠にありがとうございます。<br>
+    会員登録が完了いたしましたのでお知らせいたします。</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background-color:#f8f9fa;border-radius:4px;">
+      <tr>
+        <td style="padding:15px 20px;">
+          <p style="margin:0 0 8px;font-size:13px;color:#666;">登録メールアドレス</p>
+          <p style="margin:0;font-weight:bold;">${safeEmail}</p>
+        </td>
+      </tr>
+    </table>
+    <p>以下のリンクよりログインし、サービスをご利用ください。</p>
+    <p style="margin:20px 0;">
+      <a href="${loginUrl}" style="display:inline-block;padding:12px 24px;background:#0066cc;color:#fff;text-decoration:none;border-radius:4px;">ログインはこちら</a>
+    </p>
+    <p>マイページ: <a href="${mypageUrl}" style="color:#0066cc;">${mypageUrl}</a></p>
+    <p style="color:#666;font-size:12px;">
+      ※本メールにお心当たりのない場合はご利用状況をご確認の上、ご不明な場合は下記連絡先までお問い合わせ下さい。<br>
+      ※本メールアドレスは送信専用です。返信いただきましてもお返事できませんので、ご了承ください
+    </p>
+    <p style="margin:10px 0;">よろしくお願いいたします。</p>
+    <p style="font-size:11px;color:#999;">
+      ${MAIL_FOOTER_HTML}
+    </p>
+  </td></tr>
+</table>
 </body>
 </html>`;
 }

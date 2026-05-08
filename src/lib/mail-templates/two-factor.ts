@@ -1,3 +1,4 @@
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
 import { escapeHtml } from "@/lib/mail-templates/utils";
 
 interface TwoFactorMailParams {
@@ -35,13 +36,7 @@ export function twoFactorMailHtml({ code }: TwoFactorMailParams): string {
     </p>
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="font-size:11px;color:#999;">
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
-      ハンファジャパン株式会社<br>
-      Q.PARTNERS事務局<br>
-      Tel:03-5441-5976<br>
-      Email : q-partners@hqj.co.jp<br>
-      問い合わせ受付時間：平日10：00-12：00 13：00-17：00<br>
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>
 </table>
