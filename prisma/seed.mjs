@@ -102,15 +102,22 @@ const ALL_MENU_CODES = [
   ...menus2UnderMypage.map((m) => m.menuCode),
 ];
 
+// INQUIRY: 비회원 포함 전체 사용 가능 (read + create) — 모든 역할 공통 부여.
+// 화면설계서 사양상 문의하기는 누구나 사용 가능한 공통 기능. 1-Level INQUIRY 와
+// 2-Level INQ_FORM 모두 동일 정책 적용. update/delete 는 미구현이라 false.
+const INQUIRY_OPEN_MENUS = ["INQUIRY", "INQ_FORM"];
+
 /**
  * 역할별 메뉴 권한 매트릭스 생성.
  * - SUPER_ADMIN: 전체 메뉴 CRUD (fail-open)
  * - ADMIN:
  *   · MEMBERS / BULK_MAIL / NOTICES / CATEGORIES / CONTENT — 전체 CRUD (ADMIN_FULL_MENUS)
  *   · PERMISSIONS / MENUS / CODES — read only, create/update/delete 전부 false (ADMIN_RESTRICTED_MENUS)
- *   · HOME / INQUIRY / MYPAGE / ADMIN(parent) — 네비게이션용 read
+ *   · INQUIRY / INQ_FORM — read + create (INQUIRY_OPEN_MENUS)
+ *   · HOME / MYPAGE / ADMIN(parent) — 네비게이션용 read
  * - 1ST_STORE / 2ND_STORE / SEKO / GENERAL:
- *   · HOME / CONTENT / INQUIRY / MYPAGE — read only (GENERAL_MENUS)
+ *   · INQUIRY / INQ_FORM — read + create (INQUIRY_OPEN_MENUS)
+ *   · HOME / CONTENT / MYPAGE — read only (GENERAL_MENUS)
  *   · 관리 메뉴 전체 — 모든 플래그 false
  * - Lockout: PERMISSIONS.canUpdate 는 SUPER_ADMIN 만 true. API (PUT /api/roles/:rc/permissions) 에서도
  *   상승 시도 차단하여 이중화.
@@ -120,6 +127,10 @@ function buildPermissions(roleCode) {
     if (roleCode === "SUPER_ADMIN") {
       return { menuCode, canRead: true, canCreate: true, canUpdate: true, canDelete: true };
     }
+    // INQUIRY / INQ_FORM — 모든 역할에 read + create 부여 (비회원 포함 전체 사용 정책)
+    if (INQUIRY_OPEN_MENUS.includes(menuCode)) {
+      return { menuCode, canRead: true, canCreate: true, canUpdate: false, canDelete: false };
+    }
     if (roleCode === "ADMIN") {
       if (ADMIN_RESTRICTED_MENUS.includes(menuCode)) {
         return { menuCode, canRead: true, canCreate: false, canUpdate: false, canDelete: false };
@@ -127,7 +138,7 @@ function buildPermissions(roleCode) {
       if (ADMIN_FULL_MENUS.includes(menuCode)) {
         return { menuCode, canRead: true, canCreate: true, canUpdate: true, canDelete: true };
       }
-      // HOME, INQUIRY, MYPAGE, ADMIN (parent) — 네비게이션용 read
+      // HOME, MYPAGE, ADMIN (parent) — 네비게이션용 read
       return { menuCode, canRead: true, canCreate: false, canUpdate: false, canDelete: false };
     }
     // 비관리자: 일반 메뉴 read only, 관리 메뉴 전부 false
