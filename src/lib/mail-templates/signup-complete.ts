@@ -35,7 +35,7 @@ export function signupCompleteMailHtml({
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:0;font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;background-color:#f5f5f5;">
+<body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;background-color:#f5f5f5;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;background-color:#ffffff;">
     <tr>
       <td style="padding:30px 40px 20px;border-bottom:3px solid #003d7a;text-align:left;">
