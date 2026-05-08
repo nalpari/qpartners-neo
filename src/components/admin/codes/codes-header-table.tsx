@@ -8,9 +8,13 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button, Checkbox } from "@/components/common";
 import type { HeaderGridRow } from "./codes-types";
 
-// 편집 불가 필드 — 첫번째 컬럼(headerCode, detail 진입 링크) 만.
+// 편집 불가 필드 — headerCode(detail 진입 링크), headerAlias(기존행 displayCode 정합성 보호).
+// headerAlias 변경 시 발급된 displayCode(`alias + 3자리 seq`) 가 비동기화되어 같은 헤더에
+// 이전 alias 와 새 alias 가 혼재한 상태가 된다. 외부 시스템이 displayCode 를 외래키처럼 참조할
+// 수 있어 일괄 cascade 가 도입되기 전에는 기존행 alias 편집을 봉쇄한다 (보수적 정책).
+// 신규행은 isNew 분기로 별도 input 노출.
 // 使用可否(isActive) 는 native <select> 로 즉시 토글 가능.
-const NON_EDITABLE_FIELDS = new Set(["headerCode"]);
+const NON_EDITABLE_FIELDS = new Set(["headerCode", "headerAlias"]);
 
 const centerCellStyle = {
   display: "flex" as const,
@@ -109,16 +113,100 @@ type HeaderGridContext = {
   isUpdateReadOnly: boolean;
 };
 
-// 첫번째 컬럼 — 신규행은 input, 기존행은 detail 진입 버튼 (편집 불가)
+/**
+ * 영문 전용 입력 — 비영문 문자를 제거하고 대문자로 변환.
+ * allowUnderscore=true 시 언더바(_)도 허용 (headerCode 용).
+ *
+ * IME 가드 — 일본어/한국어 IME 조합 중에는 필터링/DOM 보정을 미루고 compositionEnd
+ * 시점에 한 번에 처리한다. 조합 중 input.value 를 덮으면 조합이 강제 종료되거나
+ * 문자가 잘리는 현상 회피.
+ */
+function EnglishOnlyCellInput({
+  defaultValue,
+  placeholder,
+  maxLength,
+  allowUnderscore,
+  onChange,
+  onKeyDown,
+}: {
+  defaultValue: string;
+  placeholder: string;
+  maxLength?: number;
+  allowUnderscore?: boolean;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const pattern = allowUnderscore ? /[^a-zA-Z_]/g : /[^a-zA-Z]/g;
+
+  // 필터링 + DOM 보정 + 부모 통지를 한 함수로 합쳐 IME 분기에서 재사용.
+  // selection 위치 보존 — `el.value = filtered` 로 통째 교체하면 캐럿이 끝으로 이동해
+  // 한자 변환 후 추가 입력 시 캐럿이 점프하는 현상 발생. 사용자 시점 캐럿 위치를
+  // 유지하되 필터링으로 길이가 줄어든 경우 끝까지로 클램프.
+  const applyFilter = (raw: string) => {
+    let filtered = raw.replace(pattern, "").toUpperCase();
+    if (maxLength) filtered = filtered.slice(0, maxLength);
+    const el = ref.current;
+    if (el && el.value !== filtered) {
+      const start = el.selectionStart ?? filtered.length;
+      el.value = filtered;
+      const newPos = Math.min(start, filtered.length);
+      el.setSelectionRange(newPos, newPos);
+    }
+    onChange(filtered);
+  };
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      defaultValue={defaultValue}
+      maxLength={maxLength}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false;
+        applyFilter(e.currentTarget.value);
+      }}
+      onChange={(e) => {
+        // 조합 중 onChange 는 IME buffer 표시용 — 필터링 미루기.
+        if (composingRef.current) return;
+        applyFilter(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+          e.stopPropagation();
+          return;
+        }
+        onKeyDown?.(e);
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      placeholder={placeholder}
+      className="w-full h-[34px] px-3 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
+    />
+  );
+}
+
+// 첫번째 컬럼 — 신규행은 영문전용 input, 기존행은 detail 진입 버튼 (편집 불가)
 function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   const data = params.data;
   if (!data) return null;
   const ctx = params.context as HeaderGridContext;
   if (data.isNew) {
     return (
-      <CellInput
+      <EnglishOnlyCellInput
         defaultValue={ctx.newRowFieldsRef.current.headerCode ?? ""}
         placeholder=""
+        allowUnderscore
         onChange={(v) => ctx.onNewRowFieldChange("headerCode", v)}
       />
     );
@@ -132,6 +220,27 @@ function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
       {data.headerCode}
     </button>
   );
+}
+
+/**
+ * headerAlias(Header Id) — 신규행만 영문 3자리 input 노출.
+ * 기존행은 displayCode 정합성 보호를 위해 편집 봉쇄(NON_EDITABLE_FIELDS) — 텍스트만 표시.
+ */
+function HeaderAliasRendererFn(params: ICellRendererParams<HeaderGridRow>) {
+  const data = params.data;
+  if (!data) return null;
+  const ctx = params.context as HeaderGridContext;
+  if (data.isNew) {
+    return (
+      <EnglishOnlyCellInput
+        defaultValue={ctx.newRowFieldsRef.current.headerAlias ?? ""}
+        placeholder=""
+        maxLength={3}
+        onChange={(v) => ctx.onNewRowFieldChange("headerAlias", v)}
+      />
+    );
+  }
+  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
 }
 
 // 일반 편집 가능 컬럼 (헤더 텍스트 필드)
@@ -308,7 +417,7 @@ export function CodesHeaderTable({
 
   const columnDefs = useMemo<ColDef<HeaderGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeRendererFn, cellStyle: makeEditableCellStyle("headerCode"), headerClass: "ag-header-cell-center" },
-    { headerName: "Header Id", field: "headerAlias", flex: 1, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("headerAlias"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Header Id", field: "headerAlias", flex: 1, cellRenderer: HeaderAliasRendererFn, cellStyle: makeEditableCellStyle("headerAlias"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Header Code Name", field: "headerName", flex: 1.5, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("headerName"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relCode1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
