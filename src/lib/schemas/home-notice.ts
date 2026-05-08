@@ -45,7 +45,7 @@ export const createHomeNoticeSchema = z
   })
   // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
   .refine((data) => data.startAt <= data.endAt, {
-    message: "開始日は終了日より前に設定してください",
+    message: "開始日は終了日以前に設定してください",
     path: ["startAt"],
   });
 
@@ -85,7 +85,7 @@ export const updateHomeNoticeSchema = z
       if (data.startAt && data.endAt) return data.startAt <= data.endAt;
       return true;
     },
-    { message: "開始日は終了日より前に設定してください", path: ["startAt"] },
+    { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
 // ─── Helpers ───

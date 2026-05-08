@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jstDayStart } from "@/lib/jst-day";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
@@ -29,10 +31,8 @@ const contentTargetSchema = z
   .refine(
     (data) => {
       if (data.startAt && data.endAt) {
-        // 날짜 단위 비교 — 같은 날짜 허용 (시간 차이 무시)
-        const s = new Date(data.startAt.getFullYear(), data.startAt.getMonth(), data.startAt.getDate());
-        const e = new Date(data.endAt.getFullYear(), data.endAt.getMonth(), data.endAt.getDate());
-        return s <= e;
+        // JST day 단위 비교 — 같은 날짜 허용, 서버 컨테이너 TZ 비의존
+        return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
       }
       return true;
     },

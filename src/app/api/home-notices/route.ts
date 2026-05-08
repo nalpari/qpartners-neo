@@ -101,12 +101,13 @@ export async function GET(request: NextRequest) {
         ? { targets: { some: { roleCode: { in: targetRoleCodes } } } }
         : undefined;
 
-    // 날짜 파라미터 검증
-    if (startDate && isNaN(new Date(startDate).getTime())) {
-      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
+    // 날짜 파라미터 검증 — yyyy-MM-dd 형식 강제
+    const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+    if (startDate && !DATE_ONLY_RE.test(startDate)) {
+      return NextResponse.json({ error: "日付はyyyy-MM-dd形式で入力してください" }, { status: 400 });
     }
-    if (endDate && isNaN(new Date(endDate).getTime())) {
-      return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
+    if (endDate && !DATE_ONLY_RE.test(endDate)) {
+      return NextResponse.json({ error: "日付はyyyy-MM-dd形式で入力してください" }, { status: 400 });
     }
 
     const andClauses: Prisma.HomeNoticeWhereInput[] = [];
