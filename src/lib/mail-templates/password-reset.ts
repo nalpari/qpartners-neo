@@ -30,7 +30,7 @@ export function passwordResetMailHtml({
       <a href="${safeResetUrl}" style="display:inline-block;padding:12px 24px;background:#0066cc;color:#fff;text-decoration:none;border-radius:4px;">パスワード変更リンク</a>
     </p>
     <p style="color:#666;font-size:12px;">※セキュリティ保護のため、本リンクは一定時間経過後に無効となります。</p>
-    <p>よろしくお願いいたします。</p>
+    <p style="margin:10px 0;">よろしくお願いいたします。</p>
     <p style="font-size:11px;color:#999;">
       ${MAIL_FOOTER_HTML}
     </p>
