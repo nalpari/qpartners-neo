@@ -160,6 +160,20 @@ export function NoticeFormPopup() {
     return code === "LIMIT_EXCEEDED";
   };
 
+  /** 서버 Zod validation 실패 시 issues 배열에서 메시지 추출 */
+  const extractValidationMessages = (error: unknown): string | null => {
+    if (!isAxiosError(error) || !error.response) return null;
+    const data: unknown = error.response.data;
+    if (data == null || typeof data !== "object" || !("issues" in data)) return null;
+    const issues = (data as { issues: unknown }).issues;
+    if (!Array.isArray(issues)) return null;
+    const messages = issues
+      .filter((i): i is Record<string, unknown> => i !== null && typeof i === "object")
+      .map((i) => i.message)
+      .filter((m): m is string => typeof m === "string");
+    return messages.length > 0 ? messages.join("\n") : null;
+  };
+
   // 응답 body 형태: `{ data: notice }`. notice 의 메타데이터(createdAt 등)를 폼 표시값에 반영한다.
   // PII/외부 API 호출(QSP 이름 조회) 회피를 위해 이름은 응답으로 받지 않으므로, 본인 자신이 등록자인
   // 신규 등록 직후엔 이름 미해결 상태(authorId 만 표시) — 다음 페이지 새로고침 시 정확히 표시됨.
@@ -224,7 +238,8 @@ export function NoticeFormPopup() {
         });
         return;
       }
-      openAlert({ type: "alert", message: "登録に失敗しました。", confirmLabel: "確認" });
+      const validationMsg = extractValidationMessages(error);
+      openAlert({ type: "alert", message: validationMsg ?? "登録に失敗しました。", confirmLabel: "確認" });
     },
   });
 
@@ -250,7 +265,8 @@ export function NoticeFormPopup() {
         });
         return;
       }
-      openAlert({ type: "alert", message: "保存に失敗しました。", confirmLabel: "確認" });
+      const validationMsg = extractValidationMessages(error);
+      openAlert({ type: "alert", message: validationMsg ?? "保存に失敗しました。", confirmLabel: "確認" });
     },
   });
 

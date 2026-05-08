@@ -309,13 +309,31 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       });
     } catch (error: unknown) {
       console.error("[Contents] 저장 실패:", error);
+      let message = "保存に失敗しました。しばらくしてからお試しください。";
       if (isAxiosError(error) && error.response) {
         const resData: unknown = error.response.data;
         const errorMsg = resData != null && typeof resData === "object" && "error" in resData ? (resData as { error: unknown }).error : undefined;
         console.error("[Contents] 서버 응답 status:", error.response.status, "error:", errorMsg);
+        // Validation failed 시 issues 배열의 구체적인 메시지 표시
+        if (
+          resData != null &&
+          typeof resData === "object" &&
+          "issues" in resData &&
+          Array.isArray((resData as { issues: unknown }).issues)
+        ) {
+          const issues = (resData as { issues: { message?: string }[] }).issues;
+          const messages = issues
+            .map((i) => i.message)
+            .filter((m): m is string => typeof m === "string");
+          if (messages.length > 0) {
+            message = messages.join("\n");
+          }
+        } else if (typeof errorMsg === "string" && errorMsg !== "Validation failed") {
+          message = errorMsg;
+        }
       }
       setIsSubmitting(false);
-      openAlert({ type: "alert", message: "保存に失敗しました。しばらくしてからお試しください。" });
+      openAlert({ type: "alert", message });
     }
   };
 

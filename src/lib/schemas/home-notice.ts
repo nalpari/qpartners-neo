@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── HomeNotice ───
@@ -41,9 +43,9 @@ export const createHomeNoticeSchema = z
       .nullable()
       .default(null),
   })
-  // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
-  .refine((data) => data.startAt <= data.endAt, {
-    message: "開始日は終了日より前に設定してください",
+  // Issue #2176 (2) — 시작일==종료일 허용. JST day 단위 비교 — 서버 TZ 비의존.
+  .refine((data) => jstDayStart(data.startAt) <= jstDayStart(data.endAt), {
+    message: "開始日は終了日以前に設定してください",
     path: ["startAt"],
   });
 
@@ -79,22 +81,25 @@ export const updateHomeNoticeSchema = z
   })
   .refine(
     (data) => {
-      // Issue #2176 (2) — 시작일==종료일 허용.
-      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
+      // Issue #2176 (2) — 시작일==종료일 허용. JST day 단위 비교 — 서버 TZ 비의존.
+      if (data.startAt && data.endAt) return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
       return true;
     },
-    { message: "開始日は終了日より前に設定してください", path: ["startAt"] },
+    { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
 // ─── Helpers ───
 
 type HomeNoticeStatus = "scheduled" | "active" | "ended";
 
-/** status 동적 산출 (DB 컬럼 없음) */
+/** status 동적 산출 (DB 컬럼 없음) — day 단위 비교 (JST 기준). */
 export function computeStatus(startAt: Date, endAt: Date): HomeNoticeStatus {
-  const now = new Date();
-  if (now < startAt) return "scheduled";
-  if (now > endAt) return "ended";
+  const todayStart = jstDayStart();
+  const tomorrowStart = jstNextDayStart();
+  // startAt 의 JST 날짜가 내일 이후 → 아직 예정
+  if (startAt >= tomorrowStart) return "scheduled";
+  // endAt 의 JST 날짜가 오늘 이전 → 종료
+  if (endAt < todayStart) return "ended";
   return "active";
 }
 

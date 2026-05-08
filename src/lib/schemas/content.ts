@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jstDayStart } from "@/lib/jst-day";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── Content ───
@@ -28,7 +30,10 @@ const contentTargetSchema = z
   })
   .refine(
     (data) => {
-      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
+      if (data.startAt && data.endAt) {
+        // JST day 단위 비교 — 같은 날짜 허용, 서버 컨테이너 TZ 비의존
+        return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
+      }
       return true;
     },
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
