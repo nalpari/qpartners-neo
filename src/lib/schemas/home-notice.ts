@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
+
 export { idParamSchema } from "@/lib/schemas/common";
 
 // ─── HomeNotice ───
@@ -90,11 +92,14 @@ export const updateHomeNoticeSchema = z
 
 type HomeNoticeStatus = "scheduled" | "active" | "ended";
 
-/** status 동적 산출 (DB 컬럼 없음) */
+/** status 동적 산출 (DB 컬럼 없음) — day 단위 비교 (JST 기준). */
 export function computeStatus(startAt: Date, endAt: Date): HomeNoticeStatus {
-  const now = new Date();
-  if (now < startAt) return "scheduled";
-  if (now > endAt) return "ended";
+  const todayStart = jstDayStart();
+  const tomorrowStart = jstNextDayStart();
+  // startAt 의 JST 날짜가 내일 이후 → 아직 예정
+  if (startAt >= tomorrowStart) return "scheduled";
+  // endAt 의 JST 날짜가 오늘 이전 → 종료
+  if (endAt < todayStart) return "ended";
   return "active";
 }
 
