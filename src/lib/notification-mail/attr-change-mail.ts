@@ -1,4 +1,4 @@
-import { MAIL_FOOTER_TEXT } from "@/lib/mail-templates/footer";
+import { MAIL_FOOTER_HTML } from "@/lib/mail-templates/footer";
 import { escapeHtml } from "@/lib/mail-templates/utils";
 import { splitQspUserName, type QspMemberDetail } from "@/lib/qsp-member";
 import type { ProfileUpdateInput } from "@/lib/schemas/mypage";
@@ -102,9 +102,9 @@ function diffFields(
 }
 
 /**
- * AS-IS edit_user.txt 양식 그대로 HTML 본문 생성.
- * Plain text 양식을 `<pre>` 로 래핑 (mailer.ts 가 HTML 필수).
- * 모든 동적 값은 escapeHtml 적용.
+ * AS-IS edit_user.txt 양식을 HTML 구조로 변환.
+ * password-reset 등 다른 메일 템플릿과 동일한 폰트/레이아웃 사용.
+ * 모든 동적 값은 escapeHtml 적용. 변경 항목은 escapeHtml 이 끝난 라인 그대로 사용.
  */
 function buildBodyHtml(args: {
   recipientName: { sei: string; mei: string };
@@ -112,36 +112,45 @@ function buildBodyHtml(args: {
   userChanges: string[];
   siteUrl: string;
 }): string {
-  const lines: string[] = [
-    "※本メールは「Q.PARTNERS」をご利用いただく際の重要な情報を記載しておりますので、大切に保存していただきますようお願いいたします。",
-    "",
-    `${escapeHtml(args.recipientName.sei)}　${escapeHtml(args.recipientName.mei)}様`,
-    "",
-    "いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。",
-    "以下の登録情報の変更が完了しましたので、以下にご連絡いたします。",
-    "",
-    "●会社情報変更",
-    ...args.companyChanges,
-    "",
-    "",
-    "●会員情報変更",
-    ...args.userChanges,
-    "",
-    "もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。",
-    "",
-    "お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。",
-    `マイページ(URL)：${escapeHtml(args.siteUrl)}/mypage/`,
-    "",
-    "--------------------------------------------------------------------------------",
-    "このメールは、ご登録されたメールアドレス宛に自動的に送信されています。",
-    "本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに",
-    "「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。",
-    "--------------------------------------------------------------------------------",
-    "",
-    MAIL_FOOTER_TEXT,
-  ];
+  const safeSei = escapeHtml(args.recipientName.sei);
+  const safeMei = escapeHtml(args.recipientName.mei);
+  const safeSiteUrl = escapeHtml(args.siteUrl);
+  // diffFields 가 이미 escapeHtml 처리한 라인 — 그대로 <br> 결합.
+  const companyBlock = args.companyChanges.length > 0
+    ? args.companyChanges.join("<br>")
+    : "(変更なし)";
+  const userBlock = args.userChanges.length > 0
+    ? args.userChanges.join("<br>")
+    : "(変更なし)";
 
-  return `<pre style="font-family: 'Hiragino Sans', 'Meiryo', sans-serif; white-space: pre-wrap;">${lines.join("\n")}</pre>`;
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
+  <tr><td>
+    <p>※本メールは「Q.PARTNERS」をご利用いただく際の重要な情報を記載しておりますので、大切に保存していただきますようお願いいたします。</p>
+    <p>${safeSei}　${safeMei}様</p>
+    <p>いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。<br>
+    以下の登録情報の変更が完了しましたので、以下にご連絡いたします。</p>
+    <p>●会社情報変更<br>${companyBlock}</p>
+    <p>●会員情報変更<br>${userBlock}</p>
+    <p>もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。</p>
+    <p>お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。<br>
+    マイページ(URL)：<a href="${safeSiteUrl}/mypage/">${safeSiteUrl}/mypage/</a></p>
+    <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
+    <p style="font-size:12px;color:#999;">
+      このメールは、ご登録されたメールアドレス宛に自動的に送信されています。<br>
+      本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに
+      「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。
+    </p>
+    <p style="font-size:11px;color:#999;">
+      ${MAIL_FOOTER_HTML}
+    </p>
+  </td></tr>
+</table>
+</body>
+</html>`;
 }
 
 /**
