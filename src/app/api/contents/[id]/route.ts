@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     // 접근제어를 위해 먼저 조회
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      include: { targets: { select: { targetType: true, startAt: true, endAt: true } } },
+      include: { targets: { select: { roleCode: true, startAt: true, endAt: true } } },
     });
 
     if (!existing) {
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       where: { id: parsed.data },
       data: shouldIncrement ? { viewCount: { increment: 1 } } : {},
       include: {
-        targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
+        targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
         categories: {
           include: { category: CATEGORY_TREE_INCLUDE },
         },
@@ -231,7 +231,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
             : undefined,
         },
         include: {
-          targets: { select: { id: true, targetType: true, startAt: true, endAt: true } },
+          targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
           categories: { include: { category: CATEGORY_TREE_INCLUDE } },
         },
       });
@@ -260,12 +260,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     await unlinkInlineImages(unlinkPaths, "[PUT /api/contents/:id]");
 
-    // PUT 은 requireMenuPermission("CONTENT","update") 통과자 = 사내 사용자이므로
-    // includeInternal=true
+    // PUT 응답의 includeInternal은 요청자 역할에 따라 동적으로 판단.
+    // 매트릭스가 외부 역할에 update 권한을 부여하더라도 내부 카테고리 노출을 방지.
     return NextResponse.json({
       data: {
         ...content,
-        categories: buildCategoryTree(content.categories, { includeInternal: true }),
+        categories: buildCategoryTree(content.categories, { includeInternal: isInternalUser(user.role) }),
       },
     });
   } catch (error) {

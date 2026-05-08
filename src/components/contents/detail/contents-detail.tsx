@@ -46,7 +46,8 @@ interface ContentDetailData {
   hasBeenUpdated: boolean;
   targets: {
     id: number;
-    targetType: string;
+    /** 권한코드 — null = 비회원. 라벨/순서는 useTargetLabels 훅으로 변환. */
+    roleCode: string | null;
     startAt: string | null;
     endAt: string | null;
   }[];

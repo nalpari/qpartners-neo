@@ -4,6 +4,7 @@ export { DatePicker } from "./date-picker";
 export { InputBox } from "./input-box";
 export { Radio } from "./radio";
 export { SelectBox } from "./select-box";
+export { MultiSelectCombobox } from "./multi-select-combobox";
 export { PageSizeSelect } from "./page-size-select";
 export { PermissionGate } from "./permission-gate";
 export { Toggle } from "./toggle";

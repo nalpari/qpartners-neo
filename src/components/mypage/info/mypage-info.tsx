@@ -7,6 +7,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
+import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { MypageInfoCorporate } from "./mypage-info-corporate";
 import { MypageInfoMember } from "./mypage-info-member";
@@ -122,6 +124,11 @@ export function MypageInfo() {
   const [isSaving, setIsSaving] = useState(false);
   const { openAlert } = useAlertStore();
 
+  // RBAC — MYPAGE.canUpdate 매트릭스 가드. false → 修正 버튼/아이콘 사전 숨김.
+  // 로딩 중에도 fail-closed (서버 PUT /api/mypage/profile 가 최종 방어선이라 UX 보호 목적).
+  const { canUpdate: canUpdateMypage, isLoading: isPermLoading } = useMenuPermission(MENU.MYPAGE);
+  const canShowEdit = !isPermLoading && canUpdateMypage;
+
   // Design Ref: §4.1 — 부모 컴포넌트 데이터 페칭
   const queryClient = useQueryClient();
   const { data: loginUser } = useQuery<LoginUser | null>({
@@ -148,6 +155,12 @@ export function MypageInfo() {
 
   const handleStartEdit = () => {
     if (!profile) return;
+    // RBAC 패턴 E — UI(canShowEdit) 와 핸들러 본체 이중 가드. 로딩 중 silent return.
+    if (isPermLoading) return;
+    if (!canUpdateMypage) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
     setEditData(createEditFormData(profile));
     setIsEditing(true);
   };
@@ -164,6 +177,14 @@ export function MypageInfo() {
   // Design Ref: §4 — 저장 로직
   const handleSave = async () => {
     if (!editData || !userType) return;
+
+    // RBAC 패턴 E — 저장 본체에서도 권한 재검증 (UI 우회·race 차단).
+    // 서버 PUT /api/mypage/profile 가 최종 방어선이라 보안은 안전, 본 분기는 UX 가드.
+    if (isPermLoading) return;
+    if (!canUpdateMypage) {
+      openAlert({ type: "alert", message: "権限がありません。" });
+      return;
+    }
 
     const errors = validateEditForm(editData, userType);
     if (errors.length > 0) {
@@ -263,14 +284,14 @@ export function MypageInfo() {
         <h2 className="flex-1 font-['Noto_Sans_JP'] font-medium text-[18px] leading-[1.5] text-[#101010]">
           {isEditing ? "私の情報/会社情報の修正" : "私の情報/会社情報"}
         </h2>
-        {!isEditing && userType && (
+        {!isEditing && userType && canShowEdit && (
           <div className="hidden lg:block">
             <Button variant="primary" className="w-[68px]" onClick={handleStartEdit}>
               修正
             </Button>
           </div>
         )}
-        {!isEditing && userType && (
+        {!isEditing && userType && canShowEdit && (
           <button
             type="button"
             className="lg:hidden shrink-0"

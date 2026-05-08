@@ -1416,7 +1416,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "keyword", in: "query", description: "공지내용(content) Like 검색", schema: { type: "string" } },
           { name: "status", in: "query", description: "scheduled/active/ended (콤마 구분)", schema: { type: "string" } },
-          { name: "targetType", in: "query", description: "게시대상 필터 — 단일 또는 콤마 구분 멀티 선택 (super_admin/admin/first_store/second_store/seko/general). 멀티는 OR 매칭", schema: { type: "string" } },
+          { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 — 단일 또는 콤마 구분 멀티 선택 (qp_roles 동적: 6 기본 + 추가 권한). 멀티는 OR 매칭", schema: { type: "string" } },
           { name: "createdBy", in: "query", description: "등록자 Like 검색 (createdBy 부분 일치)", schema: { type: "string" } },
           { name: "startDate", in: "query", description: "등록일 시작 (YYYY-MM-DD)", schema: { type: "string" } },
           { name: "endDate", in: "query", description: "등록일 종료 (YYYY-MM-DD)", schema: { type: "string" } },
@@ -1448,7 +1448,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 등록",
         description:
-          "게시대상 최소 1개 필수. 권한별(target별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 등록 불가 (code=LIMIT_EXCEEDED, target=초과된 권한군 키).",
+          "게시대상 권한코드 1개 이상 필수. 권한별(roleCode별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 등록 불가 (code=LIMIT_EXCEEDED, target=초과된 roleCode).",
         requestBody: {
           required: true,
           content: {
@@ -1508,7 +1508,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["HomeNotice"],
         summary: "홈화면 공지 수정",
         description:
-          "권한별(target별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 수정 불가 (code=LIMIT_EXCEEDED, target=초과된 권한군 키). 게시기간 미변경 + 새로 추가된 target 만 검사.",
+          "권한별(roleCode별)로 동일기간 활성(예정 포함) 공지 5건 초과 시 수정 불가 (code=LIMIT_EXCEEDED, target=초과된 roleCode). 게시기간 미변경 + 새로 추가된 roleCode 만 검사.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
         ],
@@ -1628,7 +1628,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["HomeNotice"],
         summary: "홈화면용 활성 공지 (비회원 접근 가능)",
-        description: "현재 시각 기준 활성 공지 중 사용자 역할에 해당하는 것만 반환. 비회원은 targetGeneral만.",
+        description: "현재 시각 기준 활성 공지 중 사용자 역할(roleCode) 에 해당하는 것만 반환. 비회원은 GENERAL roleCode 매칭 공지만 노출.",
         responses: {
           "200": {
             description: "조회 성공",
@@ -1662,13 +1662,13 @@ export const openApiSpec: OpenAPIV3.Document = {
           { name: "keyword", in: "query", schema: { type: "string" } },
           { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
-          { name: "targetType", in: "query", schema: { type: "string" } },
-          { name: "department", in: "query", schema: { type: "string" } },
+          { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
+          { name: "department", in: "query", description: "担当部門フィルター（複数選択時はカンマ区切り）", schema: { type: "string" } },
           {
             name: "internalOnly",
             in: "query",
             description:
-              "사내회원 전용 게시글만 조회 여부.\n- 사내 사용자(ADMIN): true 시 외부 게시대상이 없는(사내회원 전용) 게시글만 반환. targetType 파라미터는 무시됨.\n- 비사내 사용자: 파라미터 값과 무관하게 사내전용 카테고리는 항상 제외 (bypass 불가).",
+              "사내회원 전용 게시글만 조회 여부.\n- 사내 사용자(ADMIN): true 시 외부 게시대상(비-INTERNAL_ROLE_CODES 또는 비회원 null)이 없는 게시글만 반환. roleCode 파라미터는 무시됨.\n- 비사내 사용자: 파라미터 값과 무관하게 사내전용 카테고리는 항상 제외 (bypass 불가).",
             schema: { type: "boolean", default: false },
           },
           { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "oldest", "views", "updated"], default: "newest" } },
@@ -1724,9 +1724,13 @@ export const openApiSpec: OpenAPIV3.Document = {
                     type: "array",
                     items: {
                       type: "object",
-                      required: ["targetType"],
+                      required: ["roleCode"],
                       properties: {
-                        targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                        roleCode: {
+                          type: "string",
+                          nullable: true,
+                          description: "권한코드 (qp_roles.role_code 동적). null = 비회원 sentinel. JSON 직렬화 시 null 또는 `__NON_MEMBER__` 문자열 양쪽 허용.",
+                        },
                         startAt: { type: "string", format: "date-time" },
                         endAt: { type: "string", format: "date-time" },
                       },
@@ -3046,7 +3050,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: "관리자 전용 — 대량메일 목록 (검색/필터/페이징)",
         parameters: [
           { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
-          { name: "target", in: "query", schema: { type: "string", enum: ["super_admin", "admin", "first_store", "second_store", "seko", "general"] }, description: "발송대상 필터" },
+          { name: "roleCode", in: "query", schema: { type: "string", maxLength: 50 }, description: "발송대상 권한코드 필터 (qp_roles 동적). 단일 또는 콤마 구분 멀티 — OR 매칭." },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
           { name: "authorSearchType", in: "query", schema: { type: "string", enum: ["name", "id"] }, description: "登録者 검색 대상 (이름/ID)" },
           { name: "authorQuery", in: "query", schema: { type: "string", minLength: 2 }, description: "登録者 검색어 (부분일치, 2文字以上)" },
@@ -3678,9 +3682,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             maxLength: 255,
             example: "상태코드",
           },
-          relCode1: { type: "string", maxLength: 50, nullable: true },
-          relCode2: { type: "string", maxLength: 50, nullable: true },
-          relCode3: { type: "string", maxLength: 50, nullable: true },
+          relCode1: { type: "string", maxLength: 100, nullable: true },
+          relCode2: { type: "string", maxLength: 100, nullable: true },
+          relCode3: { type: "string", maxLength: 100, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,
@@ -3703,9 +3707,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           headerAlias: { type: "string", maxLength: 50 },
           headerName: { type: "string", maxLength: 255 },
-          relCode1: { type: "string", maxLength: 50, nullable: true },
-          relCode2: { type: "string", maxLength: 50, nullable: true },
-          relCode3: { type: "string", maxLength: 50, nullable: true },
+          relCode1: { type: "string", maxLength: 100, nullable: true },
+          relCode2: { type: "string", maxLength: 100, nullable: true },
+          relCode3: { type: "string", maxLength: 100, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,
@@ -3729,9 +3733,9 @@ export const openApiSpec: OpenAPIV3.Document = {
           displayCode: { type: "string", maxLength: 20, example: "01" },
           codeName: { type: "string", maxLength: 255, example: "활성" },
           codeNameEtc: { type: "string", maxLength: 255, nullable: true },
-          relCode1: { type: "string", maxLength: 50, nullable: true },
-          relCode2: { type: "string", maxLength: 50, nullable: true },
-          relCode3: { type: "string", maxLength: 50, nullable: true },
+          relCode1: { type: "string", maxLength: 100, nullable: true },
+          relCode2: { type: "string", maxLength: 100, nullable: true },
+          relCode3: { type: "string", maxLength: 100, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,
@@ -3818,7 +3822,11 @@ export const openApiSpec: OpenAPIV3.Document = {
             items: {
               type: "object",
               properties: {
-                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                roleCode: {
+                  type: "string",
+                  nullable: true,
+                  description: "권한코드 (qp_roles 동적). null = 비회원 sentinel",
+                },
                 startAt: { type: "string", format: "date-time", nullable: true },
                 endAt: { type: "string", format: "date-time", nullable: true },
               },
@@ -3866,7 +3874,11 @@ export const openApiSpec: OpenAPIV3.Document = {
               type: "object",
               properties: {
                 id: { type: "integer" },
-                targetType: { type: "string", enum: ["first_store", "second_store", "seko", "general", "non_member"] },
+                roleCode: {
+                  type: "string",
+                  nullable: true,
+                  description: "권한코드 (qp_roles 동적). null = 비회원 sentinel",
+                },
                 startAt: { type: "string", format: "date-time", nullable: true },
                 endAt: { type: "string", format: "date-time", nullable: true },
               },
@@ -3964,13 +3976,18 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       Role: {
         type: "object",
-        required: ["id", "roleCode", "roleName", "isActive", "createdAt", "updatedAt"],
+        required: ["id", "roleCode", "roleName", "isActive", "isSystem", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
           roleCode: { type: "string", example: "ADMIN" },
           roleName: { type: "string", example: "관리자" },
           description: { type: "string", nullable: true, example: "사내직원, 전체 메뉴 CRUD 권한 부여" },
           isActive: { type: "boolean", example: true },
+          isSystem: {
+            type: "boolean",
+            description: "시스템 예약 권한 (6 기본). true 시 isActive 변경/삭제 불가, roleName 만 편집 가능. (Target Dynamic from Role)",
+            example: true,
+          },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
@@ -3980,12 +3997,15 @@ export const openApiSpec: OpenAPIV3.Document = {
       CreateRole: {
         type: "object",
         required: ["roleCode", "roleName"],
+        description:
+          "운영자 정의 추가 권한 등록. 시스템 예약 코드(SUPER_ADMIN/ADMIN/GENERAL/1ST_STORE/2ND_STORE/SEKO) 는 거부됨. isSystem 은 입력값 무시 — 서버에서 false 강제.",
         properties: {
           roleCode: {
             type: "string",
-            enum: ["SUPER_ADMIN", "ADMIN", "1ST_STORE", "2ND_STORE", "SEKO", "GENERAL"],
-            description: "authRole ↔ roleCode 1:1. enum 외 생성 불가 (후속 GET/PUT 경로가 path param enum 에서 400 이 되어 좀비 row 가 되는 것을 방지).",
-            example: "ADMIN",
+            maxLength: 50,
+            pattern: "^[A-Z0-9][A-Z0-9_]*$",
+            description: "권한코드 — 영대문자/숫자/언더스코어, 영대문자 또는 숫자로 시작. 시스템 예약 코드 6종은 등록 불가.",
+            example: "PARTNER_LEAD",
           },
           roleName: { type: "string", maxLength: 100, example: "特殊会員" },
           description: { type: "string", maxLength: 500, nullable: true, example: "特殊パートナー" },
@@ -3994,7 +4014,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       UpdateRole: {
         type: "object",
-        description: "변경할 필드만 전송 (roleCode 수정 불가)",
+        description:
+          "변경할 필드만 전송 (roleCode 수정 불가). 시스템 예약 권한(isSystem=true) 은 isActive 변경 거부 — 서버가 기존 값 유지.",
         properties: {
           roleName: { type: "string", maxLength: 100 },
           description: { type: "string", maxLength: 500, nullable: true },
@@ -4033,7 +4054,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         required: ["error", "code"],
         description:
-          "HomeNotice 등록/수정 시 권한별(target별) 동일기간 5건 초과로 거부된 응답.",
+          "HomeNotice 등록/수정 시 권한별(roleCode별) 동일기간 5건 초과로 거부된 응답.",
         properties: {
           error: {
             type: "string",
@@ -4043,16 +4064,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           code: { type: "string", enum: ["LIMIT_EXCEEDED"] },
           target: {
             type: "string",
-            enum: [
-              "super_admin",
-              "admin",
-              "first_store",
-              "second_store",
-              "seko",
-              "general",
-            ],
             description:
-              "초과된 권한군 외부 키 (toTargetArray 와 동일 사전). 권한군 식별 불가능 시 누락.",
+              "초과된 roleCode (qp_roles 동적 — 6 기본 + 추가 권한). 권한 식별 불가능 시 누락.",
           },
         },
       },
@@ -4061,12 +4074,12 @@ export const openApiSpec: OpenAPIV3.Document = {
         required: ["id", "startAt", "endAt", "title", "content", "userType", "userId", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
-          targetSuperAdmin: { type: "boolean" },
-          targetAdmin: { type: "boolean" },
-          targetFirstStore: { type: "boolean" },
-          targetSecondStore: { type: "boolean" },
-          targetConstructor: { type: "boolean" },
-          targetGeneral: { type: "boolean" },
+          /** 게시대상 권한코드 배열 — qp_roles FK (Target Dynamic from Role 후) */
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            example: ["1ST_STORE", "SEKO"],
+          },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
           title: { type: "string", maxLength: 100 },
@@ -4084,7 +4097,12 @@ export const openApiSpec: OpenAPIV3.Document = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          targets: { type: "array", items: { type: "string" }, example: ["first_store", "seko"] },
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            example: ["1ST_STORE", "SEKO"],
+            description: "게시대상 권한코드 배열 (qp_roles 동적)",
+          },
           title: { type: "string", maxLength: 100 },
           content: { type: "string" },
           url: { type: "string", nullable: true },
@@ -4136,15 +4154,16 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       CreateHomeNotice: {
         type: "object",
-        required: ["startAt", "endAt", "title", "content"],
-        description: "게시대상(target*) 중 최소 1개 true 필수",
+        required: ["startAt", "endAt", "title", "content", "targetRoleCodes"],
+        description: "게시대상(targetRoleCodes) 권한코드 1개 이상 필수 (qp_roles 동적).",
         properties: {
-          targetSuperAdmin: { type: "boolean", default: false },
-          targetAdmin: { type: "boolean", default: false },
-          targetFirstStore: { type: "boolean", default: false },
-          targetSecondStore: { type: "boolean", default: false },
-          targetConstructor: { type: "boolean", default: false },
-          targetGeneral: { type: "boolean", default: false },
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            minItems: 1,
+            example: ["1ST_STORE", "SEKO"],
+            description: "권한코드 배열 — qp_roles 동적 (6 기본 + 추가 권한)",
+          },
           startAt: { type: "string", format: "date-time", example: "2026-03-20T00:00:00Z" },
           endAt: { type: "string", format: "date-time", example: "2026-03-30T23:59:59Z" },
           title: { type: "string", maxLength: 100, example: "システムメンテナンスのお知らせ" },
@@ -4154,14 +4173,14 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       UpdateHomeNotice: {
         type: "object",
-        description: "변경할 필드만 전송. 게시대상 최소 1개 true 필수.",
+        description: "변경할 필드만 전송. 게시대상(targetRoleCodes) 전송 시 1개 이상 필수.",
         properties: {
-          targetSuperAdmin: { type: "boolean" },
-          targetAdmin: { type: "boolean" },
-          targetFirstStore: { type: "boolean" },
-          targetSecondStore: { type: "boolean" },
-          targetConstructor: { type: "boolean" },
-          targetGeneral: { type: "boolean" },
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            minItems: 1,
+            description: "권한코드 배열 — qp_roles 동적",
+          },
           startAt: { type: "string", format: "date-time" },
           endAt: { type: "string", format: "date-time" },
           title: { type: "string", maxLength: 100 },
@@ -4239,9 +4258,9 @@ export const openApiSpec: OpenAPIV3.Document = {
           displayCode: { type: "string", maxLength: 20 },
           codeName: { type: "string", maxLength: 255 },
           codeNameEtc: { type: "string", maxLength: 255, nullable: true },
-          relCode1: { type: "string", maxLength: 50, nullable: true },
-          relCode2: { type: "string", maxLength: 50, nullable: true },
-          relCode3: { type: "string", maxLength: 50, nullable: true },
+          relCode1: { type: "string", maxLength: 100, nullable: true },
+          relCode2: { type: "string", maxLength: 100, nullable: true },
+          relCode3: { type: "string", maxLength: 100, nullable: true },
           relNum1: {
             oneOf: [{ type: "number" }, { type: "string" }],
             nullable: true,
@@ -4381,18 +4400,12 @@ export const openApiSpec: OpenAPIV3.Document = {
         properties: {
           id: { type: "integer" },
           status: { type: "string", enum: ["draft", "pending", "sending", "sent", "send_failed"] },
-          targets: {
-            type: "object",
-            properties: {
-              super_admin: { type: "boolean" },
-              admin: { type: "boolean" },
-              first_store: { type: "boolean" },
-              second_store: { type: "boolean" },
-              seko: { type: "boolean" },
-              general: { type: "boolean" },
-            },
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            example: ["1ST_STORE", "SEKO"],
+            description: "발송대상 권한코드 배열 (qp_roles 동적). FE 가 useTargetLabels 로 라벨링.",
           },
-          targetsLabel: { type: "string", description: "발송대상 콤마 구분 표시용" },
           subject: { type: "string" },
           hasAttachment: { type: "boolean" },
           senderName: { type: "string" },
@@ -4407,8 +4420,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         required: [
           "id",
           "senderName",
-          "targets",
-          "targetsLabel",
+          "targetRoleCodes",
           "optOut",
           "subject",
           "body",
@@ -4432,19 +4444,12 @@ export const openApiSpec: OpenAPIV3.Document = {
           userType: { type: "string", description: "작성자 userType" },
           userId: { type: "string", description: "작성자 userId" },
           authorIsSuperAdmin: { type: "boolean", description: "작성자가 SUPER_ADMIN 여부 (프론트 수정/삭제 버튼 노출 판단용)" },
-          targets: {
-            type: "object",
-            required: ["super_admin", "admin", "first_store", "second_store", "seko", "general"],
-            properties: {
-              super_admin: { type: "boolean" },
-              admin: { type: "boolean" },
-              first_store: { type: "boolean" },
-              second_store: { type: "boolean" },
-              seko: { type: "boolean" },
-              general: { type: "boolean" },
-            },
+          targetRoleCodes: {
+            type: "array",
+            items: { type: "string", maxLength: 50 },
+            example: ["1ST_STORE", "SEKO"],
+            description: "발송대상 권한코드 배열 (qp_roles 동적). FE 가 useTargetLabels 로 라벨링.",
           },
-          targetsLabel: { type: "string", description: "발송대상 콤마 구분 표시용" },
           optOut: { type: "boolean" },
           subject: { type: "string" },
           body: { type: "string" },
@@ -4470,11 +4475,15 @@ export const openApiSpec: OpenAPIV3.Document = {
             description: "영구 실패 수신자 명단 (status='failed' 인 recipients). 失敗確認 모달 팝업용. PII 보호를 위해 email 마스킹 + errorMessage 는 카테고리 코드로 치환. sent_failed=0 이면 빈 배열, 상한(500건) 초과 시 truncated=true.",
             items: {
               type: "object",
-              required: ["email", "userName", "authRole", "errorCategory", "lastAttemptAt"],
+              required: ["email", "userName", "authRoleCode", "errorCategory", "lastAttemptAt"],
               properties: {
                 email: { type: "string", description: "마스킹된 이메일 (local-part 첫 1자만 노출)" },
                 userName: { type: "string", nullable: true },
-                authRole: { type: "string", enum: ["SUPER_ADMIN", "ADMIN", "FIRST_STORE", "SECOND_STORE", "SEKO", "GENERAL"] },
+                authRoleCode: {
+                  type: "string",
+                  description: "발송 시점 권한코드 스냅샷 (qp_roles FK 가 아닌 String 으로 보존 — 권한 비활성·삭제 후에도 이력 유지)",
+                  maxLength: 50,
+                },
                 errorCategory: {
                   type: "string",
                   enum: ["ORPHAN_SEND", "SMTP_TIMEOUT", "SMTP_REJECT", "UNKNOWN"],
@@ -4542,15 +4551,15 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       MassMailCreateRequest: {
         type: "object",
-        required: ["senderName", "subject", "body", "status"],
+        required: ["senderName", "subject", "body", "status", "targetRoleCodes"],
         properties: {
           senderName: { type: "string" },
-          targetSuperAdmin: { type: "boolean" },
-          targetAdmin: { type: "boolean" },
-          targetFirstStore: { type: "boolean" },
-          targetSecondStore: { type: "boolean" },
-          targetConstructor: { type: "boolean" },
-          targetGeneral: { type: "boolean" },
+          targetRoleCodes: {
+            type: "string",
+            description:
+              "발송대상 권한코드 배열 (qp_roles 동적). multipart/form-data 필드라 JSON 배열 문자열 또는 콤마 구분 문자열 양쪽 허용. 예: `[\"1ST_STORE\",\"SEKO\"]` 또는 `1ST_STORE,SEKO`. 1 개 이상 필수.",
+            example: '["1ST_STORE","SEKO"]',
+          },
           optOut: { type: "boolean", description: "뉴스레터 수신거부 제외 여부" },
           subject: { type: "string" },
           body: { type: "string" },

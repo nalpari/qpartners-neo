@@ -234,6 +234,7 @@ export function ContentsTable({
   // 서버 POST /api/contents 도 requireMenuPermission(CONTENT, create) 로 최종 검증하므로 FE 는 UX 전용.
   // 로딩 중 fail-closed (isPermLoading 시 false) — RBAC 표준 패턴 B 준수.
   const { canCreate: canCreateContent, isLoading: isPermLoading } = useMenuPermission(MENU.CONTENT);
+  // 매트릭스가 유일한 권한 판단 기준 — isInternal 이중 가드 제거.
   const showCreateButton = !isPermLoading && canCreateContent;
 
   // 권한관리 라벨 동기화 — 게시대상 셀/CSV export 표시명을 권한명으로 동적 변환.
@@ -319,7 +320,7 @@ export function ContentsTable({
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
                 {targets.map((t, i) => (
-                  <span key={i} className="text-xs">{resolveTargetLabel(t.targetType)}</span>
+                  <span key={i} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
                 ))}
               </div>
             );
@@ -395,7 +396,7 @@ export function ContentsTable({
           render: (item) => {
             // rowData 에서 이미 정렬된 targets 사용
             if (item.targets.length === 0) return "-";
-            return item.targets.map((t) => resolveTargetLabel(t.targetType)).join(", ");
+            return item.targets.map((t) => resolveTargetLabel(t.roleCode)).join(", ");
           },
         },
         {
@@ -433,7 +434,7 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {isInternal && showCreateButton && (
+        {showCreateButton && (
           <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
             <Button variant="primary" className="w-[90px]">
               新規登録

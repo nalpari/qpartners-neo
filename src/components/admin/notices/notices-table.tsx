@@ -16,6 +16,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import type {
@@ -37,7 +38,8 @@ import {
 interface NoticeDetailResponse {
   data: {
     id: number;
-    targets: string[];
+    /** 게시대상 권한코드 배열 — qp_roles 동적 */
+    targetRoleCodes: string[];
     title: string;
     content: string;
     url: string | null;
@@ -100,6 +102,9 @@ export function NoticesTable({
     enabled: false,
   });
 
+  // 권한 라벨 동기화 — 게시대상 컬럼은 qp_roles 단일 출처. 비활성된 권한도 라벨 룩업 가능.
+  const { resolveLabel: resolveTargetLabel } = useTargetLabels();
+
   const { data, isLoading } = useQuery<NoticeListResponse>({
     // 배열을 직접 키에 넣으면 reference identity 가 매 렌더 바뀔 때 캐시 미스 발생.
     // join(",") 으로 직렬화해 동일 내용은 동일 키로 안정화.
@@ -107,7 +112,7 @@ export function NoticesTable({
       "home-notices",
       filters.keyword,
       filters.statuses.join(","),
-      filters.targetTypes.join(","),
+      filters.roleCodes.join(","),
       filters.author,
       filters.startDate?.getTime(),
       filters.endDate?.getTime(),
@@ -121,8 +126,8 @@ export function NoticesTable({
       };
       if (filters.keyword) params.keyword = filters.keyword;
       if (filters.statuses.length > 0) params.status = filters.statuses.join(",");
-      // 게시대상 멀티 선택 — comma-separated 로 BE 에 전달, BE 에서 OR 조건으로 변환.
-      if (filters.targetTypes.length > 0) params.targetType = filters.targetTypes.join(",");
+      // 게시대상 권한코드 멀티 선택 — comma-separated 로 BE 에 전달, BE 에서 OR 조건으로 변환.
+      if (filters.roleCodes.length > 0) params.roleCode = filters.roleCodes.join(",");
       if (filters.author) params.createdBy = filters.author;
       if (filters.startDate) {
         const d = filters.startDate;
@@ -273,7 +278,7 @@ export function NoticesTable({
 
         const formData: NoticeFormData = {
           id: d.id,
-          targets: d.targets,
+          targetRoleCodes: d.targetRoleCodes,
           startDate: d.startAt,
           endDate: d.endAt,
           title: d.title,
@@ -361,7 +366,7 @@ export function NoticesTable({
     // Issue #2146 (2) — createdAt 을 미리 채우지 않는다. 폼 표시값이 실제 DB 저장 시각과 어긋나는 문제
     // 차단. 신규 등록 모달에서 등록일은 "—" 로 표시되고, 저장 응답 후 실제 createdAt 으로 갱신된다.
     const emptyForm: NoticeFormData = {
-      targets: [],
+      targetRoleCodes: [],
       startDate: "",
       endDate: "",
       title: "",
@@ -396,9 +401,9 @@ export function NoticesTable({
       },
       {
         headerName: "掲示対象",
-        field: "targets",
+        field: "targetRoleCodes",
         flex: 1,
-        valueFormatter: (p) => targetsToLabel(p.value as string[]),
+        valueFormatter: (p) => targetsToLabel(p.value as string[], resolveTargetLabel),
         headerClass: "ag-header-cell-center",
       },
       {
@@ -459,7 +464,7 @@ export function NoticesTable({
         headerClass: "ag-header-cell-center",
       },
     ],
-    [TitleCellRenderer, CheckboxCellRenderer, HeaderCheckbox],
+    [TitleCellRenderer, CheckboxCellRenderer, HeaderCheckbox, resolveTargetLabel],
   );
 
   // 그리드 context — cell renderer 가 최신 selectedIds / 토글 핸들러를 참조하도록 매 렌더 갱신.

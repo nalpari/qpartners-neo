@@ -11,7 +11,7 @@ import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { resolveAuthRole, type AuthRole } from "@/lib/auth";
+import { resolveAuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -330,9 +330,15 @@ export async function POST(request: NextRequest) {
 
   // 7. 자동 로그인 — JWT 발행 + 쿠키 설정
   // 비밀번호 변경은 이미 완료됨 — resolveAuthRole 실패로 전체 응답을 실패시키면 안 됨
-  let authRole: AuthRole;
+  // GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록 4번째 인자로 전달.
+  let authRole: string;
   try {
-    authRole = await resolveAuthRole(validUserTp, loginId, detailData?.storeLvl ?? null);
+    authRole = await resolveAuthRole(
+      validUserTp,
+      loginId,
+      detailData?.storeLvl ?? null,
+      detailData?.authCd ?? null,
+    );
   } catch (error) {
     console.error("[POST /api/auth/password-reset/confirm] authRole 판별 실패, 기본값 사용:", error);
     // STORE 폴백은 항상 2ND_STORE 단일 매핑 — resolveAuthRole 실패 상황에서 storeLvl 만으로

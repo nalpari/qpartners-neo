@@ -10,15 +10,17 @@ import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
-import { userTpValues, authRoleValues, targetTypeValues } from "@/lib/schemas/common";
+import { userTpValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
+
+/** GENERAL 사용자의 격상을 차단할 관리자 역할. 1ST_STORE/2ND_STORE/SEKO는 운영자 할당 시 허용. */
+const ADMIN_ROLE_CODES: ReadonlySet<string> = new Set(["SUPER_ADMIN", "ADMIN"]);
 // getFallbackRole/AuthRole 은 Edge Runtime 호환을 위해 prisma 비의존 파일로 분리되어 있다.
 // 이 파일은 서버 API 전용이므로 그대로 re-export 해 기존 소비처의 import 경로를 유지.
 import { getFallbackRole, type AuthRole } from "@/lib/auth-role";
 
 export { getFallbackRole };
 export type { AuthRole };
-export type TargetType = (typeof targetTypeValues)[number];
 type UserTp = (typeof userTpValues)[number];
 
 /** QpRoleMenuPermission 의 CRUD boolean 필드 묶음. resolveMenuPermission 반환 타입. */
@@ -30,7 +32,16 @@ export type MenuPermission = {
 };
 
 const VALID_USER_TYPES = new Set<string>(userTpValues);
-const VALID_ROLES = new Set<string>(authRoleValues);
+
+/**
+ * roleCode 형식 검증 — schemas/common.ts roleCodeFormatSchema 와 동일 정책.
+ * 6 기본 권한(SUPER_ADMIN/ADMIN/GENERAL/1ST_STORE/2ND_STORE/SEKO) + 운영자 정의
+ * 추가 권한 모두 허용 (Target Dynamic from Role 후).
+ *
+ * 활성 여부 검증은 `resolveMenuPermission` 의 `role.isActive` 분기에서 수행 —
+ * DB 단일 진실 원천 (qp_roles.is_active).
+ */
+const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 
 export type UserInfo = {
   userType: (typeof userTpValues)[number];
@@ -58,7 +69,7 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
 
   if (!userType || !userId || !role) return null;
   if (!VALID_USER_TYPES.has(userType)) return null;
-  if (!VALID_ROLES.has(role)) return null;
+  if (!ROLE_CODE_FORMAT.test(role) || role.length > 50) return null;
 
   const rawName = headers.get("X-User-Name");
   const rawDepartment = headers.get("X-User-Department");
@@ -147,6 +158,9 @@ export async function resolveMenuPermission(
       roleCode: user.role,
       menuCode,
       menu: { isActive: true },
+      // 비활성 권한(qp_roles.is_active=false) 회원 차단 —
+      // 6 기본 권한은 마이그레이션에서 isActive=TRUE 강제, 추가 권한만 영향.
+      role: { isActive: true },
     },
     select: {
       canRead: true,
@@ -208,12 +222,22 @@ export async function requireMenuPermission(
   return { user };
 }
 
-/** QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용 */
+/**
+ * QSP 응답 기반 세부 권한코드 판별 — 로그인/비밀번호 초기화 후 자동 로그인 공용.
+ *
+ * GENERAL 사용자는 회원관리에서 운영자가 임의 권한 그룹을 할당할 수 있으므로,
+ * QSP `authCd` 가 활성 + 비SUPER/ADMIN 권한이면 우선 채택. 그 외는 GENERAL 폴백 (fail-closed).
+ *
+ * 반환 타입을 string 으로 확장 — 운영자 정의 동적 권한(예: "MANAGER_A") 도 그대로 흐르도록.
+ * AuthRole 6개 fixed 타입은 RBAC 가드의 hardcoded 분기 식별자로 그대로 사용 가능
+ * (string 비교는 type narrowing 영향 없음).
+ */
 export async function resolveAuthRole(
   userTp: UserTp,
   userId: string,
   storeLvl: string | null,
-): Promise<AuthRole> {
+  authCd: string | null = null,
+): Promise<string> {
   switch (userTp) {
     case "ADMIN": {
       const entry = await prisma.codeDetail.findFirst({
@@ -238,34 +262,90 @@ export async function resolveAuthRole(
       return storeLvl === "1" ? "1ST_STORE" : "2ND_STORE";
     case "SEKO":
       return "SEKO";
-    default:
+    default: {
+      // GENERAL: 운영자가 회원관리에서 할당한 authCd 우선 채택.
+      // SUPER_ADMIN/ADMIN 격상만 차단 — 나머지 시스템 역할(1ST_STORE/2ND_STORE/SEKO)은 허용.
+      // 무효/미설정/조회 실패 시 GENERAL 폴백 (최소 권한 원칙, rules/api.md 정책).
+      if (authCd) {
+        try {
+          const activeRoleCodes = await resolveActiveRoleCodes();
+          if (activeRoleCodes.has(authCd) && !ADMIN_ROLE_CODES.has(authCd)) {
+            return authCd;
+          }
+          console.warn(
+            `[resolveAuthRole] GENERAL authCd 무효 또는 관리자 역할 격상 차단 — GENERAL 폴백: authCd=${authCd?.slice(0, 30)}`,
+          );
+        } catch (error) {
+          console.error("[resolveAuthRole] qpRole 활성 목록 조회 실패 — GENERAL 폴백:", error);
+        }
+      }
       return "GENERAL";
+    }
   }
 }
 
-/** authRole(대문자) → ContentTarget.targetType(소문자) 매핑 */
-export const AUTH_ROLE_TO_TARGET: Partial<Record<AuthRole, TargetType>> = {
-  "1ST_STORE": "first_store",
-  "2ND_STORE": "second_store",
-  "SEKO": "seko",
-  "GENERAL": "general",
-};
+/**
+ * 활성 권한 코드 동적 조회 — qp_roles 기반 단일 진실 원천.
+ *
+ * - 6 기본 권한 (isSystem=true) + 운영자 정의 활성 추가 권한 (isSystem=false AND isActive=true)
+ * - JWT 검증, 게시대상 등록 검증, 회원관리 권한 변경 검증 모두 공유
+ * - 프로세스 내 TTL 캐시 (60초) — 준정적 데이터이므로 per-request DB 조회 불필요.
+ *   권한 변경 시 invalidateActiveRoleCache() 호출로 즉시 갱신.
+ */
+let _activeRoleCache: { codes: Set<string>; expiry: number } | null = null;
+const ROLE_CACHE_TTL = 60_000;
 
-/** 콘텐츠 접근 가능 여부 — 게시대상 + 기간 접근제어 */
+export async function resolveActiveRoleCodes(): Promise<Set<string>> {
+  const now = Date.now();
+  if (_activeRoleCache && _activeRoleCache.expiry > now) return _activeRoleCache.codes;
+  const rows = await prisma.qpRole.findMany({
+    where: { isActive: true },
+    select: { roleCode: true },
+  });
+  const codes = new Set(rows.map((r) => r.roleCode));
+  _activeRoleCache = { codes, expiry: now + ROLE_CACHE_TTL };
+  return codes;
+}
+
+/** 권한 변경 시 캐시 무효화 — PUT /api/roles/:roleCode, POST /api/roles 에서 호출 */
+export function invalidateActiveRoleCache(): void {
+  _activeRoleCache = null;
+}
+
+/**
+ * 콘텐츠 접근 가능 여부 — 게시대상(roleCode) + 기간 접근제어.
+ *
+ * - SUPER_ADMIN/ADMIN: 모든 콘텐츠 접근 (사내 사용자)
+ * - 비로그인: roleCode IS NULL (비회원 게시대상) 콘텐츠만 통과
+ * - 그 외: 사용자 authRole 과 일치하는 게시대상 콘텐츠 통과
+ *
+ * 게시대상 시그니처는 ContentTarget 의 Prisma 모델 그대로 — `roleCode: string | null`.
+ * `null = 비회원 sentinel` (qp_roles 외부, useTargetLabels.ts:15 코드 의도 보존).
+ */
 export function canAccessContent(
   user: UserInfo | null,
-  targets: { targetType: string; startAt: Date | null; endAt: Date | null }[],
+  targets: { roleCode: string | null; startAt: Date | null; endAt: Date | null }[],
 ): boolean {
   // 사내 사용자는 모든 콘텐츠 접근 가능
   if (user && isInternalUser(user.role)) return true;
 
-  const targetType = user ? (AUTH_ROLE_TO_TARGET[user.role] ?? "non_member") : "non_member";
+  const userRoleCode: string | null = user ? user.role : null;
+
+  // 게시기간 day 단위 비교 — 목록 API(contents/route, home-notices/active/route) 와 동일 기준.
+  // JST 기준 오늘 자정(UTC ms) 을 명시 계산해 서버 컨테이너 TZ 의존성 제거 (Redmine #2131).
   const now = new Date();
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const todayStart = new Date(
+    Math.floor((now.getTime() + JST_OFFSET_MS) / ONE_DAY_MS) * ONE_DAY_MS - JST_OFFSET_MS,
+  );
 
   return targets.some((t) => {
-    if (t.targetType !== targetType) return false;
-    if (t.startAt && now < t.startAt) return false;
-    if (t.endAt && now > t.endAt) return false;
+    // 비로그인 사용자 → 비회원 게시대상(roleCode IS NULL)만 통과
+    // 로그인 사용자 → roleCode 일치
+    if (t.roleCode !== userRoleCode) return false;
+    if (t.startAt && todayStart < t.startAt) return false;
+    if (t.endAt && todayStart > t.endAt) return false;
     return true;
   });
 }

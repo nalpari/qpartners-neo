@@ -9,7 +9,7 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { resolveAuthRole, type AuthRole } from "@/lib/auth";
+import { resolveAuthRole } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 // ─── 요청 스키마 ───
@@ -229,9 +229,16 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. JWT 재발급 — 최신 사용자 정보 반영
-    let authRole: AuthRole;
+    // GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록
+    // resolveAuthRole 4번째 인자로 전달 (detailData 우선, fallback user.authCd).
+    let authRole: string;
     try {
-      authRole = await resolveAuthRole(user.userTp, loginId, detailData?.storeLvl ?? user.storeLvl ?? null);
+      authRole = await resolveAuthRole(
+        user.userTp,
+        loginId,
+        detailData?.storeLvl ?? user.storeLvl ?? null,
+        detailData?.authCd ?? user.authCd ?? null,
+      );
     } catch (error) {
       console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
       authRole = user.userTp === "ADMIN" ? "ADMIN"

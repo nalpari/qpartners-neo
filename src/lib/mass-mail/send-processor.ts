@@ -25,7 +25,6 @@ import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
-import type { RecipientAuthRole } from "@/generated/prisma/client";
 
 const LOG_TAG = "[mass-mail/send-processor]";
 
@@ -195,7 +194,7 @@ function sanitizeErrorMessage(message: string): string {
  * 단일 recipient 에 대한 SMTP 발송 — 권한별 실 회원 이메일로 1건 발송.
  */
 async function sendOneRecipient(
-  recipient: { email: string; authRole: RecipientAuthRole },
+  recipient: { email: string },
   subject: string,
   html: string,
   attachments: SendMailAttachment[],
@@ -255,7 +254,7 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
 
   const pendings = await prisma.massMailRecipient.findMany({
     where: { massMailId, status: "pending", retryCount: { lt: maxRetry } },
-    select: { id: true, email: true, retryCount: true, authRole: true },
+    select: { id: true, email: true, retryCount: true, authRoleCode: true },
   });
 
   console.log(`${LOG_TAG} 발송 루프 시작 — massMailId: ${massMailId}, pending: ${pendings.length}건 (retry 여력 있음)`);
@@ -599,24 +598,14 @@ export async function collectAndQueueRecipients(
     select: {
       userId: true,
       createdBy: true,
-      targetSuperAdmin: true,
-      targetAdmin: true,
-      targetFirstStore: true,
-      targetSecondStore: true,
-      targetConstructor: true,
-      targetGeneral: true,
       optOut: true,
+      targets: { select: { roleCode: true } },
     },
   });
   if (!mail) throw new Error(`MassMail not found: ${massMailId}`);
 
   const targets: CollectTargets = {
-    targetSuperAdmin: mail.targetSuperAdmin,
-    targetAdmin: mail.targetAdmin,
-    targetFirstStore: mail.targetFirstStore,
-    targetSecondStore: mail.targetSecondStore,
-    targetConstructor: mail.targetConstructor,
-    targetGeneral: mail.targetGeneral,
+    roleCodes: mail.targets.map((t) => t.roleCode),
     optOut: mail.optOut,
   };
 
@@ -657,7 +646,7 @@ export async function collectAndQueueRecipients(
           massMailId,
           email: r.email,
           userName: r.userName,
-          authRole: r.authRole,
+          authRoleCode: r.authRoleCode,
           // 이전 버전에 생성돼 createdBy 가 null 인 legacy MassMail 재발송 시에도
           // 감사 흔적을 남기기 위해 작성자 userId 로 fallback
           createdBy: mail.createdBy ?? mail.userId,

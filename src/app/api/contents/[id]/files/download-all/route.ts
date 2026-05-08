@@ -97,7 +97,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         id: true,
         title: true,
         status: true,
-        targets: { select: { targetType: true, startAt: true, endAt: true } },
+        targets: { select: { roleCode: true, startAt: true, endAt: true } },
         attachments: {
           select: { id: true, fileName: true, filePath: true },
           orderBy: { sortOrder: "asc" },

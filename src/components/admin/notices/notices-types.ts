@@ -1,9 +1,10 @@
-// Design Ref: §2 — API Response 타입 + §5 — 레이블 매핑/유틸
+// Design Ref: §2 — API Response 타입 + §5 — 레이블 매핑/유틸 (Target Dynamic from Role 후)
 
 /** 목록 아이템 (API 응답 기준) */
 export interface NoticeListItem {
   id: number;
-  targets: string[];
+  /** 게시대상 권한코드 배열 — qp_roles 동적 (6 기본 + 추가 권한) */
+  targetRoleCodes: string[];
   title: string;
   content: string;
   url: string | null;
@@ -35,7 +36,8 @@ export interface NoticeListResponse {
 /** 팝업 폼 데이터 (등록/수정용) */
 export interface NoticeFormData {
   id?: number;
-  targets: string[];
+  /** 게시대상 권한코드 배열 — qp_roles 동적 */
+  targetRoleCodes: string[];
   startDate: string;
   endDate: string;
   title: string;
@@ -53,8 +55,8 @@ export interface NoticeFormData {
 export interface NoticeSearchFilters {
   keyword: string;
   statuses: string[];
-  // 게시대상 멀티 선택 (OR 조건). 비어있으면 전체.
-  targetTypes: string[];
+  /** 게시대상 권한코드 멀티 선택 (OR 조건). 비어있으면 전체. */
+  roleCodes: string[];
   startDate: Date | null;
   endDate: Date | null;
   author: string;
@@ -63,7 +65,7 @@ export interface NoticeSearchFilters {
 export const INITIAL_FILTERS: NoticeSearchFilters = {
   keyword: "",
   statuses: [],
-  targetTypes: [],
+  roleCodes: [],
   startDate: null,
   endDate: null,
   author: "",
@@ -76,41 +78,16 @@ export const STATUS_LABEL_MAP: Record<string, string> = {
   ended: "終了",
 };
 
-/** 게시대상 레이블 */
-export const TARGET_LABEL_MAP: Record<string, string> = {
-  super_admin: "スーパー管理者",
-  admin: "管理者",
-  first_store: "1次店",
-  second_store: "2次店以下",
-  seko: "施工店",
-  general: "一般会員",
-};
-
-/** targets 배열 → 일본어 라벨 문자열 */
-export function targetsToLabel(targets: string[]): string {
-  if (!targets || targets.length === 0) return "-";
-  return targets.map((t) => TARGET_LABEL_MAP[t] ?? t).join(", ");
-}
-
-// Design Ref: §2 — targets ↔ API boolean 필드 변환
-
-/** targets key → API boolean 필드명 매핑 */
-export const TARGET_FIELD_MAP: Record<string, string> = {
-  super_admin: "targetSuperAdmin",
-  admin: "targetAdmin",
-  first_store: "targetFirstStore",
-  second_store: "targetSecondStore",
-  seko: "targetConstructor",
-  general: "targetGeneral",
-};
-
-/** targets 배열 → API request body boolean 필드 변환 */
-export function targetsToPayload(targets: string[]): Record<string, boolean> {
-  const result: Record<string, boolean> = {};
-  for (const [key, field] of Object.entries(TARGET_FIELD_MAP)) {
-    result[field] = targets.includes(key);
-  }
-  return result;
+/**
+ * roleCodes 배열 → 일본어 라벨 문자열.
+ * resolveLabel 은 useTargetLabels().resolveLabel — 동적 권한관리 라벨/비활성 권한 표시 단일 출처.
+ */
+export function targetsToLabel(
+  roleCodes: string[],
+  resolveLabel: (roleCode: string | null) => string,
+): string {
+  if (!roleCodes || roleCodes.length === 0) return "-";
+  return roleCodes.map((code) => resolveLabel(code)).join(", ");
 }
 
 /**

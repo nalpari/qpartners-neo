@@ -5,7 +5,8 @@ import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
 import DOMPurify from "isomorphic-dompurify";
 
-import { canModifyResource, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { canModifyResource, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
+import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
@@ -22,9 +23,6 @@ import { prisma } from "@/lib/prisma";
 import {
   massMailIdParamSchema,
   massMailCreateSchema,
-  TARGET_KEYS,
-  buildTargetsObject,
-  buildTargetLabel,
 } from "@/lib/schemas/mass-mail";
 
 type Params = { params: Promise<{ id: string }> };
@@ -62,12 +60,15 @@ export async function GET(request: NextRequest, { params }: Params) {
           },
           orderBy: { id: "asc" },
         },
+        targets: {
+          select: { roleCode: true },
+        },
         recipients: {
           where: { status: "failed" },
           select: {
             email: true,
             userName: true,
-            authRole: true,
+            authRoleCode: true,
             errorMessage: true,
             sentAt: true,
           },
@@ -100,8 +101,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     const mapped = {
       id: mail.id,
       senderName: mail.senderName,
-      targets: buildTargetsObject(mail),
-      targetsLabel: buildTargetLabel(mail),
+      /** 게시대상 권한코드 배열 — FE 가 useTargetLabels 로 라벨링 */
+      targetRoleCodes: mail.targets.map((t) => t.roleCode),
       optOut: mail.optOut,
       subject: mail.subject,
       body: mail.body,
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       failedRecipients: mail.recipients.map((r) => ({
         email: maskEmail(r.email),
         userName: r.userName,
-        authRole: r.authRole,
+        authRoleCode: r.authRoleCode,
         errorCategory: classifyFailure(r.errorMessage),
         lastAttemptAt: r.sentAt?.toISOString() ?? null,
       })),
@@ -319,16 +320,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const data = result.data;
-    const hasTarget = TARGET_KEYS.some((k) => data[k] === true);
-    if (!hasTarget) {
+
+    // targetRoleCodes DB 활성 검증 — 비활성/미존재 권한코드 차단
+    const activeRoles = await resolveActiveRoleCodes();
+    const inactiveRoles = data.targetRoleCodes.filter((c) => !activeRoles.has(c));
+    if (inactiveRoles.length > 0) {
       return NextResponse.json(
-        { error: "送信先を1つ以上選択してください" },
+        { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
+        { status: 400 },
+      );
+    }
+
+    // 운영자 정의 추가 권한은 QSP 회원 매핑 미정 — 발송 불가 (silent skip 방지, 명시적 거부)
+    const unsupportedRoles = data.targetRoleCodes.filter((c) => !SYSTEM_ROLE_CODES.has(c));
+    if (unsupportedRoles.length > 0) {
+      return NextResponse.json(
+        { error: "カスタム権限への一括送信は現在対応していません", unsupportedRoleCodes: unsupportedRoles },
         { status: 400 },
       );
     }
 
     // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보 (조용한 스킵 금지, 명시적 거부)
-    if (data.targetConstructor) {
+    if (data.targetRoleCodes.includes("SEKO")) {
       return NextResponse.json(
         { error: "施工店(SEKO)向け一括送信は現在対応していません" },
         { status: 400 },
@@ -437,12 +450,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
           where: { id: idResult.data, status: "draft" },
           data: {
             senderName: data.senderName,
-            targetSuperAdmin: data.targetSuperAdmin,
-            targetAdmin: data.targetAdmin,
-            targetFirstStore: data.targetFirstStore,
-            targetSecondStore: data.targetSecondStore,
-            targetConstructor: data.targetConstructor,
-            targetGeneral: data.targetGeneral,
             optOut: data.optOut,
             subject: data.subject,
             body: sanitizedBody,
@@ -455,6 +462,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
         if (updated.count === 0) {
           throw new Error("NOT_DRAFT_ANYMORE");
         }
+
+        // MassMailTarget 갱신 — 전체 삭제 후 재생성 (Target Dynamic from Role)
+        await tx.massMailTarget.deleteMany({
+          where: { massMailId: idResult.data },
+        });
+        await tx.massMailTarget.createMany({
+          data: data.targetRoleCodes.map((code) => ({
+            massMailId: idResult.data,
+            roleCode: code,
+          })),
+        });
 
         // 신규 첨부파일 레코드 추가
         if (writtenFiles.length > 0) {

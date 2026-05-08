@@ -1,25 +1,23 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
-import { requireMenuPermission } from "@/lib/auth";
+import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import { maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import {
   createHomeNoticeSchema,
   computeStatus,
-  toTargetArray,
-  TARGET_FIELD_TO_KEY,
-  type TargetField,
 } from "@/lib/schemas/home-notice";
 
-// 트랜잭션 내부에서 instanceof 기반 분기로 매핑하기 위한 도메인 에러.
-// 메시지 문자열 매칭 대신 instanceof 사용 — `.claude/rules/api.md` "문자열 매칭 금지" 정책.
+/**
+ * 트랜잭션 내부 도메인 에러 — instanceof 분기로 매핑.
+ */
 class HomeNoticeCreateError extends Error {
   constructor(
     public readonly kind: "LIMIT_EXCEEDED",
-    public readonly target?: TargetField,
+    public readonly target?: string,
   ) {
     super(kind);
     this.name = "HomeNoticeCreateError";
@@ -35,56 +33,37 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const keyword = searchParams.get("keyword") ?? undefined;
     const statusFilter = searchParams.get("status") ?? undefined;
-    const targetType = searchParams.get("targetType") ?? undefined;
+    // roleCode 멀티 선택 (comma-separated) — qp_roles 동적 (6 기본 + 추가 권한)
+    const roleCodeParam = searchParams.get("roleCode") ?? undefined;
     const createdBy = searchParams.get("createdBy") ?? undefined;
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? "20") || 20));
 
-    // targetType → 해당 boolean 필드 필터.
-    // comma-separated 멀티 선택 (`first_store,seko`) 지원 — OR 조건으로 변환.
-    // 단일 값도 동일 경로로 처리.
-    type TargetField =
-      | "targetSuperAdmin"
-      | "targetAdmin"
-      | "targetFirstStore"
-      | "targetSecondStore"
-      | "targetConstructor"
-      | "targetGeneral";
-
-    const targetMap: Record<string, TargetField> = {
-      super_admin: "targetSuperAdmin",
-      admin: "targetAdmin",
-      first_store: "targetFirstStore",
-      second_store: "targetSecondStore",
-      seko: "targetConstructor",
-      general: "targetGeneral",
-    };
-
-    const targetFields: TargetField[] = [];
-    if (targetType) {
-      const requested = targetType
+    // roleCode 검색 필터 — 형식 검증만 (활성 검증은 qp_roles 가 단일 진실 원천)
+    const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
+    const targetRoleCodes: string[] = [];
+    if (roleCodeParam) {
+      const requested = roleCodeParam
         .split(",")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      // dedupe + 화이트리스트 검증 — 한 항목이라도 미정의 키면 400.
       const seen = new Set<string>();
-      for (const key of requested) {
-        const field = targetMap[key];
-        if (!field) {
+      for (const code of requested) {
+        if (!ROLE_CODE_FORMAT.test(code) || code.length > 50) {
           return NextResponse.json(
             { error: "送信先フィルタの値が正しくありません" },
             { status: 400 },
           );
         }
-        if (seen.has(key)) continue;
-        seen.add(key);
-        targetFields.push(field);
+        if (seen.has(code)) continue;
+        seen.add(code);
+        targetRoleCodes.push(code);
       }
     }
 
-    // status 필터 → DB where 조건으로 변환 (메모리 필터 대신 DB 레벨)
+    // status 필터 → DB where 조건으로 변환
     const now = new Date();
     const VALID_STATUSES = new Set(["scheduled", "active", "ended"]);
     const statusSet = statusFilter
@@ -114,10 +93,10 @@ export async function GET(request: NextRequest) {
         }
       : undefined;
 
-    // 게시대상 멀티 선택 — 선택된 boolean 컬럼들 중 하나라도 true 면 매칭(OR).
+    // 게시대상 멀티 선택 — HomeNoticeTarget 정규화 테이블 JOIN
     const targetWhere =
-      targetFields.length > 0
-        ? { OR: targetFields.map((f) => ({ [f]: true })) }
+      targetRoleCodes.length > 0
+        ? { targets: { some: { roleCode: { in: targetRoleCodes } } } }
         : undefined;
 
     // 날짜 파라미터 검증
@@ -128,14 +107,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "日付の形式が正しくありません" }, { status: 400 });
     }
 
-    // statusWhere · targetWhere 둘 다 최상위 OR 을 사용하므로 단순 spread 시 키 충돌이 발생.
-    // AND 배열로 묶어 두 그룹을 동시에 적용 (상태 OR ∧ 대상 OR).
     const andClauses: Prisma.HomeNoticeWhereInput[] = [];
     if (statusWhere) andClauses.push(statusWhere);
     if (targetWhere) andClauses.push(targetWhere);
 
-    const where = {
-      // 검색 keyword 는 content 부분 일치.
+    const where: Prisma.HomeNoticeWhereInput = {
       ...(keyword && { content: { contains: keyword } }),
       ...(createdBy && { createdBy: { contains: createdBy } }),
       ...((startDate || endDate) && {
@@ -150,6 +126,7 @@ export async function GET(request: NextRequest) {
     const [notices, total] = await Promise.all([
       prisma.homeNotice.findMany({
         where,
+        include: { targets: { select: { roleCode: true } } },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -157,14 +134,7 @@ export async function GET(request: NextRequest) {
       prisma.homeNotice.count({ where }),
     ]);
 
-    // QSP 사용자 이름 일괄 조회 — 행 N건의 createdBy/updatedBy 에서 unique 키만 추출해
-    // 외부 API 호출 횟수를 최소화한다 (페이지 내 동일 등록자 다수 등장 시 1회로 축소).
-    // 실패는 silent — 이름 미해결 시 프론트가 userId 로 폴백.
-    //
-    // ▼ HIGH 1 수정: createdBy 는 notice.userType 으로 lookup 가능하지만, updatedBy 는
-    //   다른 userType 사용자(예: SUPER_ADMIN 이 STORE 작성글 갱신)가 들어올 수 있어
-    //   notice.userType 으로 조회하면 잘못된 사용자가 반환되거나 null 폴백 빈번.
-    //   → known 키는 (userType, userId), unknown 키는 (userId) 로 분리해 lookup.
+    // QSP 사용자 이름 일괄 조회 (기존 로직 유지)
     const logTag = "[GET /api/home-notices]";
     type LookupKey = string;
     const knownKey = (ut: string, uid: string): LookupKey => `known:${ut}:${uid}`;
@@ -173,7 +143,6 @@ export async function GET(request: NextRequest) {
     const knownLookups = new Map<LookupKey, { userType: string; userId: string }>();
     const unknownLookups = new Map<LookupKey, string>();
 
-    // 1차 패스: 모든 createdBy 를 known 으로 등록 — 이 정보가 unknown 등록 시 dedupe 기준이 됨.
     for (const n of notices) {
       if (n.createdBy) {
         knownLookups.set(knownKey(n.userType, n.createdBy), {
@@ -183,19 +152,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 보조 인덱스: userId → 매칭되는 known LookupKey 1개. updatedBy 가 다른 row 의 createdBy 와
-    // 동일 userId 라면 그 known 조회 결과를 그대로 재활용해서 외부 호출 폭증을 차단한다.
-    // (서로 다른 userType 으로 같은 userId 가 등록되는 경우는 사실상 없으므로 첫 매칭 사용.)
     const knownByUserId = new Map<string, LookupKey>();
     for (const [key, ref] of knownLookups.entries()) {
       if (!knownByUserId.has(ref.userId)) knownByUserId.set(ref.userId, key);
     }
 
-    // 2차 패스: updatedBy 등록 — createdBy 동일·known 에 이미 있는 userId 는 skip.
     for (const n of notices) {
       if (!n.updatedBy) continue;
-      if (n.updatedBy === n.createdBy) continue; // known 결과 재사용
-      if (knownByUserId.has(n.updatedBy)) continue; // 다른 row 의 createdBy 로 이미 등록됨
+      if (n.updatedBy === n.createdBy) continue;
+      if (knownByUserId.has(n.updatedBy)) continue;
       unknownLookups.set(unknownKey(n.updatedBy), n.updatedBy);
     }
 
@@ -230,11 +195,9 @@ export async function GET(request: NextRequest) {
 
     const resolveUpdatedByName = (n: (typeof notices)[number]): string | null => {
       if (!n.updatedBy) return null;
-      // 동일인 갱신 → 이미 조회된 known 결과 재사용.
       if (n.updatedBy === n.createdBy) {
         return nameMap.get(knownKey(n.userType, n.updatedBy)) ?? null;
       }
-      // 다른 row 의 createdBy 로 known 조회된 userId 면 그 결과 재사용.
       const knownKeyForUser = knownByUserId.get(n.updatedBy);
       if (knownKeyForUser) return nameMap.get(knownKeyForUser) ?? null;
       return nameMap.get(unknownKey(n.updatedBy)) ?? null;
@@ -242,7 +205,7 @@ export async function GET(request: NextRequest) {
 
     const data = notices.map((n) => ({
       id: n.id,
-      targets: toTargetArray(n),
+      targetRoleCodes: n.targets.map((t) => t.roleCode),
       title: n.title,
       content: n.content,
       url: n.url,
@@ -298,37 +261,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 게시기간이 겹치는 공지가 동일 target 그룹 내에 5건 초과인지 검사 + 등록을 트랜잭션으로 처리.
-    // 권한별(target별) 5건 한도 — 각 target 그룹은 독립적으로 카운트되어 한 그룹의 한도가
-    // 다른 그룹의 노출을 막지 않도록 함.
+    // targetRoleCodes DB 활성 검증 — 비활성/미존재 권한코드 차단
+    const activeRoles = await resolveActiveRoleCodes();
+    const inactiveRoles = result.data.targetRoleCodes.filter((c) => !activeRoles.has(c));
+    if (inactiveRoles.length > 0) {
+      return NextResponse.json(
+        { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
+        { status: 400 },
+      );
+    }
+
+    // 게시기간이 겹치는 공지가 동일 권한별 5건 초과인지 검사 + 등록을 트랜잭션으로 처리.
+    // 권한별(roleCode별) 5건 한도 — 각 권한은 독립적으로 카운트되어 한 권한의 한도가
+    // 다른 권한의 노출을 막지 않도록 함.
     const notice = await prisma.$transaction(
       async (tx) => {
-        const selected: TargetField[] = [];
-        if (result.data.targetSuperAdmin) selected.push("targetSuperAdmin");
-        if (result.data.targetAdmin) selected.push("targetAdmin");
-        if (result.data.targetFirstStore) selected.push("targetFirstStore");
-        if (result.data.targetSecondStore) selected.push("targetSecondStore");
-        if (result.data.targetConstructor) selected.push("targetConstructor");
-        if (result.data.targetGeneral) selected.push("targetGeneral");
-
-        for (const f of selected) {
-          const c = await tx.homeNotice.count({
-            where: {
-              startAt: { lte: result.data.endAt },
-              endAt: { gte: result.data.startAt },
-              [f]: true,
-            },
-          });
-          if (c >= 5) throw new HomeNoticeCreateError("LIMIT_EXCEEDED", f);
+        // 권한별 5건 한도 일괄 검사 — N+1 루프 대신 단일 GROUP BY 집계 쿼리
+        const overLimit = await tx.$queryRaw<{ role_code: string }[]>`
+          SELECT hnt.role_code
+          FROM qp_home_notice_targets hnt
+          JOIN qp_home_notices hn ON hn.id = hnt.home_notice_id
+          WHERE hnt.role_code IN (${Prisma.join(result.data.targetRoleCodes)})
+            AND hn.start_at <= ${result.data.endAt}
+            AND hn.end_at   >= ${result.data.startAt}
+          GROUP BY hnt.role_code
+          HAVING COUNT(DISTINCT hn.id) >= 5
+          LIMIT 1
+        `;
+        if (overLimit.length > 0) {
+          throw new HomeNoticeCreateError("LIMIT_EXCEEDED", overLimit[0].role_code);
         }
 
         return tx.homeNotice.create({
           data: {
-            ...result.data,
+            title: result.data.title,
+            content: result.data.content,
+            url: result.data.url,
+            startAt: result.data.startAt,
+            endAt: result.data.endAt,
             userType: auth.user.userType,
             userId: auth.user.userId,
             createdBy: auth.user.userId,
+            targets: {
+              create: result.data.targetRoleCodes.map((code) => ({ roleCode: code })),
+            },
           },
+          include: { targets: { select: { roleCode: true } } },
         });
       },
       { isolationLevel: "Serializable" },
@@ -340,17 +318,22 @@ export async function POST(request: NextRequest) {
       role: auth.user.role,
     });
 
-    return NextResponse.json({ data: notice }, { status: 201 });
+    return NextResponse.json(
+      {
+        data: {
+          ...notice,
+          targetRoleCodes: notice.targets.map((t) => t.roleCode),
+        },
+      },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof HomeNoticeCreateError && error.kind === "LIMIT_EXCEEDED") {
-      // FE 가 code 로 분기하고 target(외부 키) 로 사용자에게 어느 권한군이 초과인지 안내.
-      // DB 컬럼명이 아닌 toTargetArray 와 동일 외부 키로 정규화 (추상화 누수 방지).
-      const target = error.target ? TARGET_FIELD_TO_KEY[error.target] : undefined;
       return NextResponse.json(
         {
           error: "同一期間に同じ送信先で掲載できるお知らせは5件までです",
           code: "LIMIT_EXCEEDED",
-          ...(target ? { target } : {}),
+          ...(error.target ? { target: error.target } : {}),
         },
         { status: 400 },
       );

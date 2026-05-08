@@ -13,8 +13,10 @@ import { ContentsTable } from "./contents-table";
 interface SearchFilters {
   keyword: string;
   categoryIds: number[];
-  targetType: string;
-  department: string;
+  /** 게시대상 권한코드 — `__NON_MEMBER__` sentinel = 비회원 검색 (서버에서 null 로 변환) */
+  roleCode: string;
+  /** 담당부문 복수선택 — CSV 직렬화로 URL 영속. 빈 배열 = 전체조회. */
+  departments: string[];
   internalOnly: boolean;
 }
 
@@ -47,8 +49,8 @@ function parseSearchParams(urlParams: URLSearchParams): SearchParams {
     page: Number(urlParams.get("page")) || 1,
     keyword: urlParams.get("keyword") ?? "",
     categoryIds: categoryIdsStr ? categoryIdsStr.split(",").map(Number).filter((n) => !isNaN(n)) : [],
-    targetType: urlParams.get("targetType") ?? "",
-    department: urlParams.get("department") ?? "",
+    roleCode: urlParams.get("roleCode") ?? "",
+    departments: urlParams.get("department") ? urlParams.get("department")!.split(",").filter(Boolean) : [],
     internalOnly: urlParams.get("internalOnly") === "true",
   };
 }
@@ -59,8 +61,8 @@ function buildQueryString(params: SearchParams): string {
   if (params.page > 1) qs.set("page", String(params.page));
   if (params.keyword) qs.set("keyword", params.keyword);
   if (params.categoryIds.length > 0) qs.set("categoryIds", params.categoryIds.join(","));
-  if (params.targetType) qs.set("targetType", params.targetType);
-  if (params.department) qs.set("department", params.department);
+  if (params.roleCode) qs.set("roleCode", params.roleCode);
+  if (params.departments.length > 0) qs.set("department", params.departments.join(","));
   if (params.internalOnly) qs.set("internalOnly", "true");
   const str = qs.toString();
   return str ? `?${str}` : "";
@@ -126,8 +128,8 @@ export function ContentsContents() {
       };
       if (searchParams.keyword) params.keyword = searchParams.keyword;
       if (searchParams.categoryIds.length > 0) params.categoryIds = searchParams.categoryIds.join(",");
-      if (searchParams.targetType) params.targetType = searchParams.targetType;
-      if (searchParams.department) params.department = searchParams.department;
+      if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
+      if (searchParams.departments.length > 0) params.department = searchParams.departments.join(",");
       if (searchParams.internalOnly) params.internalOnly = true;
 
       const res = await api.get<{
@@ -200,6 +202,7 @@ export interface ContentListItem {
     isInternalOnly: boolean;
     children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
   }[];
-  targets: { targetType: string; startAt: string | null; endAt: string | null }[];
+  /** 게시대상 권한코드 (null = 비회원). 라벨/정렬은 useTargetLabels 훅으로 변환. */
+  targets: { roleCode: string | null; startAt: string | null; endAt: string | null }[];
   attachmentCount: number;
 }

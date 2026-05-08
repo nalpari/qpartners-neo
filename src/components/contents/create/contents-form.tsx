@@ -11,11 +11,12 @@ import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
+import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsFormManagement } from "./contents-form-management";
 import {
   ContentsFormPostTarget,
-  getInitialPostTargets,
+  buildInitialPostTargetsState,
 } from "./contents-form-post-target";
 import type { PostTargetState } from "./contents-form-post-target";
 import { ContentsFormCategory } from "./contents-form-category";
@@ -43,7 +44,8 @@ interface ContentDetailResponse {
   updatedAt: string;
   /** 서버에서 계산한 갱신 이력 여부 — createdAt !== updatedAt 시 true. */
   hasBeenUpdated?: boolean;
-  targets: { targetType: string; startAt: string | null; endAt: string | null }[];
+  /** 게시대상 권한코드 (null = 비회원) */
+  targets: { roleCode: string | null; startAt: string | null; endAt: string | null }[];
   categories: {
     id: number;
     categoryCode: string;
@@ -70,6 +72,10 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
     enabled: mode === "edit" && !!contentId,
   });
 
+  // 권한 라벨 동기화 — 게시대상 옵션 노출은 운영자가 권한관리에서 정의한 동적 권한.
+  // 폼 마운트 시점에 allOptions 가 확정돼야 buildInitialPostTargetsState 가 정확한 행 집합을 만든다.
+  const { allOptions, isLoading: isLoadingTargets } = useTargetLabels();
+
   if (mode === "edit" && isLoadingContent) {
     return (
       <div className="flex items-center justify-center w-full py-20">
@@ -78,13 +84,22 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
     );
   }
 
-  // existingData가 준비된 후 key로 내부 폼을 리마운트하여 초기값 보장
+  if (isLoadingTargets) {
+    return (
+      <div className="flex items-center justify-center w-full py-20">
+        <Spinner size={48} />
+      </div>
+    );
+  }
+
+  // existingData / allOptions 모두 준비된 후 key 로 내부 폼을 리마운트하여 초기값 보장
   return (
     <ContentsFormInner
       key={mode === "edit" ? `edit-${contentId}-${existingData?.updatedAt}` : "create"}
       mode={mode}
       contentId={contentId}
       existingData={existingData ?? undefined}
+      allOptions={allOptions}
     />
   );
 }
@@ -93,9 +108,10 @@ interface ContentsFormInnerProps {
   mode: "create" | "edit";
   contentId?: string;
   existingData?: ContentDetailResponse;
+  allOptions: TargetRoleOption[];
 }
 
-function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerProps) {
+function ContentsFormInner({ mode, contentId, existingData, allOptions }: ContentsFormInnerProps) {
   const router = useRouter();
   const { openAlert } = useAlertStore();
   const queryClient = useQueryClient();
@@ -159,26 +175,12 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
     ? (existingData.authorDepartment ?? "")
     : (loginUser?.deptNm ?? "");
 
-  // 폼 상태 — existingData에서 직접 초기값 도출 (useEffect setState 대신 key 리마운트 방식)
-  const initialPostTargets = (() => {
-    if (!existingData?.targets) return getInitialPostTargets();
-    const base = getInitialPostTargets();
-    return {
-      ...base,
-      targets: base.targets.map((item) => {
-        const existing = existingData.targets.find((t) => t.targetType === item.key);
-        if (existing) {
-          return {
-            ...item,
-            checked: true,
-            startDate: existing.startAt ? new Date(existing.startAt) : null,
-            endDate: existing.endAt ? new Date(existing.endAt) : null,
-          };
-        }
-        return item;
-      }),
-    };
-  })();
+  // 폼 상태 — allOptions(권한관리) + existingData 결합으로 초기값 도출.
+  // (useEffect setState 대신 key 리마운트 방식; allOptions 변경 시 재마운트로 동기화)
+  const initialPostTargets = buildInitialPostTargetsState(
+    allOptions,
+    existingData?.targets,
+  );
 
   const [approver, setApprover] = useState(existingData ? String(existingData.approverLevel ?? "") : "");
   const [postTargets, setPostTargets] = useState<PostTargetState>(initialPostTargets);
@@ -240,11 +242,11 @@ function ContentsFormInner({ mode, contentId, existingData }: ContentsFormInnerP
       return;
     }
 
-    // 게시대상 배열 구성
+    // 게시대상 배열 구성 — roleCode (null = 비회원) 그대로 전송. JSON null 직렬화 OK.
     const targets = postTargets.targets
       .filter((t) => t.checked)
       .map((t) => ({
-        targetType: t.key,
+        roleCode: t.roleCode,
         ...(t.startDate && { startAt: t.startDate.toISOString() }),
         ...(t.endDate && { endAt: t.endDate.toISOString() }),
       }));

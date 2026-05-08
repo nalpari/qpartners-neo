@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
-import { Checkbox, SelectBox, Button } from "@/components/common";
+import { Checkbox, SelectBox, MultiSelectCombobox, Button } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import api from "@/lib/axios";
@@ -11,9 +11,6 @@ import type { CategoryNode, SearchFilters } from "./contents-contents";
 
 // 게시대상 placeholder 옵션 — 권한관리 라벨은 useTargetLabels 훅으로 동적 주입
 const POST_TARGET_PLACEHOLDER = { value: "", label: "掲示対象" };
-
-// 担当部門 placeholder — QSP 부서 목록은 useQuery 로 동적 주입 (관리자 전용 필터)
-const DEPARTMENT_PLACEHOLDER = { value: "", label: "担当部門" };
 
 interface DeptItem {
   deptCd: string;
@@ -40,8 +37,8 @@ export function ContentsSearch({
   const isFilterOpen = userToggled ?? !isMobile;
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
-  const [postTarget, setPostTarget] = useState(initialFilters?.targetType ?? "");
-  const [department, setDepartment] = useState(initialFilters?.department ?? "");
+  const [postTarget, setPostTarget] = useState(initialFilters?.roleCode ?? "");
+  const [departments, setDepartments] = useState<string[]>(initialFilters?.departments ?? []);
   const [internalOnly, setInternalOnly] = useState(initialFilters?.internalOnly ?? false);
   // [x] 클릭 후 input 으로 focus 복귀용 — 클릭으로 button 이 focus 보유 시
   // 이어진 Enter 가 input 의 onKeyDown 이 아니라 button 의 click 을 다시 트리거하여
@@ -50,13 +47,15 @@ export function ContentsSearch({
 
   // 권한관리 라벨 동기화 — isActive=Y 만 검색 옵션 노출, 라벨은 권한명 사용.
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
+  // 비회원(roleCode=null) 은 SelectBox value 로 null 을 다룰 수 없어 sentinel `__NON_MEMBER__` 사용.
+  // 서버 listContentsQuerySchema 가 transform 으로 null 변환.
   const { allOptions: targetAllOptions } = useTargetLabels();
   const POST_TARGET_OPTIONS = useMemo(() => {
     return [
       POST_TARGET_PLACEHOLDER,
       ...targetAllOptions
         .filter((o) => o.isActive)
-        .map((o) => ({ value: o.value, label: o.label })),
+        .map((o) => ({ value: o.roleCode ?? "__NON_MEMBER__", label: o.label })),
     ];
   }, [targetAllOptions]);
 
@@ -86,10 +85,7 @@ export function ContentsSearch({
   // 동일 부서명이 여러 deptCd 를 갖는 비정상 케이스만 옵션 중복으로 보일 수 있으나,
   // 그 경우에도 검색 결과는 동일(부서명 매칭)하므로 기능상 문제 없음.
   const DEPARTMENT_OPTIONS = useMemo(() => {
-    return [
-      DEPARTMENT_PLACEHOLDER,
-      ...deptItems.map((d) => ({ value: d.deptNm, label: d.deptNm })),
-    ];
+    return deptItems.map((d) => ({ value: d.deptNm, label: d.deptNm }));
   }, [deptItems]);
 
   // 부서 데이터가 비어 있는 정상 응답(`{ data: [] }`) — placeholder 만 가진 SelectBox 가
@@ -107,7 +103,7 @@ export function ContentsSearch({
     setKeyword("");
     setSelectedCategoryIds([]);
     setPostTarget("");
-    setDepartment("");
+    setDepartments([]);
     setInternalOnly(false);
   };
 
@@ -115,8 +111,8 @@ export function ContentsSearch({
     onSearch({
       keyword,
       categoryIds: selectedCategoryIds,
-      targetType: postTarget,
-      department,
+      roleCode: postTarget,
+      departments,
       internalOnly,
     });
   };
@@ -226,7 +222,7 @@ export function ContentsSearch({
                   </span>
                 </div>
                 <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
-                  <div className="w-full lg:max-w-[300px]">
+                  <div className="w-full lg:max-w-[460px]">
                     <SelectBox
                       options={POST_TARGET_OPTIONS}
                       value={postTarget}
@@ -253,16 +249,17 @@ export function ContentsSearch({
                   </span>
                 </div>
                 <div className="flex-1 flex items-center gap-[18px] bg-white border border-[#EAF0F6] rounded-[6px] pl-6 pr-2 py-2">
-                  <div className="w-full lg:max-w-[300px]">
+                  <div className="w-full lg:max-w-[460px]">
                     {isDeptEmpty ? (
                       <span className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
                         -
                       </span>
                     ) : (
-                      <SelectBox
+                      <MultiSelectCombobox
                         options={DEPARTMENT_OPTIONS}
-                        value={department}
-                        onChange={setDepartment}
+                        values={departments}
+                        onChange={setDepartments}
+                        placeholder="担当部門"
                         disabled={isDeptLoading || isDeptLoadError}
                         className="w-full"
                       />
@@ -347,10 +344,11 @@ export function ContentsSearch({
                     -
                   </span>
                 ) : (
-                  <SelectBox
+                  <MultiSelectCombobox
                     options={DEPARTMENT_OPTIONS}
-                    value={department}
-                    onChange={setDepartment}
+                    values={departments}
+                    onChange={setDepartments}
+                    placeholder="担当部門"
                     disabled={isDeptLoading || isDeptLoadError}
                   />
                 )}

@@ -22,7 +22,9 @@ function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData
     const data = parsed as Record<string, unknown>;
     const initialData: Partial<FormInitialData> = {
       senderName: typeof data.senderName === "string" ? data.senderName : undefined,
-      targets: Array.isArray(data.targets) ? data.targets.filter((t): t is string => typeof t === "string") : undefined,
+      targetRoleCodes: Array.isArray(data.targetRoleCodes)
+        ? data.targetRoleCodes.filter((t): t is string => typeof t === "string")
+        : undefined,
       optOut: typeof data.optOut === "boolean" ? data.optOut : undefined,
       subject: typeof data.subject === "string" ? data.subject : undefined,
       body: typeof data.body === "string" ? data.body : undefined,

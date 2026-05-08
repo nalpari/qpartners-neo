@@ -1,23 +1,19 @@
 "use client";
 
 import { Checkbox, DatePicker } from "@/components/common";
-import { useTargetLabels } from "@/hooks/use-target-labels";
+import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
 
 /**
- * Figma 기준 행/열 배치 순서.
- * 라벨은 useTargetLabels 훅으로 권한관리(`QpRole.roleName`) 와 동기화 — 여기서는 키만 정의.
+ * 콘텐츠 등록 폼 게시대상 선택 (Target Dynamic from Role 후).
+ *
+ * - 6 기본 권한 + 운영자 정의 추가 권한 + 비회원 sentinel 모두 동적 노출.
+ * - useTargetLabels.allOptions 가 6 기본 → 추가 권한 → 비회원 순으로 정렬됨.
+ * - 비활성 권한은 새로 체크 불가 (이미 체크된 행만 해제 가능).
  */
-const POST_TARGET_ROW_KEYS: ReadonlyArray<ReadonlyArray<string | null>> = [
-  ["first_store", "seko", "non_member"],
-  ["second_store", "general", null],
-];
-
-const ALL_KEYS = POST_TARGET_ROW_KEYS.flat().filter(
-  (k): k is string => k !== null,
-);
 
 interface PostTargetItem {
-  key: string;
+  /** roleCode — null = 비회원 */
+  roleCode: string | null;
   checked: boolean;
   startDate: Date | null;
   endDate: Date | null;
@@ -35,18 +31,64 @@ interface ContentsFormPostTargetProps {
   onPostTargetsChange: (targets: PostTargetState) => void;
 }
 
-export function getInitialPostTargets(): PostTargetState {
+/**
+ * 폼 마운트 시 초기 PostTargetState 빌더 — allOptions 와 existingTargets 결합.
+ *
+ * - allOptions(`useTargetLabels.allOptions`) 의 모든 권한을 unchecked 행으로 채운다.
+ * - existingTargets(편집모드 진입) 가 있으면 매칭되는 행을 checked + 기간으로 덮어쓴다.
+ * - existingTargets 의 roleCode 가 현재 allOptions 에 없으면(비활성 권한) 행을 추가해
+ *   체크 해제만 가능하도록 노출한다 (rendering 측은 `available || checked` 가드).
+ */
+export function buildInitialPostTargetsState(
+  allOptions: readonly TargetRoleOption[],
+  existingTargets?: readonly {
+    roleCode: string | null;
+    startAt: string | null;
+    endAt: string | null;
+  }[],
+): PostTargetState {
   const today = new Date();
-  return {
-    selectAll: false,
-    allStartDate: today,
-    allEndDate: new Date("2999-12-31"),
-    targets: ALL_KEYS.map((key) => ({
-      key,
+  const defaultEnd = new Date("2999-12-31");
+
+  const existingMap = new Map(
+    (existingTargets ?? []).map((t) => [t.roleCode, t] as const),
+  );
+
+  const items: PostTargetItem[] = allOptions.map((opt) => {
+    const found = existingMap.get(opt.roleCode);
+    if (found) {
+      return {
+        roleCode: opt.roleCode,
+        checked: true,
+        startDate: found.startAt ? new Date(found.startAt) : null,
+        endDate: found.endAt ? new Date(found.endAt) : null,
+      };
+    }
+    return {
+      roleCode: opt.roleCode,
       checked: false,
       startDate: new Date(today),
-      endDate: new Date(today),
-    })),
+      endDate: new Date(defaultEnd),
+    };
+  });
+
+  // allOptions 에 없는 existingTarget(비활성 권한 등) 도 보존 — 사용자 해제 가능.
+  const optionRoleCodes = new Set(allOptions.map((o) => o.roleCode));
+  for (const t of existingTargets ?? []) {
+    if (optionRoleCodes.has(t.roleCode)) continue;
+    items.push({
+      roleCode: t.roleCode,
+      checked: true,
+      startDate: t.startAt ? new Date(t.startAt) : null,
+      endDate: t.endAt ? new Date(t.endAt) : null,
+    });
+  }
+
+  return {
+    selectAll: items.length > 0 && items.every((i) => i.checked),
+    allStartDate: today,
+    allEndDate: defaultEnd,
+    targets: items,
   };
 }
 
@@ -54,26 +96,24 @@ export function ContentsFormPostTarget({
   postTargets,
   onPostTargetsChange,
 }: ContentsFormPostTargetProps) {
-  // 권한관리 라벨/사용가능여부 — isActive=N 권한은 새로 체크할 수 없도록 disabled.
-  // (이미 체크된 상태로 들어온 데이터는 그대로 노출 — 수정 시 해제만 가능)
-  const { resolveLabel: resolveTargetLabel, isAvailable: isTargetAvailable } =
-    useTargetLabels();
+  const { allOptions, isLoading } = useTargetLabels();
 
   const handleSelectAll = (checked: boolean) => {
-    // 일괄 선택 시 비활성 권한은 새로 체크하지 않음 (해제는 모든 권한 대상)
     onPostTargetsChange({
       ...postTargets,
       selectAll: checked,
       targets: postTargets.targets.map((t) => {
+        const opt = allOptions.find((o) => o.roleCode === t.roleCode);
+        const available = opt?.isActive ?? false;
         if (!checked) return { ...t, checked: false };
-        return { ...t, checked: isTargetAvailable(t.key) ? true : t.checked };
+        return { ...t, checked: available ? true : t.checked };
       }),
     });
   };
 
-  const handleTargetCheck = (key: string, checked: boolean) => {
+  const handleTargetCheck = (roleCode: string | null, checked: boolean) => {
     const newTargets = postTargets.targets.map((t) =>
-      t.key === key ? { ...t, checked } : t
+      t.roleCode === roleCode ? { ...t, checked } : t,
     );
     const allChecked = newTargets.every((t) => t.checked);
     onPostTargetsChange({
@@ -84,14 +124,14 @@ export function ContentsFormPostTarget({
   };
 
   const handleTargetDate = (
-    key: string,
+    roleCode: string | null,
     field: "startDate" | "endDate",
-    date: Date | null
+    date: Date | null,
   ) => {
     onPostTargetsChange({
       ...postTargets,
       targets: postTargets.targets.map((t) =>
-        t.key === key ? { ...t, [field]: date } : t
+        t.roleCode === roleCode ? { ...t, [field]: date } : t,
       ),
     });
   };
@@ -110,17 +150,16 @@ export function ContentsFormPostTarget({
                 ? new Date(postTargets.allEndDate)
                 : t.endDate,
             }
-          : t
+          : t,
       ),
     });
   };
 
-  const getTarget = (key: string) =>
-    postTargets.targets.find((t) => t.key === key);
+  const getTarget = (roleCode: string | null) =>
+    postTargets.targets.find((t) => t.roleCode === roleCode);
 
   return (
     <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[14px] pt-[34px] pb-6 px-6 w-[1440px]">
-      {/* 타이틀 */}
       <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
         投稿対象
       </h2>
@@ -131,6 +170,7 @@ export function ContentsFormPostTarget({
           checked={postTargets.selectAll}
           onChange={handleSelectAll}
           label="全選択/解除"
+          disabled={isLoading}
         />
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
@@ -165,71 +205,66 @@ export function ContentsFormPostTarget({
         </p>
       </div>
 
-      {/* 대상 테이블 */}
-      <div className="flex flex-col gap-1">
-        {POST_TARGET_ROW_KEYS.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex gap-1">
-            {row.map((key, colIdx) => {
-              const target = key ? getTarget(key) : null;
-              // 비활성(isActive=N) 권한은 미노출 — 단, 기존 콘텐츠 수정 시 이미 체크된 경우 해제 가능하도록 표시.
-              const available = key ? isTargetAvailable(key) : true;
-              const shouldRender = !key || available || (target?.checked ?? false);
+      {/* 대상 옵션 — 동적 grid (3열 자동 wrapping) */}
+      <div className="grid grid-cols-3 gap-1">
+        {allOptions.map((opt) => {
+          const target = getTarget(opt.roleCode);
+          const available = opt.isActive;
+          // 비활성 권한은 미표시. 단 기존 데이터에서 체크된 경우 해제 가능하도록 노출.
+          const shouldRender = available || (target?.checked ?? false);
 
-              return (
-                <div key={colIdx} className="flex flex-1 gap-1 h-[58px]">
-                  {/* Th */}
-                  <div
-                    className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 rounded-[6px] border border-[#EAF0F6] ${
-                      shouldRender && key ? "bg-[#F7F9FB]" : "bg-white"
-                    }`}
-                  >
-                    {shouldRender && key && (
-                      <span
-                        className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
-                          available ? "text-[#45576F]" : "text-[#A0A8B0]"
-                        }`}
-                      >
-                        {resolveTargetLabel(key)}
+          if (!shouldRender) return null;
+
+          const key = opt.roleCode ?? "__NON_MEMBER__";
+
+          return (
+            <div key={key} className="flex gap-1 h-[58px]">
+              <div
+                className={`w-[120px] shrink-0 flex items-center pl-4 pr-2 rounded-[6px] border border-[#EAF0F6] ${
+                  shouldRender ? "bg-[#F7F9FB]" : "bg-white"
+                }`}
+              >
+                <span
+                  className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
+                    available ? "text-[#45576F]" : "text-[#A0A8B0]"
+                  }`}
+                >
+                  {opt.label}
+                </span>
+              </div>
+              <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
+                {target && (
+                  <>
+                    <Checkbox
+                      checked={target.checked}
+                      onChange={(checked) => handleTargetCheck(opt.roleCode, checked)}
+                      disabled={!available && !target.checked}
+                    />
+                    <div className="flex flex-1 items-center gap-1">
+                      <DatePicker
+                        value={target.startDate}
+                        onChange={(date) =>
+                          handleTargetDate(opt.roleCode, "startDate", date)
+                        }
+                        disabled={!target.checked}
+                      />
+                      <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">
+                        ~
                       </span>
-                    )}
-                  </div>
-                  {/* Form */}
-                  <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAF0F6] rounded-[6px] p-2">
-                    {shouldRender && key && target && (
-                      <>
-                        <Checkbox
-                          checked={target.checked}
-                          onChange={(checked) =>
-                            handleTargetCheck(key, checked)
-                          }
-                        />
-                        <div className="flex flex-1 items-center gap-1">
-                          <DatePicker
-                            value={target.startDate}
-                            onChange={(date) =>
-                              handleTargetDate(key, "startDate", date)
-                            }
-                            disabled={!target.checked}
-                          />
-                          <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">
-                            ~
-                          </span>
-                          <DatePicker
-                            value={target.endDate}
-                            onChange={(date) =>
-                              handleTargetDate(key, "endDate", date)
-                            }
-                            disabled={!target.checked}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+                      <DatePicker
+                        value={target.endDate}
+                        onChange={(date) =>
+                          handleTargetDate(opt.roleCode, "endDate", date)
+                        }
+                        disabled={!target.checked}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

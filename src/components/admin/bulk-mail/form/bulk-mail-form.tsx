@@ -55,7 +55,9 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   // ─── Form State ───
   const senderName = initialData?.senderName ?? DEFAULT_SENDER;
-  const [targets, setTargets] = useState<string[]>(initialData?.targets ?? []);
+  const [targetRoleCodes, setTargetRoleCodes] = useState<string[]>(
+    initialData?.targetRoleCodes ?? [],
+  );
   const [optOut, setOptOut] = useState(initialData?.optOut ?? false);
   const [subject, setSubject] = useState(initialData?.subject ?? "");
   const [body, setBody] = useState(initialData?.body ?? "");
@@ -121,7 +123,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   // Issue #2177 (2) — 메시지 형식 통일: "{項目名}は必須入力項目です。"
   function validate(): string | null {
     if (!senderName.trim()) return "送信者名は必須入力項目です。";
-    if (targets.length === 0) return "配信対象は必須入力項目です。";
+    if (targetRoleCodes.length === 0) return "配信対象は必須入力項目です。";
     if (!subject.trim()) return "件名は必須入力項目です。";
     if (!body.trim()) return "本文は必須入力項目です。";
     return null;
@@ -152,7 +154,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       cancelLabel: "キャンセル",
       onConfirm: () => {
         const fd = buildFormData({
-          senderName, targets, optOut, subject, body,
+          senderName, targetRoleCodes, optOut, subject, body,
           status: "pending", files,
         });
         submitMutation.mutate(fd);
@@ -175,7 +177,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       return;
     }
     const fd = buildFormData({
-      senderName, targets, optOut, subject, body,
+      senderName, targetRoleCodes, optOut, subject, body,
       status: "draft", files,
     });
     draftMutation.mutate(fd);
@@ -235,7 +237,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       openAlert({ type: "alert", message: "権限がありません。" });
       return;
     }
-    const copyData = { senderName, targets, optOut, subject, body };
+    const copyData = { senderName, targetRoleCodes, optOut, subject, body };
     try {
       sessionStorage.setItem("mass-mail-copy", JSON.stringify(copyData));
     } catch (error: unknown) {
@@ -266,8 +268,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 발송대상 카드 — RBAC: detail 모드 또는 권한 readonly 시 비활성 (패턴 C) */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormTargets
-          targets={targets}
-          onTargetsChange={setTargets}
+          targetRoleCodes={targetRoleCodes}
+          onTargetRoleCodesChange={setTargetRoleCodes}
           disabled={isFormDisabled}
         />
       </section>

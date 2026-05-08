@@ -5,10 +5,12 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import {
   getUserFromHeaders,
+  invalidateActiveRoleCache,
   requireMenuPermission,
   resolveMenuPermission,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { createRoleSchema } from "@/lib/schemas/permission";
 
 // GET /api/roles — 권한 목록
@@ -88,7 +90,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const role = await prisma.qpRole.create({ data: result.data });
+    // 6 기본 권한 코드 충돌 차단 (예약 코드)
+    if (SYSTEM_ROLE_CODES.has(result.data.roleCode)) {
+      console.warn(
+        `[POST /api/roles] 시스템 예약 권한 코드 충돌 시도 차단: ${result.data.roleCode}`,
+      );
+      return NextResponse.json(
+        { error: "予約された権限コードは使用できません", roleCode: result.data.roleCode },
+        { status: 400 },
+      );
+    }
+
+    // isSystem 은 운영자 input 무시 — 서버에서 false 강제 (추가 권한은 시스템 권한 X)
+    const role = await prisma.qpRole.create({
+      data: { ...result.data, isSystem: false },
+    });
+
+    // 신규 권한 추가 시 활성 권한 캐시 무효화
+    invalidateActiveRoleCache();
+
     return NextResponse.json({ data: role }, { status: 201 });
   } catch (error) {
     if (
