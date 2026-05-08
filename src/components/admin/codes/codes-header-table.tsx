@@ -109,16 +109,74 @@ type HeaderGridContext = {
   isUpdateReadOnly: boolean;
 };
 
-// 첫번째 컬럼 — 신규행은 input, 기존행은 detail 진입 버튼 (편집 불가)
+/**
+ * 영문 전용 입력 — 비영문 문자를 제거하고 대문자로 변환.
+ * allowUnderscore=true 시 언더바(_)도 허용 (headerCode 용).
+ */
+function EnglishOnlyCellInput({
+  defaultValue,
+  placeholder,
+  maxLength,
+  allowUnderscore,
+  onChange,
+  onKeyDown,
+}: {
+  defaultValue: string;
+  placeholder: string;
+  maxLength?: number;
+  allowUnderscore?: boolean;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const pattern = allowUnderscore ? /[^a-zA-Z_]/g : /[^a-zA-Z]/g;
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      defaultValue={defaultValue}
+      maxLength={maxLength}
+      onChange={(e) => {
+        let filtered = e.target.value.replace(pattern, "").toUpperCase();
+        if (maxLength) filtered = filtered.slice(0, maxLength);
+        if (e.target.value !== filtered) {
+          e.target.value = filtered;
+        }
+        onChange(filtered);
+      }}
+      onKeyDown={(e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+          e.stopPropagation();
+          return;
+        }
+        onKeyDown?.(e);
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      placeholder={placeholder}
+      className="w-full h-[34px] px-3 bg-white border border-[#101010] rounded-[4px] font-['Noto_Sans_JP'] text-[13px] text-[#101010] outline-none placeholder:text-[#AAAAAA]"
+    />
+  );
+}
+
+// 첫번째 컬럼 — 신규행은 영문전용 input, 기존행은 detail 진입 버튼 (편집 불가)
 function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
   const data = params.data;
   if (!data) return null;
   const ctx = params.context as HeaderGridContext;
   if (data.isNew) {
     return (
-      <CellInput
+      <EnglishOnlyCellInput
         defaultValue={ctx.newRowFieldsRef.current.headerCode ?? ""}
         placeholder=""
+        allowUnderscore
         onChange={(v) => ctx.onNewRowFieldChange("headerCode", v)}
       />
     );
@@ -132,6 +190,38 @@ function HeaderCodeRendererFn(params: ICellRendererParams<HeaderGridRow>) {
       {data.headerCode}
     </button>
   );
+}
+
+/**
+ * headerAlias(Header Id) — 영문 3자리, 입력 시 대문자 변환.
+ * 신규행: input, 기존행: 더블클릭 편집 시 input.
+ */
+function HeaderAliasRendererFn(params: ICellRendererParams<HeaderGridRow>) {
+  const data = params.data;
+  if (!data) return null;
+  const ctx = params.context as HeaderGridContext;
+  if (data.isNew) {
+    return (
+      <EnglishOnlyCellInput
+        defaultValue={ctx.newRowFieldsRef.current.headerAlias ?? ""}
+        placeholder=""
+        maxLength={3}
+        onChange={(v) => ctx.onNewRowFieldChange("headerAlias", v)}
+      />
+    );
+  }
+  if (data.editingField === "headerAlias") {
+    return (
+      <EnglishOnlyCellInput
+        defaultValue={String(params.value ?? "")}
+        placeholder=""
+        maxLength={3}
+        onChange={(v) => ctx.onEditFieldChange("headerAlias", v)}
+        onKeyDown={ctx.onKeyDown}
+      />
+    );
+  }
+  return <span className="font-['Noto_Sans_JP'] text-[14px] text-[#555]">{String(params.value ?? "")}</span>;
 }
 
 // 일반 편집 가능 컬럼 (헤더 텍스트 필드)
@@ -308,7 +398,7 @@ export function CodesHeaderTable({
 
   const columnDefs = useMemo<ColDef<HeaderGridRow>[]>(() => [
     { headerName: "Header Code", field: "headerCode", flex: 1, cellRenderer: HeaderCodeRendererFn, cellStyle: makeEditableCellStyle("headerCode"), headerClass: "ag-header-cell-center" },
-    { headerName: "Header Id", field: "headerAlias", flex: 1, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("headerAlias"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
+    { headerName: "Header Id", field: "headerAlias", flex: 1, cellRenderer: HeaderAliasRendererFn, cellStyle: makeEditableCellStyle("headerAlias"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Header Code Name", field: "headerName", flex: 1.5, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("headerName"), headerClass: "ag-header-cell-center", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode1", field: "relCode1", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relCode1"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },
     { headerName: "Rel\nCode2", field: "relCode2", flex: 0.6, cellRenderer: EditableTextRendererFn, cellStyle: makeEditableCellStyle("relCode2"), headerClass: "ag-header-cell-center ag-header-cell-wrap", suppressKeyboardEvent: suppressKeyboardWhenEditing },

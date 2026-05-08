@@ -31,7 +31,7 @@ export interface DetailGridRow {
   codeNameEtc: string;
   relCode1: string;
   relCode2: string;
-  relNum1: string;
+  relCode3: string;
   sortOrder: number;
   isActive: "Y" | "N";
   isNew?: boolean;
@@ -67,17 +67,17 @@ export function toDetailGridRow(row: CodeDetailResponse, headerCode: string): De
     codeNameEtc: row.codeNameEtc ?? "",
     relCode1: row.relCode1 ?? "",
     relCode2: row.relCode2 ?? "",
-    relNum1: row.relNum1 ?? "",
+    relCode3: row.relCode3 ?? "",
     sortOrder: row.sortOrder,
     isActive: row.isActive ? "Y" : "N",
   };
 }
 
 // nullable 필드 상수 (Craftsman)
-export const DETAIL_NULLABLE_FIELDS = ["relCode1", "relCode2", "relNum1", "codeNameEtc"] as const;
+export const DETAIL_NULLABLE_FIELDS = ["relCode1", "relCode2", "relCode3", "codeNameEtc"] as const;
 export const HEADER_NULLABLE_FIELDS = ["relCode1", "relCode2", "relCode3", "relNum1", "relNum2", "relNum3"] as const;
 export const HEADER_NUMERIC_FIELDS = ["relNum1", "relNum2", "relNum3"] as const;
-export const DETAIL_NUMERIC_FIELDS = ["relNum1", "sortOrder"] as const;
+export const DETAIL_NUMERIC_FIELDS = ["sortOrder"] as const;
 
 export const EMPTY_HEADER_FIELDS = { headerCode: "", headerAlias: "", headerName: "", relCode1: "", relCode2: "", relCode3: "", relNum1: "", relNum2: "", relNum3: "" };
-export const EMPTY_DETAIL_FIELDS = { code: "", displayCode: "", codeName: "", codeNameEtc: "", relCode1: "", relCode2: "", relNum1: "", sortOrder: "" };
+export const EMPTY_DETAIL_FIELDS = { code: "", displayCode: "", codeName: "", codeNameEtc: "", relCode1: "", relCode2: "", relCode3: "", sortOrder: "" };
