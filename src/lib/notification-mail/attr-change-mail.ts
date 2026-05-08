@@ -129,22 +129,22 @@ function buildBodyHtml(args: {
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
   <tr><td>
-    <p>※本メールは「Q.PARTNERS」をご利用いただく際の重要な情報を記載しておりますので、大切に保存していただきますようお願いいたします。</p>
-    <p>${safeSei}　${safeMei}様</p>
-    <p>いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。<br>
+    <p style="margin:16px 0;">※本メールは「Q.PARTNERS」をご利用いただく際の重要な情報を記載しておりますので、大切に保存していただきますようお願いいたします。</p>
+    <p style="margin:16px 0;">${safeSei}　${safeMei}様</p>
+    <p style="margin:16px 0;">いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。<br>
     以下の登録情報の変更が完了しましたので、以下にご連絡いたします。</p>
-    <p>●会社情報変更<br>${companyBlock}</p>
-    <p>●会員情報変更<br>${userBlock}</p>
-    <p>もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。</p>
-    <p>お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。<br>
+    <p style="margin:16px 0;">●会社情報変更<br>${companyBlock}</p>
+    <p style="margin:16px 0;">●会員情報変更<br>${userBlock}</p>
+    <p style="margin:16px 0;">もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。</p>
+    <p style="margin:16px 0;">お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。<br>
     マイページ(URL)：<a href="${safeSiteUrl}/mypage/">${safeSiteUrl}/mypage/</a></p>
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
-    <p style="font-size:12px;color:#999;">
+    <p style="margin:16px 0;font-size:12px;color:#999;">
       このメールは、ご登録されたメールアドレス宛に自動的に送信されています。<br>
       本メールに心あたりが無い場合には、お手数ですがメールの件名もしくは本文の始めに
       「登録の記憶無し」と記載し、本メールに返信(q-partners@hqj.co.jp)してください。
     </p>
-    <p style="font-size:11px;color:#999;">
+    <p style="margin:16px 0;font-size:11px;color:#999;">
       ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>

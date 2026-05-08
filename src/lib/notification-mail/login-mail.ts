@@ -53,13 +53,13 @@ function buildBodyHtml(args: {
 <body style="margin:0;padding:0;font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:14px;line-height:1.6;color:#333;">
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0;padding:20px;">
   <tr><td>
-    <p>${safeUserNm}様</p>
-    <p>平素より格別のお引き立てありがとうございます。<br>
+    <p style="margin:16px 0;">${safeUserNm}様</p>
+    <p style="margin:16px 0;">平素より格別のお引き立てありがとうございます。<br>
     以下ログインが確認されましたので、お知らせいたします。</p>
-    <p>ログイン日時：${safeLoginAt}<br>
+    <p style="margin:16px 0;">ログイン日時：${safeLoginAt}<br>
     IPアドレス：${safeIp}</p>
-    <p>お心当たりのない方は、第三者のログインの可能性がありますので、ログインパスワードの再設定をお願い致します。</p>
-    <p style="font-size:11px;color:#999;">
+    <p style="margin:16px 0;">お心当たりのない方は、第三者のログインの可能性がありますので、ログインパスワードの再設定をお願い致します。</p>
+    <p style="margin:16px 0;font-size:11px;color:#999;">
       ${MAIL_FOOTER_HTML}
     </p>
   </td></tr>
