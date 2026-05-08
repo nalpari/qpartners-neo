@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 interface MultiSelectOption {
@@ -77,6 +77,20 @@ export function MultiSelectCombobox({
     if (!disabled) setIsOpen(true);
   };
 
+  // 외부 클릭 감지 — onBlur 만으로는 트리거 빈 영역 클릭 후 비포커스 요소 클릭 시 닫히지 않는
+  // 엣지 케이스가 있어 document mousedown 으로 이중 가드. isOpen=true 일 때만 리스너 등록.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setIsOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen]);
+
   return (
     <div
       ref={containerRef}
@@ -143,14 +157,25 @@ export function MultiSelectCombobox({
           </span>
         )}
 
-        {/* 화살표 아이콘 */}
-        <Image
-          src="/asset/images/common/select_arr.svg"
-          alt=""
-          width={24}
-          height={24}
-          className={`shrink-0 ml-auto transition-transform duration-200 ${isOpen ? "rotate-180" : ""} ${disabled ? "opacity-50" : ""}`}
-        />
+        {/* 화살표 아이콘 — 클릭 시 드롭다운 토글 (입력창 클릭은 항상 열기만, 토글은 화살표로 분리) */}
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) setIsOpen((prev) => !prev);
+          }}
+          className="flex items-center justify-center shrink-0 ml-auto"
+          aria-label={isOpen ? "閉じる" : "開く"}
+        >
+          <Image
+            src="/asset/images/common/select_arr.svg"
+            alt=""
+            width={24}
+            height={24}
+            className={`transition-transform duration-200 ${isOpen ? "rotate-180" : ""} ${disabled ? "opacity-50" : ""}`}
+          />
+        </button>
       </div>
 
       {/* 드롭다운 */}
