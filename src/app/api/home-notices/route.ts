@@ -101,12 +101,12 @@ export async function GET(request: NextRequest) {
         ? { targets: { some: { roleCode: { in: targetRoleCodes } } } }
         : undefined;
 
-    // 날짜 파라미터 검증 — yyyy-MM-dd 형식 강제
-    const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
-    if (startDate && !DATE_ONLY_RE.test(startDate)) {
+    // 날짜 파라미터 검증 — yyyy-MM-dd 형식 + 月日 범위 강제
+    const DATE_ONLY_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+    if (startDate && (!DATE_ONLY_RE.test(startDate) || isNaN(jstParseDateOnly(startDate).getTime()))) {
       return NextResponse.json({ error: "日付はyyyy-MM-dd形式で入力してください" }, { status: 400 });
     }
-    if (endDate && !DATE_ONLY_RE.test(endDate)) {
+    if (endDate && (!DATE_ONLY_RE.test(endDate) || isNaN(jstParseDateOnlyEnd(endDate).getTime()))) {
       return NextResponse.json({ error: "日付はyyyy-MM-dd形式で入力してください" }, { status: 400 });
     }
 

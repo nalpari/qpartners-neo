@@ -43,8 +43,8 @@ export const createHomeNoticeSchema = z
       .nullable()
       .default(null),
   })
-  // Issue #2176 (2) — 시작일==종료일 허용 (`<` → `<=`).
-  .refine((data) => data.startAt <= data.endAt, {
+  // Issue #2176 (2) — 시작일==종료일 허용. JST day 단위 비교 — 서버 TZ 비의존.
+  .refine((data) => jstDayStart(data.startAt) <= jstDayStart(data.endAt), {
     message: "開始日は終了日以前に設定してください",
     path: ["startAt"],
   });
@@ -81,8 +81,8 @@ export const updateHomeNoticeSchema = z
   })
   .refine(
     (data) => {
-      // Issue #2176 (2) — 시작일==종료일 허용.
-      if (data.startAt && data.endAt) return data.startAt <= data.endAt;
+      // Issue #2176 (2) — 시작일==종료일 허용. JST day 단위 비교 — 서버 TZ 비의존.
+      if (data.startAt && data.endAt) return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
       return true;
     },
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
