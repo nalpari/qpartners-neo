@@ -10,6 +10,12 @@ import { EMPTY_DETAIL_FIELDS } from "../codes-types";
 interface UseCodeDetailsOptions {
   selectedHeaderId: number | null;
   selectedHeaderCode: string;
+  selectedHeaderAlias: string;
+  /**
+   * displayCode seq 가 999 상한에 도달해 신규행 생성을 중단할 때 호출되는 콜백.
+   * 호출측에서 사용자 안내 alert 노출을 담당. 미주입 시 조용히 abort.
+   */
+  onSeqLimitExceeded?: () => void;
 }
 
 /**
@@ -29,7 +35,7 @@ interface UseCodeDetailsOptions {
  * - mutation 실패 시 신규행 state는 정리하지 않고 그대로 유지 (retry-friendly)
  * - 호출측이 에러 alert를 띄운 뒤 같은 행을 재시도 가능
  */
-export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCodeDetailsOptions) {
+export function useCodeDetails({ selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, onSeqLimitExceeded }: UseCodeDetailsOptions) {
   const queryClient = useQueryClient();
 
   const [detailActiveOnly, setDetailActiveOnly] = useState(true);
@@ -55,6 +61,7 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
 
   // Detail 등록 mutation
   // isActive는 클라이언트에서 전송하지 않고 서버 Zod 기본값(.default(true))에 위임 — 신규 코드는 활성 상태로 생성
+  // relNum1 은 Detail UI 에서 deprecated 됐지만 BE 스키마에는 살아있어 명시적 null 로 전송한다.
   const detailCreateMutation = useMutation({
     mutationFn: async (data: Record<string, string>) => {
       const body = {
@@ -64,7 +71,8 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
         codeNameEtc: data.codeNameEtc || null,
         relCode1: data.relCode1 || null,
         relCode2: data.relCode2 || null,
-        relNum1: data.relNum1 || null,
+        relCode3: data.relCode3 || null,
+        relNum1: null,
         sortOrder: data.sortOrder ? Number(data.sortOrder) : 0,
       };
       return api.post(`/codes/${selectedHeaderId}/details`, body);
@@ -92,29 +100,60 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
     },
   });
 
+  // displayCode 자동 생성 가능 여부 — prefix 가 영문 3자리일 때만 발급. CodesContents 가
+  // 「追加」 버튼 disabled / 안내 alert 분기에 사용한다.
+  const canAddDetail = /^[A-Z]{3}$/.test(selectedHeaderAlias.toUpperCase());
+
   const handleDetailAdd = useCallback(() => {
     if (detailNewRow || !selectedHeaderId) return;
+    // headerAlias 미설정/비정상 → 자동 displayCode 발급 불가 → 추가 차단 (방어층).
+    // CodesContents 의 wrapping handler 가 사용자에게 안내 alert 노출.
+    const prefix = selectedHeaderAlias.toUpperCase();
+    if (!/^[A-Z]{3}$/.test(prefix)) return;
+
     // 기본 sortOrder: 현재 detailsRaw 중 max(sortOrder) + 1 (append 의도).
     // BE 가 자동 shift 하므로 충돌해도 안전하지만, 끝번호로 두면 무의미한 shift 회피 + UX 명확.
     const maxSort = detailsRaw.reduce((acc, d) => Math.max(acc, d.sortOrder), 0);
     const nextSort = maxSort + 1;
-    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort) };
+
+    // displayCode 자동 생성 — `<prefix><3자리 seq>` 정확 매칭으로 maxSeq 추출.
+    // startsWith 부분 매칭은 alias 축소(USR→US)·legacy 4자리 seq 등에서 NaN/오버플로 위험.
+    const seqPattern = new RegExp(`^${prefix}(\\d{3})$`);
+    let maxSeq = 0;
+    for (const d of detailsRaw) {
+      const m = seqPattern.exec(d.displayCode);
+      if (!m) continue;
+      const seq = Number(m[1]);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+    }
+    const nextSeq = maxSeq + 1;
+
+    // 999 상한 — 사양상 "3자리 seq" 보장. 초과 시 신규행 생성 자체를 중단하고 호출측에
+    // 알림 콜백으로 사용자 안내. 빈 displayCode 폴백은 handleSave 의 일반 "필수 입력"
+    // 메시지로 차단되어 사용자가 진짜 원인(seq 한계)을 알 수 없으므로 명시적 abort.
+    if (nextSeq > 999) {
+      onSeqLimitExceeded?.();
+      return;
+    }
+    const autoDisplayCode = `${prefix}${String(nextSeq).padStart(3, "0")}`;
+
+    detailNewRowRef.current = { ...EMPTY_DETAIL_FIELDS, sortOrder: String(nextSort), displayCode: autoDisplayCode };
     setDetailNewRow({
       id: `new-${Date.now()}`,
       headerId: String(selectedHeaderId),
       headerCode: selectedHeaderCode,
       code: "",
-      displayCode: "",
+      displayCode: autoDisplayCode,
       codeName: "",
       codeNameEtc: "",
       relCode1: "",
       relCode2: "",
-      relNum1: "",
+      relCode3: "",
       sortOrder: nextSort,
       isActive: "Y",
       isNew: true,
     });
-  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, detailsRaw]);
+  }, [detailNewRow, selectedHeaderId, selectedHeaderCode, selectedHeaderAlias, detailsRaw, onSeqLimitExceeded]);
 
   const handleDetailCancelAdd = useCallback(() => {
     setDetailNewRow(null);
@@ -142,6 +181,8 @@ export function useCodeDetails({ selectedHeaderId, selectedHeaderCode }: UseCode
     // 신규행
     detailNewRow,
     detailNewRowRef,
+    // 가드 — CodesContents 가 「追加」 버튼 disabled / 안내 alert 분기에 사용
+    canAddDetail,
     // 핸들러
     handleDetailAdd,
     handleDetailCancelAdd,

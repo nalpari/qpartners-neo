@@ -607,6 +607,8 @@ export function PermissionsTable() {
     if (!data || data.isNew || !field) return;
     if (NON_EDITABLE_FIELDS.has(field)) return;
     if (colId === "menuSetting") return; // Available Menu Setting 컬럼 제외
+    // isSystem 행은 roleName 만 편집 허용 — description/roleCode 변경 차단 (시스템 예약 권한 보호).
+    if (data.isSystem && field !== "roleName") return;
     if (isPermLoading) return;
     if (!canUpdatePermission) {
       openAlert({ type: "alert", message: "権限がありません。", confirmLabel: "確認" });
@@ -720,6 +722,11 @@ export function PermissionsTable() {
               (newRow ? !canCreatePermission : !canUpdatePermission) ||
               createMutation.isPending ||
               updateMutation.isPending
+            }
+            title={
+              !isPermLoading && (newRow ? !canCreatePermission : !canUpdatePermission)
+                ? "権限がありません"
+                : undefined
             }
           >
             保存

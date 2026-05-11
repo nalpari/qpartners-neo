@@ -1284,23 +1284,20 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       put: {
         tags: ["Permission"],
-        summary: "메뉴별 권한 일괄 저장 (SUPER_ADMIN 전용)",
+        summary: "메뉴별 권한 일괄 저장 (ADM_PERMISSION.update 매트릭스 가드)",
         description: `payload 에 포함된 menuCode 만 upsert (replace 아님). 나머지 menuCode 는 기존 값 유지.
 트랜잭션으로 묶여 부분 실패 시 전체 롤백. \`created_at\` / \`created_by\` 는 기존 행에서 보존.
 
-**권한**: SUPER_ADMIN 전용. ADMIN 은 GET 만 가능.
+**권한**: ADM_PERMISSION.canUpdate 매트릭스 가드.
 
 **menuCode 검증 (2단)**:
 - Zod 형식 검증: \`^[A-Z][A-Z0-9_]{0,49}$\` (+ max 50). 메뉴관리 UI 에서 신규 등록한 menuCode(예: TEST2) 도 통과.
 - DB 존재성 검증: \`qp_menus\` 일괄 findMany. 미존재 코드 포함 시 400 + \`{ error, unknownMenuCodes: string[] }\`.
 - FK 경합: 사전 검증과 upsert 사이에 메뉴가 삭제되면 P2003 → 400 + 재시도 안내.
 
-**Lockout 방어 (3중화)**:
-1. target = \`SUPER_ADMIN\` + payload 에 \`{ menuCode: "ADM_PERMISSION", canUpdate: false }\` 포함 → 400 (self-demotion 차단)
-2. target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 중 \`canRead: false\` 포함 → 400 (관리 페이지 접근 불가 → 복구 불가 차단)
-3. target ≠ \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\` / \`ADM_MENU\` / \`ADM_CODE\` 의 canCreate|canUpdate|canDelete 중 하나라도 true 포함 → 400
-
-세 lockout 거부 모두 응답 바디에 \`{ error, menuCode, action }\` 구조 (action ∈ {read, create, update, delete}).`,
+**Lockout 방어 (SUPER_ADMIN 보호)**:
+- target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION.canUpdate=false\` → 400 (self-demotion 차단)
+- target = \`SUPER_ADMIN\` + payload 에 \`ADM_PERMISSION\`/\`ADM_MENU\`/\`ADM_CODE\` 의 \`canRead=false\` → 400 (관리 페이지 접근 불가 차단)`,
         parameters: [
           {
             name: "roleCode",

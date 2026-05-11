@@ -3,25 +3,14 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin, requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { restrictedMenuCodeSet } from "@/lib/schemas/common";
 import {
   roleCodeParamSchema,
   updatePermissionsSchema,
 } from "@/lib/schemas/permission";
 
 type Params = { params: Promise<{ roleCode: string }> };
-
-/**
- * PII 보호 — byUserId 는 ADMIN 계열에서 이메일/로그인 ID 인 경우가 많아 평문 로깅 금지
- * (`.claude/rules/api.md`). 관리자 풀이 작아 prefix 4자만으로도 재식별 위험이 크므로
- * 8자 미만은 전체 마스킹, 8자 이상은 앞 2자만 노출 (운영 추적 최소치 확보).
- */
-function maskUserId(id: string): string {
-  if (id.length < 8) return "***";
-  return `${id.slice(0, 2)}***`;
-}
 
 // GET /api/roles/:roleCode/permissions — 메뉴별 권한 조회
 export async function GET(request: NextRequest, { params }: Params) {
@@ -115,29 +104,19 @@ export async function GET(request: NextRequest, { params }: Params) {
 /**
  * PUT /api/roles/:roleCode/permissions — 메뉴별 권한 일괄 저장.
  *
- * 권한: SUPER_ADMIN 전용 (requireSuperAdmin). ADMIN 은 조회만 가능.
- *   · 과거 requireAdmin 허용 시 ADMIN 이 1ST_STORE/SEKO 등 하위 역할의 매트릭스를 임의 조작하여
- *     ADM_MEMBER.canDelete / ADM_BULK_MAIL.canCreate 등을 부여할 수 있었음 (CRITICAL #1).
+ * 권한: ADM_PERMISSION.canUpdate 매트릭스 가드.
  *
  * 저장 전략: upsert (replace 아님).
- *   · 과거 `deleteMany + create` 는 payload 에 ADM_PERMISSION 행이 누락되면 해당 행까지
- *     일괄 삭제되어 lockout 가드를 우회할 수 있었음 (CRITICAL #2).
- *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지 → 우회 경로 차단 +
- *     `created_at` / `created_by` 감사 추적 보존 (HIGH #7).
+ *   · upsert 는 payload 에 포함된 menuCode 만 갱신, 나머지는 기존 값 유지.
+ *   · `created_at` / `created_by` 감사 추적 보존.
  *
- * Lockout 가드 3단:
- *   1. target === "SUPER_ADMIN" — payload 에 `ADM_PERMISSION.canUpdate === false` 가 있으면 거부.
- *      SUPER_ADMIN 이 자신의 권한관리 update 권한을 내리면 시스템 전체 lockout (CRITICAL #4).
- *   2. target === "SUPER_ADMIN" — payload 에 RESTRICTED 메뉴(ADM_PERMISSION/ADM_MENU/ADM_CODE) 의
- *      `canRead === false` 가 있으면 거부. read 가 막히면 해당 관리 페이지 자체가 열리지 않아
- *      복구가 DB 직접 수정 없이 불가능해진다 (CRITICAL #5).
- *   3. target !== "SUPER_ADMIN" — payload 에 `ADMIN_RESTRICTED_MENUS`(ADM_PERMISSION/ADM_MENU/ADM_CODE)
- *      중 CUD true 가 있으면 거부. 매트릭스 의도(ADMIN = read only, 비관리자 = 접근 없음)
- *      를 API 단에서 강제 (HIGH #6).
+ * Lockout 가드 (SUPER_ADMIN 보호):
+ *   · SUPER_ADMIN 대상 + ADM_PERMISSION.canUpdate=false → 400 (self-demotion 차단)
+ *   · SUPER_ADMIN 대상 + ADM_PERMISSION/ADM_MENU/ADM_CODE canRead=false → 400 (관리 페이지 접근 불가 차단)
  */
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireSuperAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "update");
     if (auth instanceof NextResponse) return auth;
 
     const { roleCode } = await params;
@@ -229,87 +208,33 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Lockout 가드 #1 — SUPER_ADMIN self-demotion 차단 (ADM_PERMISSION.canUpdate).
+    // Lockout 가드 — SUPER_ADMIN self-demotion 차단.
+    // ADM_PERMISSION.canUpdate=false 가 payload 에 포함되면 SUPER_ADMIN 이 권한 매트릭스를
+    // 수정할 수단이 사라져 DB 직접 수정 외 복구 불가능한 시스템 lockout 발생.
+    // ADM_PERMISSION/ADM_MENU/ADM_CODE 의 canRead=false 도 동일 — 관리 페이지 자체 접근 불가.
     if (parsedCode.data === "SUPER_ADMIN") {
       const permRow = result.data.permissions.find(
         (p) => p.menuCode === "ADM_PERMISSION",
       );
       if (permRow && permRow.canUpdate === false) {
         console.warn(
-          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN self-lockout 시도 차단",
-          {
-            byUserType: auth.user.userType,
-            byUserIdMasked: maskUserId(auth.user.userId),
-            byRole: auth.user.role,
-          },
+          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN self-lockout 시도 차단 — ADM_PERMISSION.canUpdate=false",
         );
         return NextResponse.json(
-          {
-            error: "スーパー管理者の「権限管理」更新権限は無効化できません",
-            menuCode: "ADM_PERMISSION",
-            action: "update",
-          },
+          { error: "スーパー管理者の「権限管理」更新権限は無効化できません" },
           { status: 400 },
         );
       }
-
-      // Lockout 가드 #2 — SUPER_ADMIN 이 RESTRICTED 메뉴의 canRead 를 회수하면
-      //                  해당 관리 페이지 자체가 열리지 않아 복구 불가.
+      const restrictedMenus = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"];
       const readRevocation = result.data.permissions.find(
-        (p) => restrictedMenuCodeSet.has(p.menuCode) && p.canRead === false,
+        (p) => restrictedMenus.includes(p.menuCode) && p.canRead === false,
       );
       if (readRevocation) {
         console.warn(
-          "[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN RESTRICTED canRead 회수 시도 차단",
-          {
-            targetRoleCode: parsedCode.data,
-            menuCode: readRevocation.menuCode,
-            byUserType: auth.user.userType,
-            byUserIdMasked: maskUserId(auth.user.userId),
-            byRole: auth.user.role,
-          },
+          `[PUT /api/roles/:roleCode/permissions] SUPER_ADMIN 관리메뉴 canRead 회수 시도 차단 — menuCode=${readRevocation.menuCode}`,
         );
         return NextResponse.json(
-          {
-            error: `スーパー管理者の「${readRevocation.menuCode}」閲覧権限は無効化できません`,
-            menuCode: readRevocation.menuCode,
-            action: "read",
-          },
-          { status: 400 },
-        );
-      }
-    }
-
-    // Lockout 가드 #3 — 비 SUPER_ADMIN 역할에 RESTRICTED 메뉴 CUD 부여 차단.
-    if (parsedCode.data !== "SUPER_ADMIN") {
-      const violation = result.data.permissions.find(
-        (p) =>
-          restrictedMenuCodeSet.has(p.menuCode) &&
-          (p.canCreate || p.canUpdate || p.canDelete),
-      );
-      if (violation) {
-        const action = violation.canCreate
-          ? "create"
-          : violation.canUpdate
-            ? "update"
-            : "delete";
-        console.warn(
-          "[PUT /api/roles/:roleCode/permissions] RESTRICTED 메뉴 권한 상승 시도 차단",
-          {
-            targetRoleCode: parsedCode.data,
-            violatedMenuCode: violation.menuCode,
-            violatedAction: action,
-            byUserType: auth.user.userType,
-            byUserIdMasked: maskUserId(auth.user.userId),
-            byRole: auth.user.role,
-          },
-        );
-        return NextResponse.json(
-          {
-            error: `「${violation.menuCode}」の${action}権限はスーパー管理者にのみ付与できます`,
-            menuCode: violation.menuCode,
-            action,
-          },
+          { error: `スーパー管理者の「${readRevocation.menuCode}」閲覧権限は無効化できません` },
           { status: 400 },
         );
       }

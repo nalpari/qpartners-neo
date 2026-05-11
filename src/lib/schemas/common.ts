@@ -38,20 +38,6 @@ export const menuCodeSchema = z.enum(menuCodeValues);
 export type MenuCode = z.infer<typeof menuCodeSchema>;
 
 /**
- * ADMIN 제한 메뉴 — ADMIN 에게 read 만 허용하고 CUD 는 SUPER_ADMIN 전용.
- * seed 의 `ADMIN_RESTRICTED_MENUS` 와 PUT /roles/:rc/permissions 의 lockout 가드 공용.
- */
-export const restrictedMenuCodes = ["ADM_PERMISSION", "ADM_MENU", "ADM_CODE"] as const;
-export type RestrictedMenuCode = (typeof restrictedMenuCodes)[number];
-/**
- * RESTRICTED 판정 — `updatePermissionsSchema` 에서 menuCode 가 enum 고정을 벗어나
- * 임의 문자열(신규 메뉴관리 행)까지 허용되기 때문에 `ReadonlySet<string>` 로 넓혀
- * lockout 가드 호출부(`restrictedMenuCodeSet.has(p.menuCode)`)의 타입 안전성을 유지한다.
- * 런타임 동작은 값 비교이므로 영향 없음 — RESTRICTED 3종만 true 로 떨어진다.
- */
-export const restrictedMenuCodeSet: ReadonlySet<string> = new Set(restrictedMenuCodes);
-
-/**
  * 메뉴 등록/수정 시 menuCode 의 형식 제약 — DB `qp_menus.menu_code VARCHAR(50)` 과 1:1.
  * 대문자 시작 + 대문자/숫자/언더스코어, 50자 이내.
  *
