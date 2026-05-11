@@ -63,34 +63,21 @@ export function CategoriesContents() {
 
   // ─── 파생 데이터 ───
   // Plan SC: SC-07 — 사내전용 필터 + 사용여부 필터(#2103)
-  // 부모 표시값/필터 판정은 「자식 OR」 룰로 derived 계산:
-  //   자식이 하나라도 Y면 부모 Y, 자식 모두 N이면 부모 N (자식 없는 부모는 자체값 사용).
-  //   → 4번 사내전용=Y 체크 시 사내전용 자식이 있는 부모도 정상 매칭/표시되도록.
-  const derivedTree = useMemo(() => {
-    return treeData.map((parent) => {
-      if (parent.children.length === 0) return parent;
-      return {
-        ...parent,
-        isInternalOnly: parent.children.some((c) => c.isInternalOnly),
-        isActive: parent.children.some((c) => c.isActive),
-      };
-    });
-  }, [treeData]);
-
-  // 두 필터는 AND 결합. derived 부모 + 자식 자체값에 matchSelf 적용.
-  // 자식 매칭되면 derived 부모도 자동 매칭되므로 children.length > 0 fallback 불필요.
+  // 표시값은 DB 원본 그대로(자식 OR 덮어쓰기 금지) — 부모 자체값 수정이 목록에 즉시 반영되도록.
+  // 필터 매칭만 「부모 자체 매칭 OR 자식 매칭」 룰을 적용하여 사내전용 자식이 있는 부모도
+  // 필터 결과에 포함되도록 한다.
   const filteredTree = useMemo(() => {
-    if (!filterInternalOnly && !filterActiveOnly) return derivedTree;
+    if (!filterInternalOnly && !filterActiveOnly) return treeData;
     const matchSelf = (n: { isInternalOnly: boolean; isActive: boolean }) =>
       (!filterInternalOnly || n.isInternalOnly) &&
       (!filterActiveOnly || n.isActive);
-    return derivedTree
+    return treeData
       .map((parent) => ({
         ...parent,
         children: parent.children.filter(matchSelf),
       }))
-      .filter((p) => matchSelf(p));
-  }, [derivedTree, filterInternalOnly, filterActiveOnly]);
+      .filter((p) => matchSelf(p) || p.children.length > 0);
+  }, [treeData, filterInternalOnly, filterActiveOnly]);
 
   const totalCount = filteredTree.reduce(
     (sum, p) => sum + 1 + p.children.length,
