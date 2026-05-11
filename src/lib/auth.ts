@@ -85,30 +85,18 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
   };
 }
 
-/** 관리자 여부 (super_admin | admin) — isInternalUser와 동일 */
-export function isAdmin(role: string): boolean {
+/**
+ * 사내 사용자 여부 (SUPER_ADMIN | ADMIN) — 콘텐츠 가시성/소유권 등 비즈니스 로직 판정용.
+ *
+ * 주의: 관리자 라우트 가드 용도가 아니다. admin/* 라우트는
+ * `requireMenuPermission(headers, "ADM_*", action)` 매트릭스 단일 가드를 사용한다
+ * (2026-05-08 정책 — 권한관리 매트릭스 단일 진실).
+ *
+ * 종전 `isAdmin` / `requireAdmin` 은 admin 라우트 가드의 role 하드코딩 분기였으나
+ * 매트릭스 단일 의존 정책으로 전체 폐지됨. `isInternalUser` 만 비즈니스 판정용으로 잔존.
+ */
+export function isInternalUser(role: string): boolean {
   return role === "SUPER_ADMIN" || role === "ADMIN";
-}
-
-/** 사내 사용자 여부 — isAdmin의 alias */
-export const isInternalUser = isAdmin;
-
-/** 관리자 인증 가드. 미인증 시 401, 권한 부족 시 403. */
-export function requireAdmin(headers: Headers): { user: UserInfo } | NextResponse {
-  const user = getUserFromHeaders(headers);
-  if (!user) {
-    return NextResponse.json(
-      { error: "認証が必要です" },
-      { status: 401 },
-    );
-  }
-  if (!isAdmin(user.role)) {
-    return NextResponse.json(
-      { error: "管理者権限が必要です" },
-      { status: 403 },
-    );
-  }
-  return { user };
 }
 
 /**
@@ -161,7 +149,10 @@ const MENU_ACTION_TO_KEY: Readonly<Record<MenuAction, keyof MenuPermission>> = {
 };
 
 /**
- * 메뉴 권한 매트릭스 기반 가드 — `requireAdmin` 의 RBAC 교체판.
+ * 메뉴 권한 매트릭스 기반 가드 — 모든 admin/도메인 라우트의 단일 인증 가드.
+ *
+ * 정책 (2026-05-08): 권한관리 화면에서 설정한 메뉴별 CRUD 매트릭스를 단일 진실로 삼는다.
+ * 종전 `requireAdmin` (role 하드코딩 분기) 는 폐지되었으며, 신규 라우트도 본 가드만 사용한다.
  *
  * 성공: `{ user }` 반환 — 호출부에서 그대로 `const { user } = auth;` 로 소비.
  * 실패:

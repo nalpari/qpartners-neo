@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireAdmin, requireMenuPermission } from "@/lib/auth";
+import { requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   roleCodeParamSchema,
@@ -13,9 +13,13 @@ import {
 type Params = { params: Promise<{ roleCode: string }> };
 
 // GET /api/roles/:roleCode/permissions — 메뉴별 권한 조회
+//
+// 권한: ADM_PERMISSION.canRead 매트릭스 가드 (PUT 의 ADM_PERMISSION.canUpdate 와 동일 도메인).
+// 종전 requireAdmin(role==="SUPER_ADMIN"||"ADMIN") 하드코딩 분기는 폐지 —
+// 권한관리 매트릭스 단일 진실(2026-05-08 정책) 으로 통일.
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const auth = requireAdmin(request.headers);
+    const auth = await requireMenuPermission(request.headers, "ADM_PERMISSION", "read");
     if (auth instanceof NextResponse) return auth;
 
     const { roleCode } = await params;
