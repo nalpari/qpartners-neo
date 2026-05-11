@@ -9,6 +9,8 @@ import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-label
  * - 6 기본 권한 + 운영자 정의 추가 권한 + 비회원 sentinel 모두 동적 노출.
  * - useTargetLabels.allOptions 가 6 기본 → 추가 권한 → 비회원 순으로 정렬됨.
  * - 비활성 권한은 새로 체크 불가 (이미 체크된 행만 해제 가능).
+ * - forcedRoleCode (비관리자 작성자의 본인 권한코드) 행은 자동 체크 + 해제 불가.
+ *   본인이 작성한 콘텐츠가 본인 목록에서 사라지는 회귀 방지 (목록 GET 가 roleCode=user.role 매칭).
  */
 
 interface PostTargetItem {
@@ -29,6 +31,8 @@ export interface PostTargetState {
 interface ContentsFormPostTargetProps {
   postTargets: PostTargetState;
   onPostTargetsChange: (targets: PostTargetState) => void;
+  /** 비관리자 작성자의 본인 권한코드 — null = 강제 없음(사내회원/미로그인) */
+  forcedRoleCode?: string | null;
 }
 
 /**
@@ -46,6 +50,7 @@ export function buildInitialPostTargetsState(
     startAt: string | null;
     endAt: string | null;
   }[],
+  forcedRoleCode?: string | null,
 ): PostTargetState {
   const today = new Date();
   const defaultEnd = new Date("2999-12-31");
@@ -56,6 +61,8 @@ export function buildInitialPostTargetsState(
 
   const items: PostTargetItem[] = allOptions.map((opt) => {
     const found = existingMap.get(opt.roleCode);
+    const isForced =
+      forcedRoleCode != null && opt.roleCode === forcedRoleCode;
     if (found) {
       return {
         roleCode: opt.roleCode,
@@ -64,9 +71,10 @@ export function buildInitialPostTargetsState(
         endDate: found.endAt ? new Date(found.endAt) : null,
       };
     }
+    // forcedRoleCode 행은 신규 등록 시점부터 체크 + 기본 기간(오늘~2999) 부여
     return {
       roleCode: opt.roleCode,
-      checked: false,
+      checked: isForced,
       startDate: new Date(today),
       endDate: new Date(defaultEnd),
     };
@@ -84,6 +92,17 @@ export function buildInitialPostTargetsState(
     });
   }
 
+  // forcedRoleCode 가 allOptions 에도 existingTargets 에도 없는 극단 케이스 방어 —
+  // 비활성화된 본인 권한으로 폼 진입했을 때(현실에선 매트릭스 가드가 차단하지만 fail-closed).
+  if (forcedRoleCode != null && !items.some((i) => i.roleCode === forcedRoleCode)) {
+    items.push({
+      roleCode: forcedRoleCode,
+      checked: true,
+      startDate: new Date(today),
+      endDate: new Date(defaultEnd),
+    });
+  }
+
   return {
     selectAll: items.length > 0 && items.every((i) => i.checked),
     allStartDate: today,
@@ -95,14 +114,20 @@ export function buildInitialPostTargetsState(
 export function ContentsFormPostTarget({
   postTargets,
   onPostTargetsChange,
+  forcedRoleCode = null,
 }: ContentsFormPostTargetProps) {
   const { allOptions, isLoading } = useTargetLabels();
+
+  const isForcedRow = (roleCode: string | null) =>
+    forcedRoleCode != null && roleCode === forcedRoleCode;
 
   const handleSelectAll = (checked: boolean) => {
     onPostTargetsChange({
       ...postTargets,
       selectAll: checked,
       targets: postTargets.targets.map((t) => {
+        // forcedRoleCode 행은 전체해제에도 항상 체크 유지
+        if (isForcedRow(t.roleCode)) return { ...t, checked: true };
         const opt = allOptions.find((o) => o.roleCode === t.roleCode);
         const available = opt?.isActive ?? false;
         if (!checked) return { ...t, checked: false };
@@ -112,6 +137,8 @@ export function ContentsFormPostTarget({
   };
 
   const handleTargetCheck = (roleCode: string | null, checked: boolean) => {
+    // forcedRoleCode 행 해제 시도는 무시
+    if (isForcedRow(roleCode) && !checked) return;
     const newTargets = postTargets.targets.map((t) =>
       t.roleCode === roleCode ? { ...t, checked } : t,
     );
@@ -202,6 +229,9 @@ export function ContentsFormPostTarget({
         </div>
         <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#1060B4] whitespace-nowrap">
           ※社内会員（スーパー管理者／管理者）は掲示対象に関係なく常に照会可能
+          {forcedRoleCode != null
+            ? "（本人の権限は照会のため必須付与されます）"
+            : ""}
         </p>
       </div>
 
@@ -238,7 +268,7 @@ export function ContentsFormPostTarget({
                     <Checkbox
                       checked={target.checked}
                       onChange={(checked) => handleTargetCheck(opt.roleCode, checked)}
-                      disabled={!available && !target.checked}
+                      disabled={(!available && !target.checked) || isForcedRow(opt.roleCode)}
                     />
                     <div className="flex flex-1 items-center gap-1">
                       <DatePicker

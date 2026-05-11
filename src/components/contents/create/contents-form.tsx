@@ -175,11 +175,22 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     ? (existingData.authorDepartment ?? "")
     : (loginUser?.deptNm ?? "");
 
-  // 폼 상태 — allOptions(권한관리) + existingData 결합으로 초기값 도출.
+  // forcedRoleCode — 비관리자 작성자/편집자의 본인 권한코드.
+  // 본인 콘텐츠가 본인 목록에서 사라지는 회귀 방지 (목록 GET 가 roleCode=user.role 매칭).
+  // auth-client.canModifyClient 와 동일 폴백 (authRole 미보유 구 JWT 호환).
+  // 사내회원(SUPER_ADMIN/ADMIN) 은 항상 조회 가능하므로 강제 없음 → null.
+  const effectiveRole =
+    loginUser?.authRole ?? (loginUser?.userTp === "ADMIN" ? "ADMIN" : null);
+  const isInternalEditor =
+    effectiveRole === "SUPER_ADMIN" || effectiveRole === "ADMIN";
+  const forcedRoleCode = !isInternalEditor && effectiveRole ? effectiveRole : null;
+
+  // 폼 상태 — allOptions(권한관리) + existingData + forcedRoleCode 결합으로 초기값 도출.
   // (useEffect setState 대신 key 리마운트 방식; allOptions 변경 시 재마운트로 동기화)
   const initialPostTargets = buildInitialPostTargetsState(
     allOptions,
     existingData?.targets,
+    forcedRoleCode,
   );
 
   const [approver, setApprover] = useState(existingData ? String(existingData.approverLevel ?? "") : "");
@@ -355,6 +366,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
         <ContentsFormPostTarget
           postTargets={postTargets}
           onPostTargetsChange={setPostTargets}
+          forcedRoleCode={forcedRoleCode}
         />
 
         <ContentsFormCategory
