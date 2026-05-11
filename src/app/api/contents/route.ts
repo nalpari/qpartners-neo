@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
 import {
   reconcileInlineImages,
@@ -273,6 +274,9 @@ export async function POST(request: NextRequest) {
 
     const { targets, categoryIds, ...contentData } = result.data;
 
+    // 비사내 작성자의 본인 권한 강제 포함 — FE 우회 방어 (정책: lib/contents-author-target.ts).
+    const effectiveTargets = ensureAuthorTarget(targets, user.role);
+
     // publishedAt 자동 설정
     const publishedAt =
       contentData.status === "published"
@@ -291,7 +295,7 @@ export async function POST(request: NextRequest) {
           createdBy: user.userId,
           authorDepartment:
             contentData.authorDepartment ?? user.department ?? undefined,
-          targets: targets ? { create: targets } : undefined,
+          targets: effectiveTargets ? { create: effectiveTargets } : undefined,
           categories: categoryIds
             ? {
                 create: categoryIds.map((categoryId) => ({

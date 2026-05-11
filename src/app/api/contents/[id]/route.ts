@@ -12,6 +12,7 @@ import {
   resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
   unlinkInlineImages,
@@ -202,8 +203,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const { targets, categoryIds, ...contentData } = result.data;
 
+    // 비사내 작성자의 본인 권한 강제 포함 — FE 우회 방어 (정책: lib/contents-author-target.ts).
+    // targets 미명시(undefined) 시 변경 의도 없음으로 기존 보존, 명시된 경우만 보강.
+    const effectiveTargets = ensureAuthorTarget(targets, user.role);
+
     const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
-      if (targets) {
+      if (effectiveTargets) {
         await tx.contentTarget.deleteMany({
           where: { contentId: parsed.data },
         });
@@ -220,7 +225,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         data: {
           ...contentData,
           updatedBy: user.userId,
-          targets: targets ? { create: targets } : undefined,
+          targets: effectiveTargets ? { create: effectiveTargets } : undefined,
           categories: categoryIds
             ? {
                 create: categoryIds.map((categoryId) => ({

@@ -1248,8 +1248,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/roles/{roleCode}/permissions": {
       get: {
         tags: ["Permission"],
-        summary: "메뉴별 권한 조회",
-        description: "전체 메뉴(2레벨) 목록 + 해당 roleCode의 CRUD 권한 매핑",
+        summary: "메뉴별 권한 조회 (ADM_PERMISSION.read 매트릭스 가드)",
+        description: "전체 메뉴(2레벨) 목록 + 해당 roleCode의 CRUD 권한 매핑. **권한**: ADM_PERMISSION.canRead 매트릭스 가드 (PUT 의 canUpdate 와 동일 도메인).",
         parameters: [
           {
             name: "roleCode",
@@ -1277,7 +1277,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": errorResponse("無効な権限コードです"),
           "401": errorResponse("認証が必要です"),
-          "403": errorResponse("2段階認証が必要です"),
+          "403": errorResponse("権限がありません"),
           "404": errorResponse("指定された権限が見つかりません"),
           "500": errorResponse("権限の取得に失敗しました"),
         },
@@ -1398,7 +1398,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("認証が必要です"),
-          "403": errorResponse("スーパー管理者権限が必要です"),
+          "403": errorResponse("権限がありません"),
           "404": errorResponse("指定された権限が見つかりません"),
           "500": errorResponse("権限の更新に失敗しました"),
         },
@@ -3304,9 +3304,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/master/deptList": {
       get: {
         tags: ["Master"],
-        summary: "부서(担当部門) 목록 조회",
+        summary: "부서(担当部門) 목록 조회 (CONT_LIST.read 매트릭스 가드)",
         description:
-          "관리자 전용 — QSP 부서 마스터 조회. 콘텐츠 검색 화면의 担当部門 셀렉트 옵션용. " +
+          "QSP 부서 마스터 조회. 콘텐츠 검색 화면의 担当部門 셀렉트 옵션용. " +
+          "**권한**: CONT_LIST.canRead 매트릭스 가드 — 콘텐츠 목록 화면에 종속된 dropdown 이므로 " +
+          "콘텐츠 목록 read 권한을 그대로 따른다 (2026-05-08 정책 — 권한관리 매트릭스 단일 진실). " +
           "loginId 는 인증 세션의 userId 를 그대로 사용 (클라이언트 페이로드 아님). " +
           "QSP 의 result envelope 은 노출하지 않고 `{ data: [{ deptCd, deptNm }] }` 형태로 정규화.",
         responses: {
@@ -3334,84 +3336,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("管理者権限が必要です (SUPER_ADMIN || ADMIN)"),
+          "403": errorResponse("権限がありません"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류 (QSP 응답 비정상/스키마 불일치/resultCode≠S)"),
-        },
-      },
-    },
-
-    // ─── Interface Log ───
-    "/admin/interface-logs": {
-      get: {
-        tags: ["InterfaceLog"],
-        summary: "인터페이스 로그 목록 조회",
-        description: "관리자 전용 — QSP/시공점 등 외부 시스템 API 호출 이력 조회. requestBody/responseBody는 목록에서 제외.",
-        parameters: [
-          { name: "system", in: "query", schema: { type: "string" }, description: "시스템 필터 (QSP, SEKO 등)" },
-          { name: "apiName", in: "query", schema: { type: "string" }, description: "API명 필터 (login, userDetail 등)" },
-          { name: "resultCode", in: "query", schema: { type: "string" }, description: "결과코드 필터 (S, F)" },
-          { name: "from", in: "query", schema: { type: "string", format: "date-time" }, description: "시작일시" },
-          { name: "to", in: "query", schema: { type: "string", format: "date-time" }, description: "종료일시" },
-          { name: "page", in: "query", schema: { type: "integer", default: 1 }, description: "페이지 번호" },
-          { name: "limit", in: "query", schema: { type: "integer", default: 20, maximum: 100 }, description: "페이지 크기" },
-        ],
-        responses: {
-          "200": {
-            description: "인터페이스 로그 목록",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/InterfaceLogSummary" },
-                    },
-                    pagination: {
-                      type: "object",
-                      properties: {
-                        page: { type: "integer" },
-                        limit: { type: "integer" },
-                        total: { type: "integer" },
-                        totalPages: { type: "integer" },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
-        },
-      },
-    },
-    "/admin/interface-logs/{id}": {
-      get: {
-        tags: ["InterfaceLog"],
-        summary: "인터페이스 로그 상세 조회",
-        description: "관리자 전용 — requestBody/responseBody 포함 전체 필드 조회",
-        parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "로그 ID" },
-        ],
-        responses: {
-          "200": {
-            description: "인터페이스 로그 상세",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    data: { $ref: "#/components/schemas/InterfaceLogDetail" },
-                  },
-                },
-              },
-            },
-          },
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("관리자 권한 필요"),
-          "404": errorResponse("로그 없음"),
         },
       },
     },
@@ -4501,49 +4428,6 @@ export const openApiSpec: OpenAPIV3.Document = {
           createdBy: { type: "string" },
           createdByName: { type: "string", nullable: true, description: "등록자명 (DB 미존재 시 null)" },
           createdAt: { type: "string", format: "date-time" },
-        },
-      },
-      InterfaceLogSummary: {
-        type: "object",
-        properties: {
-          id: { type: "integer" },
-          traceId: { type: "string" },
-          system: { type: "string" },
-          direction: { type: "string" },
-          apiName: { type: "string" },
-          method: { type: "string" },
-          requestUrl: { type: "string" },
-          responseStatus: { type: "integer" },
-          resultCode: { type: "string", nullable: true },
-          durationMs: { type: "integer" },
-          callerRoute: { type: "string" },
-          userId: { type: "string", nullable: true },
-          userType: { type: "string", nullable: true },
-          errorMessage: { type: "string", nullable: true },
-          createdAt: { type: "string", format: "date-time" },
-        },
-      },
-      InterfaceLogDetail: {
-        type: "object",
-        properties: {
-          id: { type: "integer" },
-          traceId: { type: "string" },
-          system: { type: "string" },
-          direction: { type: "string" },
-          apiName: { type: "string" },
-          method: { type: "string" },
-          requestUrl: { type: "string" },
-          requestBody: { type: "string", nullable: true },
-          responseStatus: { type: "integer" },
-          responseBody: { type: "string", nullable: true },
-          resultCode: { type: "string", nullable: true },
-          durationMs: { type: "integer" },
-          callerRoute: { type: "string" },
-          userId: { type: "string", nullable: true },
-          userType: { type: "string", nullable: true },
-          errorMessage: { type: "string", nullable: true },
-          createdAt: { type: "string", format: "date-time" },
-          createdBy: { type: "string" },
         },
       },
       MassMailCreateRequest: {
