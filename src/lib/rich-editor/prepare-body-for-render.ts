@@ -2,6 +2,8 @@
  * 상세 페이지 본문 렌더 직전 전처리.
  *
  * - 레거시 plain-text 줄바꿈(\n)을 <br>로 변환해 시각적 줄바꿈 보존.
+ * - Tiptap이 빈 단락을 `<p></p>`로 직렬화 → prose CSS에서 0 높이로 붕괴되어 빈 줄이
+ *   사라지는 문제를 막기 위해 `<p><br></p>`로 정규화.
  * - Tiptap이 출력하는 td[colwidth]를 BlockNote 호환 colgroup>col[style="width:Npx"]로 변환 →
  *   detail CSS([&_table]:table-fixed)가 두 마크업에서 동일하게 동작.
  *
@@ -10,7 +12,20 @@
 export function prepareBodyForRender(body: string | null | undefined): string {
   if (!body) return "";
   const withBr = body.replace(/\n/g, "<br>");
-  return normalizeTiptapTableWidths(withBr);
+  const withBlankParagraphs = ensureEmptyParagraphsRender(withBr);
+  return normalizeTiptapTableWidths(withBlankParagraphs);
+}
+
+/**
+ * 콘텐츠가 없는 `<p></p>`(공백·&nbsp; 포함)를 `<p><br></p>`로 치환한다.
+ * - 속성은 보존 (`<p class="...">` 등)
+ * - sanitize 단계의 ALLOWED_TAGS에 `br`이 포함되어 있어 통과한다.
+ */
+function ensureEmptyParagraphsRender(html: string): string {
+  return html.replace(
+    /<p(\s[^>]*)?>(?:\s|&nbsp;)*<\/p>/gi,
+    (_match, attrs: string | undefined) => `<p${attrs ?? ""}><br></p>`,
+  );
 }
 
 /**
