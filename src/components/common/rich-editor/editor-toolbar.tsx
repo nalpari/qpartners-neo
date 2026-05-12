@@ -146,17 +146,18 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
             />
           </span>
         </button>
-        <ColorPopover
-          open={textColorOpen}
-          onClose={() => setTextColorOpen(false)}
-          triggerRef={textColorButtonRef}
-          title={t.textColor}
-          resetLabel={t.textColorReset}
-          palette={TEXT_COLOR_PALETTE}
-          activeValue={activeTextColor}
-          onSelect={(v) => editor.chain().focus().setColor(v).run()}
-          onReset={() => editor.chain().focus().unsetColor().run()}
-        />
+        {textColorOpen && (
+          <ColorPopover
+            onClose={() => setTextColorOpen(false)}
+            triggerRef={textColorButtonRef}
+            title={t.textColor}
+            resetLabel={t.textColorReset}
+            palette={TEXT_COLOR_PALETTE}
+            activeValue={activeTextColor}
+            onSelect={(v) => editor.chain().focus().setColor(v).run()}
+            onReset={() => editor.chain().focus().unsetColor().run()}
+          />
+        )}
       </div>
 
       {/* G2.6 — 하이라이트 */}
@@ -179,17 +180,18 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
             H
           </span>
         </button>
-        <ColorPopover
-          open={highlightOpen}
-          onClose={() => setHighlightOpen(false)}
-          triggerRef={highlightButtonRef}
-          title={t.highlight}
-          resetLabel={t.highlightReset}
-          palette={HIGHLIGHT_PALETTE}
-          activeValue={activeHighlight}
-          onSelect={(v) => editor.chain().focus().setHighlight({ color: v }).run()}
-          onReset={() => editor.chain().focus().unsetHighlight().run()}
-        />
+        {highlightOpen && (
+          <ColorPopover
+            onClose={() => setHighlightOpen(false)}
+            triggerRef={highlightButtonRef}
+            title={t.highlight}
+            resetLabel={t.highlightReset}
+            palette={HIGHLIGHT_PALETTE}
+            activeValue={activeHighlight}
+            onSelect={(v) => editor.chain().focus().setHighlight({ color: v }).run()}
+            onReset={() => editor.chain().focus().unsetHighlight().run()}
+          />
+        )}
       </div>
 
       {divider}
@@ -267,12 +269,13 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         >
           ▦
         </button>
-        <InsertTablePopover
-          editor={editor}
-          open={tablePopoverOpen}
-          onClose={() => setTablePopoverOpen(false)}
-          triggerRef={tableButtonRef}
-        />
+        {tablePopoverOpen && (
+          <InsertTablePopover
+            editor={editor}
+            onClose={() => setTablePopoverOpen(false)}
+            triggerRef={tableButtonRef}
+          />
+        )}
       </div>
 
       {divider}

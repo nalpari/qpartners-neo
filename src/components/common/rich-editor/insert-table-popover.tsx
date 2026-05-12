@@ -1,37 +1,53 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import { editorI18n } from "./editor-i18n";
 
 const MAX_ROWS = 10;
 const MAX_COLS = 10;
+const VIEWPORT_MARGIN = 8;
+// 10 cols × 16px + 9 gaps × 2px + 좌우 padding 24 + 여유
+const POPOVER_WIDTH = 220;
 
 export interface InsertTablePopoverProps {
   editor: Editor;
-  open: boolean;
   onClose: () => void;
-  /** popover 외부 클릭으로 닫을 때 제외할 트리거 요소 — 토글 버튼이 다시 닫히지 않도록 */
-  triggerRef?: RefObject<HTMLElement | null>;
+  /** popover 외부 클릭으로 닫을 때 제외할 트리거 요소 */
+  triggerRef: RefObject<HTMLElement | null>;
 }
 
 /**
  * 툴바 ▦ 버튼이 띄우는 hover 그리드.
- * 좌상단부터 (r+1) × (c+1) 영역을 하이라이트하며 클릭 시 그 크기로 표 삽입.
- * 부모가 open=false 시 unmount해 hover state가 다음 표시에 남지 않도록 한다.
+ * portal + fixed로 body에 렌더링해 툴바 overflow 영향을 받지 않는다.
+ * 좌표는 트리거 버튼 좌표 기준으로 useLayoutEffect에서 DOM에 직접 적용한다.
  */
 export function InsertTablePopover({
   editor,
-  open,
   onClose,
   triggerRef,
 }: InsertTablePopoverProps) {
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const trigger = triggerRef.current;
+    if (!container || !trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const left = clamp(
+      rect.left,
+      VIEWPORT_MARGIN,
+      window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN,
+    );
+    container.style.top = `${rect.bottom + 4}px`;
+    container.style.left = `${left}px`;
+    container.style.visibility = "visible";
+  }, [triggerRef]);
+
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -40,7 +56,7 @@ export function InsertTablePopover({
       if (!el) return;
       const target = e.target as Node;
       if (el.contains(target)) return;
-      if (triggerRef?.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
       onClose();
     };
     document.addEventListener("keydown", onKey);
@@ -49,9 +65,9 @@ export function InsertTablePopover({
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onMouseDown);
     };
-  }, [open, onClose, triggerRef]);
+  }, [onClose, triggerRef]);
 
-  if (!open) return null;
+  if (typeof document === "undefined") return null;
 
   const label = hover
     ? `${hover.r + 1} × ${hover.c + 1}`
@@ -66,12 +82,12 @@ export function InsertTablePopover({
     onClose();
   };
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       role="dialog"
       aria-label={editorI18n.tableInsert.sizeHint}
-      className="absolute top-full left-0 mt-1 z-20 bg-white border border-[#EBEBEB] rounded-[6px] shadow-md p-3 font-['Noto_Sans_JP']"
+      className="fixed z-50 invisible bg-white border border-[#EBEBEB] rounded-[6px] shadow-md p-3 font-['Noto_Sans_JP']"
     >
       <div className="mb-2 text-[12px] text-[#505050] select-none">{label}</div>
       <div
@@ -97,8 +113,13 @@ export function InsertTablePopover({
           }),
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 export default InsertTablePopover;

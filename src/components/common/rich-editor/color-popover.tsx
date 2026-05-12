@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { ColorOption } from "./editor-colors";
 
+const POPOVER_WIDTH = 200;
+const VIEWPORT_MARGIN = 8;
+
 export interface ColorPopoverProps {
-  open: boolean;
   onClose: () => void;
-  triggerRef?: RefObject<HTMLElement | null>;
+  triggerRef: RefObject<HTMLElement | null>;
   title: string;
   resetLabel: string;
   palette: readonly ColorOption[];
@@ -16,8 +19,13 @@ export interface ColorPopoverProps {
   onReset: () => void;
 }
 
+/**
+ * 색상 선택 팝오버. 트리거 버튼의 viewport 좌표 바로 아래에 portal로 렌더링한다.
+ * - createPortal로 document.body에 마운트해 툴바 overflow 클리핑을 회피한다.
+ * - 위치는 useLayoutEffect에서 DOM에 직접 적용(setState 없음) — React Compiler 룰 회피.
+ * - 측정 전에는 visibility:hidden으로 시작해 잘못된 좌표가 화면에 잠깐 노출되지 않게 한다.
+ */
 export function ColorPopover({
-  open,
   onClose,
   triggerRef,
   title,
@@ -29,8 +37,22 @@ export function ColorPopover({
 }: ColorPopoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const trigger = triggerRef.current;
+    if (!container || !trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const left = clamp(
+      rect.left,
+      VIEWPORT_MARGIN,
+      window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN,
+    );
+    container.style.top = `${rect.bottom + 4}px`;
+    container.style.left = `${left}px`;
+    container.style.visibility = "visible";
+  }, [triggerRef]);
+
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -39,7 +61,7 @@ export function ColorPopover({
       if (!el) return;
       const target = e.target as Node;
       if (el.contains(target)) return;
-      if (triggerRef?.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
       onClose();
     };
     document.addEventListener("keydown", onKey);
@@ -48,16 +70,17 @@ export function ColorPopover({
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onMouseDown);
     };
-  }, [open, onClose, triggerRef]);
+  }, [onClose, triggerRef]);
 
-  if (!open) return null;
+  if (typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       role="dialog"
       aria-label={title}
-      className="absolute top-full left-0 mt-1 z-20 bg-white border border-[#EBEBEB] rounded-[6px] shadow-md p-3 font-['Noto_Sans_JP']"
+      className="fixed z-50 invisible bg-white border border-[#EBEBEB] rounded-[6px] shadow-md p-3 font-['Noto_Sans_JP']"
+      style={{ width: POPOVER_WIDTH }}
     >
       <div className="mb-2 text-[12px] text-[#505050] select-none">{title}</div>
       <div className="grid grid-cols-5 gap-[6px]">
@@ -91,6 +114,11 @@ export function ColorPopover({
       >
         {resetLabel}
       </button>
-    </div>
+    </div>,
+    document.body,
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
 }
