@@ -527,11 +527,12 @@ function MemberEditForm({
                   right={{
                     label: "PW初期化",
                     isForm: true,
-                    children: (
-                      <Button variant="outline" onClick={onPasswordReset} disabled={isSaving || isReadOnly} className="w-full">
+                    children: !isPermReadOnly ? (
+                      // #2183 note-12: RBAC 사유는 미노출 / 회원 상태(탈퇴·QSP 미존재) 는 disabled 유지.
+                      <Button variant="outline" onClick={onPasswordReset} disabled={isSaving || isWithdrawn || (isQspNotFound && member.status === "unknown")} className="w-full">
                         パスワード初期化
                       </Button>
-                    ),
+                    ) : null,
                   }}
                 />
                 {/* 2행: 氏名 / 会員タイプ */}
