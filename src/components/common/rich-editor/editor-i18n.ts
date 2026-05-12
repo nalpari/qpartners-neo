@@ -21,6 +21,8 @@ export const editorI18n = {
     table: "テーブル",
     undo: "元に戻す",
     redo: "やり直し",
+    fontSize: "文字サイズ",
+    fontSizeDefault: "デフォルト",
     textColor: "文字色",
     textColorReset: "色なし",
     highlight: "ハイライト",

@@ -10,6 +10,7 @@ import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import { InlineImagePaste } from "./inline-image-paste";
 import { SlashCommand } from "./editor-slash-menu";
+import { FontSize } from "./font-size";
 
 export interface BuildExtensionsOptions {
   placeholder?: string;
@@ -54,6 +55,7 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
     TableCell,
     TextStyle,
     Color.configure({ types: ["textStyle"] }),
+    FontSize,
     Highlight.configure({ multicolor: true }),
     Placeholder.configure({
       placeholder: opts.placeholder ?? "",

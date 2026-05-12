@@ -68,20 +68,26 @@ const SAFE_TABLE_STYLE_PATTERN =
   /^\s*(?:(?:min-)?(?:width|height)\s*:\s*\d+(?:\.\d+)?px\s*;?\s*)+$/i;
 const STYLE_ALLOWED_TAGS = new Set(["COL", "COLGROUP", "TABLE", "TD", "TH", "TR"]);
 
-// 텍스트 컬러/하이라이트 보존용 — <span style="color: …"> /
+// 텍스트 컬러/하이라이트/폰트 사이즈 보존용 —
+//   <span style="color: …">, <span style="font-size: 18px">,
 //   <mark style="background-color: …; color: inherit"> 등.
 // Tiptap highlight(multicolor)는 background-color와 color: inherit를 함께 직렬화하므로
 // 다중 declaration을 ';'로 분리해서 각각 검증한다.
-// 허용 값: hex / keyword(inherit·transparent) / rgb·rgba·hsl·hsla 함수형.
+// color/bg 허용 값: hex / keyword(inherit·transparent) / rgb·rgba·hsl·hsla 함수형.
 //   브라우저가 inline style을 IDL로 읽을 때 rgb(...) 로 normalize 하는 경로가 있어
 //   hex 외 함수형도 통과시켜야 mark/span의 style 속성이 통째로 떨어지지 않는다.
 //   괄호 내부는 영숫자·공백·`,.%-` 외 문자 차단 — `;<>"'()\` 등 주입 우회 봉쇄.
-const COLOR_STYLE_ALLOWED_TAGS = new Set(["SPAN", "MARK"]);
-const SAFE_COLOR_PROPS = new Set(["color", "background-color"]);
+// font-size는 SPAN에만 허용하며 `\d{1,3}px` 형식만 통과 (font-size.ts:FONT_SIZE_OPTIONS와 한 묶음 정책).
+const SPAN_MARK_STYLE_ALLOWED_TAGS = new Set(["SPAN", "MARK"]);
+const SPAN_ALLOWED_STYLE_PROPS = new Set(["color", "background-color", "font-size"]);
+const MARK_ALLOWED_STYLE_PROPS = new Set(["color", "background-color"]);
 const SAFE_COLOR_VALUE_PATTERN =
   /^(?:#[0-9a-f]{3,8}|inherit|transparent|(?:rgba?|hsla?)\(\s*[0-9a-z\s,.%\-]+\s*\))$/i;
+const SAFE_FONT_SIZE_VALUE_PATTERN = /^\d{1,3}px$/i;
 
-function isSafeColorStyle(value: string): boolean {
+function isSafeSpanMarkStyle(tagName: string, value: string): boolean {
+  const allowedProps =
+    tagName === "SPAN" ? SPAN_ALLOWED_STYLE_PROPS : MARK_ALLOWED_STYLE_PROPS;
   const decls = value.split(";").map((s) => s.trim()).filter(Boolean);
   if (decls.length === 0) return false;
   for (const decl of decls) {
@@ -89,8 +95,12 @@ function isSafeColorStyle(value: string): boolean {
     if (idx < 0) return false;
     const prop = decl.slice(0, idx).trim().toLowerCase();
     const val = decl.slice(idx + 1).trim();
-    if (!SAFE_COLOR_PROPS.has(prop)) return false;
-    if (!SAFE_COLOR_VALUE_PATTERN.test(val)) return false;
+    if (!allowedProps.has(prop)) return false;
+    if (prop === "font-size") {
+      if (!SAFE_FONT_SIZE_VALUE_PATTERN.test(val)) return false;
+    } else {
+      if (!SAFE_COLOR_VALUE_PATTERN.test(val)) return false;
+    }
   }
   return true;
 }
@@ -123,14 +133,16 @@ function ensureHooksRegistered(): void {
         data.keepAttr = false;
       }
     }
-    // inline style — 표 관련 태그의 width/height, span·mark의 color/background-color만 허용
+    // inline style — 표 관련 태그의 width/height,
+    //   span의 color/background-color/font-size, mark의 color/background-color만 허용
     if (data.attrName === "style") {
       const tagName = node.tagName;
       const isTableStyle =
         STYLE_ALLOWED_TAGS.has(tagName) && SAFE_TABLE_STYLE_PATTERN.test(data.attrValue);
-      const isColorStyle =
-        COLOR_STYLE_ALLOWED_TAGS.has(tagName) && isSafeColorStyle(data.attrValue);
-      if (!isTableStyle && !isColorStyle) {
+      const isSpanMarkStyle =
+        SPAN_MARK_STYLE_ALLOWED_TAGS.has(tagName) &&
+        isSafeSpanMarkStyle(tagName, data.attrValue);
+      if (!isTableStyle && !isSpanMarkStyle) {
         data.keepAttr = false;
       }
     }

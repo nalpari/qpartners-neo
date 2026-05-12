@@ -6,6 +6,7 @@ import { editorI18n } from "./editor-i18n";
 import { InsertTablePopover } from "./insert-table-popover";
 import { ColorPopover } from "./color-popover";
 import { HIGHLIGHT_PALETTE, TEXT_COLOR_PALETTE } from "./editor-colors";
+import { FONT_SIZE_OPTIONS } from "./font-size";
 
 export interface EditorToolbarProps {
   editor: Editor;
@@ -49,6 +50,14 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
     else if (value === "h3") chain.setHeading({ level: 3 }).run();
   };
 
+  const activeFontSize =
+    (editor.getAttributes("textStyle").fontSize as string | undefined) ?? "";
+
+  const setFontSize = (value: string) => {
+    if (!value) editor.chain().focus().unsetFontSize().run();
+    else editor.chain().focus().setFontSize(value).run();
+  };
+
   const isEditable = editor.isEditable;
 
   const btnBase =
@@ -78,6 +87,22 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         <option value="h1">{t.heading1}</option>
         <option value="h2">{t.heading2}</option>
         <option value="h3">{t.heading3}</option>
+      </select>
+
+      {/* G1.5 — 폰트 사이즈 드롭다운 */}
+      <select
+        aria-label={t.fontSize}
+        value={activeFontSize}
+        onChange={(e) => setFontSize(e.target.value)}
+        disabled={!isEditable}
+        className="h-9 px-2 rounded border border-[#EBEBEB] bg-white text-[13px] text-[#101010] disabled:opacity-40"
+      >
+        <option value="">{t.fontSizeDefault}</option>
+        {FONT_SIZE_OPTIONS.map((size) => (
+          <option key={size} value={size}>
+            {size.replace("px", "")}
+          </option>
+        ))}
       </select>
 
       {divider}
