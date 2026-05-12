@@ -68,11 +68,27 @@ const SAFE_TABLE_STYLE_PATTERN =
   /^\s*(?:(?:min-)?(?:width|height)\s*:\s*\d+(?:\.\d+)?px\s*;?\s*)+$/i;
 const STYLE_ALLOWED_TAGS = new Set(["COL", "COLGROUP", "TABLE", "TD", "TH", "TR"]);
 
-// 텍스트 컬러/하이라이트 보존용 — <span style="color: #xxx"> / <mark style="background-color: #xxx">.
-// hex(3/6/8자리)만 허용 — 키워드·url()·expression 등 우회 차단.
-const SAFE_COLOR_STYLE_PATTERN =
-  /^\s*(?:(?:color|background-color)\s*:\s*#[0-9a-f]{3,8}\s*;?\s*)+$/i;
+// 텍스트 컬러/하이라이트 보존용 — <span style="color: #xxx"> /
+//   <mark style="background-color: #xxx; color: inherit"> 등.
+// Tiptap highlight(multicolor)는 background-color와 color: inherit를 함께 직렬화하므로
+// 다중 declaration을 ';'로 분리해서 각각 검증한다. hex/inherit/transparent 외 값은 차단.
 const COLOR_STYLE_ALLOWED_TAGS = new Set(["SPAN", "MARK"]);
+const SAFE_COLOR_PROPS = new Set(["color", "background-color"]);
+const SAFE_COLOR_VALUE_PATTERN = /^(#[0-9a-f]{3,8}|inherit|transparent)$/i;
+
+function isSafeColorStyle(value: string): boolean {
+  const decls = value.split(";").map((s) => s.trim()).filter(Boolean);
+  if (decls.length === 0) return false;
+  for (const decl of decls) {
+    const idx = decl.indexOf(":");
+    if (idx < 0) return false;
+    const prop = decl.slice(0, idx).trim().toLowerCase();
+    const val = decl.slice(idx + 1).trim();
+    if (!SAFE_COLOR_PROPS.has(prop)) return false;
+    if (!SAFE_COLOR_VALUE_PATTERN.test(val)) return false;
+  }
+  return true;
+}
 
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
@@ -108,7 +124,7 @@ function ensureHooksRegistered(): void {
       const isTableStyle =
         STYLE_ALLOWED_TAGS.has(tagName) && SAFE_TABLE_STYLE_PATTERN.test(data.attrValue);
       const isColorStyle =
-        COLOR_STYLE_ALLOWED_TAGS.has(tagName) && SAFE_COLOR_STYLE_PATTERN.test(data.attrValue);
+        COLOR_STYLE_ALLOWED_TAGS.has(tagName) && isSafeColorStyle(data.attrValue);
       if (!isTableStyle && !isColorStyle) {
         data.keepAttr = false;
       }
