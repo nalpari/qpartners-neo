@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { editorI18n } from "./editor-i18n";
 import { InsertTablePopover } from "./insert-table-popover";
+import { ColorPopover } from "./color-popover";
+import { HIGHLIGHT_PALETTE, TEXT_COLOR_PALETTE } from "./editor-colors";
 
 export interface EditorToolbarProps {
   editor: Editor;
@@ -21,6 +23,15 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
   const t = editorI18n.toolbar;
   const [tablePopoverOpen, setTablePopoverOpen] = useState(false);
   const tableButtonRef = useRef<HTMLButtonElement>(null);
+  const [textColorOpen, setTextColorOpen] = useState(false);
+  const textColorButtonRef = useRef<HTMLButtonElement>(null);
+  const [highlightOpen, setHighlightOpen] = useState(false);
+  const highlightButtonRef = useRef<HTMLButtonElement>(null);
+
+  const activeTextColor =
+    (editor.getAttributes("textStyle").color as string | undefined) ?? null;
+  const activeHighlight =
+    (editor.getAttributes("highlight").color as string | undefined) ?? null;
 
   const blockValue: "paragraph" | "h1" | "h2" | "h3" = editor.isActive("heading", { level: 1 })
     ? "h1"
@@ -112,6 +123,74 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
       >
         <span className="font-mono text-[12px]">{`</>`}</span>
       </button>
+
+      {/* G2.5 — 문자 색상 */}
+      <div className="relative">
+        <button
+          ref={textColorButtonRef}
+          type="button"
+          aria-label={t.textColor}
+          title={t.textColor}
+          aria-haspopup="dialog"
+          aria-expanded={textColorOpen}
+          className={btn(textColorOpen || !!activeTextColor)}
+          onClick={() => setTextColorOpen((o) => !o)}
+          disabled={!isEditable}
+        >
+          <span className="flex flex-col items-center leading-none">
+            <span className="text-[12px] font-bold">A</span>
+            <span
+              className="block w-3 h-[3px] mt-[1px] rounded-[1px]"
+              style={{ backgroundColor: activeTextColor ?? "#101010" }}
+              aria-hidden="true"
+            />
+          </span>
+        </button>
+        <ColorPopover
+          open={textColorOpen}
+          onClose={() => setTextColorOpen(false)}
+          triggerRef={textColorButtonRef}
+          title={t.textColor}
+          resetLabel={t.textColorReset}
+          palette={TEXT_COLOR_PALETTE}
+          activeValue={activeTextColor}
+          onSelect={(v) => editor.chain().focus().setColor(v).run()}
+          onReset={() => editor.chain().focus().unsetColor().run()}
+        />
+      </div>
+
+      {/* G2.6 — 하이라이트 */}
+      <div className="relative">
+        <button
+          ref={highlightButtonRef}
+          type="button"
+          aria-label={t.highlight}
+          title={t.highlight}
+          aria-haspopup="dialog"
+          aria-expanded={highlightOpen}
+          className={btn(highlightOpen || editor.isActive("highlight"))}
+          onClick={() => setHighlightOpen((o) => !o)}
+          disabled={!isEditable}
+        >
+          <span
+            className="inline-block px-[3px] text-[12px] font-bold rounded-[2px]"
+            style={{ backgroundColor: activeHighlight ?? "#FFF3BF" }}
+          >
+            H
+          </span>
+        </button>
+        <ColorPopover
+          open={highlightOpen}
+          onClose={() => setHighlightOpen(false)}
+          triggerRef={highlightButtonRef}
+          title={t.highlight}
+          resetLabel={t.highlightReset}
+          palette={HIGHLIGHT_PALETTE}
+          activeValue={activeHighlight}
+          onSelect={(v) => editor.chain().focus().setHighlight({ color: v }).run()}
+          onReset={() => editor.chain().focus().unsetHighlight().run()}
+        />
+      </div>
 
       {divider}
 

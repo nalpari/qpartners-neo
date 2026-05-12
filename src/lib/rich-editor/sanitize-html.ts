@@ -27,6 +27,7 @@ const ALLOWED_TAGS = [
   "s",
   "br",
   "span",
+  "mark",
   "div",
   // BlockNote 시절 체크리스트 fallback 표시용. Tiptap 본 마이그레이션은
   // 신규 입력은 차단하지만, 기존 콘텐츠가 detail 에서 깨지지 않게 유지.
@@ -67,6 +68,12 @@ const SAFE_TABLE_STYLE_PATTERN =
   /^\s*(?:(?:min-)?(?:width|height)\s*:\s*\d+(?:\.\d+)?px\s*;?\s*)+$/i;
 const STYLE_ALLOWED_TAGS = new Set(["COL", "COLGROUP", "TABLE", "TD", "TH", "TR"]);
 
+// 텍스트 컬러/하이라이트 보존용 — <span style="color: #xxx"> / <mark style="background-color: #xxx">.
+// hex(3/6/8자리)만 허용 — 키워드·url()·expression 등 우회 차단.
+const SAFE_COLOR_STYLE_PATTERN =
+  /^\s*(?:(?:color|background-color)\s*:\s*#[0-9a-f]{3,8}\s*;?\s*)+$/i;
+const COLOR_STYLE_ALLOWED_TAGS = new Set(["SPAN", "MARK"]);
+
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 
@@ -95,9 +102,14 @@ function ensureHooksRegistered(): void {
         data.keepAttr = false;
       }
     }
-    // inline style — 표 관련 태그의 width/height 류만 허용
+    // inline style — 표 관련 태그의 width/height, span·mark의 color/background-color만 허용
     if (data.attrName === "style") {
-      if (!STYLE_ALLOWED_TAGS.has(node.tagName) || !SAFE_TABLE_STYLE_PATTERN.test(data.attrValue)) {
+      const tagName = node.tagName;
+      const isTableStyle =
+        STYLE_ALLOWED_TAGS.has(tagName) && SAFE_TABLE_STYLE_PATTERN.test(data.attrValue);
+      const isColorStyle =
+        COLOR_STYLE_ALLOWED_TAGS.has(tagName) && SAFE_COLOR_STYLE_PATTERN.test(data.attrValue);
+      if (!isTableStyle && !isColorStyle) {
         data.keepAttr = false;
       }
     }
