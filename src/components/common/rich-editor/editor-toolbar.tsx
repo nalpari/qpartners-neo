@@ -64,7 +64,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
     <div
       role="toolbar"
       aria-label={editorI18n.ariaLabels.toolbar}
-      className="flex items-center gap-1 px-2 py-1 border-b border-[#EBEBEB] flex-wrap font-['Noto_Sans_JP']"
+      className="flex items-center gap-1 px-2 py-1 border-b border-[#EBEBEB] flex-nowrap overflow-x-auto whitespace-nowrap [&>*]:shrink-0 font-['Noto_Sans_JP']"
     >
       {/* G1 — 블록 타입 드롭다운 */}
       <select
