@@ -710,27 +710,22 @@ export function PermissionsTable() {
               </Button>
             </PermissionGate>
           )}
-          {/* 保存 — 패턴 B. newRow 일 때는 createMutation 호출 경로이므로 canCreate 로 분기, 그 외는 canUpdate.
-              create 권한만 있는 운영자가 「追加」 → 입력 → 「保存」 흐름을 자연스럽게 완료할 수 있도록 함 (PR #148 리뷰).
-              서버 POST/PUT 도 requireMenuPermission 으로 최종 검증. */}
-          <Button
-            variant="primary"
-            onClick={() => { void handleSave(); }}
-            disabled={
-              isSaving ||
-              isPermLoading ||
-              (newRow ? !canCreatePermission : !canUpdatePermission) ||
-              createMutation.isPending ||
-              updateMutation.isPending
-            }
-            title={
-              !isPermLoading && (newRow ? !canCreatePermission : !canUpdatePermission)
-                ? "権限がありません"
-                : undefined
-            }
-          >
-            保存
-          </Button>
+          {/* 保存 — RBAC 패턴 A (미노출). newRow 일 때는 createMutation 호출 경로이므로 canCreate 로 분기, 그 외는 canUpdate.
+              create 권한만 있는 운영자가 「追加」 → 입력 → 「保存」 흐름을 자연스럽게 완료할 수 있도록 함.
+              서버 POST/PUT 도 requireMenuPermission 으로 최종 검증. #2183 note-12 통일. */}
+          {!isPermLoading && (newRow ? canCreatePermission : canUpdatePermission) && (
+            <Button
+              variant="primary"
+              onClick={() => { void handleSave(); }}
+              disabled={
+                isSaving ||
+                createMutation.isPending ||
+                updateMutation.isPending
+              }
+            >
+              保存
+            </Button>
+          )}
         </div>
       </div>
 

@@ -186,11 +186,14 @@ function ActionButtons({
   onSubmit,
   isPending,
   isMobile,
+  showSubmit,
 }: {
   onCancel: () => void;
   onSubmit: () => void;
   isPending: boolean;
   isMobile?: boolean;
+  /** RBAC 패턴 A — false 면 「お問い合わせ」 버튼 미노출. #2183 note-12 통일 */
+  showSubmit: boolean;
 }) {
   return (
     <div className={
@@ -205,14 +208,16 @@ function ActionButtons({
       >
         キャンセル
       </Button>
-      <Button
-        variant="primary"
-        className={isMobile ? "flex-1 shrink-0" : "w-[110px]"}
-        onClick={onSubmit}
-        disabled={isPending}
-      >
-        {isPending ? "送信中..." : "お問い合わせ"}
-      </Button>
+      {showSubmit && (
+        <Button
+          variant="primary"
+          className={isMobile ? "flex-1 shrink-0" : "w-[110px]"}
+          onClick={onSubmit}
+          disabled={isPending}
+        >
+          {isPending ? "送信中..." : "お問い合わせ"}
+        </Button>
+      )}
     </div>
   );
 }
@@ -226,6 +231,9 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
   // 비로그인 시 useMenuPermission 은 enabled=false 라 canCreate=false 반환 → isLoggedIn 분기로
   // 비회원 가드 우회. 서버 POST /api/inquiry 가 최종 방어선이라 FE 는 UX 알림 전용.
   const { canCreate: canCreateInquiry, isLoading: isPermLoading } = useMenuPermission(MENU.INQUIRY);
+  // #2183 note-12 통일: RBAC 패턴 A (canCreate=false 인 로그인 사용자는 「お問い合わせ」 버튼 미노출).
+  // 비회원은 PUBLIC 통과이므로 항상 노출. 로딩 중에는 미노출 (fail-closed) — race 클릭 차단.
+  const canSubmitInquiry = !isLoggedIn || (!isPermLoading && canCreateInquiry);
 
   const {
     data: inquiryTypeOptions = [],
@@ -426,7 +434,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
             <InquiryFields {...inquiryFieldsProps} />
           </div>
         </div>
-        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} />
+        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} showSubmit={canSubmitInquiry} />
       </div>
 
       {/* 모바일 카드 */}
@@ -439,7 +447,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
             <InquiryFields {...inquiryFieldsProps} isMobile />
           </div>
         </div>
-        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} isMobile />
+        <ActionButtons onCancel={handleCancel} onSubmit={handleSubmit} isPending={submitMutation.isPending} isMobile showSubmit={canSubmitInquiry} />
       </div>
 
       {/* 비로그인 전용: 로그인 유도 안내 */}
