@@ -89,8 +89,9 @@ export function MenusInfoForm({
   isPermLoading,
 }: MenusInfoFormProps) {
   // mode 별 분기 — 편집 모드는 update, 신규 모드는 create.
-  const isSaveDisabledByPerm =
-    isPermLoading || (isEditing ? !canUpdate : !canCreate);
+  const canSaveByPerm = isEditing ? canUpdate : canCreate;
+  // 폼 입력 비활성화 — RBAC 사유 (권한 없으면 readOnly 와 동치).
+  // 저장 권한 없으면 입력 자체가 의미 없으므로 그대로 폼 비활성.
   const isFormDisabled =
     isPermLoading || (isEditing ? !canUpdate : !canCreate);
   return (
@@ -101,32 +102,36 @@ export function MenusInfoForm({
           メニュー情報
         </h2>
         <div className="flex items-center gap-2">
-          {/* 新規 — 패턴 B (canCreate=false 시 disabled) */}
-          <Button
-            variant="outline"
-            onClick={onNew}
-            disabled={isSaving || isDeleting || isPermLoading || !canCreate}
-          >
-            新規
-          </Button>
-          {/* 削除 — 패턴 B (canDelete=false 시 disabled). 핸들러 본체 패턴 E 는 부모에서. */}
-          <Button
-            variant="secondary"
-            onClick={onDelete}
-            disabled={
-              !isDeleteEnabled || isSaving || isDeleting || isPermLoading || !canDelete
-            }
-          >
-            {isDeleting ? "削除中..." : "削除"}
-          </Button>
-          {/* 保存 — 패턴 B (mode 별 분기). 핸들러 본체 패턴 E 는 부모에서. */}
-          <Button
-            variant="primary"
-            onClick={onSave}
-            disabled={isSaving || isDeleting || isSaveDisabledByPerm}
-          >
-            保存
-          </Button>
+          {/* 新規 — RBAC 패턴 A (canCreate=false 시 미노출). #2183 note-12 통일 */}
+          {!isPermLoading && canCreate && (
+            <Button
+              variant="outline"
+              onClick={onNew}
+              disabled={isSaving || isDeleting}
+            >
+              新規
+            </Button>
+          )}
+          {/* 削除 — RBAC 패턴 A (canDelete=false 시 미노출). 핸들러 본체 패턴 E 는 부모에서. */}
+          {!isPermLoading && canDelete && (
+            <Button
+              variant="secondary"
+              onClick={onDelete}
+              disabled={!isDeleteEnabled || isSaving || isDeleting}
+            >
+              {isDeleting ? "削除中..." : "削除"}
+            </Button>
+          )}
+          {/* 保存 — RBAC 패턴 A (mode 별 분기 미노출). 핸들러 본체 패턴 E 는 부모에서. */}
+          {!isPermLoading && canSaveByPerm && (
+            <Button
+              variant="primary"
+              onClick={onSave}
+              disabled={isSaving || isDeleting}
+            >
+              保存
+            </Button>
+          )}
         </div>
       </div>
 

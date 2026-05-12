@@ -75,8 +75,7 @@ export function CategoriesDetail({
   const depth = form.parentId === null ? 1 : 2;
 
   // RBAC — mode 별로 필요한 액션 분기. 신규(isNewMode)면 create, 수정이면 update.
-  const isSaveDisabledByPerm =
-    isPermLoading || (isNewMode ? !canCreate : !canUpdate);
+  const canSaveByPerm = isNewMode ? canCreate : canUpdate;
   // 입력 필드 disabled 통일 — canUpdate=false 면 모든 폼 입력 차단 (저장 버튼만 막는 부분 적용 금지).
   // 신규 모드는 canCreate 가 일차 가드, 수정 모드는 canUpdate 가 일차 가드.
   const isFormDisabled =
@@ -120,34 +119,39 @@ export function CategoriesDetail({
           カテゴリ情報
         </h2>
         <div className="flex items-center gap-[6px]">
-          {/* 削除 — 패턴 B (canDelete=false 시 disabled). 핸들러 본체 패턴 E 는 부모(handleDelete) 에서 적용. */}
-          <Button
-            variant="secondary"
-            disabled={!isEditMode || isSaving || isPermLoading || !canDelete}
-            onClick={onDelete}
-          >
-            削除
-          </Button>
+          {/* 削除 — RBAC 패턴 A (canDelete=false 시 미노출). #2183 note-12 통일 */}
+          {!isPermLoading && canDelete && (
+            <Button
+              variant="secondary"
+              disabled={!isEditMode || isSaving}
+              onClick={onDelete}
+            >
+              削除
+            </Button>
+          )}
           {/* 初期化 — 폼 state reset 만 수행, RBAC 비대상 (read 영역) */}
           <Button variant="secondary" onClick={onReset}>
             初期化
           </Button>
-          {/* 新規 — 패턴 B (canCreate=false 시 disabled) */}
-          <Button
-            variant="point"
-            disabled={isPermLoading || !canCreate}
-            onClick={onNew}
-          >
-            新規
-          </Button>
-          {/* 保存 — 패턴 B (mode 별 분기). 핸들러 본체 패턴 E 는 부모(handleSave) 에서 적용. */}
-          <Button
-            variant="primary"
-            disabled={!hasSelection || isSaving || isSaveDisabledByPerm}
-            onClick={() => onSave(form)}
-          >
-            保存
-          </Button>
+          {/* 新規 — RBAC 패턴 A (canCreate=false 시 미노출) */}
+          {!isPermLoading && canCreate && (
+            <Button
+              variant="point"
+              onClick={onNew}
+            >
+              新規
+            </Button>
+          )}
+          {/* 保存 — RBAC 패턴 A (mode 별 분기 미노출). 핸들러 본체 패턴 E 는 부모(handleSave). */}
+          {!isPermLoading && canSaveByPerm && (
+            <Button
+              variant="primary"
+              disabled={!hasSelection || isSaving}
+              onClick={() => onSave(form)}
+            >
+              保存
+            </Button>
+          )}
         </div>
       </div>
 

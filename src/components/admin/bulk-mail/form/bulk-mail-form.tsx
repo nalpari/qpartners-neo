@@ -311,18 +311,19 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         />
       </section>
 
-      {/* 하단 버튼 — 모드별 분기. RBAC 패턴 B (disabled) + 핸들러 본체 패턴 E 이중 가드. */}
+      {/* 하단 버튼 — 모드별 분기. RBAC 패턴 A (미노출) + 핸들러 본체 패턴 E 이중 가드. #2183 note-12 통일 */}
       <div className="flex items-center justify-end gap-2 w-[1440px] pb-1">
         {isDetail ? (
           <>
-            {/* コピーして作成 — create 권한 필요. 새 등록 화면 진입은 페이지 가드도 최종 차단. */}
-            <Button
-              variant="outline"
-              onClick={handleCopy}
-              disabled={isPermLoading || !canCreateMail}
-            >
-              コピーして作成
-            </Button>
+            {/* コピーして作成 — RBAC 패턴 A (canCreate=false 시 미노출). */}
+            {!isPermLoading && canCreateMail && (
+              <Button
+                variant="outline"
+                onClick={handleCopy}
+              >
+                コピーして作成
+              </Button>
+            )}
             <Button variant="secondary" onClick={handleList}>
               一覧
             </Button>
@@ -332,31 +333,35 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
             <Button variant="secondary" onClick={handleList}>
               一覧
             </Button>
-            {mode === "edit" && (
+            {mode === "edit" && !isPermLoading && canDeleteMail && (
               <Button
                 variant="secondary"
                 onClick={handleDelete}
-                disabled={isPending || isPermLoading || !canDeleteMail}
+                disabled={isPending}
               >
                 削除
               </Button>
             )}
-            {/* 登録 — mode 별 분기 (edit=update, create/copy=create) */}
-            <Button
-              variant="primary"
-              onClick={handleSend}
-              disabled={isPending || isPermReadOnly}
-            >
-              登録
-            </Button>
-            {/* 下書き保存 — handleSend 와 동일 액션 */}
-            <Button
-              variant="outline"
-              onClick={handleDraft}
-              disabled={isPending || isPermReadOnly}
-            >
-              下書き保存
-            </Button>
+            {/* 登録 — RBAC 패턴 A (mode 별 분기 미노출). edit=update, create/copy=create */}
+            {!isPermReadOnly && (
+              <Button
+                variant="primary"
+                onClick={handleSend}
+                disabled={isPending}
+              >
+                登録
+              </Button>
+            )}
+            {/* 下書き保存 — handleSend 와 동일 액션, 동일 권한 가드 */}
+            {!isPermReadOnly && (
+              <Button
+                variant="outline"
+                onClick={handleDraft}
+                disabled={isPending}
+              >
+                下書き保存
+              </Button>
+            )}
           </>
         )}
       </div>

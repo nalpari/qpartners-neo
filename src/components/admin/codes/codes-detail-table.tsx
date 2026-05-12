@@ -259,13 +259,11 @@ export function CodesDetailTable({
 }: CodesDetailTableProps) {
   const isUpdateReadOnly = isPermLoading || !canUpdate;
   const canAddNew = !isPermLoading && canCreate;
-  // 「追加」 버튼 disabled 사유 분기 — headerAlias 미설정이면 tooltip 으로 명시.
-  // selectedHeaderCode 가 비어 있으면 헤더 미선택 (이전 비활성 사유), 그 외에는
-  // canAddDetail=false 가 alias 부재 사유. canAddNew 는 권한 부재.
-  const addButtonDisabled = !selectedHeaderCode || !canAddNew || !canAddDetail;
+  // 「追加」 버튼 — #2183 note-12 통일: RBAC 사유(canAddNew=false) 는 미노출.
+  // 그 외 사유(selectedHeaderCode/canAddDetail) 는 권한 충분 상태의 UX 가이드이므로 disabled + tooltip 유지.
+  const addButtonDisabled = !selectedHeaderCode || !canAddDetail;
   const addButtonTitle = (() => {
     if (!selectedHeaderCode) return "Header を選択してください。";
-    if (!canAddNew) return "権限がありません。";
     if (!canAddDetail) return "Header Id が空のため Detail を追加できません。新しい Header を作成してください。";
     return undefined;
   })();
@@ -366,17 +364,20 @@ export function CodesDetailTable({
           {hasNewRow ? (
             <Button variant="outline" onClick={onCancelAdd}>キャンセル</Button>
           ) : (
+            // RBAC 패턴 A — canAddNew=false 면 버튼 자체 미노출. 권한 충분 상태에서만 도달.
             // disabled 버튼은 pointer-events-none 이라 native title 이 무시됨.
-            // wrapper span 에 title 을 두어 disabled 상태에서도 hover tooltip 노출.
-            <span title={addButtonTitle} className="inline-block">
-              <Button
-                variant="outline"
-                onClick={onAdd}
-                disabled={addButtonDisabled}
-              >
-                追加
-              </Button>
-            </span>
+            // wrapper span 에 title 을 두어 disabled 상태에서도 hover tooltip 노출 (UX 가이드).
+            canAddNew && (
+              <span title={addButtonTitle} className="inline-block">
+                <Button
+                  variant="outline"
+                  onClick={onAdd}
+                  disabled={addButtonDisabled}
+                >
+                  追加
+                </Button>
+              </span>
+            )
           )}
         </div>
       </div>
