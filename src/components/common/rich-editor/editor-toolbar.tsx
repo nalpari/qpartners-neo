@@ -50,8 +50,18 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
     else if (value === "h3") chain.setHeading({ level: 3 }).run();
   };
 
-  const activeFontSize =
-    (editor.getAttributes("textStyle").fontSize as string | undefined) ?? "";
+  // collapsed selection에서 setFontSize는 storedMarks에만 attribute를 추가하므로
+  //   getAttributes("textStyle")만으로는 드롭다운 표시 값이 동기화되지 않는다.
+  //   storedMarks fallback으로 다음 입력에 적용될 fontSize도 함께 표시한다.
+  const activeFontSize = (() => {
+    const attr = editor.getAttributes("textStyle").fontSize;
+    if (typeof attr === "string") return attr;
+    const stored = editor.state.storedMarks?.find(
+      (m) => m.type.name === "textStyle",
+    );
+    const storedAttr = stored?.attrs.fontSize;
+    return typeof storedAttr === "string" ? storedAttr : "";
+  })();
 
   const setFontSize = (value: string) => {
     if (!value) editor.chain().focus().unsetFontSize().run();
