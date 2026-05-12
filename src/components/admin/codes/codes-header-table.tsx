@@ -363,12 +363,12 @@ export function CodesHeaderTable({
   canUpdate,
   isPermLoading,
 }: CodesHeaderTableProps) {
-  // 「追加」 활성 조건 — create 권한 + 신규행 미존재.
+  // 「追加」 표시 조건 — create 권한 + 신규행 미존재. #2183 note-12: 패턴 A (미노출).
   const canAddNew = !isPermLoading && canCreate;
-  // 「保存」 활성 조건 — 신규행이 있으면 create 권한, 없으면 update 권한 (BE 가드와 동일 의미론).
+  // 「保存」 표시 조건 — 신규행이 있으면 create 권한, 없으면 update 권한 (BE 가드와 동일 의미론).
   // hasNewRow 유무에 따라 필요한 권한을 분기: 신규행 존재 시 create, 그 외 update.
-  const isSaveDisabledByPerm =
-    isPermLoading || (hasNewRow ? !canCreate : !canUpdate);
+  const canSaveByPerm =
+    !isPermLoading && (hasNewRow ? canCreate : canUpdate);
   // AG Grid API ref + editingCell 변화 시 강제 cell refresh
   // (data 객체에 editingField 가 추가/제거되어도 셀 value 자체는 변하지 않아
   //  AG Grid 가 자동 refresh 하지 않으므로 수동 트리거 필요)
@@ -464,15 +464,17 @@ export function CodesHeaderTable({
           {hasNewRow ? (
             <Button variant="outline" onClick={onCancelAdd}>キャンセル</Button>
           ) : (
-            <Button variant="outline" onClick={onAdd} disabled={!canAddNew}>追加</Button>
+            canAddNew && <Button variant="outline" onClick={onAdd}>追加</Button>
           )}
-          <Button
-            variant="primary"
-            onClick={onSave}
-            disabled={isSaving || isSaveDisabledByPerm}
-          >
-            保存
-          </Button>
+          {canSaveByPerm && (
+            <Button
+              variant="primary"
+              onClick={onSave}
+              disabled={isSaving}
+            >
+              保存
+            </Button>
+          )}
         </div>
       </div>
       <DataGrid<HeaderGridRow>

@@ -384,6 +384,12 @@ export function NoticeFormPopup() {
 
   const errorText = "font-['Noto_Sans_JP'] text-[12px] text-[#FF1A1A] mt-1";
 
+  // #2183 note-12: mode 에 필요한 권한이 없으면 모든 인풋 readOnly + 保存/削除 미노출.
+  // 로딩 중 fail-closed — 권한 응답 전엔 readOnly 로 차단.
+  const canEditByPerm =
+    !isPermLoading && (mode === "create" ? canCreateNotice : canUpdateNotice);
+  const isFormReadOnly = !canEditByPerm;
+
   return (
     <div className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}>
       <div
@@ -422,6 +428,7 @@ export function NoticeFormPopup() {
                   checked={targetRoleCodes.includes(opt.value)}
                   onChange={(checked) => toggleTarget(opt.value, checked)}
                   label={opt.label}
+                  readOnly={isFormReadOnly}
                 />
               ))}
             </div>
@@ -434,9 +441,9 @@ export function NoticeFormPopup() {
               掲示期間<span className="text-[#FF1A1A]">*</span>
             </label>
             <div className="flex items-center gap-2">
-              <DatePicker value={startDate} onChange={setStartDate} className="w-[200px]" />
+              <DatePicker value={startDate} onChange={setStartDate} className="w-[200px]" readOnly={isFormReadOnly} />
               <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">~</span>
-              <DatePicker value={endDate} onChange={setEndDate} className="w-[200px]" />
+              <DatePicker value={endDate} onChange={setEndDate} className="w-[200px]" readOnly={isFormReadOnly} />
             </div>
             {errors.startDate && <p className={errorText}>{errors.startDate}</p>}
             {errors.endDate && <p className={errorText}>{errors.endDate}</p>}
@@ -448,7 +455,7 @@ export function NoticeFormPopup() {
             <label className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#101010]">
               タイトル<span className="text-[#FF1A1A]">*</span>
             </label>
-            <InputBox value={title} onChange={setTitle} placeholder="" />
+            <InputBox value={title} onChange={setTitle} placeholder="" readOnly={isFormReadOnly} />
             {errors.title && <p className={errorText}>{errors.title}</p>}
           </div>
 
@@ -461,7 +468,8 @@ export function NoticeFormPopup() {
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full min-h-[150px] p-4 border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#101010] outline-none bg-white hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA]"
+              readOnly={isFormReadOnly}
+              className="w-full min-h-[150px] p-4 border border-[#EBEBEB] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#101010] outline-none bg-white hover:border-[#D1D1D1] focus:border-[#101010] placeholder:text-[#AAAAAA] read-only:bg-[#F5F5F5] read-only:cursor-not-allowed"
               style={{ resize: "none" }}
             />
             <div className="flex items-center justify-between">
@@ -486,7 +494,7 @@ export function NoticeFormPopup() {
             <label className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#101010]">
               URL
             </label>
-            <InputBox value={url} onChange={setUrl} placeholder="" />
+            <InputBox value={url} onChange={setUrl} placeholder="" readOnly={isFormReadOnly} />
             {errors.url && <p className={errorText}>{errors.url}</p>}
           </div>
 
@@ -527,31 +535,29 @@ export function NoticeFormPopup() {
           </div>
 
           {/* 버튼 — 순서: キャンセル → 削除(edit 모드만) → 保存 */}
-          {/* RBAC 표준 패턴 B — 매트릭스 가드 + 로딩 중 fail-closed. 서버 API 가 최종 방어선. */}
+          {/* RBAC 패턴 A (미노출) — 매트릭스 가드 + 로딩 중 fail-closed. 서버 API 가 최종 방어선. #2183 note-12 통일 */}
           <div className="popup-buttons--inline">
             <Button variant="secondary" onClick={handleClose} disabled={isSaving}>
               キャンセル
             </Button>
-            {mode === "edit" && (
+            {mode === "edit" && !isPermLoading && canDeleteNotice && (
               <Button
                 variant="secondary"
                 onClick={handleDelete}
-                disabled={isSaving || isPermLoading || !canDeleteNotice}
+                disabled={isSaving}
               >
                 {deleteMutation.isPending ? "削除中..." : "削除"}
               </Button>
             )}
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              disabled={
-                isSaving ||
-                isPermLoading ||
-                (mode === "create" ? !canCreateNotice : !canUpdateNotice)
-              }
-            >
-              {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
-            </Button>
+            {canEditByPerm && (
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={isSaving}
+              >
+                {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -293,14 +293,16 @@ export function MenusTables({
           メニュー目録
         </h2>
         <div className="flex items-center gap-2">
-          {/* 整列保存 — 패턴 B (canUpdate=false 시 disabled). 핸들러 본체 패턴 E 는 부모(handleSortSave). */}
-          <Button
-            variant="outline"
-            onClick={onSortSave}
-            disabled={isSortSaving || isPermLoading || !canUpdate}
-          >
-            整列保存
-          </Button>
+          {/* 整列保存 — RBAC 패턴 A (canUpdate=false 시 미노출). #2183 note-12 통일 */}
+          {!isPermLoading && canUpdate && (
+            <Button
+              variant="outline"
+              onClick={onSortSave}
+              disabled={isSortSaving}
+            >
+              整列保存
+            </Button>
+          )}
         </div>
       </div>
 
