@@ -12,8 +12,6 @@ import type {
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, PageSizeSelect, Button, Checkbox, PermissionGate } from "@/components/common";
 import { usePopupStore, useAlertStore } from "@/lib/store";
-import type { LoginUser } from "@/lib/schemas/auth";
-import { canModifyClient } from "@/lib/auth-client";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 import { useTargetLabels } from "@/hooks/use-target-labels";
@@ -86,21 +84,12 @@ export function NoticesTable({
   // RBAC 표준 패턴 — ADM_NOTICE 매트릭스 가드. 권한관리 UI 토글이 즉시 버튼/액션에 반영됨.
   // 로딩 중 fail-closed (isPermLoading 시 false) — 클릭 race window 차단.
   // 서버 API 도 requireMenuPermission(ADM_NOTICE, ...) 로 최종 검증하므로 FE 는 UX 전용.
-  // canCreate 는 「お知らせ登録」 버튼의 PermissionGate 가 자체 조회하므로 분해 불요.
+  // canCreate 는 「お知らせ登録」 버튼의 PermissionGate 가 자체 조회. canUpdate 는 팝업 내부에서 자체 조회.
+  // #2183 note-12: 상세 진입은 R 권한만으로 허용 → 작성자/canUpdate 가드를 진입 단계에서 제거.
   const {
-    canUpdate: canUpdateNotice,
     canDelete: canDeleteNotice,
     isLoading: isPermLoading,
   } = useMenuPermission(ADMIN_MENU.NOTICES);
-
-  // 로그인 사용자 — TanStack Query 캐시 구독 (layout Gnb 가 /auth/login-user-info 로 주입).
-  // canModifyClient 권한 판정에 사용 — user 변경 시 renderer 가 재생성돼 클로저가 최신 사용자 참조.
-  const { data: user = null } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
 
   // 권한 라벨 동기화 — 게시대상 컬럼은 qp_roles 단일 출처. 비활성된 권한도 라벨 룩업 가능.
   const { resolveLabel: resolveTargetLabel } = useTargetLabels();
@@ -256,25 +245,14 @@ export function NoticesTable({
     });
   };
 
-  // 공통 클릭 핸들러 — 상세 조회 → 권한 체크 → 팝업 오픈.
-  // 타이틀/내용 두 컬럼 모두 동일 동작을 공유하도록 useCallback 으로 추출.
+  // 공통 클릭 핸들러 — 상세 조회 → 팝업 오픈.
+  // #2183 note-12: R 권한만 있어도 진입+조회 허용 (메뉴 노출 자체가 R 함의).
+  // CUD 권한 가드는 팝업 내부의 修正/削除 버튼/인풋 readOnly 로 위임 (다른 화면들과 통일).
   const openNoticeDetail = useCallback(
     async (id: number) => {
       try {
         const res = await api.get<NoticeDetailResponse>(`/home-notices/${id}`);
         const d = res.data.data;
-
-        // 작성자 가드(canModifyClient) AND 매트릭스 가드(canUpdate) — 둘 다 통과해야 편집 진입.
-        // 패턴 E (클릭 시점 alert) — 행 클릭이 라우트 이동 대신 모달 오픈이라 추가 안전장치.
-        // RBAC 가드(isPermLoading / canUpdateNotice) 선행 평가 — 권한 응답 도착 전에는 작성자라도
-        // 일괄 차단(fail-closed). canModifyClient 는 RBAC 통과 후의 작성자 OR 관리자 보조 가드.
-        if (isPermLoading || !canUpdateNotice || !canModifyClient(user, d)) {
-          useAlertStore.getState().openAlert({
-            type: "alert",
-            message: "このお知らせを編集する権限がありません。",
-          });
-          return;
-        }
 
         const formData: NoticeFormData = {
           id: d.id,
@@ -302,7 +280,7 @@ export function NoticesTable({
         useAlertStore.getState().openAlert({ type: "alert", message: "データの取得に失敗しました。" });
       }
     },
-    [user, openPopup, isPermLoading, canUpdateNotice],
+    [openPopup],
   );
 
   // 제목 셀 — 클릭 시 상세 팝업 오픈. Issue #2148 — 표시값을 content → title 로 변경.
@@ -481,15 +459,17 @@ export function NoticesTable({
           {selectedIds.size > 0 ? `${selectedIds.size}件選択中` : ""}
         </div>
         <div className="flex items-center gap-[8px]">
-          {/* 일괄삭제 — 패턴 B (canDelete=false 시 disabled) */}
-          <Button
-            variant="secondary"
-            onClick={handleBulkDelete}
-            disabled={isPermLoading || !canDeleteNotice || bulkDeleteMutation.isPending}
-          >
-            {bulkDeleteMutation.isPending ? "削除中..." : "削除"}
-          </Button>
-          {/* 등록 — 패턴 A (PermissionGate 로 canCreate=false 시 버튼 자체 숨김) */}
+          {/* 일괄삭제 — RBAC 패턴 A (canDelete=false 시 미노출). #2183 note-12 통일 */}
+          {!isPermLoading && canDeleteNotice && (
+            <Button
+              variant="secondary"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? "削除中..." : "削除"}
+            </Button>
+          )}
+          {/* 등록 — RBAC 패턴 A (PermissionGate 로 canCreate=false 시 버튼 자체 숨김) */}
           <PermissionGate menuCode={ADMIN_MENU.NOTICES} action="create" fallback={null}>
             <Button variant="primary" onClick={handleRegister}>
               お知らせ登録
