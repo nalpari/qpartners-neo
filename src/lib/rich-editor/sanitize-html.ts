@@ -68,13 +68,18 @@ const SAFE_TABLE_STYLE_PATTERN =
   /^\s*(?:(?:min-)?(?:width|height)\s*:\s*\d+(?:\.\d+)?px\s*;?\s*)+$/i;
 const STYLE_ALLOWED_TAGS = new Set(["COL", "COLGROUP", "TABLE", "TD", "TH", "TR"]);
 
-// 텍스트 컬러/하이라이트 보존용 — <span style="color: #xxx"> /
-//   <mark style="background-color: #xxx; color: inherit"> 등.
+// 텍스트 컬러/하이라이트 보존용 — <span style="color: …"> /
+//   <mark style="background-color: …; color: inherit"> 등.
 // Tiptap highlight(multicolor)는 background-color와 color: inherit를 함께 직렬화하므로
-// 다중 declaration을 ';'로 분리해서 각각 검증한다. hex/inherit/transparent 외 값은 차단.
+// 다중 declaration을 ';'로 분리해서 각각 검증한다.
+// 허용 값: hex / keyword(inherit·transparent) / rgb·rgba·hsl·hsla 함수형.
+//   브라우저가 inline style을 IDL로 읽을 때 rgb(...) 로 normalize 하는 경로가 있어
+//   hex 외 함수형도 통과시켜야 mark/span의 style 속성이 통째로 떨어지지 않는다.
+//   괄호 내부는 영숫자·공백·`,.%-` 외 문자 차단 — `;<>"'()\` 등 주입 우회 봉쇄.
 const COLOR_STYLE_ALLOWED_TAGS = new Set(["SPAN", "MARK"]);
 const SAFE_COLOR_PROPS = new Set(["color", "background-color"]);
-const SAFE_COLOR_VALUE_PATTERN = /^(#[0-9a-f]{3,8}|inherit|transparent)$/i;
+const SAFE_COLOR_VALUE_PATTERN =
+  /^(?:#[0-9a-f]{3,8}|inherit|transparent|(?:rgba?|hsla?)\(\s*[0-9a-z\s,.%\-]+\s*\))$/i;
 
 function isSafeColorStyle(value: string): boolean {
   const decls = value.split(";").map((s) => s.trim()).filter(Boolean);
