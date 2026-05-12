@@ -45,11 +45,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   // GA 4 측정 ID — `@next/third-parties` 가 Turbopack 워커 충돌 유발하여
-  // `next/script` 로 직접 삽입한다. ID 는 `G-` + 대문자/숫자 형식만 허용해
-  // 인라인 스크립트 주입 위험을 차단한다.
+  // `next/script` 로 직접 삽입한다. ID 는 `G-` + 대문자/숫자 8~20 자만 허용해
+  // 인라인 스크립트 주입 위험과 비정상 길이 입력을 차단한다.
+  // 형식 불일치 시 무음 비활성화 대신 console.warn 으로 운영자가 인지 가능하게 한다.
   const rawGaId = process.env.NEXT_PUBLIC_GA_ID;
   const gaId =
-    rawGaId && /^G-[A-Z0-9]+$/.test(rawGaId) ? rawGaId : undefined;
+    rawGaId && /^G-[A-Z0-9]{8,20}$/.test(rawGaId) ? rawGaId : undefined;
+  if (rawGaId && !gaId) {
+    console.warn(
+      "[layout] NEXT_PUBLIC_GA_ID 형식 불일치로 GA 비활성화:",
+      `${rawGaId.slice(0, 4)}***`,
+    );
+  }
 
   return (
     <html lang="ja">
@@ -76,12 +83,28 @@ export default function RootLayout({
               src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
               strategy="afterInteractive"
             />
-            <Script id="ga-init" strategy="afterInteractive">
-              {`window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
-                gtag('js', new Date());
-                gtag('config', '${gaId}');`}
-            </Script>
+            {/**
+             * Why dangerouslySetInnerHTML 단일 문자열:
+             *   JSX children 으로 주입한 템플릿 리터럴은 들여쓰기/개행이 그대로
+             *   직렬화되어 향후 CSP `script-src 'strict-dynamic'` + hash 도입 시
+             *   hash 가 들여쓰기에 민감해 정책이 깨질 수 있다. 단일 라인 문자열로
+             *   안정적 hash 가능 형태 유지.
+             *
+             * Why id={`ga-init-${gaId}`}:
+             *   `next/script` 의 id 는 dedup key. 환경별로 gaId 가 다른데 id 가
+             *   고정이면 라우트 전환 등으로 gaId 변경 시 재실행되지 않을 위험.
+             */}
+            <Script
+              id={`ga-init-${gaId}`}
+              strategy="afterInteractive"
+              dangerouslySetInnerHTML={{
+                __html:
+                  `window.dataLayer=window.dataLayer||[];` +
+                  `function gtag(){dataLayer.push(arguments);}` +
+                  `gtag('js',new Date());` +
+                  `gtag('config','${gaId}',{anonymize_ip:true});`,
+              }}
+            />
           </>
         )}
       </body>
