@@ -296,18 +296,21 @@ export function PermissionMenuPopup() {
             </div>
           </div>
 
-          {/* 버튼 */}
+          {/* 버튼 — #2183 note-12 통일: RBAC 패턴 A (canUpdate=false 시 保存 미노출).
+              매트릭스 체크박스는 isMatrixReadOnly 로 readOnly 유지 (조회는 가능). */}
           <div className="popup-buttons--inline">
             <Button variant="secondary" onClick={handleClose} disabled={saveMutation.isPending}>
               キャンセル
             </Button>
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              disabled={isLoading || saveMutation.isPending || !roleCode || isMatrixReadOnly}
-            >
-              {saveMutation.isPending ? "保存中..." : "保存"}
-            </Button>
+            {!isMatrixReadOnly && (
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={isLoading || saveMutation.isPending || !roleCode}
+              >
+                {saveMutation.isPending ? "保存中..." : "保存"}
+              </Button>
+            )}
           </div>
         </div>
       </div>
