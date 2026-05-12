@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { type Editor } from "@tiptap/react";
 import { editorI18n } from "./editor-i18n";
 import { InsertTablePopover } from "./insert-table-popover";
@@ -50,18 +50,39 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
     else if (value === "h3") chain.setHeading({ level: 3 }).run();
   };
 
-  // collapsed selection에서 setFontSize는 storedMarks에만 attribute를 추가하므로
-  //   getAttributes("textStyle")만으로는 드롭다운 표시 값이 동기화되지 않는다.
-  //   storedMarks fallback으로 다음 입력에 적용될 fontSize도 함께 표시한다.
-  const activeFontSize = (() => {
-    const attr = editor.getAttributes("textStyle").fontSize;
-    if (typeof attr === "string") return attr;
-    const stored = editor.state.storedMarks?.find(
-      (m) => m.type.name === "textStyle",
-    );
-    const storedAttr = stored?.attrs.fontSize;
-    return typeof storedAttr === "string" ? storedAttr : "";
-  })();
+  // 폰트 사이즈 드롭다운은 React Compiler 메모이제이션과 getAttributes의 selection
+  // 가시성 차이로 인해 단순 계산식만으로는 갱신이 누락된다.
+  //   - useSyncExternalStore로 transaction/selectionUpdate를 명시적으로 구독해 리렌더 보장
+  //   - selection의 active marks를 직접 검사하고 storedMarks fallback도 함께 확인
+  const subscribeEditor = useCallback(
+    (cb: () => void) => {
+      editor.on("transaction", cb);
+      editor.on("selectionUpdate", cb);
+      return () => {
+        editor.off("transaction", cb);
+        editor.off("selectionUpdate", cb);
+      };
+    },
+    [editor],
+  );
+  const readFontSize = useCallback(() => {
+    const textStyleType = editor.schema.marks.textStyle;
+    if (!textStyleType) return "";
+    const { selection, storedMarks } = editor.state;
+    const activeMark = selection.$from
+      .marks()
+      .find((m) => m.type === textStyleType);
+    const activeFontSizeAttr = activeMark?.attrs.fontSize;
+    if (typeof activeFontSizeAttr === "string") return activeFontSizeAttr;
+    const stored = storedMarks?.find((m) => m.type === textStyleType);
+    const storedFontSizeAttr = stored?.attrs.fontSize;
+    return typeof storedFontSizeAttr === "string" ? storedFontSizeAttr : "";
+  }, [editor]);
+  const activeFontSize = useSyncExternalStore(
+    subscribeEditor,
+    readFontSize,
+    () => "",
+  );
 
   const setFontSize = (value: string) => {
     if (!value) editor.chain().focus().unsetFontSize().run();
