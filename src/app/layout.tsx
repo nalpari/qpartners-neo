@@ -23,6 +23,25 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// GA 4 측정 ID — `@next/third-parties` 가 Turbopack 워커 충돌 유발하여
+// `next/script` 로 직접 삽입한다. ID 는 `G-` + 대문자/숫자 8~20 자만 허용해
+// 인라인 스크립트 주입 위험과 비정상 길이 입력을 차단한다.
+//
+// `NEXT_PUBLIC_*` 은 빌드 타임 상수이므로 모듈 스코프에서 한 번만 검증한다.
+// RootLayout 내부에서 평가하면 매 요청마다 동일 정규식 평가 + 형식 불일치 시
+// 서버 stdout 에 같은 warn 이 매 요청 찍혀 로그 노이즈 / 알람 영향 발생.
+// 형식 불일치 시 무음 비활성화 대신 console.warn 으로 운영자가 인지 가능하게 한다.
+// GA 측정 ID 는 클라이언트 번들에 노출되도록 설계된 식별자(PII 아님)이므로
+// 마스킹 없이 전체 값과 길이를 로깅하여 운영자 디버깅 가능성을 확보한다.
+const RAW_GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const GA_ID =
+  RAW_GA_ID && /^G-[A-Z0-9]{8,20}$/.test(RAW_GA_ID) ? RAW_GA_ID : undefined;
+if (RAW_GA_ID && !GA_ID) {
+  console.warn(
+    `[layout] NEXT_PUBLIC_GA_ID 형식 불일치로 GA 비활성화: length=${RAW_GA_ID.length}, value=${RAW_GA_ID} (expected /^G-[A-Z0-9]{8,20}$/)`,
+  );
+}
+
 export const metadata: Metadata = {
   title: "Q.PARTNERS",
   description: "Q.PARTNERS",
@@ -44,20 +63,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // GA 4 측정 ID — `@next/third-parties` 가 Turbopack 워커 충돌 유발하여
-  // `next/script` 로 직접 삽입한다. ID 는 `G-` + 대문자/숫자 8~20 자만 허용해
-  // 인라인 스크립트 주입 위험과 비정상 길이 입력을 차단한다.
-  // 형식 불일치 시 무음 비활성화 대신 console.warn 으로 운영자가 인지 가능하게 한다.
-  const rawGaId = process.env.NEXT_PUBLIC_GA_ID;
-  const gaId =
-    rawGaId && /^G-[A-Z0-9]{8,20}$/.test(rawGaId) ? rawGaId : undefined;
-  if (rawGaId && !gaId) {
-    console.warn(
-      "[layout] NEXT_PUBLIC_GA_ID 형식 불일치로 GA 비활성화:",
-      `${rawGaId.slice(0, 4)}***`,
-    );
-  }
-
   return (
     <html lang="ja">
       <body
@@ -65,7 +70,7 @@ export default function RootLayout({
       >
         <QueryProvider>
           <AdminTransitionRefresh />
-          {gaId && <GaPageTracker />}
+          {GA_ID && <GaPageTracker />}
           <div className="wrap">
             <Gnb />
             <Location />
@@ -77,10 +82,10 @@ export default function RootLayout({
           <PopupController />
           <AlertDialog />
         </QueryProvider>
-        {gaId && (
+        {GA_ID && (
           <>
             <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
               strategy="afterInteractive"
             />
             {/**
@@ -90,19 +95,29 @@ export default function RootLayout({
              *   hash 가 들여쓰기에 민감해 정책이 깨질 수 있다. 단일 라인 문자열로
              *   안정적 hash 가능 형태 유지.
              *
-             * Why id={`ga-init-${gaId}`}:
-             *   `next/script` 의 id 는 dedup key. 환경별로 gaId 가 다른데 id 가
-             *   고정이면 라우트 전환 등으로 gaId 변경 시 재실행되지 않을 위험.
+             * Why id={`ga-init-${GA_ID}`}:
+             *   `next/script` 의 id 는 dedup key. 환경별 빌드마다 GA_ID 가 다른데
+             *   id 가 고정이면 동일 페이지에 다른 ID 가 공존하는 dev 시나리오에서
+             *   재실행 누락 위험이 있다. 또한 ID 가 포함되어 디버깅 가독성도 향상.
+             *
+             * Why send_page_view:false + gtag('consent','default',...):
+             *   gtag('config') 자동 page_view 는 외부 스크립트 race / 라우트 전환
+             *   타이밍에 따라 누락되거나 중복될 수 있다. 자동 발송을 끄고
+             *   GaPageTracker effect 에서 항상 발송하여 일관성 확보.
+             *   consent default 는 ad_storage 거부 / analytics_storage 허용 으로
+             *   광고 식별자 차단(EU 권역 GDPR / 일본 個人情報保護法 보수 운영) +
+             *   분석 데이터는 수집되도록 명시.
              */}
             <Script
-              id={`ga-init-${gaId}`}
+              id={`ga-init-${GA_ID}`}
               strategy="afterInteractive"
               dangerouslySetInnerHTML={{
                 __html:
                   `window.dataLayer=window.dataLayer||[];` +
                   `function gtag(){dataLayer.push(arguments);}` +
+                  `gtag('consent','default',{ad_storage:'denied',analytics_storage:'granted'});` +
                   `gtag('js',new Date());` +
-                  `gtag('config','${gaId}',{anonymize_ip:true});`,
+                  `gtag('config','${GA_ID}',{anonymize_ip:true,send_page_view:false});`,
               }}
             />
           </>

@@ -26,10 +26,13 @@ declare global {
   interface Window {
     gtag?: GtagFn;
     /**
-     * 외부 스크립트가 직접 push 하지 못하도록 readonly 로 노출.
-     * gtag() 내부 구현만 push 를 수행한다. 향후 third-party 추가 또는 stored XSS 시
-     * `dataLayer.push()` 로 임의 이벤트 주입을 차단하기 위한 타입 가드.
+     * gtag.js 가 내부적으로 `push` 를 호출하므로 mutable 배열로 선언한다.
+     * `readonly` 로 두면 런타임 보호 효과는 없으면서 TS 코드에서
+     * `window.dataLayer.push(...)` 호출 시 컴파일 에러를 유발한다.
+     * 외부 스크립트 / Stored XSS 의 dataLayer.push 주입은 타입이 아니라
+     * CSP(`script-src 'strict-dynamic'` + nonce) 또는 GA Server-Side Tagging
+     * 으로 차단해야 한다.
      */
-    dataLayer?: readonly unknown[];
+    dataLayer?: unknown[];
   }
 }
