@@ -60,7 +60,10 @@ export function BulkMailFormBody({
       </h2>
       {isReadonlyView ? (
         // 타이틀 InputBox 의 readonly 스타일(#F5F5F5 / #EBEBEB / cursor-not-allowed) 과 통일.
-        // 인라인 color 가 박힌 span 까지 회색으로 보이도록 [&_*]:!text-[#999] 로 강제 override.
+        // 의도: detail 모드는 "발송 완료된 메일의 비활성 미리보기" — 본문/서명을 한 톤으로 흐리게.
+        // 인라인 color 가 박힌 span(에디터에서 입힌 색상) 까지 모두 회색으로 보이도록
+        // `[&_*]:!text-[#999]` 로 전체 후손 텍스트 색상을 강제 override.
+        // (서명만 회색이 아닌 본문 전체를 동일 톤으로 가라앉히는 게 디자인 정책.)
         <div
           aria-readonly="true"
           className="w-full min-h-[200px] p-4 border border-[#EBEBEB] rounded-[4px] bg-[#F5F5F5] cursor-not-allowed font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#999] [&_*]:!text-[#999] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"

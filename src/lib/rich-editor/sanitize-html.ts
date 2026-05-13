@@ -108,6 +108,13 @@ function isSafeSpanMarkStyle(tagName: string, value: string): boolean {
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 
+// `colwidth` 화이트리스트 — Tiptap 표 셀이 부여하는 비표준 속성.
+//   - 단일 컬럼: `<td colwidth="120">`
+//   - colspan>1 셀: `<td colwidth="120,80">`
+// 외부 메일 클라이언트 렌더링 안전성을 위해 숫자(또는 쉼표 구분 숫자 리스트) 만 허용.
+const SAFE_COLWIDTH_PATTERN = /^\d+(?:,\d+)*$/;
+const COLWIDTH_ALLOWED_TAGS = new Set(["TD", "TH"]);
+
 // class 속성 화이트리스트 — Tiptap extensions 가 부여하는 식별용 클래스만 허용.
 // UI 위조 / CSS injection 벡터 차단을 위해 임의 class 통과 금지.
 //   - rich-editor-inline-image / rich-editor-table : editor-extensions.ts HTMLAttributes
@@ -162,6 +169,14 @@ function ensureHooksRegistered(): void {
     // class 화이트리스트 — Tiptap 식별용 클래스(rich-editor-* / language-*) 외 통째 제거.
     if (data.attrName === "class") {
       if (!isSafeClassValue(data.attrValue)) {
+        data.keepAttr = false;
+      }
+    }
+    // colwidth — TD/TH 에만 허용 + 값은 숫자(또는 쉼표 구분 숫자) 만 통과.
+    if (data.attrName === "colwidth") {
+      const validTag = COLWIDTH_ALLOWED_TAGS.has(node.tagName);
+      const validValue = SAFE_COLWIDTH_PATTERN.test(data.attrValue);
+      if (!validTag || !validValue) {
         data.keepAttr = false;
       }
     }

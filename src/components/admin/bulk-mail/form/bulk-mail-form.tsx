@@ -12,6 +12,10 @@ import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
+import {
+  bodyHasSignature,
+  stripSignatureLines,
+} from "@/components/admin/bulk-mail/bulk-mail-types";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
@@ -24,27 +28,6 @@ import type {
 import { buildFormData, formatMailDate, FORM_DATA_CONFIG } from "@/components/admin/bulk-mail/bulk-mail-types";
 
 const DEFAULT_SENDER = "Q.PARTNERS事務局 (q.partners@hqj.co.jp)";
-
-// bulk-mail-types.ts:SIGNATURE_SPAN_STYLE ("font-size: 11px; color: #999") 에 매칭되는 <p><span>…</span></p> 블록.
-// font-size 와 color 두 declaration 순서가 뒤바뀔 수 있어 둘 다 포함되는지만 확인 (둘 다 매칭 시에만 서명 라인으로 간주).
-// SIGNATURE_SPAN_STYLE 의 값이 바뀌면 이 정규식도 함께 갱신해야 한다.
-const SIGNATURE_PARAGRAPH_PATTERN =
-  /<p[^>]*><span[^>]*style="[^"]*font-size:\s*11px[^"]*color:\s*#999[^"]*"[^>]*>[\s\S]*?<\/span><\/p>/gi;
-
-/**
- * 본문이 사무국 기본 서명만 남기고 비어 있는지 검사.
- *
- * SIGNATURE_SPAN_STYLE (11px / #999) 로 래핑된 <p> 블록을 모두 제거한 뒤,
- * 남는 HTML 이 `isHtmlEmpty` 기준으로 비어 있으면 "서명만 있음" 으로 간주.
- */
-function isOnlySignature(body: string): boolean {
-  // 서명 패턴이 한 건도 없으면 사용자 작성 본문이라는 의미 → 서명-only 아님.
-  if (!SIGNATURE_PARAGRAPH_PATTERN.test(body)) return false;
-  // /g 플래그가 lastIndex 를 보존하므로 다음 .replace 전에 리셋.
-  SIGNATURE_PARAGRAPH_PATTERN.lastIndex = 0;
-  const stripped = body.replace(SIGNATURE_PARAGRAPH_PATTERN, "");
-  return isHtmlEmpty(stripped);
-}
 
 interface BulkMailFormProps {
   mode: FormMode;
@@ -149,9 +132,11 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     if (!subject.trim()) return "件名は必須入力項目です。";
     // RichEditor 도입으로 body 는 HTML 문자열. 빈 <p></p> 는 trim 으로 못 거르므로 isHtmlEmpty 사용.
     if (isHtmlEmpty(body)) return "本文は必須入力項目です。";
-    // 사무국 서명만 채워진 채 발송되는 케이스 차단 — DEFAULT_BULK_MAIL_BODY_HTML 만 남으면 본문 없음.
-    // 서명 라인(11px / #999 span) 을 모두 제거한 뒤에도 의미 있는 텍스트가 남아 있어야 통과.
-    if (isOnlySignature(body)) return "本文は必須入力項目です。";
+    // 사무국 서명만 채워진 채 발송되는 케이스 차단 — 서명 라인 제거 후에도 의미 있는 텍스트가 남아야 통과.
+    // bodyHasSignature 가 false 면(레거시 본문 등) 서명-only 가 아니므로 검사 생략.
+    if (bodyHasSignature(body) && isHtmlEmpty(stripSignatureLines(body))) {
+      return "本文は必須入力項目です。";
+    }
     return null;
   }
 

@@ -147,12 +147,46 @@ export type FormMode = "create" | "detail" | "edit" | "copy";
  * 본문 자체에 서명이 들어가므로, BE 의 `buildMailHtml` 은 더 이상 풋터를 자동 부착하지 않는다.
  */
 export const SIGNATURE_SPAN_STYLE = "font-size: 11px; color: #999";
-export const DEFAULT_BULK_MAIL_BODY_HTML: string = [
-  "<p></p>",
-  ...FOOTER_LINES.map(
-    (line) => `<p><span style="${SIGNATURE_SPAN_STYLE}">${line}</span></p>`,
-  ),
-].join("");
+
+const SIGNATURE_BLOCK_HTML: string = FOOTER_LINES.map(
+  (line) => `<p><span style="${SIGNATURE_SPAN_STYLE}">${line}</span></p>`,
+).join("");
+
+export const DEFAULT_BULK_MAIL_BODY_HTML: string = `<p></p>${SIGNATURE_BLOCK_HTML}`;
+
+/**
+ * 서명 라인(font-size:11px AND color:#999 span 으로 래핑된 <p>) 매칭 정규식 source.
+ *
+ * - lookahead `(?=[^"]*font-size:\s*11px)` 와 `(?=[^"]*color:\s*#999)` 로 두 declaration 의 순서를 독립 검증.
+ * - 모듈 레벨 RegExp 인스턴스를 공유하지 않고, 호출 시점마다 `new RegExp` 으로 생성해
+ *   `/g` 플래그의 `lastIndex` 누적 부작용을 회피.
+ */
+const SIGNATURE_PARAGRAPH_REGEX_SOURCE =
+  "<p[^>]*><span[^>]*style=\"(?=[^\"]*font-size:\\s*11px)(?=[^\"]*color:\\s*#999)[^\"]*\"[^>]*>[\\s\\S]*?</span></p>";
+
+/** 본문에 서명 패턴 라인이 한 줄이라도 포함되어 있는지 검사. */
+export function bodyHasSignature(body: string): boolean {
+  return new RegExp(SIGNATURE_PARAGRAPH_REGEX_SOURCE, "i").test(body);
+}
+
+/** 본문에서 서명 라인을 모두 제거한 HTML 을 반환. */
+export function stripSignatureLines(body: string): string {
+  return body.replace(new RegExp(SIGNATURE_PARAGRAPH_REGEX_SOURCE, "gi"), "");
+}
+
+/**
+ * 작성 폼(create / copy) 진입 시 초기 body 결정.
+ *
+ * - copiedBody 없음(순수 create) → 기본 서명 + 빈 단락
+ * - copiedBody 에 서명 패턴 포함(RichEditor 시대에 저장된 메일 copy) → 원본 유지
+ * - copiedBody 가 서명 미포함(레거시 textarea 시대 저장 메일 copy) → 본문 + 서명 자동 추가
+ *   (UX 일관성 — 신규 작성 화면에서 서명이 항상 존재해야 한다는 정책)
+ */
+export function resolveCreateBody(copiedBody: string | undefined | null): string {
+  if (!copiedBody) return DEFAULT_BULK_MAIL_BODY_HTML;
+  if (bodyHasSignature(copiedBody)) return copiedBody;
+  return `${copiedBody}${SIGNATURE_BLOCK_HTML}`;
+}
 
 /** 폼 초기 데이터 */
 export interface FormInitialData {
