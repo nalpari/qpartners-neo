@@ -210,6 +210,18 @@ button{cursor: pointer;}
 }
 
 /*
+ * RichEditor 본문 라인 간격 — prose-sm 기본(line-height 1.7142857, p margin 1.1428571em)이
+ * 일본어 본문 작성 시 너무 넓다는 피드백 반영. 약 절반 수준으로 축소.
+ */
+.ProseMirror {
+  line-height: 1.35;
+}
+.ProseMirror p {
+  margin-top: 0.5714286em;
+  margin-bottom: 0.5714286em;
+}
+
+/*
  * Tiptap @tiptap/extension-table 표 + 컬럼 리사이즈 — Tiptap 공식 권장 CSS.
  * resizable: true로 켜져 있어도 .column-resize-handle / .tableWrapper /
  * .selectedCell / .resize-cursor 등 핵심 클래스에 CSS가 없으면 핸들 폭이 0이라
