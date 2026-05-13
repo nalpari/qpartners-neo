@@ -1,3 +1,4 @@
+import { DbStatusIndicator } from "@/components/layout/db-status-indicator";
 import { TermsButton } from "@/components/layout/terms-button";
 
 export function Footer() {
@@ -43,8 +44,9 @@ export function Footer() {
           </div>
 
           {/* 저작권 */}
-          <p className="font-pretendard font-normal text-[13px] leading-[1.5] text-[#999] text-center w-full">
-            COPYRIGHT©2026 Hanwha Japan All Rights Reserved.
+          <p className="font-pretendard font-normal text-[13px] leading-[1.5] text-[#999] text-center w-full inline-flex items-center justify-center gap-1.5">
+            <span>COPYRIGHT©2026 Hanwha Japan All Rights Reserved.</span>
+            <DbStatusIndicator />
           </p>
         </div>
       </div>
@@ -71,8 +73,9 @@ export function Footer() {
         </div>
 
         {/* 저작권 */}
-        <p className="font-pretendard font-normal text-[12px] leading-[1.5] text-[#999] pl-1">
-          COPYRIGHT©2026 Hanwha Japan All Rights Reserved.
+        <p className="font-pretendard font-normal text-[12px] leading-[1.5] text-[#999] pl-1 inline-flex items-center gap-1.5">
+          <span>COPYRIGHT©2026 Hanwha Japan All Rights Reserved.</span>
+          <DbStatusIndicator />
         </p>
       </div>
     </footer>
