@@ -230,9 +230,19 @@ button{cursor: pointer;}
   margin-bottom: 0;
 }
 /*
- * 상세 페이지 렌더링(.prose)의 빈 단락 — 저장된 HTML은 직렬화된 <p><br></p>로
- * 들어오며 trailingBreak 클래스가 없으므로 일반 br:only-child로 매칭한다.
+ * 상세 페이지 렌더링(.prose)도 에디터(.ProseMirror)와 동일한 컴팩트 간격으로 맞춤.
+ * - 일반 <p>: 위/아래 margin 절반(0.5714286em), line-height 1.35
+ *   (컨테이너의 leading-[1.7]은 인접 inline 요소에는 살아있으나 <p>는 직접 스타일이 우선)
+ * - 빈 <p><br></p>: 저장된 HTML에는 ProseMirror-trailingBreak 클래스가 없으므로
+ *   일반 br:only-child로 매칭하여 위/아래 margin 제거.
+ * 인접 단락 margin이 그대로면 빈 단락 margin만 0으로 해도 마진 콜랩스 결과 갭이
+ * 줄지 않으므로 .prose p 전반의 margin을 함께 축소한다.
  */
+.prose p {
+  margin-top: 0.5714286em;
+  margin-bottom: 0.5714286em;
+  line-height: 1.35;
+}
 .prose p:has(> br:only-child) {
   margin-top: 0;
   margin-bottom: 0;
