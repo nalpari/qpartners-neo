@@ -328,6 +328,8 @@ export async function POST(request: NextRequest) {
     twoFactorVerified: !requireTwoFactor && qsp.data.pwdInitYn !== "N",
     // QSP compTelNo(회사 전화번호) → telNo로 전달 (문의하기 자동 입력용)
     telNo: qsp.data.compTelNo ?? null,
+    // 2FA verify 단계에서 로그인 알림 메일 발송 여부 판단용 (Redmine #2214).
+    loginNotiYn: qsp.data.loginNotiYn ?? null,
   };
 
   let token: string;
@@ -341,11 +343,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 8. 로그인 알림 메일 발송 (Redmine #2125, Q2 결정 — 1차 로그인 성공 시 즉시 발송).
-  //    조건: qsp.data.loginNotiYn === "Y" && email 등록됨
+  // 8. 로그인 알림 메일 발송 (Redmine #2125 + #2214 후속).
+  //    조건: !requireTwoFactor && loginNotiYn === "Y" && email 등록됨
+  //    - 2FA 미요구 사용자(STORE/SEKO/GENERAL 일반 로그인): 1차 로그인 성공 즉시 발송 (#2125 Q2 결정 유지)
+  //    - 2FA 필수 사용자(ADMIN/SUPER_ADMIN 등): 2FA 검증 성공 시점에 발송 (#2214 — verify route 에서 처리)
+  //      → 인증 미완료 상태에서 "로그인 성공" 메일이 먼저 도착하는 UX 혼란 제거.
   //    fire-and-forget — sendNotificationMail 내부 try-catch 흡수, 본 응답 무영향.
-  //    inbound 자동로그인은 정책상 발송 제외 (Q3) — 본 라우트(`/api/auth/login`) 만 발송 진입점.
-  if (qsp.data.loginNotiYn === "Y" && qsp.data.email) {
+  //    inbound 자동로그인은 정책상 발송 제외 (#2125 Q3) — 본 라우트(`/api/auth/login`) 만 발송 진입점.
+  if (!requireTwoFactor && qsp.data.loginNotiYn === "Y" && qsp.data.email) {
     // sendNotificationMail 내부 try-catch 가 SMTP/네트워크 예외를 흡수하지만
     // buildBodyHtml/formatReceivedAt 등 본 함수 내 동기 단계에서 예상 외 throw 시
     // unhandled rejection 가 발생할 수 있어 보강.
