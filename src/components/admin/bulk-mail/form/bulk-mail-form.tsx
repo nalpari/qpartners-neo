@@ -2,7 +2,7 @@
 
 // Design Ref: §3 — 메일 폼 컴포넌트 (4모드: create/detail/edit/copy)
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -11,6 +11,7 @@ import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
+import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
 import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
@@ -125,9 +126,35 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     if (!senderName.trim()) return "送信者名は必須入力項目です。";
     if (targetRoleCodes.length === 0) return "配信対象は必須入力項目です。";
     if (!subject.trim()) return "件名は必須入力項目です。";
-    if (!body.trim()) return "本文は必須入力項目です。";
+    // RichEditor 도입으로 body 는 HTML 문자열. 빈 <p></p> 는 trim 으로 못 거르므로 isHtmlEmpty 사용.
+    if (isHtmlEmpty(body)) return "本文は必須入力項目です。";
     return null;
   }
+
+  // RichEditor 본문 파싱/이미지 업로드 실패 핸들러 — contents-form 과 동일 패턴.
+  const handleBodyParseError = useCallback((error: unknown) => {
+    console.error("[BulkMailForm] 本文 파싱 실패:", error);
+    openAlert({
+      type: "alert",
+      message: "保存された本文を読み込めませんでした。データが破損している可能性があります。再入力する前にキャンセルし、管理者にお問い合わせください。",
+    });
+  }, [openAlert]);
+
+  const handleBodyUploadError = useCallback((error: unknown) => {
+    let message = "画像のアップロードに失敗しました。しばらくしてからお試しください。";
+    if (isAxiosError(error) && error.response) {
+      const resData: unknown = error.response.data;
+      const serverMsg =
+        resData != null &&
+        typeof resData === "object" &&
+        "error" in resData &&
+        typeof (resData as { error: unknown }).error === "string"
+          ? (resData as { error: string }).error
+          : null;
+      if (serverMsg) message = serverMsg;
+    }
+    openAlert({ type: "alert", message });
+  }, [openAlert]);
 
   // ─── 버튼 핸들러 (Design Ref: §3.4) ───
   const handleList = () => {
@@ -295,9 +322,12 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       {/* 내용 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
         <BulkMailFormBody
+          mode={mode}
           content={body}
           onContentChange={setBody}
           disabled={isFormDisabled}
+          onContentParseError={handleBodyParseError}
+          onContentUploadError={handleBodyUploadError}
         />
       </section>
 
