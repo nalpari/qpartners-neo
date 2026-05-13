@@ -220,6 +220,15 @@ button{cursor: pointer;}
   margin-top: 0.5714286em;
   margin-bottom: 0.5714286em;
 }
+/*
+ * 빈 단락(엔터로 만들어진 공백 라인) — ProseMirror가 자동 삽입하는
+ * trailingBreak만 자식으로 둔 <p>를 골라내 위/아래 margin 제거.
+ * 빈 줄 높이가 약 35px → 19px 수준으로 축소.
+ */
+.ProseMirror p:has(> br.ProseMirror-trailingBreak:only-child) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 
 /*
  * Tiptap @tiptap/extension-table 표 + 컬럼 리사이즈 — Tiptap 공식 권장 CSS.
