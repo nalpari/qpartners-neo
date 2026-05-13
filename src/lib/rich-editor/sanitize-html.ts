@@ -112,7 +112,8 @@ const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 // UI 위조 / CSS injection 벡터 차단을 위해 임의 class 통과 금지.
 //   - rich-editor-inline-image / rich-editor-table : editor-extensions.ts HTMLAttributes
 //   - language-* : 코드블록 syntax highlight(향후 도입 시)
-const SAFE_CLASS_VALUE_PATTERN = /^(?:rich-editor-[\w-]+|language-[\w-]+)$/;
+//   - bn-* : 레거시 BlockNote 본문(체크리스트·블록 식별 등) — 기존 콘텐츠 detail 렌더링 회귀 방지
+const SAFE_CLASS_VALUE_PATTERN = /^(?:rich-editor-[\w-]+|language-[\w-]+|bn-[\w-]+)$/;
 
 function isSafeClassValue(value: string): boolean {
   const tokens = value.split(/\s+/).map((t) => t.trim()).filter(Boolean);

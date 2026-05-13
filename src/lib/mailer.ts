@@ -120,14 +120,18 @@ export interface SendMailResult {
 }
 
 /**
- * SMTP From 헤더 display name 의 CRLF / 인용부호 / 꺾쇠 등을 제거.
+ * SMTP From 헤더 display name 정제.
  *
- * nodemailer 가 phrase 부분을 자동 quote 처리하지만, 사용자 입력(senderName) 에
- * `<`, `>`, `"`, 개행 등이 들어가면 메일 헤더 인젝션(추가 헤더 주입 / 잘못된 quote) 위험.
- * 인박스 표시 안전성 우선 — 위험 문자는 공백 1칸으로 치환 후 trim.
+ * RFC 5322 의 `specials` 문자(`()<>[]:;@\,."`) 와 CR/LF 가 unquoted phrase 에 섞이면
+ * 일부 MTA 가 group syntax 등으로 잘못 해석하거나 헤더 인젝션 벡터가 될 수 있다.
+ * nodemailer 에 객체 형태(`{ name, address }`) 로 넘기면 RFC 2047 인코딩까지 자동 처리되지만,
+ * 입력단계에서도 위험 문자를 공백으로 치환해 인박스 표시 일관성을 확보한다.
  */
 function sanitizeFromName(name: string): string {
-  return name.replace(/[<>"\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  return name
+    .replace(/[<>"\r\n;:,@\\\[\]()]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** 공용 메일 발송 유틸리티 */
@@ -149,7 +153,8 @@ export async function sendMail({ to, subject, html, bcc, fromName, attachments }
   let rawInfo: nodemailer.SentMessageInfo;
   try {
     rawInfo = await transporter.sendMail({
-      from: `${displayName} <${from}>`,
+      // 객체 형태 — nodemailer 가 RFC 2047 인코딩과 quote 처리를 알아서 수행해 헤더 인젝션 추가 방어.
+      from: { name: displayName, address: from },
       to,
       subject,
       html,
