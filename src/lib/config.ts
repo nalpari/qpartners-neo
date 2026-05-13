@@ -92,28 +92,23 @@ export const QSP_API = {
 // Q.Partners 가 target 별 URL 에 `?autoLoginParam1=<cipher>` 를 붙여 이동시킨다.
 // QSP 응답의 `data.url` 은 HANASYS 한정 힌트이므로 사용하지 않고 아래 map 을 자체 관리.
 //
-// default 는 dev 도메인으로 고정. prod URL 은 운영 배포 시 env override 로 명시 주입.
-//   HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
+// URL 은 환경별 .env 파일에 명시 주입 (env 필수, 누락 시 부팅 실패).
+//   .env.development → dev URL (개발/통테)
+//   운영 Jenkins credential → prod URL
+//   env: HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
 //
-// 이전에는 `isProductionDeploy ? prodUrl : devUrl` 로 분기했으나, APP_ENV 환경변수가
-// 잘못 주입(예: shell 환경 오염)되면 dev 배포에서도 운영 URL 이 선택되어 사용자가
-// 실제 운영 시스템으로 리다이렉트되는 사고가 발생했음(2026-04-25). 코드에서 운영 URL
-// 하드코딩을 제거하여 dev 환경에서 운영 URL 노출 가능성 자체를 차단.
-//
-// 정식 구조 개선(env 필수화 + 누락 시 부팅 실패) 은 후속 PR 에서 진행.
-const HANASYS_AUTOLOGIN_URL_DEFAULT = "https://dev.hanasys.jp/login";
-const Q_ORDER_AUTOLOGIN_URL_DEFAULT = "https://q-order-dev.q-cells.jp/eos/login/autoLogin";
-const Q_MUSUBI_AUTOLOGIN_URL_DEFAULT = "https://q-musubi-dev.q-cells.jp/qm/login/autoLogin";
+// 이전에는 코드에 dev default 를 하드코딩 후 prod 에서만 env override 를 강제했으나,
+// (1) 운영 부팅 시 default 잔존 차단 로직이 복잡해지고
+// (2) APP_ENV 가 잘못 주입되면 dev 배포에서 default(=dev URL) 가 통과해 운영 URL 로 빠질
+//     역방향 리스크가 항상 존재했음. 환경별 분기 정책(feedback_env_per_environment_config.md)
+//     에 맞춰 env 필수화로 정리 (2026-04-25 사고 → 2026-05-13 후속 정리).
 
 /**
  * 운영 자동로그인 host 화이트리스트.
  *
- * env override 가 잘못/악의적으로 다른 host 로 주입(`https://attacker.example.com/login`,
+ * env 값이 잘못/악의적으로 다른 host 로 주입(`https://attacker.example.com/login`,
  * `https://www.hanasys.jp@attacker.example.com/login` 등 userinfo 트릭)되어도 cipher 가
  * 외부로 유출되지 않도록 prod 부팅 단계에서 host 일치 검증 (open redirect 방어).
- *
- * NOTE: 이는 default URL 이 아니라 **검증용 화이트리스트** — 운영에서만 사용되며,
- * 환경별 분기 정책(feedback_env_per_environment_config.md)과 별개의 보안 가드.
  */
 const PROD_AUTOLOGIN_HOSTS = {
   hanasys: "www.hanasys.jp",
@@ -122,18 +117,28 @@ const PROD_AUTOLOGIN_HOSTS = {
 } as const;
 
 /**
- * 자동로그인 URL env override 처리.
- * - prod 배포: HTTPS + host 일치 필수 (assertProdAutoLoginUrl 에서 부팅 검증)
- * - dev 배포: HTTPS 권장 — default URL 이든 override 이든 동일하게 검증.
- *   HTTP 허용은 ALLOW_INSECURE_AUTOLOGIN_URL=true 명시 opt-in 필수.
+ * 자동로그인 URL env 해석.
+ * - dev/prod 공통: env 누락 시 부팅 실패 (fail-closed).
+ *   단, `next build` 의 page data 수집 단계(NEXT_PHASE=phase-production-build)에서는 검증 보류
+ *   — 런타임 컨테이너에 env 가 주입되므로 빌드 머신은 placeholder 로 통과시키고, 런타임 평가 시
+ *   다시 검증된다.
+ * - dev 배포: HTTPS 강제. HTTP 허용은 ALLOW_INSECURE_AUTOLOGIN_URL=true 명시 opt-in.
  *   stdout 모니터링 부재 환경에서 평문 cipher 가 silent 로 흐르지 않도록 fail-closed.
- *
- * 과거 override 분기에만 검증을 적용했으나, default URL 자체가 향후 http 로 잘못 변경될
- * 경우 dev 에서 silent 통과되는 갭이 있어 fail-closed 일관성을 위해 url 자체로 검증.
+ * - prod 배포: 추가로 assertProdAutoLoginUrl 에서 host 화이트리스트 / userinfo / 포트 검증.
  */
-function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
-  const override = process.env[envName]?.trim();
-  const url = override || defaultUrl;
+function resolveAutoLoginUrl(envName: string): string {
+  const url = process.env[envName]?.trim();
+  if (!url) {
+    if (isBuildPhase) {
+      // 빌드 단계 placeholder — 런타임 컨테이너에서 다시 evaluate 되며 그 시점에 env 가 주입됨.
+      // 의도적으로 유효하지 않은 host 를 써서, 만약 placeholder 가 런타임에 새어나가더라도
+      // prod host 화이트리스트 검증에서 즉시 차단되도록 한다.
+      return "https://placeholder.invalid/build-phase";
+    }
+    throw new Error(
+      `${envName} is required (자동로그인 URL 미설정). .env.development 또는 운영 credential 에 명시하세요.`,
+    );
+  }
   if (!isProductionDeploy && !url.startsWith("https://")) {
     if (process.env.ALLOW_INSECURE_AUTOLOGIN_URL !== "true") {
       throw new Error(
@@ -149,11 +154,11 @@ function resolveAutoLoginUrl(envName: string, defaultUrl: string): string {
 
 export const AUTO_LOGIN_URL = {
   /** HANASYS DESIGN 자동로그인 — GET {dev|www}.hanasys.jp/login?autoLoginParam1={cipher} */
-  hanasys: resolveAutoLoginUrl("HANASYS_AUTOLOGIN_URL", HANASYS_AUTOLOGIN_URL_DEFAULT),
+  hanasys: resolveAutoLoginUrl("HANASYS_AUTOLOGIN_URL"),
   /** Q.Order 자동로그인 — GET {q-order-domain}/eos/login/autoLogin?autoLoginParam1={cipher} */
-  qOrder: resolveAutoLoginUrl("Q_ORDER_AUTOLOGIN_URL", Q_ORDER_AUTOLOGIN_URL_DEFAULT),
+  qOrder: resolveAutoLoginUrl("Q_ORDER_AUTOLOGIN_URL"),
   /** Q.Musubi 자동로그인 — GET {q-musubi-domain}/qm/login/autoLogin?autoLoginParam1={cipher} */
-  qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL", Q_MUSUBI_AUTOLOGIN_URL_DEFAULT),
+  qMusubi: resolveAutoLoginUrl("Q_MUSUBI_AUTOLOGIN_URL"),
 } as const;
 
 /**
@@ -192,23 +197,12 @@ function assertProdAutoLoginUrl(envName: string, urlValue: string, expectedHost:
   }
 }
 
-// 운영 배포 시 안전장치 — env override 누락(=default dev URL 잔존) / 비-HTTPS / 임의 host 모두 부팅 실패.
-// 운영 배포에서 dev URL 또는 외부 URL 이 응답에 나가는 사고를 부팅 단계에서 강제로 차단한다.
+// 운영 배포 안전장치 — HTTPS + host 화이트리스트 + userinfo 차단 + 표준 포트 검증.
+// env 누락 자체는 resolveAutoLoginUrl 에서 이미 throw 되므로 여기서는 값의 적격성만 검사한다.
 // 운영 Jenkins credential 에 HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
 // 3개를 모두 명시 주입해야 부팅 성공.
-if (isProductionDeploy) {
-  // 1) default dev URL 잔존 차단 — 동등성 비교(===)로 default 상수 변경 시 자동 추적.
-  //    substring 매칭은 false-negative(향후 default 변경) / false-positive(우연한 토큰 포함) 모두 발생.
-  if (AUTO_LOGIN_URL.hanasys === HANASYS_AUTOLOGIN_URL_DEFAULT) {
-    throw new Error("HANASYS_AUTOLOGIN_URL is required in production (default dev URL detected)");
-  }
-  if (AUTO_LOGIN_URL.qOrder === Q_ORDER_AUTOLOGIN_URL_DEFAULT) {
-    throw new Error("Q_ORDER_AUTOLOGIN_URL is required in production (default dev URL detected)");
-  }
-  if (AUTO_LOGIN_URL.qMusubi === Q_MUSUBI_AUTOLOGIN_URL_DEFAULT) {
-    throw new Error("Q_MUSUBI_AUTOLOGIN_URL is required in production (default dev URL detected)");
-  }
-  // 2) HTTPS + host 화이트리스트 + userinfo 차단 — 임의 URL 주입 시에도 cipher 외부 유출 방지.
+// 빌드 단계는 스킵 — placeholder URL 이 host 화이트리스트에 막혀 빌드가 실패하지 않도록.
+if (isProductionDeploy && !isBuildPhase) {
   assertProdAutoLoginUrl(
     "HANASYS_AUTOLOGIN_URL",
     AUTO_LOGIN_URL.hanasys,
