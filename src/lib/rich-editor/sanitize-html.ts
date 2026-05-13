@@ -108,6 +108,26 @@ function isSafeSpanMarkStyle(tagName: string, value: string): boolean {
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 
+// `colwidth` 화이트리스트 — Tiptap 표 셀이 부여하는 비표준 속성.
+//   - 단일 컬럼: `<td colwidth="120">`
+//   - colspan>1 셀: `<td colwidth="120,80">`
+// 외부 메일 클라이언트 렌더링 안전성을 위해 숫자(또는 쉼표 구분 숫자 리스트) 만 허용.
+const SAFE_COLWIDTH_PATTERN = /^\d+(?:,\d+)*$/;
+const COLWIDTH_ALLOWED_TAGS = new Set(["TD", "TH"]);
+
+// class 속성 화이트리스트 — Tiptap extensions 가 부여하는 식별용 클래스만 허용.
+// UI 위조 / CSS injection 벡터 차단을 위해 임의 class 통과 금지.
+//   - rich-editor-inline-image / rich-editor-table : editor-extensions.ts HTMLAttributes
+//   - language-* : 코드블록 syntax highlight(향후 도입 시)
+//   - bn-* : 레거시 BlockNote 본문(체크리스트·블록 식별 등) — 기존 콘텐츠 detail 렌더링 회귀 방지
+const SAFE_CLASS_VALUE_PATTERN = /^(?:rich-editor-[\w-]+|language-[\w-]+|bn-[\w-]+)$/;
+
+function isSafeClassValue(value: string): boolean {
+  const tokens = value.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => SAFE_CLASS_VALUE_PATTERN.test(token));
+}
+
 let hooksRegistered = false;
 
 function ensureHooksRegistered(): void {
@@ -143,6 +163,20 @@ function ensureHooksRegistered(): void {
         SPAN_MARK_STYLE_ALLOWED_TAGS.has(tagName) &&
         isSafeSpanMarkStyle(tagName, data.attrValue);
       if (!isTableStyle && !isSpanMarkStyle) {
+        data.keepAttr = false;
+      }
+    }
+    // class 화이트리스트 — Tiptap 식별용 클래스(rich-editor-* / language-*) 외 통째 제거.
+    if (data.attrName === "class") {
+      if (!isSafeClassValue(data.attrValue)) {
+        data.keepAttr = false;
+      }
+    }
+    // colwidth — TD/TH 에만 허용 + 값은 숫자(또는 쉼표 구분 숫자) 만 통과.
+    if (data.attrName === "colwidth") {
+      const validTag = COLWIDTH_ALLOWED_TAGS.has(node.tagName);
+      const validValue = SAFE_COLWIDTH_PATTERN.test(data.attrValue);
+      if (!validTag || !validValue) {
         data.keepAttr = false;
       }
     }
@@ -182,8 +216,11 @@ export function sanitizeContentHtml(html: string | null | undefined): string {
     return DOMPurify.sanitize(html, {
       ALLOWED_TAGS,
       ALLOWED_ATTR,
-      ALLOW_DATA_ATTR: true,
-      ALLOW_ARIA_ATTR: true,
+      // 임의 data-* 통과 차단 — 필요한 data-type / data-checked / data-language 는 ALLOWED_ATTR 에 명시.
+      ALLOW_DATA_ATTR: false,
+      // 임의 aria-* 통과 차단 — Tiptap 출력은 ARIA 를 본문 노드에 부착하지 않음(툴바/팝오버 한정),
+      // 메일 발송 경로에서 스크린리더 조작 / UX 변조 벡터를 사전 차단.
+      ALLOW_ARIA_ATTR: false,
     });
   } catch (error: unknown) {
     console.error("[sanitizeContentHtml] sanitize 실패:", error);

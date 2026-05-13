@@ -1,28 +1,14 @@
 /**
  * 대량메일 POST/PUT 공통 유틸
  *
- * DOMPurify 설정, 첨부파일 타입, 클린업 함수를 공유하여
- * POST(route.ts)와 PUT([id]/route.ts) 간 중복을 제거한다.
+ * 첨부파일 타입과 클린업 함수를 공유하여 POST(route.ts)와 PUT([id]/route.ts) 간 중복을 제거한다.
+ * 본문 sanitize 는 `@/lib/rich-editor/sanitize-html` 의 `sanitizeContentHtml` 로 통일 (RichEditor 출력 보존).
  */
 
 import { unlink, rm } from "fs/promises";
 import { relative } from "path";
 
 import { UPLOAD_DIR } from "@/lib/config";
-
-// ─── DOMPurify 공통 설정 (stored XSS 방어) ───
-
-export const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: [
-    "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
-    "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "img", "span", "div", "hr",
-  ],
-  ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel"],
-  ALLOWED_URI_REGEXP: /^https:\/\//i,
-  ALLOW_DATA_ATTR: false,
-};
 
 // ─── 첨부파일 공통 타입 ───
 

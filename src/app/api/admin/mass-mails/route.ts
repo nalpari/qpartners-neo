@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { randomUUID } from "crypto";
-import DOMPurify from "isomorphic-dompurify";
 
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
@@ -11,8 +10,9 @@ import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
-import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
+import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -159,7 +159,9 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
   }
 
   // HTML body sanitization (stored XSS 방어)
-  const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
+  // RichEditor 출력(color/font-size span, mark/highlight, table 등)을 보존하기 위해
+  // FE 의 표준 sanitizer 사용. 메일 본문도 contents 와 동일한 화이트리스트를 통과.
+  const sanitizedBody = sanitizeContentHtml(data.body);
 
   if (!sanitizedBody.trim()) {
     return NextResponse.json(

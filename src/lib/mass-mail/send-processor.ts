@@ -19,7 +19,6 @@ import { MASS_MAIL_DEFAULTS, UPLOAD_DIR } from "@/lib/config";
 import { maskEmail } from "@/lib/interface-logger";
 import { sendMail } from "@/lib/mailer";
 import type { SendMailAttachment } from "@/lib/mailer";
-import { escapeHtml } from "@/lib/mail-templates/utils";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
@@ -192,33 +191,34 @@ function sanitizeErrorMessage(message: string): string {
 
 /**
  * 단일 recipient 에 대한 SMTP 발송 — 권한별 실 회원 이메일로 1건 발송.
+ *
+ * senderName 은 SMTP From display name 으로 전달되어 수신자 인박스의 발신자란에 노출됨.
+ * 헤더 인젝션 방지는 mailer.sanitizeFromName 가 담당.
  */
 async function sendOneRecipient(
   recipient: { email: string },
   subject: string,
   html: string,
+  senderName: string,
   attachments: SendMailAttachment[],
 ): Promise<void> {
   await sendMail({
     to: recipient.email,
     subject,
     html,
+    fromName: senderName,
     ...(attachments.length > 0 ? { attachments } : {}),
   });
 }
 
-function buildMailHtml(body: string, senderName: string): string {
-  // body는 POST/PUT 단계에서 DOMPurify로 sanitize 완료된 HTML.
-  // senderName은 사용자 입력 평문 → 반드시 escape (stored XSS / 피싱 방어).
-  const safeSenderName = escapeHtml(senderName);
+function buildMailHtml(body: string): string {
+  // body는 POST/PUT 단계에서 sanitizeContentHtml 로 sanitize 완료된 HTML.
+  // 사무국 서명/연락처 등은 작성자가 본문 자체에 포함하므로(BulkMailCreateClient 가
+  // DEFAULT_BULK_MAIL_BODY_HTML 로 기본 서명을 미리 채움), 여기서는 발신 양식 wrapper 만 둔다.
+  // 발신자명(senderName) 표시는 본문 풋터 텍스트가 아니라 SMTP From 헤더 display name 으로 전달 (mailer.fromName).
   return `
 <div style="font-family: sans-serif; max-width: 600px;">
 ${body}
-<hr />
-<p style="font-size: 12px; color: #888;">
-このメールはQ.PARTNERSから送信されています。<br/>
-送信者: ${safeSenderName}
-</p>
 </div>`;
 }
 
@@ -247,7 +247,8 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
   });
   if (!massMail) throw new Error(`MassMail not found: ${massMailId}`);
 
-  const html = buildMailHtml(massMail.body, massMail.senderName);
+  const html = buildMailHtml(massMail.body);
+  const senderName = massMail.senderName;
   const attachments = await loadMassMailAttachments(massMailId);
   const maxRetry = MASS_MAIL_DEFAULTS.recipientMaxRetry;
   const retryDelayMs = MASS_MAIL_DEFAULTS.recipientRetryDelayMs;
@@ -271,7 +272,7 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
     while (!resolved && currentRetryCount < maxRetry) {
       let smtpOk = false;
       try {
-        await sendOneRecipient(recipient, massMail.subject, html, attachments);
+        await sendOneRecipient(recipient, massMail.subject, html, senderName, attachments);
         smtpOk = true;
       } catch (error: unknown) {
         const rawMessage = error instanceof Error ? error.message : String(error);
