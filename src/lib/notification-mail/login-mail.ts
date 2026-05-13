@@ -70,10 +70,14 @@ function buildBodyHtml(args: {
 
 /**
  * 로그인 알림 발송.
- * 호출 패턴 (login route):
- *   if (qsp.data.loginNotiYn === "Y" && qsp.data.email) {
- *     void sendLoginNotification({ to, userNm, loginAt, clientIp, callerRoute });
- *   }
+ *
+ * 호출 진입점 (Redmine #2214 분리 후):
+ *   - login route (2FA 미요구 사용자): 1차 로그인 성공 즉시
+ *       if (!requireTwoFactor && qsp.data.loginNotiYn === "Y" && qsp.data.email) { ... }
+ *   - two-factor/verify route (2FA 필수 사용자): 검증 성공 시
+ *       if (user.loginNotiYn === "Y" && user.email) { ... }
+ *
+ * inbound 자동로그인 (auto-login/inbound) 은 정책상 발송 제외 (#2125 Q3).
  */
 export async function sendLoginNotification(ctx: LoginNotificationContext): Promise<void> {
   const userNm = ctx.userNm?.trim() ? ctx.userNm.trim() : "お客様";

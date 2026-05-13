@@ -9,6 +9,8 @@ import { timingSafeEqual } from "crypto";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { hashOtp } from "@/lib/auth-utils";
+import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
+import { extractClientIp } from "@/lib/notification-mail/utils";
 
 const MAX_VERIFY_ATTEMPTS = 5;
 
@@ -212,6 +214,26 @@ export async function POST(request: NextRequest) {
       { error: "認証処理中にサーバーエラーが発生しました" },
       { status: 500 },
     );
+  }
+
+  // 9. 로그인 알림 메일 발송 (Redmine #2214 — 2FA 필수 사용자는 검증 성공 시점에 발송).
+  //    조건: user.loginNotiYn === "Y" && user.email
+  //    - login route 에서 2FA 필요 사용자는 발송 지연되었고, 본 시점이 "로그인 완료" 의 정확한 시점.
+  //    - JWT 페이로드(user)에 loginNotiYn 포함하여 별도 QSP userDetail 재호출 회피.
+  //    - fire-and-forget — login route 와 동일 정책. 메일 실패가 인증 흐름을 막지 않음.
+  if (user.loginNotiYn === "Y" && user.email) {
+    void sendLoginNotification({
+      to: user.email,
+      userNm: user.userNm,
+      loginAt: new Date(),
+      clientIp: extractClientIp(request),
+      callerRoute: "[POST /api/auth/two-factor/verify]",
+    }).catch((error: unknown) => {
+      console.warn(
+        "[POST /api/auth/two-factor/verify] 로그인 알림 메일 발송 처리 중 예외:",
+        error,
+      );
+    });
   }
 
   const response = NextResponse.json({ data: { verified: true } });

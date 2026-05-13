@@ -104,6 +104,12 @@ export const loginUserSchema = qspLoginUserSchema
     //   - QSP 응답 null (필드 미설정/이관 잔재) → 동일하게 2FA 분기로 폴백
     //   - 클라이언트 분기 `userData.pwdInitYn === "N"` 가 false 가 되어 personal-info popup 미표시
     pwdInitYn: z.enum(["Y", "N"]).nullish(),
+    // 로그인 알림 사용 여부 — Redmine #2214 후속.
+    // 2FA 필요 사용자(ADMIN/SUPER_ADMIN 등)의 경우 1차 로그인 시점에 발송하면
+    // 사용자가 "인증도 안 끝났는데 로그인 성공 메일이 왔다" 고 인지하므로
+    // 2FA 검증 성공(verify) 시점에 발송한다. verify route 에서 발송 조건 판별을 위해
+    // JWT 페이로드에 포함. nullish 폴백: 구 JWT 호환 (필드 부재 → 발송 안 함).
+    loginNotiYn: z.enum(["Y", "N"]).nullish(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;
