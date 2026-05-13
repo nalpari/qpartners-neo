@@ -7,7 +7,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
-import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
+import {
+  DEFAULT_BULK_MAIL_BODY_HTML,
+  type FormMode,
+  type FormInitialData,
+} from "@/components/admin/bulk-mail/bulk-mail-types";
 
 function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
   if (typeof window === "undefined") return { mode: "create" };
@@ -46,8 +50,11 @@ export function BulkMailCreateClient() {
     enabled: false,
   });
 
+  // 신규(create) 모드는 본문에 사무국 서명을 미리 채워두고, 사용자가 그 위에 본문을 작성하도록 한다.
+  // copy 모드는 원본 메일의 body 를 그대로 살린다 (원본에 서명이 이미 들어있으므로 중복 방지).
   const initialData: Partial<FormInitialData> = {
     ...initial.initialData,
+    body: initial.initialData?.body ?? DEFAULT_BULK_MAIL_BODY_HTML,
     createdBy: user?.userId ?? "",
     createdByName: user?.userNm ?? null,
   };

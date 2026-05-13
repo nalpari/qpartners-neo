@@ -19,7 +19,6 @@ import { MASS_MAIL_DEFAULTS, UPLOAD_DIR } from "@/lib/config";
 import { maskEmail } from "@/lib/interface-logger";
 import { sendMail } from "@/lib/mailer";
 import type { SendMailAttachment } from "@/lib/mailer";
-import { escapeHtml } from "@/lib/mail-templates/utils";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
@@ -207,18 +206,13 @@ async function sendOneRecipient(
   });
 }
 
-function buildMailHtml(body: string, senderName: string): string {
+function buildMailHtml(body: string): string {
   // body는 POST/PUT 단계에서 DOMPurify로 sanitize 완료된 HTML.
-  // senderName은 사용자 입력 평문 → 반드시 escape (stored XSS / 피싱 방어).
-  const safeSenderName = escapeHtml(senderName);
+  // 사무국 서명/연락처 등은 작성자가 본문 자체에 포함하므로(BulkMailCreateClient 가
+  // DEFAULT_BULK_MAIL_BODY_HTML 로 기본 서명을 미리 채움), 여기서는 발신 양식 wrapper 만 둔다.
   return `
 <div style="font-family: sans-serif; max-width: 600px;">
 ${body}
-<hr />
-<p style="font-size: 12px; color: #888;">
-このメールはQ.PARTNERSから送信されています。<br/>
-送信者: ${safeSenderName}
-</p>
 </div>`;
 }
 
@@ -243,11 +237,11 @@ ${body}
 export async function sendLoop(massMailId: number, throttleMs: number): Promise<void> {
   const massMail = await prisma.massMail.findUnique({
     where: { id: massMailId },
-    select: { subject: true, body: true, senderName: true },
+    select: { subject: true, body: true },
   });
   if (!massMail) throw new Error(`MassMail not found: ${massMailId}`);
 
-  const html = buildMailHtml(massMail.body, massMail.senderName);
+  const html = buildMailHtml(massMail.body);
   const attachments = await loadMassMailAttachments(massMailId);
   const maxRetry = MASS_MAIL_DEFAULTS.recipientMaxRetry;
   const retryDelayMs = MASS_MAIL_DEFAULTS.recipientRetryDelayMs;
