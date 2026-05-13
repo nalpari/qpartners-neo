@@ -16,9 +16,11 @@ export function DbStatusIndicator() {
   const { data, isPending, isError } = useQuery({
     queryKey: ["health", "db"],
     queryFn: fetchDbHealth,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   });
 
