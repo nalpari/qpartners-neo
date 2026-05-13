@@ -12,7 +12,14 @@
  * 동적 값 없음(전부 정적 리터럴) → escape 불필요. 향후 동적 값 추가 시 호출부에서 escapeHtml 처리.
  */
 
-const FOOTER_LINES: readonly string[] = [
+/**
+ * 사무국 풋터 텍스트 라인 — text/HTML/RichEditor 표현이 동일 출처를 공유하도록 export.
+ *
+ * 사용처:
+ *   - MAIL_FOOTER_TEXT / MAIL_FOOTER_HTML : 시스템 메일 템플릿
+ *   - DEFAULT_BULK_MAIL_BODY_HTML(bulk-mail-types.ts) : 대량메일 에디터 기본 서명
+ */
+export const FOOTER_LINES: readonly string[] = [
   "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
   "ハンファジャパン株式会社",
   "Q.PARTNERS事務局",

@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import { basename, resolve, join } from "path";
 import { randomUUID } from "crypto";
-import DOMPurify from "isomorphic-dompurify";
 
 import { canModifyResource, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
@@ -11,8 +10,9 @@ import { UPLOAD_DIR } from "@/lib/config";
 import { validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
 import { logError } from "@/lib/log-error";
-import { cleanupAttachments, SANITIZE_CONFIG } from "@/lib/mass-mail-utils";
+import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
+import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 import {
   classifyFailure,
   FAILED_RECIPIENTS_RESPONSE_LIMIT,
@@ -387,7 +387,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 6. HTML body sanitization (공통 화이트리스트 설정 사용)
-    const sanitizedBody = DOMPurify.sanitize(data.body, SANITIZE_CONFIG);
+    // RichEditor 출력(color/font-size span, mark/highlight, table 등)을 보존하기 위해
+    // FE 의 표준 sanitizer 사용. 메일 본문도 contents 와 동일한 화이트리스트를 통과.
+    const sanitizedBody = sanitizeContentHtml(data.body);
 
     if (!sanitizedBody.trim()) {
       return NextResponse.json(

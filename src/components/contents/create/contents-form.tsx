@@ -216,21 +216,14 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     });
   };
 
+  // 서버 응답 메시지를 그대로 UI 에 노출하지 않음 (api.md: 외부/내부 API 에러 직접 노출 금지).
+  // 원본 에러는 콘솔에만 남기고, 사용자에게는 일반화된 메시지를 표시.
   const handleContentUploadError = (error: unknown) => {
-    // 서버가 일본어 메시지를 내려주는 경우 그대로 노출 — 그 외에는 일반화 메시지.
-    let message = "画像のアップロードに失敗しました。しばらくしてからお試しください。";
-    if (isAxiosError(error) && error.response) {
-      const resData: unknown = error.response.data;
-      const serverMsg =
-        resData != null &&
-        typeof resData === "object" &&
-        "error" in resData &&
-        typeof (resData as { error: unknown }).error === "string"
-          ? ((resData as { error: string }).error)
-          : null;
-      if (serverMsg) message = serverMsg;
-    }
-    openAlert({ type: "alert", message });
+    console.error("[Contents] 本文 画像アップロード 실패:", error);
+    openAlert({
+      type: "alert",
+      message: "画像のアップロードに失敗しました。しばらくしてからお試しください。",
+    });
   };
 
   const handleSave = async () => {

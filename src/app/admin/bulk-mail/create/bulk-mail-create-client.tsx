@@ -7,7 +7,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { BulkMailForm } from "@/components/admin/bulk-mail/form/bulk-mail-form";
-import type { FormMode, FormInitialData } from "@/components/admin/bulk-mail/bulk-mail-types";
+import {
+  ensureBodyHasSignature,
+  type FormMode,
+  type FormInitialData,
+} from "@/components/admin/bulk-mail/bulk-mail-types";
 
 function loadCopyData(): { mode: FormMode; initialData?: Partial<FormInitialData> } {
   if (typeof window === "undefined") return { mode: "create" };
@@ -46,8 +50,13 @@ export function BulkMailCreateClient() {
     enabled: false,
   });
 
+  // 본문 초기값 — ensureBodyHasSignature 가 mode 별 분기 처리:
+  //   - 순수 create: DEFAULT_BULK_MAIL_BODY_HTML (빈 단락 + 서명)
+  //   - copy + 원본에 서명 있음: 원본 그대로 (중복 방지)
+  //   - copy + 레거시 본문(서명 미포함): 원본 + 서명 자동 추가 (UX 일관성)
   const initialData: Partial<FormInitialData> = {
     ...initial.initialData,
+    body: ensureBodyHasSignature(initial.initialData?.body),
     createdBy: user?.userId ?? "",
     createdByName: user?.userNm ?? null,
   };
