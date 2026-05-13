@@ -61,14 +61,6 @@ pipeline {
             }
         }
 
-        stage('Approval') {
-            steps {
-                timeout(time: 30, unit: 'MINUTES') {
-                    input message: "Production 배포를 진행할까요? (commit: ${env.GIT_COMMIT_SHORT})"
-                }
-            }
-        }
-
         stage('Stop Existing') {
             steps {
                 sh """
