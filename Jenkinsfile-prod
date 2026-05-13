@@ -101,13 +101,29 @@ pipeline {
                         IMAGE_TAG=${IMAGE_TAG} \
                         docker compose -f ${COMPOSE_FILE} -p ${COMPOSE_PROJECT} ps
                     """
+                    // Jenkins agent와 host network 컨테이너는 네트워크 네임스페이스가 달라
+                    // localhost 직접 접근이 불가하므로, `docker exec`로 컨테이너 내부에서 헬스체크 수행
                     sh '''
-                        for port in 5000 5001; do
-                            curl -fsS --max-time 5 --retry 6 --retry-delay 5 \
-                                http://localhost:$port/ > /dev/null \
-                                || { echo "Port $port health check failed"; exit 1; }
-                            echo "Port $port: OK"
-                        done
+                        check_health() {
+                            container=$1
+                            port=$2
+                            attempts=6
+                            delay=5
+                            i=1
+                            while [ $i -le $attempts ]; do
+                                if docker exec "$container" node -e "require('http').get('http://localhost:$port/',{timeout:5000},r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))" >/dev/null 2>&1; then
+                                    echo "$container (port $port): OK"
+                                    return 0
+                                fi
+                                echo "$container (port $port): attempt $i/$attempts failed, retry in ${delay}s..."
+                                i=$((i+1))
+                                sleep $delay
+                            done
+                            echo "$container (port $port) health check failed"
+                            return 1
+                        }
+                        check_health qpartners-app-1 5000 || exit 1
+                        check_health qpartners-app-2 5001 || exit 1
                     '''
                 }
             }
