@@ -59,6 +59,7 @@ storage/uploads/
 
 # git worktrees
 .worktrees/
+.claude/worktrees/
 
 # graphify - local-only or machine-specific (per docs/graphify-guide.md §8)
 graphify-out/cache/
