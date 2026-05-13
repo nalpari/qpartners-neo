@@ -63,7 +63,8 @@ export function BulkMailFormBody({
         // 의도: detail 모드는 "발송 완료된 메일의 비활성 미리보기" — 본문/서명을 한 톤으로 흐리게.
         // 인라인 color 가 박힌 span(에디터에서 입힌 색상) 까지 모두 회색으로 보이도록
         // `[&_*]:!text-[#999]` 로 전체 후손 텍스트 색상을 강제 override.
-        // (서명만 회색이 아닌 본문 전체를 동일 톤으로 가라앉히는 게 디자인 정책.)
+        // (서명만 회색이 아닌 본문 전체를 동일 톤으로 가라앉히는 게 디자인 정책 — 사용자 명시 요청 "글도 회색 쳐".
+        //  코드리뷰의 opacity 대안은 색상 정보 유지 트레이드오프가 있으나, 디자인 정책상 회색 일색이 우선.)
         <div
           aria-readonly="true"
           className="w-full min-h-[200px] p-4 border border-[#EBEBEB] rounded-[4px] bg-[#F5F5F5] cursor-not-allowed font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#999] [&_*]:!text-[#999] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"
