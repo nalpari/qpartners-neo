@@ -25,6 +25,27 @@ import { buildFormData, formatMailDate, FORM_DATA_CONFIG } from "@/components/ad
 
 const DEFAULT_SENDER = "Q.PARTNERS事務局 (q.partners@hqj.co.jp)";
 
+// bulk-mail-types.ts:SIGNATURE_SPAN_STYLE ("font-size: 11px; color: #999") 에 매칭되는 <p><span>…</span></p> 블록.
+// font-size 와 color 두 declaration 순서가 뒤바뀔 수 있어 둘 다 포함되는지만 확인 (둘 다 매칭 시에만 서명 라인으로 간주).
+// SIGNATURE_SPAN_STYLE 의 값이 바뀌면 이 정규식도 함께 갱신해야 한다.
+const SIGNATURE_PARAGRAPH_PATTERN =
+  /<p[^>]*><span[^>]*style="[^"]*font-size:\s*11px[^"]*color:\s*#999[^"]*"[^>]*>[\s\S]*?<\/span><\/p>/gi;
+
+/**
+ * 본문이 사무국 기본 서명만 남기고 비어 있는지 검사.
+ *
+ * SIGNATURE_SPAN_STYLE (11px / #999) 로 래핑된 <p> 블록을 모두 제거한 뒤,
+ * 남는 HTML 이 `isHtmlEmpty` 기준으로 비어 있으면 "서명만 있음" 으로 간주.
+ */
+function isOnlySignature(body: string): boolean {
+  // 서명 패턴이 한 건도 없으면 사용자 작성 본문이라는 의미 → 서명-only 아님.
+  if (!SIGNATURE_PARAGRAPH_PATTERN.test(body)) return false;
+  // /g 플래그가 lastIndex 를 보존하므로 다음 .replace 전에 리셋.
+  SIGNATURE_PARAGRAPH_PATTERN.lastIndex = 0;
+  const stripped = body.replace(SIGNATURE_PARAGRAPH_PATTERN, "");
+  return isHtmlEmpty(stripped);
+}
+
 interface BulkMailFormProps {
   mode: FormMode;
   initialData?: Partial<FormInitialData>;
@@ -128,6 +149,9 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     if (!subject.trim()) return "件名は必須入力項目です。";
     // RichEditor 도입으로 body 는 HTML 문자열. 빈 <p></p> 는 trim 으로 못 거르므로 isHtmlEmpty 사용.
     if (isHtmlEmpty(body)) return "本文は必須入力項目です。";
+    // 사무국 서명만 채워진 채 발송되는 케이스 차단 — DEFAULT_BULK_MAIL_BODY_HTML 만 남으면 본문 없음.
+    // 서명 라인(11px / #999 span) 을 모두 제거한 뒤에도 의미 있는 텍스트가 남아 있어야 통과.
+    if (isOnlySignature(body)) return "本文は必須入力項目です。";
     return null;
   }
 
@@ -140,20 +164,14 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     });
   }, [openAlert]);
 
+  // 서버 응답 메시지를 그대로 UI 에 노출하지 않음 (api.md: 외부/내부 API 에러 직접 노출 금지).
+  // 원본 에러는 콘솔에만 남기고, 사용자에게는 일반화된 메시지를 표시.
   const handleBodyUploadError = useCallback((error: unknown) => {
-    let message = "画像のアップロードに失敗しました。しばらくしてからお試しください。";
-    if (isAxiosError(error) && error.response) {
-      const resData: unknown = error.response.data;
-      const serverMsg =
-        resData != null &&
-        typeof resData === "object" &&
-        "error" in resData &&
-        typeof (resData as { error: unknown }).error === "string"
-          ? (resData as { error: string }).error
-          : null;
-      if (serverMsg) message = serverMsg;
-    }
-    openAlert({ type: "alert", message });
+    console.error("[BulkMailForm] 本文 画像アップロード 실패:", error);
+    openAlert({
+      type: "alert",
+      message: "画像のアップロードに失敗しました。しばらくしてからお試しください。",
+    });
   }, [openAlert]);
 
   // ─── 버튼 핸들러 (Design Ref: §3.4) ───

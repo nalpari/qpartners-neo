@@ -103,6 +103,12 @@ interface SendMailOptions {
    * dev/staging 에서 운영 주체 실주소 노출 방지는 호출부(send-notification.ts)에서 가드한다.
    */
   bcc?: string | string[];
+  /**
+   * SMTP From 헤더의 display name 오버라이드.
+   * 미지정 시 `SMTP_DEFAULTS.fromName` 사용. 대량메일(bulk-mail) 처럼 운영자가
+   * 발신자명을 폼에서 입력하는 경우 이 값으로 수신자 인박스의 From 표시를 제어한다.
+   */
+  fromName?: string;
   attachments?: SendMailAttachment[];
 }
 
@@ -113,10 +119,24 @@ export interface SendMailResult {
   previewUrl?: string;
 }
 
+/**
+ * SMTP From 헤더 display name 의 CRLF / 인용부호 / 꺾쇠 등을 제거.
+ *
+ * nodemailer 가 phrase 부분을 자동 quote 처리하지만, 사용자 입력(senderName) 에
+ * `<`, `>`, `"`, 개행 등이 들어가면 메일 헤더 인젝션(추가 헤더 주입 / 잘못된 quote) 위험.
+ * 인박스 표시 안전성 우선 — 위험 문자는 공백 1칸으로 치환 후 trim.
+ */
+function sanitizeFromName(name: string): string {
+  return name.replace(/[<>"\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /** 공용 메일 발송 유틸리티 */
-export async function sendMail({ to, subject, html, bcc, attachments }: SendMailOptions): Promise<SendMailResult> {
+export async function sendMail({ to, subject, html, bcc, fromName, attachments }: SendMailOptions): Promise<SendMailResult> {
   const from = process.env.SMTP_FROM ?? SMTP_DEFAULTS.from;
   const useEthereal = useEtherealFlag;
+  // fromName 미지정 또는 sanitize 결과 빈 문자열이면 기본값 사용.
+  const sanitizedFromName = fromName ? sanitizeFromName(fromName) : "";
+  const displayName = sanitizedFromName.length > 0 ? sanitizedFromName : SMTP_DEFAULTS.fromName;
 
   let transporter: nodemailer.Transporter;
   try {
@@ -129,7 +149,7 @@ export async function sendMail({ to, subject, html, bcc, attachments }: SendMail
   let rawInfo: nodemailer.SentMessageInfo;
   try {
     rawInfo = await transporter.sendMail({
-      from: `${SMTP_DEFAULTS.fromName} <${from}>`,
+      from: `${displayName} <${from}>`,
       to,
       subject,
       html,

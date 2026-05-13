@@ -5,6 +5,9 @@
 // schema 가 바뀌어도 컴파일러가 잡지 못해 silent drift 발생. 타입 전용 import 라 런타임 영향 없음.
 import type { MailStatus } from "@/generated/prisma/client";
 
+// 사무국 서명 텍스트 단일 출처 — 시스템 메일과 동일 출처. drift 방지.
+import { FOOTER_LINES } from "@/lib/mail-templates/footer";
+
 /** 메일 상태 — Prisma MailStatus 와 단일 출처. sending/send_failed 는 자동 처리 / 운영자 화면 노출. */
 export type MassMailStatus = MailStatus;
 
@@ -136,24 +139,19 @@ export type FormMode = "create" | "detail" | "edit" | "copy";
  *
  * 다른 시스템메일(signup-complete / inquiry-confirmation / password-reset / two-factor /
  * login / attr-change)이 공유하는 `MAIL_FOOTER_HTML`(`src/lib/mail-templates/footer.ts`)
- * 과 동일 양식·스타일(font-size:11px / color:#999) 적용.
+ * 과 동일 텍스트(FOOTER_LINES 단일 출처)·스타일(font-size:11px / color:#999) 적용.
  *
  * 스타일은 `<span style>` 로 부여 — RichEditor 의 textStyle mark 와 호환되며,
  * sanitize-html.ts 의 SPAN_ALLOWED_STYLE_PROPS(color / font-size) 를 통과한다.
  *
  * 본문 자체에 서명이 들어가므로, BE 의 `buildMailHtml` 은 더 이상 풋터를 자동 부착하지 않는다.
  */
-const SIGNATURE_SPAN_STYLE = "font-size: 11px; color: #999";
+export const SIGNATURE_SPAN_STYLE = "font-size: 11px; color: #999";
 export const DEFAULT_BULK_MAIL_BODY_HTML: string = [
   "<p></p>",
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">ハンファジャパン株式会社</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">Q.PARTNERS事務局</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">Tel:03-5441-5976</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">Email : q-partners@hqj.co.jp</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">問い合わせ受付時間：平日 10:00 ~ 12:00 / 13:00 ~ 17:00</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">※土曜、日曜、祝日にお問合せをいただいた場合は、翌営業日以降に順次対応いたします</span></p>`,
-  `<p><span style="${SIGNATURE_SPAN_STYLE}">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span></p>`,
+  ...FOOTER_LINES.map(
+    (line) => `<p><span style="${SIGNATURE_SPAN_STYLE}">${line}</span></p>`,
+  ),
 ].join("");
 
 /** 폼 초기 데이터 */

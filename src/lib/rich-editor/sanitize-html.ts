@@ -108,6 +108,18 @@ function isSafeSpanMarkStyle(tagName: string, value: string): boolean {
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 
+// class 속성 화이트리스트 — Tiptap extensions 가 부여하는 식별용 클래스만 허용.
+// UI 위조 / CSS injection 벡터 차단을 위해 임의 class 통과 금지.
+//   - rich-editor-inline-image / rich-editor-table : editor-extensions.ts HTMLAttributes
+//   - language-* : 코드블록 syntax highlight(향후 도입 시)
+const SAFE_CLASS_VALUE_PATTERN = /^(?:rich-editor-[\w-]+|language-[\w-]+)$/;
+
+function isSafeClassValue(value: string): boolean {
+  const tokens = value.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => SAFE_CLASS_VALUE_PATTERN.test(token));
+}
+
 let hooksRegistered = false;
 
 function ensureHooksRegistered(): void {
@@ -143,6 +155,12 @@ function ensureHooksRegistered(): void {
         SPAN_MARK_STYLE_ALLOWED_TAGS.has(tagName) &&
         isSafeSpanMarkStyle(tagName, data.attrValue);
       if (!isTableStyle && !isSpanMarkStyle) {
+        data.keepAttr = false;
+      }
+    }
+    // class 화이트리스트 — Tiptap 식별용 클래스(rich-editor-* / language-*) 외 통째 제거.
+    if (data.attrName === "class") {
+      if (!isSafeClassValue(data.attrValue)) {
         data.keepAttr = false;
       }
     }
@@ -182,7 +200,8 @@ export function sanitizeContentHtml(html: string | null | undefined): string {
     return DOMPurify.sanitize(html, {
       ALLOWED_TAGS,
       ALLOWED_ATTR,
-      ALLOW_DATA_ATTR: true,
+      // 임의 data-* 통과 차단 — 필요한 data-type / data-checked / data-language 는 ALLOWED_ATTR 에 명시.
+      ALLOW_DATA_ATTR: false,
       ALLOW_ARIA_ATTR: true,
     });
   } catch (error: unknown) {
