@@ -63,3 +63,6 @@ storage/uploads/
 
 # graphify - local-only (전체 산출물, 머신/사용자별 데이터)
 graphify-out/
+
+# prisma migration archive (baseline 이전 옛 마이그레이션 백업)
+prisma/_migrations_archive_pre_baseline/
