@@ -59,8 +59,11 @@ export function BulkMailFormBody({
         内容<span className="text-[#FF1A1A]">*</span>
       </h2>
       {isReadonlyView ? (
+        // 타이틀 InputBox 의 readonly 스타일(#F5F5F5 / #EBEBEB / cursor-not-allowed) 과 통일.
+        // 인라인 color 가 박힌 span 까지 회색으로 보이도록 [&_*]:!text-[#999] 로 강제 override.
         <div
-          className="w-full min-h-[200px] p-4 border border-[#EAF0F6] rounded-[4px] bg-[#FDFEFE] font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#101010] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"
+          aria-readonly="true"
+          className="w-full min-h-[200px] p-4 border border-[#EBEBEB] rounded-[4px] bg-[#F5F5F5] cursor-not-allowed font-['Noto_Sans_JP'] text-[14px] leading-[1.8] text-[#999] [&_*]:!text-[#999] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"
           dangerouslySetInnerHTML={{
             __html: sanitizeContentHtml(prepareBodyForRender(content)),
           }}
