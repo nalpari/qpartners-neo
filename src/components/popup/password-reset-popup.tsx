@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
+
+/**
+ * 비밀번호 재설정 popup 가상 page_view 경로 — Redmine #2216 note-2 후속.
+ *
+ * `/password-reset` 라우트는 server-side redirect 라 GaPageTracker 가 추적 불가하고,
+ * 실제 UI 는 `/login` URL 의 popup 으로 표시되어 GA 보고서에 진입 카운트가 섞인다.
+ * popup 마운트 시점에 본 가상 경로로 page_view 를 1회 발송하여 분리 측정한다.
+ */
+const VIRTUAL_PAGE_PATH = "/login/password-reset";
 
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
@@ -47,6 +56,20 @@ export function PasswordResetPopup() {
   const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // popup 마운트 1회 — 비밀번호 재설정 진입 가상 page_view 발송 (Redmine #2216 note-2).
+  //   - PopupController 가 activePopup === "password-reset" 일 때만 본 컴포넌트를 마운트하므로
+  //     본 effect 1회 발송 = popup 진입 1회 카운트로 매핑된다.
+  //   - GA4 콘솔 "페이지 경로" 보고서에 `/login/password-reset` 가 별도 행으로 분리되어
+  //     `/login` 트래픽과 구분 측정 가능.
+  //   - window.gtag 미정의(광고 차단·gtag.js 미로드) 시 조용히 스킵 — UX 영향 0.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.gtag) return;
+    window.gtag("event", "page_view", {
+      page_path: VIRTUAL_PAGE_PATH,
+      page_location: `${window.location.origin}${VIRTUAL_PAGE_PATH}`,
+    });
+  }, []);
 
   const handleChange = (key: keyof ResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));

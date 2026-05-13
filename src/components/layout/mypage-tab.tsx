@@ -1,28 +1,35 @@
 "use client";
 
-
-
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 
 export type MypageTabKey = "info" | "downloads";
 
 interface TabItem {
   key: MypageTabKey;
   label: string;
+  href: string;
 }
 
+/**
+ * /mypage 탭 — Redmine #2216 note-4 이후 Link 기반 자체 navigation.
+ *
+ * - 활성 탭은 pathname 으로 자동 판별 (`/mypage` → info, `/mypage/downloads` → downloads).
+ * - 페이지 이동이 라우터 push 이므로 GaPageTracker 가 자연스럽게 `page_view` 를 분리 수집.
+ */
 const TABS: TabItem[] = [
-  { key: "info", label: "私の情報/会社情報" },
-  { key: "downloads", label: "ダウンロード履歴" },
+  { key: "info", label: "私の情報/会社情報", href: "/mypage" },
+  { key: "downloads", label: "ダウンロード履歴", href: "/mypage/downloads" },
 ];
 
-interface MypageTabProps {
-  activeTab: MypageTabKey;
-  onTabChange: (tab: MypageTabKey) => void;
+function resolveActiveTab(pathname: string): MypageTabKey {
+  return pathname === "/mypage/downloads" ? "downloads" : "info";
 }
 
-export function MypageTab({ activeTab, onTabChange }: MypageTabProps) {
+export function MypageTab() {
+  const pathname = usePathname();
+  const activeTab = resolveActiveTab(pathname);
 
   return (
     <>
@@ -41,10 +48,9 @@ export function MypageTab({ activeTab, onTabChange }: MypageTabProps) {
             {TABS.map((tab) => {
               const isActive = tab.key === activeTab;
               return (
-                <button
+                <Link
                   key={tab.key}
-                  type="button"
-                  onClick={() => onTabChange(tab.key)}
+                  href={tab.href}
                   className={`relative flex items-center h-full font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-center whitespace-nowrap transition-colors duration-200 ${
                     isActive
                       ? "text-[#e97923]"
@@ -57,7 +63,7 @@ export function MypageTab({ activeTab, onTabChange }: MypageTabProps) {
                       isActive ? "opacity-100" : "opacity-0"
                     }`}
                   />
-                </button>
+                </Link>
               );
             })}
           </nav>
@@ -139,10 +145,9 @@ export function MypageTab({ activeTab, onTabChange }: MypageTabProps) {
             const isActive = tab.key === activeTab;
             const isLast = index === TABS.length - 1;
             return (
-              <button
+              <Link
                 key={tab.key}
-                type="button"
-                onClick={() => onTabChange(tab.key)}
+                href={tab.href}
                 className={`flex items-start w-full bg-white border-t border-[#dee5ed] px-[24px] py-[18px] ${
                   isLast
                     ? "shadow-[0px_1px_1px_0px_rgba(32,55,77,0.05)]"
@@ -156,7 +161,7 @@ export function MypageTab({ activeTab, onTabChange }: MypageTabProps) {
                 >
                   {tab.label}
                 </span>
-              </button>
+              </Link>
             );
           })}
         </div>
