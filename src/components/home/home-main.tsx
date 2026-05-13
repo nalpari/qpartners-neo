@@ -1,7 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import type { LoginUser } from "@/lib/schemas/auth";
+import { useAuthFlag } from "@/hooks/use-auth-flag";
 import { HomeVisual } from "./home-visual";
 import { HomeSearchMobile } from "./home-search-mobile";
 import { HomeNotices } from "./home-notices";
@@ -10,13 +9,10 @@ import { HomeSidebar } from "./home-sidebar";
 import { HomeDownloads } from "./home-downloads";
 
 export function HomeMain() {
-  const { data: user } = useQuery<LoginUser | null>({
-    queryKey: ["auth", "login-user-info"],
-    queryFn: () => null,
-    staleTime: Infinity,
-    enabled: false,
-  });
-  const isLoggedIn = user != null;
+  // 로그인 여부는 AUTH_FLAG_KEY 기반 synchronous 플래그로 결정 — Gnb 의 `/auth/login-user-info`
+  // fetch 가 완료되기 전에도 첫 렌더부터 layout(HomeSidebar/HomeDownloads) 가 확정되어
+  // 마운트/언마운트로 인한 "인증 모션" flicker 가 제거됨.
+  const isLoggedIn = useAuthFlag();
 
   return (
     <div className="flex flex-col items-center w-full bg-[#f7f9fb]">

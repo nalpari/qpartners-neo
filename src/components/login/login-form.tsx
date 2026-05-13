@@ -65,7 +65,9 @@ export function LoginForm({
   onClearId,
   onSubmit,
 }: LoginFormProps) {
-  const { openPopup } = usePopupStore();
+  // 전체 store 구독 시 popup state 변경 때마다 LoginForm 재렌더 → selector 로 openPopup action 만 구독.
+  // (zustand action ref 는 안정적이므로 사실상 구독으로 인한 재렌더는 발생하지 않음.)
+  const openPopup = usePopupStore((s) => s.openPopup);
   const config = TAB_CONFIG[activeTab];
 
   const canSubmit = !!id.trim() && !!password.trim() && agreeTerms && !isSubmitting;
