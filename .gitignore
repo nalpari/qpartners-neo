@@ -61,9 +61,5 @@ storage/uploads/
 .worktrees/
 .claude/worktrees/
 
-# graphify - local-only or machine-specific (per docs/graphify-guide.md §8)
-graphify-out/cache/
-graphify-out/manifest.json
-graphify-out/cost.json
-graphify-out/.graphify_python
-graphify-out/.graphify_root
+# graphify - local-only (전체 산출물, 머신/사용자별 데이터)
+graphify-out/
