@@ -119,19 +119,28 @@ export interface SendMailResult {
   previewUrl?: string;
 }
 
+/** SMTP From 헤더 display name 최대 길이 — 헤더 폭주 / 인박스 발신자 표시 변조 방지. */
+const MAX_FROM_NAME_LENGTH = 100;
+
 /**
  * SMTP From 헤더 display name 정제.
  *
  * RFC 5322 의 `specials` 문자(`()<>[]:;@\,."`) 와 CR/LF 가 unquoted phrase 에 섞이면
  * 일부 MTA 가 group syntax 등으로 잘못 해석하거나 헤더 인젝션 벡터가 될 수 있다.
+ * 추가로 `=`, `?` 는 RFC 2047 encoded-word 패턴(`=?charset?Q?text?=`) 흉내 입력을
+ * 차단하기 위해 같이 제거 — nodemailer 가 자동 인코딩하지만 일부 MTA 의 phrase
+ * 파싱이 흉내 입력을 발신자 표시로 잘못 렌더링할 수 있다.
  * nodemailer 에 객체 형태(`{ name, address }`) 로 넘기면 RFC 2047 인코딩까지 자동 처리되지만,
  * 입력단계에서도 위험 문자를 공백으로 치환해 인박스 표시 일관성을 확보한다.
  */
 function sanitizeFromName(name: string): string {
-  return name
-    .replace(/[<>"\r\n;:,@\\\[\]()]+/g, " ")
+  const sanitized = name
+    .replace(/[<>"\r\n;:,@\\\[\]()?=]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  return sanitized.length > MAX_FROM_NAME_LENGTH
+    ? sanitized.slice(0, MAX_FROM_NAME_LENGTH).trim()
+    : sanitized;
 }
 
 /** 공용 메일 발송 유틸리티 */

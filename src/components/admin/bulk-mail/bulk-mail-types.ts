@@ -157,12 +157,21 @@ export const DEFAULT_BULK_MAIL_BODY_HTML: string = `<p></p>${SIGNATURE_BLOCK_HTM
 /**
  * 서명 라인(font-size:11px AND color:#999 span 으로 래핑된 <p>) 매칭 정규식 source.
  *
- * - lookahead `(?=[^"]*font-size:\s*11px)` 와 `(?=[^"]*color:\s*#999)` 로 두 declaration 의 순서를 독립 검증.
+ * - lookahead `(?=[^"]*font-size:\s*11px\b)` + `(?=[^"]*color:\s*(?:#999…|rgb…))` 로
+ *   두 declaration 의 순서를 독립 검증.
+ * - color 값은 #999 / #999999 / rgb(153,153,153) 모두 허용 — 브라우저가 inline style 을
+ *   IDL 로 읽을 때 `#999` 를 `rgb(153, 153, 153)` 으로 normalize 하는 경로 대응
+ *   (Tiptap setContent → getHTML 라운드트립 시 발생 가능).
+ * - 본문 매칭부는 `[\s\S]*?` 대신 negative-lookahead 기반 `(?:(?!</span>)[\s\S])*` 로 교체 —
+ *   `</span>` 가 없는 비정상 입력에서 lazy quantifier 의 catastrophic backtracking 방지.
  * - 모듈 레벨 RegExp 인스턴스를 공유하지 않고, 호출 시점마다 `new RegExp` 으로 생성해
  *   `/g` 플래그의 `lastIndex` 누적 부작용을 회피.
  */
 const SIGNATURE_PARAGRAPH_REGEX_SOURCE =
-  "<p[^>]*><span[^>]*style=\"(?=[^\"]*font-size:\\s*11px)(?=[^\"]*color:\\s*#999)[^\"]*\"[^>]*>[\\s\\S]*?</span></p>";
+  "<p[^>]*><span[^>]*style=\"" +
+  "(?=[^\"]*font-size:\\s*11px\\b)" +
+  "(?=[^\"]*color:\\s*(?:#999(?:999)?\\b|rgb\\(\\s*153\\s*,\\s*153\\s*,\\s*153\\s*\\)))" +
+  "[^\"]*\"[^>]*>(?:(?!</span>)[\\s\\S])*</span></p>";
 
 /** 본문에 서명 패턴 라인이 한 줄이라도 포함되어 있는지 검사. */
 export function bodyHasSignature(body: string): boolean {
@@ -175,18 +184,22 @@ export function stripSignatureLines(body: string): string {
 }
 
 /**
- * 작성 폼(create / copy) 진입 시 초기 body 결정.
+ * 작성/편집 폼(create / copy / edit) 진입 시 초기 body 에 서명이 보장되도록 보강.
  *
- * - copiedBody 없음(순수 create) → 기본 서명 + 빈 단락
- * - copiedBody 에 서명 패턴 포함(RichEditor 시대에 저장된 메일 copy) → 원본 유지
- * - copiedBody 가 서명 미포함(레거시 textarea 시대 저장 메일 copy) → 본문 + 서명 자동 추가
- *   (UX 일관성 — 신규 작성 화면에서 서명이 항상 존재해야 한다는 정책)
+ * - body 없음(순수 create) → 기본 서명 + 빈 단락
+ * - body 에 서명 패턴 포함(RichEditor 시대 저장본) → 원본 유지 (중복 방지)
+ * - body 가 서명 미포함(레거시 textarea 시대 저장본 copy / edit) → 본문 + 서명 자동 추가
+ *
+ * edit 모드에도 적용해 레거시 draft 를 그대로 발송했을 때 서명 없는 메일이 나가는 회귀 차단.
  */
-export function resolveCreateBody(copiedBody: string | undefined | null): string {
-  if (!copiedBody) return DEFAULT_BULK_MAIL_BODY_HTML;
-  if (bodyHasSignature(copiedBody)) return copiedBody;
-  return `${copiedBody}${SIGNATURE_BLOCK_HTML}`;
+export function ensureBodyHasSignature(body: string | null | undefined): string {
+  if (!body) return DEFAULT_BULK_MAIL_BODY_HTML;
+  if (bodyHasSignature(body)) return body;
+  return `${body}${SIGNATURE_BLOCK_HTML}`;
 }
+
+/** @deprecated `ensureBodyHasSignature` 와 동작 동일 — 점진적 교체 후 제거 예정. */
+export const resolveCreateBody = ensureBodyHasSignature;
 
 /** 폼 초기 데이터 */
 export interface FormInitialData {
