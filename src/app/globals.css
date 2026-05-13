@@ -229,6 +229,14 @@ button{cursor: pointer;}
   margin-top: 0;
   margin-bottom: 0;
 }
+/*
+ * 상세 페이지 렌더링(.prose)의 빈 단락 — 저장된 HTML은 직렬화된 <p><br></p>로
+ * 들어오며 trailingBreak 클래스가 없으므로 일반 br:only-child로 매칭한다.
+ */
+.prose p:has(> br:only-child) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 
 /*
  * Tiptap @tiptap/extension-table 표 + 컬럼 리사이즈 — Tiptap 공식 권장 CSS.
