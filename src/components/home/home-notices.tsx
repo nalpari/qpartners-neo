@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { useAuthFlag } from "@/hooks/use-auth-flag";
 
 interface HomeNoticeItem {
   id: number;
@@ -25,13 +26,15 @@ const PLACEHOLDER_TITLE = "タイトル";
 const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
 
 export function HomeNotices() {
+  // 로그인 여부 — AUTH_FLAG_KEY synchronous 플래그로 첫 렌더부터 확정.
+  // user 캐시 의존(이전 패턴) 은 Gnb fetch 완료 전 false 로 잠깐 떨어지며 mount 플리커 유발.
+  const isLoggedIn = useAuthFlag();
   const { data: user } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
     queryFn: () => null,
     staleTime: Infinity,
     enabled: false,
   });
-  const isLoggedIn = user != null;
 
   const cacheScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "guest";
   const { data: notices = [] } = useQuery<HomeNoticeItem[]>({
@@ -43,7 +46,9 @@ export function HomeNotices() {
       return res.data.data;
     },
     staleTime: 60_000,
-    enabled: isLoggedIn,
+    // 로그인 사용자는 user 가 캐시에 채워질 때까지 대기 → "guest" scope 로의 불필요한 1차 fetch 차단.
+    // 비로그인은 isLoggedIn=false 라 이 분기 자체가 false → 어차피 enabled=false.
+    enabled: isLoggedIn && user != null,
   });
 
   // "init": 사용자 미조작 (첫 항목 자동 펼침), number: 해당 id 펼침, null: 모두 접힘

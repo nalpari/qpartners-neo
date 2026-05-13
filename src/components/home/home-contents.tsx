@@ -8,6 +8,7 @@ import { Spinner } from "@/components/common";
 import { HomeContentCard } from "./home-content-card";
 import type { HomeContentItem } from "./home-content-card";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { useAuthFlag } from "@/hooks/use-auth-flag";
 
 interface ContentsResponse {
   data: HomeContentItem[];
@@ -18,6 +19,9 @@ export function HomeContents() {
   // 로그인 전후 / 역할 전환 시 캐시가 혼용되어 로그인 후에도 비로그인 캐시(보통 0건)가
   // 노출되던 문제 방지 — queryKey 에 사용자 scope 포함. home-notices 와 동일 패턴.
   // userId 는 의도적으로 제외 (PII 노출 방지, role 단위 필터이므로 동일 role 공유 무해).
+  // hasAuthFlag = synchronous 로그인 플래그. user 캐시 채워지기 전 "guest" scope 로 1차 fetch
+  // 한 뒤 user scope 로 2차 fetch 하는 더블 패치를 차단하기 위해 enabled 게이트로 사용.
+  const hasAuthFlag = useAuthFlag();
   const { data: user } = useQuery<LoginUser | null>({
     queryKey: ["auth", "login-user-info"],
     queryFn: () => null,
@@ -35,6 +39,9 @@ export function HomeContents() {
       return res.data.data.slice(0, 4);
     },
     staleTime: 60_000,
+    // 로그인 사용자는 user 가 캐시에 채워진 뒤에만 fetch — "guest" scope 1차 fetch 차단.
+    // 비로그인(hasAuthFlag=false) 은 즉시 fetch 허용해 게스트 캐시를 정상 사용.
+    enabled: !hasAuthFlag || user != null,
   });
 
   return (
