@@ -258,6 +258,7 @@ export function ContentsFormPostTarget({
                 }`}
               >
                 <span
+                  title={opt.label}
                   className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
                     available ? "text-[#45576F]" : "text-[#A0A8B0]"
                   }`}
