@@ -45,7 +45,8 @@ export function ContentsSearch({
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
   // 비회원(roleCode=null) 은 SelectBox value 로 null 을 다룰 수 없어 sentinel `__NON_MEMBER__` 사용.
   // 서버 listContentsQuerySchema 가 transform 으로 null 변환.
-  const { allOptions: targetAllOptions } = useTargetLabels();
+  // contentTargetOptions: SUPER_ADMIN/ADMIN 제외 — 사내회원은 게시대상과 무관하게 항상 조회 가능.
+  const { contentTargetOptions: targetAllOptions } = useTargetLabels();
   const POST_TARGET_OPTIONS = useMemo(() => {
     return [
       POST_TARGET_PLACEHOLDER,
