@@ -88,34 +88,17 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
         {/* Top info */}
         <div className="flex flex-col gap-[12px]">
           <div className="flex flex-col gap-[8px]">
-            {/* Badges + Download icon */}
-            <div className="flex items-center relative">
-              <div className="flex-1 flex items-center gap-[4px]">
-                {item.isNew && (
-                  <span className="px-[8px] py-[2px] rounded-[4px] bg-[#f4f9fd] border border-[#e3effb] font-['Pretendard'] font-medium text-[13px] text-[#63a5f2] leading-[1.5]">
-                    NEW
-                  </span>
-                )}
-                {item.hasBeenUpdated && item.isUpdated && (
-                  <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
-                    UPDATE
-                  </span>
-                )}
-              </div>
-              {hasAttachments && (
-                <button
-                  type="button"
-                  onClick={handleDownloadAll}
-                  className="flex items-center justify-center size-[38px] rounded-full bg-[#f2f6fa] shrink-0 cursor-pointer hover:bg-[#e6eef6] transition-colors absolute right-0 top-0"
-                  aria-label="全ファイルダウンロード"
-                >
-                  <Image
-                    src="/asset/images/contents/home_down_icon.svg"
-                    alt=""
-                    width={38}
-                    height={38}
-                  />
-                </button>
+            {/* Badges — 다운로드 버튼은 하단 영역으로 이동했으므로 상단은 배지만 노출 */}
+            <div className="flex items-center gap-[4px]">
+              {item.isNew && (
+                <span className="px-[8px] py-[2px] rounded-[4px] bg-[#f4f9fd] border border-[#e3effb] font-['Pretendard'] font-medium text-[13px] text-[#63a5f2] leading-[1.5]">
+                  NEW
+                </span>
+              )}
+              {item.hasBeenUpdated && item.isUpdated && (
+                <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
+                  UPDATE
+                </span>
               )}
             </div>
 
@@ -141,10 +124,13 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
             </div>
           </div>
 
-          {/* Title */}
-          <h3 className="font-['Noto_Sans_JP'] font-semibold text-[16px] leading-[1.5] text-[#2e5884]">
-            {item.title}
-          </h3>
+          {/* Title — 콘텐츠 상세 진입 링크. (이전엔 하단 Read More 가 담당) */}
+          <Link
+            href={`/contents/${item.id}`}
+            className="font-['Noto_Sans_JP'] font-semibold text-[16px] leading-[1.5] text-[#2e5884] hover:underline"
+          >
+            <h3>{item.title}</h3>
+          </Link>
         </div>
 
         {/* Category tags — PC만 표시, 부모 그룹명 + 자식 값, 선택값 있는 그룹만 */}
@@ -168,20 +154,24 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
         )}
       </div>
 
-      {/* Read More */}
-      <div className="flex items-center">
-        <Link href={`/contents/${item.id}`} className="flex items-center">
-          <span className="font-['Pretendard'] font-medium text-[11px] text-[#004ea1] uppercase tracking-[1.375px] leading-[1.4]">
-            Read More
-          </span>
-          <Image
-            src="/asset/images/contents/read_more_icon.svg"
-            alt=""
-            width={32}
-            height={32}
-          />
-        </Link>
-      </div>
+      {/* 하단 첨부파일 아이콘 — 이전 Read More 영역. 첨부가 있을 때만 노출. */}
+      {hasAttachments && (
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={handleDownloadAll}
+            className="flex items-center justify-center size-[38px] rounded-full bg-[#f2f6fa] shrink-0 cursor-pointer hover:bg-[#e6eef6] transition-colors"
+            aria-label="全ファイルダウンロード"
+          >
+            <Image
+              src="/asset/images/contents/home_down_icon.svg"
+              alt=""
+              width={38}
+              height={38}
+            />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
