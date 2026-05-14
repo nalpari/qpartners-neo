@@ -40,8 +40,21 @@ interface DownloadLogsData {
   list: DownloadLogItem[];
 }
 
+/**
+ * ISO 시각 문자열 → JST 기준 "YYYY.MM.DD" 표시.
+ *
+ * 이전 구현은 `iso.slice(0, 10)` 으로 UTC 날짜 부분을 그대로 잘라 표시 →
+ * 새벽 시간대(JST 0~9시) 다운로드의 UTC 일자가 전날로 떨어져 검색 결과가
+ * 한 칸 어긋난 것처럼 보이는 회귀가 있었음. JST(+09:00) 오프셋을 더한 뒤
+ * UTC 컴포넌트를 추출해 일관되게 표시한다.
+ */
 function formatDate(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, ".");
+  const d = new Date(iso);
+  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(jst.getUTCDate()).padStart(2, "0");
+  return `${y}.${m}.${day}`;
 }
 
 // Design Ref: §4 — AG Grid CellRenderers
