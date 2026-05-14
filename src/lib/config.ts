@@ -62,6 +62,8 @@ if (isProductionDeploy && !QSP_ENCRYPT_BASE_URL.startsWith("https://")) {
 export const QSP_API = {
   /** No.3 Q.Partners Login API — Q.Partners 로그인 */
   login: `${QSP_BASE_URL}/api/qpartners/user/login`,
+  /** QSP Logout API — 로그아웃 (관리자/판매점/일반 공통). pwd 불요, actLog="LOGOUT" 으로 호출. */
+  logout: `${QSP_BASE_URL}/api/user/logout`,
   /** No.6 Q.Partners(일반) 회원가입 — Q.Partners 신규 일반 사용자 신청 */
   newUserReq: `${QSP_BASE_URL}/api/qpartners/user/newUserReq`,
   /** No.13 Q.Partners 유저 정보 조회 — 이메일 또는 ID로 회원정보 조회 */
