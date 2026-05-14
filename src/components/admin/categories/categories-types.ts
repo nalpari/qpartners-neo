@@ -11,6 +11,8 @@ export interface CategoryNode {
   isInternalOnly: boolean;
   sortOrder: number;
   isActive: boolean;
+  /** 콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (관리자가 토글). false 면 컬럼 자체가 미노출. */
+  isVisible: boolean;
   children: CategoryNode[];
 }
 
@@ -22,6 +24,7 @@ export interface CreateCategoryPayload {
   isInternalOnly: boolean;
   sortOrder: number;
   isActive: boolean;
+  isVisible: boolean;
 }
 
 /** PUT 요청 body (모든 필드 optional) */
@@ -30,6 +33,7 @@ export interface UpdateCategoryPayload {
   isInternalOnly?: boolean;
   sortOrder?: number;
   isActive?: boolean;
+  isVisible?: boolean;
 }
 
 /** CategoriesDetail 폼 상태 */
@@ -40,6 +44,7 @@ export interface CategoryFormState {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  isVisible: boolean;
 }
 
 /**

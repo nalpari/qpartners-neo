@@ -56,31 +56,32 @@ export function CategoriesTree({
         </div>
       </div>
 
-      {/* Thead */}
+      {/* Thead — body 1Depth/2Depth row 의 우측 영역과 동일한 폭/gap/padding 으로 정렬 일치.
+          (좌측 flex-1 + 우측 w-[350px] gap-[16px] pr-[16px] / 각 셀 너비는 body 와 1:1 매핑) */}
       <div className="flex h-[58px] items-center rounded-[6px] overflow-hidden">
         <div className="flex-1 flex items-center justify-center h-full bg-[#506273] pl-[16px] pr-[8px] rounded-l-[6px]">
           <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             カテゴリ名
           </span>
         </div>
-        <div className="flex items-center justify-center h-full bg-[#506273] w-[100px] pl-[16px] pr-[8px]">
-          <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+        <div className="flex items-center justify-end h-full bg-[#506273] w-[350px] gap-[16px] pr-[30px] rounded-r-[6px]">
+          <span className="w-[80px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             社内専用
           </span>
-        </div>
-        <div className="flex items-center justify-center h-full bg-[#506273] w-[100px] pl-[16px] pr-[8px]">
-          <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+          <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             使用
           </span>
-        </div>
-        <div className="flex items-center justify-center h-full bg-[#506273] w-[100px] pl-[16px] pr-[8px] rounded-r-[6px]">
-          <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+          <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+            表示
+          </span>
+          <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             注文
           </span>
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — scrollbar-gutter: stable 로 스크롤바 영역을 항상 예약.
+          데이터 양에 따라 세로 스크롤바가 생겨도 row 의 가로 길이가 변하지 않아 thead 와 정렬이 유지된다. */}
       <div className="flex flex-col gap-[18px] max-h-[640px] overflow-y-auto">
         {treeData.map((parent) => (
           <div key={parent.id} className="flex flex-col gap-[4px]">
@@ -129,14 +130,17 @@ export function CategoriesTree({
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-end w-[370px] gap-[34px]">
-                <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+              <div className="flex items-center justify-end w-[350px] gap-[16px]">
+                <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.isInternalOnly ? "Y" : "N"}
                 </span>
-                <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.isActive ? "Y" : "N"}
                 </span>
-                <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                  {parent.isVisible ? "Y" : "N"}
+                </span>
+                <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.sortOrder}
                 </span>
               </div>
@@ -174,14 +178,19 @@ export function CategoriesTree({
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-end w-[370px] gap-[34px]">
-                      <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                    <div className="flex items-center justify-end w-[300px] gap-[16px]">
+                      <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.isInternalOnly ? "Y" : "N"}
                       </span>
-                      <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                      <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.isActive ? "Y" : "N"}
                       </span>
-                      <span className="w-[60px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                      {/* 表示 컬럼은 1Depth(부모) 카테고리에만 적용 — 콘텐츠 목록 ag-grid 의
+                          parent 컬럼 노출 토글이므로 자식 행은 "-" 로 표시. */}
+                      <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                        -
+                      </span>
+                      <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.sortOrder}
                       </span>
                     </div>

@@ -143,6 +143,7 @@ export function CategoriesContents() {
         isInternalOnly: form.isInternalOnly,
         sortOrder: form.sortOrder,
         isActive: form.isActive,
+        isVisible: form.isVisible,
       });
     } else if (selectedId !== null) {
       updateMutation.mutate({
@@ -152,6 +153,7 @@ export function CategoriesContents() {
           isInternalOnly: form.isInternalOnly,
           sortOrder: form.sortOrder,
           isActive: form.isActive,
+          isVisible: form.isVisible,
         },
       });
     }

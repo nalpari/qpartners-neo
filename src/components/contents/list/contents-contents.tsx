@@ -36,6 +36,8 @@ interface CategoryNode {
   parentId: number | null;
   isInternalOnly: boolean;
   isActive: boolean;
+  /** 관리자가 토글 — false 면 콘텐츠 목록 ag-grid 의 카테고리 컬럼에서 제외된다. */
+  isVisible: boolean;
   sortOrder: number;
   children: CategoryNode[];
 }

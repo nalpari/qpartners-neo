@@ -254,7 +254,10 @@ export function ContentsTable({
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
-    const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
+    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
+    const categoryColumns: ColDef<ContentListItem>[] = categories
+      .filter((parent) => parent.isVisible !== false)
+      .map((parent) => ({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;

@@ -188,6 +188,7 @@ model Category {
   isInternalOnly Boolean           @default(false) @map("is_internal_only")
   sortOrder      Int               @default(1) @map("sort_order")
   isActive       Boolean           @default(true) @map("is_active")
+  isVisible      Boolean           @default(true) @map("is_visible")
   createdAt      DateTime          @default(now()) @map("created_at")
   createdBy      String?           @map("created_by") @db.VarChar(255)
   updatedAt      DateTime          @updatedAt @map("updated_at")
