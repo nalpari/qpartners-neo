@@ -6,6 +6,7 @@ erDiagram
         varchar role_name
         varchar description
         boolean is_active
+        boolean is_system
         datetime created_at
         varchar created_by
         datetime updated_at
@@ -99,7 +100,7 @@ erDiagram
     qp_content_targets {
         int id PK
         int content_id FK
-        enum target_type
+        varchar role_code FK
         datetime start_at
         datetime end_at
         datetime created_at
@@ -143,11 +144,24 @@ erDiagram
         varchar updated_by
     }
 
+    qp_content_inline_images {
+        int id PK
+        int content_id FK
+        enum owner_type
+        varchar owner_user_id
+        varchar file_name
+        varchar file_path
+        bigint file_size
+        varchar mime_type
+        datetime created_at
+    }
+
     %% ━━━ 인증 관련 ━━━
     qp_password_reset_tokens {
         int id PK
         enum user_type
         varchar user_id
+        varchar login_id
         varchar token UK
         datetime expires_at
         boolean used
@@ -163,23 +177,19 @@ erDiagram
         datetime expires_at
         boolean verified
         datetime verified_at
+        int attempts
         datetime created_at
         varchar created_by
     }
 
-    %% ━━━ 서비스 운영 ━━━
+    %% ━━━ 홈공지 / 대량메일 ━━━
     qp_home_notices {
         int id PK
         enum user_type
         varchar user_id
-        boolean target_super_admin
-        boolean target_admin
-        boolean target_first_dealer
-        boolean target_second_dealer
-        boolean target_constructor
-        boolean target_general
         datetime start_at
         datetime end_at
+        varchar title
         text content
         varchar url
         datetime created_at
@@ -188,26 +198,36 @@ erDiagram
         varchar updated_by
     }
 
+    qp_home_notice_targets {
+        int id PK
+        int home_notice_id FK
+        varchar role_code FK
+    }
+
     qp_mass_mails {
         int id PK
         enum user_type
         varchar user_id
         varchar sender_name
-        boolean target_super_admin
-        boolean target_admin
-        boolean target_first_dealer
-        boolean target_second_dealer
-        boolean target_constructor
-        boolean target_general
-        boolean opt_out
         varchar subject
         mediumtext body
         enum status
         datetime sent_at
+        int sent_total
+        int sent_success
+        int sent_failed
+        boolean opt_out
         datetime created_at
         varchar created_by
+        varchar created_by_name
         datetime updated_at
         varchar updated_by
+    }
+
+    qp_mass_mail_targets {
+        int id PK
+        int mass_mail_id FK
+        varchar role_code FK
     }
 
     qp_mass_mail_attachments {
@@ -222,6 +242,21 @@ erDiagram
         varchar updated_by
     }
 
+    qp_mass_mail_recipients {
+        int id PK
+        int mass_mail_id FK
+        varchar email
+        varchar user_name
+        varchar auth_role_code
+        enum status
+        datetime sent_at
+        varchar error_message
+        int retry_count
+        datetime created_at
+        varchar created_by
+    }
+
+    %% ━━━ 로그 / 문의 / 외부 I/F ━━━
     qp_download_logs {
         int id PK
         enum user_type
@@ -246,16 +281,44 @@ erDiagram
         varchar created_by
     }
 
+    qp_interface_log {
+        int id PK
+        varchar trace_id
+        varchar system
+        varchar direction
+        varchar api_name
+        varchar method
+        varchar request_url
+        text request_body
+        int response_status
+        text response_body
+        varchar result_code
+        int duration_ms
+        varchar caller_route
+        varchar user_id
+        varchar user_type
+        varchar error_message
+        datetime created_at
+        varchar created_by
+    }
+
     %% ━━━ 관계 ━━━
     qp_roles ||--o{ qp_role_menu_permissions : "has"
+    qp_roles ||--o{ qp_content_targets : "has"
+    qp_roles ||--o{ qp_home_notice_targets : "has"
+    qp_roles ||--o{ qp_mass_mail_targets : "has"
     qp_menus ||--o{ qp_role_menu_permissions : "has"
     qp_menus ||--o{ qp_menus : "parent"
     qp_code_headers ||--o{ qp_code_details : "has"
     qp_contents ||--o{ qp_content_targets : "has"
     qp_contents ||--o{ qp_content_categories : "has"
     qp_contents ||--o{ qp_content_attachments : "has"
+    qp_contents ||--o{ qp_content_inline_images : "has"
     qp_contents ||--o{ qp_download_logs : "has"
     qp_content_attachments ||--o{ qp_download_logs : "has"
     qp_categories ||--o{ qp_content_categories : "has"
     qp_categories ||--o{ qp_categories : "parent"
+    qp_home_notices ||--o{ qp_home_notice_targets : "has"
+    qp_mass_mails ||--o{ qp_mass_mail_targets : "has"
     qp_mass_mails ||--o{ qp_mass_mail_attachments : "has"
+    qp_mass_mails ||--o{ qp_mass_mail_recipients : "has"

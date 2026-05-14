@@ -3,7 +3,7 @@
 > HANASYS DESIGN / Q.Order / Q.Musubi 등 외부 사이트에서 **Q.Partners-neo 로 자동로그인 진입**하기 위한 연동 가이드입니다.
 > `autoLoginParam1` 생성(암호화)부터 Q.Partners-neo 에서 복호화 후 로그인 완료까지 **외부 사이트 개발자 관점**에서 정리했습니다.
 
-- **Document version**: 2.0 (2026-04-30)
+- **Document version**: 2.0 (2026-05-11)
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
 - **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력 — 양방향 가이드 통일
 
@@ -68,7 +68,7 @@ raw 16 byte 를 직접 키로 사용하므로 (SHA-256 KDF 가 없음), **저엔
 iv = UTF-8(`${YYYYMMDD_KST}_autoL!!`)   // 정확히 16 byte (8 + 8)
 ```
 
-- `YYYYMMDD_KST` 는 **KST(UTC+09:00) 기준** 오늘 날짜 (예: `20260430`).
+- `YYYYMMDD_KST` 는 **KST(UTC+09:00) 기준** 오늘 날짜 (예: `20260511`).
 - 접미사 `_autoL!!` 는 **고정 상수** — outbound 와 동일한 값으로 양방향 통일.
 - 날짜가 바뀌면 IV 도 바뀌므로, **자정 경계**(KST 00:00)에 발급된 cipher 는 Q.Partners-neo 서버에서 **전일 IV 로 자동 재시도**하여 복호화한다.
 - 외부 사이트는 **cipher 생성 시점의 KST 날짜**를 사용하면 된다.
@@ -320,6 +320,6 @@ flowchart TD
 
 | 버전 | 날짜 | 변경사항 |
 |---|---|---|
-| 1.0 | 2026-04-22 | 초안 작성 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT)) |
-| **2.0** | **2026-04-30** | **사양 재정렬 — outbound 와 통일** (AES-128-CBC + raw 16B key + 결정적 IV `YYYYMMDD_autoL!!` + Base64(ciphertext)). 환경변수명 `AUTO_LOGIN_AES_KEY` → `AUTO_LOGIN_INBOUND_AES_KEY` 로 분리. 3사 측 inbound encrypt 미구현 시점에 변경하여 호환 부담 0. |
-| **2.1** | **2026-04-30** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
+| 1.0 | 2026-05-11 | 초안 작성 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT)) |
+| **2.0** | **2026-05-11** | **사양 재정렬 — outbound 와 통일** (AES-128-CBC + raw 16B key + 결정적 IV `YYYYMMDD_autoL!!` + Base64(ciphertext)). 환경변수명 `AUTO_LOGIN_AES_KEY` → `AUTO_LOGIN_INBOUND_AES_KEY` 로 분리. 3사 측 inbound encrypt 미구현 시점에 변경하여 호환 부담 0. |
+| **2.1** | **2026-05-11** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
