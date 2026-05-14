@@ -62,7 +62,8 @@ export const qspLoginResponseSchema = z.object({
     code: z.number(),
     resultCode: z.string(),
     message: z.string(),
-    resultMsg: z.string(),
+    // QSP 응답에서 null 또는 필드 자체 누락 가능 — logout schema 와 동일 정책으로 통일.
+    resultMsg: z.string().nullish(),
   }),
 });
 
@@ -76,7 +77,8 @@ export const qspLogoutResponseSchema = z.object({
     code: z.number(),
     resultCode: z.string(),
     message: z.string(),
-    resultMsg: z.string().nullable(),
+    // QSP 응답에서 null 또는 필드 자체 누락 가능 — login schema 와 동일 정책으로 통일.
+    resultMsg: z.string().nullish(),
   }),
 });
 

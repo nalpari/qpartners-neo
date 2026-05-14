@@ -162,7 +162,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        message: { type: "string", example: "로그아웃 되었습니다" },
+                        message: { type: "string", example: "ログアウトが完了しました" },
                       },
                     },
                   },
@@ -170,7 +170,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "500": errorResponse("서버 내부 오류"),
+          "403": errorResponse("same-origin 검증 실패 (CSRF 차단). 응답 시 쿠키는 함께 삭제됨"),
+          "500": errorResponse("서버 내부 오류 (응답 시 쿠키는 함께 삭제됨)"),
         },
       },
     },

@@ -16,12 +16,15 @@ const COOKIE_CLEAR_OPTIONS = {
 };
 
 /**
- * same-origin 검증 — 강제 로그아웃 CSRF 심층 방어.
+ * same-origin 검증 — 보조적 심층 방어 (SameSite=Lax 가 주력).
  *
- * SameSite=Lax 쿠키로 1차 보호되지만, 일부 우회 케이스(서브도메인 takeover, embed iframe)
- * 에 대비해 Origin / Referer 헤더가 자신의 origin 과 일치하는지 추가 검증한다.
- * 둘 다 없는 환경(엄격한 프록시/일부 모바일 in-app browser)에서는 통과(fail-open) —
- * 실질 피해는 세션 종료뿐이라 정상 사용자 차단을 막는 쪽을 우선한다.
+ * 본 라우트의 CSRF 방어 주체는 인증 쿠키의 `sameSite: "lax"` 속성이다.
+ * 본 함수는 일부 우회 케이스(서브도메인 takeover, embed iframe 등)에 대비한
+ * 2차 검증으로 Origin / Referer 헤더가 자신의 origin 과 일치하는지만 추가 확인한다.
+ *
+ * Origin / Referer 둘 다 없는 환경(엄격한 프록시·일부 모바일 in-app browser)에서는
+ * 통과(fail-open) — 1차 방어(SameSite=Lax) 가 이미 동작하고 실질 피해는 세션 종료뿐이라
+ * 정상 사용자 차단을 막는 쪽을 우선한다.
  */
 function isSameOrigin(request: NextRequest): boolean {
   const expected = request.nextUrl.origin;
@@ -52,10 +55,15 @@ export async function POST(request: NextRequest) {
   try {
     if (!isSameOrigin(request)) {
       console.warn("[POST /api/auth/logout] same-origin 검증 실패 — 차단");
-      return NextResponse.json(
+      // 403 응답에도 쿠키 삭제 — fail-open 정책과 일관. CSRF 차단되더라도 정상 사용자
+      // 입장에서는 로그아웃이 끝나야 하며, performLogout 이 /login 으로 이동한 뒤
+      // JWT 쿠키가 살아남는 silent session leak 을 차단한다.
+      const errResponse = NextResponse.json(
         { error: "リクエスト元が無効です" },
         { status: 403 },
       );
+      errResponse.cookies.set(COOKIE_NAME, "", COOKIE_CLEAR_OPTIONS);
+      return errResponse;
     }
 
     const user = await getUserFromRequest(request);
@@ -127,7 +135,7 @@ export async function POST(request: NextRequest) {
     }
 
     const response = NextResponse.json({
-      data: { message: "로그아웃 되었습니다" },
+      data: { message: "ログアウトが完了しました" },
     });
     response.cookies.set(COOKIE_NAME, "", COOKIE_CLEAR_OPTIONS);
     return response;
