@@ -108,11 +108,28 @@ export const listContentsQuerySchema = z.object({
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
 });
 
-export const downloadLogsQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20),
-  keyword: z.string().max(100).optional(),
-});
+/** YYYY-MM-DD 형식 검증 — 실제 시각 변환은 핸들러에서 jst-day 헬퍼로 수행. */
+const dateOnlyString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "日付の形式が正しくありません(YYYY-MM-DD)");
+
+export const downloadLogsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(20),
+    keyword: z.string().max(100).optional(),
+    dateFrom: dateOnlyString.optional(),
+    dateTo: dateOnlyString.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.dateFrom && val.dateTo && val.dateFrom > val.dateTo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dateTo"],
+        message: "終了日は開始日以降の日付を指定してください",
+      });
+    }
+  });
 
 // ─── Types ───
 
