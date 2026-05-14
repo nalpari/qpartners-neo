@@ -53,6 +53,23 @@ export async function POST(request: NextRequest) {
   // 2. QSP API 호출
   const { loginId, pwd, userTp } = result.data;
 
+  const qspRequestBody = {
+    loginId,
+    pwd,
+    userTp,
+    accsSiteCd: "QPARTNERS",
+    actLog: "LOGIN",
+    requestId: crypto.randomUUID(),
+  };
+
+  // 디버그: DEBUG_QSP_LOGIN=true 시 터미널에서 그대로 재현 가능한 curl 명령을 stdout 에 출력.
+  // pwd 평문이 노출되므로 운영 상시 활성화 금지 — 진단 시에만 일시 활성화.
+  if (process.env.DEBUG_QSP_LOGIN === "true") {
+    console.log(
+      `[DEBUG_QSP_LOGIN] curl -X POST '${QSP_API.login}' -H 'Content-Type: application/json; charset=utf-8' -d ${JSON.stringify(JSON.stringify(qspRequestBody))}`,
+    );
+  }
+
   let qspResponse: Response;
   try {
     qspResponse = await fetchWithLog(
@@ -62,14 +79,7 @@ export async function POST(request: NextRequest) {
         headers: { "Content-Type": "application/json; charset=utf-8" },
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify({
-          loginId,
-          pwd,
-          userTp,
-          accsSiteCd: "QPARTNERS",
-          actLog: "LOGIN",
-          requestId: crypto.randomUUID(),
-        }),
+        body: JSON.stringify(qspRequestBody),
       },
       {
         system: "QSP",
