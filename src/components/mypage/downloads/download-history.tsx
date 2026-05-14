@@ -137,7 +137,13 @@ export function DownloadHistory() {
   const mobileHasMore = mobilePage * pageSize < totalCount;
 
   // 검색 실행 — 키워드와 기간 모두 search* 상태로 커밋해 한 번에 query 재발사.
+  // 두 날짜 입력은 서로의 선택 가능 범위를 제한하지 않음(사용자가 자유롭게 양방향 수정 가능).
+  // 대신 검색 시점에 dateFrom > dateTo 면 알림으로 안내하고 요청 자체를 차단.
   const handleSearch = () => {
+    if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
+      openAlert({ type: "alert", message: "終了日は開始日以降の日付を指定してください" });
+      return;
+    }
     setSearchKeyword(keyword);
     setSearchDateFrom(dateFrom ? toDateString(dateFrom) : null);
     setSearchDateTo(dateTo ? toDateString(dateTo) : null);
@@ -467,7 +473,6 @@ function DownloadHistorySearch({
               <DatePicker
                 value={dateFrom}
                 onChange={onDateFromChange}
-                maxDate={dateTo ?? undefined}
                 dateFormat="yyyy.MM.dd"
                 placeholder="YYYY.MM.DD"
               />
@@ -479,7 +484,6 @@ function DownloadHistorySearch({
               <DatePicker
                 value={dateTo}
                 onChange={onDateToChange}
-                minDate={dateFrom ?? undefined}
                 dateFormat="yyyy.MM.dd"
                 placeholder="YYYY.MM.DD"
               />
