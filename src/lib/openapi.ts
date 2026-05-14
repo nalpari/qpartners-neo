@@ -2353,7 +2353,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1).",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다.",
         requestBody: {
           required: true,
           content: {
