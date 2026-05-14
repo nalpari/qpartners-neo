@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
           pwd,
           userTp,
           accsSiteCd: "QPARTNERS",
-          actLog: "LOGOUT",
+          actLog: "LOGIN",
           requestId: crypto.randomUUID(),
         }),
       },

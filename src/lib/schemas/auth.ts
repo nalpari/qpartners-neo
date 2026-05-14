@@ -68,6 +68,20 @@ export const qspLoginResponseSchema = z.object({
 
 export type QspLoginResponse = z.infer<typeof qspLoginResponseSchema>;
 
+// ─── QSP 로그아웃 응답 ───
+// QSP Logout API (POST /api/user/logout) — pwd 불요, data 없음. result 만 검증.
+
+export const qspLogoutResponseSchema = z.object({
+  result: z.object({
+    code: z.number(),
+    resultCode: z.string(),
+    message: z.string(),
+    resultMsg: z.string().nullable(),
+  }),
+});
+
+export type QspLogoutResponse = z.infer<typeof qspLogoutResponseSchema>;
+
 // ─── 클라이언트에 전달할 로그인 사용자 정보 ───
 
 export const loginUserSchema = qspLoginUserSchema

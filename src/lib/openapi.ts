@@ -140,10 +140,20 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "로그아웃",
-        description: "인증 쿠키를 삭제하여 세션 종료.",
+        description: `Q.Partners-neo 세션 종료 + QSP 로그아웃 로그 기록.
+
+**흐름:**
+1. 쿠키의 JWT 에서 \`loginId/userTp\` 추출 (없거나 만료면 QSP 호출 스킵 — 멱등 처리)
+2. QSP \`POST /api/user/logout\` 호출 (\`actLog: "LOGOUT"\`) — qp_interface_log 자동 기록
+3. QSP 응답과 무관하게 인증 쿠키는 항상 삭제 (fail-open) — 클라이언트 세션은 반드시 끊김
+
+**QSP 사양 (인터페이스 사양서 v1.0):**
+- Endpoint: \`POST /api/user/logout\`
+- Request: \`loginId\`, \`accsSiteCd="QPARTNERS"\`, \`actLog="LOGOUT"\`, \`requestId\`
+- pwd 불요 (로그인과 차이점)`,
         responses: {
           "200": {
-            description: "로그아웃 성공",
+            description: "로그아웃 처리 완료 (QSP 호출 실패해도 200 — 쿠키는 항상 삭제)",
             content: {
               "application/json": {
                 schema: {
@@ -160,6 +170,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "500": errorResponse("서버 내부 오류"),
         },
       },
     },
