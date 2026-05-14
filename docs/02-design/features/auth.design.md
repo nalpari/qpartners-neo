@@ -47,7 +47,7 @@ Content-Type: application/json
   "pwd": "1234",
   "userTp": "GENERAL",
   "accsSiteCd": "QPARTNERS",
-  "actLog": "LOGOUT",
+  "actLog": "LOGIN",
   "requestId": "{uuid}"
 }
 ```
@@ -58,7 +58,7 @@ Content-Type: application/json
 | pwd | string | Y | 비밀번호 |
 | userTp | string | Y | 사용자 유형 (ADMIN/DEALER/SEKO/GENERAL) |
 | accsSiteCd | string | Y | 접근 사이트 코드, "QPARTNERS" 고정 |
-| actLog | string | N | 행동 로그 ("LOGOUT" 등) |
+| actLog | string | Y | 행동 로그 — `LOGIN` / `AUTO_LOGIN` / `LOGOUT` (login route 는 `LOGIN` 고정) |
 | requestId | string | N | 요청 추적 ID |
 
 ### Response (2026-03-25 실제 호출 확인 완료)
@@ -198,7 +198,12 @@ Content-Type: application/json
 
 ### `POST /api/auth/logout` — 로그아웃
 
-**처리:** 세션/쿠키 무효화
+**서버 처리 흐름:**
+1. JWT 쿠키에서 `loginId`(=userId) / `userTp` 추출 — 없거나 만료면 QSP 호출 스킵 (멱등)
+2. QSP `POST /api/user/logout` 호출 (`actLog: "LOGOUT"`) — `fetchWithLog` 로 `qp_interface_log` 자동 기록
+3. QSP 응답 성공/실패와 무관하게 인증 쿠키 삭제 (fail-open)
+   - QSP 502/timeout 이라도 사용자 입장에서는 로그아웃이 반드시 완료되어야 함
+   - QSP 측 로그 누락은 `qp_interface_log` 에러 라인으로 운영자가 별도 추적
 
 **Response (200):**
 ```json
@@ -206,6 +211,66 @@ Content-Type: application/json
   "data": { "message": "로그아웃 되었습니다" }
 }
 ```
+
+**Response (500):**
+```json
+{
+  "error": "ログアウト処理中にサーバーエラーが発生しました"
+}
+```
+
+---
+
+## 3-1. QSP Logout API Specification
+
+QSP 인터페이스 사양서 v1.0 — `QSP Logout API` 시트 기준.
+
+### Request
+
+```
+POST {QSP_BASE_URL}/api/user/logout
+Content-Type: application/json
+```
+
+```json
+{
+  "loginId": "test1",
+  "accsSiteCd": "QPARTNERS",
+  "actLog": "LOGOUT",
+  "requestId": "{uuid}"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| loginId | string(100) | Y | 로그인 ID |
+| accsSiteCd | string(10) | Y | "QPARTNERS" 고정 |
+| actLog | string(10) | Y | `LOGIN` / `AUTO_LOGIN` / `LOGOUT` (logout route 는 `LOGOUT` 고정) |
+| requestId | string(255) | N | 요청 추적 ID — 로그아웃 추적 아이디로 사용 가능 |
+
+> 로그인 API 와 달리 **`pwd` 불요**. JWT 쿠키의 `loginId` 만 있으면 호출 가능.
+
+### Response
+
+```json
+{
+  "result": {
+    "code": 200,
+    "message": "success",
+    "resultCode": "S",
+    "resultMsg": ""
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| result.code | int(3) | 200(성공) / 400(에러) |
+| result.message | string(255) | 결과 메시지 |
+| result.resultCode | string(1) | `S` (성공) / `E` (에러) |
+| result.resultMsg | string(255)? | 결과 메시지 2 |
+
+**성공/실패 판별:** `result.resultCode === "S"`
 
 ---
 
@@ -266,7 +331,7 @@ src/app/api/auth/
 ├── login/
 │   └── route.ts              # POST — QSP 로그인 프록시 + JWT 쿠키 설정
 ├── logout/
-│   └── route.ts              # POST — 로그아웃 (쿠키 삭제)
+│   └── route.ts              # POST — QSP /api/user/logout 호출 + JWT 쿠키 삭제
 └── me/
     └── route.ts              # GET — 현재 로그인 사용자 정보
 src/lib/
@@ -309,3 +374,4 @@ src/
 | 0.1 | 2026-03-25 | Initial draft | CK |
 | 0.2 | 2026-03-25 | QSP 실제 응답 구조 반영 (4개 계정 테스트 완료) | CK |
 | 0.3 | 2026-03-25 | 구현 완료 반영 — JWT/미들웨어/me 엔드포인트 추가, 파일 구조 업데이트 | CK |
+| 0.4 | 2026-05-14 | actLog 값 정정(LOGIN), QSP Logout API 사양 및 `/api/auth/logout` 흐름 갱신 | CK |
