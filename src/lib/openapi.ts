@@ -2376,7 +2376,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
         description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다.",
+          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다.",
         parameters: [
           {
             name: "id",
@@ -3682,7 +3682,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       Category: {
         type: "object",
-        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "createdAt", "updatedAt"],
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "isVisible", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
           parentId: { type: "integer", nullable: true, example: null },
@@ -3691,6 +3691,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", example: false },
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
+          isVisible: { type: "boolean", example: true, description: "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (1Depth 전용)" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
@@ -3701,7 +3702,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       // CATEGORY_TREE_INCLUDE.select(`category-tree.ts`)와 일치해야 함.
       CategoryNodeMinimal: {
         type: "object",
-        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive"],
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "isVisible"],
         properties: {
           id: { type: "integer", example: 1 },
           parentId: { type: "integer", nullable: true, example: null },
@@ -3710,6 +3711,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", example: false },
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
+          isVisible: { type: "boolean", example: true, description: "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (1Depth 전용)" },
         },
       },
       CategoryTree: {
@@ -3845,6 +3847,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", default: false },
           sortOrder: { type: "integer", default: 1 },
           isActive: { type: "boolean", default: true },
+          isVisible: { type: "boolean", default: true, description: "1Depth 전용 — 자식 등록 시 생략 가능 (서버 default true 적용)" },
         },
       },
       Menu: {
@@ -4184,6 +4187,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean" },
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
+          isVisible: { type: "boolean", description: "1Depth 전용 — 자식 카테고리(parentId !== null)에 전송 시 400 거절" },
         },
       },
       UpdateCodeDetail: {

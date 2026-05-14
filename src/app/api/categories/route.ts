@@ -22,10 +22,14 @@ export async function GET(request: NextRequest) {
       if (auth instanceof NextResponse) return auth;
     }
 
+    // isVisible(1Depth 한정) 서버측 필터:
+    //   activeOnly=true (일반 사용자 경로) 일 때만 isVisible=false 부모 카테고리를 응답에서 제외.
+    //   관리자 트리(activeOnly=false) 는 토글 UI 가 모든 행을 보여줘야 하므로 제외하지 않는다.
+    //   자식(2Depth) 은 isVisible 정책 대상이 아니므로 children where 에는 적용하지 않음.
     const categories = await prisma.category.findMany({
       where: {
         parentId: null,
-        ...(activeOnly && { isActive: true }),
+        ...(activeOnly && { isActive: true, isVisible: true }),
         ...(internalOnly && { isInternalOnly: true }),
       },
       include: {
