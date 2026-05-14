@@ -20,8 +20,8 @@ import { usePathname, useSearchParams } from "next/navigation";
  *   - 민감 쿼리 파라미터(자동로그인 페이로드·비밀번호 재설정 토큰·인증 코드 등) 는
  *     sanitize 화이트리스트로 제거. page_location 도 sanitize 된 path 로 재구성해
  *     `window.location.href` 원본 전송 차단.
- *   - 동적 라우트 segment(`/contents/123`, `/admin/bulk-mail/456` 등) 는
- *     정규화하여 회원/콘텐츠 ID enumeration 차단 (일본 個人情報保護法 보수 운영).
+ *   - 동적 라우트 segment 는 raw ID 그대로 송신 — 운영팀의 콘텐츠별 조회수 추적
+ *     요구(Redmine #2216 note-1). PII 우려보다 비즈니스 통계 우선.
  *   - page_title 미전송 — 관리자 회원 상세 등에서 이름/이메일이 포함될 수 있어 제외.
  *
  * Suspense 경계:
@@ -123,35 +123,6 @@ function sanitizeSearch(searchParams: URLSearchParams): string {
   return out.toString();
 }
 
-/**
- * 동적 라우트 segment 정규화.
- *
- * `pathname` 에는 `/contents/123`, `/admin/bulk-mail/456` 처럼 순차 PK 가 그대로
- * 포함되어 GA 콘솔에서 회원/콘텐츠 ID enumeration · 비공개 콘텐츠 존재 추정 등
- * PII / 비밀 정보 누설 위험이 있다. App Router 라우트 디렉토리 구조와 동일하게
- * `[id]` placeholder 로 치환하여 차단한다.
- *
- * Prisma 스키마상 `Content.id`/`MassMail.id` 모두 `Int autoincrement` 이므로
- * 정규식을 `\d+` 로 좁혀 정적 형제 라우트(`/contents/create`,
- * `/admin/bulk-mail/create`) 가 잘못 정규화되어 funnel 분석이 왜곡되는 것을 방지.
- *
- * 신규 동적 라우트 추가 시 본 함수도 함께 갱신해야 한다 (CI 자동 검출 어려움
- * — `src/app/**\/[*]` 디렉토리 변경 시 페어 변경 권장).
- */
-const DYNAMIC_ROUTE_PATTERNS: ReadonlyArray<[RegExp, string]> = [
-  // `/contents/[id]` 및 그 하위(`/contents/[id]/edit` 등) — `\d+` 로 숫자 ID 만 매칭.
-  [/^\/contents\/\d+(?=\/|$)/, "/contents/[id]"],
-  [/^\/admin\/bulk-mail\/\d+(?=\/|$)/, "/admin/bulk-mail/[id]"],
-];
-
-function normalizePathname(pathname: string): string {
-  let normalized = pathname;
-  for (const [pattern, replacement] of DYNAMIC_ROUTE_PATTERNS) {
-    normalized = normalized.replace(pattern, replacement);
-  }
-  return normalized;
-}
-
 type PendingPageView = {
   pagePath: string;
   pageLocation: string;
@@ -172,9 +143,8 @@ function GaPageTrackerInner() {
     if (typeof window === "undefined") return;
 
     const search = sanitizeSearch(searchParams);
-    const normalizedPath = normalizePathname(pathname);
-    const pagePath = search ? `${normalizedPath}?${search}` : normalizedPath;
-    // window.location.href 원본 전송 금지 — sanitize / 정규화 된 path 로 재구성.
+    const pagePath = search ? `${pathname}?${search}` : pathname;
+    // window.location.href 원본 전송 금지 — sanitize 된 path 로 재구성.
     const pageLocation = `${window.location.origin}${pagePath}`;
 
     if (!window.gtag) {

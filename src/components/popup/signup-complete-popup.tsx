@@ -73,7 +73,7 @@ export function SignupCompletePopup() {
             {/* 안내 박스 */}
             <div className="flex flex-col gap-2 bg-[#F7F9FB] rounded-[4px] px-5 pt-4 pb-5 w-full leading-[1.5]">
               <p className="font-['Noto_Sans_JP'] font-medium text-[15px] text-[#E97923] w-full">
-                {userName || "登録したユーザー名を表示"},
+                {userName || "登録したユーザー名を表示"}　様
               </p>
               <p className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#101010] w-full">
                 一般会員登録が完了しました.

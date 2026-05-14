@@ -528,7 +528,7 @@ export function Gnb() {
                     </span>
                     <span className="w-px h-3 bg-[rgba(255,255,255,0.4)]" />
                     <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      {user?.userNm ?? ""}
+                      {user?.userNm ? `${user.userNm}　様` : ""}
                     </span>
                   </div>
                 </div>
