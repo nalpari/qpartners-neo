@@ -468,6 +468,8 @@ export function ContentsTable({
               className="contents-grid"
               loading={isLoading}
               emptyMessage="該当するコンテンツがありません。"
+              autoHeight={!(isLoading || rowData.length === 0)}
+              maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
             />
             {totalPages > 0 && (
               <Pagination
