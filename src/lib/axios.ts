@@ -37,13 +37,20 @@ api.interceptors.response.use(
       && error.response?.status === 401
       && typeof window !== "undefined"
     ) {
-      try {
-        if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
-          localStorage.removeItem(AUTH_FLAG_KEY);
-          window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+      // nginx 등 리버스 프록시의 HTTP Basic Auth 챌린지(WWW-Authenticate: Basic ...)는
+      // 앱 자체 JWT 인증 만료와 무관 — AUTH_FLAG 를 건드리면 dev 환경에서 cascade 재렌더 +
+      // queryKey 변경으로 prompt 가 반복 표출된다. Basic 챌린지는 무시하고 원본 에러만 전달.
+      const wwwAuth = error.response.headers?.["www-authenticate"];
+      const isBasicChallenge = typeof wwwAuth === "string" && /^\s*basic\b/i.test(wwwAuth);
+      if (!isBasicChallenge) {
+        try {
+          if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
+            localStorage.removeItem(AUTH_FLAG_KEY);
+            window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+          }
+        } catch (e) {
+          console.warn("[axios] AUTH_FLAG_KEY 정리 실패:", e);
         }
-      } catch (e) {
-        console.warn("[axios] AUTH_FLAG_KEY 정리 실패:", e);
       }
     }
     return Promise.reject(error);
