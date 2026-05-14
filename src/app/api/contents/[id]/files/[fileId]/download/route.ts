@@ -12,11 +12,15 @@ import { idParamSchema } from "@/lib/schemas/content";
 type Params = { params: Promise<{ id: string; fileId: string }> };
 
 // GET /api/contents/:id/files/:fileId/download — 첨부파일 다운로드
+//
+// ?preview=true 쿼리가 붙은 호출은 화면 미리보기(이미지 <img>, PDF 첫페이지 렌더 등) 용도이며
+// 실제 사용자의 다운로드 의사로 해석하지 않는다. 이 경우 DownloadLog 기록을 건너뛴다.
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const { id, fileId } = await params;
     const parsedId = idParamSchema.safeParse(id);
     const parsedFileId = idParamSchema.safeParse(fileId);
+    const isPreview = request.nextUrl.searchParams.get("preview") === "true";
 
     if (!parsedId.success || !parsedFileId.success) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
@@ -88,7 +92,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 다운로드 로그 기록 — 파일 읽기 성공 후에만 기록 (실패해도 다운로드는 진행)
-    if (user) {
+    // 미리보기(?preview=true) 호출은 사용자의 다운로드 의사가 아니므로 로그 기록 생략.
+    if (user && !isPreview) {
       try {
         await prisma.downloadLog.create({
           data: {

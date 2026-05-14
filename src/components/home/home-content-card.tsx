@@ -31,26 +31,39 @@ export interface HomeContentItem {
   attachmentCount: number;
 }
 
-const DOWNLOAD_DELAY_MS = 300;
-const MAX_DOWNLOAD_FILES = 20;
-
-// TODO: zip 다운로드 API 완성 후 제거
+/**
+ * 콘텐츠 첨부파일 일괄 다운로드 — 단일 ZIP(또는 첨부 1개면 원본) 응답을 받아 저장.
+ *
+ * 이전 구현은 각 첨부를 `<a>` 클릭으로 N회 개별 다운로드 → 다운로드 이력에도 N행이 쌓여
+ * "콘텐츠 1개 받기" 가 사용자에겐 "전체 다운로드 받은 것처럼" 보이는 회귀가 있었음.
+ * `/files/download-all` 단일 호출로 통일하면 백엔드 DownloadLog 도 콘텐츠 단위 1행으로 기록됨.
+ *
+ * 파일명은 Content-Disposition 의 `filename*=UTF-8''` 값을 우선 사용 (일본어/한국어 원본 보존).
+ */
 async function downloadAllAttachments(contentId: number): Promise<{ success: boolean }> {
   try {
-    const res = await api.get<{ data: { attachments: { id: number; fileName: string }[] } }>(`/contents/${contentId}`);
-    const attachments = res.data.data.attachments;
-    if (!attachments || attachments.length === 0) return { success: true };
+    const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
+      responseType: "blob",
+    });
 
-    const files = attachments.slice(0, MAX_DOWNLOAD_FILES);
-    for (const file of files) {
-      const link = document.createElement("a");
-      link.href = `/api/contents/${contentId}/files/${file.id}/download`;
-      link.download = file.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      await new Promise((r) => setTimeout(r, DOWNLOAD_DELAY_MS));
-    }
+    // axios 가 헤더 키를 소문자로 노출 — `content-disposition` 으로 접근.
+    const headerValue = res.headers["content-disposition"];
+    const cd: string = typeof headerValue === "string" ? headerValue : "";
+    const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const asciiMatch = cd.match(/filename="([^"]+)"/i);
+    const fallbackName = `content_${contentId}.zip`;
+    const fileName = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : (asciiMatch?.[1] ?? fallbackName);
+
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     return { success: true };
   } catch (err: unknown) {
     console.error("[Home] 첨부파일 다운로드 실패:", err);
