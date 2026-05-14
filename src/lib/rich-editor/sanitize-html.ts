@@ -218,7 +218,9 @@ export function sanitizeContentHtml(html: string | null | undefined): string {
       ALLOWED_ATTR,
       // 임의 data-* 통과 차단 — 필요한 data-type / data-checked / data-language 는 ALLOWED_ATTR 에 명시.
       ALLOW_DATA_ATTR: false,
-      ALLOW_ARIA_ATTR: true,
+      // 임의 aria-* 통과 차단 — Tiptap 출력은 ARIA 를 본문 노드에 부착하지 않음(툴바/팝오버 한정),
+      // 메일 발송 경로에서 스크린리더 조작 / UX 변조 벡터를 사전 차단.
+      ALLOW_ARIA_ATTR: false,
     });
   } catch (error: unknown) {
     console.error("[sanitizeContentHtml] sanitize 실패:", error);

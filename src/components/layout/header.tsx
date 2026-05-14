@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -224,7 +224,9 @@ export function Gnb() {
     : RELATED_SITE_URLS_DEV;
   const relatedSites = user ? getRelatedSites(user, fallbackUrls) : [];
   const showRelatedSites = relatedSites.length > 0;
-  const isLoggingOut = useRef(false);
+  // 로그아웃 진행 상태 — 중복 클릭 방어 + 버튼 비활성화/로딩 표시.
+  // QSP 호출 10초 타임아웃 동안 버튼이 멍하니 응답 없는 것처럼 보이는 UX 개선.
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
   const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
@@ -262,11 +264,15 @@ export function Gnb() {
   };
 
   const handleLogout = async () => {
-    if (isLoggingOut.current) return;
-    isLoggingOut.current = true;
-    await performLogout(queryClient);
-    router.replace("/login");
-    isLoggingOut.current = false;
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await performLogout(queryClient);
+      router.replace("/login");
+    } finally {
+      // 페이지 전환 후라도 안전하게 해제 — React 가 unmount 컴포넌트의 setState 는 무시.
+      setIsLoggingOut(false);
+    }
   };
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -528,7 +534,7 @@ export function Gnb() {
                     </span>
                     <span className="w-px h-3 bg-[rgba(255,255,255,0.4)]" />
                     <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      {user?.userNm ?? ""}
+                      {user?.userNm ? `${user.userNm}　様` : ""}
                     </span>
                   </div>
                 </div>
@@ -548,7 +554,9 @@ export function Gnb() {
                   <button
                     type="button"
                     onClick={() => { void handleLogout(); }}
-                    className="flex items-center justify-center gap-1.5 h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
+                    disabled={isLoggingOut}
+                    aria-busy={isLoggingOut || undefined}
+                    className="flex items-center justify-center gap-1.5 h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14] disabled:opacity-60 disabled:cursor-wait disabled:hover:bg-[#252525] disabled:hover:border-[#313131]"
                   >
                     <Image
                       src="/asset/images/layout/icon_logout.svg"
@@ -557,7 +565,7 @@ export function Gnb() {
                       height={16}
                     />
                     <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      ログアウト
+                      {isLoggingOut ? "ログアウト中..." : "ログアウト"}
                     </span>
                   </button>
                   {/* 톱니바퀴 (管理者) — ADM_* 매트릭스 중 하나라도 canRead=true 일 때만 노출 */}
@@ -671,7 +679,7 @@ export function Gnb() {
                     {user?.compNm ?? "-"}
                   </span>
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#e97923]">
-                    {user?.userNm ?? ""}
+                    {user?.userNm ? `${user.userNm}　様` : ""}
                   </span>
                 </div>
               </div>
@@ -764,9 +772,11 @@ export function Gnb() {
                 <button
                   type="button"
                   onClick={() => { void handleLogout(); }}
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.4] text-white uppercase whitespace-nowrap"
+                  disabled={isLoggingOut}
+                  aria-busy={isLoggingOut || undefined}
+                  className="font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.4] text-white uppercase whitespace-nowrap disabled:opacity-60 disabled:cursor-wait"
                 >
-                  ログアウト
+                  {isLoggingOut ? "ログアウト中..." : "ログアウト"}
                 </button>
               </div>
             ) : (

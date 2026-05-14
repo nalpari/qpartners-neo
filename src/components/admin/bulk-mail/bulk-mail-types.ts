@@ -198,9 +198,6 @@ export function ensureBodyHasSignature(body: string | null | undefined): string 
   return `${body}${SIGNATURE_BLOCK_HTML}`;
 }
 
-/** @deprecated `ensureBodyHasSignature` 와 동작 동일 — 점진적 교체 후 제거 예정. */
-export const resolveCreateBody = ensureBodyHasSignature;
-
 /** 폼 초기 데이터 */
 export interface FormInitialData {
   /** edit 모드 시 기존 레코드 ID */

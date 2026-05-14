@@ -72,7 +72,10 @@ const targetRoleCodesField = z
   });
 
 export const massMailCreateSchema = z.object({
-  senderName: z.string().min(1, "送信者名は必須です").max(255),
+  // SMTP From 헤더 display name 으로 사용. mailer.sanitizeFromName 이 2차 방어하지만,
+  // DB 에 저장되는 값이 1차에서 깨끗해야 향후 sanitizeFromName 변경 시 회귀 차단.
+  senderName: z.string().min(1, "送信者名は必須です").max(255)
+    .refine((v) => !/[\r\n]/.test(v), { message: "送信者名に改行を含めることはできません" }),
   /** 게시대상 권한코드 배열 — qp_roles FK (Target Dynamic from Role 후) */
   targetRoleCodes: targetRoleCodesField,
   optOut: formBool,

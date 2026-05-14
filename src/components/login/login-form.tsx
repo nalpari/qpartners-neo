@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { Checkbox } from "@/components/common/checkbox";
 import { Button } from "@/components/common/button";
-import { usePopupStore } from "@/lib/store";
 import type { TabType } from "@/components/login/types";
 
 const TAB_CONFIG = {
@@ -36,14 +35,12 @@ interface LoginFormProps {
   password: string;
   showPassword: boolean;
   saveId: boolean;
-  agreeTerms: boolean;
   error: string | null;
   isSubmitting: boolean;
   onIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onTogglePassword: () => void;
   onSaveIdChange: (checked: boolean) => void;
-  onAgreeTermsChange: (checked: boolean) => void;
   onClearId: () => void;
   onSubmit: () => void;
 }
@@ -54,21 +51,18 @@ export function LoginForm({
   password,
   showPassword,
   saveId,
-  agreeTerms,
   error,
   isSubmitting,
   onIdChange,
   onPasswordChange,
   onTogglePassword,
   onSaveIdChange,
-  onAgreeTermsChange,
   onClearId,
   onSubmit,
 }: LoginFormProps) {
-  const { openPopup } = usePopupStore();
   const config = TAB_CONFIG[activeTab];
 
-  const canSubmit = !!id.trim() && !!password.trim() && agreeTerms && !isSubmitting;
+  const canSubmit = !!id.trim() && !!password.trim() && !isSubmitting;
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,57 +165,12 @@ export function LoginForm({
           </div>
 
           {/* 옵션 영역 — 로딩 오버레이(z-50) 위에 배치하여 클릭 허용 */}
-          <div className="flex flex-col gap-[14px] lg:flex-row lg:gap-5 relative z-[51]">
-            <div className="lg:flex-1">
-              <Checkbox
-                checked={saveId}
-                onChange={onSaveIdChange}
-                label="ID Save"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={agreeTerms}
-                onChange={onAgreeTermsChange}
-              />
-              {/* 중첩 <label> 회피 — docs/fix-checkbox-nested-label.md 참조.
-                  span 자체에 onClick 을 걸어 텍스트 영역 클릭으로도 체크 토글 가능하게 한다.
-                  키보드 사용자(Tab → Space/Enter)도 토글 가능하도록 role="checkbox" + tabIndex
-                  + onKeyDown 을 부여한다. 약관 동의는 법적 유효성 관점에서 키보드 접근 필수.
-                  내부 (表示) 버튼은 stopPropagation 으로 토글 트리거를 차단한다. */}
-              <span
-                role="checkbox"
-                aria-checked={agreeTerms}
-                tabIndex={0}
-                onClick={() => onAgreeTermsChange(!agreeTerms)}
-                onKeyDown={(e) => {
-                  // Space → 체크 토글 (표준 체크박스 키바인딩)
-                  // Enter → form submit 직접 트리거. span 에 focus 있는 상태에서는 브라우저가
-                  //         form 의 implicit submit 으로 전파해주지 않아 focus 이동처럼 보이는 문제 수정.
-                  if (e.key === " ") {
-                    e.preventDefault();
-                    onAgreeTermsChange(!agreeTerms);
-                  } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (canSubmit) onSubmit();
-                  }
-                }}
-                className="font-['Noto_Sans_JP'] text-[13px] lg:text-[14px] text-[#767676] leading-[1.5] cursor-pointer"
-              >
-                利用規約に同意する必要があります
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    openPopup("terms");
-                  }}
-                  className="font-['Noto_Sans_JP'] font-semibold text-[#E97923] underline cursor-pointer"
-                >
-                  (表示)
-                </button>
-              </span>
-            </div>
+          <div className="relative z-[51]">
+            <Checkbox
+              checked={saveId}
+              onChange={onSaveIdChange}
+              label="ID Save"
+            />
           </div>
         </div>
 

@@ -140,10 +140,20 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "로그아웃",
-        description: "인증 쿠키를 삭제하여 세션 종료.",
+        description: `Q.Partners-neo 세션 종료 + QSP 로그아웃 로그 기록.
+
+**흐름:**
+1. 쿠키의 JWT 에서 \`loginId/userTp\` 추출 (없거나 만료면 QSP 호출 스킵 — 멱등 처리)
+2. QSP \`POST /api/user/logout\` 호출 (\`actLog: "LOGOUT"\`) — qp_interface_log 자동 기록
+3. QSP 응답과 무관하게 인증 쿠키는 항상 삭제 (fail-open) — 클라이언트 세션은 반드시 끊김
+
+**QSP 사양 (인터페이스 사양서 v1.0):**
+- Endpoint: \`POST /api/user/logout\`
+- Request: \`loginId\`, \`accsSiteCd="QPARTNERS"\`, \`actLog="LOGOUT"\`, \`requestId\`
+- pwd 불요 (로그인과 차이점)`,
         responses: {
           "200": {
-            description: "로그아웃 성공",
+            description: "로그아웃 처리 완료 (QSP 호출 실패해도 200 — 쿠키는 항상 삭제)",
             content: {
               "application/json": {
                 schema: {
@@ -152,7 +162,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        message: { type: "string", example: "로그아웃 되었습니다" },
+                        message: { type: "string", example: "ログアウトが完了しました" },
                       },
                     },
                   },
@@ -160,6 +170,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "403": errorResponse("same-origin 검증 실패 (CSRF 차단). 응답 시 쿠키는 함께 삭제됨"),
+          "500": errorResponse("서버 내부 오류 (응답 시 쿠키는 함께 삭제됨)"),
         },
       },
     },
@@ -2364,7 +2376,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
         description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다.",
+          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다.",
         parameters: [
           {
             name: "id",
@@ -3670,7 +3682,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       Category: {
         type: "object",
-        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "createdAt", "updatedAt"],
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "isVisible", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
           parentId: { type: "integer", nullable: true, example: null },
@@ -3679,6 +3691,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", example: false },
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
+          isVisible: { type: "boolean", example: true, description: "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (1Depth 전용)" },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
@@ -3689,7 +3702,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       // CATEGORY_TREE_INCLUDE.select(`category-tree.ts`)와 일치해야 함.
       CategoryNodeMinimal: {
         type: "object",
-        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive"],
+        required: ["id", "categoryCode", "name", "isInternalOnly", "sortOrder", "isActive", "isVisible"],
         properties: {
           id: { type: "integer", example: 1 },
           parentId: { type: "integer", nullable: true, example: null },
@@ -3698,6 +3711,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", example: false },
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
+          isVisible: { type: "boolean", example: true, description: "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (1Depth 전용)" },
         },
       },
       CategoryTree: {
@@ -3833,6 +3847,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean", default: false },
           sortOrder: { type: "integer", default: 1 },
           isActive: { type: "boolean", default: true },
+          isVisible: { type: "boolean", default: true, description: "1Depth 전용 — 자식 등록 시 생략 가능 (서버 default true 적용)" },
         },
       },
       Menu: {
@@ -4172,6 +4187,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           isInternalOnly: { type: "boolean" },
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
+          isVisible: { type: "boolean", description: "1Depth 전용 — 자식 카테고리(parentId !== null)에 전송 시 400 거절" },
         },
       },
       UpdateCodeDetail: {

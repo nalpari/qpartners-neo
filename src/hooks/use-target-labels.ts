@@ -30,6 +30,16 @@ interface RoleLabelsResponse {
 /** 비회원 라벨 (권한관리 외부 sentinel — 항상 고정) */
 const NON_MEMBER_LABEL = "非会員";
 
+/**
+ * 콘텐츠 게시대상(등록 폼 / 검색조건) 노출 제외 권한 코드.
+ * 사내회원(SUPER_ADMIN / ADMIN)은 게시대상과 무관하게 항상 콘텐츠 조회가 가능하므로
+ * 게시대상 선택지에서 제외한다. 권한관리 / 홈공지 / 대량메일 등 다른 화면은 영향 없음.
+ */
+const ROLE_CODES_HIDDEN_FROM_CONTENT_TARGET: ReadonlySet<string> = new Set([
+  "SUPER_ADMIN",
+  "ADMIN",
+]);
+
 /** 6 기본 권한 표시 우선 순서 — 그 외 추가 권한은 roleCode 알파벳 순으로 뒤에 배치. */
 const SYSTEM_ROLE_ORDER: Record<string, number> = {
   SUPER_ADMIN: 1,
@@ -105,6 +115,11 @@ export function useTargetLabels() {
       { roleCode: null, label: NON_MEMBER_LABEL, isActive: true, isSystem: true },
     ];
 
+    /** 콘텐츠 게시대상 전용 — 사내회원(SUPER_ADMIN / ADMIN) 제외 옵션. */
+    const contentTargetOptions: TargetRoleOption[] = allOptions.filter(
+      (o) => o.roleCode === null || !ROLE_CODES_HIDDEN_FROM_CONTENT_TARGET.has(o.roleCode),
+    );
+
     /** ContentTarget 행 표시 순서 정렬 — 6 기본 우선, 비회원 마지막 */
     const sortByOrder = <T extends { roleCode: string | null }>(
       targets: readonly T[],
@@ -121,6 +136,7 @@ export function useTargetLabels() {
       isAvailable,
       allOptions,
       memberOptions,
+      contentTargetOptions,
       sortByOrder,
       isLoading,
     };

@@ -11,6 +11,7 @@ export const createCategorySchema = z.object({
   isInternalOnly: z.boolean().default(false),
   sortOrder: z.number().int().positive().default(1),
   isActive: z.boolean().default(true),
+  isVisible: z.boolean().default(true),
 });
 
 export const updateCategorySchema = z.object({
@@ -18,6 +19,7 @@ export const updateCategorySchema = z.object({
   isInternalOnly: z.boolean().optional(),
   sortOrder: z.number().int().positive().optional(),
   isActive: z.boolean().optional(),
+  isVisible: z.boolean().optional(),
 });
 
 // ─── Types ───

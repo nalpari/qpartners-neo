@@ -54,6 +54,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // isVisible 은 1Depth(parentId === null) 전용 — 자식 카테고리에는 의미가 없으므로
+    // 클라이언트가 잘못 보내더라도 서버 단에서 명시적으로 거절(400)한다.
+    // 1Depth 여부는 트랜잭션 외부에서 단일 SELECT 로 먼저 확인 (race 가능성 없음 — parentId 는 updateCategorySchema 에서 수정 불가).
+    if (result.data.isVisible !== undefined) {
+      const current = await prisma.category.findUnique({
+        where: { id: parsed.data },
+        select: { parentId: true },
+      });
+      if (!current) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (current.parentId !== null) {
+        return NextResponse.json(
+          { error: "isVisible は 1Depth カテゴリ専用です" },
+          { status: 400 },
+        );
+      }
+    }
+
     let reorderLog: {
       categoryId: number;
       parentId: number | null;

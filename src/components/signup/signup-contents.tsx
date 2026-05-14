@@ -92,10 +92,10 @@ export function SignupContents() {
     if (!form.address1.trim()) errors.address1 = "住所を入力してください";
     if (!form.address2.trim()) errors.address2 = "住所の詳細を入力してください";
     if (!form.phone.trim()) errors.phone = "電話番号を入力してください";
-    if (!form.lastName.trim()) errors.lastName = "姓を入力してください";
-    if (!form.firstName.trim()) errors.firstName = "名前を入力してください";
-    if (!form.lastNameKana.trim()) errors.lastNameKana = "姓（ひらがな）を入力してください";
-    if (!form.firstNameKana.trim()) errors.firstNameKana = "名前（ひらがな）を入力してください";
+    if (!form.lastName.trim()) errors.lastName = "氏を入力してください";
+    if (!form.firstName.trim()) errors.firstName = "名を入力してください";
+    if (!form.lastNameKana.trim()) errors.lastNameKana = "氏（ひらがな）を入力してください";
+    if (!form.firstNameKana.trim()) errors.firstNameKana = "名（ひらがな）を入力してください";
     if (!form.email.trim()) {
       errors.email = "メールアドレスを入力してください";
     } else if (emailCheckStatus !== "ok") {
@@ -168,7 +168,7 @@ export function SignupContents() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await api.post<{ data: { userName: string; email: string } }>(
+      const res = await api.post<{ data: { email: string } }>(
         "/auth/signup",
         {
           email: form.email.trim().toLowerCase(),
@@ -191,8 +191,10 @@ export function SignupContents() {
         }
       );
 
-      const { userName, email } = res.data.data;
-      openPopup("signup-complete", { userName, userId: email });
+      const { email } = res.data.data;
+      // Redmine #2223 — 가입 완료 모달 표시는 "성 + 전각공백 + 명" 형식 사용 (popup 측 様 앞 전각공백과 통일)
+      const displayName = `${form.lastName}　${form.firstName}`;
+      openPopup("signup-complete", { userName: displayName, userId: email });
     } catch (error) {
       console.error("[Signup] 회원가입 실패:", error);
       if (isAxiosError(error) && error.response) {
@@ -292,7 +294,7 @@ export function SignupContents() {
                     住所検索
                   </button>
                   <p className="font-['Noto_Sans_JP'] text-sm text-[#1060B4] leading-[1.5] lg:flex lg:items-center lg:pl-2 lg:pr-[18px] lg:shrink-0">
-                    ※住所検索ボタンをクリックして都道府県情報を選択してください
+                    ※住所検索ボタンをクリックして都道府県情報を選択してください。
                   </p>
                 </div>
               </FormRow>
@@ -343,37 +345,37 @@ export function SignupContents() {
             </h2>
 
             <div className="flex flex-col gap-4 mt-4 lg:gap-[4px] lg:mt-4">
-              {/* 성명 (2칸) */}
+              {/* 성명 (2칸) — Redmine #2222: 성 좁게 / 이름 넓게 (placeholder 만 氏/名 변경) */}
               <FormRow label="氏名" required error={fieldErrors.lastName || fieldErrors.firstName}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastName}
                     onChange={(v) => updateField("lastName", v)}
-                    placeholder="姓"
+                    placeholder="氏"
                     className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstName}
                     onChange={(v) => updateField("firstName", v)}
-                    placeholder="名前"
+                    placeholder="名"
                     className="lg:flex-1"
                   />
                 </div>
               </FormRow>
 
-              {/* 성명 히라가나 (2칸) */}
+              {/* 성명 히라가나 (2칸) — Redmine #2222 동일 적용 */}
               <FormRow label="氏名ひらがな" required error={fieldErrors.lastNameKana || fieldErrors.firstNameKana}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastNameKana}
                     onChange={(v) => updateField("lastNameKana", v)}
-                    placeholder="姓"
+                    placeholder="氏"
                     className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstNameKana}
                     onChange={(v) => updateField("firstNameKana", v)}
-                    placeholder="名前"
+                    placeholder="名"
                     className="lg:flex-1"
                   />
                 </div>
@@ -656,8 +658,9 @@ function HeaderCard() {
       {/* PC: 가로 배치 */}
       <div className="hidden lg:flex items-center h-[60px]">
         <p className="flex-1 font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5]">
-          ※本画面は一般会員登録のためのページです.
-          販売店会員および施工店会員は各会員タイプボタンをクリックして該当加入ページに移動してください.
+          本画面は一般会員登録のためのページです。
+          <br />
+          販売店会員および施工店会員は各会員タイプボタンをクリックして該当ページに移動してください。
         </p>
         <div className="flex gap-2 shrink-0">
           <ExternalLinkButton href="https://www.hanasys.jp/join">
@@ -672,8 +675,9 @@ function HeaderCard() {
       {/* MO: 세로 배치 */}
       <div className="flex flex-col gap-6 lg:hidden">
         <p className="font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5]">
-          ※本画面は一般会員登録のためのページです.
-          販売店会員および施工店会員は各会員タイプボタンをクリックして該当加入ページに移動してください.
+          本画面は一般会員登録のためのページです。
+          <br />
+          販売店会員および施工店会員は各会員タイプボタンをクリックして該当ページに移動してください。
         </p>
         <div className="flex gap-2 w-full">
           <ExternalLinkButton
