@@ -20,20 +20,37 @@ const COOKIE_CLEAR_OPTIONS = {
  *
  * 본 라우트의 CSRF 방어 주체는 인증 쿠키의 `sameSite: "lax"` 속성이다.
  * 본 함수는 일부 우회 케이스(서브도메인 takeover, embed iframe 등)에 대비한
- * 2차 검증으로 Origin / Referer 헤더가 자신의 origin 과 일치하는지만 추가 확인한다.
+ * 2차 검증으로 Origin / Referer 헤더의 host 가 자신의 host 와 일치하는지 확인한다.
+ *
+ * 호스트만 비교하는 이유: nginx 등 TLS termination 프록시 뒤에서 동작할 때
+ * 브라우저 Origin 은 `https://...` 이지만 Next.js 컨테이너가 받는 connection 은 HTTP 라
+ * `request.nextUrl.origin` 이 `http://...` 로 평가된다. 프로토콜까지 비교하면 정상 사용자가
+ * 항상 차단된다. CSRF 방어 의도(같은 사이트인지)에는 host 일치만으로 충분하다.
+ *
+ * X-Forwarded-Host > Host > nextUrl.host 순으로 expected host 를 결정 — 프록시 헤더가 있는
+ * 환경(개발/운영)과 없는 환경(로컬) 양쪽 모두 동작.
  *
  * Origin / Referer 둘 다 없는 환경(엄격한 프록시·일부 모바일 in-app browser)에서는
  * 통과(fail-open) — 1차 방어(SameSite=Lax) 가 이미 동작하고 실질 피해는 세션 종료뿐이라
  * 정상 사용자 차단을 막는 쪽을 우선한다.
  */
 function isSameOrigin(request: NextRequest): boolean {
-  const expected = request.nextUrl.origin;
+  const expectedHost =
+    request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
+    request.nextUrl.host;
   const origin = request.headers.get("origin");
-  if (origin) return origin === expected;
+  if (origin) {
+    try {
+      return new URL(origin).host === expectedHost;
+    } catch {
+      return false;
+    }
+  }
   const referer = request.headers.get("referer");
   if (referer) {
     try {
-      return new URL(referer).origin === expected;
+      return new URL(referer).host === expectedHost;
     } catch {
       return false;
     }
