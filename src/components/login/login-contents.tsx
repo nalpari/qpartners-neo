@@ -50,7 +50,6 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
-  const [agreeTerms, setAgreeTerms] = useState(false);
   // notice: 자동로그인 실패 등 외부 유입 안내 — 입력 시 초기화하지 않음 (탭 전환 시만 초기화)
   const [notice, setNotice] = useState<string | null>(initialError);
   const [error, setError] = useState<string | null>(null);
@@ -188,10 +187,6 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
       setError("パスワードを入力してください");
       return;
     }
-    if (!agreeTerms) {
-      setError("利用規約に同意してください");
-      return;
-    }
 
     setError(null);
     loginMutation.mutate({
@@ -235,14 +230,12 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
             password={password}
             showPassword={showPassword}
             saveId={saveId}
-            agreeTerms={agreeTerms}
             error={error ?? notice}
             isSubmitting={isSubmitting}
             onIdChange={(v) => { setId(v); setError(null); }}
             onPasswordChange={(v) => { setPassword(v); setError(null); }}
             onTogglePassword={() => setShowPassword((prev) => !prev)}
             onSaveIdChange={setSaveId}
-            onAgreeTermsChange={setAgreeTerms}
             onClearId={() => { setId(""); setError(null); }}
             onSubmit={handleSubmit}
           />
