@@ -90,10 +90,12 @@ GET    /api/auth/login-user-info → 현재 로그인 사용자 정보
   "pwd": "1234",
   "userTp": "GENERAL",
   "accsSiteCd": "QPARTNERS",
-  "actLog": "LOGOUT",
+  "actLog": "LOGIN",
   "requestId": "3132131313"
 }
 ```
+
+**actLog 값:** `LOGIN` | `AUTO_LOGIN` | `LOGOUT` (QSP 인터페이스 사양서 v1.0)
 
 **userTp 매핑:**
 | QSP userTp | QPartners UserType | 설명 |
@@ -105,8 +107,30 @@ GET    /api/auth/login-user-info → 현재 로그인 사용자 정보
 
 ---
 
+## 6. QSP Logout API Request Format
+
+```
+POST {QSP_BASE_URL}/api/user/logout
+```
+
+```json
+{
+  "loginId": "test1",
+  "accsSiteCd": "QPARTNERS",
+  "actLog": "LOGOUT",
+  "requestId": "{uuid}"
+}
+```
+
+- 로그인과 달리 `pwd` 불요
+- Q.Partners-neo `POST /api/auth/logout` 에서 JWT 쿠키로 사용자 식별 후 호출
+- 호출 결과와 무관하게 인증 쿠키는 항상 삭제 (fail-open)
+
+---
+
 ## Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 0.1 | 2026-03-25 | Initial draft | CK |
+| 0.2 | 2026-05-14 | actLog 값 정정(LOGIN), QSP Logout API 사양 추가 | CK |
