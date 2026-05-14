@@ -204,6 +204,8 @@ export function MembersTable({
           context={gridContext}
           loading={isLoading}
           emptyMessage="検索結果がありません"
+          autoHeight={!(isLoading || list.length === 0)}
+          maxHeight={isLoading || list.length === 0 ? 200 : undefined}
         />
         {totalPages > 0 && (
           <Pagination

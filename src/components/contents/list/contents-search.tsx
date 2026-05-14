@@ -4,7 +4,6 @@ import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { Checkbox, SelectBox, MultiSelectCombobox, Button } from "@/components/common";
-import { useIsMobile } from "@/hooks/use-media-query";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import api from "@/lib/axios";
 import type { CategoryNode, SearchFilters } from "./contents-contents";
@@ -30,11 +29,8 @@ export function ContentsSearch({
   onSearch,
   initialFilters,
 }: ContentsSearchProps) {
-  const isMobile = useIsMobile();
-  // 사용자가 토글하기 전에는 뷰포트 반응형 (PC: 열림, MO: 닫힘)
-  // 토글 후에는 사용자 선택값 유지
-  const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const isFilterOpen = userToggled ?? !isMobile;
+  // 詳細条件 패널은 디폴트 닫힘 — 사용자가 詳細条件 버튼을 누르면 토글된다 (PC/모바일 동일).
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
   const [postTarget, setPostTarget] = useState(initialFilters?.roleCode ?? "");
@@ -49,7 +45,8 @@ export function ContentsSearch({
   // (이미 등록된 콘텐츠가 isActive=N 권한과 매핑되어 있어도 목록 그리드는 별도 라벨 룩업으로 표시한다.)
   // 비회원(roleCode=null) 은 SelectBox value 로 null 을 다룰 수 없어 sentinel `__NON_MEMBER__` 사용.
   // 서버 listContentsQuerySchema 가 transform 으로 null 변환.
-  const { allOptions: targetAllOptions } = useTargetLabels();
+  // contentTargetOptions: SUPER_ADMIN/ADMIN 제외 — 사내회원은 게시대상과 무관하게 항상 조회 가능.
+  const { contentTargetOptions: targetAllOptions } = useTargetLabels();
   const POST_TARGET_OPTIONS = useMemo(() => {
     return [
       POST_TARGET_PLACEHOLDER,
@@ -162,7 +159,7 @@ export function ContentsSearch({
           <button
             type="button"
             className="flex items-center justify-center gap-2.5 h-full px-6 lg:px-4 bg-[#246097] shrink-0"
-            onClick={() => setUserToggled((prev) => !(prev ?? !isMobile))}
+            onClick={() => setIsFilterOpen((prev) => !prev)}
           >
             <span className="hidden lg:inline font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-white whitespace-nowrap">
               詳細条件

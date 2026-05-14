@@ -116,7 +116,10 @@ export function ContentsFormPostTarget({
   onPostTargetsChange,
   forcedRoleCode = null,
 }: ContentsFormPostTargetProps) {
-  const { allOptions, isLoading } = useTargetLabels();
+  // contentTargetOptions: SUPER_ADMIN/ADMIN 제외 — 사내회원은 게시대상과 무관하게 항상 조회 가능.
+  // 편집 모드에서 기존 데이터에 SUPER_ADMIN/ADMIN 타깃이 있으면 buildInitialPostTargetsState 의
+  // "비활성/외부 권한 보존" 분기로 행이 유지되어 해제만 가능하게 노출된다.
+  const { contentTargetOptions: allOptions, isLoading } = useTargetLabels();
 
   const isForcedRow = (roleCode: string | null) =>
     forcedRoleCode != null && roleCode === forcedRoleCode;
@@ -255,6 +258,7 @@ export function ContentsFormPostTarget({
                 }`}
               >
                 <span
+                  title={opt.label}
                   className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap truncate ${
                     available ? "text-[#45576F]" : "text-[#A0A8B0]"
                   }`}

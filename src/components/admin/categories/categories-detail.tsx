@@ -36,6 +36,7 @@ const INITIAL_FORM: CategoryFormState = {
   name: "",
   sortOrder: 1,
   isActive: true,
+  isVisible: true,
 };
 
 function getInitialForm(category: CategoryNode | null): CategoryFormState {
@@ -47,6 +48,7 @@ function getInitialForm(category: CategoryNode | null): CategoryFormState {
     name: category.name,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
+    isVisible: category.isVisible,
   };
 }
 
@@ -250,6 +252,29 @@ export function CategoriesDetail({
             />
           </div>
         </FormRow>
+
+        {/* Row 8: リスト表示 — 콘텐츠 목록 ag-grid 의 parent 카테고리 컬럼 노출 토글.
+            1Depth 에만 적용되는 개념이므로 2Depth(자식) 카테고리에서는 영역 자체를 미노출. */}
+        {depth === 1 && (
+          <FormRow label="リスト表示" required>
+            <div className="flex items-center gap-[12px] px-[24px]">
+              <Radio
+                checked={form.isVisible}
+                onChange={() => updateField("isVisible", true)}
+                label="Y"
+                name="isVisible"
+                disabled={isFormDisabled}
+              />
+              <Radio
+                checked={!form.isVisible}
+                onChange={() => updateField("isVisible", false)}
+                label="N"
+                name="isVisible"
+                disabled={isFormDisabled}
+              />
+            </div>
+          </FormRow>
+        )}
       </div>
 
       <p className="text-[14px] text-[#101010] font-['Noto_Sans_JP']">

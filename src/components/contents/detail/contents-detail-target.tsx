@@ -26,12 +26,16 @@ function formatPeriod(startAt: string | null, endAt: string | null): string {
 }
 
 export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
-  const { resolveLabel, allOptions, sortByOrder } = useTargetLabels();
+  // contentTargetOptions: SUPER_ADMIN/ADMIN 제외 — 사내회원은 게시대상과 무관하게 항상 조회 가능.
+  const { resolveLabel, contentTargetOptions: allOptions, sortByOrder } = useTargetLabels();
 
   // 권한관리 활성 목록 + 비회원 sentinel — allOptions 정렬 그대로 사용.
   // 콘텐츠에 등록된 게시대상(targets) 만 active 표시, 나머지는 grayed out.
+  // sortedTargets(MO 노출)는 allOptions 의 roleCode 화이트리스트로 한 번 더 거름 —
+  // 기존 데이터에 SUPER_ADMIN/ADMIN 타깃이 남아 있어도 상세 화면에 표시되지 않도록.
+  const visibleRoleCodes = new Set(allOptions.map((o) => o.roleCode));
   const targetMap = new Map(targets.map((t) => [t.roleCode ?? "__NON_MEMBER__", t]));
-  const sortedTargets = sortByOrder(targets);
+  const sortedTargets = sortByOrder(targets).filter((t) => visibleRoleCodes.has(t.roleCode));
 
   // 표시는 모든 옵션을 노출하고 active/inactive 만 다르게 — 기존 디자인 보존.
   // 단 옵션이 동적 길이라 grid 자동 wrapping.

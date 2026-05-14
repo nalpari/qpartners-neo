@@ -63,6 +63,11 @@ interface DataGridProps<T> {
   rowData: T[];
   className?: string;
   maxHeight?: number;
+  /**
+   * true 시 그리드 높이를 행 개수에 맞춰 자동 확장하고 컨테이너 내부 스크롤을 제거한다.
+   * maxHeight 보다 우선 — 명시되면 maxHeight 는 무시. 페이지 자체 스크롤을 사용.
+   */
+  autoHeight?: boolean;
   getRowClass?: (params: RowClassParams<T>) => string | undefined;
   getRowId?: (params: { data: T }) => string;
   context?: Record<string, unknown>;
@@ -81,6 +86,7 @@ export function DataGrid<T>({
   rowData,
   className = "",
   maxHeight = DEFAULT_MAX_HEIGHT,
+  autoHeight = false,
   getRowClass: externalGetRowClass,
   getRowId,
   context,
@@ -124,17 +130,21 @@ export function DataGrid<T>({
     return `<span class="font-['Noto_Sans_JP'] text-[14px] text-[#AAAAAA]">${escaped}</span>`;
   }, [emptyMessage]);
 
+  // autoHeight 가 명시되면 maxHeight 무시 — 그리드 자체가 행 수에 맞춰 늘어나고
+  // 컨테이너 내부 스크롤이 제거된다. 페이지 스크롤로 위임.
+  const useAutoHeight = autoHeight || !maxHeight;
+
   return (
     <div
       className={`w-full ${className}`}
-      style={maxHeight ? { height: maxHeight } : undefined}
+      style={useAutoHeight ? undefined : { height: maxHeight }}
     >
       <AgGridReact<T>
         theme={customTheme}
         rowData={rowData}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
-        domLayout={maxHeight ? "normal" : "autoHeight"}
+        domLayout={useAutoHeight ? "autoHeight" : "normal"}
         getRowClass={getRowClass}
         getRowId={getRowId}
         context={context}

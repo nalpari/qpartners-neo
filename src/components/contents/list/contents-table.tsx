@@ -254,7 +254,10 @@ export function ContentsTable({
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
-    const categoryColumns: ColDef<ContentListItem>[] = categories.map((parent) => ({
+    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
+    const categoryColumns: ColDef<ContentListItem>[] = categories
+      .filter((parent) => parent.isVisible !== false)
+      .map((parent) => ({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
@@ -358,7 +361,18 @@ export function ContentsTable({
       );
     }
 
-    return baseCols;
+    // 헤더 텍스트가 한 줄(nowrap) 로 잘리지 않을 만큼 minWidth 를 보강.
+    // 일본어/한자 1자 ≈ 16px + 셀 padding / sort 아이콘 여유 40px.
+    // flex 컬럼만 보강 — 고정 width 컬럼(添付 등)은 의도된 폭이 있으므로 제외.
+    // ag-grid 기본 truncate 가 발생하지 않게 하한선만 올리고, flex 분배는 기존대로 유지된다.
+    const headerMinWidth = (name: string) => name.length * 16 + 40;
+    return baseCols.map((col) => {
+      if (col.flex == null) return col;
+      return {
+        ...col,
+        minWidth: Math.max(col.minWidth ?? 0, headerMinWidth(col.headerName ?? "")),
+      };
+    });
   }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
@@ -460,6 +474,8 @@ export function ContentsTable({
               className="contents-grid"
               loading={isLoading}
               emptyMessage="該当するコンテンツがありません。"
+              autoHeight={!(isLoading || rowData.length === 0)}
+              maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
             />
             {totalPages > 0 && (
               <Pagination

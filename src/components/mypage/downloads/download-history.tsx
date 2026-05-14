@@ -373,7 +373,8 @@ export function DownloadHistory() {
           <DataGrid
             columnDefs={columnDefs}
             rowData={data?.list ?? []}
-            maxHeight={500}
+            autoHeight={!(!data || data.list.length === 0)}
+            maxHeight={!data || data.list.length === 0 ? 200 : undefined}
             context={{ onDownload: (item: DownloadLogItem) => { void handleDownload(item); } }}
             emptyMessage="ダウンロードしたデータがありません。"
           />

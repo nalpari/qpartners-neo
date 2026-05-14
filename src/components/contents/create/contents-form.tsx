@@ -74,7 +74,8 @@ export function ContentsForm({ mode, contentId }: ContentsFormProps) {
 
   // 권한 라벨 동기화 — 게시대상 옵션 노출은 운영자가 권한관리에서 정의한 동적 권한.
   // 폼 마운트 시점에 allOptions 가 확정돼야 buildInitialPostTargetsState 가 정확한 행 집합을 만든다.
-  const { allOptions, isLoading: isLoadingTargets } = useTargetLabels();
+  // contentTargetOptions: SUPER_ADMIN/ADMIN 제외 — 사내회원은 게시대상과 무관하게 항상 조회 가능.
+  const { contentTargetOptions: allOptions, isLoading: isLoadingTargets } = useTargetLabels();
 
   if (mode === "edit" && isLoadingContent) {
     return (

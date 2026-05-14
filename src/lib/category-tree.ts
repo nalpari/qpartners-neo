@@ -22,6 +22,7 @@ export const CATEGORY_TREE_INCLUDE = {
     isInternalOnly: true,
     sortOrder: true,
     isActive: true,
+    isVisible: true,
     parent: {
       select: {
         id: true,
@@ -31,6 +32,7 @@ export const CATEGORY_TREE_INCLUDE = {
         isInternalOnly: true,
         sortOrder: true,
         isActive: true,
+        isVisible: true,
       },
     },
   },
@@ -45,6 +47,8 @@ export interface CategoryNode {
   isInternalOnly: boolean;
   sortOrder: number;
   isActive: boolean;
+  /** 콘텐츠 목록 ag-grid 카테고리 컬럼 노출 여부 (1Depth 전용). 트리 응답에는 무관. */
+  isVisible: boolean;
 }
 
 /** 자식 카테고리를 포함한 트리 노드 */
@@ -94,8 +98,12 @@ export function buildCategoryTree(
   /** root id → 이미 추가된 child id 집합 (dedup) */
   const childIdsByRoot = new Map<number, Set<number>>();
 
-  /** 노드를 응답에 노출할지 여부 — isActive, isInternalOnly 정책 평가 */
-  const isVisible = (node: CategoryNode): boolean => {
+  /**
+   * 노드를 응답에 노출할지 여부 — isActive, isInternalOnly 정책 평가.
+   * 주의: 동명의 `isVisible` 필드(ag-grid 컬럼 노출 플래그)와 무관 — 이름 충돌을 피하기 위해
+   * 함수명은 `shouldShow` 로 사용한다.
+   */
+  const shouldShow = (node: CategoryNode): boolean => {
     if (node.isActive === false) return false;
     if (!includeInternal && node.isInternalOnly === true) return false;
     return true;
@@ -108,7 +116,7 @@ export function buildCategoryTree(
     }
 
     // 자기 자신 가시성 확인 — 비활성/내부전용이면 즉시 스킵
-    if (!isVisible(category)) continue;
+    if (!shouldShow(category)) continue;
 
     if (category.parentId === null) {
       // 최상위 카테고리 — 자체가 루트
@@ -121,6 +129,7 @@ export function buildCategoryTree(
           isInternalOnly: category.isInternalOnly,
           sortOrder: category.sortOrder,
           isActive: category.isActive,
+          isVisible: category.isVisible,
           children: [],
         });
         childIdsByRoot.set(category.id, new Set());
@@ -133,7 +142,7 @@ export function buildCategoryTree(
     if (parent === null) continue;
 
     // 부모 가시성 확인 — 자식이 공개여도 부모가 내부전용/비활성이면 제외 (MF-1, MF-3)
-    if (!isVisible(parent)) continue;
+    if (!shouldShow(parent)) continue;
 
     // 자식 카테고리 — parent 로 그룹화
     if (!rootMap.has(parent.id)) {
@@ -145,6 +154,7 @@ export function buildCategoryTree(
         isInternalOnly: parent.isInternalOnly,
         sortOrder: parent.sortOrder,
         isActive: parent.isActive,
+        isVisible: parent.isVisible,
         children: [],
       });
       childIdsByRoot.set(parent.id, new Set());
@@ -165,6 +175,7 @@ export function buildCategoryTree(
         isInternalOnly: category.isInternalOnly,
         sortOrder: category.sortOrder,
         isActive: category.isActive,
+        isVisible: category.isVisible,
       });
     }
   }

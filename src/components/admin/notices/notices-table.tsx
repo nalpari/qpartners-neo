@@ -487,6 +487,8 @@ export function NoticesTable({
           loading={isLoading}
           context={gridContext}
           onGridReady={handleGridReady}
+          autoHeight={!(isLoading || items.length === 0)}
+          maxHeight={isLoading || items.length === 0 ? 200 : undefined}
         />
         {totalPages > 0 && (
           <Pagination
