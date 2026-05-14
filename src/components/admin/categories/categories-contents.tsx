@@ -135,6 +135,10 @@ export function CategoriesContents() {
       return;
     }
 
+    // isVisible 은 1Depth(parent) 전용 정책 — 자식 카테고리에서는 폼 라디오도 미노출이고
+    // 콘텐츠 목록 컬럼 필터도 parent.isVisible 만 검사하므로 payload 에서도 제외.
+    const isParent = form.parentId === null;
+
     if (isNewMode) {
       createMutation.mutate({
         parentId: form.parentId,
@@ -143,7 +147,7 @@ export function CategoriesContents() {
         isInternalOnly: form.isInternalOnly,
         sortOrder: form.sortOrder,
         isActive: form.isActive,
-        isVisible: form.isVisible,
+        ...(isParent && { isVisible: form.isVisible }),
       });
     } else if (selectedId !== null) {
       updateMutation.mutate({
@@ -153,7 +157,7 @@ export function CategoriesContents() {
           isInternalOnly: form.isInternalOnly,
           sortOrder: form.sortOrder,
           isActive: form.isActive,
-          isVisible: form.isVisible,
+          ...(isParent && { isVisible: form.isVisible }),
         },
       });
     }

@@ -124,13 +124,13 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
             </div>
           </div>
 
-          {/* Title — 콘텐츠 상세 진입 링크. (이전엔 하단 Read More 가 담당) */}
-          <Link
-            href={`/contents/${item.id}`}
-            className="font-['Noto_Sans_JP'] font-semibold text-[16px] leading-[1.5] text-[#2e5884] hover:underline"
-          >
-            <h3>{item.title}</h3>
-          </Link>
+          {/* Title — 콘텐츠 상세 진입 링크. heading 시맨틱 유지를 위해 h3 가 외곽,
+              Link 가 안쪽. 시각 스타일은 h3 가 보유. */}
+          <h3 className="font-['Noto_Sans_JP'] font-semibold text-[16px] leading-[1.5] text-[#2e5884]">
+            <Link href={`/contents/${item.id}`} className="hover:underline">
+              {item.title}
+            </Link>
+          </h3>
         </div>
 
         {/* Category tags — PC만 표시, 부모 그룹명 + 자식 값, 선택값 있는 그룹만 */}

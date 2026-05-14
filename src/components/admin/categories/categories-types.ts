@@ -16,7 +16,7 @@ export interface CategoryNode {
   children: CategoryNode[];
 }
 
-/** POST 요청 body */
+/** POST 요청 body — isVisible 은 1Depth 전용이라 자식 등록 시 생략 가능 (서버 default true 적용). */
 export interface CreateCategoryPayload {
   parentId: number | null;
   categoryCode: string;
@@ -24,7 +24,7 @@ export interface CreateCategoryPayload {
   isInternalOnly: boolean;
   sortOrder: number;
   isActive: boolean;
-  isVisible: boolean;
+  isVisible?: boolean;
 }
 
 /** PUT 요청 body (모든 필드 optional) */

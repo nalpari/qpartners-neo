@@ -362,14 +362,17 @@ export function ContentsTable({
     }
 
     // 헤더 텍스트가 한 줄(nowrap) 로 잘리지 않을 만큼 minWidth 를 보강.
-    // Noto Sans JP 14px 기준 일본어/한자 1자 ≈ 16px + 셀 padding / sort 아이콘 여유 40px.
-    // ag-grid 기본 truncate 가 발생하지 않게 하한선만 올리고, flex 분배는 기존대로 유지되어
-    // 그리드 가용 width 안에서 컬럼이 자연스럽게 늘어난다. 컬럼명이 바뀌어도 자동 대응.
+    // 일본어/한자 1자 ≈ 16px + 셀 padding / sort 아이콘 여유 40px.
+    // flex 컬럼만 보강 — 고정 width 컬럼(添付 등)은 의도된 폭이 있으므로 제외.
+    // ag-grid 기본 truncate 가 발생하지 않게 하한선만 올리고, flex 분배는 기존대로 유지된다.
     const headerMinWidth = (name: string) => name.length * 16 + 40;
-    return baseCols.map((col) => ({
-      ...col,
-      minWidth: Math.max(col.minWidth ?? 0, headerMinWidth(col.headerName ?? "")),
-    }));
+    return baseCols.map((col) => {
+      if (col.flex == null) return col;
+      return {
+        ...col,
+        minWidth: Math.max(col.minWidth ?? 0, headerMinWidth(col.headerName ?? "")),
+      };
+    });
   }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
