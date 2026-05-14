@@ -20,8 +20,11 @@ import { usePathname, useSearchParams } from "next/navigation";
  *   - 민감 쿼리 파라미터(자동로그인 페이로드·비밀번호 재설정 토큰·인증 코드 등) 는
  *     sanitize 화이트리스트로 제거. page_location 도 sanitize 된 path 로 재구성해
  *     `window.location.href` 원본 전송 차단.
- *   - 동적 라우트 segment 는 raw ID 그대로 송신 — 운영팀의 콘텐츠별 조회수 추적
- *     요구(Redmine #2216 note-1). PII 우려보다 비즈니스 통계 우선.
+ *   - 동적 라우트 segment(`/contents/123`, `/admin/bulk-mail/456` 등) 는 정규화하여
+ *     page_view 의 page_path 에서 raw ID 노출을 차단 (회원/콘텐츠 ID enumeration·
+ *     비공개 콘텐츠 존재 추정 방지, 일본 個人情報保護法 보수 운영).
+ *   - 콘텐츠별 조회수 통계(Redmine #2216 note-1) 는 별도 `content_view` Custom Event
+ *     로 content_id / content_type 만 발송. page_path 정규화와 비즈니스 통계 양립.
  *   - page_title 미전송 — 관리자 회원 상세 등에서 이름/이메일이 포함될 수 있어 제외.
  *
  * Suspense 경계:
@@ -123,9 +126,66 @@ function sanitizeSearch(searchParams: URLSearchParams): string {
   return out.toString();
 }
 
+/**
+ * 동적 라우트 segment 정규화 + content_view Custom Event 매칭.
+ *
+ * `pathname` 에는 `/contents/123`, `/admin/bulk-mail/456` 처럼 순차 PK 가 그대로
+ * 포함되어 GA 콘솔에서 회원/콘텐츠 ID enumeration · 비공개 콘텐츠 존재 추정 등
+ * PII / 비밀 정보 누설 위험이 있다. App Router 라우트 디렉토리 구조와 동일하게
+ * `[id]` placeholder 로 치환하여 page_view 송신 시 차단한다.
+ *
+ * Prisma 스키마상 `Content.id`/`MassMail.id` 모두 `Int autoincrement` 이므로
+ * 정규식을 `\d+` 로 좁혀 정적 형제 라우트(`/contents/create`,
+ * `/admin/bulk-mail/create`) 가 잘못 정규화되어 funnel 분석이 왜곡되는 것을 방지.
+ *
+ * 콘텐츠별 조회수 통계는 page_view 의 page_path 에 기대지 않고 별도
+ * `content_view` Custom Event 로 content_type + content_id 만 발송한다.
+ *
+ * 신규 동적 라우트 추가 시 본 배열도 함께 갱신해야 한다 (CI 자동 검출 어려움
+ * — `src/app/**\/[*]` 디렉토리 변경 시 페어 변경 권장).
+ */
+type DynamicRouteRule = {
+  pattern: RegExp;
+  placeholder: string;
+  contentType: string;
+};
+
+const DYNAMIC_ROUTE_RULES: ReadonlyArray<DynamicRouteRule> = [
+  {
+    pattern: /^\/contents\/(\d+)(?=\/|$)/,
+    placeholder: "/contents/[id]",
+    contentType: "contents",
+  },
+  {
+    pattern: /^\/admin\/bulk-mail\/(\d+)(?=\/|$)/,
+    placeholder: "/admin/bulk-mail/[id]",
+    contentType: "bulk-mail",
+  },
+];
+
+type NormalizedRoute = {
+  normalized: string;
+  contentEvent: { contentType: string; contentId: string } | null;
+};
+
+function normalizePathname(pathname: string): NormalizedRoute {
+  let normalized = pathname;
+  let contentEvent: NormalizedRoute["contentEvent"] = null;
+  for (const { pattern, placeholder, contentType } of DYNAMIC_ROUTE_RULES) {
+    const match = pathname.match(pattern);
+    if (match) {
+      normalized = pathname.replace(pattern, placeholder);
+      contentEvent = { contentType, contentId: match[1] };
+      break;
+    }
+  }
+  return { normalized, contentEvent };
+}
+
 type PendingPageView = {
   pagePath: string;
   pageLocation: string;
+  contentEvent: NormalizedRoute["contentEvent"];
 };
 
 function GaPageTrackerInner() {
@@ -143,14 +203,15 @@ function GaPageTrackerInner() {
     if (typeof window === "undefined") return;
 
     const search = sanitizeSearch(searchParams);
-    const pagePath = search ? `${pathname}?${search}` : pathname;
-    // window.location.href 원본 전송 금지 — sanitize 된 path 로 재구성.
+    const { normalized, contentEvent } = normalizePathname(pathname);
+    const pagePath = search ? `${normalized}?${search}` : normalized;
+    // window.location.href 원본 전송 금지 — sanitize / 정규화 된 path 로 재구성.
     const pageLocation = `${window.location.origin}${pagePath}`;
 
     if (!window.gtag) {
       // gtag.js 미로드 — 큐에 보관 후 다음 effect 호출(또는 별도 onLoad 훅)에서
       // 발송 재시도. 광고 차단 환경에서는 영구 미로드일 수 있어 1회만 경고.
-      pendingPageViewRef.current = { pagePath, pageLocation };
+      pendingPageViewRef.current = { pagePath, pageLocation, contentEvent };
       if (!hasWarnedMissingGtagRef.current) {
         hasWarnedMissingGtagRef.current = true;
         console.warn(
@@ -168,12 +229,24 @@ function GaPageTrackerInner() {
         page_path: pending.pagePath,
         page_location: pending.pageLocation,
       });
+      if (pending.contentEvent) {
+        window.gtag("event", "content_view", {
+          content_type: pending.contentEvent.contentType,
+          content_id: pending.contentEvent.contentId,
+        });
+      }
     }
 
     window.gtag("event", "page_view", {
       page_path: pagePath,
       page_location: pageLocation,
     });
+    if (contentEvent) {
+      window.gtag("event", "content_view", {
+        content_type: contentEvent.contentType,
+        content_id: contentEvent.contentId,
+      });
+    }
   }, [pathname, searchParams]);
 
   return null;

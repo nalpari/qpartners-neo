@@ -92,10 +92,10 @@ export function SignupContents() {
     if (!form.address1.trim()) errors.address1 = "住所を入力してください";
     if (!form.address2.trim()) errors.address2 = "住所の詳細を入力してください";
     if (!form.phone.trim()) errors.phone = "電話番号を入力してください";
-    if (!form.lastName.trim()) errors.lastName = "姓を入力してください";
-    if (!form.firstName.trim()) errors.firstName = "名前を入力してください";
-    if (!form.lastNameKana.trim()) errors.lastNameKana = "姓（ひらがな）を入力してください";
-    if (!form.firstNameKana.trim()) errors.firstNameKana = "名前（ひらがな）を入力してください";
+    if (!form.lastName.trim()) errors.lastName = "氏を入力してください";
+    if (!form.firstName.trim()) errors.firstName = "名を入力してください";
+    if (!form.lastNameKana.trim()) errors.lastNameKana = "氏（ひらがな）を入力してください";
+    if (!form.firstNameKana.trim()) errors.firstNameKana = "名（ひらがな）を入力してください";
     if (!form.email.trim()) {
       errors.email = "メールアドレスを入力してください";
     } else if (emailCheckStatus !== "ok") {
@@ -168,7 +168,7 @@ export function SignupContents() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await api.post<{ data: { userName: string; email: string } }>(
+      const res = await api.post<{ data: { email: string } }>(
         "/auth/signup",
         {
           email: form.email.trim().toLowerCase(),
@@ -192,9 +192,8 @@ export function SignupContents() {
       );
 
       const { email } = res.data.data;
-      // Redmine #2223 — 가입 완료 모달 표시는 "성 + 반각공백 + 명" 형식 사용 (BE 응답 userName 대신
-      // form 입력값으로 직접 조립 — 공백 처리 보장).
-      const displayName = `${form.lastName} ${form.firstName}`;
+      // Redmine #2223 — 가입 완료 모달 표시는 "성 + 전각공백 + 명" 형식 사용 (popup 측 様 앞 전각공백과 통일)
+      const displayName = `${form.lastName}　${form.firstName}`;
       openPopup("signup-complete", { userName: displayName, userId: email });
     } catch (error) {
       console.error("[Signup] 회원가입 실패:", error);

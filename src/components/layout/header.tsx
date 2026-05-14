@@ -671,7 +671,7 @@ export function Gnb() {
                     {user?.compNm ?? "-"}
                   </span>
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#e97923]">
-                    {user?.userNm ?? ""}
+                    {user?.userNm ? `${user.userNm}　様` : ""}
                   </span>
                 </div>
               </div>
