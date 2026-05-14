@@ -22,12 +22,14 @@ function toDateString(d: Date): string {
 }
 
 // Design Ref: §2 — API Response Type
+// attachmentId 는 OpenAPI 스펙(nullable: true) · Prisma 스키마(FK SetNull) 와 정합 — 첨부 삭제 후 null.
+// null 행에서는 다운로드 버튼을 노출하지 않는다(404 회피).
 interface DownloadLogItem {
   id: number;
   downloadedAt: string;
   contentId: number;
   contentTitle: string;
-  attachmentId: number;
+  attachmentId: number | null;
   fileName: string;
   isExpired: boolean;
 }
@@ -80,7 +82,8 @@ function FileNameCell(params: ICellRendererParams<DownloadLogItem>) {
 
 function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
   const data = params.data;
-  if (!data || data.isExpired) return null;
+  // attachmentId 가 null(첨부 삭제) 인 경우는 다운로드 불가 — 버튼 미노출로 404 회피.
+  if (!data || data.isExpired || data.attachmentId == null) return null;
 
   return (
     <button
@@ -210,6 +213,11 @@ export function DownloadHistory() {
 
   // Design Ref: §3.5 — 다운로드
   const handleDownload = async (item: DownloadLogItem) => {
+    // 첨부 삭제(attachmentId=null) 행은 다운로드 불가 — 호출 가드.
+    if (item.attachmentId == null) {
+      openAlert({ type: "alert", message: "このファイルは既に削除されています。" });
+      return;
+    }
     try {
       const res = await api.get<Blob>(
         `/contents/${item.contentId}/files/${item.attachmentId}/download`,
@@ -279,7 +287,8 @@ export function DownloadHistory() {
               {item.fileName}
             </span>
           </div>
-          {!item.isExpired && (
+          {/* attachmentId null(첨부 삭제) 행은 다운로드 버튼 미노출 — PC 셀과 정책 일치. */}
+          {!item.isExpired && item.attachmentId != null && (
             <button
               type="button"
               onClick={(e) => {
@@ -350,11 +359,18 @@ export function DownloadHistory() {
           onSearch={handleSearch}
           onReset={handleReset}
         />
-        {searchKeyword && (
+        {/* 검색 결과 문구 — 키워드 / 날짜 어느 하나라도 적용되면 표시. 키워드 강조는 키워드가 있을 때만. */}
+        {(searchKeyword || searchDateFrom || searchDateTo) && (
           <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] mt-[12px] text-center lg:text-left">
-            「<span className="font-medium text-[#e97923]">{searchKeyword}</span>」
-            <span className="text-[#101010]">で合計</span>
-            <span className="font-medium text-[#e97923]">{totalCount.toLocaleString()}</span>
+            {searchKeyword ? (
+              <>
+                「<span className="font-medium text-[#e97923]">{searchKeyword}</span>」
+                <span className="text-[#101010]">で合計</span>
+              </>
+            ) : (
+              <span className="text-[#101010]">検索結果 合計</span>
+            )}
+            <span className="font-medium text-[#e97923]"> {totalCount.toLocaleString()} </span>
             <span className="text-[#101010]">件のデータが検索されました。</span>
           </p>
         )}

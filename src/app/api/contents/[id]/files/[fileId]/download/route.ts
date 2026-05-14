@@ -15,12 +15,19 @@ type Params = { params: Promise<{ id: string; fileId: string }> };
 //
 // ?preview=true 쿼리가 붙은 호출은 화면 미리보기(이미지 <img>, PDF 첫페이지 렌더 등) 용도이며
 // 실제 사용자의 다운로드 의사로 해석하지 않는다. 이 경우 DownloadLog 기록을 건너뛴다.
+//
+// 보안 강화 (Boston MEDIUM #1): 외부에서 URL 에 ?preview=true 를 수동 추가해 로그를 우회하는
+// 시나리오를 차단하기 위해 Referer 가 동일 origin 일 때만 preview 효과를 인정한다.
+// Referer 가 없거나 외부 origin 이면 미리보기 의도로 보지 않고 정상 다운로드 로그를 기록한다.
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const { id, fileId } = await params;
     const parsedId = idParamSchema.safeParse(id);
     const parsedFileId = idParamSchema.safeParse(fileId);
-    const isPreview = request.nextUrl.searchParams.get("preview") === "true";
+    const previewRequested = request.nextUrl.searchParams.get("preview") === "true";
+    const referer = request.headers.get("referer") ?? "";
+    const sameOriginReferer = referer.startsWith(request.nextUrl.origin);
+    const isPreview = previewRequested && sameOriginReferer;
 
     if (!parsedId.success || !parsedFileId.success) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });

@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
+import { useAlertStore } from "@/lib/store";
 
 interface CategoryChild {
   id: number;
@@ -83,11 +84,19 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
   const hasAttachments = item.attachmentCount > 0;
   const downloadingRef = useRef(false);
   const queryClient = useQueryClient();
+  const { openAlert } = useAlertStore();
 
+  // download-all 응답이 Blob 형식이라 axios catch 분기가 사용자 무음 실패로 흘러갔던 회귀를
+  // 호출 측에서 success 플래그 확인 + 알림으로 보완. (Boston HIGH #1)
   const handleDownloadAll = () => {
     if (downloadingRef.current) return;
     downloadingRef.current = true;
     void downloadAllAttachments(item.id)
+      .then((result) => {
+        if (!result.success) {
+          openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
+        }
+      })
       .finally(() => {
         downloadingRef.current = false;
         void queryClient.invalidateQueries({ queryKey: ["home-downloads"] });

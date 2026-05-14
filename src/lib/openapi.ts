@@ -2135,7 +2135,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("入力内容に不備があります"),
+          "400": errorResponse("入力内容に不備があります (例: dateFrom > dateTo, 形式不正)"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("서버 에러"),
