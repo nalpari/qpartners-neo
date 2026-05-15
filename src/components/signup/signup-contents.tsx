@@ -192,8 +192,9 @@ export function SignupContents() {
       );
 
       const { email } = res.data.data;
-      // Redmine #2223 — 가입 완료 모달 표시는 "성 + 전각공백 + 명" 형식 사용 (popup 측 様 앞 전각공백과 통일)
-      const displayName = `${form.lastName}　${form.firstName}`;
+      // 표시 규칙: "성 + 반각공백 + 명". popup 측에서 様 앞 전각공백을 별도로 추가하므로
+      // 최종 표기는 "성 명　様" (반각·전각공백 차이 의도적).
+      const displayName = `${form.lastName} ${form.firstName}`;
       openPopup("signup-complete", { userName: displayName, userId: email });
     } catch (error) {
       console.error("[Signup] 회원가입 실패:", error);
