@@ -32,13 +32,13 @@ export function SignupCompletePopup() {
   };
 
   return (
+    // 회원가입 완료 안내 → 사용자가 [ログイン画面に移動] 버튼으로만 닫도록 강제.
+    // dim 클릭·X 버튼으로 임의 닫힘 시 prefillEmail 설정 + 로그인 화면 이동 흐름이 끊긴다.
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
-      onClick={handleClose}
     >
       <div
         className="popup-container"
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="会員登録完了"
@@ -49,21 +49,6 @@ export function SignupCompletePopup() {
           <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
             会員登録完了
           </h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-[#E97923] cursor-pointer"
-            aria-label="閉じる"
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path
-                d="M1 1L9 9M9 1L1 9"
-                stroke="white"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
         </div>
 
         {/* 본문 */}
