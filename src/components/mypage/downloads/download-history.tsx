@@ -9,17 +9,29 @@ import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid";
 import { MobileCardList } from "@/components/common/mobile-card-list";
 import type { MobileCardField } from "@/components/common/mobile-card-list";
-import { DimSpinner, Pagination, PageSizeSelect } from "@/components/common";
+import { Button, DatePicker, DimSpinner, InputBox, Pagination, PageSizeSelect } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { usePageSize } from "@/hooks/use-page-size";
+import { formatJstDate } from "@/lib/jst-day";
+
+/**
+ * DatePicker(Date) → API 파라미터 "YYYY-MM-DD".
+ * 브라우저 로컬 TZ 의존을 피하고 JST 일자로 통일 — JST 사용자 환경에선 동일 결과,
+ * 다른 TZ 환경에서도 한 칸 어긋남 없이 검색 일자가 화면 표시(formatJstDate)와 일치.
+ */
+function toDateString(d: Date): string {
+  return formatJstDate(d, "-");
+}
 
 // Design Ref: §2 — API Response Type
+// attachmentId 는 OpenAPI 스펙(nullable: true) · Prisma 스키마(FK SetNull) 와 정합 — 첨부 삭제 후 null.
+// null 행에서는 다운로드 버튼을 노출하지 않는다(404 회피).
 interface DownloadLogItem {
   id: number;
   downloadedAt: string;
   contentId: number;
   contentTitle: string;
-  attachmentId: number;
+  attachmentId: number | null;
   fileName: string;
   isExpired: boolean;
 }
@@ -32,8 +44,9 @@ interface DownloadLogsData {
   list: DownloadLogItem[];
 }
 
+/** ISO 시각 문자열 → JST 기준 "YYYY.MM.DD" 표시. jst-day 공용 헬퍼 사용. */
 function formatDate(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, ".");
+  return formatJstDate(iso, ".");
 }
 
 // Design Ref: §4 — AG Grid CellRenderers
@@ -59,7 +72,8 @@ function FileNameCell(params: ICellRendererParams<DownloadLogItem>) {
 
 function DownloadCell(params: ICellRendererParams<DownloadLogItem>) {
   const data = params.data;
-  if (!data || data.isExpired) return null;
+  // attachmentId 가 null(첨부 삭제) 인 경우는 다운로드 불가 — 버튼 미노출로 404 회피.
+  if (!data || data.isExpired || data.attachmentId == null) return null;
 
   return (
     <button
@@ -90,8 +104,13 @@ export function DownloadHistory() {
   const { pageSize, setPageSize } = usePageSize();
 
   // 검색/페이지네이션 상태
+  // 입력값(local)과 실제 검색에 사용되는 값(search) 을 분리 — 사용자가 입력 도중 query 가 매번 발사되지 않도록.
   const [keyword, setKeyword] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [searchDateFrom, setSearchDateFrom] = useState<string | null>(null);
+  const [searchDateTo, setSearchDateTo] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
   // 모바일 누적 로드
@@ -100,11 +119,14 @@ export function DownloadHistory() {
   const [isMobileLoading, setIsMobileLoading] = useState(false);
 
   // API 연동
+  // dateFrom/dateTo 는 백엔드 미구현 상태에서도 future-proof 하게 함께 전송 (서버에서 무시되어도 동작에 영향 없음).
   const { data, isLoading, error } = useQuery<DownloadLogsData>({
-    queryKey: ["download-logs", { page, pageSize, keyword: searchKeyword }],
+    queryKey: ["download-logs", { page, pageSize, keyword: searchKeyword, dateFrom: searchDateFrom, dateTo: searchDateTo }],
     queryFn: async () => {
       const params: Record<string, string | number> = { page, pageSize };
       if (searchKeyword) params.keyword = searchKeyword;
+      if (searchDateFrom) params.dateFrom = searchDateFrom;
+      if (searchDateTo) params.dateTo = searchDateTo;
       const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
       return res.data.data;
     },
@@ -120,24 +142,33 @@ export function DownloadHistory() {
   const totalPages = Math.ceil(totalCount / pageSize);
   const mobileHasMore = mobilePage * pageSize < totalCount;
 
-  // 검색 실행
+  // 검색 실행 — 키워드와 기간 모두 search* 상태로 커밋해 한 번에 query 재발사.
+  // 두 날짜 입력은 서로의 선택 가능 범위를 제한하지 않음(사용자가 자유롭게 양방향 수정 가능).
+  // 대신 검색 시점에 dateFrom > dateTo 면 알림으로 안내하고 요청 자체를 차단.
   const handleSearch = () => {
+    if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
+      openAlert({ type: "alert", message: "終了日は開始日以降の日付を指定してください" });
+      return;
+    }
     setSearchKeyword(keyword);
+    setSearchDateFrom(dateFrom ? toDateString(dateFrom) : null);
+    setSearchDateTo(dateTo ? toDateString(dateTo) : null);
     setPage(1);
     setMobilePage(1);
     setMobileItems([]);
   };
 
-  const handleSearchClear = () => {
+  // 초기화 — 입력값과 검색값을 모두 비움.
+  const handleReset = () => {
     setKeyword("");
+    setDateFrom(null);
+    setDateTo(null);
     setSearchKeyword("");
+    setSearchDateFrom(null);
+    setSearchDateTo(null);
     setPage(1);
     setMobilePage(1);
     setMobileItems([]);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
   };
 
   // 페이지 변경
@@ -158,6 +189,8 @@ export function DownloadHistory() {
     try {
       const params: Record<string, string | number> = { page: nextPage, pageSize };
       if (searchKeyword) params.keyword = searchKeyword;
+      if (searchDateFrom) params.dateFrom = searchDateFrom;
+      if (searchDateTo) params.dateTo = searchDateTo;
       const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
       setMobileItems((prev) => [...(prev.length === 0 ? (data?.list.slice(0, pageSize) ?? []) : prev), ...res.data.data.list]);
       setMobilePage(nextPage);
@@ -170,6 +203,11 @@ export function DownloadHistory() {
 
   // Design Ref: §3.5 — 다운로드
   const handleDownload = async (item: DownloadLogItem) => {
+    // 첨부 삭제(attachmentId=null) 행은 다운로드 불가 — 호출 가드.
+    if (item.attachmentId == null) {
+      openAlert({ type: "alert", message: "このファイルは既に削除されています。" });
+      return;
+    }
     try {
       const res = await api.get<Blob>(
         `/contents/${item.contentId}/files/${item.attachmentId}/download`,
@@ -239,7 +277,8 @@ export function DownloadHistory() {
               {item.fileName}
             </span>
           </div>
-          {!item.isExpired && (
+          {/* attachmentId null(첨부 삭제) 행은 다운로드 버튼 미노출 — PC 셀과 정책 일치. */}
+          {!item.isExpired && item.attachmentId != null && (
             <button
               type="button"
               onClick={(e) => {
@@ -297,54 +336,31 @@ export function DownloadHistory() {
         </h2>
       </div>
 
-      {/* 검색바 */}
-      <div className="w-full max-w-[1440px] px-[24px] lg:px-0 flex flex-col gap-[12px] items-center">
-        <div className="bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] h-[60px] flex items-start overflow-hidden pl-[20px] w-full">
-          <div className="flex-1 h-[60px] flex items-center">
-            <input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="タイトル, 資料名検索"
-              className="flex-1 min-w-0 h-full font-['Noto_Sans_JP'] text-[14px] leading-[1.5] bg-transparent outline-none text-[#101010] placeholder:text-[#999]"
-            />
-          </div>
-          {keyword && (
-            <button
-              type="button"
-              className="size-[60px] flex items-center justify-center shrink-0"
-              onClick={handleSearchClear}
-              aria-label="検索クリア"
-            >
-              <Image
-                src="/asset/images/layout/search_delete.svg"
-                alt=""
-                width={60}
-                height={60}
-                unoptimized
-              />
-            </button>
-          )}
-          <button
-            type="button"
-            className="size-[60px] border-l border-[#f7f9fb] flex items-center justify-center shrink-0 cursor-pointer"
-            onClick={handleSearch}
-            aria-label="検索"
-          >
-            <Image
-              src="/asset/images/contents/search_icon.svg"
-              alt=""
-              width={19}
-              height={19}
-            />
-          </button>
-        </div>
-        {searchKeyword && (
-          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5]">
-            「<span className="font-medium text-[#e97923]">{searchKeyword}</span>」
-            <span className="text-[#101010]">で合計</span>
-            <span className="font-medium text-[#e97923]">{totalCount.toLocaleString()}</span>
+      {/* 검색바 — 관리자 검색 패턴(MembersSearch) 차용. Figma 491:501(PC) / 491:839(MO).
+          PC: 라벨박스 + 폼박스 가로 정렬, 한 행 2필드(키워드 + 기간) / MO: 라벨 위 + input 아래, 세로 스택. */}
+      <div className="w-full max-w-[1440px] px-[24px] lg:px-0">
+        <DownloadHistorySearch
+          keyword={keyword}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onKeywordChange={setKeyword}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onSearch={handleSearch}
+          onReset={handleReset}
+        />
+        {/* 검색 결과 문구 — 키워드 / 날짜 어느 하나라도 적용되면 표시. 키워드 강조는 키워드가 있을 때만. */}
+        {(searchKeyword || searchDateFrom || searchDateTo) && (
+          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] mt-[12px] text-center lg:text-left">
+            {searchKeyword ? (
+              <>
+                「<span className="font-medium text-[#e97923]">{searchKeyword}</span>」
+                <span className="text-[#101010]">で合計</span>
+              </>
+            ) : (
+              <span className="text-[#101010]">検索結果 合計</span>
+            )}
+            <span className="font-medium text-[#e97923]"> {totalCount.toLocaleString()} </span>
             <span className="text-[#101010]">件のデータが検索されました。</span>
           </p>
         )}
@@ -426,5 +442,115 @@ export function DownloadHistory() {
         </div>
       </div>
     </section>
+  );
+}
+
+// ─── DownloadHistorySearch ───
+// Figma 491:501 (PC) / 491:839 (MO). 관리자 MembersSearch 의 SearchField 구조를 따르되,
+// 모바일은 라벨이 input 위로 올라가는 세로 스택으로 분기.
+interface DownloadHistorySearchProps {
+  keyword: string;
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  onKeywordChange: (value: string) => void;
+  onDateFromChange: (date: Date | null) => void;
+  onDateToChange: (date: Date | null) => void;
+  onSearch: () => void;
+  onReset: () => void;
+}
+
+function DownloadHistorySearch({
+  keyword,
+  dateFrom,
+  dateTo,
+  onKeywordChange,
+  onDateFromChange,
+  onDateToChange,
+  onSearch,
+  onReset,
+}: DownloadHistorySearchProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) onSearch();
+  };
+
+  return (
+    <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[28px] lg:pt-[34px] pb-[24px] px-[24px] w-full">
+      {/* 필드 행 — MO: column, PC: row */}
+      <div className="flex flex-col lg:flex-row gap-[16px] lg:gap-[4px] items-stretch lg:items-start">
+        <SearchField label="タイトル·資料名">
+          <InputBox
+            value={keyword}
+            onChange={onKeywordChange}
+            onKeyDown={handleKeyDown}
+            className="w-full"
+          />
+        </SearchField>
+        <SearchField label="ダウンロード日">
+          {/* 기간 입력 — PC: 가로 + "~" / MO: 세로 */}
+          <div className="flex flex-col lg:flex-row flex-1 min-w-0 items-stretch lg:items-center gap-[4px] lg:gap-[8px]">
+            <div className="flex-1 min-w-0">
+              <DatePicker
+                value={dateFrom}
+                onChange={onDateFromChange}
+                dateFormat="yyyy.MM.dd"
+                placeholder="YYYY.MM.DD"
+              />
+            </div>
+            <span className="hidden lg:inline shrink-0 font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+              ~
+            </span>
+            <div className="flex-1 min-w-0">
+              <DatePicker
+                value={dateTo}
+                onChange={onDateToChange}
+                dateFormat="yyyy.MM.dd"
+                placeholder="YYYY.MM.DD"
+              />
+            </div>
+          </div>
+        </SearchField>
+      </div>
+
+      {/* 버튼 — PC: 우측 정렬 / MO: 가로 분할(flex-1). */}
+      <div className="flex items-center gap-[6px] mt-[18px] lg:justify-end">
+        <Button
+          variant="secondary"
+          onClick={onReset}
+          className="flex-1 lg:flex-none"
+        >
+          初期化
+        </Button>
+        <Button
+          variant="primary"
+          onClick={onSearch}
+          className="flex-1 lg:flex-none"
+        >
+          検索
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// MO: 라벨이 상단(pb-[8px] pr-[8px]) → input 하단 / PC: 라벨박스 + 폼박스 가로 정렬(SearchField 패턴).
+function SearchField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row flex-1 gap-[4px] lg:h-[58px] lg:items-center">
+      {/* PC: 라벨 길이에 따라 잘리지 않도록 폭을 160px 로 확장하고 ellipsis 처리 제거. */}
+      <div className="flex items-center pb-[8px] pr-[8px] lg:p-0 lg:pl-[16px] lg:pr-[8px] lg:py-[8px] lg:w-[160px] lg:h-full shrink-0 lg:bg-[#f7f9fb] lg:border lg:border-[#eaf0f6] lg:rounded-[6px]">
+        <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576f] whitespace-nowrap">
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-1 min-w-0 items-center lg:bg-white lg:border lg:border-[#eaf0f6] lg:rounded-[6px] lg:p-[8px]">
+        {children}
+      </div>
+    </div>
   );
 }

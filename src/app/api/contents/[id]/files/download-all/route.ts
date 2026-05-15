@@ -316,21 +316,23 @@ export async function GET(request: NextRequest, { params }: Params) {
       // DownloadLog 기록은 ZIP이 실제로 클라이언트에게 송출 완료된 시점에서만 작성
       // (이전에는 finalize 직후 기록되어 abort/error 시 false positive 감사 로그 발생)
       if (!user) return;
-      // 리뷰 대응: N개 parallel `create()` → 커넥션 풀 소진 및 실패 시 감사 로그 소실 위험.
-      //           `createMany` 로 단일 쿼리 전환 + 실패 시 단일 로그 요약으로 축약.
+      // 정책 (옵션 A): 일괄 다운로드 1건 = DownloadLog 1행.
+      //   이전에는 첨부 N개당 N행 createMany → 다운로드 이력 화면에서 "한 번 클릭" 이 "N행" 으로
+      //   보이는 사용자 혼동이 컸음. 대표 첨부(정렬 첫 항목) 의 id 만 기록해 콘텐츠 단위 1행으로 축약.
+      const representative = validFiles[0];
       void prisma.downloadLog
-        .createMany({
-          data: validFiles.map((f) => ({
+        .create({
+          data: {
             userType: user.userType,
             userId: user.userId,
             contentId: parsedId.data,
-            attachmentId: f.id,
-          })),
+            attachmentId: representative.id,
+          },
         })
         .catch((err: unknown) => {
           console.error("[download-all] DownloadLog 기록 실패:", {
-            count: validFiles.length,
-            attachmentIds: validFiles.map((f) => f.id),
+            attachmentId: representative.id,
+            bundledCount: validFiles.length,
             error: err,
           });
         });

@@ -2078,10 +2078,23 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["DownloadLog"],
         summary: "다운로드 기록 목록 조회",
+        description: "본인의 다운로드 이력을 조회한다. 키워드(타이틀·자료명 부분일치)와 다운로드일 범위(JST 기준)로 필터링. dateFrom 은 해당일 00:00 부터, dateTo 는 23:59:59.999 까지 inclusive.",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
-          { name: "keyword", in: "query", schema: { type: "string" } },
+          { name: "keyword", in: "query", schema: { type: "string" }, description: "콘텐츠 타이틀 또는 첨부파일명 부분일치 검색" },
+          {
+            name: "dateFrom",
+            in: "query",
+            schema: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", example: "2026-03-01" },
+            description: "다운로드일 시작(JST 자정) — 포함",
+          },
+          {
+            name: "dateTo",
+            in: "query",
+            schema: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", example: "2026-03-31" },
+            description: "다운로드일 종료(JST 23:59:59.999) — 포함. dateFrom 보다 이전이면 400.",
+          },
         ],
         responses: {
           "200": {
@@ -2122,7 +2135,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("入力内容に不備があります"),
+          "400": errorResponse("入力内容に不備があります (例: dateFrom > dateTo, 形式不正)"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("서버 에러"),
@@ -2340,7 +2353,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1).",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다.",
         requestBody: {
           required: true,
           content: {

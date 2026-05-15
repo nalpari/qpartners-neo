@@ -59,7 +59,8 @@ export function PdfThumbnail({ contentId, fileId, fileName, onError, onLoaded }:
           import.meta.url,
         ).toString();
 
-        const res = await fetch(`/api/contents/${contentId}/files/${fileId}/download`, {
+        // ?preview=true: 첫페이지 썸네일 렌더 용도 — 서버에 다운로드 의사 없음을 알려 DownloadLog 기록 회피.
+        const res = await fetch(`/api/contents/${contentId}/files/${fileId}/download?preview=true`, {
           credentials: "include",
         });
         if (!res.ok) throw new Error(`download failed: status=${res.status}`);

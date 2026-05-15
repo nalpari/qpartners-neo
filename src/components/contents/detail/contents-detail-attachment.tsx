@@ -46,9 +46,11 @@ function ImageThumbnail({ contentId, fileId, fileName }: { contentId: number; fi
   }
 
   return (
+    // ?preview=true: 미리보기 호출임을 서버에 알려 DownloadLog 기록을 건너뛴다.
+    //   (이 플래그가 없으면 상세 페이지 진입만으로도 첨부 수만큼 다운로드 이력이 자동 누적됨.)
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/api/contents/${contentId}/files/${fileId}/download`}
+      src={`/api/contents/${contentId}/files/${fileId}/download?preview=true`}
       alt={fileName}
       className="max-w-full max-h-full object-contain"
       onError={() => setError(true)}
