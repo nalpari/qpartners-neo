@@ -120,6 +120,9 @@ export function DownloadHistory() {
 
   // API 연동
   // dateFrom/dateTo 는 백엔드 미구현 상태에서도 future-proof 하게 함께 전송 (서버에서 무시되어도 동작에 영향 없음).
+  // refetchOnMount: "always" — 다른 화면(홈/콘텐츠 목록·상세)에서 다운로드 후 이력 페이지로
+  // 진입했을 때 글로벌 staleTime(60s) 캐시 hit 으로 인해 신규 행이 즉시 보이지 않는 회귀 차단.
+  // 다운로드 발생 시점을 호출지에서 invalidate 하는 방식 대신 진입 시 항상 최신 fetch 로 일원화.
   const { data, isLoading, error } = useQuery<DownloadLogsData>({
     queryKey: ["download-logs", { page, pageSize, keyword: searchKeyword, dateFrom: searchDateFrom, dateTo: searchDateTo }],
     queryFn: async () => {
@@ -130,6 +133,7 @@ export function DownloadHistory() {
       const res = await api.get<{ data: DownloadLogsData }>("/mypage/download-logs", { params });
       return res.data.data;
     },
+    refetchOnMount: "always",
   });
 
   // 모바일 데이터: 첫 페이지는 PC 데이터 사용, 추가 페이지는 별도 fetch로 누적
