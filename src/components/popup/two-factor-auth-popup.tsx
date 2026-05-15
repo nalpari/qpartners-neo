@@ -284,10 +284,14 @@ export function TwoFactorAuthPopup() {
                   height={24}
                   className="shrink-0"
                 />
+                {/* 브라우저 자동 번역 모드에서 정적 텍스트(残り時間)와 동적 timerDisplay 가
+                    같은 텍스트 노드 라인에 인접하면 번역기가 DOM 노드를 외부 변경 → React
+                    reconciliation 실패로 카운트가 멈춘 것처럼 보이는 회귀가 있었음.
+                    동적 값을 별도 <span> 으로 감싸 React 가 관리하는 경계를 명확히 한다. */}
                 <p className={`font-['Noto_Sans_JP'] text-[14px] leading-[1.5] ${
                   isTimerExpired ? "text-[#FF1A1A]" : "text-[#505050]"
                 }`}>
-                  残り時間 : {timerDisplay}
+                  残り時間 : <span>{timerDisplay}</span>
                 </p>
               </div>
 

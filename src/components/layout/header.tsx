@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import api from "@/lib/axios";
 import { performLogout } from "@/lib/auth-client";
+import { formatUserDisplayName } from "@/lib/format";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
@@ -217,6 +218,9 @@ export function Gnb() {
   const router = useRouter();
 
   const isLoggedIn = user != null;
+  // QSP userNm 이 공백 문자열인 경우(`"   "`) truthy 라 삼항 가드를 통과해 "　様" 만 단독
+  // 렌더되는 회귀를 차단. 정규화 결과 빈 문자열이면 아예 렌더하지 않는다.
+  const userDisplayName = formatUserDisplayName(user?.userNm);
   // SSR initial: "" → dev URL fallback. Client mount 후 운영 hostname 이면 prod URL 로 수렴.
   const hostname = useSyncExternalStore(subscribeNoop, getClientHostname, getServerHostname);
   const fallbackUrls = PROD_HOSTS.includes(hostname)
@@ -534,7 +538,7 @@ export function Gnb() {
                     </span>
                     <span className="w-px h-3 bg-[rgba(255,255,255,0.4)]" />
                     <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap">
-                      {user?.userNm ? `${user.userNm}　様` : ""}
+                      {userDisplayName ? `${userDisplayName}　様` : ""}
                     </span>
                   </div>
                 </div>
@@ -679,7 +683,7 @@ export function Gnb() {
                     {user?.compNm ?? "-"}
                   </span>
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#e97923]">
-                    {user?.userNm ? `${user.userNm}　様` : ""}
+                    {userDisplayName ? `${userDisplayName}　様` : ""}
                   </span>
                 </div>
               </div>
