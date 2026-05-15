@@ -28,5 +28,10 @@ export function formatUserDisplayName(userNm: string | null | undefined): string
   if (!userNm) return "";
   const tokens = userNm.split(/[\s　,]+/).filter(Boolean);
   if (tokens.length === 0) return "";
+  // 3토큰 이상은 QSP 명세 외 데이터 (예: 미들네임·복수 콤마) — 표시는 앞 2토큰만 보이므로
+  // 정보 손실 발생. drift 모니터링을 위해 길이만 노출(PII 회피).
+  if (tokens.length > 2) {
+    console.warn(`[formatUserDisplayName] 3토큰 이상 입력 — 절단, length=${userNm.length}, tokens=${tokens.length}`);
+  }
   return tokens.slice(0, 2).join(" ");
 }
