@@ -35,3 +35,23 @@ export function jstParseDateOnly(s: string): Date {
 export function jstParseDateOnlyEnd(s: string): Date {
   return new Date(`${s}T23:59:59.999+09:00`);
 }
+
+/**
+ * JST 기준 `YYYY{sep}MM{sep}DD` 문자열 직렬화.
+ *
+ * `toISOString` 은 UTC 기준이라 JST 자정 직후 다운로드는 전날 UTC 로 표시되는 회귀가 있어
+ * JST(+09:00) 오프셋을 더한 뒤 UTC 컴포넌트로 추출한다.
+ * separator 기본값 "." — 화면 표시용. API 파라미터(YYYY-MM-DD)는 "-" 지정.
+ */
+export function formatJstDate(
+  date: Date | string,
+  separator: "." | "-" = ".",
+): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "-";
+  const jst = new Date(d.getTime() + JST_OFFSET_MS);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(jst.getUTCDate()).padStart(2, "0");
+  return `${y}${separator}${m}${separator}${day}`;
+}

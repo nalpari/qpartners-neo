@@ -12,13 +12,15 @@ import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { Button, DatePicker, DimSpinner, InputBox, Pagination, PageSizeSelect } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { usePageSize } from "@/hooks/use-page-size";
+import { formatJstDate } from "@/lib/jst-day";
 
-/** Date → "YYYY-MM-DD" — toISOString 은 UTC 기준이라 JST 자정이 전날로 넘어가는 이슈를 회피하기 위해 로컬 시간 기반으로 직렬화. */
+/**
+ * DatePicker(Date) → API 파라미터 "YYYY-MM-DD".
+ * 브라우저 로컬 TZ 의존을 피하고 JST 일자로 통일 — JST 사용자 환경에선 동일 결과,
+ * 다른 TZ 환경에서도 한 칸 어긋남 없이 검색 일자가 화면 표시(formatJstDate)와 일치.
+ */
 function toDateString(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return formatJstDate(d, "-");
 }
 
 // Design Ref: §2 — API Response Type
@@ -42,21 +44,9 @@ interface DownloadLogsData {
   list: DownloadLogItem[];
 }
 
-/**
- * ISO 시각 문자열 → JST 기준 "YYYY.MM.DD" 표시.
- *
- * 이전 구현은 `iso.slice(0, 10)` 으로 UTC 날짜 부분을 그대로 잘라 표시 →
- * 새벽 시간대(JST 0~9시) 다운로드의 UTC 일자가 전날로 떨어져 검색 결과가
- * 한 칸 어긋난 것처럼 보이는 회귀가 있었음. JST(+09:00) 오프셋을 더한 뒤
- * UTC 컴포넌트를 추출해 일관되게 표시한다.
- */
+/** ISO 시각 문자열 → JST 기준 "YYYY.MM.DD" 표시. jst-day 공용 헬퍼 사용. */
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(jst.getUTCDate()).padStart(2, "0");
-  return `${y}.${m}.${day}`;
+  return formatJstDate(iso, ".");
 }
 
 // Design Ref: §4 — AG Grid CellRenderers

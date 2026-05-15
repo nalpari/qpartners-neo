@@ -16,9 +16,14 @@ type Params = { params: Promise<{ id: string; fileId: string }> };
 // ?preview=true 쿼리가 붙은 호출은 화면 미리보기(이미지 <img>, PDF 첫페이지 렌더 등) 용도이며
 // 실제 사용자의 다운로드 의사로 해석하지 않는다. 이 경우 DownloadLog 기록을 건너뛴다.
 //
-// 보안 강화 (Boston MEDIUM #1): 외부에서 URL 에 ?preview=true 를 수동 추가해 로그를 우회하는
-// 시나리오를 차단하기 위해 Referer 가 동일 origin 일 때만 preview 효과를 인정한다.
-// Referer 가 없거나 외부 origin 이면 미리보기 의도로 보지 않고 정상 다운로드 로그를 기록한다.
+// 보안 강화 (Boston MEDIUM): 외부에서 URL 에 ?preview=true 를 수동 추가해 로그를 우회하는
+// 시나리오를 차단하기 위해 동일 origin 요청일 때만 preview 효과를 인정한다.
+// 검증 2단 — Referer 가 동일 origin 이고 Sec-Fetch-Site 도 same-origin 일 때만 통과.
+// - Referer 는 클라이언트가 위조 가능 (UA 설정, 확장)
+// - Sec-Fetch-Site 는 브라우저가 직접 부여하는 fetch metadata 로 위조 불가
+// - Sec-Fetch-Site 미지원 구형 UA(Safari 일부 구버전) 폴백 — Referer 만으로도 인정하되 로그 남김
+//
+// TODO(후속): preview 경로를 `/preview` 엔드포인트로 분리하면 query 우회 자체가 불가해짐.
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const { id, fileId } = await params;
@@ -26,8 +31,28 @@ export async function GET(request: NextRequest, { params }: Params) {
     const parsedFileId = idParamSchema.safeParse(fileId);
     const previewRequested = request.nextUrl.searchParams.get("preview") === "true";
     const referer = request.headers.get("referer") ?? "";
-    const sameOriginReferer = referer.startsWith(request.nextUrl.origin);
-    const isPreview = previewRequested && sameOriginReferer;
+    // URL 파싱 후 origin 비교 — `startsWith` prefix 매칭은 `example.com.attacker.com` 같은
+    // 위조 referer 통과 가능. invalid URL 은 폴백에서 거부됨.
+    let refererOrigin: string | null = null;
+    try {
+      refererOrigin = referer ? new URL(referer).origin : null;
+    } catch {
+      refererOrigin = null;
+    }
+    const sameOriginReferer = refererOrigin === request.nextUrl.origin;
+    const fetchSite = request.headers.get("sec-fetch-site");
+    // same-origin 만 신뢰. cross-site/same-site/none 은 외부 진입으로 간주.
+    const isSameOriginFetch = fetchSite === "same-origin";
+    // Sec-Fetch-Site 미지원 UA — 헤더가 null. 이 경우 Referer 만으로 폴백.
+    const isPreview = previewRequested && (
+      isSameOriginFetch || (fetchSite === null && sameOriginReferer)
+    );
+    if (previewRequested && !isPreview) {
+      console.warn("[download] preview 요청 거부 — 외부 origin", {
+        hasReferer: referer.length > 0,
+        fetchSite,
+      });
+    }
 
     if (!parsedId.success || !parsedFileId.success) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });

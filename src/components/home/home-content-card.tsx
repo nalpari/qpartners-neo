@@ -4,6 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { useAlertStore } from "@/lib/store";
@@ -41,7 +42,13 @@ export interface HomeContentItem {
  *
  * 파일명은 Content-Disposition 의 `filename*=UTF-8''` 값을 우선 사용 (일본어/한국어 원본 보존).
  */
-async function downloadAllAttachments(contentId: number): Promise<{ success: boolean }> {
+interface DownloadResult {
+  success: boolean;
+  /** axios 에러일 때만 채워짐. 호출자가 상태 코드별 안내 분기에 사용. */
+  status?: number;
+}
+
+async function downloadAllAttachments(contentId: number): Promise<DownloadResult> {
   try {
     const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
       responseType: "blob",
@@ -50,8 +57,10 @@ async function downloadAllAttachments(contentId: number): Promise<{ success: boo
     // axios 가 헤더 키를 소문자로 노출 — `content-disposition` 으로 접근.
     const headerValue = res.headers["content-disposition"];
     const cd: string = typeof headerValue === "string" ? headerValue : "";
-    const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i);
-    const asciiMatch = cd.match(/filename="([^"]+)"/i);
+    // RFC 5987 — `filename*=UTF-8''` 주변에 공백·세미콜론·따옴표 종료가 다양하게 등장.
+    // `[^;\s]+` 로 세미콜론·공백 직전까지만 캡처해 trailing whitespace·다음 파라미터 침입 방지.
+    const utf8Match = cd.match(/filename\*\s*=\s*UTF-8''([^;\s]+)/i);
+    const asciiMatch = cd.match(/filename\s*=\s*"([^"]+)"/i);
     const fallbackName = `content_${contentId}.zip`;
     const fileName = utf8Match
       ? decodeURIComponent(utf8Match[1])
@@ -68,8 +77,26 @@ async function downloadAllAttachments(contentId: number): Promise<{ success: boo
     return { success: true };
   } catch (err: unknown) {
     console.error("[Home] 첨부파일 다운로드 실패:", err);
-    return { success: false };
+    const status = isAxiosError(err) ? err.response?.status : undefined;
+    return { success: false, status };
   }
+}
+
+/** HTTP 상태 코드 → 사용자 안내(JP). 정확한 원인을 노출해 재시도 가능성 판단에 도움. */
+function errorMessageForStatus(status: number | undefined): string {
+  if (status === 401 || status === 403) {
+    return "アクセス権限がありません。再ログイン後にお試しください。";
+  }
+  if (status === 404) {
+    return "ファイルが見つかりません。削除された可能性があります。";
+  }
+  if (status === 429) {
+    return "リクエストが集中しています。しばらくしてからお試しください。";
+  }
+  if (status && status >= 500) {
+    return "サーバーエラーが発生しました。しばらくしてからお試しください。";
+  }
+  return "ファイルのダウンロードに失敗しました。";
 }
 
 interface HomeContentCardProps {
@@ -88,18 +115,22 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
 
   // download-all 응답이 Blob 형식이라 axios catch 분기가 사용자 무음 실패로 흘러갔던 회귀를
   // 호출 측에서 success 플래그 확인 + 알림으로 보완. (Boston HIGH #1)
+  // 추가로 상태 코드별 분기 — 401/403 은 권한, 404 는 첨부 부재, 그 외는 일반 실패. (Boston MEDIUM)
   const handleDownloadAll = () => {
     if (downloadingRef.current) return;
     downloadingRef.current = true;
     void downloadAllAttachments(item.id)
       .then((result) => {
         if (!result.success) {
-          openAlert({ type: "alert", message: "ファイルのダウンロードに失敗しました。" });
+          openAlert({ type: "alert", message: errorMessageForStatus(result.status) });
+          return;
         }
+        // 성공 시에만 캐시 invalidate — 실패한 다운로드는 서버에 DownloadLog 가 쌓이지 않으므로
+        // 재요청 비용만 늘리는 무의미한 invalidate 회피.
+        void queryClient.invalidateQueries({ queryKey: ["home-downloads"] });
       })
       .finally(() => {
         downloadingRef.current = false;
-        void queryClient.invalidateQueries({ queryKey: ["home-downloads"] });
       });
   };
 

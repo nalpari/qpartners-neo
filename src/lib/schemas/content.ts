@@ -108,10 +108,20 @@ export const listContentsQuerySchema = z.object({
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
 });
 
-/** YYYY-MM-DD 형식 검증 — 실제 시각 변환은 핸들러에서 jst-day 헬퍼로 수행. */
+/**
+ * YYYY-MM-DD 형식 + 실제 존재 날짜 검증.
+ * regex 만으로는 `2026-02-30`·`2026-13-01` 등 존재하지 않는 날짜가 통과해
+ * JS Date 자동 보정(2/30 → 3/2)으로 의도와 다른 범위 쿼리가 실행됨.
+ * JST 정오 기준으로 파싱 후 UTC 일자가 원본 문자열과 일치하는지로 실제 존재 여부 확인.
+ * 실제 시각 변환은 핸들러에서 jst-day 헬퍼로 별도 수행.
+ */
 const dateOnlyString = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "日付の形式が正しくありません(YYYY-MM-DD)");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "日付の形式が正しくありません(YYYY-MM-DD)")
+  .refine((s) => {
+    const d = new Date(`${s}T12:00:00+09:00`);
+    return !Number.isNaN(d.getTime()) && s === d.toISOString().slice(0, 10);
+  }, "存在しない日付です");
 
 export const downloadLogsQuerySchema = z
   .object({
