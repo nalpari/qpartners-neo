@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { getFallbackRole, isInternalUser } from "@/lib/auth";
+import { jstParseDateOnly, jstParseDateOnlyEnd } from "@/lib/jst-day";
 import { getUserFromRequest } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { downloadLogsQuerySchema } from "@/lib/schemas/content";
@@ -36,7 +37,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, pageSize, keyword } = query.data;
+    const { page, pageSize, keyword, dateFrom, dateTo } = query.data;
+
+    // 기간 필터 — 사용자 입력은 YYYY-MM-DD(날짜 단위). JST 자정 기준으로 변환해
+    // dateTo 의 23:59:59.999 까지 inclusive 비교 (오늘 다운로드 분이 누락되는 회귀 방지).
+    const downloadedAtFilter: { gte?: Date; lte?: Date } = {};
+    if (dateFrom) downloadedAtFilter.gte = jstParseDateOnly(dateFrom);
+    if (dateTo) downloadedAtFilter.lte = jstParseDateOnlyEnd(dateTo);
+    const hasDateFilter = dateFrom !== undefined || dateTo !== undefined;
 
     const where = {
       userType: user.userTp,
@@ -47,6 +55,7 @@ export async function GET(request: NextRequest) {
           { attachment: { fileName: { contains: keyword } } },
         ],
       }),
+      ...(hasDateFilter && { downloadedAt: downloadedAtFilter }),
     };
 
     const [logs, totalCount] = await Promise.all([

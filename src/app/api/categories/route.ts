@@ -79,6 +79,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // isVisible 은 1Depth 전용 정책 — 자식 카테고리(parentId !== null) 에 false 가 전송되면
+    // 서버 단에서 명시적으로 거절(PUT 핸들러와 동일 정책). createCategorySchema 의 default(true) 가
+    // 적용되어 true 값은 자식에 와도 기능 영향이 없으므로 false 케이스만 차단.
+    if (result.data.parentId !== null && result.data.isVisible === false) {
+      return NextResponse.json(
+        { error: "isVisible は 1Depth カテゴリ専用です" },
+        { status: 400 },
+      );
+    }
+
     let shiftLog: {
       parentId: number | null;
       insertAt: number;
