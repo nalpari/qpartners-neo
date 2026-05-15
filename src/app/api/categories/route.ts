@@ -22,14 +22,15 @@ export async function GET(request: NextRequest) {
       if (auth instanceof NextResponse) return auth;
     }
 
-    // isVisible(1Depth 한정) 서버측 필터:
-    //   activeOnly=true (일반 사용자 경로) 일 때만 isVisible=false 부모 카테고리를 응답에서 제외.
-    //   관리자 트리(activeOnly=false) 는 토글 UI 가 모든 행을 보여줘야 하므로 제외하지 않는다.
-    //   자식(2Depth) 은 isVisible 정책 대상이 아니므로 children where 에는 적용하지 않음.
+    // isVisible 은 "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출" 토글 전용 정책.
+    // API 응답에서 isVisible=false 부모를 제거하면 콘텐츠 목록의 검색 체크박스·콘텐츠 상세·
+    // 등록 폼의 카테고리 선택 등 다른 모든 화면에서도 동시에 사라지는 회귀가 발생.
+    // 따라서 서버측 필터는 활성/내부전용 만 적용하고, isVisible 적용은 호출지(ag-grid)에서
+    // 클라이언트 필터로 수행한다 (contents-table.tsx 의 columnDefs 생성부).
     const categories = await prisma.category.findMany({
       where: {
         parentId: null,
-        ...(activeOnly && { isActive: true, isVisible: true }),
+        ...(activeOnly && { isActive: true }),
         ...(internalOnly && { isInternalOnly: true }),
       },
       include: {
