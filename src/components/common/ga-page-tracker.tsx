@@ -20,11 +20,8 @@ import { usePathname, useSearchParams } from "next/navigation";
  *   - 민감 쿼리 파라미터(자동로그인 페이로드·비밀번호 재설정 토큰·인증 코드 등) 는
  *     sanitize 화이트리스트로 제거. page_location 도 sanitize 된 path 로 재구성해
  *     `window.location.href` 원본 전송 차단.
- *   - 동적 라우트 segment(`/contents/123`, `/admin/bulk-mail/456` 등) 는 정규화하여
- *     page_view 의 page_path 에서 raw ID 노출을 차단 (회원/콘텐츠 ID enumeration·
- *     비공개 콘텐츠 존재 추정 방지, 일본 個人情報保護法 보수 운영).
- *   - 콘텐츠별 조회수 통계(Redmine #2216 note-1) 는 별도 `content_view` Custom Event
- *     로 content_id / content_type 만 발송. page_path 정규화와 비즈니스 통계 양립.
+ *   - 동적 라우트 segment 는 raw ID 그대로 송신 — 운영팀의 콘텐츠/벌크메일별
+ *     조회수 추적 요구(Redmine #2216 note-1). PII 우려보다 비즈니스 통계 우선.
  *   - page_title 미전송 — 관리자 회원 상세 등에서 이름/이메일이 포함될 수 있어 제외.
  *
  * Suspense 경계:
@@ -127,79 +124,30 @@ function sanitizeSearch(searchParams: URLSearchParams): string {
 }
 
 /**
- * 동적 라우트 segment 정규화 + content_view Custom Event 매칭.
- *
- * `pathname` 에는 `/contents/123`, `/admin/bulk-mail/456` 처럼 순차 PK 가 그대로
- * 포함되어 GA 콘솔에서 회원/콘텐츠 ID enumeration · 비공개 콘텐츠 존재 추정 등
- * PII / 비밀 정보 누설 위험이 있다. App Router 라우트 디렉토리 구조와 동일하게
- * `[id]` placeholder 로 치환하여 page_view 송신 시 차단한다.
- *
- * Prisma 스키마상 `Content.id`/`MassMail.id` 모두 `Int autoincrement` 이므로
- * 정규식을 `\d+` 로 좁혀 정적 형제 라우트(`/contents/create`,
- * `/admin/bulk-mail/create`) 가 잘못 정규화되어 funnel 분석이 왜곡되는 것을 방지.
- *
- * 콘텐츠별 조회수 통계는 page_view 의 page_path 에 기대지 않고 별도
- * `content_view` Custom Event 로 content_type + content_id 만 발송한다.
- *
- * 신규 동적 라우트 추가 시 본 배열도 함께 갱신해야 한다 (CI 자동 검출 어려움
- * — `src/app/**\/[*]` 디렉토리 변경 시 페어 변경 권장).
- */
-type DynamicRouteRule = {
-  pattern: RegExp;
-  placeholder: string;
-  contentType: string;
-};
-
-const DYNAMIC_ROUTE_RULES: ReadonlyArray<DynamicRouteRule> = [
-  {
-    pattern: /^\/contents\/(\d+)(?=\/|$)/,
-    placeholder: "/contents/[id]",
-    contentType: "contents",
-  },
-  {
-    pattern: /^\/admin\/bulk-mail\/(\d+)(?=\/|$)/,
-    placeholder: "/admin/bulk-mail/[id]",
-    contentType: "bulk-mail",
-  },
-];
-
-type NormalizedRoute = {
-  normalized: string;
-  contentEvent: { contentType: string; contentId: string } | null;
-};
-
-/**
  * 비밀번호 재설정 화면은 `src/app/(auth)/password-reset/page.tsx` 의
  * server-side redirect 로 `/login?reset-token=…` 에 마운트되어 GA 에 `/login`
  * 으로 잡힌다. 일반 로그인과 funnel 을 구분하기 위해 reset-token query 존재 시
  * `/password-reset` 가상 경로로 정규화하여 별도 page_view 로 카운트한다.
  * 토큰 값 자체는 `SENSITIVE_KEYS` 에 의해 query 에서 제거되므로 GA 전송되지 않음.
+ *
+ * 동적 라우트(`/contents/123`, `/admin/bulk-mail/456` 등) 는 정규화하지 않고
+ * raw pathname 그대로 GA 로 송신 — 운영팀 콘텐츠/벌크메일별 통계 추적 요구
+ * (Redmine #2216 note-1) 반영.
  */
 function isPasswordResetVirtualPath(pathname: string, searchParams: URLSearchParams): boolean {
   return pathname === "/login" && searchParams.has("reset-token");
 }
 
-function normalizePathname(pathname: string, searchParams: URLSearchParams): NormalizedRoute {
+function normalizePathname(pathname: string, searchParams: URLSearchParams): string {
   if (isPasswordResetVirtualPath(pathname, searchParams)) {
-    return { normalized: "/password-reset", contentEvent: null };
+    return "/password-reset";
   }
-  let normalized = pathname;
-  let contentEvent: NormalizedRoute["contentEvent"] = null;
-  for (const { pattern, placeholder, contentType } of DYNAMIC_ROUTE_RULES) {
-    const match = pathname.match(pattern);
-    if (match) {
-      normalized = pathname.replace(pattern, placeholder);
-      contentEvent = { contentType, contentId: match[1] };
-      break;
-    }
-  }
-  return { normalized, contentEvent };
+  return pathname;
 }
 
 type PendingPageView = {
   pagePath: string;
   pageLocation: string;
-  contentEvent: NormalizedRoute["contentEvent"];
 };
 
 function GaPageTrackerInner() {
@@ -217,7 +165,7 @@ function GaPageTrackerInner() {
     if (typeof window === "undefined") return;
 
     const search = sanitizeSearch(searchParams);
-    const { normalized, contentEvent } = normalizePathname(pathname, searchParams);
+    const normalized = normalizePathname(pathname, searchParams);
     const pagePath = search ? `${normalized}?${search}` : normalized;
     // window.location.href 원본 전송 금지 — sanitize / 정규화 된 path 로 재구성.
     const pageLocation = `${window.location.origin}${pagePath}`;
@@ -225,7 +173,7 @@ function GaPageTrackerInner() {
     if (!window.gtag) {
       // gtag.js 미로드 — 큐에 보관 후 다음 effect 호출(또는 별도 onLoad 훅)에서
       // 발송 재시도. 광고 차단 환경에서는 영구 미로드일 수 있어 1회만 경고.
-      pendingPageViewRef.current = { pagePath, pageLocation, contentEvent };
+      pendingPageViewRef.current = { pagePath, pageLocation };
       if (!hasWarnedMissingGtagRef.current) {
         hasWarnedMissingGtagRef.current = true;
         console.warn(
@@ -243,24 +191,12 @@ function GaPageTrackerInner() {
         page_path: pending.pagePath,
         page_location: pending.pageLocation,
       });
-      if (pending.contentEvent) {
-        window.gtag("event", "content_view", {
-          content_type: pending.contentEvent.contentType,
-          content_id: pending.contentEvent.contentId,
-        });
-      }
     }
 
     window.gtag("event", "page_view", {
       page_path: pagePath,
       page_location: pageLocation,
     });
-    if (contentEvent) {
-      window.gtag("event", "content_view", {
-        content_type: contentEvent.contentType,
-        content_id: contentEvent.contentId,
-      });
-    }
   }, [pathname, searchParams]);
 
   return null;
