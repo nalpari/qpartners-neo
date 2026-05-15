@@ -141,6 +141,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 4-1. 탭(요청 userTp)과 QSP 응답 userTp 일치 검증.
+  //   QSP 는 loginId+pwd 위주로 인증해 STORE 계정이 SEKO 탭으로도 통과되던 결함을
+  //   응답 시점에 차단. 후속 2FA 판정 / authRole 판별 / 로그인 알림 메일 (line 363) 등이
+  //   모두 이 가드 아래에 있으므로 메일 false-positive 도 함께 방지된다.
+  //   사용자 열거 방지를 위해 자격증명 실패와 동일 메시지/상태로 응답.
+  if (qsp.data.userTp !== userTp) {
+    console.warn("[POST /api/auth/login] userTp 불일치 — 탭과 계정 유형 다름", {
+      requestedUserTp: userTp,
+      actualUserTp: qsp.data.userTp,
+      userId: maskEmail(qsp.data.userId),
+    });
+    return NextResponse.json(
+      { error: "IDまたはパスワードが正しくありません" },
+      { status: 401 },
+    );
+  }
+
   // 5. 2차 인증 필요 여부 판별
   //    정책 (관리자 명시 해제 최우선):
   //      - 최우선 면제: secAuthYn === "N" (관리자 명시 해제) — secAuthDt 유무 무관 면제
