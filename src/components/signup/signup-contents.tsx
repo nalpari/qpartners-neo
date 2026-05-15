@@ -346,38 +346,38 @@ export function SignupContents() {
             </h2>
 
             <div className="flex flex-col gap-4 mt-4 lg:gap-[4px] lg:mt-4">
-              {/* 성명 (2칸) — 성·이름 인풋 가로 50:50 */}
+              {/* 성명 (2칸) — PC: 성 인풋 길이(120px)에 이름 인풋도 맞춰 동일 폭으로 통일 */}
               <FormRow label="氏名" required error={fieldErrors.lastName || fieldErrors.firstName}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastName}
                     onChange={(v) => updateField("lastName", v)}
                     placeholder="氏"
-                    className="w-full lg:flex-1 lg:min-w-0"
+                    className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstName}
                     onChange={(v) => updateField("firstName", v)}
                     placeholder="名"
-                    className="w-full lg:flex-1 lg:min-w-0"
+                    className="w-full lg:w-[120px]"
                   />
                 </div>
               </FormRow>
 
-              {/* 성명 히라가나 (2칸) — 성·이름 인풋 가로 50:50 */}
+              {/* 성명 히라가나 (2칸) — 氏名 행과 동일한 폭 정책 */}
               <FormRow label="氏名ひらがな" required error={fieldErrors.lastNameKana || fieldErrors.firstNameKana}>
                 <div className="flex flex-col lg:flex-row gap-2 w-full">
                   <InputBox
                     value={form.lastNameKana}
                     onChange={(v) => updateField("lastNameKana", v)}
                     placeholder="氏"
-                    className="w-full lg:flex-1 lg:min-w-0"
+                    className="w-full lg:w-[120px]"
                   />
                   <InputBox
                     value={form.firstNameKana}
                     onChange={(v) => updateField("firstNameKana", v)}
                     placeholder="名"
-                    className="w-full lg:flex-1 lg:min-w-0"
+                    className="w-full lg:w-[120px]"
                   />
                 </div>
               </FormRow>
