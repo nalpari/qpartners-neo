@@ -168,7 +168,21 @@ type NormalizedRoute = {
   contentEvent: { contentType: string; contentId: string } | null;
 };
 
-function normalizePathname(pathname: string): NormalizedRoute {
+/**
+ * 비밀번호 재설정 화면은 `src/app/(auth)/password-reset/page.tsx` 의
+ * server-side redirect 로 `/login?reset-token=…` 에 마운트되어 GA 에 `/login`
+ * 으로 잡힌다. 일반 로그인과 funnel 을 구분하기 위해 reset-token query 존재 시
+ * `/password-reset` 가상 경로로 정규화하여 별도 page_view 로 카운트한다.
+ * 토큰 값 자체는 `SENSITIVE_KEYS` 에 의해 query 에서 제거되므로 GA 전송되지 않음.
+ */
+function isPasswordResetVirtualPath(pathname: string, searchParams: URLSearchParams): boolean {
+  return pathname === "/login" && searchParams.has("reset-token");
+}
+
+function normalizePathname(pathname: string, searchParams: URLSearchParams): NormalizedRoute {
+  if (isPasswordResetVirtualPath(pathname, searchParams)) {
+    return { normalized: "/password-reset", contentEvent: null };
+  }
   let normalized = pathname;
   let contentEvent: NormalizedRoute["contentEvent"] = null;
   for (const { pattern, placeholder, contentType } of DYNAMIC_ROUTE_RULES) {
@@ -203,7 +217,7 @@ function GaPageTrackerInner() {
     if (typeof window === "undefined") return;
 
     const search = sanitizeSearch(searchParams);
-    const { normalized, contentEvent } = normalizePathname(pathname);
+    const { normalized, contentEvent } = normalizePathname(pathname, searchParams);
     const pagePath = search ? `${normalized}?${search}` : normalized;
     // window.location.href 원본 전송 금지 — sanitize / 정규화 된 path 로 재구성.
     const pageLocation = `${window.location.origin}${pagePath}`;
