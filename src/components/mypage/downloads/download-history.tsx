@@ -353,21 +353,6 @@ export function DownloadHistory() {
           onSearch={handleSearch}
           onReset={handleReset}
         />
-        {/* 검색 결과 문구 — 키워드 / 날짜 어느 하나라도 적용되면 표시. 키워드 강조는 키워드가 있을 때만. */}
-        {(searchKeyword || searchDateFrom || searchDateTo) && (
-          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] mt-[12px] text-center lg:text-left">
-            {searchKeyword ? (
-              <>
-                「<span className="font-medium text-[#e97923]">{searchKeyword}</span>」
-                <span className="text-[#101010]">で合計</span>
-              </>
-            ) : (
-              <span className="text-[#101010]">検索結果 合計</span>
-            )}
-            <span className="font-medium text-[#e97923]"> {totalCount.toLocaleString()} </span>
-            <span className="text-[#101010]">件のデータが検索されました。</span>
-          </p>
-        )}
       </div>
 
       {/* 테이블 영역 */}
