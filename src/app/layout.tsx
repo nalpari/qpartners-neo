@@ -41,6 +41,26 @@ if (RAW_GA_ID && !GA_ID) {
   );
 }
 
+/**
+ * 모든 페이지를 dynamic SSR 로 강제 — SSG 빌드 타임 캐싱 회피.
+ *
+ * Why:
+ *   `NEXT_PUBLIC_GA_ID` 는 빌드 타임 인라인 변수인데, dev/운영 이미지 빌드 시
+ *   `.dockerignore` 의 `.env*` 패턴으로 `.env.production` 이 빌드 컨테이너에서
+ *   제외되어 빌드 타임에 `process.env.NEXT_PUBLIC_GA_ID` 가 `undefined` 가 된다.
+ *   결과적으로 SSG 페이지(예: `/`, `/signup`)는 GA `<Script>` 가 없는 HTML 로
+ *   영구 캐시되어 GA SDK 가 절대 로드되지 않고, 홈 진입 사용자의 SPA 이동
+ *   전체에서 `/collect` 발송이 0 건이 된다.
+ *
+ *   런타임 ENV 는 docker-compose / 운영 환경설정에서 정상 주입되므로
+ *   force-dynamic 으로 매 요청 SSR 렌더링 시 layout 이 런타임 `process.env`
+ *   를 읽어 GA `<Script>` 가 모든 페이지 HTML 에 포함된다.
+ *
+ *   진짜 근본 해결은 인프라 단계의 `.dockerignore` / Dockerfile build-arg
+ *   조정이지만, 그 전까지 본 directive 가 회피층 역할을 한다.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Q.PARTNERS",
   description: "Q.PARTNERS",
