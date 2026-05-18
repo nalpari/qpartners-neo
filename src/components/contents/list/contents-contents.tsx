@@ -81,7 +81,8 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
         : [],
       internalOnly: parsed.internalOnly === true,
     };
-  } catch {
+  } catch (error: unknown) {
+    console.warn("[ContentsContents] sessionStorage JSON 파싱 실패:", error);
     return EMPTY_SEARCH_PARAMS;
   }
 }

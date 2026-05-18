@@ -32,7 +32,8 @@ function parseStoredSearchParams(raw: string | null): MassMailSearchParams {
     if (typeof parsed.startDate === "string") result.startDate = parsed.startDate;
     if (typeof parsed.endDate === "string") result.endDate = parsed.endDate;
     return result;
-  } catch {
+  } catch (error: unknown) {
+    console.warn("[BulkMailContents] sessionStorage JSON 파싱 실패:", error);
     return {};
   }
 }
