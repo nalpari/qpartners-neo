@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
+import {
+  consumeListRestoreFlag,
+  LIST_RESTORE_KEYS,
+  useListStateCacheInvalidator,
+} from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
@@ -15,15 +19,20 @@ interface SearchFilters {
   categoryIds: number[];
   /** 게시대상 권한코드 — `__NON_MEMBER__` sentinel = 비회원 검색 (서버에서 null 로 변환) */
   roleCode: string;
-  /** 담당부문 복수선택 — CSV 직렬화로 URL 영속. 빈 배열 = 전체조회. */
+  /** 담당부문 복수선택. 빈 배열 = 전체조회. */
   departments: string[];
   internalOnly: boolean;
 }
 
 /**
- * URL 쿼리 영속 대상 — page + filters.
- * pageSize 는 URL 에서 분리해 usePageSize 로컬 state 로 관리한다 — 회원관리/공지사항 등
- * 다른 테이블과 동일한 정책. 새로고침 시 PAGE_SIZE 공통코드 sort=1 값으로 초기화 (URL 영속 X).
+ * sessionStorage 영속 대상 — filters + page.
+ * pageSize 는 별도 (usePageSize) 가 관리한다.
+ *
+ * 정책 (대량메일과 동일):
+ *   - URL 쿼리에는 영속하지 않는다 — 새로고침/메뉴 재진입 시 자연 초기화.
+ *   - 상세/생성/편집 → 목록 복귀 시 sessionStorage 의 setListRestoreFlag("contents")
+ *     가 활성화된 경우에만 직전 검색조건/페이지 복원.
+ *   - 그 외(메뉴 클릭, 새로고침, 다른 페이지 경유) 진입은 모두 초기화.
  */
 interface SearchParams extends SearchFilters {
   page: number;
@@ -44,54 +53,112 @@ interface CategoryNode {
 
 export type { CategoryNode, SearchFilters };
 
-/** URL 쿼리 → SearchParams 파싱 — pageSize 는 별도 (usePageSize) 관리. */
-function parseSearchParams(urlParams: URLSearchParams): SearchParams {
-  const categoryIdsStr = urlParams.get("categoryIds") ?? "";
-  return {
-    page: Number(urlParams.get("page")) || 1,
-    keyword: urlParams.get("keyword") ?? "",
-    categoryIds: categoryIdsStr ? categoryIdsStr.split(",").map(Number).filter((n) => !isNaN(n)) : [],
-    roleCode: urlParams.get("roleCode") ?? "",
-    departments: urlParams.get("department") ? urlParams.get("department")!.split(",").filter(Boolean) : [],
-    internalOnly: urlParams.get("internalOnly") === "true",
-  };
+const EMPTY_SEARCH_PARAMS: SearchParams = {
+  page: 1,
+  keyword: "",
+  categoryIds: [],
+  roleCode: "",
+  departments: [],
+  internalOnly: false,
+};
+
+/** sessionStorage 의 직렬화된 검색조건을 안전하게 역직렬화. 손상/스키마변동 시 빈 값. */
+function parseStoredSearchParams(raw: string | null): SearchParams {
+  if (!raw) return EMPTY_SEARCH_PARAMS;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SearchParams> | null;
+    if (!parsed || typeof parsed !== "object") return EMPTY_SEARCH_PARAMS;
+    return {
+      page: typeof parsed.page === "number" && parsed.page > 0 ? parsed.page : 1,
+      keyword: typeof parsed.keyword === "string" ? parsed.keyword : "",
+      categoryIds: Array.isArray(parsed.categoryIds)
+        // DB id 는 양의 정수만 유효 — NaN/±Infinity/음수/0/소수는 모두 제외 (서버 zod 거부 사전 차단).
+        ? parsed.categoryIds.filter((n): n is number => Number.isInteger(n) && n > 0)
+        : [],
+      roleCode: typeof parsed.roleCode === "string" ? parsed.roleCode : "",
+      departments: Array.isArray(parsed.departments)
+        ? parsed.departments.filter((d): d is string => typeof d === "string")
+        : [],
+      internalOnly: parsed.internalOnly === true,
+    };
+  } catch (error: unknown) {
+    console.warn("[ContentsContents] sessionStorage JSON 파싱 실패:", error);
+    return EMPTY_SEARCH_PARAMS;
+  }
 }
 
-/** SearchParams → URL 쿼리 문자열 (빈 값 제외) — pageSize 미직렬화. */
-function buildQueryString(params: SearchParams): string {
-  const qs = new URLSearchParams();
-  if (params.page > 1) qs.set("page", String(params.page));
-  if (params.keyword) qs.set("keyword", params.keyword);
-  if (params.categoryIds.length > 0) qs.set("categoryIds", params.categoryIds.join(","));
-  if (params.roleCode) qs.set("roleCode", params.roleCode);
-  if (params.departments.length > 0) qs.set("department", params.departments.join(","));
-  if (params.internalOnly) qs.set("internalOnly", "true");
-  const str = qs.toString();
-  return str ? `?${str}` : "";
+/** searchParams 가 사실상 비어있는지 (모든 검색 필드가 기본값) 판정 — page 는 제외. */
+function isEmptySearchParams(params: SearchParams): boolean {
+  return (
+    params.keyword === "" &&
+    params.categoryIds.length === 0 &&
+    params.roleCode === "" &&
+    params.departments.length === 0 &&
+    !params.internalOnly &&
+    params.page === 1
+  );
 }
 
 export function ContentsContents() {
-  const router = useRouter();
-  const urlParams = useSearchParams();
+  // 마운트 시 1회 — sessionStorage 복원 플래그 소비.
+  //   - 상세/생성/편집 → 목록 복귀: 플래그 "1" → true (직전 검색조건/페이지/페이지 표시 개수 복원)
+  //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
+  const [shouldRestoreList] = useState(() => consumeListRestoreFlag("contents"));
+  // 컴포넌트 unmount 시 cache 무효화 — stale 복원 회귀 차단.
+  useListStateCacheInvalidator("contents");
 
-  // pageSize 는 usePageSize 로컬 state 로 관리 (URL 미영속) — 새로고침 시 PAGE_SIZE 공통코드
-  // sort=1 값으로 초기화. 회원관리/공지사항 등 다른 테이블과 동일한 정책.
-  const { pageSize, setPageSize, isLoading: isPageSizeLoading } = usePageSize();
+  // pageSize — URL 미영속. shouldRestore 일 때만 sessionStorage 복원, 그 외 sort=1 초기화.
+  const { pageSize, setPageSize, isLoading: isPageSizeLoading } = usePageSize({
+    storageKey: LIST_RESTORE_KEYS.contents.pageSize,
+    shouldRestore: shouldRestoreList,
+  });
 
-  // URL 쿼리에서 검색 상태 파싱 (page/keyword/filters)
-  const searchParams = parseSearchParams(urlParams);
+  // searchParams 초기값:
+  //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
+  //   - false 이고 URL 에 `?keyword=...` 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
+  //     `router.push("/contents?keyword=...")` 등) 으로 간주, URL 키워드를 한 번 흡수.
+  //   - false + URL 빈 → sessionStorage 즉시 삭제 + 기본 빈값.
+  // useState lazy init 안에서 sessionStorage 부수효과 수행 (마운트 1회).
+  const [searchParams, setSearchParams] = useState<SearchParams>(() => {
+    if (typeof window === "undefined") return EMPTY_SEARCH_PARAMS;
+    const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
+    if (shouldRestoreList) {
+      return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
+    }
+    window.sessionStorage.removeItem(FILTERS_KEY);
+    // 외부 진입 URL 쿼리 흡수 — 현재는 홈 검색바의 keyword 만 지원.
+    // 다른 필드(categoryIds 등)는 외부 진입 호출처 없음.
+    const urlKeyword = new URLSearchParams(window.location.search).get("keyword");
+    if (urlKeyword) {
+      return { ...EMPTY_SEARCH_PARAMS, keyword: urlKeyword };
+    }
+    return EMPTY_SEARCH_PARAMS;
+  });
 
-  // URL 쿼리 업데이트 (replace로 히스토리 쌓지 않음).
-  // `scroll: false` — 검색·페이지 이동·페이지 사이즈 변경 모두에서 현재 스크롤 위치 유지.
-  // Next.js `router.replace` 기본값이 `scroll: true` 라 URL 변경마다 상단으로 점프하던
-  // 결함을 차단 (Redmine #2163). 사용자가 필터/페이지를 조작해도 결과만 갱신되고
-  // 화면 위치는 그대로 — 긴 필터 패널 아래에서 검색해도 다시 스크롤할 필요 없다.
-  const updateParams = useCallback(
-    (next: SearchParams) => {
-      router.replace(`/contents${buildQueryString(next)}`, { scroll: false });
-    },
-    [router],
-  );
+  // 외부 진입으로 URL 에 ?keyword=... 가 남아있는 경우 → URL 정리.
+  //   - 사용자가 화면 내에서 추가 검색조건을 입력해도 URL 은 영속하지 않으므로
+  //     새로고침 시 URL 의 stale keyword 가 다시 흡수되어 추가 조건이 사라지는 혼란 방지.
+  //   - history.replaceState 로 직접 URL 만 갱신 (Next.js useRouter 사용 시 라우터 트리
+  //     리렌더 유발 — 본 화면은 useSearchParams 미사용이라 직접 갱신이 더 가볍다).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // searchParams 변경 시 sessionStorage 동기화.
+  //   - 비어있으면 삭제 — 초기화 버튼 후 이전 검색조건이 부활하는 회귀 방지.
+  //   - page 까지 함께 직렬화하여 복귀 시 페이지 번호도 복원.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
+    if (isEmptySearchParams(searchParams)) {
+      window.sessionStorage.removeItem(FILTERS_KEY);
+    } else {
+      window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(searchParams));
+    }
+  }, [searchParams]);
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
@@ -144,22 +211,26 @@ export function ContentsContents() {
   });
 
   const handleSearch = (filters: SearchFilters) => {
-    updateParams({ ...searchParams, ...filters, page: 1 });
+    setSearchParams({ ...filters, page: 1 });
   };
 
   const handlePageChange = (page: number) => {
-    updateParams({ ...searchParams, page });
+    setSearchParams((prev) => ({ ...prev, page }));
   };
 
   const handlePageSizeChange = (newPageSize: number) => {
     setPageSize(newPageSize);
-    // 페이지 사이즈 변경 시 page 만 1 로 리셋 (URL 영속) — pageSize 자체는 URL 미영속.
-    updateParams({ ...searchParams, page: 1 });
+    // 페이지 사이즈 변경 시 page 만 1 로 리셋.
+    setSearchParams((prev) => ({ ...prev, page: 1 }));
   };
 
   return (
     <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full pb-[10px] lg:pb-[48px]">
       <ContentsSearch
+        // 복원 시 폼 state 가 초기값으로 동기화되도록 key 로 리마운트 제어
+        // (react-hooks/set-state-in-effect 정책 — 부모에서 key prop 으로 리마운트 권장 패턴).
+        // 한 번만 평가되는 shouldRestoreList 를 그대로 사용 — 검색 동작 중 리마운트 X.
+        key={`mount-${shouldRestoreList ? "restore" : "fresh"}`}
         isInternal={isInternal}
         categories={categories}
         onSearch={handleSearch}

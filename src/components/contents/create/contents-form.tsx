@@ -12,6 +12,7 @@ import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { canModifyClient } from "@/lib/auth-client";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
+import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { ContentsFormManagement } from "./contents-form-management";
 import {
@@ -206,6 +207,8 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleList = () => {
+    // 생성/편집 → 목록 복귀 — 직전 검색조건/페이지 표시 개수 복원 활성화.
+    setListRestoreFlag("contents");
     router.push("/contents", { transitionTypes: ["fade"] });
   };
 

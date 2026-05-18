@@ -13,6 +13,7 @@ import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, Mass
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import { usePageSize } from "@/hooks/use-page-size";
+import { LIST_RESTORE_KEYS } from "@/hooks/use-list-state-persist";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 
@@ -37,12 +38,19 @@ function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
 
 interface BulkMailTableProps {
   searchParams: MassMailSearchParams;
+  /** 부모(BulkMailContents)가 consumeListRestoreFlag 로 결정한 복원 여부.
+   *  true → sessionStorage 의 pageSize 복원, false → sessionStorage 삭제 후 sort=1 초기화. */
+  shouldRestore: boolean;
 }
 
-export function BulkMailTable({ searchParams }: BulkMailTableProps) {
+export function BulkMailTable({ searchParams, shouldRestore }: BulkMailTableProps) {
   const router = useRouter();
   // 페이지 사이즈 default 는 PAGE_SIZE 공통코드 sortOrder=1 항목을 따른다 (운영자 제어).
-  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
+  // shouldRestore 정책: 상세/생성 → 목록 복귀일 때만 sessionStorage 값 복원, 그 외엔 초기화.
+  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize({
+    storageKey: LIST_RESTORE_KEYS.bulkMail.pageSize,
+    shouldRestore,
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const [draftOnly, setDraftOnly] = useState(false);
 
