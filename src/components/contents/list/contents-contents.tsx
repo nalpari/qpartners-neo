@@ -5,10 +5,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
+import { useListStatePersist } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable } from "./contents-table";
+
+/**
+ * sessionStorage 키 — 콘텐츠 목록 검색조건/페이지 영속.
+ * useListStatePersist 와 usePageSize 가 각자 다른 suffix 로 분리하여 사용한다.
+ */
+const LIST_STORAGE_PREFIX = "qp:list:contents";
 
 interface SearchFilters {
   keyword: string;
@@ -74,9 +81,12 @@ export function ContentsContents() {
   const router = useRouter();
   const urlParams = useSearchParams();
 
-  // pageSize 는 usePageSize 로컬 state 로 관리 (URL 미영속) — 새로고침 시 PAGE_SIZE 공통코드
-  // sort=1 값으로 초기화. 회원관리/공지사항 등 다른 테이블과 동일한 정책.
-  const { pageSize, setPageSize, isLoading: isPageSizeLoading } = usePageSize();
+  // pageSize 는 usePageSize 로컬 state 로 관리 (URL 미영속).
+  // storageKey 지정으로 sessionStorage 영속 — 목록 → 상세 → 목록 왕복 시 직전 선택값 유지.
+  // 새로고침/탭 신규 진입 시에는 PAGE_SIZE 공통코드 sort=1 값으로 초기화 (sessionStorage 미존재 시).
+  const { pageSize, setPageSize, isLoading: isPageSizeLoading } = usePageSize({
+    storageKey: `${LIST_STORAGE_PREFIX}:pageSize`,
+  });
 
   // URL 쿼리에서 검색 상태 파싱 (page/keyword/filters)
   const searchParams = parseSearchParams(urlParams);
@@ -92,6 +102,19 @@ export function ContentsContents() {
     },
     [router],
   );
+
+  // 검색조건 sessionStorage 영속 — 목록 → 상세 → 목록 왕복 시 직전 검색조건/페이지 복원.
+  //   - 마운트 시 URL 쿼리가 비어 있고 sessionStorage 에 값 있으면 router.replace 로 복원.
+  //   - URL 쿼리 변경마다 sessionStorage 동기화.
+  //   - 복원 직후 searchParams 가 새 값으로 재계산되고, 아래 ContentsSearch 의 key prop
+  //     (filters 해시) 이 바뀌어 폼 state 가 복원값으로 리마운트된다.
+  useListStatePersist({
+    storageKey: `${LIST_STORAGE_PREFIX}:filters`,
+    currentQueryString: urlParams.toString(),
+    onRestore: (stored) => {
+      router.replace(`/contents?${stored}`, { scroll: false });
+    },
+  });
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
@@ -160,6 +183,11 @@ export function ContentsContents() {
   return (
     <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full pb-[10px] lg:pb-[48px]">
       <ContentsSearch
+        // 검색조건 복원(sessionStorage → router.replace) 후 ContentsSearch 가 새 initialFilters
+        // 로 리마운트되도록 filters 부분 해시를 key 로 사용. page 는 제외 — 페이지 이동마다
+        // 폼이 리셋되면 사용자 입력 중 임시 값(아직 검색 미실행)이 손실됨.
+        // react-hooks/set-state-in-effect 정책상 부모에서 key prop 으로 리마운트 제어 권장 패턴.
+        key={`${searchParams.keyword}|${searchParams.categoryIds.join(",")}|${searchParams.roleCode}|${searchParams.departments.join(",")}|${searchParams.internalOnly}`}
         isInternal={isInternal}
         categories={categories}
         onSearch={handleSearch}
