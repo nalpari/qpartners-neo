@@ -150,6 +150,11 @@ export async function POST(request: NextRequest) {
   //   예외: ADMIN(SUPER_ADMIN 포함, QSP 상 동일 userTp="ADMIN")은 "판매점(STORE) 탭" 으로만 허용.
   //   ADMIN 전용 로그인 탭이 없어 판매점 탭이 관리자 진입점 역할을 한다. 시공점/일반 탭으로
   //   ADMIN 진입은 정책상 차단 유지.
+  //
+  //   QSP 동작 전제: QSP 는 요청 userTp 와 무관하게 계정의 실제 userTp 를 응답한다.
+  //   따라서 ADMIN 계정이 STORE 탭(요청 userTp="STORE")으로 진입하더라도 qsp.data.userTp
+  //   는 "ADMIN" 으로 회신되며, ADMIN 권한이 STORE 등급(1ST/2ND_STORE)으로 강등되는
+  //   시나리오는 발생하지 않는다. 후속 resolveAuthRole 도 qsp.data.userTp 기준 분기.
   const isAdminViaDealerTab = qsp.data.userTp === "ADMIN" && userTp === "STORE";
   if (qsp.data.userTp !== userTp && !isAdminViaDealerTab) {
     console.warn("[POST /api/auth/login] userTp 불일치 — 탭과 계정 유형 다름", {
@@ -161,6 +166,16 @@ export async function POST(request: NextRequest) {
       { error: "IDまたはパスワードが正しくありません" },
       { status: 401 },
     );
+  }
+
+  // 감사 trail: ADMIN 계정이 판매점 탭 경유로 진입한 경우 보안 로그에 기록.
+  //   관리자 진입 경로 추적 + 비정상 패턴(특정 ADMIN 의 비정기적 STORE 탭 사용 등) 사후 분석용.
+  //   PII 제외, userId 는 maskEmail 처리.
+  if (isAdminViaDealerTab) {
+    console.log("[POST /api/auth/login] ADMIN 계정 판매점 탭 진입 허용", {
+      userId: maskEmail(qsp.data.userId),
+      requestedUserTp: userTp,
+    });
   }
 
   // 5. 2차 인증 필요 여부 판별
