@@ -146,7 +146,12 @@ export async function POST(request: NextRequest) {
   //   응답 시점에 차단. 후속 2FA 판정 / authRole 판별 / 로그인 알림 메일 (line 363) 등이
   //   모두 이 가드 아래에 있으므로 메일 false-positive 도 함께 방지된다.
   //   사용자 열거 방지를 위해 자격증명 실패와 동일 메시지/상태로 응답.
-  if (qsp.data.userTp !== userTp) {
+  //
+  //   예외: ADMIN(SUPER_ADMIN 포함, QSP 상 동일 userTp="ADMIN")은 "판매점(STORE) 탭" 으로만 허용.
+  //   ADMIN 전용 로그인 탭이 없어 판매점 탭이 관리자 진입점 역할을 한다. 시공점/일반 탭으로
+  //   ADMIN 진입은 정책상 차단 유지.
+  const isAdminViaDealerTab = qsp.data.userTp === "ADMIN" && userTp === "STORE";
+  if (qsp.data.userTp !== userTp && !isAdminViaDealerTab) {
     console.warn("[POST /api/auth/login] userTp 불일치 — 탭과 계정 유형 다름", {
       requestedUserTp: userTp,
       actualUserTp: qsp.data.userTp,
