@@ -72,7 +72,8 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
       page: typeof parsed.page === "number" && parsed.page > 0 ? parsed.page : 1,
       keyword: typeof parsed.keyword === "string" ? parsed.keyword : "",
       categoryIds: Array.isArray(parsed.categoryIds)
-        ? parsed.categoryIds.filter((n): n is number => typeof n === "number" && !isNaN(n))
+        // DB id 는 양의 정수만 유효 — NaN/±Infinity/음수/0/소수는 모두 제외 (서버 zod 거부 사전 차단).
+        ? parsed.categoryIds.filter((n): n is number => Number.isInteger(n) && n > 0)
         : [],
       roleCode: typeof parsed.roleCode === "string" ? parsed.roleCode : "",
       departments: Array.isArray(parsed.departments)

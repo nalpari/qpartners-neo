@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+
+/**
+ * Strict Mode 의 unmount→remount 시뮬레이션이 일어나는 grace window (ms).
+ * 이 시간 안에 같은 컴포넌트가 재마운트되면 모듈 cache hit 으로 동일 결과를 보장하고,
+ * 사용자의 정상 navigation(메뉴 클릭, 다른 페이지 경유)은 이 시간 이상 지나서 cache miss 가 되어
+ * 새 평가가 일어난다. 100ms 는 React 19 Strict Mode 의 동기적 remount 가 수 ms 이내라는
+ * 관찰에 충분한 여유를 둔 값.
+ */
+const STRICT_MODE_REMOUNT_GRACE_MS = 100;
 
 /**
  * 목록 화면별 sessionStorage 키 묶음.
@@ -32,7 +41,8 @@ export type ListScope = keyof typeof LIST_RESTORE_KEYS;
  * scope 별 consumeListRestoreFlag 결과 캐시.
  *   - 같은 컴포넌트 마운트 안에서 useState lazy init 이중 호출 / 두 훅의 동일 scope 조회를
  *     같은 결과로 만들어 주는 short-lived 캐시.
- *   - 새 setListRestoreFlag 호출 또는 invalidateListRestoreCache(unmount 시) 호출로 무효화.
+ *   - 새 setListRestoreFlag 호출 또는 useListStateCacheInvalidator (unmount 시) 호출로 무효화.
+ *   - 키 집합이 LIST_RESTORE_KEYS 의 ListScope 로 유한(2개 고정)하므로 영구 잔존이라도 메모리 누수 아님.
  */
 const _scopeDecisionCache = new Map<ListScope, boolean>();
 
@@ -77,78 +87,26 @@ export function consumeListRestoreFlag(scope: ListScope): boolean {
  * 시뮬레이션 중간에 cache 가 비워져 두 번째 mount 가 새로 평가(=flag 이미 소비됨 → false)
  * 하는 회귀가 발생한다. setTimeout 으로 매크로태스크 다음에 invalidate 하여:
  *   - Strict Mode 의 즉시 remount(수 ms 이내): cache hit 유지 → 같은 결과로 복원 보장
- *   - 사용자의 정상 navigation(메뉴 클릭, 다른 페이지 경유): 100ms 이상 지나 cache miss → 새 평가
+ *   - 사용자의 정상 navigation(메뉴 클릭, 다른 페이지 경유): grace window 이상 지나 cache miss → 새 평가
  *
- * 컴포넌트가 짧은 시간 내(<100ms) 재마운트되는 비정상 케이스는 stale cache 가 잠시 살아있을
- * 수 있으나, 그 경우에도 flag 가 이미 소비됐으므로 다음 평가에서 false 가 나와 결과가 같다.
+ * 컴포넌트가 짧은 시간 내(grace window 이내) 재마운트되는 비정상 케이스는 stale cache 가 잠시
+ * 살아있을 수 있으나, 그 경우에도 flag 가 이미 소비됐으므로 다음 평가에서 false 가 나와 결과가 같다.
+ *
+ * 빠른 navigation 으로 핸들이 누적되지 않도록 useRef 로 이전 setTimeout 핸들을 추적해
+ * 새 등록 전 clearTimeout 한다.
  */
 export function useListStateCacheInvalidator(scope: ListScope): void {
+  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
-      const t = setTimeout(() => {
+      if (pendingTimeoutRef.current !== null) {
+        clearTimeout(pendingTimeoutRef.current);
+      }
+      pendingTimeoutRef.current = setTimeout(() => {
         _scopeDecisionCache.delete(scope);
-      }, 100);
-      // 같은 scope 가 즉시 remount 되어 같은 invalidator 가 새 setTimeout 을 걸어도
-      // 이전 setTimeout 은 그대로 둔다 (둘 다 같은 cache 를 지우는 멱등 연산).
-      void t;
+        pendingTimeoutRef.current = null;
+      }, STRICT_MODE_REMOUNT_GRACE_MS);
     };
   }, [scope]);
 }
 
-/**
- * 목록 화면의 검색조건/페이지 등 URL 쿼리 상태를 sessionStorage 에 백업하고
- * 마운트 시 shouldRestore 가 true 이고 URL 쿼리가 비어 있으면 자동 복원하는 공통 훅.
- *
- * 사용 시나리오: 목록 → 상세/생성/편집 진입 → 복귀 시 직전 검색조건 유지 (같은 탭 세션 한정).
- *
- * 동작:
- *   - 마운트 시 1회: shouldRestore && currentQueryString === "" 이면 sessionStorage 값으로
- *     onRestore(stored) 호출. onRestore 안에서 router.replace 로 URL 을 복원하면 된다.
- *   - shouldRestore === false 면 sessionStorage 의 검색조건도 함께 삭제 — 다른 페이지 경유
- *     또는 새로고침으로 진입한 경우 이전 검색조건이 살아나는 것을 방지.
- *   - currentQueryString 이 바뀔 때마다 sessionStorage 에 동기화. 빈 쿼리는 sessionStorage
- *     에서 삭제 — 사용자가 초기화 버튼을 눌렀을 때 이전 검색조건이 부활하는 회귀 방지.
- *
- * SSR 안전: window 미존재 환경에서는 no-op.
- *
- * react-hooks/set-state-in-effect 정책 준수: 내부에서 setState 를 호출하지 않는다.
- */
-export function useListStatePersist(options: {
-  /** sessionStorage key — LIST_RESTORE_KEYS[scope].filters 사용 권장 */
-  storageKey: string;
-  /** consumeListRestoreFlag 결과를 그대로 전달. true 일 때만 복원, false 면 sessionStorage 삭제. */
-  shouldRestore: boolean;
-  /** 현재 URL 쿼리 문자열 (선행 `?` 제외, 비어 있으면 빈 문자열) */
-  currentQueryString: string;
-  /** 마운트 시 복원 콜백 — sessionStorage 의 저장값을 그대로 받는다 */
-  onRestore: (storedQueryString: string) => void;
-}) {
-  const { storageKey, shouldRestore, currentQueryString, onRestore } = options;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (currentQueryString !== "") return; // URL 에 이미 쿼리가 있으면 그것 우선
-
-    if (shouldRestore) {
-      const stored = window.sessionStorage.getItem(storageKey);
-      if (stored) onRestore(stored);
-    } else {
-      // 상세/생성/편집 경유가 아닌 진입(메뉴 클릭, 새로고침 등) — 검색조건 초기화 보장.
-      window.sessionStorage.removeItem(storageKey);
-    }
-    // 마운트 시 1회만 — currentQueryString/onRestore/shouldRestore 변경 추적 X.
-    // shouldRestore 는 consumeListRestoreFlag 가 마운트 시 한 번 평가한 값이므로 변하지 않음.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (currentQueryString) {
-      window.sessionStorage.setItem(storageKey, currentQueryString);
-    } else {
-      // 초기화 버튼 등으로 쿼리가 비워졌을 때 sessionStorage 도 같이 비워서
-      // 다음 복원 시 이전 검색조건이 부활하지 않도록 한다.
-      window.sessionStorage.removeItem(storageKey);
-    }
-  }, [storageKey, currentQueryString]);
-}

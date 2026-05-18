@@ -14,16 +14,24 @@ import type { MassMailSearchParams } from "./bulk-mail-types";
 
 /**
  * sessionStorage 의 직렬화된 검색조건을 안전하게 역직렬화.
- * 스키마 변동/JSON 손상 등 어떤 경우에도 throw 하지 않고 빈 객체로 폴백.
+ * 스키마 변동/JSON 손상/타입 불일치 등 어떤 경우에도 throw 하지 않고 빈 객체로 폴백.
+ * 각 필드별 타입 가드로 schema drift 시 런타임 안전성 확보.
  */
 function parseStoredSearchParams(raw: string | null): MassMailSearchParams {
   if (!raw) return {};
   try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as MassMailSearchParams;
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result: MassMailSearchParams = {};
+    if (typeof parsed.keyword === "string") result.keyword = parsed.keyword;
+    if (typeof parsed.roleCode === "string") result.roleCode = parsed.roleCode;
+    if (parsed.authorSearchType === "name" || parsed.authorSearchType === "id") {
+      result.authorSearchType = parsed.authorSearchType;
     }
-    return {};
+    if (typeof parsed.authorQuery === "string") result.authorQuery = parsed.authorQuery;
+    if (typeof parsed.startDate === "string") result.startDate = parsed.startDate;
+    if (typeof parsed.endDate === "string") result.endDate = parsed.endDate;
+    return result;
   } catch {
     return {};
   }
