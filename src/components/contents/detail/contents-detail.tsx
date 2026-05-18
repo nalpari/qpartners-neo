@@ -9,6 +9,7 @@ import { Button, DimSpinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { canModifyClient } from "@/lib/auth-client";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
 import { MENU } from "@/lib/menu-codes";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { useIsInternal } from "@/hooks/use-is-internal";
@@ -151,7 +152,11 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           openAlert({
             type: "alert",
             message: "削除されました。",
-            onConfirm: () => router.push("/contents"),
+            onConfirm: () => {
+              // 상세 → 목록 복귀 — 직전 검색조건/페이지 표시 개수 복원 활성화.
+              setListRestoreFlag("contents");
+              router.push("/contents");
+            },
           });
         } catch (err: unknown) {
           console.error("[Contents] 삭제 실패:", err);
@@ -175,6 +180,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   };
 
   const handleList = () => {
+    // 상세 → 목록 복귀 — 직전 검색조건/페이지 표시 개수 복원 활성화.
+    setListRestoreFlag("contents");
     router.push("/contents");
   };
 

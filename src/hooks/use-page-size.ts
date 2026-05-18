@@ -40,9 +40,16 @@ function toPositiveInt(value: string | undefined | null): number | null {
  * **storageKey (선택)**: 지정 시 사용자 선택값을 sessionStorage 에 영속해
  *   목록 → 상세 → 목록 왕복 시에도 직전 선택을 유지한다. 미지정 시 기존 동작
  *   (컴포넌트 unmount 시 초기화) 그대로 — 하위 호환.
+ *
+ * **shouldRestore (선택)**: storageKey 와 함께 사용. consumeListRestoreFlag 결과를
+ *   그대로 전달한다.
+ *     - true  : sessionStorage 값 복원 (상세/생성/편집 → 목록 복귀 경로)
+ *     - false : sessionStorage 값 삭제 + 기본값(sort=1)으로 시작 (그 외 경로)
+ *   storageKey 만 지정하고 shouldRestore 미지정 시 기존 "항상 복원" 동작 유지.
  */
-export function usePageSize(hookOptions?: { storageKey?: string }) {
+export function usePageSize(hookOptions?: { storageKey?: string; shouldRestore?: boolean }) {
   const storageKey = hookOptions?.storageKey;
+  const shouldRestore = hookOptions?.shouldRestore;
   // 404(헤더 비활성/미등록) 는 에러가 아닌 정상 분기로 처리 — useQuery error 흐름을 타면
   // 콘솔 빨간 로그 + DevTools 빨강 표시가 떠 운영 노이즈가 발생한다. queryFn 내부에서
   // catch 해 `{ options: [], isHidden: true }` 로 변환하면 정상 data 로 흐른다.
@@ -75,13 +82,22 @@ export function usePageSize(hookOptions?: { storageKey?: string }) {
   const options = data?.options ?? [];
 
   // 사용자가 PageSizeSelect 로 직접 선택한 값. null 이면 미선택 상태 → options[0] (sort=1) 사용.
-  // storageKey 지정 시 lazy init 으로 sessionStorage 에서 직전 선택값 복원.
-  //   - SSR 환경(window 미존재)에서는 null 로 시작 → 클라이언트 하이드레이션 후 useEffect 에서
-  //     보강하지 않는다 (set-state-in-effect 규칙 회피). SSR 첫 페인트는 sort=1 옵션이지만,
-  //     pageSize 변경 즉시 sessionStorage 에 동기화되므로 다음 마운트부터는 lazy init 으로 복원됨.
+  // storageKey + shouldRestore 정책:
+  //   - storageKey 미지정 → 항상 null 시작 (기존 동작, 하위 호환)
+  //   - storageKey 지정 & shouldRestore === false → sessionStorage 삭제 후 null 시작 (초기화)
+  //   - storageKey 지정 & shouldRestore !== false (true 또는 undefined) → sessionStorage 복원
+  //
+  // SSR 환경(window 미존재)에서는 null 로 시작 — 클라이언트 하이드레이션 후 useEffect 에서
+  // 보강하지 않는다 (set-state-in-effect 규칙 회피). SSR 첫 페인트는 sort=1 옵션이지만,
+  // pageSize 변경 즉시 sessionStorage 에 동기화되므로 다음 마운트부터는 lazy init 으로 복원됨.
   const [userSelected, setUserSelected] = useState<number | null>(() => {
     if (!storageKey) return null;
     if (typeof window === "undefined") return null;
+    if (shouldRestore === false) {
+      // 명시적 초기화 — 이전 선택값을 sessionStorage 에서 삭제하여 다음 진입 시 복원되지 않도록.
+      window.sessionStorage.removeItem(storageKey);
+      return null;
+    }
     const stored = window.sessionStorage.getItem(storageKey);
     return toPositiveInt(stored);
   });
