@@ -113,7 +113,9 @@ export function ContentsContents() {
 
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
-  //   - false → sessionStorage 즉시 삭제 + 기본 빈값으로 시작
+  //   - false 이고 URL 에 `?keyword=...` 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
+  //     `router.push("/contents?keyword=...")` 등) 으로 간주, URL 키워드를 한 번 흡수.
+  //   - false + URL 빈 → sessionStorage 즉시 삭제 + 기본 빈값.
   // useState lazy init 안에서 sessionStorage 부수효과 수행 (마운트 1회).
   const [searchParams, setSearchParams] = useState<SearchParams>(() => {
     if (typeof window === "undefined") return EMPTY_SEARCH_PARAMS;
@@ -122,8 +124,26 @@ export function ContentsContents() {
       return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
     }
     window.sessionStorage.removeItem(FILTERS_KEY);
+    // 외부 진입 URL 쿼리 흡수 — 현재는 홈 검색바의 keyword 만 지원.
+    // 다른 필드(categoryIds 등)는 외부 진입 호출처 없음.
+    const urlKeyword = new URLSearchParams(window.location.search).get("keyword");
+    if (urlKeyword) {
+      return { ...EMPTY_SEARCH_PARAMS, keyword: urlKeyword };
+    }
     return EMPTY_SEARCH_PARAMS;
   });
+
+  // 외부 진입으로 URL 에 ?keyword=... 가 남아있는 경우 → URL 정리.
+  //   - 사용자가 화면 내에서 추가 검색조건을 입력해도 URL 은 영속하지 않으므로
+  //     새로고침 시 URL 의 stale keyword 가 다시 흡수되어 추가 조건이 사라지는 혼란 방지.
+  //   - history.replaceState 로 직접 URL 만 갱신 (Next.js useRouter 사용 시 라우터 트리
+  //     리렌더 유발 — 본 화면은 useSearchParams 미사용이라 직접 갱신이 더 가볍다).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   // searchParams 변경 시 sessionStorage 동기화.
   //   - 비어있으면 삭제 — 초기화 버튼 후 이전 검색조건이 부활하는 회귀 방지.
