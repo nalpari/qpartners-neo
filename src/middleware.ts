@@ -23,6 +23,10 @@ const PUBLIC_PATHS = [
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
   // sub-route(/api/inquiry/[id] 등) 추가 시 PUBLIC_GET_PATTERNS로 분리할 것
   "/api/inquiry",
+  // 헬스체크 — 푸터 DB 상태 인디케이터(비로그인 페이지 포함 전 화면 렌더) 및 외부 readiness probe 용도.
+  // 응답은 ok: boolean 만 노출(민감정보 없음) → 인증 불요.
+  "/api/health",
+  "/api/health/db",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
