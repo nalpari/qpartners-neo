@@ -7,6 +7,19 @@ import { LOGIN_QUERY_ERROR_MESSAGES } from "@/components/login/types";
 
 export const metadata: Metadata = {
   title: "ログイン | Q.PARTNERS",
+  /**
+   * /login 한정 referrer 정책 — root layout 의 `no-referrer-when-downgrade` 를 override.
+   *
+   * 비밀번호 재설정 메일 링크(`/login?reset-token=…`) 진입 시 client useEffect 의
+   * `history.replaceState` 가 토큰을 즉시 제거하지만, GA4 Enhanced Measurement 의
+   * gtag.js 가 브라우저 캐시에서 즉시 로드되는 극단적 edge case 에서 token 정리 이전에
+   * 자동 page_view 발송이 일어나 Referer 헤더로 토큰이 GA 로 누설될 가능성이 이론적으로 존재.
+   *
+   * `/login` 페이지에서는 자동로그인 외부 3사(HANASYS/Q.Order/Q.Musubi) 직접 호출이 없고,
+   * 회원가입 외부 링크는 `rel="noopener noreferrer"` 로 처리되어 있어 `no-referrer` 적용 시
+   * 외부 호출 호환성 영향 없음.
+   */
+  referrer: "no-referrer",
 };
 
 interface LoginPageProps {
