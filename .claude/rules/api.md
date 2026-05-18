@@ -70,6 +70,21 @@ await prisma.passwordResetToken.count({ where: { userId: email, userType: userTp
 - authRole 폴백 분기에서도 동일 원칙 적용: STORE + storeLvl 불명 → `2ND_STORE`(하위), `1ST_STORE`(상위) 아님
 - resolveAuthRole 본체와 catch 폴백의 권한 매핑이 반드시 일치해야 함
 
+#### GA4 Enhanced Measurement — 토큰 query string 노출 금지 (Redmine #2216 후속)
+- `src/app/layout.tsx` 의 gtag 자동 page_view 발송은 `window.location.href` 원본을 그대로 GA 로 전송한다.
+- **토큰·민감값을 query string 으로 노출하는 신규 라우트를 추가할 때는 반드시 server-side redirect 후 가상 page_view 패턴을 적용한다.**
+- 패턴 (참조: `src/components/popup/password-reset-popup.tsx`):
+  1. 외부 진입 라우트(예: `/password-reset?token=…`)는 server-side 에서 토큰을 추출·검증 후
+     `redirect("/login?reset-token=…")` 로 302 이동 — URL bar 에 토큰이 잔존하더라도 후속 단계 1 회 카운트만 발생
+  2. 진입 페이지(예: `/login`)의 client useEffect 첫 줄에서 `window.history.replaceState({}, "", "/login")` 로
+     verify fetch 이전에 토큰을 URL 에서 제거 — Referer 헤더 / 자동 page_view 누설 채널 사전 차단
+  3. 진입 페이지 metadata 에 `referrer: "no-referrer"` 추가 — race condition(gtag.js 캐시 즉시 로드 시) 의
+     이론적 잔존 누설 방어층 (root layout 의 `no-referrer-when-downgrade` override)
+  4. 분리 측정이 필요한 popup/가상 경로는 `window.gtag("event", "page_view", { page_path, page_location })` 로
+     `window.location.origin + 고정 경로` 형태로 명시 발송 — `window.location.href` 원본 전송 금지
+- 자동로그인 inbound 등 `/api/*` route handler 는 서버사이드 redirect 만 발생 → 브라우저 GA script 실행 대상 외이므로
+  본 가이드라인 적용 불요. URL bar 에 토큰이 보이는 client 진입 페이지가 적용 대상.
+
 ---
 
 ### Zod 검증 패턴

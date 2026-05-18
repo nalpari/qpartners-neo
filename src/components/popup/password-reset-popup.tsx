@@ -10,9 +10,10 @@ import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/type
 /**
  * 비밀번호 재설정 popup 가상 page_view 경로 — Redmine #2216 note-2 후속.
  *
- * `/password-reset` 라우트는 server-side redirect 라 GaPageTracker 가 추적 불가하고,
- * 실제 UI 는 `/login` URL 의 popup 으로 표시되어 GA 보고서에 진입 카운트가 섞인다.
- * popup 마운트 시점에 본 가상 경로로 page_view 를 1회 발송하여 분리 측정한다.
+ * `/password-reset` 라우트는 server-side redirect 로 `/login?reset-token=…` 에 마운트된다.
+ * GA4 의 자동 page_view (gtag.js Enhanced Measurement) 는 redirect 후 URL 인 `/login` 만
+ * 잡으므로 일반 로그인과 funnel 이 구분되지 않는다. popup 마운트 시점에 본 가상 경로로
+ * 별도 page_view 를 1회 발송하여 GA4 콘솔에서 분리 측정 가능하게 한다.
  */
 const VIRTUAL_PAGE_PATH = "/login/password-reset";
 
