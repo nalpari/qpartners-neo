@@ -8,6 +8,7 @@ import {
   LIST_RESTORE_KEYS,
   useListStateCacheInvalidator,
 } from "@/hooks/use-list-state-persist";
+import { usePageSize } from "@/hooks/use-page-size";
 import { BulkMailSearch } from "./bulk-mail-search";
 import { BulkMailTable } from "./bulk-mail-table";
 import type { MassMailSearchParams } from "./bulk-mail-types";
@@ -52,6 +53,15 @@ export function BulkMailContents() {
   // 컴포넌트 unmount 시 cache 무효화 — 다른 페이지 다녀온 후 다시 진입할 때 stale 한
   // true 값이 그대로 남아 잘못 복원되던 회귀 차단.
   useListStateCacheInvalidator("bulkMail");
+
+  // pageSize 를 부모에서 관리 — 검색 시 Table 이 key 변경으로 리마운트되어도
+  // pageSize state 가 유지되도록 한다. Table 내부에서 호출하면 리마운트마다
+  // shouldRestore=false 정책에 의해 sessionStorage 가 삭제되어 sort=1 (20) 으로
+  // 회귀하던 버그(사용자 50 선택 → 검색 → 20 으로 회귀) 차단.
+  const { pageSize, setPageSize } = usePageSize({
+    storageKey: LIST_RESTORE_KEYS.bulkMail.pageSize,
+    shouldRestore: shouldRestoreList,
+  });
 
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
@@ -105,7 +115,8 @@ export function BulkMailContents() {
       <BulkMailTable
         key={searchKey}
         searchParams={searchParams}
-        shouldRestore={shouldRestoreList}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
     </main>
   );
