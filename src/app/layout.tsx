@@ -9,7 +9,6 @@ import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
 import { AlertDialog } from "@/components/common/alert-dialog";
 import { AdminTransitionRefresh } from "@/components/common/admin-transition-refresh";
-import { GaPageTracker } from "@/components/analytics/ga-page-tracker";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -146,16 +145,9 @@ export default function RootLayout({
                   `function gtag(){dataLayer.push(arguments);}` +
                   `gtag('consent','default',{ad_storage:'denied',analytics_storage:'granted'});` +
                   `gtag('js',new Date());` +
-                  // send_page_view:false → 첫 페이지 로드의 자동 page_view 차단.
-                  // GA4 Property dashboard 의 Enhanced Measurement "Page changes based on
-                  // browser history events" 토글도 OFF 와 함께 적용해야 자동 발송이 완전 차단된다.
-                  // 두 군데 모두 OFF + GaPageTracker 의 manual 발송 1회로 단일화 → Redmine #2216
-                  // 중복 카운트 사고 회피. 한쪽만 OFF 면 0배 또는 2배 카운트가 발생하므로
-                  // 코드 PR 머지와 dashboard 설정 변경은 반드시 동시 적용해야 한다.
-                  `gtag('config','${GA_ID}',{anonymize_ip:true,send_page_view:false});`,
+                  `gtag('config','${GA_ID}',{anonymize_ip:true});`,
               }}
             />
-            <GaPageTracker />
           </>
         )}
       </body>
