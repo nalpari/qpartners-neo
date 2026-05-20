@@ -297,6 +297,9 @@ type LogData = {
   userId: string | null;
   userType: string | null;
   errorMessage: string | null;
+  /** 진입~종료 wrapper 패턴에서 라우트 진입 시각을 명시하기 위한 override.
+   *  미지정 시 Prisma `@default(now())` 가 적용된다. */
+  createdAt?: Date;
 };
 
 /** fire-and-forget: 로그 insert 실패 시 console.error만 남김 */
@@ -310,4 +313,56 @@ function writeLog(data: LogData): void {
         error: err,
       });
     });
+}
+
+export type InboundLogParams = {
+  apiName: string;
+  callerRoute: string;
+  method: string;
+  requestUrl: string;
+  responseStatus: number;
+  /** INBOUND 진입 결과 — "S"(성공) / "F"(실패) / null(미정). 호출부 오타 방지 위해 union 으로 좁힘. */
+  resultCode: "S" | "F" | null;
+  durationMs: number;
+  userId?: string | null;
+  userType?: string | null;
+  errorMessage?: string | null;
+  /** 라우트 진입 시각 (wrapper 패턴에서 종료 시점에 호출되더라도 created_at 은 진입 시각이 자연스러움).
+   *  미지정 시 insert 시점 = 종료 시점이 created_at 으로 기록되어, 같은 흐름 내 OUTBOUND 호출보다
+   *  뒤에 정렬됨 → 사용자 진단 직관과 어긋남 (INBOUND 가 먼저 발생했음에도 OUTBOUND 가 먼저 보임). */
+  createdAt?: Date;
+};
+
+/**
+ * 외부 시스템 → Q.Partners INBOUND 호출 로그 기록 (`qp_interface_log`).
+ *
+ * 자동로그인 inbound 진입처럼 우리 측이 수신한 호출 결과를 1건 기록한다.
+ *  - `system` 은 "QSP" 로 통일 — 자동로그인 흐름이 QSP 사용자 기반이라
+ *    OUTBOUND `userDetail` 호출과 동일 system 으로 묶여 진단 시 일관 조회 가능.
+ *  - `requestUrl` 은 `maskSensitiveQueryInUrl` 로 cipher / loginId / email 마스킹.
+ *  - GET 진입이라 `requestBody` 는 항상 null. `responseBody` 도 INBOUND 측은 의미 없어 null.
+ *  - fire-and-forget — 로그 기록 실패가 본 요청 흐름을 블로킹하지 않음.
+ *
+ * 2026-05-20 정책 — 자동로그인 inbound 진입 단계별 실패 추적·외부 3사 호출 도달성 확인을 위해
+ * outbound 와 통일하던 미기록 정책에서 변경 (INBOUND 로깅 활성).
+ */
+export function logInbound(params: InboundLogParams): void {
+  writeLog({
+    traceId: crypto.randomUUID(),
+    system: "QSP",
+    direction: "INBOUND",
+    apiName: params.apiName,
+    method: params.method,
+    requestUrl: maskSensitiveQueryInUrl(params.requestUrl),
+    requestBody: null,
+    responseStatus: params.responseStatus,
+    responseBody: null,
+    resultCode: params.resultCode,
+    durationMs: params.durationMs,
+    callerRoute: params.callerRoute,
+    userId: params.userId ?? null,
+    userType: params.userType ?? null,
+    errorMessage: params.errorMessage ?? null,
+    createdAt: params.createdAt,
+  });
 }

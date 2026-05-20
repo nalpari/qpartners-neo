@@ -3,7 +3,7 @@
 > HANASYS DESIGN / Q.Order / Q.Musubi 등 외부 사이트에서 **Q.Partners-neo 로 자동로그인 진입**하기 위한 연동 가이드입니다.
 > `autoLoginParam1` 생성(암호화)부터 Q.Partners-neo 에서 복호화 후 로그인 완료까지 **외부 사이트 개발자 관점**에서 정리했습니다.
 
-- **Document version**: 2.0 (2026-05-11)
+- **Document version**: 2.2 (2026-05-19)
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
 - **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력 — 양방향 가이드 통일
 
@@ -88,7 +88,7 @@ GET https://{q-partners-neo-host}/api/auth/auto-login/inbound
 | 환경 | `{q-partners-neo-host}` |
 |---|---|
 | Development | `dev.q-partners.q-cells.jp` |
-| Production | `www.q-partners.q-cells.jp` (확정 후 업데이트) |
+| Production | `prod.q-partners.q-cells.jp` |
 
 ### 쿼리 파라미터
 
@@ -323,3 +323,4 @@ flowchart TD
 | 1.0 | 2026-05-11 | 초안 작성 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT)) |
 | **2.0** | **2026-05-11** | **사양 재정렬 — outbound 와 통일** (AES-128-CBC + raw 16B key + 결정적 IV `YYYYMMDD_autoL!!` + Base64(ciphertext)). 환경변수명 `AUTO_LOGIN_AES_KEY` → `AUTO_LOGIN_INBOUND_AES_KEY` 로 분리. 3사 측 inbound encrypt 미구현 시점에 변경하여 호환 부담 0. |
 | **2.1** | **2026-05-11** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
+| **2.2** | **2026-05-19** | **§3 호출 URL 표 운영 호스트 확정** — `www.q-partners.q-cells.jp` (확정 후 업데이트) → `prod.q-partners.q-cells.jp`. |
