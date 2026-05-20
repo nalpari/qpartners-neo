@@ -103,8 +103,7 @@ const RELATED_SITE_URLS_PROD: Record<AutoLoginSiteValue, string> = {
  * `toLowerCase()` 비교로 IDN/대소문자 변칙(`WWW.Q-PARTNERS.Q-CELLS.JP`) 도 정규화 처리.
  */
 const PROD_HOSTS: readonly string[] = [
-  "www.q-partners.q-cells.jp",
-  "q-partners.q-cells.jp",
+  "prod.q-partners.q-cells.jp",
 ] as const;
 
 /**
