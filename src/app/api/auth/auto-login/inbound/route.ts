@@ -6,7 +6,7 @@ import { resolveAuthRole } from "@/lib/auth";
 import { decryptAutoLogin } from "@/lib/auto-login-crypto";
 import { SITE_DEFAULTS } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
-import { logInbound, maskEmail } from "@/lib/interface-logger";
+import { logInbound, maskUserId } from "@/lib/interface-logger";
 import { COOKIE_NAME, signToken } from "@/lib/jwt";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
   };
 
   // inner handle — 모든 응답 경로를 한 곳에서 받아 finally 의 INBOUND 로그에 일관 반영.
+  // ─────────────────── handle() inner 본문 시작 ───────────────────
   const handle = async (): Promise<NextResponse> => {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -151,7 +152,10 @@ export async function GET(request: NextRequest) {
     if (trimmedUserId.length === 0) {
       return failRedirect("empty_user_id");
     }
-    logUserId = maskEmail(trimmedUserId);
+    // userId 마스킹 — STORE/SEKO/ADMIN 의 loginId 는 `@` 없는 식별자(예: "1301011") 라
+    // maskEmail 사용 시 원문이 그대로 DB 에 저장됨 (`if (atIdx <= 0) return value`).
+    // maskUserId 는 이메일은 maskEmail, 그 외는 앞 2자 + "***" 로 축약하여 PII 누출 차단.
+    logUserId = maskUserId(trimmedUserId);
     // userId 형식 가드 — 수 KB 페이로드로 QSP 414/메모리 낭비, 제어 문자 주입 방어
     if (trimmedUserId.length > 255) {
       console.warn(LOG, "userId 길이 초과:", { length: trimmedUserId.length, userTp });
@@ -296,6 +300,7 @@ export async function GET(request: NextRequest) {
     return failRedirect("unexpected_runtime_error");
   }
   };
+  // ─────────────────── handle() inner 본문 끝 ───────────────────
 
   const response = await handle();
 

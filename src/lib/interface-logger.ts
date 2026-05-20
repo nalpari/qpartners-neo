@@ -321,7 +321,8 @@ export type InboundLogParams = {
   method: string;
   requestUrl: string;
   responseStatus: number;
-  resultCode: string | null;
+  /** INBOUND 진입 결과 — "S"(성공) / "F"(실패) / null(미정). 호출부 오타 방지 위해 union 으로 좁힘. */
+  resultCode: "S" | "F" | null;
   durationMs: number;
   userId?: string | null;
   userType?: string | null;
