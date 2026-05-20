@@ -6,6 +6,7 @@ import { resolveAuthRole } from "@/lib/auth";
 import { decryptAutoLogin } from "@/lib/auto-login-crypto";
 import { SITE_DEFAULTS } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
+import { logInbound, maskEmail } from "@/lib/interface-logger";
 import { COOKIE_NAME, signToken } from "@/lib/jwt";
 import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -81,15 +82,30 @@ function extractClientIp(request: NextRequest): string | null {
 
 export async function GET(request: NextRequest) {
   const LOG = "[GET /api/auth/auto-login/inbound]";
+  const startTime = performance.now();
+  // 진입 시각 — INBOUND 로그의 created_at override 용. wrapper 종료 시점에 insert 되더라도
+  // DB 시간순 조회(ORDER BY created_at) 시 본 INBOUND 행이 흐름 도중의 OUTBOUND userDetail
+  // 호출보다 먼저 보이도록 한다 (외부 3사 진입 → QSP 검증 → 결과 순서가 자연스럽게 보이게).
+  const startedAt = new Date();
+  const requestUrl = request.url;
+
+  // INBOUND 로그 컨텍스트 — closure 로 inner handle 함수에서 mutate.
+  // 진입 단계별 식별 정보 (userTp / userId 마스킹) 가 확보되는 시점에 갱신.
+  let logUserType: string | undefined;
+  let logUserId: string | undefined;
+  let failReason: string | null = null;
 
   // 302 Found — GET SSO 진입 → GET 리다이렉트 의도. 307(Temp Redirect) 은 메서드 보존 + 일부 프록시 캐시 가능.
   // redirect(url, { status: 302 }) 는 string 시그니처만 수용하므로 URL 객체를 .toString() 으로 넘긴다.
   const failRedirect = (reason: string) => {
     console.warn(LOG, "자동로그인 실패 폴백:", reason);
+    failReason = reason;
     const url = new URL("/login?error=auto_login_failed", BASE_URL);
     return NextResponse.redirect(url.toString(), { status: 302 });
   };
 
+  // inner handle — 모든 응답 경로를 한 곳에서 받아 finally 의 INBOUND 로그에 일관 반영.
+  const handle = async (): Promise<NextResponse> => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const parsed = inboundQuerySchema.safeParse({
@@ -100,6 +116,7 @@ export async function GET(request: NextRequest) {
       return failRedirect("query_validation_failed");
     }
     const { autoLoginParam1, userTp } = parsed.data;
+    logUserType = userTp;
 
     // 1. Rate Limit — IP 식별 불가 시 즉시 거부 (fail-closed). 복호화·QSP·JWT 고비용 흐름 차단용.
     //    IP 부재 시 anon 공유 버킷은 userTp 4개뿐이라 정상 사용자 DoS 벡터가 됨.
@@ -122,6 +139,7 @@ export async function GET(request: NextRequest) {
       // 설정 에러(AUTO_LOGIN_INBOUND_AES_KEY 미설정·16 byte 길이 불일치 등) 는 redirect 대신 500 — 운영자 즉시 인지 필요
       if (error instanceof ConfigError) {
         console.error(LOG, "설정 에러:", error.message);
+        failReason = "decrypt_config_error";
         return NextResponse.json(
           { error: "サーバー設定エラーが発生しました" },
           { status: 500 },
@@ -133,6 +151,7 @@ export async function GET(request: NextRequest) {
     if (trimmedUserId.length === 0) {
       return failRedirect("empty_user_id");
     }
+    logUserId = maskEmail(trimmedUserId);
     // userId 형식 가드 — 수 KB 페이로드로 QSP 414/메모리 낭비, 제어 문자 주입 방어
     if (trimmedUserId.length > 255) {
       console.warn(LOG, "userId 길이 초과:", { length: trimmedUserId.length, userTp });
@@ -244,6 +263,7 @@ export async function GET(request: NextRequest) {
     } catch (error: unknown) {
       if (error instanceof ConfigError) {
         console.error(LOG, "JWT 설정 에러:", error.message);
+        failReason = "jwt_config_error";
         return NextResponse.json(
           { error: "サーバー設定エラーが発生しました" },
           { status: 500 },
@@ -275,4 +295,28 @@ export async function GET(request: NextRequest) {
     console.error(LOG, "예측 불가 에러:", error);
     return failRedirect("unexpected_runtime_error");
   }
+  };
+
+  const response = await handle();
+
+  // INBOUND 로그 — 진입 ~ 종료 1회 기록 (fire-and-forget).
+  //  - resultCode "S": failReason 미설정(정상 홈 리다이렉트 경로)
+  //  - resultCode "F": failReason 설정(폴백/설정에러 경로) — errorMessage 에 사유 보존
+  //  - responseStatus: 실제 응답 status (302 redirect / 500 ConfigError JSON)
+  //  - createdAt: 진입 시각 — 같은 흐름의 OUTBOUND userDetail 보다 시간순 먼저 보이도록 명시.
+  logInbound({
+    apiName: "autoLogin",
+    callerRoute: LOG,
+    method: "GET",
+    requestUrl,
+    responseStatus: response.status,
+    resultCode: failReason === null ? "S" : "F",
+    durationMs: Math.round(performance.now() - startTime),
+    userId: logUserId,
+    userType: logUserType,
+    errorMessage: failReason,
+    createdAt: startedAt,
+  });
+
+  return response;
 }
