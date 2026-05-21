@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
     try {
       userId = decryptAutoLogin(autoLoginParam1);
     } catch (error: unknown) {
-      // 설정 에러(AUTO_LOGIN_INBOUND_AES_KEY 미설정·16 byte 길이 불일치 등) 는 redirect 대신 500 — 운영자 즉시 인지 필요
+      // 설정 에러(AUTO_LOGIN_AES_KEY 미설정·16 byte 길이 불일치 등) 는 redirect 대신 500 — 운영자 즉시 인지 필요
       if (error instanceof ConfigError) {
         console.error(LOG, "설정 에러:", error.message);
         failReason = "decrypt_config_error";

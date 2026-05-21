@@ -1,11 +1,13 @@
 /**
  * Outbound 자동로그인 AES-128-CBC 암호화 유틸 (Q.Partners → DESIGN(HANASYS) / Q.Order / Q.Musubi)
  *
- * 사양 (담당자 공유 사실, 2026-04-27):
+ * 사양 (담당자 공유 사실, 2026-04-27 / 2026-05-21 키 통일):
  *   - 알고리즘 : AES/CBC/PKCS5Padding (Java) ↔ aes-128-cbc (Node.js, 기본 PKCS7 패딩 = 16B 블록에서 PKCS5 와 동일)
- *   - Key     : AUTO_LOGIN_OUTBOUND_AES_KEY 환경변수 (16 byte UTF-8, 예: jpqcellQ123456!!)
+ *   - Key     : AUTO_LOGIN_AES_KEY 환경변수 (16 byte UTF-8, 예: jpqcellQ123456!!)
  *               ※ Java 코드 함수명은 `encryptAes256` 이지만 SecretKeySpec 은 키 byte 길이로
  *                 알고리즘이 자동 결정되며, 16 byte → AES-128 이 실제 동작.
+ *               ※ 2026-05-21 inbound 키 분리(`AUTO_LOGIN_INBOUND_AES_KEY`) 번복 — 외부 4개 시스템
+ *                 (QSP/Q.Order/Q.Musubi/Design) 단일 공통 키 운영 사양에 맞춰 inbound 와 통일.
  *   - IV      : `YYYYMMDD` (KST) + `_autoL!!` = 16 byte (예: 20260427_autoL!!)
  *   - 평문    : 사용자 로그인 ID (string)
  *   - 출력    : Base64 ciphertext — URL 인코딩은 호출 측에서 (URL/URLSearchParams)
@@ -16,7 +18,7 @@
  *   - IV 가 (KST 일자 + 고정 상수) 로 결정적이므로 같은 userId 가 같은 날 동일 cipher 가 됨.
  *     외부 3사가 본 사양을 그대로 검증하므로 결정적 IV 는 호환을 위한 의도된 동작.
  *   - 24h 단위 replay 윈도가 존재. 외부 3사 측 정책 변화 시 함께 보강 필요.
- *   - inbound 자동로그인(`auto-login-crypto.ts`) 의 SHA-256 해싱 키 시스템과는 별개.
+ *   - inbound 자동로그인(`auto-login-crypto.ts`) 과 동일 키 — 2026-05-21 통일.
  */
 
 import crypto from "node:crypto";
@@ -44,10 +46,10 @@ let _cachedKey: Buffer | null = null;
 function getOutboundAesKey(): Buffer {
   if (_cachedKey) return _cachedKey;
 
-  const raw = process.env.AUTO_LOGIN_OUTBOUND_AES_KEY;
+  const raw = process.env.AUTO_LOGIN_AES_KEY;
   if (!raw) {
     throw new ConfigError(
-      "AUTO_LOGIN_OUTBOUND_AES_KEY 환경변수가 설정되지 않았습니다",
+      "AUTO_LOGIN_AES_KEY 환경변수가 설정되지 않았습니다",
     );
   }
   // trim 하지 않음 — 외부 3사가 사용하는 정확한 byte 시퀀스를 유지해야 cipher 가 일치한다.
@@ -56,7 +58,7 @@ function getOutboundAesKey(): Buffer {
   const buf = Buffer.from(raw, "utf8");
   if (buf.length !== KEY_LENGTH) {
     throw new ConfigError(
-      "AUTO_LOGIN_OUTBOUND_AES_KEY 길이가 올바르지 않습니다 — 설정을 확인하세요",
+      "AUTO_LOGIN_AES_KEY 길이가 올바르지 않습니다 — 설정을 확인하세요",
     );
   }
   // 샘플 키 가드 부재 의도 (2026-04-30):

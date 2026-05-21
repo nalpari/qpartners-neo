@@ -3,9 +3,11 @@
 > HANASYS DESIGN / Q.Order / Q.Musubi 등 외부 사이트에서 **Q.Partners-neo 로 자동로그인 진입**하기 위한 연동 가이드입니다.
 > `autoLoginParam1` 생성(암호화)부터 Q.Partners-neo 에서 복호화 후 로그인 완료까지 **외부 사이트 개발자 관점**에서 정리했습니다.
 
-- **Document version**: 2.2 (2026-05-19)
+- **Document version**: 2.3 (2026-05-21)
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
-- **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력 — 양방향 가이드 통일
+- **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력·**키** — 양방향 가이드 통일
+
+> ⚠️ **v2.3 변경 안내 (2026-05-21)**: 키 환경변수명을 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 로 통일했습니다. inbound/outbound 분리 운영을 번복하고 **외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 단일 공통 키 운영 사양** 에 맞췄습니다. 본 문서 내 `AUTO_LOGIN_INBOUND_AES_KEY` 표기는 v2.0 ~ v2.2 이력 보존을 위해 그대로 두며, **현재 사용 환경변수는 `AUTO_LOGIN_AES_KEY`** 입니다. 새 외부 발송용 가이드는 `docs/Q.Partners-자동로그인-구현-가이드.md` 참조.
 
 ---
 
@@ -324,3 +326,4 @@ flowchart TD
 | **2.0** | **2026-05-11** | **사양 재정렬 — outbound 와 통일** (AES-128-CBC + raw 16B key + 결정적 IV `YYYYMMDD_autoL!!` + Base64(ciphertext)). 환경변수명 `AUTO_LOGIN_AES_KEY` → `AUTO_LOGIN_INBOUND_AES_KEY` 로 분리. 3사 측 inbound encrypt 미구현 시점에 변경하여 호환 부담 0. |
 | **2.1** | **2026-05-11** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
 | **2.2** | **2026-05-19** | **§3 호출 URL 표 운영 호스트 확정** — `www.q-partners.q-cells.jp` (확정 후 업데이트) → `prod.q-partners.q-cells.jp`. |
+| **2.3** | **2026-05-21** | **키 분리 운영 번복 — 단일 공통 키로 통일.** 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY`. 통합 테스트 단계에서 외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 이 이미 단일 공통 키 운영 사양임이 확인됨. 우리만 분리 운영 시 외부 4개 시스템 모두에 우리용 분기 추가가 필요해 비현실적이라 외부 사양에 맞춰 통일. inbound 코드의 `SAMPLE_KEY` 차단 가드도 제거 (통일된 운영 키 자체가 가이드/주석 노출 키라 "샘플=운영" 구조 — 의도된 정책 후퇴, outbound 와 동일). |

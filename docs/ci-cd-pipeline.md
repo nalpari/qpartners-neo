@@ -210,7 +210,7 @@ IMAGE_TAG=41 APP_ENV=production \
 | `prod-env` | Secret file | `.env.production` 파일 (운영 키 일체) |
 
 - `.env*` 파일은 `.gitignore` + `.dockerignore`에 모두 포함되어 있어 리포지토리·이미지에 절대 포함되지 않음
-- 운영 키(JWT_SECRET, OTP_SECRET, AUTO_LOGIN_INBOUND_AES_KEY, HANASYS/Q_ORDER/Q_MUSUBI URL 등)는 **모두 Jenkins credential `prod-env`로만 주입**
+- 운영 키(JWT_SECRET, OTP_SECRET, AUTO_LOGIN_AES_KEY, HANASYS/Q_ORDER/Q_MUSUBI URL 등)는 **모두 Jenkins credential `prod-env`로만 주입**
 - `prod` 파이프라인은 `post.always`에서 빌드 후 `.env.production`을 삭제하여 워크스페이스에 잔류하지 않도록 처리
 
 ---
@@ -233,7 +233,7 @@ IMAGE_TAG=41 APP_ENV=production \
 │ Container ENV:                                                 │
 │   DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME → src/lib/prisma │
 │   JWT_SECRET, OTP_SECRET, SMTP_*, QSP_BASE_URL                 │
-│   AUTO_LOGIN_INBOUND_AES_KEY, HANASYS/Q_ORDER/Q_MUSUBI URL     │
+│   AUTO_LOGIN_AES_KEY, HANASYS/Q_ORDER/Q_MUSUBI URL             │
 │   APP_ENV, PORT, UPLOAD_DIR=/data/uploads                      │
 └────────────────────────────────────────────────────────────────┘
 ```
