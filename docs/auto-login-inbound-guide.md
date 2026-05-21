@@ -7,7 +7,17 @@
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
 - **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력·**키** — 양방향 가이드 통일
 
-> ⚠️ **v2.3 변경 안내 (2026-05-21)**: 키 환경변수명을 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 로 통일했습니다. inbound/outbound 분리 운영을 번복하고 **외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 단일 공통 키 운영 사양** 에 맞췄습니다. 본 문서 내 `AUTO_LOGIN_INBOUND_AES_KEY` 표기는 v2.0 ~ v2.2 이력 보존을 위해 그대로 두며, **현재 사용 환경변수는 `AUTO_LOGIN_AES_KEY`** 입니다. 새 외부 발송용 가이드는 `docs/Q.Partners-자동로그인-구현-가이드.md` 참조.
+> ⚠️ **v2.3 변경 안내 (2026-05-21) — 본 문서는 historical 이력 문서입니다**
+>
+> 키 환경변수명을 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 로 통일했습니다. inbound/outbound 분리 운영을 번복하고 **외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 단일 공통 키 운영 사양** 에 맞췄습니다.
+>
+> 본 문서의 다음 항목은 v2.0 ~ v2.2 이력 보존 목적이며 **현재 운영과 충돌**합니다 — 그대로 신뢰하지 마세요.
+> - `AUTO_LOGIN_INBOUND_AES_KEY` 표기 (현재 사용 환경변수는 `AUTO_LOGIN_AES_KEY` 단일)
+> - `outbound 키와 분리 운영` 단정 (현재는 단일 공통 키)
+> - 외부 가이드 샘플 키를 `timingSafeEqual` 가드로 거부한다는 안내 (가드 제거됨 — 운영=샘플 구조)
+> - §4 검증 샘플의 키 리터럴 `jpqcellQ123456!!` (자바 byte-level 호환성 자체 검증용 historical 데이터이며, **외부 4개 시스템 단일 공통 키 통일(2026-05-21) 이후 본 값은 운영 키 운영 안내의 일부가 아닙니다.** 운영 키는 별도 보안 채널로만 공유됩니다)
+>
+> **현재 사양은 반드시 `docs/Q.Partners-자동로그인-구현-가이드.md` 를 참조** 하세요. 본 문서는 알고리즘 호환성 검증·과거 결정 추적 목적으로만 유지합니다.
 
 ---
 

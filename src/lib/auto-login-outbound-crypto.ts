@@ -3,7 +3,9 @@
  *
  * 사양 (담당자 공유 사실, 2026-04-27 / 2026-05-21 키 통일):
  *   - 알고리즘 : AES/CBC/PKCS5Padding (Java) ↔ aes-128-cbc (Node.js, 기본 PKCS7 패딩 = 16B 블록에서 PKCS5 와 동일)
- *   - Key     : AUTO_LOGIN_AES_KEY 환경변수 (16 byte UTF-8, 예: jpqcellQ123456!!)
+ *   - Key     : AUTO_LOGIN_AES_KEY 환경변수 (16 byte UTF-8, 예: `<16-byte-utf8-key>`)
+ *               ※ 실제 키 값을 주석/커밋/리포지토리에 박지 않는다 — git 영구 노출 + inbound/outbound
+ *                 단일 키 통일(2026-05-21) 후엔 "유일한 키" 노출이 됨. 키는 별도 보안 채널로만 공유.
  *               ※ Java 코드 함수명은 `encryptAes256` 이지만 SecretKeySpec 은 키 byte 길이로
  *                 알고리즘이 자동 결정되며, 16 byte → AES-128 이 실제 동작.
  *               ※ 2026-05-21 inbound 키 분리(`AUTO_LOGIN_INBOUND_AES_KEY`) 번복 — 외부 4개 시스템
