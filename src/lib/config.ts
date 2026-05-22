@@ -36,6 +36,18 @@ if (!isBuildPhaseSkip && rawAppEnv !== "production" && rawAppEnv !== "developmen
 }
 const isProductionDeploy = rawAppEnv === "production";
 
+// NEXT_PHASE leak 감지 — Docker standalone build 시 빌드 시점 NEXT_PHASE 가
+// 런타임 컨테이너에 stale 박히는 케이스가 있다. APP_ENV=production 인데 NEXT_PHASE 가
+// "phase-production-build" 라면 leak 의심 — 부팅을 막진 않지만 운영 로그에 critical 알림.
+// (실제 fix 는 인프라 측 NEXT_PHASE env 제거)
+if (isProductionDeploy && isBuildPhase) {
+  console.error(
+    "[config] CRITICAL: APP_ENV=production + NEXT_PHASE=phase-production-build 동시 감지. " +
+    "운영 컨테이너에 NEXT_PHASE 가 leak 된 상태로 추정 — 운영 환경 검증이 우회될 위험이 있습니다. " +
+    "인프라 담당자에게 런타임 컨테이너의 NEXT_PHASE env 제거 요청 필요.",
+  );
+}
+
 if (isProductionDeploy && !isBuildPhase && !rawQspBaseUrl) {
   throw new Error("QSP_BASE_URL is required in production");
 }
@@ -203,7 +215,11 @@ function assertProdAutoLoginUrl(envName: string, urlValue: string, expectedHost:
 // env 누락 자체는 resolveAutoLoginUrl 에서 이미 throw 되므로 여기서는 값의 적격성만 검사한다.
 // 운영 Jenkins credential 에 HANASYS_AUTOLOGIN_URL / Q_ORDER_AUTOLOGIN_URL / Q_MUSUBI_AUTOLOGIN_URL
 // 3개를 모두 명시 주입해야 부팅 성공.
-// 빌드 단계는 스킵 — placeholder URL 이 host 화이트리스트에 막혀 빌드가 실패하지 않도록.
+//
+// 빌드 단계 우회 유지 — `next build` 시 .env.production 이 자동 로드되어 APP_ENV=production
+// 으로 평가되는 환경에서 운영 env 가 일부 누락된 채 빌드 검증을 시도하면 사용자 로컬 빌드가
+// 차단되는 회귀가 있다. 운영 NEXT_PHASE leak 갭은 위쪽의 CRITICAL warning 로 가시화하며,
+// 실제 갭 차단은 인프라 측 NEXT_PHASE 제거로 해결한다 (코드측 강제 차단은 빌드 영향이 큼).
 if (isProductionDeploy && !isBuildPhase) {
   assertProdAutoLoginUrl(
     "HANASYS_AUTOLOGIN_URL",
