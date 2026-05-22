@@ -222,6 +222,10 @@ export async function GET(request: NextRequest) {
 
     // 감사 trail — ADMIN 응답 사용자가 STORE 탭으로 자동로그인 진입한 경우 보안 로그.
     // login route.ts:174-179 패턴 미러링. 비정상 패턴 사후 분석용. PII 제외.
+    //   포맷 차이 의도: login route 는 (userId, requestedUserTp) 만 기록하지만
+    //   inbound 는 SSO 경로 특성상 cipher 발신 IP(외부 3사 서버 IP) 추적이 사고 대응에
+    //   필수이므로 clientIp 를 추가 기록한다. requestedUserTp 는 항상 "STORE" 로 고정
+    //   (isAdminViaDealerTab 조건) 이라 생략.
     if (isAdminViaDealerTab) {
       console.info(LOG, "ADMIN 응답 사용자 STORE 탭 자동로그인 진입:", {
         logUserId,
@@ -271,11 +275,20 @@ export async function GET(request: NextRequest) {
       // 알 수 없는 값은 null 로 폴백 (다음 로그인 시 personal-info 분기 통과 — 보수적 fail-open).
       pwdInitYn: detail.pwdInitYn === "Y" || detail.pwdInitYn === "N" ? detail.pwdInitYn : null,
       authRole,
-      // pwdInitYn=N 회원은 false 강제하여 password-init 가드
-      // (`!twoFactorVerified || pwdInitYn==="N"`) 통과 가능. SSO 경유로 진입한 최초 로그인 회원도
-      // personal-info popup 흐름이 정상 동작하도록 login route 와 동일하게 처리.
+      // [보안 결정 2026-05-22] ADMIN/SUPER_ADMIN 포함 전원 2FA 면제 (login route 와 의도된 차이).
+      //   - 근거: SSO 경유 인증 — cipher 소유 자체가 "외부 3사 인증 완료" 증명으로 간주.
+      //           재요구 시 UX 파괴 (#2125 Q3 정책).
+      //   - 잔여 위험: cipher 24h replay + ADMIN 2FA 폐지 → 복합 위험은 cipher 노출 표면
+      //                보호(외부 3사 책임)에 의존. 향후 cipher 일회용화 시 재검토.
+      //   - 예외: pwdInitYn=N (최초 로그인) 회원은 false 강제하여 password-init 가드
+      //          (`!twoFactorVerified || pwdInitYn==="N"`) 통과 가능. SSO 경유로 진입한 최초
+      //          로그인 회원도 personal-info popup 흐름이 정상 동작하도록 login route 와 동일 처리.
       twoFactorVerified: detail.pwdInitYn !== "N",
       telNo: detail.compTelNo ?? null,
+      // loginNotiYn — 정책상 발송 제외 (#2125 Q3: SSO 경유는 로그인 알림 미발송).
+      //   verify route 에서만 발송되며 inbound 경로는 verify 를 거치지 않으므로 null 명시.
+      //   login route(L.379) 의 `qsp.data.loginNotiYn ?? null` 과 JWT 필드 일관성 유지.
+      loginNotiYn: null,
     };
 
     // 7. JWT 서명

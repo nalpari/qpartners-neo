@@ -304,8 +304,10 @@ export function Gnb() {
    *
    * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
    */
+  // e 타입은 SyntheticEvent — onClick(MouseEvent) / onKeyDown(KeyboardEvent) 양쪽에서 호출되며
+  // 내부에서 e.preventDefault() 만 사용하므로 공통 베이스로 좁혀 이중 타입 단언을 제거한다.
   const handleRelatedSiteClick = async (
-    e: React.MouseEvent<HTMLAnchorElement>,
+    e: React.SyntheticEvent<HTMLAnchorElement>,
     site: RelatedSite,
     closeMenu: () => void,
   ) => {
@@ -517,7 +519,7 @@ export function Gnb() {
                             onKeyDown={site.value === "qwarranty" ? undefined : (e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                void handleRelatedSiteClick(e as unknown as React.MouseEvent<HTMLAnchorElement>, site, () => setIsDropdownOpen(false));
+                                void handleRelatedSiteClick(e, site, () => setIsDropdownOpen(false));
                               }
                             }}
                           >
