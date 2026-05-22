@@ -6,9 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { getFileIconByName } from "@/lib/file-icon";
-import { MAX_FILE_SIZE } from "@/lib/file-validation";
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-validation";
 
-const MAX_FILE_SIZE_MB = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
+/** 파일 이름에서 소문자 확장자 추출 (없으면 빈 문자열) */
+function getExt(name: string): string {
+  return (name.split(".").pop() ?? "").toLowerCase();
+}
 
 export interface AttachmentFile {
   id: string;
@@ -51,8 +54,19 @@ export function ContentsFormAttachment({
 
   const addFiles = (fileList: FileList) => {
     const incoming = Array.from(fileList);
-    // 콘텐츠 첨부 총합(기존 저장 + 미저장 신규 + 이번 추가) ≤ MAX_FILE_SIZE.
-    // BE 도 동일 정책으로 최종 거부 — 클라이언트 검증은 UX 즉시 피드백.
+
+    // 1) 확장자 화이트리스트 사전 검증 — 비허용 시 즉시 차단(첫 위반 파일 명시).
+    //    BE 도 동일 정책으로 최종 거부 — FE 검증은 UX 즉시 피드백.
+    const invalid = incoming.find((f) => !ALLOWED_EXTENSIONS.has(getExt(f.name)));
+    if (invalid) {
+      openAlert({
+        type: "alert",
+        message: `許可されていない ファイル拡張子です: ${invalid.name}`,
+      });
+      return;
+    }
+
+    // 2) 합계 용량 검증 — 기존 저장 + 미저장 신규 + 이번 추가 ≤ MAX_FILE_SIZE.
     const currentTotal =
       savedFiles.reduce((sum, f) => sum + f.fileSize, 0) +
       attachments.reduce((sum, f) => sum + f.size, 0);

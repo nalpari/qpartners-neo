@@ -8,7 +8,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, validateFile } from "@/lib/file-validation";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFile } from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -260,9 +260,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const existingBytes = existingAgg._sum.fileSize !== null ? Number(existingAgg._sum.fileSize) : 0;
     const oldBytes = oldAttachment.fileSize !== null ? Number(oldAttachment.fileSize) : 0;
     if (existingBytes - oldBytes + rawFile.size > MAX_FILE_SIZE) {
-      const limitMb = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
       return NextResponse.json(
-        { error: `添付ファイルの合計容量が${limitMb}MBを超えています` },
+        { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
         { status: 400 },
       );
     }

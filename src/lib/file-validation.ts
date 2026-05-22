@@ -2,12 +2,16 @@
  * 파일 업로드 검증 공통 유틸
  *
  * 콘텐츠 첨부파일 업로드/교체 시 공통으로 사용되는 검증 규칙.
- * - 파일 크기: 50MB 제한
- * - 확장자: PDF/Office/이미지 화이트리스트 (SVG 제외 — XSS 위험)
+ * - 파일 크기: 단일 파일 MAX_FILE_SIZE 제한 + 합계 정책은 라우트 측에서 별도 검증
+ * - 확장자: PDF/Office/한글/텍스트/이미지/압축/미디어 화이트리스트
+ *           (svg/html/htm/js — XSS, exe/bat/sh/ps1 등 — 실행, docm/xlsm/pptm — VBA 매크로 차단)
  * - MIME 타입: 확장자와 이중 검증 (image/* 와일드카드 금지 — svg+xml 우회 방지)
  */
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+/** UI/에러 메시지 동적 표기용 — MAX_FILE_SIZE 변경 시 자동 반영. */
+export const MAX_FILE_SIZE_MB = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
 
 /**
  * 허용 확장자 (소문자) — 화이트리스트 방식.
@@ -81,7 +85,7 @@ export type FileValidationResult =
  */
 export function validateFile(file: File): FileValidationResult {
   if (file.size > MAX_FILE_SIZE) {
-    return { ok: false, error: `ファイルサイズが50MBを超えています: ${file.name}` };
+    return { ok: false, error: `ファイルサイズが${MAX_FILE_SIZE_MB}MBを超えています: ${file.name}` };
   }
 
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
