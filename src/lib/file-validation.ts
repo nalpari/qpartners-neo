@@ -42,8 +42,14 @@ export const ALLOWED_EXTENSIONS_CONTENTS = new Set([
 
 /**
  * 메일 첨부 허용 확장자 (소문자) — 좁은 기본 정책.
- * 대량메일 수신자 보호를 위해 동영상/압축/한글 등 위험 가능 확장자는 제외.
- * 변경 시 mass-mails 운영 요구사항 검토 필요.
+ * 대량메일 수신자 보호를 위해 콘텐츠 정책보다 엄격하게 제한:
+ *   - 동영상(mp4/mov)/음성(mp3/wav): 메일 첨부 용량 정책(현 10MB)과 부적합
+ *   - 압축(zip/rar/7z): 수신자가 풀어 실행할 위험 — 내부 검증 미도입 상태
+ *   - 한글(hwp/hwpx): 외부 수신자 환경 호환성 낮음 + MIME 위조 가능
+ *   - 텍스트(txt/csv/md): 의도적 제외. csv 는 Excel CSV Injection 우려, md/txt 는 외부 수신자에게
+ *     일반적이지 않은 첨부 형태로 운영 요구사항 미확인 (필요 시 운영팀 합의 후 추가).
+ *
+ * 변경 시 mass-mails 운영 요구사항 검토 + 수신자 보안 영향 평가 필요.
  */
 export const ALLOWED_EXTENSIONS_MAIL = new Set([
   "pdf", "docx", "xlsx", "pptx",
@@ -132,7 +138,11 @@ export function validateFile(file: File, policy: UploadPolicy = "contents"): Fil
 
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   if (!exts.has(ext)) {
-    return { ok: false, error: `許可されていないファイル拡張子です: ${file.name}` };
+    // policy 별 에러 메시지 분리 — 메일은 더 좁은 정책이므로 사용자에게 컨텍스트 명시.
+    const message = policy === "mail"
+      ? `メール添付に許可されていないファイル拡張子です: ${file.name}`
+      : `許可されていないファイル拡張子です: ${file.name}`;
+    return { ok: false, error: message };
   }
 
   // MIME 검증

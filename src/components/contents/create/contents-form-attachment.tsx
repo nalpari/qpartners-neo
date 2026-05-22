@@ -61,7 +61,7 @@ export function ContentsFormAttachment({
     if (invalid) {
       openAlert({
         type: "alert",
-        message: `許可されていない ファイル拡張子です: ${invalid.name}`,
+        message: `許可されていないファイル拡張子です: ${invalid.name}`,
       });
       return;
     }
@@ -75,7 +75,7 @@ export function ContentsFormAttachment({
     if (currentTotal + incomingTotal > MAX_FILE_SIZE) {
       openAlert({
         type: "alert",
-        message: `添付ファイルの 合計容量が ${MAX_FILE_SIZE_MB}MB を 超えています。`,
+        message: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています。`,
       });
       return;
     }

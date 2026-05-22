@@ -320,7 +320,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
           setIsSubmitting(false);
           openAlert({
             type: "alert",
-            message: `コンテンツは 保存されましたが、 ファイルのアップロードに 失敗しました。${detail}\n詳細画面から 再度 お試しください。`,
+            message: `コンテンツは保存されましたが、ファイルのアップロードに失敗しました。${detail}\n詳細画面から再度お試しください。`,
             onConfirm: () => router.push(`/contents/${savedId}`),
           });
           return;
