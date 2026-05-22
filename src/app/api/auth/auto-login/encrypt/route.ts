@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     const { target } = parsedBody.data;
 
     // 3. 자체 AES-128-CBC 암호화 — 3사 동일 사양 (담당자 명시 사실, 2026-04-27).
-    //    Key: AUTO_LOGIN_OUTBOUND_AES_KEY (16B), IV: YYYYMMDD_autoL!! (KST 일자).
+    //    Key: AUTO_LOGIN_AES_KEY (16B, inbound 와 동일 — 2026-05-21 통일), IV: YYYYMMDD_autoL!! (KST 일자).
     const cipher = encryptOutboundCipher(userId);
 
     // 4. target 별 URL 에 cipher 를 붙여 반환
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       console.error(
         "[POST /api/auth/auto-login/encrypt] 설정 에러:",
         error.name,
-        "— AUTO_LOGIN_OUTBOUND_AES_KEY 설정 확인 필요",
+        "— AUTO_LOGIN_AES_KEY 설정 확인 필요",
       );
       return NextResponse.json(
         { error: "サーバー設定エラーが発生しました" },
