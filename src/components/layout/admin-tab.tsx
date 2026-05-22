@@ -21,8 +21,8 @@ interface AdminTabItem {
  */
 const FALLBACK_TABS: AdminTabItem[] = [
   { menuCode: ADMIN_MENU.MEMBERS,     label: "会員管理",         href: "/admin/members"     },
-  { menuCode: ADMIN_MENU.BULK_MAIL,   label: "バルクメール発送", href: "/admin/bulk-mail"   },
-  { menuCode: ADMIN_MENU.NOTICES,     label: "ホーム画面のお知らせ", href: "/admin/notices" },
+  { menuCode: ADMIN_MENU.BULK_MAIL,   label: "一斉配信メール発送", href: "/admin/bulk-mail"   },
+  { menuCode: ADMIN_MENU.NOTICES,     label: "お知らせ管理", href: "/admin/notices" },
   { menuCode: ADMIN_MENU.CATEGORIES,  label: "カテゴリ管理",     href: "/admin/categories"  },
   { menuCode: ADMIN_MENU.PERMISSIONS, label: "権限管理",         href: "/admin/permissions" },
   { menuCode: ADMIN_MENU.MENUS,       label: "メニュー管理",     href: "/admin/menus"       },
