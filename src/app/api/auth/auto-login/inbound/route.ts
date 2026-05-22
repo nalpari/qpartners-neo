@@ -26,19 +26,34 @@ import { userTpSchema } from "@/lib/schemas/common";
  *   6. Q.Partners-neo 자체 JWT 서명 발급 후 httpOnly 쿠키로 전파 + 홈(/) 리다이렉트
  *   7. 실패 시 /login?error=auto_login_failed 폴백 (사용자 친화적 UX)
  *
+ * 허용 입력 userTp (2026-05-22):
+ *   - STORE / SEKO / GENERAL — 자동로그인 송신 측은 3종 한정.
+ *   - ADMIN 송신 시 query_validation_failed 로 거부 (외부 3사 자동로그인 송신 사양상 ADMIN 없음).
+ *   - QSP 응답 userTp 에는 ADMIN 가능 — "판매점 + QSP 유저 등록" 사용자(예: 회사 마스터 계정).
+ *     이 경우 login 라우트와 동일하게 `isAdminViaDealerTab` 예외로 통과시킨다.
+ *
+ * 후속 처리는 login 라우트(/api/auth/login) 완전 미러링:
+ *   - LoginUser.userTp = QSP 응답 userTp (입력값 아님)
+ *   - resolveAuthRole(응답 userTp, ...) — ADMIN 응답이면 SUPER_ADMIN/ADMIN 분기 정상 진입
+ *   - 즉 interplug 같은 ADMIN 응답 사용자는 자동로그인 시에도 ADMIN/SUPER_ADMIN 권한 그대로 부여
+ *   - 사용자 인증 후 권한·세션 처리에 자동로그인 vs 일반 로그인 차별 없음
+ *
  * 왜 QSP 로그인 API 를 호출하지 않나:
  *   - AS-IS Q.Partners 레거시는 자체 로그인 API 가 있어 loginKey(pwd 스킵 트릭) 모드를 지원했지만,
  *     QSP (v1.0 사양서 기준) 는 자동로그인 모드를 지원하지 않음 — `loginKey` 파라미터 자체가 없음.
  *   - 자동로그인은 cipher 소유 자체를 "외부 3사에서 인증된 사용자" 증명으로 간주하고
  *     Q.Partners-neo 가 자체 세션을 발급한다 (QSP userDetail 은 메타데이터 조회에만 사용).
- *   - 2FA 정책: ADMIN 은 twoFactorVerified=false 로 2FA 강제, SUPER_ADMIN 은 자동로그인 거부.
- *     그 외(STORE/SEKO/GENERAL)는 2FA 스킵 — 외부 3사 SSO 경유 인증이라 재요구 시 UX 파괴.
+ *
+ * inbound vs login 차이는 인증 수단 1가지 + 부가 정책 2가지:
+ *   - 인증 수단: pwd 검증 → cipher 복호화 (외부 3사 발급 증명 = "이미 인증됐다는 신뢰")
+ *   - 2FA 면제: 외부 3사 SSO 경유라 재요구 시 UX 파괴 (의도된 차이)
+ *   - 로그인 알림 메일 면제: 본인 의도된 진입이라 알림 노이즈 (#2125 Q3 결정)
  *
  * 보안 방어 계층:
  *   - Rate Limit: IP 기반 20/분, IP 식별 불가 시 즉시 거부 (fail-closed). QSP DDoS 대행·AES 키 프로빙 차단.
  *   - Open Redirect 방어: request.url 대신 SITE_URL/SITE_DEFAULTS.url 을 base 로 사용 (Host 헤더 조작 무효화).
  *   - statCd 검증: 삭제("D")/탈퇴("R") 계정 자동로그인 차단.
- *   - authRole fail-closed: DB 조회 실패 시 ADMIN 경로는 거부, STORE 는 최소권한(2ND_STORE) 강제.
+ *   - authRole fail-closed: catch 폴백은 응답 userTp 기준 (login route 와 동일 패턴).
  *   - 리다이렉트 302: 307(메서드 보존·캐시 가능) 대신 302 로 SSO 폴백 의도 명확화.
  *
  * Cipher replay 정책 (2026-04-30 결정):
@@ -48,9 +63,15 @@ import { userTpSchema } from "@/lib/schemas/common";
  *   - 대응: 외부 3사 측 cipher 노출 표면 (브라우저 히스토리·Referer·로그) 의 표준 보호에 의존.
  */
 
+/**
+ * inbound 전용 userTp enum — 공유 `userTpSchema` 와 분리.
+ * 공유 스키마는 회원관리/2FA/메일 등 ADMIN 을 포함하는 다른 흐름에서 그대로 사용한다.
+ */
+const inboundUserTpSchema = z.enum(["STORE", "SEKO", "GENERAL"]);
+
 const inboundQuerySchema = z.object({
   autoLoginParam1: z.string().min(1, "autoLoginParam1は必須です"),
-  userTp: userTpSchema,
+  userTp: inboundUserTpSchema,
 });
 
 const JWT_MAX_AGE_SEC = 60 * 60 * 8; // 8시간 — 일반 로그인과 동일
@@ -152,7 +173,7 @@ export async function GET(request: NextRequest) {
     if (trimmedUserId.length === 0) {
       return failRedirect("empty_user_id");
     }
-    // userId 마스킹 — STORE/SEKO/ADMIN 의 loginId 는 `@` 없는 식별자(예: "1301011") 라
+    // userId 마스킹 — STORE/SEKO 의 loginId 는 `@` 없는 식별자(예: "1301011") 라
     // maskEmail 사용 시 원문이 그대로 DB 에 저장됨 (`if (atIdx <= 0) return value`).
     // maskUserId 는 이메일은 maskEmail, 그 외는 앞 2자 + "***" 로 축약하여 PII 누출 차단.
     logUserId = maskUserId(trimmedUserId);
@@ -176,15 +197,36 @@ export async function GET(request: NextRequest) {
     }
     const detail = userDetailResult.detail;
 
-    // 3-1. userTp 교차 검증 — cipher에는 userId만 포함되고 userTp는 평문 쿼리.
-    //    공격자가 userTp를 변조하면 다른 계정 유형으로 QSP 조회 경로가 전환됨.
-    //    QSP 응답의 userTp와 쿼리 파라미터 userTp가 일치하는지 검증.
-    if (!detail.userTp || detail.userTp !== userTp) {
-      console.warn(LOG, "userTp 불일치 — 쿼리 변조 의심:", {
+    // 3-1. 응답 userTp 검증 + mismatch 교차 검증 (login route.ts:144-178 미러링)
+    //    qspMemberDetailSchema.userTp 는 z.string().nullable() 이라 enum 보장 없음 →
+    //    userTpSchema 로 narrow 후 사용 (UserTp 타입 확보).
+    const responseUserTpParsed = userTpSchema.safeParse(detail.userTp);
+    if (!responseUserTpParsed.success) {
+      console.warn(LOG, "응답 userTp 무효 또는 누락:", { qspUserTp: detail.userTp });
+      return failRedirect("invalid_response_user_tp");
+    }
+    const responseUserTp = responseUserTpParsed.data;
+
+    //    예외: 응답 userTp="ADMIN" + 입력 userTp="STORE" 조합은 통과 (login route 와 동일).
+    //    QSP ADMIN 정책: "판매점 등록 + QSP 유저 등록" 사용자를 ADMIN 으로 응답 (담당자 회신 2026-05-22).
+    //    회사 마스터 계정(예: interplug) 이 대표적 케이스 — STORE 송신으로 진입.
+    //    그 외 mismatch (SEKO↔STORE 등) 는 외부 3사 사양 위반 또는 쿼리 변조 → 거부.
+    const isAdminViaDealerTab = responseUserTp === "ADMIN" && userTp === "STORE";
+    if (responseUserTp !== userTp && !isAdminViaDealerTab) {
+      console.warn(LOG, "userTp 불일치 — 쿼리 변조 또는 사양 위반:", {
         queryUserTp: userTp,
-        qspUserTp: detail.userTp,
+        qspUserTp: responseUserTp,
       });
       return failRedirect("user_tp_mismatch");
+    }
+
+    // 감사 trail — ADMIN 응답 사용자가 STORE 탭으로 자동로그인 진입한 경우 보안 로그.
+    // login route.ts:174-179 패턴 미러링. 비정상 패턴 사후 분석용. PII 제외.
+    if (isAdminViaDealerTab) {
+      console.info(LOG, "ADMIN 응답 사용자 STORE 탭 자동로그인 진입:", {
+        logUserId,
+        clientIp,
+      });
     }
 
     // 4. 계정 상태 검증 — statCd "A"(active) 만 자동로그인 허용.
@@ -194,52 +236,30 @@ export async function GET(request: NextRequest) {
       return failRedirect("account_inactive");
     }
 
-    // 5. authRole 결정 — /api/auth/login 과 동일 규칙 (DB 우선, 실패 시 fail-closed 폴백)
-    //    catch 폴백 원칙:
-    //      - ADMIN: DB 조회 실패 시 SUPER_ADMIN/ADMIN 구분 불가 → 자동로그인 거부 (최소 권한 원칙, fail-closed)
-    //      - STORE: 항상 "2ND_STORE" (storeLvl 반영 생략, resolveAuthRole 의 "불명 → 2ND_STORE" 와 일치)
-    //      - SEKO/GENERAL: 결정적 매핑
-    // GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록 4번째 인자로 전달.
+    // 5. authRole 결정 — login route.ts:299-316 미러링.
+    //    응답 userTp 기준으로 매핑: ADMIN 응답이면 SUPER_ADMIN/ADMIN 분기 정상 진입.
+    //    GENERAL 사용자는 회원관리에서 할당한 authCd 가 JWT authRole 에 반영되도록 4번째 인자로 전달.
     let authRole: Awaited<ReturnType<typeof resolveAuthRole>>;
     try {
-      authRole = await resolveAuthRole(userTp, detail.userId, detail.storeLvl, detail.authCd ?? null);
+      authRole = await resolveAuthRole(responseUserTp, detail.userId, detail.storeLvl, detail.authCd ?? null);
     } catch (error: unknown) {
       const errorName = error instanceof Error ? error.name : typeof error;
-      console.warn(LOG, "authRole 결정 실패 — fail-closed 폴백:", { userTp, errorName });
-      if (userTp === "ADMIN") {
-        // ADMIN/SUPER_ADMIN 구분 불가 상태에서 SUPER_ADMIN 에게 자동로그인을 허용하면 고권한 계정이 2FA 없이
-        // JWT 발급됨. 최소 권한 원칙에 따라 ADMIN 경로는 DB 복구 후 재시도하도록 거부.
-        return failRedirect("auth_role_db_fail_admin");
-      }
-      if (userTp === "STORE") {
-        authRole = "2ND_STORE";
-      } else if (userTp === "SEKO") {
-        authRole = "SEKO";
-      } else {
-        authRole = "GENERAL";
-      }
+      console.warn(LOG, "authRole 결정 실패 — fail-closed 폴백:", { responseUserTp, errorName });
+      // login route.ts:312-315 패턴 미러링 — 응답 userTp 기준 결정적 매핑.
+      authRole = responseUserTp === "ADMIN" ? "ADMIN"
+        : responseUserTp === "STORE" ? (detail.storeLvl === "1" ? "1ST_STORE" : "2ND_STORE")
+        : responseUserTp === "SEKO" ? "SEKO"
+        : "GENERAL";
     }
 
-    // 6. 고권한 계정 자동로그인 정책 — SUPER_ADMIN 거부, ADMIN 은 감사 로그 남기고 허용.
-    if (authRole === "SUPER_ADMIN") {
-      console.warn(LOG, "SUPER_ADMIN 자동로그인 거부 — 일반 로그인 경로 사용 필요:", { userTp });
-      return failRedirect("super_admin_auto_login_denied");
-    }
-    if (authRole === "ADMIN") {
-      console.info(LOG, "ADMIN 자동로그인 — 감사 로그:", {
-        userTp,
-        ip: clientIp,
-        ua: request.headers.get("user-agent")?.slice(0, 120) ?? "unknown",
-      });
-    }
-
-    // 7. LoginUser 페이로드 구성
-    //    - twoFactorVerified: ADMIN은 false(2FA 강제) — cipher 24h 재사용 가능성에 대한 고권한 보호
-    //      그 외(STORE/SEKO/GENERAL)는 true — 외부 3사 SSO 경유 인증이라 2FA 재요구 시 UX 파괴
+    // 6. LoginUser 페이로드 구성 — login route.ts:357-380 미러링.
+    //    userTp 는 응답값(responseUserTp) 사용 — 사용자가 어느 탭으로 진입했든 실제 계정 유형이 우선.
+    //    twoFactorVerified=true — 외부 3사 SSO 경유 인증이라 2FA 재요구 시 UX 파괴.
+    //    단 pwdInitYn=N (최초 로그인) 회원은 personal-info popup 가드 통과를 위해 false 강제 (login route 와 동일).
     const user: LoginUser = {
       userId: detail.userId,
       userNm: detail.userNm,
-      userTp,
+      userTp: responseUserTp,
       compCd: detail.compCd,
       compNm: detail.compNm,
       email: detail.email,
@@ -251,14 +271,14 @@ export async function GET(request: NextRequest) {
       // 알 수 없는 값은 null 로 폴백 (다음 로그인 시 personal-info 분기 통과 — 보수적 fail-open).
       pwdInitYn: detail.pwdInitYn === "Y" || detail.pwdInitYn === "N" ? detail.pwdInitYn : null,
       authRole,
-      // login route 와 동일 정책 — pwdInitYn=N 회원은 ADMIN 아니어도 false 강제하여
-      // password-init 가드(`!twoFactorVerified || pwdInitYn==="N"`) 통과 가능. SSO 경유로 진입한
-      // 최초 로그인 회원도 personal-info popup 흐름이 정상 동작하도록 통일.
-      twoFactorVerified: authRole !== "ADMIN" && detail.pwdInitYn !== "N",
+      // pwdInitYn=N 회원은 false 강제하여 password-init 가드
+      // (`!twoFactorVerified || pwdInitYn==="N"`) 통과 가능. SSO 경유로 진입한 최초 로그인 회원도
+      // personal-info popup 흐름이 정상 동작하도록 login route 와 동일하게 처리.
+      twoFactorVerified: detail.pwdInitYn !== "N",
       telNo: detail.compTelNo ?? null,
     };
 
-    // 8. JWT 서명
+    // 7. JWT 서명
     //    - ConfigError(JWT_SECRET 미설정) 는 redirect 대신 500 — 운영자가 설정 누락을 즉시 인지해야 함
     //      (redirect 폴백으로 흡수하면 "사용자 자동로그인이 그냥 실패" 로만 보고되어 추적이 늦어짐)
     let token: string;
@@ -277,7 +297,7 @@ export async function GET(request: NextRequest) {
       return failRedirect("jwt_sign_failed");
     }
 
-    // 9. 홈 리다이렉트 + httpOnly 쿠키 (일반 로그인과 동일 속성)
+    // 8. 홈 리다이렉트 + httpOnly 쿠키 (일반 로그인과 동일 속성)
     //    base 는 BASE_URL (Host 헤더 조작 방어). 302 로 명시.
     //
     //    [정책 #2125 / Q3 결정] inbound 자동로그인 시 로그인 알림 메일 발송 제외.

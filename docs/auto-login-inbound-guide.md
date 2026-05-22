@@ -3,9 +3,27 @@
 > HANASYS DESIGN / Q.Order / Q.Musubi 등 외부 사이트에서 **Q.Partners-neo 로 자동로그인 진입**하기 위한 연동 가이드입니다.
 > `autoLoginParam1` 생성(암호화)부터 Q.Partners-neo 에서 복호화 후 로그인 완료까지 **외부 사이트 개발자 관점**에서 정리했습니다.
 
-- **Document version**: 2.3 (2026-05-21)
+- **Document version**: 2.6 (2026-05-22)
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
 - **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력·**키** — 양방향 가이드 통일
+
+> ⚠️ **v2.6 변경 안내 (2026-05-22) — ADMIN 응답 권한 강등 정책 청산 + login 라우트 완전 미러링**
+>
+> v2.5 에서 도입한 "ADMIN 응답 사용자 STORE 권한 강등" 정책을 청산합니다. 자동로그인 inbound 의 본질은 SSO (외부에서 이미 인증된 사용자의 후속 처리) 이므로 일반 로그인과 권한 차별을 두지 않습니다. interplug 같은 회사 마스터 계정도 자동로그인 시 ADMIN/SUPER_ADMIN 권한 정상 부여됩니다 (login 라우트와 byte-level 동일 결과).
+>
+> 송신 측 `userTp` 3종 한정(STORE/SEKO/GENERAL) 정책은 유지합니다.
+>
+> **현행 사양은 반드시 `docs/Q.Partners-자동로그인-구현-가이드.md` v1.5 를 참조** 하세요.
+
+> ⚠️ **v2.5 변경 안내 (2026-05-22) — (청산) ADMIN 응답 권한 강등 정책. v2.6 에서 정정**
+
+> ⚠️ **v2.4 변경 안내 (2026-05-22) — 허용 userTp 축소 (사유는 v2.5 정정)**
+>
+> inbound 허용 `userTp` 가 **`STORE` / `SEKO` / `GENERAL`** 로 축소됐습니다. `ADMIN` 송신은 진입 단계에서 `query_validation_failed` 로 거부됩니다.
+>
+> ~~근거: QSP 사양에 ADMIN userTp 자체가 없음~~ — 이 사유 단정은 v2.5 에서 청산됐습니다. 정확한 사유는 "자동로그인 송신 측만 3종 한정" 입니다.
+>
+> 직전(2026-04-30~) 의 SUPER_ADMIN 거부 / ADMIN 2FA 강제 정책 분기는 함께 삭제됐습니다.
 
 > ⚠️ **v2.3 변경 안내 (2026-05-21) — 본 문서는 historical 이력 문서입니다**
 >
@@ -344,3 +362,6 @@ flowchart TD
 | **2.1** | **2026-05-11** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
 | **2.2** | **2026-05-19** | **§3 호출 URL 표 운영 호스트 확정** — `www.q-partners.q-cells.jp` (확정 후 업데이트) → `prod.q-partners.q-cells.jp`. |
 | **2.3** | **2026-05-21** | **키 분리 운영 번복 — 단일 공통 키로 통일.** 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY`. 통합 테스트 단계에서 외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 이 이미 단일 공통 키 운영 사양임이 확인됨. 우리만 분리 운영 시 외부 4개 시스템 모두에 우리용 분기 추가가 필요해 비현실적이라 외부 사양에 맞춰 통일. inbound 코드의 `SAMPLE_KEY` 차단 가드도 제거 (통일된 운영 키 자체가 가이드/주석 노출 키라 "샘플=운영" 구조 — 의도된 정책 후퇴, outbound 와 동일). |
+| **2.4** | **2026-05-22** | **허용 `userTp` 에서 `ADMIN` 제거** (사유는 v2.5 정정). `ADMIN` 송신은 진입 단계에서 `query_validation_failed` 폴백. SUPER_ADMIN 거부 / ADMIN 2FA 강제 / ADMIN 감사 로그 분기도 dead code 로 함께 삭제. ~~"QSP 에 ADMIN userTp 미존재" 단정~~ — v2.5 에서 청산. |
+| **2.5** | **2026-05-22** | (청산) ADMIN 응답 권한 강등 정책. v2.6 에서 정정. |
+| **2.6** | **2026-05-22** | **login 라우트 완전 미러링.** SSO 본질(외부에서 이미 인증된 사용자 후속 처리)에 맞춰 일반 로그인과 권한 차별 없음. ADMIN 응답 사용자도 ADMIN/SUPER_ADMIN 권한 정상 부여 (interplug → SUPER_ADMIN). `LoginUser.userTp` = 응답값, `resolveAuthRole` 첫 인자 = 응답값, catch 폴백 = 응답 userTp 기준. 송신 3종 한정(STORE/SEKO/GENERAL) 정책은 유지. **현행 사양은 `docs/Q.Partners-자동로그인-구현-가이드.md` v1.5** 를 참조. |
