@@ -1,7 +1,8 @@
 # Q.Partners 자동로그인 구현 가이드
 
 외부 사이트(HANASYS DESIGN / Q.Order / Q.Musubi)에서 Q.Partners 로 자동로그인 진입을 구현하기 위한 사양 문서입니다.
-- **Document version**: 1.1 (2026-05-20)
+- **Document version**: 1.2 (2026-05-21)
+- **v1.2 변경**: 키 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 통일 (outbound 와 단일 공통 키 운영으로 일치)
 
 ---
 
@@ -48,7 +49,7 @@ GET https://{host}/api/auth/auto-login/inbound?autoLoginParam1={URL_ENCODED_CIPH
 
 ```text
 plaintext   = UTF-8(userId)
-aesKey      = UTF-8(AUTO_LOGIN_INBOUND_AES_KEY)        // 정확히 16 byte raw, KDF 없음
+aesKey      = UTF-8(AUTO_LOGIN_AES_KEY)                // 정확히 16 byte raw, KDF 없음
 iv          = UTF-8(`${YYYYMMDD_KST}_autoL!!`)         // 16 byte 결정적
 ciphertext  = AES-128-CBC(aesKey, iv, plaintext)       // PKCS5/PKCS7 Padding
 cipher      = Base64(ciphertext)                       // IV prepend 없음
@@ -58,7 +59,7 @@ autoLoginParam1 = encodeURIComponent(cipher)
 | 항목 | 값 |
 |---|---|
 | 알고리즘 | **AES-128-CBC** + PKCS5/PKCS7 |
-| Key | `AUTO_LOGIN_INBOUND_AES_KEY` — 정확히 16 byte UTF-8 raw, **별도 보안 채널로 송부** |
+| Key | `AUTO_LOGIN_AES_KEY` — 정확히 16 byte UTF-8 raw. **outbound 와 단일 공통 키** (QSP / Q.Order / Q.Musubi / Design 4개 시스템과 동일 키) |
 | IV | `YYYYMMDD_autoL!!` (KST 기준, 16 byte 결정적) |
 | 출력 | Base64(ciphertext) — **IV prepend 없음** |
 | 자정 경계 | Q.Partners 가 전일 IV 자동 재시도 — 외부 측 추가 처리 불요 |
@@ -70,12 +71,12 @@ autoLoginParam1 = encodeURIComponent(cipher)
 ```javascript
 const crypto = require("node:crypto");
 
-function encryptAutoLoginUserId(userId, autoLoginInboundAesKey) {
+function encryptAutoLoginUserId(userId, autoLoginAesKey) {
   const now = new Date();
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const yyyymmdd = `${kst.getUTCFullYear()}${String(kst.getUTCMonth() + 1).padStart(2, "0")}${String(kst.getUTCDate()).padStart(2, "0")}`;
 
-  const key = Buffer.from(autoLoginInboundAesKey, "utf8");   // 16 byte
+  const key = Buffer.from(autoLoginAesKey, "utf8");          // 16 byte
   const iv  = Buffer.from(`${yyyymmdd}_autoL!!`, "utf8");    // 16 byte
 
   const cipher = crypto.createCipheriv("aes-128-cbc", key, iv);
@@ -85,7 +86,7 @@ function encryptAutoLoginUserId(userId, autoLoginInboundAesKey) {
 }
 
 // 사용 예
-const autoLoginParam1 = encryptAutoLoginUserId("1301011", process.env.AUTO_LOGIN_INBOUND_AES_KEY);
+const autoLoginParam1 = encryptAutoLoginUserId("1301011", process.env.AUTO_LOGIN_AES_KEY);
 const userTp = "ADMIN";
 const redirectUrl = `https://dev.q-partners.q-cells.jp/api/auth/auto-login/inbound?autoLoginParam1=${autoLoginParam1}&userTp=${userTp}`;
 ```
@@ -96,7 +97,7 @@ const redirectUrl = `https://dev.q-partners.q-cells.jp/api/auth/auto-login/inbou
 
 ## 5. 외부 측 구현 체크리스트
 
-- [ ] `AUTO_LOGIN_INBOUND_AES_KEY` 를 안전한 시크릿 저장소에 저장. 정확히 16 byte UTF-8 (앞뒤 공백·개행 주의)
+- [ ] `AUTO_LOGIN_AES_KEY` 를 안전한 시크릿 저장소에 저장. 정확히 16 byte UTF-8 (앞뒤 공백·개행 주의). **outbound (Q.Partners→외부) 와 동일한 단일 공통 키** — 별도 inbound 전용 키 없음
 - [ ] 알고리즘은 **AES-128-CBC** + PKCS5/PKCS7. AES-256 / GCM / CTR 사용 금지
 - [ ] IV 는 결정적 `YYYYMMDD_autoL!!` (KST 기준 16 byte) — 랜덤 IV 생성 금지
 - [ ] cipher 페이로드는 **ciphertext only**, IV prepend 금지
@@ -147,11 +148,15 @@ const redirectUrl = `https://dev.q-partners.q-cells.jp/api/auth/auto-login/inbou
   - 외부 측 백엔드 서버가 cipher 만든 뒤 서버측에서 호출 (모두 같은 NAT IP) → **한도 초과 가능**
 - **권장 대응**: 백엔드 호출 패턴이라면 발송 회신 시 **귀사 호출 IP 와 예상 트래픽량** 알려주세요. 필요 시 한도 상향 또는 IP allowlist 협의 가능합니다.
 
-### 7.3 dev / 운영 공통 키 운영
+### 7.3 키 운영 — 단일 공통 키 (방향·환경 무관)
 
-- `AUTO_LOGIN_INBOUND_AES_KEY` 는 **dev / 운영 환경 공통** 으로 단일 키를 사용합니다 (외부 3사 자동로그인 키 운영 관례와 통일).
+- `AUTO_LOGIN_AES_KEY` 는 **inbound (외부→Q.Partners) / outbound (Q.Partners→외부) 양방향 동일** + **dev / 운영 환경 공통** 으로 단일 키를 사용합니다.
+- 외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 자동로그인 키 운영 관례와 통일.
 - 키 값은 **별도 보안 채널로 1회 송부** → 귀사 dev / 운영 환경 양쪽 env 에 동일하게 설정.
 - 키 교체가 필요한 경우 (정기 교체 / 침해 의심 등) **사전 공지 후 양측이 동시에** 새 키로 교체합니다.
+  - 교체 후에는 양측 모두 **프로세스(컨테이너) 재시작** 이 필요합니다. Q.Partners-neo outbound 구현은 키를 프로세스 메모리에 1회 캐싱하므로, env 만 바꾸면 stale key 가 그대로 유지됩니다. rolling restart 환경에서는 모든 인스턴스 재기동 완료까지 일시적 양방향 cipher 불일치가 발생할 수 있어 점검창 협의 권장.
+- ⚠️ **키 값 공개 채널 노출 절대 금지** — 단일 공통 키 운영이므로 키 1건이 노출되면 **외부 4개 시스템 + Q.Partners 양방향** 전체가 동시에 영향을 받습니다. 이메일/메신저/티켓/PR 본문/소스 주석/커밋 메시지/스크린샷 등 영구 보존되는 표면에 키 값을 절대 기록하지 마세요. 공유는 반드시 별도 보안 채널(예: 사내 비밀저장소·암호화된 1회용 링크) 로만 진행합니다.
+- (이력) 2026-04-30 ~ 2026-05-20 기간에는 Q.Partners 측이 inbound/outbound 키를 분리 운영했으나 (`AUTO_LOGIN_INBOUND_AES_KEY` / `AUTO_LOGIN_OUTBOUND_AES_KEY`), 통합 테스트 단계에서 외부 4개 시스템 운영 사양과의 충돌이 확인되어 2026-05-21 부터 단일 키로 통일했습니다.
 
 ---
 

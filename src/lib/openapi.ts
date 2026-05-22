@@ -188,7 +188,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 **cipher 규격 (2026-04-30 outbound 사양과 통일):**
 - 알고리즘: AES-128-CBC, PKCS5/PKCS7 Padding
-- 키: \`AUTO_LOGIN_INBOUND_AES_KEY\` 환경변수 — UTF-8 raw 16 byte (해싱·날짜 결합 없음). outbound 키와 분리 운영하여 침해 시 영향 격리.
+- 키: \`AUTO_LOGIN_AES_KEY\` 환경변수 — UTF-8 raw 16 byte (해싱·날짜 결합 없음). outbound 와 단일 공통 키 운영 (2026-05-21 통일 — 외부 4개 시스템 사양에 맞춤).
 - IV: \`UTF-8(\\\`\${YYYYMMDD_KST}_autoL!!\\\`)\` — 16 byte 결정적 IV (8+8). outbound 와 동일 상수.
 - 출력: \`Base64(ciphertext)\` → \`encodeURIComponent\` (IV prepend 없음 — 수신측이 재구성)
 - 자정 경계: 서버는 당일 IV 실패 시 전일 IV 로 재시도
@@ -196,7 +196,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 **응답:**
 - 성공: \`302\` → \`/\` (Set-Cookie 로 JWT 전파, 자동로그인은 2FA 스킵. SUPER_ADMIN 은 거부, ADMIN 은 2FA 강제)
 - 실패: \`302\` → \`/login?error=auto_login_failed\` (쿼리 검증·Rate Limit·복호화·QSP userDetail·계정상태·authRole·JWT 중 실패)
-- 설정 오류: \`500\` (AUTO_LOGIN_INBOUND_AES_KEY 미설정 또는 16 byte 길이 불일치)
+- 설정 오류: \`500\` (AUTO_LOGIN_AES_KEY 미설정 또는 16 byte 길이 불일치)
 
 **보안 방어:**
 - Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed).
@@ -237,7 +237,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "500": errorResponse("서버 설정 오류 (AUTO_LOGIN_INBOUND_AES_KEY 미설정 또는 16 byte 길이 불일치, JWT_SECRET 미설정 등)"),
+          "500": errorResponse("서버 설정 오류 (AUTO_LOGIN_AES_KEY 미설정 또는 16 byte 길이 불일치, JWT_SECRET 미설정 등)"),
         },
       },
     },
