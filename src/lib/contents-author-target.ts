@@ -9,7 +9,7 @@
  * - `targets === undefined` → 기존 의도 유지 (PUT 미명시 = 변경 의도 없음). 그대로 반환.
  * - 사내 작성자(SUPER_ADMIN/ADMIN) → 본인은 `canAccessContent` fail-open 으로 항상 열람 가능, 보강 없음.
  * - 비사내 작성자 + targets 에 본인 role 이 이미 있음 → 그대로.
- * - 비사내 작성자 + targets 에 본인 role 없음 → 기본 기간(today~2999-12-31) 으로 1건 추가.
+ * - 비사내 작성자 + targets 에 본인 role 없음 → 시작일=오늘, 종료일=미지정(상시 공개) 으로 1건 추가.
  *
  * FE 측 `ContentsFormPostTarget.forcedRoleCode` 와 같은 정책의 서버 측 단일 진실.
  */
@@ -21,8 +21,6 @@ type ContentTargetInput = {
   startAt?: Date;
   endAt?: Date;
 };
-
-const FAR_FUTURE_END = new Date("2999-12-31");
 
 export function ensureAuthorTarget(
   targets: ContentTargetInput[] | undefined,
@@ -36,7 +34,7 @@ export function ensureAuthorTarget(
     {
       roleCode: userRole,
       startAt: new Date(),
-      endAt: new Date(FAR_FUTURE_END),
+      // endAt 미지정 = 상시 공개 (ContentTarget.endAt NULL).
     },
   ];
 }

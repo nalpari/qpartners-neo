@@ -53,7 +53,6 @@ export function buildInitialPostTargetsState(
   forcedRoleCode?: string | null,
 ): PostTargetState {
   const today = new Date();
-  const defaultEnd = new Date("2999-12-31");
 
   const existingMap = new Map(
     (existingTargets ?? []).map((t) => [t.roleCode, t] as const),
@@ -71,12 +70,12 @@ export function buildInitialPostTargetsState(
         endDate: found.endAt ? new Date(found.endAt) : null,
       };
     }
-    // forcedRoleCode 행은 신규 등록 시점부터 체크 + 기본 기간(오늘~2999) 부여
+    // forcedRoleCode 행은 신규 등록 시점부터 체크 + 시작일은 오늘, 종료일은 비움(상시 공개).
     return {
       roleCode: opt.roleCode,
       checked: isForced,
       startDate: new Date(today),
-      endDate: new Date(defaultEnd),
+      endDate: null,
     };
   });
 
@@ -99,14 +98,14 @@ export function buildInitialPostTargetsState(
       roleCode: forcedRoleCode,
       checked: true,
       startDate: new Date(today),
-      endDate: new Date(defaultEnd),
+      endDate: null,
     });
   }
 
   return {
     selectAll: items.length > 0 && items.every((i) => i.checked),
     allStartDate: today,
-    allEndDate: defaultEnd,
+    allEndDate: null,
     targets: items,
   };
 }

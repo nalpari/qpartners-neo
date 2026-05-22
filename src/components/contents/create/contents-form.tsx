@@ -250,14 +250,20 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       return;
     }
 
+    // 체크된 게시대상은 시작일 필수. 종료일은 미입력 허용(상시 공개).
+    const checkedTargets = postTargets.targets.filter((t) => t.checked);
+    if (checkedTargets.some((t) => !t.startDate)) {
+      openAlert({ type: "alert", message: "閲覧期間の開始日は必須入力項目です。" });
+      return;
+    }
+
     // 게시대상 배열 구성 — roleCode (null = 비회원) 그대로 전송. JSON null 직렬화 OK.
-    const targets = postTargets.targets
-      .filter((t) => t.checked)
-      .map((t) => ({
-        roleCode: t.roleCode,
-        ...(t.startDate && { startAt: t.startDate.toISOString() }),
-        ...(t.endDate && { endAt: t.endDate.toISOString() }),
-      }));
+    // endAt 미포함 = 상시 공開 (BE: ContentTarget.endAt NULL 처리).
+    const targets = checkedTargets.map((t) => ({
+      roleCode: t.roleCode,
+      ...(t.startDate && { startAt: t.startDate.toISOString() }),
+      ...(t.endDate && { endAt: t.endDate.toISOString() }),
+    }));
 
     // 삭제된 첨부파일 ID 산출
     const currentFileIds = new Set(savedFiles.map((f) => f.id));
