@@ -15,7 +15,7 @@
 > - `AUTO_LOGIN_INBOUND_AES_KEY` 표기 (현재 사용 환경변수는 `AUTO_LOGIN_AES_KEY` 단일)
 > - `outbound 키와 분리 운영` 단정 (현재는 단일 공통 키)
 > - 외부 가이드 샘플 키를 `timingSafeEqual` 가드로 거부한다는 안내 (가드 제거됨 — 운영=샘플 구조)
-> - §4 검증 샘플의 키 리터럴 `jpqcellQ123456!!` (자바 byte-level 호환성 자체 검증용 historical 데이터이며, **외부 4개 시스템 단일 공통 키 통일(2026-05-21) 이후 본 값은 운영 키 운영 안내의 일부가 아닙니다.** 운영 키는 별도 보안 채널로만 공유됩니다)
+> - §4 검증 샘플의 키 리터럴 `<redacted-historical-sample-key>` (자바 byte-level 호환성 자체 검증용 historical 데이터이며, **외부 4개 시스템 단일 공통 키 통일(2026-05-21) 이후 본 값은 운영 키 운영 안내의 일부가 아닙니다.** 운영 키는 별도 보안 채널로만 공유됩니다. 검증이 필요한 외부 사이트 개발팀은 운영팀에 직접 문의)
 >
 > **현재 사양은 반드시 `docs/Q.Partners-자동로그인-구현-가이드.md` 를 참조** 하세요. 본 문서는 알고리즘 호환성 검증·과거 결정 추적 목적으로만 유지합니다.
 
@@ -34,16 +34,23 @@
 
 ## 2. 핵심 키 정보
 
+> ⚠️ **§2 ~ §6 historical 안내 (2026-05-21)**
+>
+> 본 §2 표 / §4 알고리즘·코드 샘플 / §6 운영 안내에 등장하는 다음 표현은 **v2.0 ~ v2.2 분리 운영 시절 기준**이며, **현행 단일 공통 키 운영 사양과는 다릅니다**:
+> - 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` (현행: `AUTO_LOGIN_AES_KEY` 단일)
+> - "outbound 키와의 관계: **분리 운영**" / "한쪽 compromise 시 영향 격리" 단정 (현행: 단일 키 — compromise 시 inbound/outbound 양방향 동시 영향)
+> - 외부 사이트 측에서 본 문서의 코드 샘플 (§4 Node.js / Java) 을 그대로 복사하면 옛 환경변수명을 사용하게 됩니다. **현행 사양·코드 샘플은 `docs/Q.Partners-자동로그인-구현-가이드.md` 를 참조** 하세요.
+
 ### 암호화 키
 
 | 항목 | 값 |
 |---|---|
-| 환경변수 이름 | `AUTO_LOGIN_INBOUND_AES_KEY` |
+| 환경변수 이름 | `AUTO_LOGIN_INBOUND_AES_KEY` *(historical — 현행 `AUTO_LOGIN_AES_KEY`)* |
 | 길이 | **정확히 16 byte (UTF-8 raw)** — AES-128-CBC 키로 그대로 사용 |
 | 값 | **Q.Partners 운영팀과 별도 협의** — 보안 채널로 전달 |
 | 공유 범위 | 외부 3사 (HANASYS / Q.Order / Q.Musubi) + Q.Partners-neo 서버 |
 | 교체 주기 | 연 1회 내외 (교체 시 사전 공지) |
-| outbound 키와의 관계 | **분리 운영** (`AUTO_LOGIN_OUTBOUND_AES_KEY` 와 다른 값) — 한쪽 compromise 시 영향 격리 |
+| outbound 키와의 관계 | *(historical)* **분리 운영** (`AUTO_LOGIN_OUTBOUND_AES_KEY` 와 다른 값) — 한쪽 compromise 시 영향 격리. 현행은 outbound 와 **단일 공통 키 (`AUTO_LOGIN_AES_KEY`)** 로 통일 — compromise 시 양방향 동시 영향. |
 
 ### 키 사용 방식
 
@@ -218,12 +225,12 @@ public static String encryptAutoLoginUserId(String userId, String autoLoginInbou
 | `T01` | `20260424` | `20260424_autoL!!` | `pQE3A9NO+KCt6q2hD/Bhzw==` |
 | `201T01` | `20260424` | `20260424_autoL!!` | `GpvgC+3aY/fPBItoF6+Cdg==` |
 
-> 위 샘플은 키 `jpqcellQ123456!!` (16 byte 자바 원본 검증용 키) 기준이며, 실제 운영 키는 별도 협의된 값을 사용한다. 자체 구현 검증 시 위 키·IV·평문 조합으로 동일 cipher 가 나오는지 확인하면 알고리즘 정합성을 빠르게 검증할 수 있다.
+> 위 샘플은 16 byte 자바 원본 검증용 키 (`<redacted-historical-sample-key>`) 기준이며, 실제 운영 키는 별도 협의된 값을 사용한다. **검증용 키 리터럴은 본 문서에서 제거되었으므로 운영팀으로부터 별도 공유**받아 자체 구현 검증 시 위 키·IV·평문 조합으로 동일 cipher 가 나오는지 확인하면 알고리즘 정합성을 빠르게 검증할 수 있다.
 >
-> Q.Partners-neo 동봉 검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`)는 git 트리에 샘플 키를 박지 않고 **`VERIFY_SAMPLE_KEY` env 로 주입**받는다. 위 byte-level 일치를 재현하려면 다음과 같이 실행한다.
+> Q.Partners-neo 동봉 검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`)는 git 트리에 샘플 키를 박지 않고 **`VERIFY_SAMPLE_KEY` env 로 주입**받는다. 위 byte-level 일치를 재현하려면 운영팀으로부터 받은 historical 검증 키를 다음과 같이 실행한다.
 >
 > ```bash
-> VERIFY_SAMPLE_KEY="jpqcellQ123456!!" node scripts/verify-auto-login-inbound-crypto.mjs
+> VERIFY_SAMPLE_KEY="<historical-sample-key>" node scripts/verify-auto-login-inbound-crypto.mjs
 > ```
 >
 > env 미설정 시 (A)/(B) 는 SKIP 되고 (C)/(D)/(E) 만 임시 랜덤 키로 실행된다 — 알고리즘 로직만 검증한다.

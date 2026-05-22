@@ -43,6 +43,11 @@ function formatKstDate(date: Date): string {
   return `${y}${m}${d}`;
 }
 
+// ⚠️ 키 캐싱 전략 불일치 메모 (2026-05-21 키 통일 후속):
+//   inbound (`auto-login-crypto.ts`) 는 매 요청마다 process.env 를 읽지만,
+//   outbound 는 프로세스 수명 동안 1회 캐싱한다 (cold path 비용 회피 + cipher 발급 빈도 차이).
+//   결과적으로 운영 중 단일 공통 키 (AUTO_LOGIN_AES_KEY) 를 교체해도 outbound 만 구 키를 들고 있을 수 있다.
+//   👉 키 로테이션 시 반드시 **프로세스 재시작 동반** (`docs/auto-login-inbound-guide.md` §3.3 참조).
 let _cachedKey: Buffer | null = null;
 
 function getOutboundAesKey(): Buffer {

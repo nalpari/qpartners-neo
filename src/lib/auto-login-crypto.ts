@@ -32,7 +32,8 @@
  *     통일. 같은 사용자가 같은 날 여러 번 inbound 진입을 정상 통과시킨다.
  *     받아들인 위험: cipher 탈취 시 24h 내 재사용 가능 (외부 3사 inbound 도 동일 위험).
  *     필요 시 평문에 nonce/타임스탬프를 포함하는 사양 확장으로 강화 가능 (현재 Out of Scope).
- *   - outbound 와 키가 다르므로 outbound 발급 cipher 를 본 모듈로 복호 불가 (의도된 분리).
+ *   - outbound (`auto-login-outbound-crypto.ts`) 와 동일 키 — 2026-05-21 통일.
+ *     단일 키 compromise 시 inbound/outbound 양방향이 동시에 영향받으므로 키 침해 대응 시 영향 범위를 단일·전사로 평가해야 한다.
  */
 
 import crypto from "node:crypto";
