@@ -6,7 +6,7 @@
 const ICON_BASE = "/asset/images/contents";
 
 /** 파일 유형 분류 — MIME / 확장자 공용 */
-type FileIconKind = "pdf" | "excel" | "word" | "ppt" | "image" | "zip" | "default";
+type FileIconKind = "pdf" | "excel" | "word" | "ppt" | "image" | "zip" | "txt" | "default";
 
 const ICON_SRC_MAP: Record<FileIconKind, string> = {
   pdf: `${ICON_BASE}/pdfIcon.svg`,
@@ -15,8 +15,8 @@ const ICON_SRC_MAP: Record<FileIconKind, string> = {
   ppt: `${ICON_BASE}/ppt_icon.svg`,
   image: `${ICON_BASE}/png_icon.svg`,
   zip: `${ICON_BASE}/zip_icon.svg`,
-  // 알 수 없는 형식은 PDF 아이콘으로 폴백 (범용 파일 아이콘 에셋 추가 시 교체)
-  default: `${ICON_BASE}/pdfIcon.svg`,
+  txt: `${ICON_BASE}/txt_icon.svg`,
+  default: `${ICON_BASE}/default_file_icon.svg`,
 };
 
 const EXT_TO_KIND: Record<string, FileIconKind> = {
@@ -38,6 +38,8 @@ const EXT_TO_KIND: Record<string, FileIconKind> = {
   zip: "zip",
   rar: "zip",
   "7z": "zip",
+  txt: "txt",
+  md: "txt",
 };
 
 /** 확장자 또는 fileName 으로 아이콘 종류 판정 */
@@ -70,6 +72,7 @@ function kindByMime(mimeType: string | null): FileIconKind {
     mimeType === "application/x-rar-compressed" ||
     mimeType === "application/x-7z-compressed"
   ) return "zip";
+  if (mimeType === "text/plain") return "txt";
   return "default";
 }
 

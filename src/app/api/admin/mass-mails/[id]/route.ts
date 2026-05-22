@@ -208,9 +208,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     await prisma.massMail.delete({ where: { id: idResult.data } });
 
     // 5. 첨부파일 디스크 정리 (DB 삭제 성공 후 — best-effort)
+    // contents 라우트와 동일하게 비교 대상 디렉토리를 resolve() 절대경로화 — 상대경로/심볼릭 링크 환경 false negative 방지.
+    const uploadRoot = resolve(UPLOAD_DIR);
     for (const att of mail.attachments) {
       const absPath = resolve(UPLOAD_DIR, att.filePath);
-      if (!isInsideDir(absPath, UPLOAD_DIR)) {
+      if (!isInsideDir(absPath, uploadRoot)) {
         console.error("[DELETE /api/admin/mass-mails/:id] Path Traversal 차단:", att.filePath);
         continue;
       }
@@ -380,7 +382,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     if (newFiles.length > 0) {
-      const validation = validateFiles(newFiles);
+      // 메일 정책 — 콘텐츠보다 좁은 화이트리스트 (수신자 보호: 동영상/압축/한글 등 제외).
+      const validation = validateFiles(newFiles, "mail");
       if (!validation.ok) {
         return NextResponse.json({ error: validation.error }, { status: 400 });
       }
@@ -498,11 +501,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     // 9. 삭제 첨부파일 디스크 정리 (best-effort)
+    // contents 라우트와 동일하게 비교 대상 디렉토리를 resolve() 절대경로화.
     if (validDeleteIds.length > 0) {
+      const uploadRoot = resolve(UPLOAD_DIR);
       const toDelete = existing.attachments.filter((a) => validDeleteIds.includes(a.id));
       for (const att of toDelete) {
         const absPath = resolve(UPLOAD_DIR, att.filePath);
-        if (!isInsideDir(absPath, UPLOAD_DIR)) continue;
+        if (!isInsideDir(absPath, uploadRoot)) continue;
         await unlink(absPath).catch((e: unknown) => {
           console.warn("[PUT /api/admin/mass-mails/:id] 삭제 첨부파일 정리 실패:", att.filePath, e);
         });

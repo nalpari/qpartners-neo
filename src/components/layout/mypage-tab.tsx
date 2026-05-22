@@ -20,7 +20,7 @@ interface TabItem {
  *   `page_view` 가 `/mypage`, `/mypage/downloads` 를 분리 수집한다.
  */
 const TABS: TabItem[] = [
-  { key: "info", label: "私の情報/会社情報", href: "/mypage" },
+  { key: "info", label: "法人情報 / 会員情報", href: "/mypage" },
   { key: "downloads", label: "ダウンロード履歴", href: "/mypage/downloads" },
 ];
 

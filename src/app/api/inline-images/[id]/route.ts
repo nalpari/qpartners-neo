@@ -5,10 +5,36 @@ import { relative, resolve } from "path";
 
 import { canAccessContent, getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
+import {
+  ALLOWED_INLINE_IMAGE_EXTENSIONS,
+  ALLOWED_INLINE_IMAGE_MIMES,
+} from "@/lib/inline-image-validation";
 import { logError } from "@/lib/log-error";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { idParamSchema } from "@/lib/schemas/common";
+
+/**
+ * filePath/fileName 의 확장자로 정규 MIME 을 추론.
+ * 업로드 폴백으로 DB 에 `application/octet-stream` 으로 저장된 기존 행의 회귀 방지용 — 안전한 화이트리스트 매핑만 제공.
+ */
+function mimeFromExt(filePath: string): string | null {
+  const ext = (filePath.split(".").pop() ?? "").toLowerCase();
+  if (!ALLOWED_INLINE_IMAGE_EXTENSIONS.has(ext)) return null;
+  switch (ext) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    default:
+      return null;
+  }
+}
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -116,13 +142,39 @@ export async function GET(request: NextRequest, { params }: Params) {
       throw fsError;
     }
 
+    // 인라인 렌더링 응답이라 MIME 스니핑 위험이 다운로드보다 큼 — 화이트리스트 외 mimeType 은 415 로 거부.
+    // 업로드 정책(`ALLOWED_INLINE_IMAGE_MIMES`)과 동일 화이트리스트로 통일 (BMP 등 첨부용 MIME 제외).
+    //
+    // 회귀 방지: 업로드 라우트가 빈 MIME 시 `application/octet-stream` 으로 폴백 저장한 기존 행은
+    // filePath 의 확장자로 정규 MIME 을 추론해 화이트리스트 재검증한다. 새 nosniff 가드가 정상
+    // 데이터를 차단하지 않도록 ext 폴백을 명시적으로 허용.
+    const candidateMime = image.mimeType && image.mimeType !== "application/octet-stream"
+      ? image.mimeType
+      : mimeFromExt(image.filePath);
+    const safeMime = candidateMime && ALLOWED_INLINE_IMAGE_MIMES.has(candidateMime)
+      ? candidateMime
+      : null;
+    if (!safeMime) {
+      console.warn("[GET /api/inline-images/:id] 비허용 MIME — 인라인 렌더 차단:", {
+        imageId: parsed.data,
+        mimeType: image.mimeType,
+        filePath: image.filePath,
+      });
+      return NextResponse.json(
+        { error: "サポートされていない画像形式です" },
+        { status: 415 },
+      );
+    }
+
     return new NextResponse(fileBuffer as unknown as BodyInit, {
       headers: {
-        "Content-Type": image.mimeType || "application/octet-stream",
+        "Content-Type": safeMime,
         "Content-Disposition": "inline",
         "Content-Length": String(fileBuffer.length),
         // 미게시/임시는 권한·상태 변경이 즉시 반영되도록 캐시 금지.
         "Cache-Control": isPublished ? "private, max-age=3600" : "private, no-store",
+        // MIME 스니핑 차단 — 인라인 렌더 경로의 XSS 우회 차단 (다운로드 라우트와 동일 정책).
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error: unknown) {

@@ -6,7 +6,12 @@ import { randomUUID } from "crypto";
 
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import {
+  isLegacyOfficeOLE2,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_MB,
+  validateFiles,
+} from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -31,7 +36,8 @@ export async function POST(request: NextRequest, { params }: Params) {
     // MF-1 대응: Content-Length 누락(chunked transfer encoding) 시 formData()가 무제한
     //            바디를 메모리에 버퍼링해 OOM을 유발할 수 있음. 헤더가 없는 요청은 411로 거부.
     //            (fast-path: 리버스 프록시에서도 body size limit를 두는 것이 최종 방어선)
-    // 다중 파일이므로 여유롭게 MAX_FILE_SIZE * 5 + 헤더 오버헤드를 한도로 적용
+    // 정책: 콘텐츠 첨부 합계 50MB. multipart boundary/헤더 오버헤드 여유 10MB → 60MB 한도.
+    //       next.config.ts proxyClientMaxBodySize 와 동일 값으로 일관화.
     const rawContentLength = request.headers.get("content-length");
     if (rawContentLength === null) {
       console.warn("[POST /api/contents/:id/files] Content-Length 누락 — chunked encoding 거부");
@@ -47,7 +53,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         { status: 400 },
       );
     }
-    const MAX_BATCH_SIZE = MAX_FILE_SIZE * 5 + 1024 * 1024; // ~251MB
+    const MAX_BATCH_SIZE = MAX_FILE_SIZE + 10 * 1024 * 1024; // 50MB 정책 + 10MB 오버헤드 여유
     if (contentLength > MAX_BATCH_SIZE) {
       console.warn("[POST /api/contents/:id/files] Content-Length 초과:", contentLength);
       return NextResponse.json(
@@ -107,12 +113,32 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
+    // 콘텐츠 첨부 합계 용량 검증 — 기존 저장 첨부 + 신규 업로드 ≤ MAX_FILE_SIZE.
+    // FE 와 동일 정책. (트랜잭션 외부 사전 검증 — TOCTOU race 의도적 soft cap)
+    //
+    // TOCTOU 정책:
+    //  - aggregate → write 사이 동시 요청 N 개 통과 시 최대 N × MAX_FILE_SIZE 저장 가능
+    //  - 50MB · 단일 콘텐츠 단위 한도이며 운영 모니터링으로 보완 (별도 정책 문서 참조)
+    //  - 엄격 격리가 필요하면 Serializable transaction + SELECT FOR UPDATE 로 격상
+    const existingAgg = await prisma.contentAttachment.aggregate({
+      _sum: { fileSize: true },
+      where: { contentId: parsed.data },
+    });
+    const existingBytes = existingAgg._sum.fileSize !== null ? Number(existingAgg._sum.fileSize) : 0;
+    const incomingBytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (existingBytes + incomingBytes > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
+        { status: 400 },
+      );
+    }
+
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
     const uploadDir = join(UPLOAD_DIR, "contents", String(parsed.data));
     await mkdir(uploadDir, { recursive: true });
     const uploadDirAbsolute = resolve(uploadDir);
 
-    // 1단계: 모든 파일을 디스크에 기록
+    // 1단계: 모든 파일을 디스크에 기록 + OLE2 magic-byte 동시 감지 (arrayBuffer 1회 read 로 통합).
     const writtenFiles: { absolutePath: string; file: File; filePath: string; safeFileName: string; archivedName: string }[] = [];
 
     for (const file of files) {
@@ -129,6 +155,15 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
+      // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사 로깅만 수행 (차단 X).
+      const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+      if (isLegacyOfficeOLE2(head)) {
+        console.warn("[POST /api/contents/:id/files] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+          fileName: file.name,
+          size: file.size,
+          contentId: parsed.data,
+        });
+      }
       await writeFile(absolutePath, buffer);
       writtenFiles.push({ absolutePath, file, filePath, safeFileName, archivedName: sanitizedName });
     }

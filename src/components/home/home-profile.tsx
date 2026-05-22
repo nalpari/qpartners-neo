@@ -49,7 +49,7 @@ export function HomeProfile() {
               height={22}
             />
             <span className="font-['Noto_Sans_JP'] font-semibold text-[14px] text-[#efa48d] uppercase leading-[1.3]">
-              私の情報/会社情報
+              法人情報 / 会員情報
             </span>
           </Link>
         </div>

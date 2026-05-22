@@ -148,6 +148,8 @@ export async function GET(request: NextRequest, { params }: Params) {
         "Content-Type": attachment.mimeType ?? "application/octet-stream",
         "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
         "Content-Length": String(fileBuffer.length),
+        // MIME 스니핑 차단 — md/txt 등 텍스트 파일을 브라우저가 text/html 로 추론해 인라인 렌더링하는 우회 차단.
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {

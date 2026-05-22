@@ -396,13 +396,13 @@ export function NoticeFormPopup() {
         className="popup-container !w-[900px] !max-w-[900px]"
         role="dialog"
         aria-modal="true"
-        aria-label="ホーム画面公知"
+        aria-label="お知らせ"
       >
         <div className="popup-container__inner !gap-[24px]">
           {/* 타이틀 */}
           <div className="flex items-center w-full border-b-2 border-[#E97923] pb-3">
             <h2 className="flex-1 font-['Noto_Sans_JP'] text-[15px] font-semibold leading-[1.5] text-[#E97923]">
-              ホーム画面公知
+              お知らせ
             </h2>
             <button
               type="button"
@@ -537,8 +537,8 @@ export function NoticeFormPopup() {
           {/* 버튼 — 순서: キャンセル → 削除(edit 모드만) → 保存 */}
           {/* RBAC 패턴 A (미노출) — 매트릭스 가드 + 로딩 중 fail-closed. 서버 API 가 최종 방어선. #2183 note-12 통일 */}
           <div className="popup-buttons--inline">
-            <Button variant="secondary" onClick={handleClose} disabled={isSaving}>
-              キャンセル
+            <Button variant="secondary" onClick={handleClose} disabled={isSaving} style={{ minWidth: 88 }}>
+              閉じる
             </Button>
             {mode === "edit" && !isPermLoading && canDeleteNotice && (
               <Button
