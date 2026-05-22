@@ -283,7 +283,13 @@ export async function GET(request: NextRequest) {
     //    [정책 #2125 / Q3 결정] inbound 자동로그인 시 로그인 알림 메일 발송 제외.
     //      외부 3사(HANASYS/Q.Order/Q.Musubi) SSO 경유는 본인 의도된 진입이므로 알림 노이즈.
     //      이상 동작 인지는 /api/auth/login 경로가 커버한다. (loginNotiYn 분기 없음 — 의도적 누락)
+    // `?auto_login=1` 쿼리 시그널 — 홈(HomeMain) 마운트 시 클라이언트 측 `qp-auth-active`
+    // localStorage flag 를 set 하기 위한 1회성 마커.
+    // 서버 redirect 만으로는 클라이언트 storage 를 만질 수 없어 Gnb 의 useQuery enabled 가
+    // 영구적으로 false 가 되어 로그인 UI 가 표시되지 않는 문제를 해결.
+    // HomeMain useEffect 가 감지 즉시 history.replaceState 로 쿼리를 정리한다.
     const homeUrl = new URL("/", BASE_URL);
+    homeUrl.searchParams.set("auto_login", "1");
     const response = NextResponse.redirect(homeUrl.toString(), { status: 302 });
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
