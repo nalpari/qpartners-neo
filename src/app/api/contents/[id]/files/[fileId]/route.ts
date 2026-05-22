@@ -8,7 +8,12 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFile } from "@/lib/file-validation";
+import {
+  detectLegacyOfficeFormat,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_MB,
+  validateFile,
+} from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { isInsideDir, isRegularFile } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -264,6 +269,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
         { status: 400 },
       );
+    }
+
+    // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사용 로깅만 수행.
+    if (await detectLegacyOfficeFormat(rawFile)) {
+      console.warn("[PUT /api/contents/:id/files/:fileId] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+        fileName: rawFile.name,
+        size: rawFile.size,
+        contentId: parsedId.data,
+        fileId: parsedFileId.data,
+      });
     }
 
     // 새 파일 저장

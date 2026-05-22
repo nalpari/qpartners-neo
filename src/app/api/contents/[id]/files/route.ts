@@ -6,7 +6,12 @@ import { randomUUID } from "crypto";
 
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFiles } from "@/lib/file-validation";
+import {
+  detectLegacyOfficeFormat,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_MB,
+  validateFiles,
+} from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
@@ -121,6 +126,20 @@ export async function POST(request: NextRequest, { params }: Params) {
         { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
         { status: 400 },
       );
+    }
+
+    // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사용 로깅만 수행.
+    // Promise.all 병렬화 — 다중 파일 시 직렬 await 누적 지연 회피 (단건 8바이트 read).
+    const legacyDetections = await Promise.all(
+      files.map(async (file) => ({ file, isLegacy: await detectLegacyOfficeFormat(file) })),
+    );
+    for (const { file, isLegacy } of legacyDetections) {
+      if (!isLegacy) continue;
+      console.warn("[POST /api/contents/:id/files] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+        fileName: file.name,
+        size: file.size,
+        contentId: parsed.data,
+      });
     }
 
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능

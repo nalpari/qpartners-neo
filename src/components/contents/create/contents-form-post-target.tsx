@@ -172,12 +172,15 @@ export function ContentsFormPostTarget({
         t.checked
           ? {
               ...t,
+              // startDate 는 필수 입력이므로 null 헤더값은 기존 행값 보존 (검증 단계에서 차단)
               startDate: postTargets.allStartDate
                 ? new Date(postTargets.allStartDate)
                 : t.startDate,
-              endDate: postTargets.allEndDate
-                ? new Date(postTargets.allEndDate)
-                : t.endDate,
+              // endDate 는 null = 상시 공개 정책 — 헤더 null 도 명시 전파해야 일괄 적용 가능
+              endDate:
+                postTargets.allEndDate !== null
+                  ? new Date(postTargets.allEndDate)
+                  : null,
             }
           : t,
       ),

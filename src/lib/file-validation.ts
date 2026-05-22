@@ -120,3 +120,29 @@ export function validateFiles(files: File[]): FileValidationResult {
   }
   return { ok: true };
 }
+
+/**
+ * Legacy Office (OLE2 Compound Document) magic-byte 감지.
+ * - 시그니처: `D0 CF 11 E0 A1 B1 1A E1` (97-2003 Word/Excel/PowerPoint)
+ * - 매크로 유무는 OLE2 내부 stream 분석이 필요해 magic-byte 만으로는 판별 불가 →
+ *   로깅 전용. 운영 추적/감사 로그용. 차단은 별도 정책 결정 필요.
+ *
+ * TODO(security): 압축(zip/rar/7z) 내부 파일 검사도 추후 도입 필요 (외부 라이브러리 필요).
+ *   현재 50MB 정책으로 zip bomb 위험은 제한적이며, 다운로드 시 Content-Disposition: attachment
+ *   강제로 직접 실행은 차단됨. 신뢰 도메인 다운로드 후 실행 위험은 별도 PR 검토.
+ */
+export async function detectLegacyOfficeFormat(file: File): Promise<boolean> {
+  if (file.size < 8) return false;
+  // Uint8Array 사용으로 Buffer(node) 의존성 제거 — Edge runtime 이전 가능성 확보.
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  return (
+    head[0] === 0xd0 &&
+    head[1] === 0xcf &&
+    head[2] === 0x11 &&
+    head[3] === 0xe0 &&
+    head[4] === 0xa1 &&
+    head[5] === 0xb1 &&
+    head[6] === 0x1a &&
+    head[7] === 0xe1
+  );
+}
