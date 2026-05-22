@@ -43,6 +43,10 @@ export const qspLoginUserSchema = z.object({
   secAuthDt: z.string().nullable(),
   loginFailCnt: z.number().nullable(),
   pwdInitYn: z.enum(["Y", "N"]).nullable(),
+  // QSP 사양서 명세상 Not Nullable Y/N. 단 현재 SUPER_ADMIN 판정은 우리 측 `qp_code_details.ADMIN_ROLE`
+  // 등록 여부로 처리 중이라 본 필드는 수신만 (사용은 향후 정합 작업에서 검토 — [[qsp-admin-user-tp-actual]]).
+  // QSP 응답에서 필드 자체가 누락되는 케이스 대비 nullish (다른 형제 필드의 보수적 정책과 동일).
+  superAdminYn: z.enum(["Y", "N"]).nullish(),
   // 로그인 알림 사용 여부 (회원관리 p.47 #6) — Y 면 로그인 성공 시 알림 메일 발송 (Redmine #2125).
   // QSP 응답에서 필드 자체가 omit 될 수 있으므로 nullish (regDt/compTelNo 와 동일 정책).
   loginNotiYn: z.enum(["Y", "N"]).nullish(),

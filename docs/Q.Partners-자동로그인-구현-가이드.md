@@ -1,7 +1,10 @@
 # Q.Partners 자동로그인 구현 가이드
 
 외부 사이트(HANASYS DESIGN / Q.Order / Q.Musubi)에서 Q.Partners 로 자동로그인 진입을 구현하기 위한 사양 문서입니다.
-- **Document version**: 1.2 (2026-05-21)
+- **Document version**: 1.5 (2026-05-22)
+- **v1.5 변경**: ADMIN 응답 사용자의 권한 정책 정정 — 자동로그인 후속 처리는 login 라우트와 완전 동일. interplug 같은 회사 마스터 계정도 자동로그인 시 ADMIN/SUPER_ADMIN 권한 정상 부여 (이전 v1.4 의 "1ST/2ND_STORE 강등" 은 SSO 본질에 어긋나 청산). 송신 `userTp` 3종 한정 정책은 유지.
+- **v1.4 변경**: (청산) ADMIN 응답 사용자 권한 강등 정책. v1.5 에서 정정.
+- **v1.3 변경**: (청산) 허용 `userTp` 에서 `ADMIN` 제거 사유를 "QSP 에 ADMIN userTp 없음" 으로 명시했으나 사실과 다름. v1.4 에서 정정.
 - **v1.2 변경**: 키 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 통일 (outbound 와 단일 공통 키 운영으로 일치)
 
 ---
@@ -32,13 +35,13 @@ GET https://{host}/api/auth/auto-login/inbound?autoLoginParam1={URL_ENCODED_CIPH
 | 파라미터 | 설명 |
 |---|---|
 | `autoLoginParam1` | URL 인코딩된 cipher (§3 참고) |
-| `userTp` | `ADMIN` / `STORE` / `SEKO` / `GENERAL` 중 하나 |
+| `userTp` | `STORE` / `SEKO` / `GENERAL` 중 하나. **`ADMIN` 송신 시 진입 단계에서 거부** (자동로그인 송신은 3종 한정, 2026-05-22). QSP 응답이 ADMIN 으로 회신되는 회사 마스터 계정(예: 1차 판매점 + QSP 등록자) 은 STORE 송신으로 진입 후 login 라우트와 동일하게 ADMIN/SUPER_ADMIN 권한 부여 (v1.5) |
 
 ### `userTp` 별 cipher 평문 식별자
 
 | `userTp` | cipher 평문에 실어야 할 값 |
 |---|---|
-| `ADMIN` / `STORE` / `SEKO` | **`loginId`** |
+| `STORE` / `SEKO` | **`loginId`** |
 | `GENERAL` | **`email`** |
 
 값이 엇갈리면 사용자 검증 실패로 폴백됩니다.
@@ -87,7 +90,7 @@ function encryptAutoLoginUserId(userId, autoLoginAesKey) {
 
 // 사용 예
 const autoLoginParam1 = encryptAutoLoginUserId("1301011", process.env.AUTO_LOGIN_AES_KEY);
-const userTp = "ADMIN";
+const userTp = "STORE";
 const redirectUrl = `https://dev.q-partners.q-cells.jp/api/auth/auto-login/inbound?autoLoginParam1=${autoLoginParam1}&userTp=${userTp}`;
 ```
 
@@ -103,8 +106,9 @@ const redirectUrl = `https://dev.q-partners.q-cells.jp/api/auth/auto-login/inbou
 - [ ] cipher 페이로드는 **ciphertext only**, IV prepend 금지
 - [ ] `encodeURIComponent` 한 번만 적용 (이중 인코딩 금지)
 - [ ] `autoLoginParam1` + `userTp` **모두 필수** 쿼리로 호출
-- [ ] `userTp` 별 cipher 평문 식별자 매핑 준수 (`ADMIN/STORE/SEKO=loginId`, `GENERAL=email`)
-- [ ] `SUPER_ADMIN` 권한 사용자는 자동로그인 미지원 — 외부 측 메뉴 가드 권장
+- [ ] `userTp` 는 `STORE` / `SEKO` / `GENERAL` 만 송신 (자동로그인 송신 3종 한정 — `ADMIN` 송신 시 진입 단계 거부)
+- [ ] `userTp` 별 cipher 평문 식별자 매핑 준수 (`STORE/SEKO=loginId`, `GENERAL=email`)
+- [ ] QSP 응답이 ADMIN 으로 회신되는 사용자(예: 1차 판매점 + QSP 등록자 — 회사 마스터 계정) 도 `STORE` 송신으로 진입. 후속 권한 매핑은 login 라우트와 동일하게 처리되어 ADMIN/SUPER_ADMIN 권한이 정상 부여됨 (v1.5 정책 — SSO 본질에 따라 일반 로그인 vs 자동로그인 권한 차별 없음)
 - [ ] KST(UTC+09:00) 명시적 적용 (서버 OS 타임존 의존 금지)
 - [ ] **HTTPS 로만 호출**
 - [ ] 실패 시 Q.Partners 가 `/login?error=auto_login_failed` 로 폴백 — 외부 측 별도 폴백 처리 불요
@@ -172,7 +176,7 @@ flowchart TD
     E -- 성공 --> F[cipher 복호화 당일 IV → 실패 시 전일 IV 재시도]
     F -- 실패 --> X
     F -- 성공 --> G[QSP userDetail 조회]
-    G --> H{사용자 존재 + statCd=A + SUPER_ADMIN 아님?}
+    G --> H{사용자 존재 + statCd=A?}
     H -- 실패 --> X
     H -- 성공 --> I[Q.Partners JWT 발급 → 302 / 홈]
 ```

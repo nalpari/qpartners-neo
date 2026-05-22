@@ -181,7 +181,7 @@ function getRelatedSites(
     { label: "HANASYS ORDER", value: "qorder", href: fallbackUrls.qorder },
     { label: "HANASYS MUSUBI", value: "qmusubi", href: fallbackUrls.qmusubi },
     { label: "HANASYS DESIGN", value: "hanasys", href: fallbackUrls.hanasys },
-    { label: "Q.WARRANTY", value: "qwarranty", href: qwarrantyHref, note: "(別途ログインが必要)" },
+    { label: "オンライン保証システム", value: "qwarranty", href: qwarrantyHref, note: "(別途ログインが必要)" },
   ];
   return all.filter((site) => allowed.includes(site.value));
 }
@@ -304,24 +304,31 @@ export function Gnb() {
    *
    * Target 매핑: site.value ("qorder"/"qmusubi"/"hanasys") → API target ("qOrder"/"qMusubi"/"hanasys").
    */
+  // e 타입은 SyntheticEvent — onClick(MouseEvent) / onKeyDown(KeyboardEvent) 양쪽에서 호출되며
+  // 내부에서 e.preventDefault() 만 사용하므로 공통 베이스로 좁혀 이중 타입 단언을 제거한다.
   const handleRelatedSiteClick = async (
-    e: React.MouseEvent<HTMLAnchorElement>,
+    e: React.SyntheticEvent<HTMLAnchorElement>,
     site: RelatedSite,
     closeMenu: () => void,
   ) => {
-    // qwarranty 는 자동로그인 대상 아님 — 기본 링크 이동 + 드롭다운/메뉴 닫기만 수행
+    // qwarranty 는 자동로그인 대상 아님 — anchor href(`QWARRANTY_URLS`) 그대로 동작 + 드롭다운/메뉴 닫기만 수행
     if (site.value === "qwarranty") {
       closeMenu();
       return;
     }
-    // ADMIN + MUSUBI 는 자동로그인 미적용 — 기본 링크 동작(href = MUSUBI 베이스 URL)
-    // 으로 위임하여 미인증 redirect 로 로그인 페이지 진입.
-    if (site.value === "qmusubi" && user?.userTp === "ADMIN") {
-      closeMenu();
-      return;
-    }
+    // 여기부터는 자동로그인 3사(qorder/qmusubi/hanasys). anchor href 가 undefined 라
+    // 기본 link 동작이 없으므로 모든 경로에서 명시적으로 window.open 을 호출해야 한다.
     e.preventDefault();
     closeMenu();
+
+    // ADMIN + MUSUBI 는 자동로그인 미적용 — 미인증 상태로 MUSUBI 베이스 URL 새 탭 오픈
+    //   → MUSUBI 측 로그인 페이지 진입. fallbackUrls 의 musubi 베이스 URL 사용.
+    //   기존 anchor href 위임 방식은 hydration race 시 dev URL 로 잘못 이동하던 회귀가 있어
+    //   onClick 명시 분기로 통일(2026-05-22).
+    if (site.value === "qmusubi" && user?.userTp === "ADMIN") {
+      window.open(fallbackUrls.qmusubi, "_blank");
+      return;
+    }
     if (autoLoginInFlight) return; // 중복 호출 방어
     // 이 시점부터 site.value 는 자동로그인 3사로 좁혀짐 — RELATED_SITE_URLS_* 인덱싱 안전성 확보.
     const siteKey: AutoLoginSiteValue = site.value;
@@ -495,13 +502,26 @@ export function Gnb() {
                     <ul className="flex flex-col gap-[13px]">
                       {relatedSites.map((site) => (
                         <li key={site.value}>
+                          {/* qwarranty 만 정적 URL(`QWARRANTY_URLS`)로 anchor href 유지 — 일반 사이트 이동.
+                              자동로그인 3사(qorder/qmusubi/hanasys)는 hostname 기반 fallback URL 이
+                              hydration race 로 dev URL 인 채로 anchor 에 박혀 마우스 오버 시 dev URL
+                              노출 + 일부 분기(ADMIN+qmusubi 단순 이동) 에서 dev URL 로 잘못 이동하던
+                              회귀 차단(2026-05-22). href 제거 + onClick 단일 경로로 통일. */}
                           <a
-                            href={site.href}
+                            href={site.value === "qwarranty" ? site.href : undefined}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923]"
+                            className="block font-['Noto_Sans_JP'] font-normal leading-normal transition-colors duration-200 text-[#101010] hover:text-[#e97923] cursor-pointer"
                             aria-busy={autoLoginInFlight === site.value || undefined}
+                            role={site.value === "qwarranty" ? undefined : "button"}
+                            tabIndex={site.value === "qwarranty" ? undefined : 0}
                             onClick={(e) => { void handleRelatedSiteClick(e, site, () => setIsDropdownOpen(false)); }}
+                            onKeyDown={site.value === "qwarranty" ? undefined : (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                void handleRelatedSiteClick(e, site, () => setIsDropdownOpen(false));
+                              }
+                            }}
                           >
                             <span className="block text-[13px] whitespace-nowrap">{site.label}</span>
                             {site.note && (
