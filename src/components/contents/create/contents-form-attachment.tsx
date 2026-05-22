@@ -67,8 +67,9 @@ export function ContentsFormAttachment({
     }
 
     // 2) 합계 용량 검증 — 기존 저장 + 미저장 신규 + 이번 추가 ≤ MAX_FILE_SIZE.
+    //    savedFiles.fileSize 는 BE Prisma BigInt nullable 응답 가능성 방어 (?? 0).
     const currentTotal =
-      savedFiles.reduce((sum, f) => sum + f.fileSize, 0) +
+      savedFiles.reduce((sum, f) => sum + (f.fileSize ?? 0), 0) +
       attachments.reduce((sum, f) => sum + f.size, 0);
     const incomingTotal = incoming.reduce((sum, f) => sum + f.size, 0);
     if (currentTotal + incomingTotal > MAX_FILE_SIZE) {
@@ -199,7 +200,7 @@ export function ContentsFormAttachment({
             ファイルをここにドラッグアンドドロップ、またはクリックでファイルを選択
           </p>
           <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#A0A8B0]">
-            最大アップロードファイル容量：{MAX_FILE_SIZE_MB}MB
+            最大アップロード容量（合計）：{MAX_FILE_SIZE_MB}MB
           </p>
         </div>
 

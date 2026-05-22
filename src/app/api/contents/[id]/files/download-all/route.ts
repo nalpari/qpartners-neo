@@ -266,6 +266,8 @@ export async function GET(request: NextRequest, { params }: Params) {
           "Content-Type": "application/octet-stream",
           "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(baseName)}`,
           "Content-Length": String(file.size),
+          // MIME 스니핑 차단 — md/txt 등 텍스트 파일 인라인 렌더링 우회 차단.
+          "X-Content-Type-Options": "nosniff",
         },
       });
     }
@@ -387,6 +389,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="download.zip"; filename*=UTF-8''${encodeURIComponent(zipFileName)}`,
+        // MIME 스니핑 차단 — 일관성을 위해 ZIP 분기에도 동일 헤더 적용.
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error: unknown) {

@@ -9,7 +9,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import {
-  detectLegacyOfficeFormat,
+  isLegacyOfficeOLE2,
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_MB,
   validateFile,
@@ -194,7 +194,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { status: 400 },
       );
     }
-    if (contentLength > MAX_FILE_SIZE + 1024 * 1024) { // 50MB + 1MB 헤더 여유
+    // POST 와 동일한 10MB 여유 — multipart boundary/필드 오버헤드가 1MB 를 넘는 환경 대응 + 정합화.
+    if (contentLength > MAX_FILE_SIZE + 10 * 1024 * 1024) {
       console.warn("[PUT /api/contents/:id/files/:fileId] Content-Length 초과:", contentLength);
       return NextResponse.json(
         { error: "リクエストサイズが大きすぎます" },
@@ -258,6 +259,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // 콘텐츠 첨부 합계 용량 검증 — 기존 총합에서 교체 대상 빼고 신규 크기 더한 값이 ≤ MAX_FILE_SIZE.
     // 단일 파일 교체이므로 SUM aggregate 후 oldAttachment.fileSize 만 차감.
+    //
+    // TOCTOU 정책: aggregate→write 사이 race 는 의도적 soft cap (POST 와 동일 정책).
+    //   엄격 격리가 필요하면 Serializable transaction + SELECT FOR UPDATE 로 격상.
     const existingAgg = await prisma.contentAttachment.aggregate({
       _sum: { fileSize: true },
       where: { contentId: parsedId.data },
@@ -269,16 +273,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
         { status: 400 },
       );
-    }
-
-    // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사용 로깅만 수행.
-    if (await detectLegacyOfficeFormat(rawFile)) {
-      console.warn("[PUT /api/contents/:id/files/:fileId] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
-        fileName: rawFile.name,
-        size: rawFile.size,
-        contentId: parsedId.data,
-        fileId: parsedFileId.data,
-      });
     }
 
     // 새 파일 저장
@@ -300,6 +294,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const buffer = Buffer.from(await rawFile.arrayBuffer());
+    // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사용 로깅만 수행 (차단 X).
+    // disk write 용 buffer 의 head 8 바이트 재사용 — 중복 arrayBuffer 호출 없음.
+    const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+    if (isLegacyOfficeOLE2(head)) {
+      console.warn("[PUT /api/contents/:id/files/:fileId] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+        fileName: rawFile.name,
+        size: rawFile.size,
+        contentId: parsedId.data,
+        fileId: parsedFileId.data,
+      });
+    }
     await writeFile(newAbsolutePath, buffer);
 
     // DB 레코드 업데이트 — Optimistic lock으로 동시성 race 방어

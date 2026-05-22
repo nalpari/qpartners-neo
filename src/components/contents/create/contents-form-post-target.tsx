@@ -221,6 +221,7 @@ export function ContentsFormPostTarget({
               onChange={(date) =>
                 onPostTargetsChange({ ...postTargets, allEndDate: date })
               }
+              placeholder="終了日なし（常時公開）"
               className="w-[200px]"
             />
           </div>
@@ -292,6 +293,7 @@ export function ContentsFormPostTarget({
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "endDate", date)
                         }
+                        placeholder="終了日なし（常時公開）"
                         disabled={!target.checked}
                       />
                     </div>

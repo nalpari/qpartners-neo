@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import {
-  detectLegacyOfficeFormat,
+  isLegacyOfficeOLE2,
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_MB,
   validateFiles,
@@ -114,7 +114,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // 콘텐츠 첨부 합계 용량 검증 — 기존 저장 첨부 + 신규 업로드 ≤ MAX_FILE_SIZE.
-    // FE 와 동일 정책. (트랜잭션 외부 사전 검증 — 동시 업로드 race 는 50MB 약간 초과 허용으로 수렴)
+    // FE 와 동일 정책. (트랜잭션 외부 사전 검증 — TOCTOU race 의도적 soft cap)
+    //
+    // TOCTOU 정책:
+    //  - aggregate → write 사이 동시 요청 N 개 통과 시 최대 N × MAX_FILE_SIZE 저장 가능
+    //  - 50MB · 단일 콘텐츠 단위 한도이며 운영 모니터링으로 보완 (별도 정책 문서 참조)
+    //  - 엄격 격리가 필요하면 Serializable transaction + SELECT FOR UPDATE 로 격상
     const existingAgg = await prisma.contentAttachment.aggregate({
       _sum: { fileSize: true },
       where: { contentId: parsed.data },
@@ -128,26 +133,12 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사용 로깅만 수행.
-    // Promise.all 병렬화 — 다중 파일 시 직렬 await 누적 지연 회피 (단건 8바이트 read).
-    const legacyDetections = await Promise.all(
-      files.map(async (file) => ({ file, isLegacy: await detectLegacyOfficeFormat(file) })),
-    );
-    for (const { file, isLegacy } of legacyDetections) {
-      if (!isLegacy) continue;
-      console.warn("[POST /api/contents/:id/files] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
-        fileName: file.name,
-        size: file.size,
-        contentId: parsed.data,
-      });
-    }
-
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
     const uploadDir = join(UPLOAD_DIR, "contents", String(parsed.data));
     await mkdir(uploadDir, { recursive: true });
     const uploadDirAbsolute = resolve(uploadDir);
 
-    // 1단계: 모든 파일을 디스크에 기록
+    // 1단계: 모든 파일을 디스크에 기록 + OLE2 magic-byte 동시 감지 (arrayBuffer 1회 read 로 통합).
     const writtenFiles: { absolutePath: string; file: File; filePath: string; safeFileName: string; archivedName: string }[] = [];
 
     for (const file of files) {
@@ -164,6 +155,15 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
+      // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사 로깅만 수행 (차단 X).
+      const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+      if (isLegacyOfficeOLE2(head)) {
+        console.warn("[POST /api/contents/:id/files] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+          fileName: file.name,
+          size: file.size,
+          contentId: parsed.data,
+        });
+      }
       await writeFile(absolutePath, buffer);
       writtenFiles.push({ absolutePath, file, filePath, safeFileName, archivedName: sanitizedName });
     }
