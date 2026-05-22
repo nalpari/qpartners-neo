@@ -282,7 +282,7 @@ export function MypageInfo() {
           className="hidden lg:block shrink-0"
         />
         <h2 className="flex-1 font-['Noto_Sans_JP'] font-medium text-[18px] leading-[1.5] text-[#101010]">
-          {isEditing ? "私の情報/会社情報の修正" : "私の情報/会社情報"}
+          法人情報 / 会員情報
         </h2>
         {!isEditing && userType && canShowEdit && (
           <div className="hidden lg:block">
