@@ -107,6 +107,22 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
+    // 콘텐츠 첨부 합계 용량 검증 — 기존 저장 첨부 + 신규 업로드 ≤ MAX_FILE_SIZE.
+    // FE 와 동일 정책. (트랜잭션 외부 사전 검증 — 동시 업로드 race 는 50MB 약간 초과 허용으로 수렴)
+    const existingAgg = await prisma.contentAttachment.aggregate({
+      _sum: { fileSize: true },
+      where: { contentId: parsed.data },
+    });
+    const existingBytes = existingAgg._sum.fileSize !== null ? Number(existingAgg._sum.fileSize) : 0;
+    const incomingBytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (existingBytes + incomingBytes > MAX_FILE_SIZE) {
+      const limitMb = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
+      return NextResponse.json(
+        { error: `添付ファイルの合計容量が${limitMb}MBを超えています` },
+        { status: 400 },
+      );
+    }
+
     // public/ 외부에 저장 → 다운로드 API를 통해서만 접근 가능
     const uploadDir = join(UPLOAD_DIR, "contents", String(parsed.data));
     await mkdir(uploadDir, { recursive: true });

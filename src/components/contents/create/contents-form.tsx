@@ -302,10 +302,25 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
           });
         } catch (uploadError: unknown) {
           console.error("[Contents] 파일 업로드 실패:", uploadError);
+          // BE 의도된 에러 메시지(일본어 사용자 대면)를 alert 에 노출 — 진단 가능성 향상.
+          let detail = "";
+          if (isAxiosError(uploadError) && uploadError.response) {
+            const resData: unknown = uploadError.response.data;
+            console.error(
+              "[Contents] 업로드 응답 status:",
+              uploadError.response.status,
+              "data:",
+              resData,
+            );
+            if (resData != null && typeof resData === "object" && "error" in resData) {
+              const errMsg = (resData as { error: unknown }).error;
+              if (typeof errMsg === "string") detail = `\n${errMsg}`;
+            }
+          }
           setIsSubmitting(false);
           openAlert({
             type: "alert",
-            message: "コンテンツは保存されましたが、ファイルのアップロードに失敗しました。詳細画面から再度お試しください。",
+            message: `コンテンツは 保存されましたが、 ファイルのアップロードに 失敗しました。${detail}\n詳細画面から 再度 お試しください。`,
             onConfirm: () => router.push(`/contents/${savedId}`),
           });
           return;

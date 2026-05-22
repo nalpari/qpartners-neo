@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   ],
   experimental: {
     viewTransition: true,
+    // 콘텐츠 첨부 합계 정책 50MB + multipart boundary/헤더 오버헤드 여유.
+    // 기본값 10MB 로는 단일 50MB upload 가 잘려 multipart 파싱 실패(400) 발생.
+    proxyClientMaxBodySize: "60mb",
   },
 };
 

@@ -6,6 +6,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { getFileIconByName } from "@/lib/file-icon";
+import { MAX_FILE_SIZE } from "@/lib/file-validation";
+
+const MAX_FILE_SIZE_MB = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
 
 export interface AttachmentFile {
   id: string;
@@ -47,7 +50,21 @@ export function ContentsFormAttachment({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (fileList: FileList) => {
-    const newFiles: AttachmentFile[] = Array.from(fileList).map((file) => ({
+    const incoming = Array.from(fileList);
+    // 콘텐츠 첨부 총합(기존 저장 + 미저장 신규 + 이번 추가) ≤ MAX_FILE_SIZE.
+    // BE 도 동일 정책으로 최종 거부 — 클라이언트 검증은 UX 즉시 피드백.
+    const currentTotal =
+      savedFiles.reduce((sum, f) => sum + f.fileSize, 0) +
+      attachments.reduce((sum, f) => sum + f.size, 0);
+    const incomingTotal = incoming.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotal + incomingTotal > MAX_FILE_SIZE) {
+      openAlert({
+        type: "alert",
+        message: `添付ファイルの 合計容量が ${MAX_FILE_SIZE_MB}MB を 超えています。`,
+      });
+      return;
+    }
+    const newFiles: AttachmentFile[] = incoming.map((file) => ({
       id: crypto.randomUUID(),
       name: file.name,
       size: file.size,
@@ -165,7 +182,10 @@ export function ContentsFormAttachment({
             height={24}
           />
           <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#90B2CD]">
-            ここをクリックするか、ファイルをDrag＆Dropして添付することができます
+            ファイルをここにドラッグアンドドロップ、またはクリックでファイルを選択
+          </p>
+          <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#A0A8B0]">
+            最大アップロードファイル容量：{MAX_FILE_SIZE_MB}MB
           </p>
         </div>
 
