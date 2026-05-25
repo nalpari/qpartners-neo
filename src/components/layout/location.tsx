@@ -33,8 +33,8 @@ const ROUTE_MAP: Record<string, LocationItem> = {
   },
   "/admin": {
     icon: "/asset/images/layout/manage_location.svg",
-    title: "マネージャー",
-    breadcrumbs: [{ label: "マネージャー" }],
+    title: "管理者設定",
+    breadcrumbs: [{ label: "管理者設定" }],
   },
 };
 

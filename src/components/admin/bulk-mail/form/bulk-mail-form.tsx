@@ -10,6 +10,7 @@ import api from "@/lib/axios";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
+import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
 import {
@@ -161,6 +162,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   // ─── 버튼 핸들러 (Design Ref: §3.4) ───
   const handleList = () => {
+    // 상세/생성/편집 → 목록 복귀 — 직전 검색조건/페이지 표시 개수 복원 활성화.
+    setListRestoreFlag("bulkMail");
     router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
   };
 
@@ -226,6 +229,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         message: "削除しました。",
         onConfirm: () => {
           void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+          // 상세 → 목록 복귀 — 직전 검색조건/페이지 표시 개수 복원 활성화.
+          setListRestoreFlag("bulkMail");
           router.push("/admin/bulk-mail", { transitionTypes: ["fade"] });
         },
       });

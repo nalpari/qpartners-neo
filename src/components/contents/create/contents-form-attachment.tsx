@@ -6,6 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useAlertStore } from "@/lib/store";
 import { getFileIconByName } from "@/lib/file-icon";
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-validation";
+
+/** 파일 이름에서 소문자 확장자 추출 (없으면 빈 문자열) */
+function getExt(name: string): string {
+  return (name.split(".").pop() ?? "").toLowerCase();
+}
 
 export interface AttachmentFile {
   id: string;
@@ -47,7 +53,33 @@ export function ContentsFormAttachment({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (fileList: FileList) => {
-    const newFiles: AttachmentFile[] = Array.from(fileList).map((file) => ({
+    const incoming = Array.from(fileList);
+
+    // 1) 확장자 화이트리스트 사전 검증 — 비허용 시 즉시 차단(첫 위반 파일 명시).
+    //    BE 도 동일 정책으로 최종 거부 — FE 검증은 UX 즉시 피드백.
+    const invalid = incoming.find((f) => !ALLOWED_EXTENSIONS.has(getExt(f.name)));
+    if (invalid) {
+      openAlert({
+        type: "alert",
+        message: `許可されていないファイル拡張子です: ${invalid.name}`,
+      });
+      return;
+    }
+
+    // 2) 합계 용량 검증 — 기존 저장 + 미저장 신규 + 이번 추가 ≤ MAX_FILE_SIZE.
+    //    savedFiles.fileSize 는 BE Prisma BigInt nullable 응답 가능성 방어 (?? 0).
+    const currentTotal =
+      savedFiles.reduce((sum, f) => sum + (f.fileSize ?? 0), 0) +
+      attachments.reduce((sum, f) => sum + f.size, 0);
+    const incomingTotal = incoming.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotal + incomingTotal > MAX_FILE_SIZE) {
+      openAlert({
+        type: "alert",
+        message: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています。`,
+      });
+      return;
+    }
+    const newFiles: AttachmentFile[] = incoming.map((file) => ({
       id: crypto.randomUUID(),
       name: file.name,
       size: file.size,
@@ -165,7 +197,10 @@ export function ContentsFormAttachment({
             height={24}
           />
           <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#90B2CD]">
-            ここをクリックするか、ファイルをDrag＆Dropして添付することができます
+            ファイルをここにドラッグアンドドロップ、またはクリックでファイルを選択
+          </p>
+          <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#A0A8B0]">
+            最大アップロード容量（合計）：{MAX_FILE_SIZE_MB}MB
           </p>
         </div>
 

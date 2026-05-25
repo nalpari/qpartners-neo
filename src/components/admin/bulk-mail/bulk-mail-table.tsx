@@ -12,7 +12,6 @@ import { Pagination, PageSizeSelect, Checkbox, Button, PermissionGate } from "@/
 import type { MassMailListItem, MassMailListResponse, MassMailSearchParams, MassMailStatus } from "./bulk-mail-types";
 import { STATUS_LABEL_MAP, formatMailDate } from "./bulk-mail-types";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
-import { usePageSize } from "@/hooks/use-page-size";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 
@@ -37,12 +36,14 @@ function TitleCellRenderer(params: ICellRendererParams<MassMailListItem>) {
 
 interface BulkMailTableProps {
   searchParams: MassMailSearchParams;
+  /** 부모(BulkMailContents)가 usePageSize 로 관리하는 현재 페이지 사이즈.
+   *  검색 시 Table 이 리마운트되어도 부모 state 가 유지되어 사용자 선택이 보존된다. */
+  pageSize: number;
+  onPageSizeChange: (next: number) => void;
 }
 
-export function BulkMailTable({ searchParams }: BulkMailTableProps) {
+export function BulkMailTable({ searchParams, pageSize: perPage, onPageSizeChange: setPerPage }: BulkMailTableProps) {
   const router = useRouter();
-  // 페이지 사이즈 default 는 PAGE_SIZE 공통코드 sortOrder=1 항목을 따른다 (운영자 제어).
-  const { pageSize: perPage, setPageSize: setPerPage } = usePageSize();
   const [currentPage, setCurrentPage] = useState(1);
   const [draftOnly, setDraftOnly] = useState(false);
 

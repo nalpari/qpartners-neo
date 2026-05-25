@@ -5,10 +5,16 @@
 import { useState, useRef } from "react";
 import Image from "next/image";
 import { useAlertStore } from "@/lib/store";
+import { ALLOWED_EXTENSIONS_MAIL } from "@/lib/file-validation";
 import type { MassMailAttachment } from "@/components/admin/bulk-mail/bulk-mail-types";
 
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/** 파일 이름에서 소문자 확장자 추출 (없으면 빈 문자열) */
+function getExt(name: string): string {
+  return (name.split(".").pop() ?? "").toLowerCase();
+}
 
 interface BulkMailFormAttachmentProps {
   /** 실제 File 객체 (등록/편집 모드) */
@@ -42,6 +48,16 @@ export function BulkMailFormAttachment({
     // 개수 제한
     if (files.length + newFiles.length > MAX_FILES) {
       openAlert({ type: "alert", message: `添付ファイルは${MAX_FILES}件以内にしてください。` });
+      return;
+    }
+
+    // 확장자 사전 검증 — BE `"mail"` 정책과 동일 화이트리스트. UX 즉시 피드백.
+    const invalidExt = newFiles.find((f) => !ALLOWED_EXTENSIONS_MAIL.has(getExt(f.name)));
+    if (invalidExt) {
+      openAlert({
+        type: "alert",
+        message: `メール添付に許可されていないファイル拡張子です: ${invalidExt.name}`,
+      });
       return;
     }
 

@@ -10,9 +10,12 @@ import type { MassMailSearchParams } from "./bulk-mail-types";
 interface BulkMailSearchProps {
   onSearch: (params: MassMailSearchParams) => void;
   onReset: () => void;
+  /** sessionStorage 복원값 초기 적용용. 부모(BulkMailContents)가 key prop 으로 리마운트하여
+   *  복원 시점에 한 번 반영되도록 한다. 미지정 시 빈 폼으로 시작. */
+  initialValues?: MassMailSearchParams;
 }
 
-export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
+export function BulkMailSearch({ onSearch, onReset, initialValues }: BulkMailSearchProps) {
   // 配信対象 옵션 — qp_roles.isActive=Y 만 동적 노출 (6 기본 + 추가 권한). 비회원 제외.
   const { memberOptions } = useTargetLabels();
   const targetOptions = useMemo(
@@ -25,12 +28,25 @@ export function BulkMailSearch({ onSearch, onReset }: BulkMailSearchProps) {
     [memberOptions],
   );
 
-  const [title, setTitle] = useState("");
-  const [authorSearchType, setAuthorSearchType] = useState<"name" | "id">("name");
-  const [authorQuery, setAuthorQuery] = useState("");
-  const [roleCode, setRoleCode] = useState("");
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  // 폼 state 초기값을 initialValues 에서 파생 — sessionStorage 복원 시 부모가 key prop 으로
+  // 본 컴포넌트를 리마운트하여 이 초기값이 반영된다.
+  const [title, setTitle] = useState(initialValues?.keyword ?? "");
+  const [authorSearchType, setAuthorSearchType] = useState<"name" | "id">(
+    initialValues?.authorSearchType ?? "name",
+  );
+  const [authorQuery, setAuthorQuery] = useState(initialValues?.authorQuery ?? "");
+  const [roleCode, setRoleCode] = useState(initialValues?.roleCode ?? "");
+  // ISO 문자열 → Date 역직렬화. 잘못된 형식이면 null.
+  const [startDate, setStartDate] = useState<Date | null>(() => {
+    if (!initialValues?.startDate) return null;
+    const d = new Date(initialValues.startDate);
+    return Number.isNaN(d.getTime()) ? null : d;
+  });
+  const [endDate, setEndDate] = useState<Date | null>(() => {
+    if (!initialValues?.endDate) return null;
+    const d = new Date(initialValues.endDate);
+    return Number.isNaN(d.getTime()) ? null : d;
+  });
 
   const handleSearch = () => {
     onSearch({

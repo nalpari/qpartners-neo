@@ -1,11 +1,13 @@
 /**
  * Inbound 자동로그인 AES-128-CBC 복호화 유틸 (외부 3사 → Q.Partners-neo)
  *
- * 사양 (2026-04-30 outbound 사양 미러링으로 재정렬):
+ * 사양 (2026-05-21 키 통일 — outbound 와 단일 공통 키 운영으로 정렬):
  *   - 알고리즘 : AES/CBC/PKCS5Padding (Java) ↔ aes-128-cbc (Node.js, 기본 PKCS7 = 16B 블록에서 PKCS5 와 동등)
- *   - Key     : AUTO_LOGIN_INBOUND_AES_KEY 환경변수 (16 byte UTF-8)
- *               ※ outbound 키(AUTO_LOGIN_OUTBOUND_AES_KEY) 와 분리 운영 —
- *                 한쪽 compromise 시 다른 방향 자동로그인에 영향 격리 (2026-04-30 Q1 결정).
+ *   - Key     : AUTO_LOGIN_AES_KEY 환경변수 (16 byte UTF-8) — outbound 와 동일 단일 키
+ *               ※ 이전: inbound/outbound 키 분리 운영 (2026-04-30 Q1 결정) →
+ *                 외부 3사(QSP/Q.Order/Q.Musubi/Design) 가 4개 시스템 단일 공통 키 운영 사양임이
+ *                 통합 테스트 단계에서 확인되어 (2026-05-21) 통일. 우리만 분리 운영 시 외부 4개 시스템
+ *                 분기 추가 필요로 비현실적이라 외부 사양에 맞춰 합쳤다.
  *   - IV      : `YYYYMMDD` (KST) + `_autoL!!` = 16 byte (예: 20260430_autoL!!)
  *               ※ outbound 와 동일 — 외부 3사 가이드 양방향 통일 (2026-04-30 Q2 결정).
  *   - 평문    : 사용자 로그인 ID (string, ADMIN/STORE/SEKO=loginId, GENERAL=email)
@@ -20,6 +22,8 @@
  *   - 2026-04-22 v1: 초안 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT))
  *   - 2026-04-30 v2: 재구현 — outbound `auto-login-outbound-crypto.ts` 와 알고리즘·IV·평문·출력 통일.
  *     키만 분리 (`AUTO_LOGIN_INBOUND_AES_KEY`). 3사 측 inbound encrypt 미구현 시점이라 호환 부담 0.
+ *   - 2026-05-21 v3: 키 분리 번복 — outbound 와 단일 `AUTO_LOGIN_AES_KEY` 로 통일.
+ *     외부 4개 시스템 단일 공통 키 운영 사양에 맞춤 (통합 테스트에서 confirm).
  *
  * 보안 노트:
  *   - IV 가 (KST 일자 + 고정 상수) 로 결정적 → 같은 userId 가 같은 날 동일 cipher 가 됨.
@@ -28,7 +32,8 @@
  *     통일. 같은 사용자가 같은 날 여러 번 inbound 진입을 정상 통과시킨다.
  *     받아들인 위험: cipher 탈취 시 24h 내 재사용 가능 (외부 3사 inbound 도 동일 위험).
  *     필요 시 평문에 nonce/타임스탬프를 포함하는 사양 확장으로 강화 가능 (현재 Out of Scope).
- *   - outbound 와 키가 다르므로 outbound 발급 cipher 를 본 모듈로 복호 불가 (의도된 분리).
+ *   - outbound (`auto-login-outbound-crypto.ts`) 와 동일 키 — 2026-05-21 통일.
+ *     단일 키 compromise 시 inbound/outbound 양방향이 동시에 영향받으므로 키 침해 대응 시 영향 범위를 단일·전사로 평가해야 한다.
  */
 
 import crypto from "node:crypto";
@@ -41,12 +46,10 @@ const IV_LENGTH = 16;
 /** IV = `YYYYMMDD`(8) + IV_SUFFIX(8) = 16 byte. outbound 와 동일 상수 — 양방향 가이드 통일. */
 const IV_SUFFIX = "_autoL!!";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-/**
- * 외부 3사 가이드 문서·검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`) 에
- * 노출된 샘플 키. 운영자가 .env 설정 시 그대로 복사하면 공개 키로 cipher 가 발급/복호되어
- * 자동로그인이 무력화된다. fail-closed 가드로 차단.
- */
-const SAMPLE_KEY = "jpqcellQ123456!!";
+// 2026-05-21 키 통일에 따라 SAMPLE_KEY 차단 가드 제거.
+// 통일된 운영 키 자체가 가이드/주석에 노출된 값이라 "샘플=운영" 구조가 됨 — 외부 4개 시스템과
+// 단일 공통 키 운영 사양에 맞추기 위한 의도된 정책 후퇴. 키 노출 위험은 가이드 문서 주의문/
+// 접근 통제로 흡수 (outbound 도 동일 정책 — `auto-login-outbound-crypto.ts:62-65`).
 
 /** KST(UTC+9) 기준 YYYYMMDD */
 function formatKstDate(date: Date): string {
@@ -68,10 +71,10 @@ function formatKstDate(date: Date): string {
  *     매 호출 시 process.env 읽기 + 16 byte Buffer 생성 비용은 무시 가능.
  */
 function getInboundAesKey(): Buffer {
-  const raw = process.env.AUTO_LOGIN_INBOUND_AES_KEY;
+  const raw = process.env.AUTO_LOGIN_AES_KEY;
   if (!raw) {
     throw new ConfigError(
-      "AUTO_LOGIN_INBOUND_AES_KEY 환경변수가 설정되지 않았습니다",
+      "AUTO_LOGIN_AES_KEY 환경변수가 설정되지 않았습니다",
     );
   }
   // trim 하지 않음 — 외부 3사가 사용하는 정확한 byte 시퀀스를 유지해야 cipher 가 일치.
@@ -82,14 +85,7 @@ function getInboundAesKey(): Buffer {
     // env 에 우연히 따옴표/공백/개행이 섞이면 buf.length 가 16 을 벗어남.
     // 실제 byte 길이를 메시지에 포함해 운영자가 즉시 원인을 식별할 수 있게 함.
     throw new ConfigError(
-      `AUTO_LOGIN_INBOUND_AES_KEY 길이가 올바르지 않습니다 — ${KEY_LENGTH} byte 필요, 실제 ${buf.length} byte (개행/공백 포함 여부 확인)`,
-    );
-  }
-  // 운영 오설정 방어 — 외부 가이드/검증 스크립트에 노출된 샘플 키가 그대로 설정된 경우 즉시 차단.
-  // 일치 비교는 이미 길이 동일(16 byte) 가 보장된 후이므로 timingSafeEqual 사용 가능.
-  if (crypto.timingSafeEqual(buf, Buffer.from(SAMPLE_KEY, "utf8"))) {
-    throw new ConfigError(
-      "AUTO_LOGIN_INBOUND_AES_KEY 가 공개된 샘플 키로 설정되어 있습니다 — 운영 키로 교체 필요",
+      `AUTO_LOGIN_AES_KEY 길이가 올바르지 않습니다 — ${KEY_LENGTH} byte 필요, 실제 ${buf.length} byte (개행/공백 포함 여부 확인)`,
     );
   }
   return buf;

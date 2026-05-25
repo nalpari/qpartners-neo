@@ -123,6 +123,16 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
     await writeFile(absolutePath, buffer);
 
+    // 빈 MIME (드래그앤드롭 등) 폴백 — application/octet-stream 대신 확장자 기반 정규 MIME 으로 저장.
+    // 인라인 조회 라우트의 nosniff/415 가드와 자연 일치 (ext 는 위에서 ALLOWED_INLINE_IMAGE_EXTENSIONS 화이트리스트 통과값).
+    const fallbackMime =
+      ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
+      ext === "png" ? "image/png" :
+      ext === "gif" ? "image/gif" :
+      ext === "webp" ? "image/webp" :
+      "application/octet-stream";
+    const resolvedMime = fileEntry.type || fallbackMime;
+
     try {
       const created = await prisma.contentInlineImage.create({
         data: {
@@ -132,7 +142,7 @@ export async function POST(request: NextRequest) {
           fileName: sanitizedName,
           filePath,
           fileSize: BigInt(fileEntry.size),
-          mimeType: fileEntry.type || "application/octet-stream",
+          mimeType: resolvedMime,
         },
         select: { id: true },
       });

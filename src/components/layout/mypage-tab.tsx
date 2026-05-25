@@ -16,10 +16,11 @@ interface TabItem {
  * /mypage 탭 — Redmine #2216 note-4 이후 Link 기반 자체 navigation.
  *
  * - 활성 탭은 pathname 으로 자동 판별 (`/mypage` → info, `/mypage/downloads` → downloads).
- * - 페이지 이동이 라우터 push 이므로 GaPageTracker 가 자연스럽게 `page_view` 를 분리 수집.
+ * - 페이지 이동이 라우터 push 이므로 GA4 Enhanced Measurement 의 SPA navigation 자동
+ *   `page_view` 가 `/mypage`, `/mypage/downloads` 를 분리 수집한다.
  */
 const TABS: TabItem[] = [
-  { key: "info", label: "私の情報/会社情報", href: "/mypage" },
+  { key: "info", label: "法人情報 / 会員情報", href: "/mypage" },
   { key: "downloads", label: "ダウンロード履歴", href: "/mypage/downloads" },
 ];
 

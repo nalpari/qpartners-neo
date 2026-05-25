@@ -9,7 +9,6 @@ import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
 import { AlertDialog } from "@/components/common/alert-dialog";
 import { AdminTransitionRefresh } from "@/components/common/admin-transition-refresh";
-import { GaPageTracker } from "@/components/common/ga-page-tracker";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -42,6 +41,26 @@ if (RAW_GA_ID && !GA_ID) {
   );
 }
 
+/**
+ * 모든 페이지를 dynamic SSR 로 강제 — SSG 빌드 타임 캐싱 회피.
+ *
+ * Why:
+ *   `NEXT_PUBLIC_GA_ID` 는 빌드 타임 인라인 변수인데, dev/운영 이미지 빌드 시
+ *   `.dockerignore` 의 `.env*` 패턴으로 `.env.production` 이 빌드 컨테이너에서
+ *   제외되어 빌드 타임에 `process.env.NEXT_PUBLIC_GA_ID` 가 `undefined` 가 된다.
+ *   결과적으로 SSG 페이지(예: `/`, `/signup`)는 GA `<Script>` 가 없는 HTML 로
+ *   영구 캐시되어 GA SDK 가 절대 로드되지 않고, 홈 진입 사용자의 SPA 이동
+ *   전체에서 `/collect` 발송이 0 건이 된다.
+ *
+ *   런타임 ENV 는 docker-compose / 운영 환경설정에서 정상 주입되므로
+ *   force-dynamic 으로 매 요청 SSR 렌더링 시 layout 이 런타임 `process.env`
+ *   를 읽어 GA `<Script>` 가 모든 페이지 HTML 에 포함된다.
+ *
+ *   진짜 근본 해결은 인프라 단계의 `.dockerignore` / Dockerfile build-arg
+ *   조정이지만, 그 전까지 본 directive 가 회피층 역할을 한다.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Q.PARTNERS",
   description: "Q.PARTNERS",
@@ -70,7 +89,6 @@ export default function RootLayout({
       >
         <QueryProvider>
           <AdminTransitionRefresh />
-          {GA_ID && <GaPageTracker />}
           <div className="wrap">
             <Gnb />
             <Location />
@@ -100,13 +118,23 @@ export default function RootLayout({
              *   id 가 고정이면 동일 페이지에 다른 ID 가 공존하는 dev 시나리오에서
              *   재실행 누락 위험이 있다. 또한 ID 가 포함되어 디버깅 가독성도 향상.
              *
-             * Why send_page_view:false + gtag('consent','default',...):
-             *   gtag('config') 자동 page_view 는 외부 스크립트 race / 라우트 전환
-             *   타이밍에 따라 누락되거나 중복될 수 있다. 자동 발송을 끄고
-             *   GaPageTracker effect 에서 항상 발송하여 일관성 확보.
-             *   consent default 는 ad_storage 거부 / analytics_storage 허용 으로
-             *   광고 식별자 차단(EU 권역 GDPR / 일본 個人情報保護法 보수 운영) +
-             *   분석 데이터는 수집되도록 명시.
+             * Why send_page_view 기본값 (생략 = true) — Redmine #2216 후속 (중복 카운트 해결):
+             *   `gtag('config')` 의 첫 page_view 자동 발송 + GA4 Enhanced Measurement 의
+             *   SPA navigation 자동 page_view 만으로 모든 화면이 1회 카운트된다.
+             *   기존 manual 트래커(GaPageTracker) 가 자동 발송과 중복되어 모든 SPA navigation
+             *   화면이 2회 카운트되던 결함의 원인이라 제거됨. redirect 케이스 (예: /password-reset
+             *   → /login server-side redirect 후 popup 표시) 처럼 URL 변경이 일어나지 않아
+             *   자동 발송이 누락되는 가상 경로만 코드에서 별도 발송한다
+             *   (`password-reset-popup.tsx` 의 `/login/password-reset` 가상 page_view).
+             *
+             *   보안 트레이드오프: 자동 발송은 `window.location.href` 원본을 그대로 GA 로
+             *   전송하므로 query string 의 민감값(자동로그인 페이로드·재설정 토큰 등)이 GA 로
+             *   누설될 수 있다. 토큰을 query 로 노출하는 새 라우트를 추가할 때는 server-side
+             *   redirect 후 가상 page_view 패턴을 따를 것.
+             *
+             * Why gtag('consent','default',...):
+             *   ad_storage 거부 / analytics_storage 허용 으로 광고 식별자 차단
+             *   (EU 권역 GDPR / 일본 個人情報保護法 보수 운영) + 분석 데이터는 수집되도록 명시.
              */}
             <Script
               id={`ga-init-${GA_ID}`}
@@ -117,7 +145,7 @@ export default function RootLayout({
                   `function gtag(){dataLayer.push(arguments);}` +
                   `gtag('consent','default',{ad_storage:'denied',analytics_storage:'granted'});` +
                   `gtag('js',new Date());` +
-                  `gtag('config','${GA_ID}',{anonymize_ip:true,send_page_view:false});`,
+                  `gtag('config','${GA_ID}',{anonymize_ip:true});`,
               }}
             />
           </>

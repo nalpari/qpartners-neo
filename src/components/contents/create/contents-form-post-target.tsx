@@ -53,7 +53,6 @@ export function buildInitialPostTargetsState(
   forcedRoleCode?: string | null,
 ): PostTargetState {
   const today = new Date();
-  const defaultEnd = new Date("2999-12-31");
 
   const existingMap = new Map(
     (existingTargets ?? []).map((t) => [t.roleCode, t] as const),
@@ -71,12 +70,12 @@ export function buildInitialPostTargetsState(
         endDate: found.endAt ? new Date(found.endAt) : null,
       };
     }
-    // forcedRoleCode 행은 신규 등록 시점부터 체크 + 기본 기간(오늘~2999) 부여
+    // forcedRoleCode 행은 신규 등록 시점부터 체크 + 시작일은 오늘, 종료일은 비움(상시 공개).
     return {
       roleCode: opt.roleCode,
       checked: isForced,
       startDate: new Date(today),
-      endDate: new Date(defaultEnd),
+      endDate: null,
     };
   });
 
@@ -99,14 +98,14 @@ export function buildInitialPostTargetsState(
       roleCode: forcedRoleCode,
       checked: true,
       startDate: new Date(today),
-      endDate: new Date(defaultEnd),
+      endDate: null,
     });
   }
 
   return {
     selectAll: items.length > 0 && items.every((i) => i.checked),
     allStartDate: today,
-    allEndDate: defaultEnd,
+    allEndDate: null,
     targets: items,
   };
 }
@@ -173,12 +172,15 @@ export function ContentsFormPostTarget({
         t.checked
           ? {
               ...t,
+              // startDate 는 필수 입력이므로 null 헤더값은 기존 행값 보존 (검증 단계에서 차단)
               startDate: postTargets.allStartDate
                 ? new Date(postTargets.allStartDate)
                 : t.startDate,
-              endDate: postTargets.allEndDate
-                ? new Date(postTargets.allEndDate)
-                : t.endDate,
+              // endDate 는 null = 상시 공개 정책 — 헤더 null 도 명시 전파해야 일괄 적용 가능
+              endDate:
+                postTargets.allEndDate !== null
+                  ? new Date(postTargets.allEndDate)
+                  : null,
             }
           : t,
       ),
@@ -219,6 +221,7 @@ export function ContentsFormPostTarget({
               onChange={(date) =>
                 onPostTargetsChange({ ...postTargets, allEndDate: date })
               }
+              placeholder="終了日なし（常時公開）"
               className="w-[200px]"
             />
           </div>
@@ -290,6 +293,7 @@ export function ContentsFormPostTarget({
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "endDate", date)
                         }
+                        placeholder="終了日なし（常時公開）"
                         disabled={!target.checked}
                       />
                     </div>

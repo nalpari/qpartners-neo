@@ -152,7 +152,8 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
   }
 
   if (files.length > 0) {
-    const validation = validateFiles(files);
+    // 메일 정책 — 콘텐츠보다 좁은 화이트리스트 (수신자 보호: 동영상/압축/한글 등 제외).
+    const validation = validateFiles(files, "mail");
     if (!validation.ok) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }

@@ -3,9 +3,39 @@
 > HANASYS DESIGN / Q.Order / Q.Musubi 등 외부 사이트에서 **Q.Partners-neo 로 자동로그인 진입**하기 위한 연동 가이드입니다.
 > `autoLoginParam1` 생성(암호화)부터 Q.Partners-neo 에서 복호화 후 로그인 완료까지 **외부 사이트 개발자 관점**에서 정리했습니다.
 
-- **Document version**: 2.0 (2026-05-11)
+- **Document version**: 2.6 (2026-05-22)
 - **Target**: HANASYS DESIGN / Q.Order / Q.Musubi 개발팀
-- **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력 — 양방향 가이드 통일
+- **사양 정렬**: outbound (Q.Partners → 3사) 와 동일한 알고리즘·IV·평문·출력·**키** — 양방향 가이드 통일
+
+> ⚠️ **v2.6 변경 안내 (2026-05-22) — ADMIN 응답 권한 강등 정책 청산 + login 라우트 완전 미러링**
+>
+> v2.5 에서 도입한 "ADMIN 응답 사용자 STORE 권한 강등" 정책을 청산합니다. 자동로그인 inbound 의 본질은 SSO (외부에서 이미 인증된 사용자의 후속 처리) 이므로 일반 로그인과 권한 차별을 두지 않습니다. interplug 같은 회사 마스터 계정도 자동로그인 시 ADMIN/SUPER_ADMIN 권한 정상 부여됩니다 (login 라우트와 byte-level 동일 결과).
+>
+> 송신 측 `userTp` 3종 한정(STORE/SEKO/GENERAL) 정책은 유지합니다.
+>
+> **현행 사양은 반드시 `docs/Q.Partners-자동로그인-구현-가이드.md` v1.5 를 참조** 하세요.
+
+> ⚠️ **v2.5 변경 안내 (2026-05-22) — (청산) ADMIN 응답 권한 강등 정책. v2.6 에서 정정**
+
+> ⚠️ **v2.4 변경 안내 (2026-05-22) — 허용 userTp 축소 (사유는 v2.5 정정)**
+>
+> inbound 허용 `userTp` 가 **`STORE` / `SEKO` / `GENERAL`** 로 축소됐습니다. `ADMIN` 송신은 진입 단계에서 `query_validation_failed` 로 거부됩니다.
+>
+> ~~근거: QSP 사양에 ADMIN userTp 자체가 없음~~ — 이 사유 단정은 v2.5 에서 청산됐습니다. 정확한 사유는 "자동로그인 송신 측만 3종 한정" 입니다.
+>
+> 직전(2026-04-30~) 의 SUPER_ADMIN 거부 / ADMIN 2FA 강제 정책 분기는 함께 삭제됐습니다.
+
+> ⚠️ **v2.3 변경 안내 (2026-05-21) — 본 문서는 historical 이력 문서입니다**
+>
+> 키 환경변수명을 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY` 로 통일했습니다. inbound/outbound 분리 운영을 번복하고 **외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 단일 공통 키 운영 사양** 에 맞췄습니다.
+>
+> 본 문서의 다음 항목은 v2.0 ~ v2.2 이력 보존 목적이며 **현재 운영과 충돌**합니다 — 그대로 신뢰하지 마세요.
+> - `AUTO_LOGIN_INBOUND_AES_KEY` 표기 (현재 사용 환경변수는 `AUTO_LOGIN_AES_KEY` 단일)
+> - `outbound 키와 분리 운영` 단정 (현재는 단일 공통 키)
+> - 외부 가이드 샘플 키를 `timingSafeEqual` 가드로 거부한다는 안내 (가드 제거됨 — 운영=샘플 구조)
+> - §4 검증 샘플의 키 리터럴 `<redacted-historical-sample-key>` (자바 byte-level 호환성 자체 검증용 historical 데이터이며, **외부 4개 시스템 단일 공통 키 통일(2026-05-21) 이후 본 값은 운영 키 운영 안내의 일부가 아닙니다.** 운영 키는 별도 보안 채널로만 공유됩니다. 검증이 필요한 외부 사이트 개발팀은 운영팀에 직접 문의)
+>
+> **현재 사양은 반드시 `docs/Q.Partners-자동로그인-구현-가이드.md` 를 참조** 하세요. 본 문서는 알고리즘 호환성 검증·과거 결정 추적 목적으로만 유지합니다.
 
 ---
 
@@ -22,16 +52,23 @@
 
 ## 2. 핵심 키 정보
 
+> ⚠️ **§2 ~ §6 historical 안내 (2026-05-21)**
+>
+> 본 §2 표 / §4 알고리즘·코드 샘플 / §6 운영 안내에 등장하는 다음 표현은 **v2.0 ~ v2.2 분리 운영 시절 기준**이며, **현행 단일 공통 키 운영 사양과는 다릅니다**:
+> - 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` (현행: `AUTO_LOGIN_AES_KEY` 단일)
+> - "outbound 키와의 관계: **분리 운영**" / "한쪽 compromise 시 영향 격리" 단정 (현행: 단일 키 — compromise 시 inbound/outbound 양방향 동시 영향)
+> - 외부 사이트 측에서 본 문서의 코드 샘플 (§4 Node.js / Java) 을 그대로 복사하면 옛 환경변수명을 사용하게 됩니다. **현행 사양·코드 샘플은 `docs/Q.Partners-자동로그인-구현-가이드.md` 를 참조** 하세요.
+
 ### 암호화 키
 
 | 항목 | 값 |
 |---|---|
-| 환경변수 이름 | `AUTO_LOGIN_INBOUND_AES_KEY` |
+| 환경변수 이름 | `AUTO_LOGIN_INBOUND_AES_KEY` *(historical — 현행 `AUTO_LOGIN_AES_KEY`)* |
 | 길이 | **정확히 16 byte (UTF-8 raw)** — AES-128-CBC 키로 그대로 사용 |
 | 값 | **Q.Partners 운영팀과 별도 협의** — 보안 채널로 전달 |
 | 공유 범위 | 외부 3사 (HANASYS / Q.Order / Q.Musubi) + Q.Partners-neo 서버 |
 | 교체 주기 | 연 1회 내외 (교체 시 사전 공지) |
-| outbound 키와의 관계 | **분리 운영** (`AUTO_LOGIN_OUTBOUND_AES_KEY` 와 다른 값) — 한쪽 compromise 시 영향 격리 |
+| outbound 키와의 관계 | *(historical)* **분리 운영** (`AUTO_LOGIN_OUTBOUND_AES_KEY` 와 다른 값) — 한쪽 compromise 시 영향 격리. 현행은 outbound 와 **단일 공통 키 (`AUTO_LOGIN_AES_KEY`)** 로 통일 — compromise 시 양방향 동시 영향. |
 
 ### 키 사용 방식
 
@@ -88,7 +125,7 @@ GET https://{q-partners-neo-host}/api/auth/auto-login/inbound
 | 환경 | `{q-partners-neo-host}` |
 |---|---|
 | Development | `dev.q-partners.q-cells.jp` |
-| Production | `www.q-partners.q-cells.jp` (확정 후 업데이트) |
+| Production | `prod.q-partners.q-cells.jp` |
 
 ### 쿼리 파라미터
 
@@ -206,12 +243,12 @@ public static String encryptAutoLoginUserId(String userId, String autoLoginInbou
 | `T01` | `20260424` | `20260424_autoL!!` | `pQE3A9NO+KCt6q2hD/Bhzw==` |
 | `201T01` | `20260424` | `20260424_autoL!!` | `GpvgC+3aY/fPBItoF6+Cdg==` |
 
-> 위 샘플은 키 `jpqcellQ123456!!` (16 byte 자바 원본 검증용 키) 기준이며, 실제 운영 키는 별도 협의된 값을 사용한다. 자체 구현 검증 시 위 키·IV·평문 조합으로 동일 cipher 가 나오는지 확인하면 알고리즘 정합성을 빠르게 검증할 수 있다.
+> 위 샘플은 16 byte 자바 원본 검증용 키 (`<redacted-historical-sample-key>`) 기준이며, 실제 운영 키는 별도 협의된 값을 사용한다. **검증용 키 리터럴은 본 문서에서 제거되었으므로 운영팀으로부터 별도 공유**받아 자체 구현 검증 시 위 키·IV·평문 조합으로 동일 cipher 가 나오는지 확인하면 알고리즘 정합성을 빠르게 검증할 수 있다.
 >
-> Q.Partners-neo 동봉 검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`)는 git 트리에 샘플 키를 박지 않고 **`VERIFY_SAMPLE_KEY` env 로 주입**받는다. 위 byte-level 일치를 재현하려면 다음과 같이 실행한다.
+> Q.Partners-neo 동봉 검증 스크립트(`scripts/verify-auto-login-inbound-crypto.mjs`)는 git 트리에 샘플 키를 박지 않고 **`VERIFY_SAMPLE_KEY` env 로 주입**받는다. 위 byte-level 일치를 재현하려면 운영팀으로부터 받은 historical 검증 키를 다음과 같이 실행한다.
 >
 > ```bash
-> VERIFY_SAMPLE_KEY="jpqcellQ123456!!" node scripts/verify-auto-login-inbound-crypto.mjs
+> VERIFY_SAMPLE_KEY="<historical-sample-key>" node scripts/verify-auto-login-inbound-crypto.mjs
 > ```
 >
 > env 미설정 시 (A)/(B) 는 SKIP 되고 (C)/(D)/(E) 만 임시 랜덤 키로 실행된다 — 알고리즘 로직만 검증한다.
@@ -323,3 +360,8 @@ flowchart TD
 | 1.0 | 2026-05-11 | 초안 작성 — AES-256-CBC + SHA-256(YYYYMMDD_KST + AUTO_LOGIN_AES_KEY) + 랜덤 IV (Base64(IV‖CT)) |
 | **2.0** | **2026-05-11** | **사양 재정렬 — outbound 와 통일** (AES-128-CBC + raw 16B key + 결정적 IV `YYYYMMDD_autoL!!` + Base64(ciphertext)). 환경변수명 `AUTO_LOGIN_AES_KEY` → `AUTO_LOGIN_INBOUND_AES_KEY` 로 분리. 3사 측 inbound encrypt 미구현 시점에 변경하여 호환 부담 0. |
 | **2.1** | **2026-05-11** | **cipher 1회용 차단 제거** — outbound 받는 측 (외부 3사) 정책과 통일. 같은 사용자 같은 날 여러 번 inbound 진입 가능. cipher 24h 재사용 위험은 §8 명시. |
+| **2.2** | **2026-05-19** | **§3 호출 URL 표 운영 호스트 확정** — `www.q-partners.q-cells.jp` (확정 후 업데이트) → `prod.q-partners.q-cells.jp`. |
+| **2.3** | **2026-05-21** | **키 분리 운영 번복 — 단일 공통 키로 통일.** 환경변수명 `AUTO_LOGIN_INBOUND_AES_KEY` → `AUTO_LOGIN_AES_KEY`. 통합 테스트 단계에서 외부 4개 시스템 (QSP / Q.Order / Q.Musubi / Design) 이 이미 단일 공통 키 운영 사양임이 확인됨. 우리만 분리 운영 시 외부 4개 시스템 모두에 우리용 분기 추가가 필요해 비현실적이라 외부 사양에 맞춰 통일. inbound 코드의 `SAMPLE_KEY` 차단 가드도 제거 (통일된 운영 키 자체가 가이드/주석 노출 키라 "샘플=운영" 구조 — 의도된 정책 후퇴, outbound 와 동일). |
+| **2.4** | **2026-05-22** | **허용 `userTp` 에서 `ADMIN` 제거** (사유는 v2.5 정정). `ADMIN` 송신은 진입 단계에서 `query_validation_failed` 폴백. SUPER_ADMIN 거부 / ADMIN 2FA 강제 / ADMIN 감사 로그 분기도 dead code 로 함께 삭제. ~~"QSP 에 ADMIN userTp 미존재" 단정~~ — v2.5 에서 청산. |
+| **2.5** | **2026-05-22** | (청산) ADMIN 응답 권한 강등 정책. v2.6 에서 정정. |
+| **2.6** | **2026-05-22** | **login 라우트 완전 미러링.** SSO 본질(외부에서 이미 인증된 사용자 후속 처리)에 맞춰 일반 로그인과 권한 차별 없음. ADMIN 응답 사용자도 ADMIN/SUPER_ADMIN 권한 정상 부여 (interplug → SUPER_ADMIN). `LoginUser.userTp` = 응답값, `resolveAuthRole` 첫 인자 = 응답값, catch 폴백 = 응답 userTp 기준. 송신 3종 한정(STORE/SEKO/GENERAL) 정책은 유지. **현행 사양은 `docs/Q.Partners-자동로그인-구현-가이드.md` v1.5** 를 참조. |
