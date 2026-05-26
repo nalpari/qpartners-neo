@@ -1,6 +1,7 @@
 "use client";
 
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { formatJstDate } from "@/lib/jst-day";
 
 // Design Ref: §4.3 — 게시대상 표시 (Target Dynamic from Role 후)
 // 라벨/활성 상태는 useTargetLabels 훅으로 권한관리(qp_roles) 와 동기화.
@@ -19,9 +20,10 @@ interface ContentsDetailTargetProps {
 
 function formatPeriod(startAt: string | null, endAt: string | null): string {
   if (!startAt && !endAt) return "-";
-  const fmt = (iso: string) => iso.slice(0, 10).replace(/-/g, ".");
-  const start = startAt ? fmt(startAt) : "";
-  const end = endAt ? fmt(endAt) : "";
+  // 저장 시점: `Date.toISOString()` 으로 JST 로컬 자정을 UTC 로 직렬화(예: JST 2026-05-26 → `2026-05-25T15:00:00.000Z`).
+  // 표시 시점에 ISO 문자열 앞 10자만 자르면 UTC 기준 -1일이 표시되므로 JST 기준 변환 필수. (Redmine #2262)
+  const start = startAt ? formatJstDate(startAt, ".") : "";
+  const end = endAt ? formatJstDate(endAt, ".") : "";
   return `${start}~${end}`;
 }
 
