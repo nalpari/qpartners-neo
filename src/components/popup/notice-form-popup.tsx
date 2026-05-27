@@ -105,8 +105,13 @@ export function NoticeFormPopup() {
   // edit 모드는 기존 startDate 사용. lazy initializer 로 new Date() 가 매 렌더 호출되지 않게 처리(React Compiler purity).
   const [startDate, setStartDate] = useState<Date | null>(() => {
     const parsed = parseDate(initialData?.startDate ?? "");
+    if (parsed) return parsed;
     // 신규 등록은 emptyForm(빈 startDate "")을 notice 로 넘기므로 initialData 존재 여부가 아닌 mode 로 분기.
-    return parsed ?? (mode === "create" ? new Date() : null);
+    if (mode !== "create") return null;
+    // 시각 성분 없는 "로컬 자정" 으로 정규화 — DatePicker 가 생성하는 값(new Date(y,m,d))과 동일 의미.
+    // new Date() 의 시:분 을 그대로 두면 종료일=오늘(자정) 선택 시 startDate>endDate 로 당일 등록이 잘못 차단됨(#2176(2) 동일날짜 허용 위배).
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
   });
   const [endDate, setEndDate] = useState<Date | null>(parseDate(initialData?.endDate ?? ""));
   const [title, setTitle] = useState(initialData?.title ?? "");
