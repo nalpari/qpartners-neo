@@ -101,7 +101,13 @@ export function NoticeFormPopup() {
   const [targetRoleCodes, setTargetRoleCodes] = useState<string[]>(
     initialData?.targetRoleCodes ?? [],
   );
-  const [startDate, setStartDate] = useState<Date | null>(parseDate(initialData?.startDate ?? ""));
+  // 신규 등록 시 시작일 기본값 = Today (홈공지 게시기간: 시작일 필수+Today 기본값 / 종료일 필수+기본값 없음, #2257 FLAG 정합).
+  // edit 모드는 기존 startDate 사용. lazy initializer 로 new Date() 가 매 렌더 호출되지 않게 처리(React Compiler purity).
+  const [startDate, setStartDate] = useState<Date | null>(() => {
+    const parsed = parseDate(initialData?.startDate ?? "");
+    // 신규 등록은 emptyForm(빈 startDate "")을 notice 로 넘기므로 initialData 존재 여부가 아닌 mode 로 분기.
+    return parsed ?? (mode === "create" ? new Date() : null);
+  });
   const [endDate, setEndDate] = useState<Date | null>(parseDate(initialData?.endDate ?? ""));
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [content, setContent] = useState(initialData?.content ?? "");
