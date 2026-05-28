@@ -99,7 +99,14 @@ function isEmptySearchParams(params: SearchParams): boolean {
   );
 }
 
-export function ContentsContents() {
+interface ContentsContentsProps {
+  /** 홈 검색바 외부 진입 시 서버(page.tsx)가 searchParams 로 확정해 전달하는 keyword.
+   *  page.tsx 가 key={initialKeyword} 로 리마운트를 제어하므로, keyword 변경 시
+   *  본 컴포넌트가 재마운트되어 아래 useState 초기화가 재실행된다. */
+  initialKeyword?: string;
+}
+
+export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps) {
   // 마운트 시 1회 — sessionStorage 복원 플래그 소비.
   //   - 상세/생성/편집 → 목록 복귀: 플래그 "1" → true (직전 검색조건/페이지/페이지 표시 개수 복원)
   //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
@@ -115,22 +122,23 @@ export function ContentsContents() {
 
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
-  //   - false 이고 URL 에 `?keyword=...` 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
-  //     `router.push("/contents?keyword=...")` 등) 으로 간주, URL 키워드를 한 번 흡수.
-  //   - false + URL 빈 → sessionStorage 즉시 삭제 + 기본 빈값.
+  //   - false 이고 initialKeyword 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
+  //     `router.push("/contents?keyword=...")`) 으로 간주, 서버가 전달한 keyword 흡수.
+  //   - false + initialKeyword 빈 → sessionStorage 즉시 삭제 + 기본 빈값.
+  // keyword 는 window.location.search 대신 서버 prop(initialKeyword) 을 신뢰 — client
+  // navigation 진입 타이밍 race 및 라우터 캐시 재마운트 누락을 page.tsx 의 key 제어로 차단.
   // useState lazy init 안에서 sessionStorage 부수효과 수행 (마운트 1회).
   const [searchParams, setSearchParams] = useState<SearchParams>(() => {
-    if (typeof window === "undefined") return EMPTY_SEARCH_PARAMS;
+    if (typeof window === "undefined") {
+      return initialKeyword ? { ...EMPTY_SEARCH_PARAMS, keyword: initialKeyword } : EMPTY_SEARCH_PARAMS;
+    }
     const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
     if (shouldRestoreList) {
       return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
     }
     window.sessionStorage.removeItem(FILTERS_KEY);
-    // 외부 진입 URL 쿼리 흡수 — 현재는 홈 검색바의 keyword 만 지원.
-    // 다른 필드(categoryIds 등)는 외부 진입 호출처 없음.
-    const urlKeyword = new URLSearchParams(window.location.search).get("keyword");
-    if (urlKeyword) {
-      return { ...EMPTY_SEARCH_PARAMS, keyword: urlKeyword };
+    if (initialKeyword) {
+      return { ...EMPTY_SEARCH_PARAMS, keyword: initialKeyword };
     }
     return EMPTY_SEARCH_PARAMS;
   });
