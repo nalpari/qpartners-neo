@@ -10,8 +10,9 @@ import { sendNotificationMail } from "./send-notification";
 /**
  * 속성 변경 알림 메일 빌더 + 발송 헬퍼.
  *
- * AS-IS oldQpartners `mypage/profile/index.php:530-553` 미러링.
- * 본문 양식은 `sitemanage/templates/_mail/edit_user.txt` 그대로.
+ * AS-IS oldQpartners `mypage/profile/index.php:530-553` 및
+ * `sitemanage/templates/_mail/edit_user.txt` 양식을 기반.
+ * (섹션 헤더 라벨·마이페이지 URL 안내 등은 TO-BE 정책에 맞춰 조정됨)
  *
  * 발송 조건은 호출부에서 `attrChgYn === "Y"` 확인 후 진입.
  * 변경 항목 0건이면 본 함수 내 가드로 발송 스킵.
@@ -102,7 +103,7 @@ function diffFields(
 }
 
 /**
- * AS-IS edit_user.txt 양식을 HTML 구조로 변환.
+ * AS-IS edit_user.txt 양식을 기반으로 HTML 구조 구성.
  * password-reset 등 다른 메일 템플릿과 동일한 폰트/레이아웃 사용.
  * 모든 동적 값은 escapeHtml 적용. 변경 항목은 escapeHtml 이 끝난 라인 그대로 사용.
  */

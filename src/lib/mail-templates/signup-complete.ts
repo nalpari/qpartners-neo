@@ -7,7 +7,7 @@ interface SignupCompleteMailParams {
   siteUrl: string;
 }
 
-/** 회원가입 승인완료 메일 HTML 템플릿 (화면설계서 p.19 기반, 일본어+한국어) */
+/** 회원가입 승인완료 메일 HTML 템플릿 (화면설계서 p.19 기반, 일본어) */
 export function signupCompleteMailHtml({
   userNm,
   email,

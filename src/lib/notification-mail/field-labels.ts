@@ -4,9 +4,9 @@
  * AS-IS oldQpartners `sitemanage/ini/dbword.ini` 의 일본어 필드 라벨을
  * TO-BE `profileUpdateSchema` (src/lib/schemas/mypage.ts) 필드명 기준으로 재매핑.
  *
- * 분류:
- *   - COMPANY_FIELD_LABELS: AS-IS edit_user.txt 의 `●会社情報変更` 섹션
- *   - USER_FIELD_LABELS: AS-IS edit_user.txt 의 `●会員情報変更` 섹션
+ * 분류 (본문 섹션 헤더 기준):
+ *   - COMPANY_FIELD_LABELS: 본문 `●法人情報変更` 섹션 (AS-IS edit_user.txt 의 `●会社情報変更` 에서 라벨 변경)
+ *   - USER_FIELD_LABELS: 본문 `●会員情報変更` 섹션
  *
  * 신규 필드 (AS-IS 미존재): department, jobTitle, corporateNo, newsRcptYn 은
  * 적절한 일본어 라벨을 신규 부여.
@@ -15,7 +15,7 @@
  * (attr-change-mail.ts diffFields 내부).
  */
 
-/** 회사정보 변경 항목 (●会社情報変更 섹션) */
+/** 회사정보 변경 항목 (본문 ●法人情報変更 섹션) */
 export const COMPANY_FIELD_LABELS: Record<string, string> = {
   compNm: "会社名",
   compNmKana: "会社名フリガナ",
