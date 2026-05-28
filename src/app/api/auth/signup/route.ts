@@ -138,7 +138,10 @@ export async function POST(request: NextRequest) {
 
     const parsed = qspResponseSchema.safeParse(qspBody);
     if (!parsed.success) {
-      console.error("[POST /api/auth/signup] QSP 응답 스키마 불일치");
+      console.error(
+        "[POST /api/auth/signup] QSP 응답 스키마 불일치:",
+        parsed.error.issues,
+      );
       return NextResponse.json(
         { error: "外部サーバーの応答形式が正しくありません" },
         { status: 502 },
