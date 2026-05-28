@@ -3,7 +3,7 @@ import { escapeHtml } from "@/lib/mail-templates/utils";
 import { splitQspUserName, type QspMemberDetail } from "@/lib/qsp-member";
 import type { ProfileUpdateInput } from "@/lib/schemas/mypage";
 
-import { ATTR_CHANGE_MAIL_SUBJECT, SITE_URL_FALLBACK } from "./constants";
+import { ATTR_CHANGE_MAIL_SUBJECT } from "./constants";
 import { COMPANY_FIELD_LABELS, USER_FIELD_LABELS } from "./field-labels";
 import { sendNotificationMail } from "./send-notification";
 
@@ -110,11 +110,9 @@ function buildBodyHtml(args: {
   recipientName: { sei: string; mei: string };
   companyChanges: string[];
   userChanges: string[];
-  siteUrl: string;
 }): string {
   const safeSei = escapeHtml(args.recipientName.sei);
   const safeMei = escapeHtml(args.recipientName.mei);
-  const safeSiteUrl = escapeHtml(args.siteUrl);
   // diffFields 가 이미 escapeHtml 처리한 라인 — 그대로 <br> 결합.
   const companyBlock = args.companyChanges.length > 0
     ? args.companyChanges.join("<br>")
@@ -133,11 +131,9 @@ function buildBodyHtml(args: {
     <p style="margin:16px 0;">${safeSei}　${safeMei}様</p>
     <p style="margin:16px 0;">いつも「Q.PARTNERS」をご利用いただきまして、誠にありがとうございます。<br>
     以下の登録情報の変更が完了しましたので、以下にご連絡いたします。</p>
-    <p style="margin:16px 0;">●会社情報変更<br>${companyBlock}</p>
+    <p style="margin:16px 0;">●法人情報変更<br>${companyBlock}</p>
     <p style="margin:16px 0;">●会員情報変更<br>${userBlock}</p>
     <p style="margin:16px 0;">もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。</p>
-    <p style="margin:16px 0;">お客様の登録情報は、ログイン後「マイページ」にてご確認いただけます。<br>
-    マイページ(URL)：<a href="${safeSiteUrl}/mypage/">${safeSiteUrl}/mypage/</a></p>
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="margin:16px 0;font-size:12px;color:#999;">
       このメールは、ご登録されたメールアドレス宛に自動的に送信されています。<br>
@@ -169,16 +165,10 @@ export async function sendAttrChangeNotification(ctx: AttrChangeMailContext): Pr
     return;
   }
 
-  const siteUrl = process.env.SITE_URL;
-  if (!siteUrl) {
-    console.warn(`${ctx.callerRoute} SITE_URL 환경변수 미설정 — fallback(${SITE_URL_FALLBACK}) 사용`);
-  }
-
   const html = buildBodyHtml({
     recipientName: ctx.recipientName,
     companyChanges,
     userChanges,
-    siteUrl: siteUrl ?? SITE_URL_FALLBACK,
   });
 
   await sendNotificationMail({
