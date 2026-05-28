@@ -13,7 +13,7 @@ import {
   passwordResetMailHtml,
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
-import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
+import { SITE_DEFAULTS, SITE_URL, QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -375,31 +375,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. 기존 미사용 토큰 무효화 + 새 토큰 생성 (트랜잭션)
+    // 5. 새 토큰 생성 (기존 토큰 무효화는 메일 발송 성공 후로 연기)
     //    토큰의 userId 는 매칭 회원의 평문 email 로 통일 — verify/confirm 라우트가 email 기준 조회.
-    //    updateMany where 에 userType 포함 — 동일 email 이 다른 userType 에 존재해도
-    //    해당 userType 토큰만 무효화 (Boston Review HIGH #2, 2026-05-06).
+    //    MF-5: 기존 유효 토큰을 선제 무효화했다가 메일 발송 실패 시 사용자가 이전에 받은
+    //          유효 링크도 모두 잃는 문제가 있었음. → 메일 발송 성공 후 invalidate 수행.
+    //          실패 경로(HTTPS 가드 / 메일 발송 실패)에서는 신규 토큰만 제거.
+    //          (admin/reset-password 라우트와 동일 패턴)
     const rawToken = generateRawResetToken();
     const token = hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1시간
 
     try {
-      await prisma.$transaction([
-        prisma.passwordResetToken.updateMany({
-          where: { userType: userTp, userId: resolvedEmail, used: false },
-          data: { used: true },
-        }),
-        prisma.passwordResetToken.create({
-          data: {
-            userType: userTp,
-            userId: resolvedEmail,
-            loginId: resolvedLoginId,
-            token,
-            expiresAt,
-          },
-        }),
-      ]);
-    } catch (error) {
+      await prisma.passwordResetToken.create({
+        data: {
+          userType: userTp,
+          userId: resolvedEmail,
+          loginId: resolvedLoginId,
+          token,
+          expiresAt,
+        },
+      });
+    } catch (error: unknown) {
       console.error(`${LOG} 토큰 생성 실패:`, error);
       return NextResponse.json(
         { error: "サーバーエラーが発生しました。" },
@@ -410,8 +406,29 @@ export async function POST(request: NextRequest) {
     // 6. 비밀번호 변경 링크 메일 발송 — 수신자는 매칭 회원의 평문 email
     //    /login 진입 시 reset-token 쿼리를 감지하여 PersonalInfoPopup(会員情報の設定)을 자동 오픈한다.
     //    (구 /password-reset 풀페이지 → 신 /login?reset-token=… popup 흐름 — PR #150 정책 흡수)
-    const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
-    const resetUrl = `${siteUrl}/login?reset-token=${rawToken}`;
+    //
+    // HTTPS 검증: 운영환경에서 http 로 링크가 발송되면 토큰이 평문으로 네트워크에 노출됨.
+    // (admin/reset-password 라우트와 동일 가드)
+    if (process.env.NODE_ENV === "production" && !SITE_URL.startsWith("https://")) {
+      console.error(`${LOG} SITE_URL이 https로 시작하지 않음:`, SITE_URL);
+      // MF-5: 신규 토큰만 삭제. 기존 유효 토큰은 아직 무효화하지 않았으므로
+      //       사용자가 이전에 받은 링크는 그대로 유효하게 유지된다.
+      //       (메일 미발송 + 신규 토큰 잔류 시 다음 요청의 rate limit 카운트에 영향 주지 않도록 즉시 롤백.)
+      await prisma.passwordResetToken
+        .deleteMany({ where: { token } })
+        .catch((dbError: unknown) => {
+          console.error(
+            `${LOG} 토큰 롤백 실패 — orphan 토큰 잔류, tokenHashPrefix:`,
+            token.slice(0, 8),
+            dbError,
+          );
+        });
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました。" },
+        { status: 500 },
+      );
+    }
+    const resetUrl = `${SITE_URL}/login?reset-token=${rawToken}`;
 
     try {
       await sendMail({
@@ -419,12 +436,14 @@ export async function POST(request: NextRequest) {
         subject: PASSWORD_RESET_SUBJECT,
         html: passwordResetMailHtml({ resetUrl }),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         `${LOG} 메일 발송 실패`,
         error instanceof Error ? { message: error.message } : error,
       );
-      // 토큰 삭제 (rate limit 미소모 — count 쿼리에서 제외)
+      // MF-5: 신규 토큰만 삭제. 기존 유효 토큰은 아직 무효화하지 않았으므로
+      //       사용자가 이전에 받은 링크는 그대로 유효하게 유지된다.
+      //       (rate limit 미소모 — count 쿼리에서 제외)
       await prisma.passwordResetToken
         .deleteMany({ where: { token } })
         .catch((dbError: unknown) => {
@@ -440,6 +459,27 @@ export async function POST(request: NextRequest) {
             "メールの送信に失敗しました。しばらくしてからもう一度お試しください。",
         },
         { status: 500 },
+      );
+    }
+
+    // MF-5: 메일 발송 성공 후 기존 유효 토큰 무효화 (신규 토큰은 제외).
+    //       실패해도 사용자 입장에서는 메일을 받은 상태이므로 치명적이지 않음 — WARN 로그로 남김.
+    //       userType 조건 포함 — 동일 email 이 다른 userType 에 존재해도 해당 userType 토큰만 무효화
+    //       (Boston Review HIGH #2, 2026-05-06).
+    try {
+      await prisma.passwordResetToken.updateMany({
+        where: {
+          userType: userTp,
+          userId: resolvedEmail,
+          used: false,
+          token: { not: token },
+        },
+        data: { used: true },
+      });
+    } catch (invalidateError: unknown) {
+      console.warn(
+        `${LOG} 기존 토큰 무효화 실패 — 신규 링크는 정상 발송됨:`,
+        invalidateError,
       );
     }
 
