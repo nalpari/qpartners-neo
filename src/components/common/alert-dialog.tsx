@@ -48,7 +48,7 @@ export function AlertDialog() {
       >
         {/* 메시지 영역 */}
         <div className="bg-[#f7f9fb] border border-[#e2e9f1] rounded-[12px] p-[24px] w-full">
-          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] text-center whitespace-pre-line break-keep">
+          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] text-center whitespace-pre-line">
             {options.message}
           </p>
         </div>

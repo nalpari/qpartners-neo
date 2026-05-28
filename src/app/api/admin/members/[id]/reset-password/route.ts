@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireMenuPermission } from "@/lib/auth";
-import { SITE_DEFAULTS } from "@/lib/config";
+import { SITE_URL } from "@/lib/config";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -147,20 +147,32 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // 6. 비밀번호 변경 링크 메일 발송
-    const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
     // HTTPS 검증: 운영환경에서 http로 링크가 발송되면 토큰이 평문으로 네트워크에 노출됨.
-    if (process.env.NODE_ENV === "production" && !siteUrl.startsWith("https://")) {
+    // (password-reset/request 라우트와 동일 가드)
+    if (process.env.NODE_ENV === "production" && !SITE_URL.startsWith("https://")) {
       console.error(
         "[POST /api/admin/members/:id/reset-password] SITE_URL이 https로 시작하지 않음:",
-        siteUrl,
+        SITE_URL,
       );
+      // MF-5: 신규 토큰이 DB 에 적재된 상태 — 메일 미발송 + 토큰 잔류 시
+      //       다음 요청의 rate limit 카운트에 영향 주지 않도록 즉시 롤백.
+      //       기존 유효 토큰은 아직 무효화하지 않았으므로 사용자가 이전에 받은 링크는 그대로 유효.
+      await prisma.passwordResetToken
+        .deleteMany({ where: { token } })
+        .catch((dbError: unknown) => {
+          console.error(
+            "[POST /api/admin/members/:id/reset-password] 토큰 롤백 실패 — orphan 토큰 잔류, tokenHashPrefix:",
+            token.slice(0, 8),
+            dbError,
+          );
+        });
       return NextResponse.json(
         { error: "サーバー設定エラーが発生しました" },
         { status: 500 },
       );
     }
     // URL에는 원본 토큰을 사용 — 사용자가 링크를 열면 해싱 후 DB 조회
-    const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
+    const resetUrl = `${SITE_URL}/password-reset?token=${rawToken}`;
 
     try {
       await sendMail({

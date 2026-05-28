@@ -7,7 +7,7 @@ interface SignupCompleteMailParams {
   siteUrl: string;
 }
 
-/** 회원가입 승인완료 메일 HTML 템플릿 (화면설계서 p.19 기반, 일본어+한국어) */
+/** 회원가입 승인완료 메일 HTML 템플릿 (화면설계서 p.19 기반, 일본어) */
 export function signupCompleteMailHtml({
   userNm,
   email,
@@ -27,7 +27,6 @@ export function signupCompleteMailHtml({
   const safeUserNm = escapeHtml(userNm);
   const safeEmail = escapeHtml(email);
   const loginUrl = new URL("/login", origin).toString();
-  const mypageUrl = new URL("/mypage", origin).toString();
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -50,7 +49,6 @@ export function signupCompleteMailHtml({
     <p style="margin:20px 0;">
       <a href="${loginUrl}" style="display:inline-block;padding:12px 24px;background:#0066cc;color:#fff;text-decoration:none;border-radius:4px;">ログインはこちら</a>
     </p>
-    <p>マイページ: <a href="${mypageUrl}" style="color:#0066cc;">${mypageUrl}</a></p>
     <p style="color:#666;font-size:12px;">
       ※本メールにお心当たりのない場合はご利用状況をご確認の上、ご不明な場合は下記連絡先までお問い合わせ下さい。<br>
       ※本メールアドレスは送信専用です。返信いただきましてもお返事できませんので、ご了承ください
