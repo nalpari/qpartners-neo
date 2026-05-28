@@ -13,7 +13,7 @@ import {
   passwordResetMailHtml,
   PASSWORD_RESET_SUBJECT,
 } from "@/lib/mail-templates/password-reset";
-import { SITE_DEFAULTS, QSP_API } from "@/lib/config";
+import { SITE_DEFAULTS, SITE_URL, QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -410,8 +410,28 @@ export async function POST(request: NextRequest) {
     // 6. 비밀번호 변경 링크 메일 발송 — 수신자는 매칭 회원의 평문 email
     //    /login 진입 시 reset-token 쿼리를 감지하여 PersonalInfoPopup(会員情報の設定)을 자동 오픈한다.
     //    (구 /password-reset 풀페이지 → 신 /login?reset-token=… popup 흐름 — PR #150 정책 흡수)
-    const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
-    const resetUrl = `${siteUrl}/login?reset-token=${rawToken}`;
+    //
+    // HTTPS 검증: 운영환경에서 http 로 링크가 발송되면 토큰이 평문으로 네트워크에 노출됨.
+    // (admin/reset-password 라우트와 동일 가드)
+    if (process.env.NODE_ENV === "production" && !SITE_URL.startsWith("https://")) {
+      console.error(`${LOG} SITE_URL이 https로 시작하지 않음:`, SITE_URL);
+      // 이 시점엔 신규 토큰이 DB 에 적재된 상태 — 메일 미발송 + 토큰 잔류 시
+      // 다음 요청의 rate limit 카운트에 영향 주지 않도록 즉시 롤백.
+      await prisma.passwordResetToken
+        .deleteMany({ where: { token } })
+        .catch((dbError: unknown) => {
+          console.error(
+            `${LOG} 토큰 롤백 실패 — orphan 토큰 잔류, tokenHashPrefix:`,
+            token.slice(0, 8),
+            dbError,
+          );
+        });
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました。" },
+        { status: 500 },
+      );
+    }
+    const resetUrl = `${SITE_URL}/login?reset-token=${rawToken}`;
 
     try {
       await sendMail({

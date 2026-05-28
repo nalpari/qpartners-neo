@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireMenuPermission } from "@/lib/auth";
-import { SITE_DEFAULTS } from "@/lib/config";
+import { SITE_URL } from "@/lib/config";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -147,12 +147,11 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // 6. 비밀번호 변경 링크 메일 발송
-    const siteUrl = process.env.SITE_URL ?? SITE_DEFAULTS.url;
     // HTTPS 검증: 운영환경에서 http로 링크가 발송되면 토큰이 평문으로 네트워크에 노출됨.
-    if (process.env.NODE_ENV === "production" && !siteUrl.startsWith("https://")) {
+    if (process.env.NODE_ENV === "production" && !SITE_URL.startsWith("https://")) {
       console.error(
         "[POST /api/admin/members/:id/reset-password] SITE_URL이 https로 시작하지 않음:",
-        siteUrl,
+        SITE_URL,
       );
       return NextResponse.json(
         { error: "サーバー設定エラーが発生しました" },
@@ -160,7 +159,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
     // URL에는 원본 토큰을 사용 — 사용자가 링크를 열면 해싱 후 DB 조회
-    const resetUrl = `${siteUrl}/password-reset?token=${rawToken}`;
+    const resetUrl = `${SITE_URL}/password-reset?token=${rawToken}`;
 
     try {
       await sendMail({

@@ -200,7 +200,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 **보안 방어:**
 - Rate Limit: IP 기반 20/분, IP 미식별 시 즉시 거부 (fail-closed).
-- Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`SITE_URL\` env / \`SITE_DEFAULTS.url\` 을 base 로 고정
+- Open Redirect 방어: \`request.url\` 기반 리다이렉트 금지 — \`config.SITE_URL\` 을 base 로 고정 (env 누락 시 production 부팅 실패)
 - 계정 상태: \`statCd === "A"\` 만 허용 (삭제/탈퇴 차단)
 - 고권한 계정: SUPER_ADMIN 자동로그인 거부, ADMIN 은 감사 로그 후 허용 (twoFactorVerified=false 로 2FA 강제)
 - userTp 교차 검증: cipher 평문은 userId 단독 → 쿼리 \`userTp\` 와 QSP 응답 \`userTp\` 일치 검증 (변조 방어)
@@ -229,7 +229,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             headers: {
               Location: {
                 schema: { type: "string" },
-                description: "리다이렉트 대상 URL (SITE_URL/SITE_DEFAULTS.url base — Host 헤더 조작 방어)",
+                description: "리다이렉트 대상 URL (config.SITE_URL base — Host 헤더 조작 방어)",
               },
               "Set-Cookie": {
                 schema: { type: "string" },
@@ -445,7 +445,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "일반 회원가입 (QSP 프록시)",
-        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송.",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 가입 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
         requestBody: {
           required: true,
           content: {
@@ -467,6 +467,12 @@ export const openApiSpec: OpenAPIV3.Document = {
                       properties: {
                         userName: { type: "string", example: "山田太郎" },
                         email: { type: "string", example: "user@example.com" },
+                        mailDelivery: {
+                          type: "string",
+                          enum: ["sent", "failed"],
+                          example: "sent",
+                          description: "승인완료 메일 발송 결과 — failed 일 때 UI 에서 메일 미수신 안내 표시 (QSP 가입 자체는 성공).",
+                        },
                       },
                     },
                   },
@@ -483,6 +489,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "409": errorResponse("이미 사용중인 이메일입니다"),
+          "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
