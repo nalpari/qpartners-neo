@@ -262,9 +262,25 @@ export const SMTP_DEFAULTS = {
 } as const;
 
 // ─── Site ───
+// SITE_URL 정책 (2026-05-28 정리)
+//   - production 배포: env 누락 시 부팅 실패 (fail-closed) — 운영 메일 링크가 dev URL 로 흐르는
+//     사고를 차단. 운영 Jenkins credential 에 SITE_URL=https://prod.q-partners.q-cells.jp 명시 필수.
+//   - dev / local: env 미설정 시 http://localhost:3000 fallback (개발 편의).
+//   - `next build` page data 수집 단계(NEXT_PHASE=phase-production-build)에서는 검증 보류 —
+//     APP_ENV/SITE_URL 모두 런타임 컨테이너에서 주입되므로 빌드 단계 강제 차단은 회귀 위험.
+
+const rawSiteUrl = process.env.SITE_URL?.trim();
+if (isProductionDeploy && !isBuildPhase && !rawSiteUrl) {
+  throw new Error("SITE_URL is required in production");
+}
+
+/**
+ * 사이트 base URL — 메일 링크·자동로그인 inbound redirect base 로 사용.
+ * production 부팅 단계에서 env 누락 시 부팅 실패 (fail-closed).
+ */
+export const SITE_URL = rawSiteUrl || "http://localhost:3000";
 
 export const SITE_DEFAULTS = {
-  url: "https://dev.q-partners.q-cells.jp",
   accsSiteCd: "QPARTNERS",
 } as const;
 

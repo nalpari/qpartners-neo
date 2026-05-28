@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { resolveAuthRole } from "@/lib/auth";
 import { decryptAutoLogin } from "@/lib/auto-login-crypto";
-import { SITE_DEFAULTS } from "@/lib/config";
+import { SITE_URL } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
 import { logInbound, maskUserId } from "@/lib/interface-logger";
 import { COOKIE_NAME, signToken } from "@/lib/jwt";
@@ -51,7 +51,7 @@ import { userTpSchema } from "@/lib/schemas/common";
  *
  * 보안 방어 계층:
  *   - Rate Limit: IP 기반 20/분, IP 식별 불가 시 즉시 거부 (fail-closed). QSP DDoS 대행·AES 키 프로빙 차단.
- *   - Open Redirect 방어: request.url 대신 SITE_URL/SITE_DEFAULTS.url 을 base 로 사용 (Host 헤더 조작 무효화).
+ *   - Open Redirect 방어: request.url 대신 config.SITE_URL 을 base 로 사용 (Host 헤더 조작 무효화).
  *   - statCd 검증: 삭제("D")/탈퇴("R") 계정 자동로그인 차단.
  *   - authRole fail-closed: catch 폴백은 응답 userTp 기준 (login route 와 동일 패턴).
  *   - 리다이렉트 302: 307(메서드 보존·캐시 가능) 대신 302 로 SSO 폴백 의도 명확화.
@@ -76,9 +76,9 @@ const inboundQuerySchema = z.object({
 
 const JWT_MAX_AGE_SEC = 60 * 60 * 8; // 8시간 — 일반 로그인과 동일
 
-// Host 헤더 조작 기반 Open Redirect 방어 — env 없으면 사이트 기본 URL 사용.
+// Host 헤더 조작 기반 Open Redirect 방어 — config.SITE_URL 을 base 로 고정.
 // 다른 route(signup, password-reset 등)와 동일한 SITE_URL 관례를 따른다.
-const BASE_URL = process.env.SITE_URL ?? SITE_DEFAULTS.url;
+const BASE_URL = SITE_URL;
 
 // Rate Limit — AES 복호화·QSP 외부 호출·JWT 서명은 모두 고비용이라 무제한 호출 시 QSP DDoS 대행,
 // AES 키 프로빙 벡터가 됨. IP 식별 불가 시 즉시 거부 (fail-closed).
