@@ -174,10 +174,10 @@ export function BulkMailTable({ searchParams, pageSize: perPage, onPageSizeChang
           />
         </div>
         <div className="flex items-center gap-[6px]">
-          {/* 「メール発送」 — 패턴 A (PermissionGate). canCreate=false 시 버튼 자체 숨김 */}
+          {/* 「新規メール」 — 패턴 A (PermissionGate). canCreate=false 시 버튼 자체 숨김 */}
           <PermissionGate menuCode={ADMIN_MENU.BULK_MAIL} action="create" fallback={null}>
             <Button variant="primary" onClick={handleSendMail}>
-              メール発送
+              新規メール
             </Button>
           </PermissionGate>
           <PageSizeSelect value={perPage} onChange={handlePerPageChange} />
