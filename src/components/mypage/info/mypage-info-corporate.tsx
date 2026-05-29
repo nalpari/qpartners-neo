@@ -247,6 +247,7 @@ function EditFieldContent({
           value={data[field.key]}
           onChange={(v) => updateField(field.key)(sanitizePhoneInput(v))}
           type="tel"
+          placeholder="000-0000-0000"
           className="h-[42px] w-full"
         />
       );

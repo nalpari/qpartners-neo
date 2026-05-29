@@ -14,9 +14,14 @@ export function formatDateISO(date: Date | string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** 전화·FAX 입력값 정규화 — 숫자와 하이픈(-)만 허용, 그 외 문자는 제거. */
+/**
+ * 전화·FAX 입력값 정규화 — 전각→반각(NFKC) 변환 후 숫자와 하이픈(-)만 허용, 그 외 문자는 제거.
+ *
+ * 일본어 IME(PC)에서 전각 숫자(０-９)·전각 하이픈(－)·전각 공백을 입력해도 NFKC 정규화로
+ * 반각으로 변환된 뒤 sanitize 되므로 입력값이 통째로 사라지는 문제를 방지한다.
+ */
 export function sanitizePhoneInput(value: string): string {
-  return value.replace(/[^0-9-]/g, "");
+  return value.normalize("NFKC").replace(/[^0-9-]/g, "");
 }
 
 /**

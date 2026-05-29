@@ -324,7 +324,7 @@ export function SignupContents() {
                   value={form.phone}
                   onChange={(v) => updateField("phone", sanitizePhoneInput(v))}
                   type="tel"
-                  placeholder="000-0000-0000 / 0000-000-000"
+                  placeholder="000-0000-0000"
                 />
               </FormRow>
 
@@ -334,7 +334,7 @@ export function SignupContents() {
                   value={form.fax}
                   onChange={(v) => updateField("fax", sanitizePhoneInput(v))}
                   type="tel"
-                  placeholder="000-0000-0000 / 0000-000-000"
+                  placeholder="000-0000-0000"
                 />
               </FormRow>
             </div>
