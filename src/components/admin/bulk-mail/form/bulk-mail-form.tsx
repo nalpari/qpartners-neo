@@ -68,8 +68,18 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const [subject, setSubject] = useState(initialData?.subject ?? "");
   const [body, setBody] = useState(initialData?.body ?? "");
   const [files, setFiles] = useState<File[]>([]);
+  // 편집 모드에서 삭제 표시한 기존 서버 첨부 ID — 저장(登録/下書き保存) 시 deleteAttachmentIds 로 전송.
+  const [deletedAttachmentIds, setDeletedAttachmentIds] = useState<number[]>([]);
 
   const editId = initialData?.id;
+
+  // 삭제 표시분을 제외한 표시용 서버 첨부 목록 (파생값).
+  const visibleAttachments = (initialData?.attachments ?? []).filter(
+    (a) => !deletedAttachmentIds.includes(a.id),
+  );
+
+  const handleRemoveServerAttachment = (id: number) =>
+    setDeletedAttachmentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
 
   // Design Ref: §3.2 — 공통 mutationFn (edit → PUT, 그 외 → POST)
   const submitToApi = (fd: FormData) =>
@@ -188,7 +198,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       onConfirm: () => {
         const fd = buildFormData({
           senderName, targetRoleCodes, optOut, subject, body,
-          status: "pending", files,
+          status: "pending", files, deleteAttachmentIds: deletedAttachmentIds,
         });
         submitMutation.mutate(fd);
       },
@@ -211,7 +221,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     }
     const fd = buildFormData({
       senderName, targetRoleCodes, optOut, subject, body,
-      status: "draft", files,
+      status: "draft", files, deleteAttachmentIds: deletedAttachmentIds,
     });
     draftMutation.mutate(fd);
   };
@@ -344,7 +354,8 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         <BulkMailFormAttachment
           files={files}
           onFilesChange={setFiles}
-          serverAttachments={initialData?.attachments}
+          serverAttachments={visibleAttachments}
+          onRemoveServerAttachment={isEditMode ? handleRemoveServerAttachment : undefined}
           disabled={isFormDisabled}
         />
       </section>

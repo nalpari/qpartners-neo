@@ -20,6 +20,8 @@ interface BulkMailFormAttachmentProps {
   onFilesChange: (files: File[]) => void;
   /** 서버 첨부파일 메타데이터 (상세/편집 모드) */
   serverAttachments?: MassMailAttachment[];
+  /** 편집 모드: 기존 서버 첨부 삭제 콜백. 미전달 시 서버 첨부 삭제 버튼 미노출. */
+  onRemoveServerAttachment?: (id: number) => void;
   disabled: boolean;
 }
 
@@ -34,6 +36,7 @@ export function BulkMailFormAttachment({
   files,
   onFilesChange,
   serverAttachments = [],
+  onRemoveServerAttachment,
   disabled,
 }: BulkMailFormAttachmentProps) {
   const { openAlert } = useAlertStore();
@@ -161,6 +164,21 @@ export function BulkMailFormAttachment({
                 <span className="font-['Noto_Sans_JP'] text-[12px] text-[#999]">
                   ({formatFileSize(att.fileSize)})
                 </span>
+              )}
+              {!disabled && onRemoveServerAttachment && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveServerAttachment(att.id)}
+                  className="shrink-0 cursor-pointer transition-opacity duration-150 hover:opacity-70"
+                  aria-label={`${att.fileName}を削除`}
+                >
+                  <Image
+                    src="/asset/images/contents/file_delete.svg"
+                    alt="削除"
+                    width={18}
+                    height={18}
+                  />
+                </button>
               )}
             </div>
           ))}

@@ -263,6 +263,8 @@ export function buildFormData(params: {
   body: string;
   status: "draft" | "pending";
   files: File[];
+  /** 편집 모드: 삭제할 기존 서버 첨부파일 ID 목록 (PUT 라우트 deleteAttachmentIds). */
+  deleteAttachmentIds?: number[];
 }): FormData {
   const fd = new FormData();
   fd.append("senderName", params.senderName);
@@ -276,6 +278,11 @@ export function buildFormData(params: {
 
   for (const file of params.files) {
     fd.append("files", file);
+  }
+
+  // 편집 모드에서 기존 첨부 삭제 — PUT 라우트가 JSON 배열로 파싱. 빈 배열은 생략.
+  if (params.deleteAttachmentIds && params.deleteAttachmentIds.length > 0) {
+    fd.append("deleteAttachmentIds", JSON.stringify(params.deleteAttachmentIds));
   }
 
   return fd;
