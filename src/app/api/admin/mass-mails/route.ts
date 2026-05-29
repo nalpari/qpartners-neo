@@ -6,9 +6,8 @@ import { randomUUID } from "crypto";
 
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
-import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, isLegacyOfficeOLE2, validateFiles } from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
@@ -22,9 +21,6 @@ import {
   massMailCreateSchema,
 } from "@/lib/schemas/mass-mail";
 import type { Prisma } from "@/generated/prisma/client";
-
-/** 첨부파일 최대 개수 */
-const MAX_FILES = 10;
 
 const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 
@@ -68,7 +64,8 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
       { status: 400 },
     );
   }
-  const MAX_BATCH_SIZE = MAX_FILE_SIZE * MAX_FILES + 1024 * 1024;
+  // 메일 첨부 합계 50MB 정책 + multipart boundary/헤더 오버헤드 여유 10MB.
+  const MAX_BATCH_SIZE = MAX_FILE_SIZE + 10 * 1024 * 1024;
   if (contentLength > MAX_BATCH_SIZE) {
     console.warn("[POST /api/admin/mass-mails] Content-Length 초과:", contentLength);
     return NextResponse.json(
@@ -123,15 +120,6 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 운영자 정의 추가 권한은 QSP 회원 매핑 미정 — 발송 불가 (silent skip 방지, 명시적 거부)
-  const unsupportedRoles = data.targetRoleCodes.filter((c) => !SYSTEM_ROLE_CODES.has(c));
-  if (unsupportedRoles.length > 0) {
-    return NextResponse.json(
-      { error: "カスタム権限への一括送信は現在対応していません", unsupportedRoleCodes: unsupportedRoles },
-      { status: 400 },
-    );
-  }
-
   // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보
   if (data.targetRoleCodes.includes("SEKO")) {
     return NextResponse.json(
@@ -144,18 +132,20 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
   const rawFiles = formData.getAll("files");
   const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
 
-  if (files.length > MAX_FILES) {
-    return NextResponse.json(
-      { error: `添付ファイルは${MAX_FILES}件以内にしてください` },
-      { status: 400 },
-    );
-  }
-
   if (files.length > 0) {
     // 메일 정책 — 콘텐츠보다 좁은 화이트리스트 (수신자 보호: 동영상/압축/한글 등 제외).
     const validation = validateFiles(files, "mail");
     if (!validation.ok) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
+    // 합계 용량 검증 — 신규 업로드 합계 ≤ MAX_FILE_SIZE (콘텐츠 첨부와 동일 정책).
+    const incomingBytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (incomingBytes > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
+        { status: 400 },
+      );
     }
   }
 
@@ -224,6 +214,15 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
+      // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사 로깅만 수행 (차단 X).
+      // contents 라우트와 동일 정책 (PR #222 HIGH) — xls/ppt 허용 시 추적 가능성 확보.
+      const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+      if (isLegacyOfficeOLE2(head)) {
+        console.warn("[POST /api/admin/mass-mails] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+          fileName: file.name,
+          size: file.size,
+        });
+      }
       await writeFile(absolutePath, buffer);
       return { error: false as const, absolutePath, file, filePath };
     });

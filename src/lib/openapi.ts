@@ -3259,6 +3259,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: ADM_BULK_MAIL.update)"),
           "404": errorResponse("메일 없음"),
           "409": errorResponse("동시 수정으로 draft 상태 변경됨"),
+          "411": errorResponse("Content-Length 필요"),
+          "413": errorResponse("요청 크기 초과"),
           "500": errorResponse("수정 실패"),
         },
       },
