@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFiles } from "@/lib/file-validation";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, isLegacyOfficeOLE2, validateFiles } from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
@@ -214,6 +214,15 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
+      // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사 로깅만 수행 (차단 X).
+      // contents 라우트와 동일 정책 (PR #222 HIGH) — xls/ppt 허용 시 추적 가능성 확보.
+      const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+      if (isLegacyOfficeOLE2(head)) {
+        console.warn("[POST /api/admin/mass-mails] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+          fileName: file.name,
+          size: file.size,
+        });
+      }
       await writeFile(absolutePath, buffer);
       return { error: false as const, absolutePath, file, filePath };
     });

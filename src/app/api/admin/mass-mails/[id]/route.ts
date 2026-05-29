@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 
 import { canModifyResource, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFiles } from "@/lib/file-validation";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, isLegacyOfficeOLE2, validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
 import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
@@ -246,6 +246,32 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (authResult instanceof NextResponse) return authResult;
     const { user } = authResult;
 
+    // 1-1. Content-Length 사전 차단 — FormData 파싱 전 대용량 body 거부 (POST 와 동일 정책).
+    const rawContentLength = request.headers.get("content-length");
+    if (rawContentLength === null) {
+      console.warn("[PUT /api/admin/mass-mails/:id] Content-Length 누락 — chunked encoding 거부");
+      return NextResponse.json(
+        { error: "Content-Lengthヘッダーが必要です" },
+        { status: 411 },
+      );
+    }
+    const contentLength = Number(rawContentLength);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      return NextResponse.json(
+        { error: "リクエストサイズが不正です" },
+        { status: 400 },
+      );
+    }
+    // 메일 첨부 합계 50MB 정책 + multipart boundary/헤더 오버헤드 여유 10MB.
+    const MAX_BATCH_SIZE = MAX_FILE_SIZE + 10 * 1024 * 1024;
+    if (contentLength > MAX_BATCH_SIZE) {
+      console.warn("[PUT /api/admin/mass-mails/:id] Content-Length 초과:", contentLength);
+      return NextResponse.json(
+        { error: "リクエストサイズが大きすぎます" },
+        { status: 413 },
+      );
+    }
+
     // 2. ID 파라미터 검증
     const { id: rawId } = await params;
     const idResult = massMailIdParamSchema.safeParse(rawId);
@@ -420,6 +446,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
+        // Legacy Office (OLE2) 감지 — 매크로 유무는 stream 분석 필요. 감사 로깅만 수행 (차단 X).
+        // contents 라우트와 동일 정책 (PR #222 HIGH) — xls/ppt 허용 시 추적 가능성 확보.
+        const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
+        if (isLegacyOfficeOLE2(head)) {
+          console.warn("[PUT /api/admin/mass-mails/:id] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+            fileName: file.name,
+            size: file.size,
+          });
+        }
         await writeFile(absolutePath, buffer);
         return { error: false as const, absolutePath, file, filePath };
       }));
