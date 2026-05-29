@@ -14,6 +14,11 @@ export function formatDateISO(date: Date | string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** 전화·FAX 입력값 정규화 — 숫자와 하이픈(-)만 허용, 그 외 문자는 제거. */
+export function sanitizePhoneInput(value: string): string {
+  return value.replace(/[^0-9-]/g, "");
+}
+
 /**
  * 사용자 표시명 정규화 — "姓 名" (반각공백) 형태로 통일.
  *

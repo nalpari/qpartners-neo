@@ -2,6 +2,7 @@
 
 import { InputBox } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
+import { sanitizePhoneInput } from "@/lib/format";
 import type { ProfileData, EditFormData } from "./mypage-info";
 
 // Design Ref: §4.2 — userType 라벨 매핑
@@ -117,7 +118,7 @@ interface EditField {
   label: string;
   key: keyof EditFormData;
   required?: boolean;
-  type?: "input" | "zip" | "address";
+  type?: "input" | "zip" | "address" | "tel";
 }
 
 // Design Ref: §2.2 — GENERAL, SEKO만 법인정보 수정 가능
@@ -127,11 +128,11 @@ function getEditFields(userType: string): EditField[] {
     { label: "会社名ひらがな", key: "compNmKana", type: "input" },
     { label: "郵便番号", key: "zipcode", required: true, type: "zip" },
     { label: "住所", key: "address1", required: true, type: "address" },
-    { label: "電話番号", key: "telNo", required: true, type: "input" },
+    { label: "電話番号", key: "telNo", required: true, type: "tel" },
   ];
 
   // SEKO는 FAX 필수
-  fields.push({ label: "FAX番号", key: "fax", required: userType === "SEKO", type: "input" });
+  fields.push({ label: "FAX番号", key: "fax", required: userType === "SEKO", type: "tel" });
 
   return fields;
 }
@@ -238,6 +239,16 @@ function EditFieldContent({
           <InputBox value={data.address1} disabled className="h-[42px]" />
           <InputBox value={data.address2} onChange={updateField("address2")} className="h-[42px]" />
         </div>
+      );
+
+    case "tel":
+      return (
+        <InputBox
+          value={data[field.key]}
+          onChange={(v) => updateField(field.key)(sanitizePhoneInput(v))}
+          type="tel"
+          className="h-[42px] w-full"
+        />
       );
 
     default:
