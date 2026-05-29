@@ -5,11 +5,8 @@
 import { useState, useRef } from "react";
 import Image from "next/image";
 import { useAlertStore } from "@/lib/store";
-import { ALLOWED_EXTENSIONS_MAIL } from "@/lib/file-validation";
+import { ALLOWED_EXTENSIONS_MAIL, MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-validation";
 import type { MassMailAttachment } from "@/components/admin/bulk-mail/bulk-mail-types";
-
-const MAX_FILES = 10;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 /** 파일 이름에서 소문자 확장자 추출 (없으면 빈 문자열) */
 function getExt(name: string): string {
@@ -43,16 +40,10 @@ export function BulkMailFormAttachment({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (fileList: FileList) => {
-    const newFiles = Array.from(fileList);
+    const incoming = Array.from(fileList);
 
-    // 개수 제한
-    if (files.length + newFiles.length > MAX_FILES) {
-      openAlert({ type: "alert", message: `添付ファイルは${MAX_FILES}件以内にしてください。` });
-      return;
-    }
-
-    // 확장자 사전 검증 — BE `"mail"` 정책과 동일 화이트리스트. UX 즉시 피드백.
-    const invalidExt = newFiles.find((f) => !ALLOWED_EXTENSIONS_MAIL.has(getExt(f.name)));
+    // 1) 확장자 화이트리스트 사전 검증 — BE `"mail"` 정책과 동일 화이트리스트. UX 즉시 피드백.
+    const invalidExt = incoming.find((f) => !ALLOWED_EXTENSIONS_MAIL.has(getExt(f.name)));
     if (invalidExt) {
       openAlert({
         type: "alert",
@@ -61,14 +52,21 @@ export function BulkMailFormAttachment({
       return;
     }
 
-    // 파일 크기 제한
-    const oversized = newFiles.find((f) => f.size > MAX_FILE_SIZE);
-    if (oversized) {
-      openAlert({ type: "alert", message: `ファイルサイズが上限(10MB)を超えています：${oversized.name}` });
+    // 2) 합계 용량 검증 — 서버 첨부 + 미저장 신규 + 이번 추가 ≤ MAX_FILE_SIZE.
+    //    serverAttachments.fileSize 는 BE Prisma BigInt nullable 응답 가능성 방어 (?? 0).
+    const currentTotal =
+      serverAttachments.reduce((sum, f) => sum + (f.fileSize ?? 0), 0) +
+      files.reduce((sum, f) => sum + f.size, 0);
+    const incomingTotal = incoming.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotal + incomingTotal > MAX_FILE_SIZE) {
+      openAlert({
+        type: "alert",
+        message: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています。`,
+      });
       return;
     }
 
-    onFilesChange([...files, ...newFiles]);
+    onFilesChange([...files, ...incoming]);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -136,6 +134,9 @@ export function BulkMailFormAttachment({
           />
           <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#90B2CD]">
             ここをクリックするか、ファイルをDrag＆Dropして添付することができます
+          </p>
+          <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#A0A8B0]">
+            最大アップロード容量（合計）：{MAX_FILE_SIZE_MB}MB
           </p>
         </div>
       )}

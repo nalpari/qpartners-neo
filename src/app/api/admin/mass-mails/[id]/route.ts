@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 
 import { canModifyResource, resolveActiveRoleCodes, resolveAuthorSuperAdmin, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { validateFiles } from "@/lib/file-validation";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, validateFiles } from "@/lib/file-validation";
 import { maskEmail } from "@/lib/interface-logger";
 import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
@@ -234,7 +234,6 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
 // ─── PUT /api/admin/mass-mails/:id — 대량메일 수정 (multipart/form-data) ───
 
-const MAX_FILES = 10;
 const LOG_TAG_PUT = "PUT /api/admin/mass-mails/:id";
 
 export async function PUT(request: NextRequest, { params }: Params) {
@@ -261,7 +260,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const existing = await prisma.massMail.findUnique({
       where: { id: idResult.data },
       include: {
-        attachments: { select: { id: true, filePath: true } },
+        attachments: { select: { id: true, filePath: true, fileSize: true } },
       },
     });
 
@@ -358,18 +357,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    // 중복 제거 + 실제 존재하는 첨부파일 ID만 필터링 (중복 ID로 keepCount 음수 방지)
+    // 중복 제거 + 실제 존재하는 첨부파일 ID만 필터링 (잔존 첨부 합계 계산·삭제 처리 정확성 보장)
     const uniqueDeleteIds = new Set(deleteAttachmentIds);
     const validDeleteIds = existing.attachments
       .filter((a) => uniqueDeleteIds.has(a.id))
       .map((a) => a.id);
-    const keepCount = existing.attachments.length - validDeleteIds.length;
-    if (keepCount + newFiles.length > MAX_FILES) {
-      return NextResponse.json(
-        { error: `添付ファイルは${MAX_FILES}件以内にしてください` },
-        { status: 400 },
-      );
-    }
+    const validDeleteSet = new Set(validDeleteIds);
 
     if (newFiles.length > 0) {
       // 메일 정책 — 콘텐츠보다 좁은 화이트리스트 (수신자 보호: 동영상/압축/한글 등 제외).
@@ -377,6 +370,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
       if (!validation.ok) {
         return NextResponse.json({ error: validation.error }, { status: 400 });
       }
+    }
+
+    // 합계 용량 검증 — 유지되는 기존 첨부 + 신규 업로드 합계 ≤ MAX_FILE_SIZE (콘텐츠 첨부와 동일 정책).
+    // fileSize 는 Prisma BigInt nullable → Number 변환, null 은 0 으로 방어.
+    const keptBytes = existing.attachments
+      .filter((a) => !validDeleteSet.has(a.id))
+      .reduce((sum, a) => sum + (a.fileSize !== null ? Number(a.fileSize) : 0), 0);
+    const incomingBytes = newFiles.reduce((sum, f) => sum + f.size, 0);
+    if (keptBytes + incomingBytes > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `添付ファイルの合計容量が${MAX_FILE_SIZE_MB}MBを超えています` },
+        { status: 400 },
+      );
     }
 
     // 6. HTML body sanitization (공통 화이트리스트 설정 사용)
