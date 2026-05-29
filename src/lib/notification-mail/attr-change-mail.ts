@@ -134,7 +134,6 @@ function buildBodyHtml(args: {
     以下の登録情報の変更が完了しましたので、以下にご連絡いたします。</p>
     <p style="margin:16px 0;">●法人情報変更<br>${companyBlock}</p>
     <p style="margin:16px 0;">●会員情報変更<br>${userBlock}</p>
-    <p style="margin:16px 0;">もし本メールの内容に心当たりが無い場合は、大変お手数ですがその旨ご明記のうえ、本メールの内容とともにご返信ください。</p>
     <hr style="border:none;border-top:1px solid #ccc;margin:20px 0;">
     <p style="margin:16px 0;font-size:12px;color:#999;">
       このメールは、ご登録されたメールアドレス宛に自動的に送信されています。<br>
