@@ -6,6 +6,7 @@ import { useState, useRef } from "react";
 import Image from "next/image";
 import { useAlertStore } from "@/lib/store";
 import { ALLOWED_EXTENSIONS_MAIL, MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-validation";
+import { getFileIconByName } from "@/lib/file-icon";
 import type { MassMailAttachment } from "@/components/admin/bulk-mail/bulk-mail-types";
 
 /** 파일 이름에서 소문자 확장자 추출 (없으면 빈 문자열) */
@@ -147,7 +148,7 @@ export function BulkMailFormAttachment({
           {serverAttachments.map((att) => (
             <div key={att.id} className="flex items-center gap-3">
               <Image
-                src="/asset/images/contents/pdfIcon.svg"
+                src={getFileIconByName(att.fileName)}
                 alt=""
                 width={24}
                 height={24}
@@ -172,7 +173,7 @@ export function BulkMailFormAttachment({
           {files.map((file, index) => (
             <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-3">
               <Image
-                src="/asset/images/contents/pdfIcon.svg"
+                src={getFileIconByName(file.name)}
                 alt=""
                 width={24}
                 height={24}
