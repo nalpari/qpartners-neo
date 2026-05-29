@@ -13,9 +13,10 @@
  *   - vbs/wsf/hta: Windows 스크립트
  *
  * TODO(security): Legacy Office (doc/xls/ppt) — OLE2 매크로 실행 위험.
- *   현재 contents 정책은 운영 편의를 위해 doc/xls/ppt 를 허용하되 detectLegacyOfficeFormat
- *   감사 로깅으로 추적한다. 운영 정책 검토 후 차단으로 격상(MIME 매칭 거부) 또는
- *   화이트리스트에서 제거 결정 필요 — [PR #222 보안 리뷰 후속].
+ *   contents 정책은 doc/xls/ppt 를 허용하며 detectLegacyOfficeFormat 감사 로깅으로 추적한다.
+ *   mail 정책은 운영 요구로 xls/ppt 를 허용하나 현재 메일 라우트에는 감사 로깅 미적용 —
+ *   동일 로깅 적용 또는 차단 격상(MIME 매칭 거부)/화이트리스트 제거 결정 필요.
+ *   운영 정책 검토 후 격상 가능 — [PR #222 보안 리뷰 후속].
  *
  * TODO(security): md(text/markdown) — 마크다운 렌더러 도입 시 stored XSS 경로.
  *   현재는 다운로드 시 Content-Disposition: attachment + X-Content-Type-Options: nosniff 로
@@ -46,13 +47,15 @@ export const ALLOWED_EXTENSIONS_CONTENTS = new Set([
  *   - 동영상(mp4/mov)/음성(mp3/wav): 메일 첨부 용량 정책(현 10MB)과 부적합
  *   - 압축(zip/rar/7z): 수신자가 풀어 실행할 위험 — 내부 검증 미도입 상태
  *   - 한글(hwp/hwpx): 외부 수신자 환경 호환성 낮음 + MIME 위조 가능
- *   - 텍스트(txt/csv/md): 의도적 제외. csv 는 Excel CSV Injection 우려, md/txt 는 외부 수신자에게
+ *   - 텍스트(csv/md): 의도적 제외. csv 는 Excel CSV Injection 우려, md 는 외부 수신자에게
  *     일반적이지 않은 첨부 형태로 운영 요구사항 미확인 (필요 시 운영팀 합의 후 추가).
+ *     txt 는 운영 요구로 허용 (plain text, 실행/스크립트 위험 없음).
  *
  * 변경 시 mass-mails 운영 요구사항 검토 + 수신자 보안 영향 평가 필요.
  */
 export const ALLOWED_EXTENSIONS_MAIL = new Set([
-  "pdf", "docx", "xlsx", "pptx",
+  "pdf", "docx", "xlsx", "xls", "pptx", "ppt",
+  "txt",
   "jpg", "jpeg", "png", "gif", "webp", "bmp",
 ]);
 
@@ -88,12 +91,15 @@ export const ALLOWED_MIMES_CONTENTS = [
   "audio/x-wav",
 ];
 
-/** 메일 정책 허용 MIME — 좁은 기본 (문서 OOXML + PDF) */
+/** 메일 정책 허용 MIME — 문서 OOXML + 구버전 Office(xls/ppt) + PDF + plain text */
 export const ALLOWED_MIMES_MAIL = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-powerpoint",
+  "text/plain",
 ];
 
 /** 기존 호환 — 명시되지 않은 호출은 콘텐츠 정책으로 폴백. */
