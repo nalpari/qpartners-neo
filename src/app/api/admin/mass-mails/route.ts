@@ -6,7 +6,6 @@ import { randomUUID } from "crypto";
 
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
-import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { UPLOAD_DIR } from "@/lib/config";
 import { MAX_FILE_SIZE, validateFiles } from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
@@ -119,15 +118,6 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
   if (inactiveRoles.length > 0) {
     return NextResponse.json(
       { error: "無効な権限コードが含まれています", invalidRoleCodes: inactiveRoles },
-      { status: 400 },
-    );
-  }
-
-  // 운영자 정의 추가 권한은 QSP 회원 매핑 미정 — 발송 불가 (silent skip 방지, 명시적 거부)
-  const unsupportedRoles = data.targetRoleCodes.filter((c) => !SYSTEM_ROLE_CODES.has(c));
-  if (unsupportedRoles.length > 0) {
-    return NextResponse.json(
-      { error: "カスタム権限への一括送信は現在対応していません", unsupportedRoleCodes: unsupportedRoles },
       { status: 400 },
     );
   }
