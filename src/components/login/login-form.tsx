@@ -24,7 +24,7 @@ const TAB_CONFIG = {
     title: "当社一般会員にご登録のお客様",
     description:
       "※ ご登録時のメールアドレスとパスワードを入力してください",
-    idPlaceholder: "メール or 施工IDを入力してください",
+    idPlaceholder: "メールアドレスを入力してください。",
     pwPlaceholder: "パスワードを入力してください",
   },
 };

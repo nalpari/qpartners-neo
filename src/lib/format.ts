@@ -15,6 +15,17 @@ export function formatDateISO(date: Date | string): string {
 }
 
 /**
+ * 전화·FAX 입력값 정규화 — 전각→반각(NFKC) 변환 후 숫자와 하이픈(-)만 허용, 그 외 문자는 제거.
+ *
+ * 일본어 IME(PC)에서 전각 숫자(０-９)·전각 하이픈(－)·전각 공백을 입력해도 NFKC 정규화로
+ * 반각으로 변환된 뒤 sanitize 되므로 입력값이 통째로 사라지는 문제를 방지한다.
+ */
+export function sanitizePhoneInput(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.normalize("NFKC").replace(/[^0-9-]/g, "");
+}
+
+/**
  * 사용자 표시명 정규화 — "姓 名" (반각공백) 형태로 통일.
  *
  * QSP `userNm` 합본은 "山田 太郎" / "山田　太郎" / "山田, 太郎" / "山田,太郎" 등 다양한

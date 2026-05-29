@@ -10,6 +10,7 @@ import { InputBox, Button, Checkbox, Radio } from "@/components/common";
 import { Spinner } from "@/components/common/spinner";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
+import { sanitizePhoneInput } from "@/lib/format";
 
 type EmailCheckStatus =
   | "idle"
@@ -321,9 +322,9 @@ export function SignupContents() {
               <FormRow label="電話番号" required error={fieldErrors.phone}>
                 <InputBox
                   value={form.phone}
-                  onChange={(v) => updateField("phone", v)}
+                  onChange={(v) => updateField("phone", sanitizePhoneInput(v))}
                   type="tel"
-                  placeholder="000-0000-0000 / 0000-000-000"
+                  placeholder="000-0000-0000"
                 />
               </FormRow>
 
@@ -331,9 +332,9 @@ export function SignupContents() {
               <FormRow label="FAX番号">
                 <InputBox
                   value={form.fax}
-                  onChange={(v) => updateField("fax", v)}
+                  onChange={(v) => updateField("fax", sanitizePhoneInput(v))}
                   type="tel"
-                  placeholder="000-0000-0000 / 0000-000-000"
+                  placeholder="000-0000-0000"
                 />
               </FormRow>
             </div>
