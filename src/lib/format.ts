@@ -20,7 +20,8 @@ export function formatDateISO(date: Date | string): string {
  * 일본어 IME(PC)에서 전각 숫자(０-９)·전각 하이픈(－)·전각 공백을 입력해도 NFKC 정규화로
  * 반각으로 변환된 뒤 sanitize 되므로 입력값이 통째로 사라지는 문제를 방지한다.
  */
-export function sanitizePhoneInput(value: string): string {
+export function sanitizePhoneInput(value: string | null | undefined): string {
+  if (!value) return "";
   return value.normalize("NFKC").replace(/[^0-9-]/g, "");
 }
 

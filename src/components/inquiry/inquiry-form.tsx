@@ -8,6 +8,7 @@ import { Button, DimSpinner, InputBox, SelectBox } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { MENU } from "@/lib/menu-codes";
+import { sanitizePhoneInput } from "@/lib/format";
 import type { LoginUser } from "@/lib/schemas/auth";
 import api from "@/lib/axios";
 
@@ -398,7 +399,14 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
     {
       label: "電話番号",
       value: phone || "-",
-      input: isLoggedIn ? undefined : { value: phone, onChange: setPhone, type: "tel", placeholder: "電話番号を入力" },
+      input: isLoggedIn
+        ? undefined
+        : {
+            value: phone,
+            onChange: (v: string) => setPhone(sanitizePhoneInput(v)),
+            type: "tel",
+            placeholder: "000-0000-0000",
+          },
     },
     {
       label: "メールアドレス",
