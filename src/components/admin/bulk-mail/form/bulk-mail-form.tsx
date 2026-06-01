@@ -127,8 +127,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   const draftMutation = useMutation({
     mutationFn: submitToApi,
-    onSuccess: (res) => {
-      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+    onSuccess: async (res) => {
+      // edit 모드는 화면을 유지하므로 업로드된 신규 파일이 서버 첨부 목록으로 반영(refetch)된
+      // 뒤에 로컬 목록을 비워야 한다. 순서가 반대면 refetch 완료 전까지 첨부가 "사라졌다 다시
+      // 나타나는" 깜빡임이 발생하므로, invalidate 를 await 한 뒤 로컬 상태를 초기화한다.
+      await queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      setFiles([]);
+      setDeletedAttachmentIds([]);
       // Issue #2177 (1) — 임시저장 후 현재 화면 유지.
       // create/copy 모드: 같은 ID 의 편집 화면으로 replace (URL 만 갱신, 폼 유지).
       // edit 모드: 라우팅 없이 상세 쿼리만 invalidate 하여 첨부/메타 갱신 반영.
