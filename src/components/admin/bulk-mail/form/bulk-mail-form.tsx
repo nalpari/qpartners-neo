@@ -68,18 +68,37 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const [subject, setSubject] = useState(initialData?.subject ?? "");
   const [body, setBody] = useState(initialData?.body ?? "");
   const [files, setFiles] = useState<File[]>([]);
-  // 편집 모드에서 삭제 표시한 기존 서버 첨부 ID — 저장(登録/下書き保存) 시 deleteAttachmentIds 로 전송.
+  // 편집 모드에서 즉시 삭제(API DELETE)에 성공한 기존 서버 첨부 ID — 상세 쿼리 refetch 전까지
+  // 표시 목록에서 숨기는 용도. 저장 시에도 deleteAttachmentIds 로 함께 전송하여 refetch 지연 중
+  // 저장하는 경우의 정합성을 방어한다(서버는 이미 삭제된 ID 를 무시).
   const [deletedAttachmentIds, setDeletedAttachmentIds] = useState<number[]>([]);
 
   const editId = initialData?.id;
 
-  // 삭제 표시분을 제외한 표시용 서버 첨부 목록 (파생값).
+  // 삭제분을 제외한 표시용 서버 첨부 목록 (파생값).
   const visibleAttachments = (initialData?.attachments ?? []).filter(
     (a) => !deletedAttachmentIds.includes(a.id),
   );
 
-  const handleRemoveServerAttachment = (id: number) =>
-    setDeletedAttachmentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  // 편집 모드: 서버 첨부 X 클릭 → 콘텐츠와 동일하게 저장 없이 즉시 서버에서 삭제.
+  // 성공분만 표시 목록에서 제외(deletedAttachmentIds)하고 상세 쿼리를 무효화해 캐시 정합성을 유지한다.
+  const handleRemoveServerAttachment = (id: number) => {
+    if (!editId) return;
+    openAlert({
+      type: "confirm",
+      message: "本当に削除しますか？",
+      onConfirm: async () => {
+        try {
+          await api.delete(`/admin/mass-mails/${editId}/attachments/${id}`);
+          setDeletedAttachmentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+          void queryClient.invalidateQueries({ queryKey: ["mass-mails", String(editId)] });
+        } catch (error: unknown) {
+          console.error("[BulkMailForm] 첨부파일 삭제 실패:", error);
+          openAlert({ type: "alert", message: "ファイルの削除に失敗しました。" });
+        }
+      },
+    });
+  };
 
   // Design Ref: §3.2 — 공통 mutationFn (edit → PUT, 그 외 → POST)
   const submitToApi = (fd: FormData) =>
@@ -108,22 +127,23 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
 
   const draftMutation = useMutation({
     mutationFn: submitToApi,
-    onSuccess: (res) => {
-      void queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+    onSuccess: async (res) => {
+      // edit 모드는 화면을 유지하므로 업로드된 신규 파일이 서버 첨부 목록으로 반영(refetch)된
+      // 뒤에 로컬 목록을 비워야 한다. 순서가 반대면 refetch 완료 전까지 첨부가 "사라졌다 다시
+      // 나타나는" 깜빡임이 발생하므로, invalidate(상세 키를 prefix 로 포함)를 await 한 뒤
+      // 로컬 상태를 초기화한다.
+      await queryClient.invalidateQueries({ queryKey: ["mass-mails"], refetchType: "all" });
+      setFiles([]);
+      setDeletedAttachmentIds([]);
       // Issue #2177 (1) — 임시저장 후 현재 화면 유지.
-      // create/copy 모드: 같은 ID 의 편집 화면으로 replace (URL 만 갱신, 폼 유지).
-      // edit 모드: 라우팅 없이 상세 쿼리만 invalidate 하여 첨부/메타 갱신 반영.
+      // edit 모드: 위 await invalidate 가 상세 쿼리(prefix 매칭)까지 이미 refetch 했으므로 추가 처리 불필요.
+      // create/copy 모드: 방금 생성된 메일의 편집 화면으로 replace (URL 만 갱신, 폼 유지).
       const { id } = res.data.data;
       openAlert({
         type: "alert",
         message: "下書き保存しました。",
         onConfirm: () => {
-          if (mode === "edit") {
-            void queryClient.invalidateQueries({
-              queryKey: ["mass-mails", String(editId)],
-              refetchType: "all",
-            });
-          } else {
+          if (mode !== "edit") {
             router.replace(`/admin/bulk-mail/${id}`, { transitionTypes: ["fade"] });
           }
         },

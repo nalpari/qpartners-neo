@@ -137,7 +137,7 @@ export function BulkMailFormAttachment({
             height={24}
           />
           <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#90B2CD]">
-            ここをクリックするか、ファイルをDrag＆Dropして添付することができます
+            ファイルをここにドラッグアンドドロップ、またはクリックでファイルを選択
           </p>
           <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#A0A8B0]">
             最大アップロード容量（合計）：{MAX_FILE_SIZE_MB}MB
