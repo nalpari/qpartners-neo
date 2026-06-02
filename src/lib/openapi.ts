@@ -3333,6 +3333,43 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/admin/mass-mails/{id}/attachments/{fileId}": {
+      delete: {
+        tags: ["MassMail"],
+        summary: "대량메일 개별 첨부파일 즉시 삭제",
+        description:
+          "관리자 전용 — 임시저장(draft) 상태 메일의 첨부파일을 저장(PUT) 없이 즉시 삭제한다. " +
+          "콘텐츠(DELETE /contents/{id}/files/{fileId})와 동일한 즉시 삭제 UX 제공. " +
+          "권한: ADM_BULK_MAIL.update (편집 컨텍스트). 소유권: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
+          { name: "fileId", in: "path", required: true, schema: { type: "integer" }, description: "첨부파일 ID" },
+        ],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string", example: "添付ファイルを削除しました" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("ID 형식 오류 또는 draft 이외 상태 첨부 삭제 시도"),
+          "401": errorResponse("인증 필요"),
+          "403": errorResponse("メニュー権限 または 他人作成メール (RBAC: ADM_BULK_MAIL.update)"),
+          "404": errorResponse("메일 없음 또는 첨부파일 없음"),
+          "500": errorResponse("삭제 실패"),
+        },
+      },
+    },
 
     // ─── Master (QSP 마스터 데이터) ───
     "/master/deptList": {
