@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Q.Partners-neo 보안 감사 리포트</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --bg-card: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #9da7b3;
+    --text-faint: #6e7681;
+    --high: #f85149;
+    --medium: #d29922;
+    --low: #58a6ff;
+    --good: #3fb950;
+    --accent: #a371f7;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* Header */
+  header.hero {
+    background: linear-gradient(135deg, #161b22 0%, #1c2230 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 24px 44px;
+    margin-bottom: 40px;
+  }
+  .hero-inner { max-width: 1080px; margin: 0 auto; }
+  .hero .eyebrow {
+    font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 12px;
+  }
+  .hero h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+  .hero .sub { color: var(--text-dim); font-size: 15px; max-width: 720px; }
+  .hero .meta-row {
+    display: flex; flex-wrap: wrap; gap: 22px; margin-top: 26px;
+    font-size: 13px; color: var(--text-faint);
+  }
+  .hero .meta-row b { color: var(--text-dim); font-weight: 600; }
+
+  /* Summary cards */
+  .scorecards {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px;
+  }
+  .card-sev {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 18px; position: relative; overflow: hidden;
+  }
+  .card-sev::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  }
+  .card-sev.high::before { background: var(--high); }
+  .card-sev.medium::before { background: var(--medium); }
+  .card-sev.low::before { background: var(--low); }
+  .card-sev.good::before { background: var(--good); }
+  .card-sev .num { font-size: 38px; font-weight: 800; line-height: 1; }
+  .card-sev.high .num { color: var(--high); }
+  .card-sev.medium .num { color: var(--medium); }
+  .card-sev.low .num { color: var(--low); }
+  .card-sev.good .num { color: var(--good); }
+  .card-sev .lbl { font-size: 13px; color: var(--text-dim); margin-top: 8px; font-weight: 600; }
+
+  /* Section */
+  section { margin-top: 48px; }
+  h2.section-title {
+    font-size: 22px; font-weight: 700; letter-spacing: -0.3px;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2.section-title .tag {
+    font-size: 12px; font-weight: 600; color: var(--text-faint);
+    border: 1px solid var(--border); border-radius: 20px; padding: 2px 12px; margin-left: auto;
+  }
+  .section-intro { color: var(--text-dim); font-size: 14px; margin: 14px 0 24px; }
+
+  /* Finding card */
+  .finding {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 20px; overflow: hidden;
+  }
+  .finding-head {
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+  }
+  .finding-head .id {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--text-faint); padding-top: 3px;
+  }
+  .finding-head .title { font-size: 17px; font-weight: 700; flex: 1; min-width: 240px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .badge {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 4px 10px; border-radius: 6px; white-space: nowrap;
+  }
+  .badge.high { background: rgba(248,81,73,0.15); color: var(--high); border: 1px solid rgba(248,81,73,0.4); }
+  .badge.medium { background: rgba(210,153,34,0.15); color: var(--medium); border: 1px solid rgba(210,153,34,0.4); }
+  .badge.low { background: rgba(88,166,255,0.15); color: var(--low); border: 1px solid rgba(88,166,255,0.4); }
+  .badge.cat { background: var(--bg-soft); color: var(--text-dim); border: 1px solid var(--border); font-family: var(--mono); text-transform: none; }
+  .badge.conf { background: var(--bg-soft); color: var(--text-faint); border: 1px solid var(--border); text-transform: none; }
+
+  .finding-body { padding: 6px 22px 20px; }
+  .field { margin-top: 16px; }
+  .field .k {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--text-faint); margin-bottom: 5px;
+  }
+  .field .v { font-size: 14.5px; color: var(--text); }
+  .field .v.dim { color: var(--text-dim); }
+  .loc {
+    font-family: var(--mono); font-size: 13px; color: var(--low);
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 8px; display: inline-block; word-break: break-all;
+  }
+  pre {
+    background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; margin-top: 8px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: #c9d1d9;
+  }
+  pre .cmt { color: #6e7681; }
+  pre .red { color: #ff7b72; }
+  .reco {
+    border-left: 3px solid var(--good); background: rgba(63,185,80,0.06);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 8px; font-size: 14px;
+  }
+  .exploit {
+    border-left: 3px solid var(--high); background: rgba(248,81,73,0.05);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 8px; font-size: 14px; color: var(--text-dim);
+  }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+  td { color: var(--text-dim); }
+  td.ok { color: var(--good); }
+  td.bad { color: var(--high); font-weight: 600; }
+  td.warn { color: var(--medium); }
+  tr:last-child td { border-bottom: none; }
+  td .loc { font-size: 12px; }
+
+  /* Good practices */
+  .good-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .good-item {
+    background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--good);
+    border-radius: 8px; padding: 14px 16px; font-size: 13.5px;
+  }
+  .good-item b { color: var(--good); font-weight: 600; }
+  .good-item span { color: var(--text-dim); display: block; margin-top: 3px; }
+
+  /* Action plan */
+  .action {
+    display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); align-items: flex-start;
+  }
+  .action:last-child { border-bottom: none; }
+  .action .rank {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px; background: var(--bg-soft); border: 1px solid var(--border);
+  }
+  .action.p1 .rank { color: var(--high); border-color: rgba(248,81,73,0.4); }
+  .action.p2 .rank { color: var(--medium); border-color: rgba(210,153,34,0.4); }
+  .action.p3 .rank { color: var(--low); border-color: rgba(88,166,255,0.4); }
+  .action .txt b { font-size: 15px; }
+  .action .txt p { color: var(--text-dim); font-size: 13.5px; margin-top: 3px; }
+  .action .txt code { font-family: var(--mono); font-size: 12px; background: var(--bg-soft); padding: 1px 6px; border-radius: 4px; color: var(--low); }
+
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--text-faint); font-size: 12.5px; text-align: center;
+  }
+  .disclaimer {
+    background: rgba(210,153,34,0.06); border: 1px solid rgba(210,153,34,0.25);
+    border-radius: 10px; padding: 16px 20px; margin-top: 24px; font-size: 13px; color: var(--text-dim);
+  }
+  .disclaimer b { color: var(--medium); }
+  @media (max-width: 720px) {
+    .scorecards { grid-template-columns: repeat(2, 1fr); }
+    .good-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">Security Audit Report</div>
+    <h1>Q.Partners-neo 코드베이스 보안 감사</h1>
+    <p class="sub">Next.js 16 App Router · Prisma 7 · MariaDB 11 기반 회원/콘텐츠/대량메일 플랫폼에 대한 전체 코드베이스 보안 진단. 인증·인가·파일·인젝션·API·인프라 6개 영역을 병렬 정밀 분석했습니다.</p>
+    <div class="meta-row">
+      <span><b>분석일</b> &nbsp;2026-06-10</span>
+      <span><b>브랜치</b> &nbsp;development</span>
+      <span><b>분석 범위</b> &nbsp;src/ 전체 (62 API 라우트 + 핵심 라이브러리)</span>
+      <span><b>방법</b> &nbsp;6-에이전트 병렬 감사 + 수동 코드 검증</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- Scorecards -->
+  <div class="scorecards">
+    <div class="card-sev high"><div class="num">1</div><div class="lbl">HIGH</div></div>
+    <div class="card-sev medium"><div class="num">6</div><div class="lbl">MEDIUM</div></div>
+    <div class="card-sev low"><div class="num">10</div><div class="lbl">LOW / 보완권장</div></div>
+    <div class="card-sev good"><div class="num">12+</div><div class="lbl">모범 구현 확인</div></div>
+  </div>
+
+  <div class="disclaimer">
+    <b>총평.</b> 이 코드베이스는 전반적으로 <b>보안 의식이 매우 높습니다.</b> OTP HMAC 해시 저장 + timingSafeEqual, 비밀번호 재설정 토큰 SHA-256 해시 + 일회성 + userType 조건, fail-closed 권한 폴백, PII 마스킹 로깅, SMTP STARTTLS 강제, 파일 경로 안전성(UUID 파일명 + lexical 검증 + symlink 거부), 메일 헤더 인젝션 방어, DOMPurify 화이트리스트 sanitize 등 다수 영역이 모범 사례를 따릅니다. 아래 발견들은 그 토대 위에서 <b>"단일 설정 실수 하나로 방어선이 무너지는 지점"</b>에 집중되어 있습니다 — 특히 가장 심각한 1건은 잘 작성된 모든 라우트 레벨 ACL을 인프라 설정에 의존하게 만듭니다.
+  </div>
+
+  <!-- HIGH -->
+  <section>
+    <h2 class="section-title">🔴 HIGH 심각도<span class="tag">즉시 조치 권장</span></h2>
+    <p class="section-intro">독립 실행된 2개 감사 에이전트가 동일하게 지목했고, 미들웨어·인증 헬퍼 코드를 직접 정독하여 확정한 발견입니다.</p>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-01</span>
+        <span class="title">미들웨어가 public GET 경로에서 인바운드 <code>X-User-*</code> 헤더를 제거하지 않아 익명 사용자가 관리자 권한 위조 가능</span>
+        <div class="badges">
+          <span class="badge high">High</span>
+          <span class="badge cat">broken_access_control</span>
+          <span class="badge conf">신뢰도 8/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field">
+          <div class="k">위치</div>
+          <div class="v"><span class="loc">src/middleware.ts:115</span> &nbsp;<span class="loc">src/lib/auth.ts:67-86</span></div>
+        </div>
+        <div class="field">
+          <div class="k">설명</div>
+          <div class="v dim">전체 인증 모델은 "<code>X-User-Type/Id/Role</code> 헤더는 오직 미들웨어가 JWT 검증 후 주입한다(신뢰값)"는 전제 위에 서 있습니다(<span class="loc">auth.ts:1-7</span> 주석이 "Gateway 없이 직접 노출할 경우 반드시 JWT 검증 로직을 추가해야 한다"고 경고). 그러나 미들웨어는 클라이언트가 보낸 인바운드 <code>X-User-*</code> 헤더를 명시적으로 제거하지 않습니다. <code>PUBLIC_GET_PATTERNS</code>에 해당하는 GET 요청에서 쿠키 토큰이 없거나/만료/2FA 미완료인 경우, 코드는 <code>return NextResponse.next()</code>(115행)로 빠지며 <b>원본 요청 헤더를 그대로 핸들러에 전달</b>합니다. <code>getUserFromHeaders</code>는 이 헤더를 HMAC/서명 검증 없이 형식만 확인하므로, 핸들러는 위조된 권한을 신뢰합니다.</div>
+        </div>
+        <div class="field">
+          <div class="k">코드 근거</div>
+          <pre><span class="cmt">// middleware.ts — public GET 비회원/무효토큰 시 원본 헤더 그대로 통과</span>
+if (isPublicGet) {
+  const publicToken = request.cookies.get(COOKIE_NAME)?.value;
+  if (publicToken) { <span class="cmt">/* ...유효 시에만 X-User-* set... */</span> }
+}
+<span class="red">return NextResponse.next();</span>   <span class="cmt">// 115행: 클라이언트 X-User-* 미제거</span>
+
+<span class="cmt">// auth.ts:72 — 헤더 무검증 신뢰</span>
+if (!userType || !userId || !role) return null;   <span class="cmt">// 형식만 확인</span></pre>
+        </div>
+        <div class="field">
+          <div class="k">익스플로잇 시나리오</div>
+          <div class="exploit">쿠키 없이 위조 헤더를 붙인 익명 요청:<br>
+          <code style="font-family:var(--mono);font-size:12px;">GET /api/contents/5/files/10/download</code><br>
+          <code style="font-family:var(--mono);font-size:12px;">X-User-Type: ADMIN / X-User-Role: SUPER_ADMIN / X-User-Id: x</code><br><br>
+          미들웨어는 <code>isPublicGet=true</code> + 무쿠키 → 115행 통과(헤더 미제거). 핸들러의 <code>isInternalUser("SUPER_ADMIN")===true</code>(<span class="loc">contents/route.ts:60</span>)가 게시대상(roleCode)·게시기간 필터를 무시 → <b>미게시(draft)·소프트삭제(deleted)·특정 파트너 전용 콘텐츠와 첨부파일·인라인 이미지를 비인증 열람</b>. 동일 위장으로 <code>GET /api/contents</code>(목록), <code>/api/contents/[id]</code>, <code>download-all</code>(ZIP), <code>/api/inline-images/[id]</code>, <code>/api/home-notices/active</code>까지 확장됩니다.</div>
+        </div>
+        <div class="field">
+          <div class="k">배포 구조와 위험도</div>
+          <div class="v dim">운영은 <code>network_mode: host</code>로 Next.js standalone이 포트 5000/5001에 직접 노출됩니다(<span class="loc">docker-compose-production.yml</span>). 리포지토리에 인바운드 헤더를 거르는 nginx/게이트웨이 설정 파일이 <b>존재하지 않으며</b>, <span class="loc">next.config.ts</span>에도 헤더 스트리핑이 없습니다. 따라서 미들웨어가 사실상 유일한 보안 경계입니다. 만약 앞단 프록시가 <code>X-User-*</code>를 제거하도록 설정되어 있다면 실제 악용은 차단되지만, 이는 <b>코드가 secure-by-default가 아니며 인프라 설정 1건에 전적으로 의존</b>함을 의미합니다 — 코드 레벨 결함은 명백합니다.</div>
+        </div>
+        <div class="field">
+          <div class="k">권장 조치</div>
+          <div class="reco">미들웨어 최상단에서 <b>모든 분기 이전에</b> 인바운드 <code>X-User-Type/Id/Role/Name/Department</code>를 무조건 삭제한 새 <code>Headers</code>를 만든 뒤, 인증된 경우에만 서버 값으로 <code>.set()</code>하세요. public GET 비인증 fall-through(115행)도 sanitized 헤더로 <code>NextResponse.next({ request: { headers } })</code>를 반환해야 합니다. 추가 방어로 주입 헤더에 요청별 공유 시크릿/서명을 부여하면 프록시 미스컨피그에도 견고해집니다.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEDIUM -->
+  <section>
+    <h2 class="section-title">🟠 MEDIUM 심각도<span class="tag">계획 수립 후 조치</span></h2>
+
+    <!-- VULN-02 tests -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-02</span>
+        <span class="title"><code>/api/tests</code> · <code>/api/tests/[id]</code> — RBAC·소유권·운영환경 가드 전무</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">missing_authorization</span>
+          <span class="badge conf">신뢰도 9/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">src/app/api/tests/route.ts</span> &nbsp;<span class="loc">src/app/api/tests/[id]/route.ts</span></div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim">데모/스캐폴딩용 <code>Test</code> 모델에 대한 GET/POST/PATCH/DELETE 핸들러에 인증·인가 코드가 전혀 없습니다. 미들웨어가 "로그인 여부"만 강제하므로 <b>최하위 권한(GENERAL 포함) 모든 인증 사용자</b>가 전체 Test 레코드를 조회·생성·수정·삭제할 수 있습니다. <code>Test</code> 모델에 소유자 필드가 없어 임의 id에 대한 <code>update</code>/<code>delete</code>가 무제한 수행되며, <code>/api-docs</code>·<code>/api/openapi</code>처럼 운영환경(<code>APP_ENV</code>) 차단도 없어 운영 빌드에 그대로 노출됩니다(프로젝트 규칙 위반: 미구현/데모는 운영 차단 또는 501).</div></div>
+        <div class="field"><div class="k">코드 근거</div><pre><span class="cmt">// tests/[id]/route.ts — 가드 없이 임의 id 삭제</span>
+export async function DELETE(_request, { params }) {
+  const { id } = await params;
+  <span class="red">await prisma.test.delete({ where: { id: Number(id) } });</span>  <span class="cmt">// 권한 체크 0</span>
+}</pre></div>
+        <div class="field"><div class="k">익스플로잇</div><div class="exploit">로그인한 일반 회원이 <code>DELETE /api/tests/{id}</code>를 반복해 임의 레코드 삭제, <code>POST /api/tests</code>로 DB 적재. 운영 빌드에 잔존하는 개발용 스캐폴딩이 공격면으로 노출됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">운영 빌드에서 tests 라우트·페이지·모델을 제거하세요. 유지가 필요하면 기존 <code>isApiDocsEnabled()</code> 패턴으로 운영환경 404 가드 + <code>requireMenuPermission</code> 권한·소유권 검증을 추가합니다.</div></div>
+      </div>
+    </div>
+
+    <!-- VULN-03 auto-login replay -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-03</span>
+        <span class="title">자동로그인 cipher 24시간 재생(replay) + ADMIN/SUPER_ADMIN 2FA 면제</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">crypto / replay</span>
+          <span class="badge conf">신뢰도 7/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">src/lib/auto-login-crypto.ts:28-37</span> &nbsp;<span class="loc">src/app/api/auth/auto-login/inbound/route.ts</span></div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim">Inbound 자동로그인은 AES-128-CBC(비인증 암호화, 인증태그 없음) + <b>결정적 IV</b>(<code>YYYYMMDD(KST)+_autoL!!</code>)를 사용해, 같은 사용자·같은 날 cipher가 항상 동일합니다. 받는 측 일회용 소진 차단이 의도적으로 제거되어 cipher 1건이 자정까지 무제한 재사용 가능합니다. 더불어 cipher 검증만으로 세션을 발급하며 <code>twoFactorVerified: detail.pwdInitYn !== "N"</code>로 설정 — 즉 ADMIN/SUPER_ADMIN 포함 전원이 2FA를 면제받습니다. cipher는 GET 쿼리스트링으로 전달되어 브라우저 히스토리·Referer·프록시 액세스 로그에 평문 잔존하므로 탈취 표면이 넓습니다.</div></div>
+        <div class="field"><div class="k">코드 근거 (코드 주석이 위험을 명시)</div><pre><span class="cmt">// auto-login-crypto.ts:30-33</span>
+<span class="cmt">// IV 가 (KST 일자 + 고정 상수) 로 결정적 → 같은 userId 가 같은 날 동일 cipher</span>
+<span class="cmt">// 받는 측 1회용 차단을 두지 않음 ...</span>
+<span class="cmt">// 받아들인 위험: cipher 탈취 시 24h 내 재사용 가능</span>
+// inbound/route.ts
+twoFactorVerified: detail.pwdInitYn !== "N",   <span class="red">// ADMIN 포함 2FA 면제</span></pre></div>
+        <div class="field"><div class="k">익스플로잇</div><div class="exploit">공격자가 공유 PC 브라우저 히스토리/프록시 로그/Referer에서 ADMIN의 <code>autoLoginParam1</code> cipher를 1회 획득 → 같은 날 자정까지 <code>/api/auth/auto-login/inbound?autoLoginParam1=&lt;cipher&gt;</code>로 재전송 → 비밀번호·2FA 없이 ADMIN 세션(8h JWT) 획득.</div></div>
+        <div class="field"><div class="k">맥락 — 의도된 설계 트레이드오프</div><div class="v dim">코드 주석에 따르면 이는 외부 3사(QSP/Q.Order/Q.Musubi) 호환을 위한 <b>의도적 결정이며 위험을 인지·수용</b>한 상태입니다. 따라서 "결함"이 아닌 "문서화된 잔존 위험"으로 분류하되, 권한 상승 경로(ADMIN 무비밀번호 진입)라는 점에서 추가 가드를 강력 권고합니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">최소한 ADMIN/SUPER_ADMIN 응답 시에는 자동로그인을 거부하거나 2FA를 강제하세요. 가능하면 평문에 nonce/타임스탬프를 포함해 inbound 측 일회용 소진(used 마킹)을 도입하거나, GCM 등 인증 암호화 + 짧은 만료로 전환합니다(주석에 "사양 확장으로 강화 가능"으로 명시됨).</div></div>
+      </div>
+    </div>
+
+    <!-- VULN-04 user enumeration -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-04</span>
+        <span class="title">비밀번호 재설정 요청에서 사용자 열거(user enumeration) — 200 vs 404 구분</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">user_enumeration</span>
+          <span class="badge conf">신뢰도 8/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">src/app/api/auth/password-reset/request/route.ts:327-338</span></div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim">회원이 존재하면 HTTP 200 <code>{ data: { message } }</code>, 미존재/매칭실패면 HTTP 404 <code>{ error: "一致する会員情報がありません" }</code>를 반환합니다. 상태 코드와 본문 메시지가 모두 달라 공격자가 임의 이메일/loginId의 가입 여부를 정확히 판별할 수 있습니다. 이는 프로젝트 자체 규칙(<span class="loc">.claude/rules/api.md</span>: "회원 존재 여부를 응답으로 구분 불가하게 설계 — 동일 200 반환")과 정면 충돌합니다. (코드는 not-found/mismatch/ambiguous "끼리"는 동일 메시지로 통일했으나, 존재 케이스와는 여전히 구분됩니다.)</div></div>
+        <div class="field"><div class="k">코드 근거</div><pre><span class="cmt">// 미존재 경로 (404)</span>
+return NextResponse.json({ error: "一致する会員情報がありません..." }, { status: 404 });
+<span class="cmt">// 존재+발송 경로 (200)</span>
+return NextResponse.json({ data: { message: "...送信しました。" } });</pre></div>
+        <div class="field"><div class="k">익스플로잇</div><div class="exploit">공격자가 표적 이메일 목록을 전송 → 404면 미가입, 200이면 가입 회원으로 분류. 수집된 유효 계정 목록은 credential stuffing·피싱 표적이 됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">존재/미존재/형식오류를 모두 동일하게 200 + 동일 메시지("해당 정보로 가입된 계정이 있으면 메일을 보냈습니다")로 응답하고, 실제 발송 여부는 서버 내부에서만 분기하세요.</div></div>
+      </div>
+    </div>
+
+    <!-- VULN-05 brute force -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-05</span>
+        <span class="title">로그인 라우트에 브루트포스/credential-stuffing 방어 부재</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">brute_force</span>
+          <span class="badge conf">신뢰도 7/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">src/app/api/auth/login/route.ts</span> (rate limit 호출 전무)</div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim">password-reset·email/check·password-init·auto-login/inbound 등 거의 모든 인증 라우트에 <code>checkRateLimit</code>이 적용돼 있으나, 정작 핵심인 <code>/api/auth/login</code>에는 IP·계정 기반 rate limit이 전혀 없습니다. loginId+pwd를 무제한으로 QSP에 프록시하며, QSP 응답의 <code>loginFailCnt</code> 필드도 읽거나 강제하지 않습니다. 따라서 우리 계층의 시도 제한은 0이며 외부 QSP 잠금 정책에만 의존합니다. <code>signup</code>도 동일하게 rate limit이 없어 메일 발송 남용 표면이 있습니다.</div></div>
+        <div class="field"><div class="k">익스플로잇</div><div class="exploit">단일 IP에서 한 계정에 비밀번호 사전 공격을 무제한 시도(QSP 잠금 임계가 높으면 성공 가능), 또는 다수 계정에 흔한 비밀번호로 credential stuffing — 우리 서버가 QSP에 대한 증폭 프록시 역할을 합니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">다른 라우트와 동일하게 IP 기반 + <code>account:loginId</code> fallback rate limit을 로그인 진입 직후 적용하세요. QSP <code>loginFailCnt</code>를 응답에 반영해 잠금 상태를 우리 계층에서도 인지합니다. (단, 아래 LOW-09의 다중 인스턴스·XFF 한계와 함께 인프라 레벨 WAF 병행을 권장.)</div></div>
+      </div>
+    </div>
+
+    <!-- VULN-06 debug log -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-06</span>
+        <span class="title"><code>DEBUG_QSP_LOGIN</code> 활성 시 로그인 비밀번호 평문 stdout 노출</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">credential_logging</span>
+          <span class="badge conf">신뢰도 7/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">src/app/api/auth/login/route.ts:67-71</span></div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim"><code>DEBUG_QSP_LOGIN=true</code>이면 <code>loginId</code>와 <code>pwd</code> 평문이 포함된 요청 바디를 그대로 재현 가능한 curl 명령으로 <code>console.log</code>에 출력합니다. 프로젝트 규칙("토큰·비밀번호 등 민감값은 prefix만 로깅")의 명시적 위반입니다. 환경변수 게이트(신뢰값)라는 점에서 직접적 익스플로잇은 아니나, 운영자가 진단 중 켜고 해제를 잊으면 이후 모든 로그인의 ID/비밀번호 평문이 중앙 로그 파이프라인(CloudWatch 등)에 영구 잔존합니다.</div></div>
+        <div class="field"><div class="k">코드 근거</div><pre>if (process.env.DEBUG_QSP_LOGIN === "true") {
+  console.log(
+    `[DEBUG_QSP_LOGIN] curl ... -d ${JSON.stringify(JSON.stringify(<span class="red">qspRequestBody</span>))}`,
+  ); <span class="cmt">// qspRequestBody = { loginId, pwd, ... } 평문</span>
+}</pre></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">평문 <code>pwd</code>를 명령에서 제거하거나 <code>[REDACTED]</code>로 치환하세요. 디버그가 꼭 필요하면 <code>loginId</code>는 마스킹, <code>pwd</code>는 완전 제외. 가능하면 이 디버그 블록 자체를 삭제하는 것을 권장합니다.</div></div>
+      </div>
+    </div>
+
+    <!-- VULN-07 security headers -->
+    <div class="finding">
+      <div class="finding-head">
+        <span class="id">VULN-07</span>
+        <span class="title">보안 응답 헤더 전역 부재 — CSP · X-Frame-Options · HSTS · Referrer-Policy</span>
+        <div class="badges">
+          <span class="badge medium">Medium</span>
+          <span class="badge cat">missing_headers</span>
+          <span class="badge conf">신뢰도 8/10</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치</div><div class="v"><span class="loc">next.config.ts</span> (headers() 미정의) &nbsp;<span class="loc">src/middleware.ts:197</span> (matcher /api/* 한정)</div></div>
+        <div class="field"><div class="k">설명</div><div class="v dim"><code>next.config.ts</code>에 <code>headers()</code> 설정이 전혀 없고, 미들웨어 matcher는 <code>/api/:path*</code> 한정이라 보안 헤더를 추가하지 않습니다. 따라서 모든 HTML 페이지가 <b>CSP / X-Frame-Options / HSTS / 전역 X-Content-Type-Options / Referrer-Policy 없이</b> 서빙됩니다. 이 앱은 BlockNote/Tiptap 리치 에디터로 작성된 사용자 HTML을 저장·렌더하므로(DOMPurify 1차 방어는 존재), sanitizer 우회가 발견되면 CSP 부재 시 즉시 임의 스크립트 실행으로 직결됩니다. 비인증 페이지(로그인·회원가입·문의)는 X-Frame-Options 부재로 클릭재킹/UI redress 표면도 노출됩니다.</div></div>
+        <div class="field"><div class="k">코드 근거</div><pre><span class="cmt">// next.config.ts — headers() 정의 없음</span>
+const nextConfig: NextConfig = {
+  reactCompiler: true,
+  output: "standalone",
+  <span class="cmt">// async headers() { ... } 부재 → CSP/XFO/HSTS 전무</span>
+};</pre></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco"><code>next.config.ts</code>에 <code>async headers()</code>를 추가해 전 경로에 <code>Content-Security-Policy</code>(최소 <code>script-src 'self'</code> + GA nonce/hash), <code>X-Frame-Options: DENY</code>(또는 <code>frame-ancestors 'none'</code>), <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code>, prod 한정 <code>Strict-Transport-Security</code>를 일괄 적용하세요. 단일 블록으로 5개 항목을 한 번에 보완할 수 있습니다. <b>주의:</b> 앞단 nginx가 HSTS/일부 헤더를 이미 제공할 수 있으므로 인프라 확인 후 중복·정합성을 조정하십시오.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Route audit table -->
+  <section>
+    <h2 class="section-title">📋 API 라우트 인증/인가 점검 현황<span class="tag">62 라우트 전수</span></h2>
+    <p class="section-intro">주요 라우트의 세션 검증·권한 체크 적용 상태입니다. 핵심 가드(<code>requireMenuPermission</code> / <code>canModifyResource</code> / <code>canAccessContent</code>)와 폴백 로직은 일관되게 <b>fail-closed</b>로 구현되어 있음을 확인했습니다.</p>
+    <table>
+      <thead><tr><th>라우트</th><th>메서드</th><th>인증</th><th>권한/소유권</th><th>판정</th></tr></thead>
+      <tbody>
+        <tr><td><span class="loc">admin/members/[id]</span></td><td>PUT</td><td class="ok">✓</td><td class="ok">ADM_MEMBER + self-lockout·격상 가드</td><td class="ok">견고</td></tr>
+        <tr><td><span class="loc">admin/mass-mails/[id]/attachments/[fileId]</span></td><td>DELETE</td><td class="ok">✓</td><td class="ok">massMailId 복합 스코프</td><td class="ok">IDOR 방어</td></tr>
+        <tr><td><span class="loc">roles/[roleCode]/permissions</span></td><td>PUT</td><td class="ok">✓</td><td class="ok">ADM_PERMISSION + SUPER_ADMIN lockout</td><td class="ok">견고</td></tr>
+        <tr><td><span class="loc">mypage/*</span> (전체)</td><td>GET/PUT/POST</td><td class="ok">✓ + 2FA</td><td class="ok">세션 userId로만 필터</td><td class="ok">IDOR 없음</td></tr>
+        <tr><td><span class="loc">contents</span> (목록/상세/다운로드)</td><td>GET</td><td class="warn">public</td><td class="warn">canAccessContent (헤더 신뢰)</td><td class="bad">VULN-01 영향</td></tr>
+        <tr><td><span class="loc">categories</span></td><td>GET</td><td class="warn">조건부</td><td class="warn">internalOnly 제외필터 부재</td><td class="warn">LOW-11</td></tr>
+        <tr><td><span class="loc">tests</span> · <span class="loc">tests/[id]</span></td><td>전체</td><td class="warn">로그인만</td><td class="bad">권한·소유권 없음</td><td class="bad">VULN-02</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- LOW / Hardening -->
+  <section>
+    <h2 class="section-title">🔵 LOW / 보완 권장 (Hardening)<span class="tag">심층 방어</span></h2>
+    <p class="section-intro">당장의 직접 악용은 어렵지만, 회귀 방지·심층 방어 차원에서 보완을 권장하는 항목입니다.</p>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-08</span><span class="title">단일 공유 AES 키 + cipher 소유 단독을 인증 증명으로 사용</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">key_management</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/lib/auto-login-crypto.ts:49-52</span> — inbound/outbound가 단일 <code>AUTO_LOGIN_AES_KEY</code>를 외부 4개 시스템과 공유하며, 주석이 "샘플 키 == 운영 키 구조"임을 명시하고 SAMPLE_KEY 차단 가드를 제거했습니다. inbound는 복호화 성공 자체를 신뢰 증명으로 간주하므로 키를 아는 누구나 임의 userId(ADMIN 포함)의 유효 cipher를 생성 가능합니다. 단일 키 침해 시 양방향·4개 시스템 동시 영향(blast radius 전사).</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">자동로그인 전용 키를 인증 신뢰 경계와 분리하고, 키를 문서/주석에서 제거 후 보안 채널로만 공유, 정기 로테이션. 가능하면 키 소유 외에 서명된 단명 토큰을 병행하세요.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-09</span><span class="title">인메모리 rate limiter — 다중 인스턴스(2대)에서 실효 한도 2배 + XFF 스푸핑</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">rate_limiting</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/lib/rate-limit.ts:12</span> — 프로세스 로컬 <code>Map</code> 기반입니다. 운영은 <code>docker-compose-production.yml</code>로 <b>2개 인스턴스(5000/5001)</b>가 확정 운영되므로 실효 한도가 <code>limit × 2</code>로 증가합니다. 또한 모든 호출부가 <code>x-forwarded-for</code> 첫 토큰을 IP로 신뢰하므로, 신뢰 프록시가 XFF를 덮어쓰지 않으면 헤더 스푸핑으로 IP 카운터를 무한 분산할 수 있습니다. 이 두 한계가 VULN-04·VULN-05의 rate limit 방어선을 약화시킵니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">Redis 등 공유 저장소 기반 분산 rate limit으로 전환하거나 WAF/ALB 레벨 제한을 병행하세요. XFF는 신뢰 홉 수를 고정해 우측에서 N번째 IP를 파싱합니다.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-10</span><span class="title">보호 경로에서 <code>X-User-Name</code>/<code>X-User-Department</code> 조건부 주입 → 위조 가능</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">spoofing</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/middleware.ts:179-184</span> — <code>X-User-Type/Id/Role</code>은 항상 <code>.set()</code>으로 덮어쓰지만, Name/Department는 <code>if (user.userNm)</code> 조건에서만 설정합니다. JWT의 <code>userNm</code>이 null인 사용자는 인바운드 위조 <code>X-User-Name</code>이 잔존해 <code>createdByName</code>(대량메일/콘텐츠 등록자명, 감사 흔적)을 위조할 수 있습니다. React 렌더는 자동 이스케이프되어 stored XSS는 아니나 감사 데이터 무결성이 훼손됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">VULN-01 권고와 동일하게 모든 <code>X-User-*</code>를 무조건 삭제 후 재주입하고, Name/Department도 값 부재 시 명시적으로 <code>delete</code>하세요.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-11</span><span class="title">GET /api/categories — 내부전용(isInternalOnly) 카테고리 비인증 노출</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">info_disclosure</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/app/api/categories/route.ts:13-46</span> — 비인증 공개 경로인데 기본 where 절(<code>activeOnly=true</code>)에 <code>isInternalOnly</code> 제외 필터가 없어 내부전용 카테고리까지 반환되며, <code>?internalOnly=true</code>로 사내 분류만 열거할 수도 있습니다. 콘텐츠 트리는 <code>includeInternal</code>로 가시성을 제어하는 것과 정책이 불일치합니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">비인증/비사내 요청에는 <code>isInternalOnly=true</code> 카테고리를 응답에서 제외하도록 요청자 internal 여부로 분기하세요.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-12</span><span class="title">업로드 파일 내용(매직바이트) 미검증 — 빈 MIME 시 확장자만으로 통과</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">content_spoofing</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/lib/file-validation.ts:162-169</span> — 업로드 검증이 확장자 화이트리스트 + 클라이언트 제어값 <code>file.type</code>에만 의존하며, <code>file.type===""</code>이면 확장자만으로 통과합니다. 현재는 다운로드가 항상 <code>attachment</code> + <code>nosniff</code>, 인라인 이미지가 MIME 화이트리스트 + svg+xml 415 거부로 막혀 <b>stored XSS로는 악용 불가</b>합니다. 다만 향후 인라인 미리보기/마크다운 렌더러 도입 시(코드 내 TODO) 즉시 polyglot 위험으로 전환됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">업로드 시 매직바이트로 선언 확장자와 실제 컨테이너 타입 일치를 검증하고 불일치 시 거부하세요(빈 MIME 폴백 경로 포함).</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-13</span><span class="title">JWT 검증 시 허용 알고리즘 화이트리스트 미지정</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">jwt</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/lib/jwt.ts:30</span> — <code>jwtVerify(token, getSecret())</code>에 <code>algorithms</code> 옵션이 없습니다. jose는 HMAC 키로 비대칭 서명을 검증할 수 없고 <code>alg:"none"</code>도 기본 거부하므로 실질적 alg-confusion은 차단되지만, 명시적 화이트리스트는 공식 권장이며 향후 키 타입 변경 시 회귀 방어층이 됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco"><code>jwtVerify(token, getSecret(), { algorithms: ["HS256"] })</code>로 고정하세요.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-14</span><span class="title"><code>login-user-info</code> 라우트 최상위 try-catch 누락</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">error_disclosure</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/app/api/auth/login-user-info/route.ts:7-27</span> — 프로젝트 규칙("모든 export 함수 최상위 try-catch 필수") 위반입니다. <code>await verifyToken(token)</code>을 try 없이 호출하는데 이는 JWT_SECRET 미설정 시 <code>ConfigError</code>를 throw합니다. 이 경로는 PUBLIC이라 비인증 접근 가능하며, dev 모드에서 스택트레이스가 응답에 노출될 수 있습니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">핸들러 본문을 try-catch로 래핑하고 catch에서 일반화된 500 JSON을 반환하세요(다른 라우트 패턴과 통일).</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-15</span><span class="title">menu <code>pageUrl</code> Zod 스키마에 URL 스킴 검증 누락 (저장단)</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">validation_gap</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/lib/schemas/menu.ts:15,25</span> — <code>pageUrl</code>이 <code>z.string().max(500)</code>로만 검증되어 <code>javascript:</code>·<code>data:</code> 스킴이 DB에 저장될 수 있습니다. 현재 모든 렌더 sink가 화이트리스트(<code>SAFE_PAGE_URL</code>)로 방어되어 실익스플로잇은 불가하나, "저장 허용 + 렌더 차단" 구조라 화이트리스트를 생략한 신규 렌더 경로 추가 시 stored XSS로 전환됩니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">스키마에서 입력단 차단: <code>pageUrl: z.string().max(500).regex(/^\/[a-zA-Z0-9\-_/]*$/).nullable()</code> 형태로 렌더 화이트리스트 규칙을 일원화하세요.</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-16</span><span class="title">쿠키 <code>secure</code> 플래그가 NODE_ENV 기준 — APP_ENV 컨벤션 불일치</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">cookie_flags</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim">쿠키 설정 8개 지점(<span class="loc">login/route.ts:425</span> 등)이 <code>secure: NODE_ENV === "production"</code>을 사용합니다. 프로젝트는 다른 곳에서 "standalone 런타임은 NODE_ENV가 항상 production이라 APP_ENV로 환경 판별을 통일"하는 정책인데 쿠키만 NODE_ENV 기준입니다. standalone 빌드에서 결과적으로 secure가 항상 true(fail-secure)라 실질 취약점은 아니나 컨벤션 미세 불일치입니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">동작상 안전하므로 필수는 아니나, 일관성을 위해 <code>secure: process.env.APP_ENV !== "development"</code> 형태로 통일을 권장합니다(8개 지점 동시 적용).</div></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head"><span class="id">LOW-17</span><span class="title">로그아웃 시 stateless JWT 서버측 무효화 부재</span><div class="badges"><span class="badge low">Low</span><span class="badge cat">session_management</span></div></div>
+      <div class="finding-body">
+        <div class="field"><div class="k">위치 · 설명</div><div class="v dim"><span class="loc">src/app/api/auth/logout/route.ts</span> — 로그아웃은 클라이언트 쿠키만 만료시킬 뿐 발급된 JWT를 무효화하는 서버측 메커니즘(블랙리스트/jti/버전)이 없습니다. 로그아웃 이전 탈취된 토큰은 8시간 만료까지 유효하며, VULN-03(자동로그인 replay)과 결합 시 활용 창이 길어집니다. stateless JWT의 알려진 트레이드오프입니다.</div></div>
+        <div class="field"><div class="k">권장 조치</div><div class="reco">관리자 세션 등 민감 작업에 한해 서버측 토큰 버전(또는 jti 블랙리스트) 도입을 검토하고, 만료 시간 단축 여지를 검토하세요.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Good practices -->
+  <section>
+    <h2 class="section-title">✅ 잘 구현된 보안 사례<span class="tag">유지 권장</span></h2>
+    <p class="section-intro">감사 과정에서 확인한, 모범적으로 구현되어 보고 대상에서 제외한 항목들입니다. 이 토대가 발견된 취약점들의 실제 위험도를 크게 낮춰줍니다.</p>
+    <div class="good-grid">
+      <div class="good-item"><b>2FA OTP 처리</b><span>HMAC-SHA256 해시 저장, timingSafeEqual 비교, 5회 시도 제한, 10분 만료</span></div>
+      <div class="good-item"><b>비밀번호 재설정 토큰</b><span>UUID + SHA-256 해시 저장 + 일회성 + userType 복합 조건 + 1시간 만료</span></div>
+      <div class="good-item"><b>fail-closed 권한 폴백</b><span>미지 userTp→null, 무권한→전부 false, 예외→최소권한. 본체·catch 매핑 일치</span></div>
+      <div class="good-item"><b>파일 경로 안전성</b><span>UUID 파일명 + resolve 후 lexical isInsideDir + symlink/특수파일 거부 + ZIP basename</span></div>
+      <div class="good-item"><b>다운로드 헤더 방어</b><span>filename* encodeURIComponent + CRLF/quote sanitize, 항상 attachment + nosniff</span></div>
+      <div class="good-item"><b>메일 헤더 인젝션 방어</b><span>sanitizeFromName(CRLF/RFC5322 specials 제거), subject/email CRLF refine</span></div>
+      <div class="good-item"><b>DOMPurify sanitize</b><span>ALLOWED_TAGS/ATTR 화이트리스트, data: img는 png/jpeg/gif/webp만, SVG 차단, 저장 시점 sanitize</span></div>
+      <div class="good-item"><b>SQL 인젝션 방어</b><span>$queryRawUnsafe 0건, raw query는 태그드 템플릿 + Prisma.join 파라미터 바인딩</span></div>
+      <div class="good-item"><b>SMTP TLS</b><span>secure=false 시 requireTLS=true(STARTTLS 강제) + 포트 유효성 검증</span></div>
+      <div class="good-item"><b>외부 API HTTPS 강제</b><span>QSP base URL prod https 강제 + host 화이트리스트 + userinfo 트릭 차단</span></div>
+      <div class="good-item"><b>시크릿 관리</b><span>하드코딩 0건, .env.* 외부화(Jenkins Credentials), .env.example placeholder만</span></div>
+      <div class="good-item"><b>인프라·클라이언트</b><span>Dockerfile 비루트(uid 1001) 실행, 토큰 httpOnly 쿠키 전용(localStorage 미저장), GA4 토큰 누설 3단 방어</span></div>
+    </div>
+  </section>
+
+  <!-- Action plan -->
+  <section>
+    <h2 class="section-title">🎯 우선순위 조치 계획</h2>
+    <div class="action p1">
+      <div class="rank">1</div>
+      <div class="txt"><b>미들웨어 인바운드 헤더 무조건 제거 (VULN-01, LOW-10)</b>
+        <p><span class="loc" style="font-size:12px;">src/middleware.ts</span> 진입 최상단에서 모든 <code>X-User-*</code>를 <code>delete</code>한 새 Headers를 생성한 뒤 인증된 경우에만 <code>.set()</code>. 단 한 곳의 수정으로 가장 심각한 익명 권한 상승과 등록자명 위조를 동시 차단합니다. <b>가장 시급.</b></p>
+      </div>
+    </div>
+    <div class="action p1">
+      <div class="rank">2</div>
+      <div class="txt"><b>tests 스캐폴드 라우트 운영 차단/제거 (VULN-02)</b>
+        <p>운영 미사용이면 라우트·페이지·<code>Test</code> 모델 제거, 유지 시 <code>isApiDocsEnabled()</code> 환경 가드 + 권한 검증 추가.</p>
+      </div>
+    </div>
+    <div class="action p2">
+      <div class="rank">3</div>
+      <div class="txt"><b>인증 라우트 강화 (VULN-04·05·06)</b>
+        <p>password-reset 응답을 200 단일화(열거 방어), 로그인에 IP+계정 rate limit 적용, <code>DEBUG_QSP_LOGIN</code> 평문 비밀번호 제거. 자동로그인(VULN-03)은 ADMIN 2FA 강제 가드 추가 검토.</p>
+      </div>
+    </div>
+    <div class="action p2">
+      <div class="rank">4</div>
+      <div class="txt"><b>보안 응답 헤더 전역 도입 (VULN-07)</b>
+        <p><code>next.config.ts</code>에 <code>headers()</code> 추가로 CSP·X-Frame-Options·HSTS·Referrer-Policy 일괄 적용. nginx 기존 설정과 정합성 확인.</p>
+      </div>
+    </div>
+    <div class="action p3">
+      <div class="rank">5</div>
+      <div class="txt"><b>심층 방어 보완 (LOW-08~17)</b>
+        <p>rate-limit 분산 저장소 전환, AES 키 분리, JWT algorithms 고정, menu pageUrl 스킴 검증, 매직바이트 검증 등 회귀 방지 차원의 단계적 적용.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>본 리포트는 정적 코드 분석 기반이며, 실제 익스플로잇 가능성은 운영 인프라(리버스 프록시 헤더 정책, WAF, 네트워크 격리) 설정에 따라 달라질 수 있습니다.<br>특히 VULN-01·VULN-07·LOW-09는 앞단 nginx 설정 확인 후 최종 심각도를 재평가하시기 바랍니다.</p>
+    <p style="margin-top:12px;color:var(--text-faint);">Q.Partners-neo Security Audit · 2026-06-10 · 6-에이전트 병렬 감사 + 수동 코드 검증</p>
+  </footer>
+
+</div>
+</body>
+</html>

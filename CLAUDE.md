@@ -17,11 +17,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 - **Framework**: Next.js 16.2, App Router (`src/app/`), React 19, React Compiler enabled
-- **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss`; theme tokens in `src/app/globals.css` using `@theme inline`
+- **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss` (theme tokens in `src/app/globals.css` using `@theme inline`) + SCSS layer in `src/style/`
 - **Path alias**: `@/*` maps to `./src/*`
 - **Database**: MariaDB 11 (Docker), Prisma 7
 - **State**: Zustand (client UI) + TanStack Query (server data)
 - **Validation**: Zod schemas in `src/lib/schemas/`
+- **Auth**: JWT cookie (`jose`) — `src/middleware.ts`에서 API 보호 (PUBLIC_PATHS 화이트리스트), RBAC은 `src/lib/rbac-guard.ts` / `src/lib/auth-role.ts`
+- **Editor/Grid**: Tiptap 리치 에디터 (`src/lib/rich-editor/`), ag-grid (콘텐츠 목록)
+- **Mail**: nodemailer (`src/lib/mailer.ts`, `src/lib/mail-templates/`, `src/lib/mass-mail/`)
+- **API Docs**: Scalar (`/api-docs`), 스펙은 `src/lib/openapi.ts`
+- **External**: QSP 회원 API 연동 (`src/lib/qsp-member.ts`)
 
 ## Key Conventions
 
@@ -70,23 +75,3 @@ and middleware-based route protection.
 ```
 fix: Resolve prisma client singleton leak in dev mode
 ```
-
-## Memo
-
-- 코드 작성시 기본적으로 @/docs/coding-conventions.md 문서를 반드시 참조한다.
-- 모든 답변과 추론과정은 한국어로 작성한다.
-- task가 끝나면 서브 에이전트를 사용해서 **린트체크**, **타입체크**, **빌드체크**를 수행한다.
-- 린트체크시 오류가 있으면 반드시 해결하고 넘어가도록 하고, 경고가 있더라도 해결하려고 노력한다.
-- 커밋시에 접두사는 영어로 나머지 타이틀과 내용은 한국어로 작성한다.
-- task 완료시 CLAUDE.md 및 README.md 문서에 업데이트가 필요하면 진행한다.
-- 에이전트 팀을 활용할 경우 @docs/agent-teams-guild.md 문서를 참조한다.
-
-## graphify
-
-This project has a graphify knowledge graph at graphify-out/.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
