@@ -74,6 +74,17 @@ function isTwoFactorPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // 보안 경계: 클라이언트가 보낸 인바운드 X-User-* 헤더를 어떤 분기보다 먼저 무조건 제거한다.
+  // 이 헤더는 오직 미들웨어가 JWT 검증 후 주입하는 신뢰값이며(auth.ts 상단 주석 참조),
+  // 위조 헤더가 핸들러(getUserFromHeaders)에 도달하면 익명 사용자의 권한 위조로 직결된다.
+  // 이후 모든 return 은 이 sanitized 헤더를 기반으로 동작한다 — public GET fall-through 포함.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("X-User-Type");
+  requestHeaders.delete("X-User-Id");
+  requestHeaders.delete("X-User-Role");
+  requestHeaders.delete("X-User-Name");
+  requestHeaders.delete("X-User-Department");
+
   const isPublicGet = isPublicGetPath(pathname, request.method);
 
   if (isPublicPath(pathname) || isPublicGet) {
@@ -91,7 +102,6 @@ export async function middleware(request: NextRequest) {
             // 폴백도 실패(미지의 userTp)하면 public GET 특성상 비회원으로 자연 통과.
             const role = publicUser.authRole ?? getFallbackRole(publicUser.userTp);
             if (role) {
-              const requestHeaders = new Headers(request.headers);
               requestHeaders.set("X-User-Type", publicUser.userTp);
               requestHeaders.set("X-User-Id", publicUser.userId);
               requestHeaders.set("X-User-Role", role);
@@ -112,7 +122,9 @@ export async function middleware(request: NextRequest) {
         }
       }
     }
-    return NextResponse.next();
+    // 무쿠키·무효토큰·2FA미완료·폴백실패 fall-through — 인바운드 X-User-* 가 제거된
+    // sanitized 헤더로 통과시켜 위조 권한이 핸들러에 도달하지 못하게 한다(VULN-01).
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const token = request.cookies.get(COOKIE_NAME)?.value;
@@ -172,7 +184,9 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  const requestHeaders = new Headers(request.headers);
+  // sanitized 헤더(상단에서 인바운드 X-User-* 제거 완료)에 서버 검증값만 주입.
+  // userNm/deptNm 부재 시에는 set 하지 않으며, 인바운드 위조값은 이미 제거된 상태이므로
+  // X-User-Name/Department 위조가 잔존하지 않는다(LOW-10 동반 해소).
   requestHeaders.set("X-User-Type", user.userTp);
   requestHeaders.set("X-User-Id", user.userId);
   requestHeaders.set("X-User-Role", role);
