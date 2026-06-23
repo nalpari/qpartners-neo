@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { getUserFromRequest, signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
-import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -102,14 +102,17 @@ export async function POST(request: NextRequest) {
     const { newPassword } = result.data;
 
     // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
+    // QSP userDetail 은 모든 userTp(GENERAL/STORE/ADMIN)에서 loginId(User ID)를 필수로 요구한다.
+    // 종전 STORE 한정 분기는 ADMIN 최초 로그인에서 loginId 누락
+    // ("User ID必須入力値が抜けています") → data:null → fail-closed 500 을 유발했다.
+    // user.userId 는 login 응답이 전 타입에 내려주므로 항상 사용 가능.
+    // email 은 비밀번호 초기화 흐름의 기존 매칭 정책에 따라 유지한다.
     const detailParams = new URLSearchParams({
       accsSiteCd: "QPARTNERS",
       email: user.email ?? "",
       userTp: user.userTp,
+      loginId: user.userId,
     });
-    if (user.userTp === "STORE") {
-      detailParams.set("loginId", user.userId);
-    }
 
     let loginId = user.userId;
     let detailData: z.infer<typeof qspUserDetailSchema>["data"] = null;
@@ -123,7 +126,7 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userDetail",
           callerRoute: "[POST /api/auth/password-init]",
-          userId: maskEmail(user.userId),
+          userId: maskUserId(user.userId),
           userType: user.userTp,
         },
       );
@@ -188,7 +191,7 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "userPwdChg",
           callerRoute: "[POST /api/auth/password-init]",
-          userId: maskEmail(user.userId),
+          userId: maskUserId(user.userId),
           userType: user.userTp,
         },
       );
