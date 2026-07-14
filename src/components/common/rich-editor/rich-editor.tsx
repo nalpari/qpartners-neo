@@ -129,8 +129,21 @@ export function RichEditor({
   const handleApplyHtmlSource = useCallback(() => {
     if (!editor) return;
     const sanitized = sanitizeContentHtml(htmlSourceDraft);
+    // sanitize 실패(입력이 있는데 빈 문자열 반환) 시 에디터 내용 전체 삭제를 방지.
+    if (sanitized === "" && htmlSourceDraft.trim() !== "") {
+      const err = new Error("HTML sanitize 실패");
+      console.error("[RichEditor] HTML 소스 sanitize 실패:", err);
+      onParseErrorRef.current?.(err);
+      return;
+    }
     try {
-      editor.commands.setContent(sanitized, true);
+      const success = editor.commands.setContent(sanitized, true);
+      if (!success) {
+        const err = new Error("setContent returned false");
+        console.error("[RichEditor] HTML 소스 적용 실패:", err);
+        onParseErrorRef.current?.(err);
+        return;
+      }
       setIsHtmlSourceMode(false);
     } catch (error: unknown) {
       console.error("[RichEditor] HTML 소스 적용 실패:", error);
