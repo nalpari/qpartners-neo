@@ -12,15 +12,27 @@ export interface EditorToolbarProps {
   editor: Editor;
   /** G5 画像 버튼 클릭 시 호출 — 호출자가 숨겨진 file input을 트리거한다. */
   onImageRequest: () => void;
+  /** HTML 소스 모드 활성 여부 — true면 HTML 버튼 외 나머지 컨트롤을 비활성화한다. */
+  htmlSourceMode: boolean;
+  /** G7 HTML 버튼 클릭 시 호출 — 소스 모드 진입/이탈 토글은 호출자가 담당한다. */
+  onToggleHtmlSource: () => void;
+  /** 이미지 업로드 진행 중 여부 — true면 HTML 버튼도 비활성화해 경쟁 조건을 방지한다. */
+  isUploading: boolean;
 }
 
 /**
  * 상단 고정 툴바.
  * 그룹 구성(스펙 §11.2):
- *   G1 블록 타입 드롭다운 / G2 인라인 / G3 리스트 / G4 블록 / G5 삽입 / G6 히스토리
+ *   G1 블록 타입 드롭다운 / G2 인라인 / G3 리스트 / G4 블록 / G5 삽입 / G6 히스토리 / G7 HTML 소스 모드
  * 좌측 블록 핸들·BubbleMenu는 사용하지 않음 (스펙 §3.4).
  */
-export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
+export function EditorToolbar({
+  editor,
+  onImageRequest,
+  htmlSourceMode,
+  onToggleHtmlSource,
+  isUploading,
+}: EditorToolbarProps) {
   const t = editorI18n.toolbar;
   const [tablePopoverOpen, setTablePopoverOpen] = useState(false);
   const tableButtonRef = useRef<HTMLButtonElement>(null);
@@ -89,7 +101,7 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
     else editor.chain().focus().setFontSize(value).run();
   };
 
-  const isEditable = editor.isEditable;
+  const isEditable = editor.isEditable && !htmlSourceMode;
 
   const btnBase =
     "flex items-center justify-center w-9 h-9 rounded transition-colors text-[14px] text-[#101010]";
@@ -341,9 +353,9 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.undo}
         title={`${t.undo} (${t.shortcuts.undo})`}
-        className={btn(false, !editor.can().undo())}
+        disabled={!isEditable}
+        className={btn(false)}
         onClick={() => editor.chain().focus().undo().run()}
-        disabled={!isEditable || !editor.can().undo()}
       >
         ↶
       </button>
@@ -351,11 +363,29 @@ export function EditorToolbar({ editor, onImageRequest }: EditorToolbarProps) {
         type="button"
         aria-label={t.redo}
         title={`${t.redo} (${t.shortcuts.redo})`}
-        className={btn(false, !editor.can().redo())}
+        disabled={!isEditable}
+        className={btn(false)}
         onClick={() => editor.chain().focus().redo().run()}
-        disabled={!isEditable || !editor.can().redo()}
       >
         ↷
+      </button>
+
+      {divider}
+
+      {/* G7 — HTML 소스 모드 토글. 다른 버튼과 달리 소스 모드 중에도 클릭 가능해야 이탈할 수 있다.
+           업로드 중에는 경쟁 조건 방지를 위해 비활성화한다. */}
+      <button
+        type="button"
+        aria-label={t.htmlSource}
+        title={t.htmlSource}
+        aria-pressed={htmlSourceMode}
+        disabled={!editor.isEditable || isUploading}
+        className={`${btnBase} ${
+          htmlSourceMode ? "bg-[#F4F4F4]" : "bg-transparent hover:bg-[#FAFAFA]"
+        } ${!editor.isEditable || isUploading ? "opacity-40 pointer-events-none" : ""}`}
+        onClick={onToggleHtmlSource}
+      >
+        <span className="font-mono text-[11px] font-bold">HTML</span>
       </button>
     </div>
   );
