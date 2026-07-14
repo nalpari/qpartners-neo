@@ -262,7 +262,6 @@ export function ContentsTable({
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
-    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
     const toCategoryColumn = (parent: CategoryNode): ColDef<ContentListItem> => ({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
@@ -277,6 +276,7 @@ export function ContentsTable({
 
     // 우선 노출 카테고리(PRIORITY_CATEGORY_ORDER)는 지정 순서로 更新日과 タイトル 사이에,
     // 그 외 카테고리는 기존 sortOrder 순서 그대로 添付 뒤에 배치.
+    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
     const visibleParents = categories.filter((parent) => parent.isVisible !== false);
     const priorityCategoryColumns = visibleParents
       .filter((parent) => parent.categoryCode in PRIORITY_CATEGORY_ORDER)
@@ -288,8 +288,7 @@ export function ContentsTable({
     const otherCategoryColumns = visibleParents
       .filter((parent) => !(parent.categoryCode in PRIORITY_CATEGORY_ORDER))
       .map(toCategoryColumn);
-    const hasCategoryColumns =
-      priorityCategoryColumns.length + otherCategoryColumns.length > 0;
+    const hasCategoryColumns = visibleParents.length > 0;
 
     const baseCols: ColDef<ContentListItem>[] = [
       {
