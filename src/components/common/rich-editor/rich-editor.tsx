@@ -125,16 +125,18 @@ export function RichEditor({
   }, [editor]);
 
   // 소스 모드 적용 — sanitize 후 setContent(emitUpdate: true)로 onChange까지 자연스럽게 전파.
+  // setContent 성공 시에만 소스 모드를 닫아 실패 시 사용자가 HTML을 수정할 수 있도록 한다.
   const handleApplyHtmlSource = useCallback(() => {
     if (!editor) return;
     const sanitized = sanitizeContentHtml(htmlSourceDraft);
     try {
       editor.commands.setContent(sanitized, true);
+      setIsHtmlSourceMode(false);
     } catch (error: unknown) {
       console.error("[RichEditor] HTML 소스 적용 실패:", error);
       onParseErrorRef.current?.(error);
+      // 소스 모드 유지 — 사용자가 HTML을 수정 후 재시도할 수 있도록.
     }
-    setIsHtmlSourceMode(false);
   }, [editor, htmlSourceDraft]);
 
   const handleCancelHtmlSource = useCallback(() => {

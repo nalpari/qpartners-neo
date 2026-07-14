@@ -345,30 +345,6 @@ export function EditorToolbar({
 
       {divider}
 
-      {/* G6 — 히스토리 */}
-      <button
-        type="button"
-        aria-label={t.undo}
-        title={`${t.undo} (${t.shortcuts.undo})`}
-        className={btn(false, !editor.can().undo())}
-        onClick={() => editor.chain().focus().undo().run()}
-        disabled={!isEditable || !editor.can().undo()}
-      >
-        ↶
-      </button>
-      <button
-        type="button"
-        aria-label={t.redo}
-        title={`${t.redo} (${t.shortcuts.redo})`}
-        className={btn(false, !editor.can().redo())}
-        onClick={() => editor.chain().focus().redo().run()}
-        disabled={!isEditable || !editor.can().redo()}
-      >
-        ↷
-      </button>
-
-      {divider}
-
       {/* G7 — HTML 소스 모드 토글. 다른 버튼과 달리 소스 모드 중에도 클릭 가능해야 이탈할 수 있다. */}
       <button
         type="button"
