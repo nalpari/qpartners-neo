@@ -23,6 +23,14 @@ import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
+/** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 添付 뒤에 기존 sortOrder 순으로 배치. */
+const PRIORITY_CATEGORY_ORDER: Record<string, number> = {
+  INFO: 1, // 情報種別
+  BIZ: 2, // 業務分類
+  DATA: 3, // 資料分類
+  CONT: 4, // 内容分類
+};
+
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-")
  * 비사내 사용자(`isInternal = false`)에게는 사내전용 카테고리 라벨을 숨긴다.
  * Issue: #2160 — 비회원 화면에서 사내전용 카테고리 라벨이 노출되던 문제 차단.
@@ -254,10 +262,7 @@ export function ContentsTable({
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
-    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
-    const categoryColumns: ColDef<ContentListItem>[] = categories
-      .filter((parent) => parent.isVisible !== false)
-      .map((parent) => ({
+    const toCategoryColumn = (parent: CategoryNode): ColDef<ContentListItem> => ({
       headerName: parent.name,
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
@@ -267,26 +272,25 @@ export function ContentsTable({
       minWidth: 90,
       headerClass: "ag-header-cell-center",
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-    }));
+    });
+
+    // 우선 노출 카테고리(PRIORITY_CATEGORY_ORDER)는 지정 순서로 更新日과 タイトル 사이에,
+    // 그 외 카테고리는 기존 sortOrder 순서 그대로 添付 뒤에 배치.
+    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
+    const visibleParents = categories.filter((parent) => parent.isVisible !== false);
+    const priorityCategoryColumns = visibleParents
+      .filter((parent) => Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
+      .sort(
+        (a, b) =>
+          PRIORITY_CATEGORY_ORDER[a.categoryCode] - PRIORITY_CATEGORY_ORDER[b.categoryCode],
+      )
+      .map(toCategoryColumn);
+    const otherCategoryColumns = visibleParents
+      .filter((parent) => !Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
+      .map(toCategoryColumn);
+    const hasCategoryColumns = visibleParents.length > 0;
 
     const baseCols: ColDef<ContentListItem>[] = [
-      ...categoryColumns,
-      {
-        headerName: "タイトル",
-        field: "title",
-        flex: categoryColumns.length > 0 ? 2 : 3,
-        minWidth: 400,
-        cellRenderer: TitleCellRenderer,
-        headerClass: "ag-header-cell-center",
-      },
-      {
-        headerName: "添付",
-        field: "attachmentCount",
-        width: 90,
-        cellRenderer: AttachmentCellRenderer,
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        headerClass: "ag-header-cell-center",
-      },
       {
         headerName: "登録日",
         field: "createdAt",
@@ -310,6 +314,24 @@ export function ContentsTable({
           return formatDate(params.value);
         },
       },
+      ...priorityCategoryColumns,
+      {
+        headerName: "タイトル",
+        field: "title",
+        flex: hasCategoryColumns ? 2 : 3,
+        minWidth: 400,
+        cellRenderer: TitleCellRenderer,
+        headerClass: "ag-header-cell-center",
+      },
+      {
+        headerName: "添付",
+        field: "attachmentCount",
+        width: 90,
+        cellRenderer: AttachmentCellRenderer,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        headerClass: "ag-header-cell-center",
+      },
+      ...otherCategoryColumns,
     ];
 
     if (isInternal) {
