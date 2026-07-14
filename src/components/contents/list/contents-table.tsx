@@ -279,14 +279,14 @@ export function ContentsTable({
     // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
     const visibleParents = categories.filter((parent) => parent.isVisible !== false);
     const priorityCategoryColumns = visibleParents
-      .filter((parent) => parent.categoryCode in PRIORITY_CATEGORY_ORDER)
+      .filter((parent) => Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
       .sort(
         (a, b) =>
           PRIORITY_CATEGORY_ORDER[a.categoryCode] - PRIORITY_CATEGORY_ORDER[b.categoryCode],
       )
       .map(toCategoryColumn);
     const otherCategoryColumns = visibleParents
-      .filter((parent) => !(parent.categoryCode in PRIORITY_CATEGORY_ORDER))
+      .filter((parent) => !Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
       .map(toCategoryColumn);
     const hasCategoryColumns = visibleParents.length > 0;
 
