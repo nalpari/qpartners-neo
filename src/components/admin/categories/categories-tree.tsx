@@ -75,7 +75,7 @@ export function CategoriesTree({
             表示
           </span>
           <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
-            注文
+            配列
           </span>
         </div>
       </div>
