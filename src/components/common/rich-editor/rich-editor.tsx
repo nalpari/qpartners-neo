@@ -118,16 +118,18 @@ export function RichEditor({
   };
 
   // HTML 소스 모드 진입 — 현재 본문을 raw HTML로 캡처해 textarea에 표시.
+  // 업로드 중에는 진입을 차단한다 — 업로드가 완료되기 전 캡처하면 삽입 중인 이미지가 누락된다.
   const handleEnterHtmlSource = useCallback(() => {
-    if (!editor) return;
+    if (!editor || isUploading) return;
     setHtmlSourceDraft(editor.getHTML());
     setIsHtmlSourceMode(true);
-  }, [editor]);
+  }, [editor, isUploading]);
 
   // 소스 모드 적용 — sanitize 후 setContent(emitUpdate: true)로 onChange까지 자연스럽게 전파.
   // setContent 성공 시에만 소스 모드를 닫아 실패 시 사용자가 HTML을 수정할 수 있도록 한다.
+  // 업로드 중에는 적용을 차단한다 — 초안이 업로드 완료 전 스냅샷이므로 덮어쓰면 이미지가 유실된다.
   const handleApplyHtmlSource = useCallback(() => {
-    if (!editor) return;
+    if (!editor || isUploading) return;
     const sanitized = sanitizeContentHtml(htmlSourceDraft);
     // sanitize 실패(입력이 있는데 빈 문자열 반환) 시 에디터 내용 전체 삭제를 방지.
     if (sanitized === "" && htmlSourceDraft.trim() !== "") {
@@ -150,7 +152,7 @@ export function RichEditor({
       onParseErrorRef.current?.(error);
       // 소스 모드 유지 — 사용자가 HTML을 수정 후 재시도할 수 있도록.
     }
-  }, [editor, htmlSourceDraft]);
+  }, [editor, htmlSourceDraft, isUploading]);
 
   const handleCancelHtmlSource = useCallback(() => {
     setIsHtmlSourceMode(false);
@@ -187,6 +189,7 @@ export function RichEditor({
         onImageRequest={triggerImagePicker}
         htmlSourceMode={isHtmlSourceMode}
         onToggleHtmlSource={isHtmlSourceMode ? handleApplyHtmlSource : handleEnterHtmlSource}
+        isUploading={isUploading}
       />
       {isHtmlSourceMode && (
         <div className="px-4 py-3">
@@ -208,7 +211,8 @@ export function RichEditor({
             <button
               type="button"
               onClick={handleApplyHtmlSource}
-              className="h-9 px-4 rounded bg-[#101010] text-[13px] text-white hover:bg-[#383838]"
+              disabled={isUploading}
+              className="h-9 px-4 rounded bg-[#101010] text-[13px] text-white hover:bg-[#383838] disabled:opacity-40 disabled:pointer-events-none"
             >
               {editorI18n.htmlSourceMode.apply}
             </button>

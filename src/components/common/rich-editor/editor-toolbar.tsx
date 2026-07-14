@@ -16,6 +16,8 @@ export interface EditorToolbarProps {
   htmlSourceMode: boolean;
   /** G7 HTML 버튼 클릭 시 호출 — 소스 모드 진입/이탈 토글은 호출자가 담당한다. */
   onToggleHtmlSource: () => void;
+  /** 이미지 업로드 진행 중 여부 — true면 HTML 버튼도 비활성화해 경쟁 조건을 방지한다. */
+  isUploading: boolean;
 }
 
 /**
@@ -29,6 +31,7 @@ export function EditorToolbar({
   onImageRequest,
   htmlSourceMode,
   onToggleHtmlSource,
+  isUploading,
 }: EditorToolbarProps) {
   const t = editorI18n.toolbar;
   const [tablePopoverOpen, setTablePopoverOpen] = useState(false);
@@ -345,16 +348,17 @@ export function EditorToolbar({
 
       {divider}
 
-      {/* G7 — HTML 소스 모드 토글. 다른 버튼과 달리 소스 모드 중에도 클릭 가능해야 이탈할 수 있다. */}
+      {/* G7 — HTML 소스 모드 토글. 다른 버튼과 달리 소스 모드 중에도 클릭 가능해야 이탈할 수 있다.
+           업로드 중에는 경쟁 조건 방지를 위해 비활성화한다. */}
       <button
         type="button"
         aria-label={t.htmlSource}
         title={t.htmlSource}
         aria-pressed={htmlSourceMode}
-        disabled={!editor.isEditable}
+        disabled={!editor.isEditable || isUploading}
         className={`${btnBase} ${
           htmlSourceMode ? "bg-[#F4F4F4]" : "bg-transparent hover:bg-[#FAFAFA]"
-        } ${!editor.isEditable ? "opacity-40 pointer-events-none" : ""}`}
+        } ${!editor.isEditable || isUploading ? "opacity-40 pointer-events-none" : ""}`}
         onClick={onToggleHtmlSource}
       >
         <span className="font-mono text-[11px] font-bold">HTML</span>
