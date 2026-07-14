@@ -23,7 +23,7 @@ export interface EditorToolbarProps {
 /**
  * 상단 고정 툴바.
  * 그룹 구성(스펙 §11.2):
- *   G1 블록 타입 드롭다운 / G2 인라인 / G3 리스트 / G4 블록 / G5 삽입 / G7 HTML 소스 모드
+ *   G1 블록 타입 드롭다운 / G2 인라인 / G3 리스트 / G4 블록 / G5 삽입 / G6 히스토리 / G7 HTML 소스 모드
  * 좌측 블록 핸들·BubbleMenu는 사용하지 않음 (스펙 §3.4).
  */
 export function EditorToolbar({
@@ -345,6 +345,30 @@ export function EditorToolbar({
           />
         )}
       </div>
+
+      {divider}
+
+      {/* G6 — 히스토리 */}
+      <button
+        type="button"
+        aria-label={t.undo}
+        title={`${t.undo} (${t.shortcuts.undo})`}
+        disabled={!isEditable}
+        className={btn(false)}
+        onClick={() => editor.chain().focus().undo().run()}
+      >
+        ↶
+      </button>
+      <button
+        type="button"
+        aria-label={t.redo}
+        title={`${t.redo} (${t.shortcuts.redo})`}
+        disabled={!isEditable}
+        className={btn(false)}
+        onClick={() => editor.chain().focus().redo().run()}
+      >
+        ↷
+      </button>
 
       {divider}
 
