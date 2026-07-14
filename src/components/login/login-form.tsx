@@ -7,24 +7,24 @@ import type { TabType } from "@/components/login/types";
 
 const TAB_CONFIG = {
   dealer: {
-    title: "当社の見積設計システムをご利用のお客様",
+    title: "当社の注文管理・見積設計システムのアカウントをお持ちの方",
     description:
-      "※ HANASYS DESIGN/Q.ORDER/Q.MUSUBIと同じID/パスワードを入力してください",
+      "※HANASYS DESIGN/Q.ORDER/Q.MUSUBIと同じID/パスワードを入力してください。",
     idPlaceholder: "IDを入力してください",
     pwPlaceholder: "パスワードを入力してください",
   },
   installer: {
-    title: "当社にて発行した施工IDをお持ちのお客様",
+    title: "当社にて発行した施工IDをお持ちの方",
     description:
-      "※ メールまたは施工IDを入力してください。パスワードをお持ちでない方はパスワードの初期化を行ってください",
+      "※ メールまたは施工IDを入力してください。パスワードをお持ちでない方はパスワードの初期化を行ってください。",
     idPlaceholder: "メール or 施工IDを入力してください",
     pwPlaceholder: "パスワードを入力してください",
   },
   general: {
-    title: "当社一般会員にご登録のお客様",
+    title: "一般会員としてご登録の方",
     description:
-      "※ ご登録時のメールアドレスとパスワードを入力してください",
-    idPlaceholder: "メールアドレスを入力してください。",
+      "※ご登録時のメールアドレスとパスワードを入力してください。",
+    idPlaceholder: "メールアドレスを入力してください",
     pwPlaceholder: "パスワードを入力してください",
   },
 };

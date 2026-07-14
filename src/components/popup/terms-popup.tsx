@@ -133,7 +133,7 @@ export function TermsPopup() {
                 <div className="mt-[8px] pt-[16px] border-t border-[#eaf0f6]">
                   <p className="font-medium text-[13px] text-[#45576f]">お問い合わせ先</p>
                   <p className="mt-[4px] whitespace-pre-line">
-                    {"ハンファジャパン株式会社　Q.PARTNERS事務局\nTel: 0120-801-170\nEmail: q-partners@hqj.co.jp\n問い合わせ受付時間：平日10:00-12:00、13:00-17:00\n※土曜、日曜、祝日にお問合せをいただいた場合は、翌営業日以降に順次対応いたします。"}
+                    {"ハンファジャパン株式会社　Q.PARTNERS事務局\nTel: 0120-801-170\nEmail: q-partners@hqj.co.jp\n問い合わせ受付時間：平日10:00-12:00、13:00-18:00\n※土曜、日曜、祝日にお問合せをいただいた場合は、翌営業日以降に順次対応いたします。"}
                   </p>
                   <p className="mt-[12px] text-[12px] text-[#999]">制定日：平成30年8月1日</p>
                 </div>
