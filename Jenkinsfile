@@ -116,6 +116,8 @@ pipeline {
                 grep -v latest | sort -rn | tail -n +4 | \
                 xargs -I {} docker rmi ${APP_NAME}:{} || true
             """
+            // 디스크 공간 확보: 24시간 지난 빌드 캐시 정리 (당일 캐시는 재사용 위해 보존)
+            sh 'docker builder prune -f --filter "until=24h" || true'
         }
         failure {
             echo "Build #${BUILD_NUMBER} 실패 - 롤백 검토 필요"
