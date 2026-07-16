@@ -249,6 +249,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           createdAt={data.createdAt}
           updatedAt={data.updatedAt}
           hasBeenUpdated={data.hasBeenUpdated}
+          viewCount={data.viewCount}
           body={data.body}
         />
 
