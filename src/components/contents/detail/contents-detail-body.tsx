@@ -43,9 +43,9 @@ export function ContentsDetailBody({
 
   return (
     <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[18px] px-6 py-[34px] lg:py-[48px] w-full lg:w-[1440px]">
-      {/* 헤더: 제목 + 날짜 */}
+      {/* 헤더: 제목 + 메타(등록일/갱신일/조회수) */}
       <div className="border-b border-[#EEE] pb-6">
-        {/* PC: 가로 (제목 좌 / 날짜 우) */}
+        {/* PC: 가로 (제목 좌 / 메타 우) */}
         <div className="hidden lg:flex items-center gap-[10px]">
           <h1 className="flex-1 font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
             {title}
