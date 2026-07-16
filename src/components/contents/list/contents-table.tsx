@@ -331,6 +331,14 @@ export function ContentsTable({
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
       },
+      {
+        headerName: "VIEW",
+        field: "viewCount",
+        width: 90,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        headerClass: "ag-header-cell-center",
+        valueFormatter: (params) => (params.data?.viewCount ?? 0).toLocaleString(),
+      },
       ...otherCategoryColumns,
     ];
 
