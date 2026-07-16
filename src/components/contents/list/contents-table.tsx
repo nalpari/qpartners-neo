@@ -23,7 +23,7 @@ import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
-/** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 添付 뒤에 기존 sortOrder 순으로 배치. */
+/** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 VIEW 뒤에 기존 sortOrder 순으로 배치. */
 const PRIORITY_CATEGORY_ORDER: Record<string, number> = {
   INFO: 1, // 情報種別
   BIZ: 2, // 業務分類
@@ -275,7 +275,7 @@ export function ContentsTable({
     });
 
     // 우선 노출 카테고리(PRIORITY_CATEGORY_ORDER)는 지정 순서로 更新日과 タイトル 사이에,
-    // 그 외 카테고리는 기존 sortOrder 순서 그대로 添付 뒤에 배치.
+    // 그 외 카테고리는 기존 sortOrder 순서 그대로 VIEW 뒤에 배치.
     // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
     const visibleParents = categories.filter((parent) => parent.isVisible !== false);
     const priorityCategoryColumns = visibleParents
