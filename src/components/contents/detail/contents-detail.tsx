@@ -214,7 +214,6 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
       {isDeleting && <DimSpinner />}
       <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full lg:pb-[120px]">
         <ContentsDetailInfo
-          viewCount={data.viewCount}
           authorDepartment={data.authorDepartment}
           createdBy={data.createdBy}
           createdByName={data.createdByName ?? null}
