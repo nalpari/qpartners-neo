@@ -629,7 +629,7 @@ export function ContentsTable({
             표시 여부가 갈리면 Link/없음 구조 자체가 달라져 hydration 에러가 난다.
             노출 여부는 항상 마운트해두고 CSS(hidden)로만 제어해 트리 구조를 고정한다. */}
         <Link
-          className={`hidden lg:block ${showCreateButton ? "" : "lg:hidden"}`}
+          className={`hidden ${showCreateButton ? "lg:block" : ""}`}
           href="/contents/create"
           transitionTypes={["fade"]}
         >
