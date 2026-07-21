@@ -119,15 +119,35 @@ export const listContentsQuerySchema = z.object({
     .transform((v) => (v ? v.split(",").filter(Boolean) : undefined)),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
-  /** ag-grid 헤더 클릭 전체 데이터 정렬 — 지정 시 위 sort(프리셋) 대신 이 필드+방향을 사용. */
+  /** ag-grid 헤더 클릭 전체 데이터 정렬 — 지정 시 위 sort(프리셋) 대신 이 필드+방향을 사용.
+   *  sortCategoryCode/sortTargets 와 상호 배타적(동시 지정 시 validation 오류, 아래 superRefine). */
   sortField: z.enum(CONTENT_SORT_FIELDS).optional(),
   /** 카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 첫 번째(표시순) 자식 카테고리명 기준.
-   *  sortField 와 동시 지정 불가하며, 지정 시 sortField/sort(프리셋) 보다 우선한다. */
+   *  sortField/sortTargets 와 상호 배타적. */
   sortCategoryCode: z.string().max(50).optional(),
   /** 掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상의 순위(targetOrderRank) 기준.
-   *  sortField/sortCategoryCode 보다 우선한다. */
+   *  sortField/sortCategoryCode 와 상호 배타적. */
   sortTargets: z.coerce.boolean().optional(),
+  /** sortField/sortCategoryCode/sortTargets 중 하나가 지정된 경우에만 유효 (기본 asc). */
   sortDir: z.enum(["asc", "desc"]).optional(),
+}).superRefine((data, ctx) => {
+  // 세 정렬 모드는 상호 배타적 — ag-grid 는 클릭된 컬럼 1개의 colId 만 보내므로 정상 흐름에서는
+  // 항상 하나만 채워지지만, API 를 직접 호출하는 경우까지 대비해 서버에서도 명시적으로 막는다.
+  const sortModes = [data.sortField, data.sortCategoryCode, data.sortTargets].filter(Boolean);
+  if (sortModes.length > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sortField"],
+      message: "sortField、sortCategoryCode、sortTargets は同時に指定できません",
+    });
+  }
+  if (data.sortDir && sortModes.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sortDir"],
+      message: "sortDir は sortField・sortCategoryCode・sortTargets のいずれかと併せて指定してください",
+    });
+  }
 });
 
 /**

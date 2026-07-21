@@ -196,11 +196,18 @@ function renderMobileTitle(item: ContentListItem) {
 }
 
 function MobileAttachmentButton({ item }: { item: ContentListItem }) {
+  const { openAlert } = useAlertStore();
+
   if (item.attachmentCount === 0) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    void downloadAllAttachments(item.id);
+    void (async () => {
+      const ok = await downloadAllAttachments(item.id);
+      if (!ok) {
+        openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+      }
+    })();
   };
 
   return (
@@ -229,6 +236,8 @@ interface ContentsTableProps {
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
+  /** 콘텐츠 목록 API 실패 여부 — true 면 "결과 없음"과 구분되는 에러 메시지를 표시한다. */
+  isError?: boolean;
   /** 부모(ContentsContents) 의 usePageSize 단일 출처 — URL 미영속이라 새로고침 시 sort=1 복귀. */
   pageSize: number;
   onPageChange: (page: number) => void;
@@ -246,6 +255,7 @@ export function ContentsTable({
   data,
   meta,
   isLoading,
+  isError = false,
   pageSize,
   onPageChange,
   onPageSizeChange,
@@ -451,8 +461,9 @@ export function ContentsTable({
             if (targets.length === 0) return <span>-</span>;
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
-                {targets.map((t, i) => (
-                  <span key={i} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
+                {targets.map((t) => (
+                  // roleCode 는 콘텐츠당 unique(validateUniqueRoleCodes) — null(비회원)은 1건만 가능해 안전.
+                  <span key={t.roleCode ?? "__non_member__"} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
                 ))}
               </div>
             );
@@ -609,6 +620,12 @@ export function ContentsTable({
     </div>
   );
 
+  // API 실패는 "결과 없음"과 구분되는 메시지로 안내 — 정렬/검색 파라미터 오류(400/500)가
+  // 조용히 빈 목록으로 보이는 것을 방지.
+  const emptyMessage = isError
+    ? "コンテンツの取得に失敗しました。時間をおいて再度お試しください。"
+    : "該当するコンテンツがありません。";
+
   return (
     <>
       {/* 데스크톱 */}
@@ -622,7 +639,7 @@ export function ContentsTable({
               rowData={rowData}
               className="contents-grid"
               loading={isLoading}
-              emptyMessage="該当するコンテンツがありません。"
+              emptyMessage={emptyMessage}
               autoHeight={!(isLoading || rowData.length === 0)}
               maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
               onSortChanged={handleSortChanged}
@@ -648,7 +665,7 @@ export function ContentsTable({
           {data.length === 0 ? (
             <div className="flex items-center justify-center min-h-[300px] bg-white">
               <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
-                該当するコンテンツがありません。
+                {emptyMessage}
               </p>
             </div>
           ) : (

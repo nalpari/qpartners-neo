@@ -181,6 +181,9 @@ export async function GET(request: NextRequest) {
     };
 
     // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
+    // 주의: sortField==="updatedAt" 인 경우 이 값은 계산만 되고 실제로는 쓰이지 않는다 —
+    // 아래 inMemorySortKey 분기가 먼저 가로채 인메모리 정렬 경로로 처리하기 때문
+    // ("-"(미수정) 행을 방향과 무관하게 항상 뒤로 보내는 규칙은 단순 orderBy 로 표현 불가).
     const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
       if (sortField) {
         const dir = sortDir ?? "asc";
@@ -199,6 +202,13 @@ export async function GET(request: NextRequest) {
             return { attachments: { _count: dir } };
           case "viewCount":
             return { viewCount: dir };
+          default: {
+            // CONTENT_SORT_FIELDS 에 필드를 추가했는데 case 를 빠뜨리면 이 줄에서 컴파일 에러가
+            // 나서 알아챌 수 있다 — case 누락이 컴파일 통과 후 조용히 기본 정렬로 fallback 되는 것 방지.
+            const _exhaustive: never = sortField;
+            console.error("[GET /api/contents] 처리되지 않은 sortField:", _exhaustive);
+            return { createdAt: "desc" as const };
+          }
         }
       }
       switch (sort) {
@@ -247,7 +257,7 @@ export async function GET(request: NextRequest) {
     let total: number;
 
     // "값 없음"(null)을 정렬 방향과 무관하게 항상 뒤로 보내는 비교자 — 카테고리 미매칭 콘텐츠(문자열 키),
-    // 미수정 콘텐츠(updatedAt 숫자 키) 양쪽에서 재사용.
+    // 미수정 콘텐츠(updatedAt 숫자 키), 게시대상 없는 콘텐츠(targetOrderRank 숫자 키) 세 곳에서 재사용.
     const compareNullsLast = <K extends string | number>(
       a: K | null,
       b: K | null,
@@ -262,7 +272,8 @@ export async function GET(request: NextRequest) {
 
     // DB orderBy 로 표현 불가한 정렬(다대다 집계, "실제 수정 여부" 판별)은 전체 로우를 가져와
     // JS 에서 키를 계산해 정렬 후 페이지를 자른다 — 콘텐츠 총량이 적어(수백 건 내외) 무시 가능한 비용.
-    // 세 케이스가 상호 배타적이므로 우선순위(카테고리 > 更新日 > 掲示対象)로 하나만 활성화된다.
+    // 세 케이스는 Zod superRefine(listContentsQuerySchema)이 동시 지정을 막아 항상 하나만 채워진다
+    // — 아래 삼항연산자 순서(카테고리 > 更新日 > 掲示対象)는 그 보장 위에서의 평가 순서일 뿐 우선순위 의미는 없다.
     const inMemorySortKey: ((row: ReturnType<typeof mapRow>) => string | number | null) | null = sortCategoryCode
       ? (row) => row.categories.find((cat) => cat.categoryCode === sortCategoryCode)?.children[0]?.name ?? null
       : sortField === "updatedAt"
