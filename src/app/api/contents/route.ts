@@ -240,6 +240,8 @@ export async function GET(request: NextRequest) {
     // JS 에서 키를 계산해 정렬 후 페이지를 자른다 — 콘텐츠 총량이 적어(수백 건 내외) 무시 가능한 비용.
     // 세 케이스는 Zod superRefine(listContentsQuerySchema)이 동시 지정을 막아 항상 하나만 채워진다
     // — 아래 삼항연산자 순서(카테고리 > 更新日 > 掲示対象)는 그 보장 위에서의 평가 순서일 뿐 우선순위 의미는 없다.
+    // children[0] は buildCategoryTree が sortOrder ASC → id ASC で安定ソートして返す先頭要素
+    // — クライアント(getFirstCategoryChildName)と同一基準で決定論的 (ソート一致保証).
     const inMemorySortKey: ((row: ReturnType<typeof mapRow>) => string | number | null) | null = sortCategoryCode
       ? (row) => row.categories.find((cat) => cat.categoryCode === sortCategoryCode)?.children[0]?.name ?? null
       : sortField === "updatedAt"
@@ -299,7 +301,9 @@ export async function GET(request: NextRequest) {
             case "updatedAt":
               return { updatedAt: dir };
             case "authorDepartment":
-              return { authorDepartment: dir };
+              // nullable 필드 — DB 기본 NULL 정렬(ASC 시 앞)이 클라이언트 comparator의
+              // null-last 동작과 어긋나므로 Prisma SortOrderInput으로 명시.
+              return { authorDepartment: { sort: dir, nulls: "last" as const } };
             case "approverLevel":
               return { approverLevel: dir };
             case "attachmentCount":

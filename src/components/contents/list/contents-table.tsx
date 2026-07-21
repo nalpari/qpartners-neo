@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import type { ColDef, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
+import type { ColDef, GridApi, GridReadyEvent, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
@@ -39,7 +39,10 @@ export const TARGETS_SORT_COL_ID = "__targets__";
 
 /** 정렬 키 — 콘텐츠당 해당 부모 카테고리의 "표시순 첫 번째" 자식 카테고리명 (없으면 null).
  *  서버(route.ts)의 sortCategoryCode 로직과 동일 기준(children[0])을 사용해야 화면 정렬과
- *  실제 서버 정렬 결과가 어긋나지 않는다. */
+ *  실제 서버 정렬 결과가 어긋나지 않는다.
+ *
+ *  children 배열은 buildCategoryTree 가 sortOrder ASC → id ASC 로 안정 정렬하여 반환하므로
+ *  children[0] 은 항상 "sortOrder 최소값" 자식으로 결정론적이다 (서버·클라이언트 동일 보장). */
 function getFirstCategoryChildName(item: ContentListItem, parentCategoryCode: string): string | null {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
   return matched?.children[0]?.name ?? null;
@@ -270,6 +273,8 @@ interface ContentsTableProps {
    * 호출자가 CONTENT_SORT_FIELDS 화이트리스트로 판별). 정렬 해제 시 둘 다 undefined.
    */
   onSortChange: (colId: string | undefined, dir: "asc" | "desc" | undefined) => void;
+  /** 검색/필터 변경 시 부모가 증가시키는 카운터 — 변경 시 ag-grid 정렬 UI 초기화. */
+  sortResetKey?: number;
 }
 
 export function ContentsTable({
@@ -283,6 +288,7 @@ export function ContentsTable({
   onPageChange,
   onPageSizeChange,
   onSortChange,
+  sortResetKey,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -373,7 +379,8 @@ export function ContentsTable({
         // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
         // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
         cellDataType: false,
-        comparator: (a: string, b: string) => a.localeCompare(b),
+        // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
+        comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
@@ -618,6 +625,17 @@ export function ContentsTable({
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
   };
 
+  const gridApiRef = useRef<GridApi<ContentListItem> | null>(null);
+
+  const handleGridReady = (event: GridReadyEvent<ContentListItem>) => {
+    gridApiRef.current = event.api;
+  };
+
+  // sortResetKey 가 변경되면 ag-grid 컬럼 정렬 UI 초기화 (검색/필터 변경 시 부모가 증가).
+  useEffect(() => {
+    gridApiRef.current?.applyColumnState({ state: [], defaultState: { sort: null } });
+  }, [sortResetKey]);
+
   // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
   // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
@@ -684,7 +702,9 @@ export function ContentsTable({
               emptyMessage={emptyMessage}
               autoHeight={!(isLoading || rowData.length === 0)}
               maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
+              onGridReady={handleGridReady}
               onSortChanged={handleSortChanged}
+              suppressMultiSort
             />
             {totalPages > 0 && (
               <Pagination

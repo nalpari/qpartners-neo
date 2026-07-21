@@ -84,6 +84,8 @@ interface DataGridProps<T> {
   onGridReady?: (event: GridReadyEvent<T>) => void;
   /** 헤더 클릭 정렬 변경 시 호출 — 서버사이드 정렬을 쓰는 그리드만 지정 (opt-in, 미지정 시 기존 동작 그대로). */
   onSortChanged?: (event: SortChangedEvent<T>) => void;
+  /** true 시 멀티 컬럼 정렬 비활성화. 서버 단일 컬럼 정렬과 UI 불일치가 발생하는 그리드만 지정. */
+  suppressMultiSort?: boolean;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -104,6 +106,7 @@ export function DataGrid<T>({
   onCellClicked,
   onGridReady,
   onSortChanged,
+  suppressMultiSort = false,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -175,7 +178,7 @@ export function DataGrid<T>({
         onCellDoubleClicked={onCellDoubleClicked}
         onCellClicked={onCellClicked}
         onGridReady={onGridReady}
-        suppressMultiSort
+        suppressMultiSort={suppressMultiSort}
         onSortChanged={onSortChanged}
       />
     </div>

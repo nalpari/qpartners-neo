@@ -125,6 +125,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   // 새로고침/메뉴 재진입 시 서버 기본 정렬(newest)로 초기화되는 편이 자연스럽다.
   // field(고정 6개 필드) / categoryCode(동적 카테고리 컬럼) / targets(掲示対象) 는 상호 배타적
   // — 항상 하나만 채워진다.
+  const [sortResetKey, setSortResetKey] = useState(0);
   const [sort, setSort] = useState<{
     field: ContentSortField | undefined;
     categoryCode: string | undefined;
@@ -246,6 +247,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   });
 
   const handleSearch = (filters: SearchFilters) => {
+    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSortResetKey((k) => k + 1);
     setSearchParams({ ...filters, page: 1 });
   };
 
@@ -255,6 +258,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
 
   const handlePageSizeChange = (newPageSize: number) => {
     setPageSize(newPageSize);
+    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSortResetKey((k) => k + 1);
     // 페이지 사이즈 변경 시 page 만 1 로 리셋.
     setSearchParams((prev) => ({ ...prev, page: 1 }));
   };
@@ -310,6 +315,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
         onSortChange={handleSortChange}
+        sortResetKey={sortResetKey}
       />
     </main>
   );
