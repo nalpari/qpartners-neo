@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { isAxiosError } from "axios";
+import type { ColDef, GridApi, GridReadyEvent, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
@@ -21,6 +22,7 @@ import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { targetOrderRank } from "@/lib/target-role-order";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
 /** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 VIEW 뒤에 기존 sortOrder 순으로 배치. */
@@ -30,6 +32,21 @@ const PRIORITY_CATEGORY_ORDER: Record<string, number> = {
   DATA: 3, // 資料分類
   CONT: 4, // 内容分類
 };
+
+/** 掲示対象 컬럼 정렬 식별용 colId — 카테고리(categoryCode)·고정 필드와 겹치지 않는 예약값.
+ *  ContentsContents.handleSortChange 가 이 값으로 sortTargets=true 요청을 분기한다. */
+export const TARGETS_SORT_COL_ID = "__targets__";
+
+/** 정렬 키 — 콘텐츠당 해당 부모 카테고리의 "표시순 첫 번째" 자식 카테고리명 (없으면 null).
+ *  서버(route.ts)의 sortCategoryCode 로직과 동일 기준(children[0])을 사용해야 화면 정렬과
+ *  실제 서버 정렬 결과가 어긋나지 않는다.
+ *
+ *  children 배열은 buildCategoryTree 가 sortOrder ASC → id ASC 로 안정 정렬하여 반환하므로
+ *  children[0] 은 항상 "sortOrder 최소값" 자식으로 결정론적이다 (서버·클라이언트 동일 보장). */
+function getFirstCategoryChildName(item: ContentListItem, parentCategoryCode: string): string | null {
+  const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
+  return matched?.children[0]?.name ?? null;
+}
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-")
  * 비사내 사용자(`isInternal = false`)에게는 사내전용 카테고리 라벨을 숨긴다.
@@ -99,8 +116,13 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
+type DownloadResult =
+  | { ok: true }
+  /** 실패 시 axios 응답 상태 코드 (네트워크 단절 등 응답 자체가 없으면 undefined) */
+  | { ok: false; status?: number };
+
 /** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
-async function downloadAllAttachments(contentId: number): Promise<boolean> {
+async function downloadAllAttachments(contentId: number): Promise<DownloadResult> {
   try {
     const { default: api } = await import("@/lib/axios");
     const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
@@ -120,10 +142,29 @@ async function downloadAllAttachments(contentId: number): Promise<boolean> {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
-    return true;
+    return { ok: true };
   } catch (err: unknown) {
-    console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
-    return false;
+    if (isAxiosError(err)) {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", { status: err.response?.status, data: err.response?.data });
+    } else {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+    }
+    const status = isAxiosError(err) ? err.response?.status : undefined;
+    return { ok: false, status };
+  }
+}
+
+/** status 코드별 안내 메시지 — download-all/route.ts 가 실제로 내려주는 상태코드(403/404/413/500)와 매칭. */
+function resolveDownloadErrorMessage(status: number | undefined): string {
+  switch (status) {
+    case 403:
+      return "この操作を行う権限がありません。";
+    case 404:
+      return "対象が見つかりません。既に削除された可能性があります。";
+    case 413:
+      return "ファイルサイズが大きすぎてダウンロードできません。";
+    default:
+      return "ファイルの一括ダウンロードに失敗しました。";
   }
 }
 
@@ -134,9 +175,9 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const contentId = params.data.id;
 
   const handleClick = async () => {
-    const ok = await downloadAllAttachments(contentId);
-    if (!ok) {
-      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+    const result = await downloadAllAttachments(contentId);
+    if (!result.ok) {
+      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
     }
   };
 
@@ -183,17 +224,22 @@ function renderMobileTitle(item: ContentListItem) {
 }
 
 function MobileAttachmentButton({ item }: { item: ContentListItem }) {
+  const { openAlert } = useAlertStore();
+
   if (item.attachmentCount === 0) return null;
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    void downloadAllAttachments(item.id);
+    const result = await downloadAllAttachments(item.id);
+    if (!result.ok) {
+      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
+    }
   };
 
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={(e) => { void handleClick(e); }}
       className="flex items-center px-1 py-[3px] shrink-0 cursor-pointer"
       aria-label="添付ファイルダウンロード"
     >
@@ -216,10 +262,19 @@ interface ContentsTableProps {
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
   isLoading: boolean;
+  /** 콘텐츠 목록 API 실패 여부 — true 면 "결과 없음"과 구분되는 에러 메시지를 표시한다. */
+  isError?: boolean;
   /** 부모(ContentsContents) 의 usePageSize 단일 출처 — URL 미영속이라 새로고침 시 sort=1 복귀. */
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  /**
+   * ag-grid 헤더 클릭 전체 데이터 정렬 — colId 그대로 전달(field 인지 카테고리 categoryCode 인지는
+   * 호출자가 CONTENT_SORT_FIELDS 화이트리스트로 판별). 정렬 해제 시 둘 다 undefined.
+   */
+  onSortChange: (colId: string | undefined, dir: "asc" | "desc" | undefined) => void;
+  /** 검색/필터 변경 시 부모가 증가시키는 카운터 — 변경 시 ag-grid 정렬 UI 초기화. */
+  sortResetKey?: number;
 }
 
 export function ContentsTable({
@@ -228,9 +283,12 @@ export function ContentsTable({
   data,
   meta,
   isLoading,
+  isError = false,
   pageSize,
   onPageChange,
   onPageSizeChange,
+  onSortChange,
+  sortResetKey,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -264,6 +322,28 @@ export function ContentsTable({
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
     const toCategoryColumn = (parent: CategoryNode): ColDef<ContentListItem> => ({
       headerName: parent.name,
+      colId: parent.categoryCode,
+      sortable: true,
+      cellDataType: false,
+      // ag-grid 는 내림차순일 때 comparator 반환값의 부호를 자동으로 뒤집는다
+      // (compareRowNodes: `sort === "asc" ? result : -result`). "-"(매칭 없음) 행은
+      // 서버(route.ts sortCategoryCode 로직)와 동일하게 방향과 무관하게 항상 맨 뒤에 와야 하므로,
+      // isDescending 일 때 반대 부호를 반환해 grid 의 반전을 미리 상쇄한다.
+      comparator: (
+        _a: unknown,
+        _b: unknown,
+        nodeA: { data?: ContentListItem },
+        nodeB: { data?: ContentListItem },
+        isDescending: boolean,
+      ) => {
+        const a = nodeA.data ? getFirstCategoryChildName(nodeA.data, parent.categoryCode) : null;
+        const b = nodeB.data ? getFirstCategoryChildName(nodeB.data, parent.categoryCode) : null;
+        const lastSign = isDescending ? -1 : 1;
+        if (a === null && b === null) return 0;
+        if (a === null) return lastSign;
+        if (b === null) return -lastSign;
+        return a.localeCompare(b, "ja");
+      },
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
         return renderCategoryCell(params.data, parent.categoryCode, true, isInternal);
@@ -294,6 +374,13 @@ export function ContentsTable({
       {
         headerName: "登録日",
         field: "createdAt",
+        sortable: true,
+        // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
+        // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
+        // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
+        cellDataType: false,
+        // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
+        comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
@@ -303,6 +390,27 @@ export function ContentsTable({
       {
         headerName: "更新日",
         field: "updatedAt",
+        sortable: true,
+        cellDataType: false,
+        // 미수정 콘텐츠는 DB 상 updatedAt=createdAt 로 채워져 null 이 아니지만 화면엔 "-"로 표시되므로,
+        // 서버(route.ts sortField==="updatedAt" 분기)와 동일하게 방향과 무관하게 항상 뒤로 보낸다.
+        // isDescending 상쇄 로직은 카테고리 컬럼 comparator 와 동일한 이유(ag-grid 자동 부호반전).
+        comparator: (
+          _a: string,
+          _b: string,
+          nodeA: { data?: ContentListItem },
+          nodeB: { data?: ContentListItem },
+          isDescending: boolean,
+        ) => {
+          const a = nodeA.data?.hasBeenUpdated ? nodeA.data.updatedAt : null;
+          const b = nodeB.data?.hasBeenUpdated ? nodeB.data.updatedAt : null;
+          const lastSign = isDescending ? -1 : 1;
+          if (a === null && b === null) return 0;
+          if (a === null) return lastSign;
+          if (b === null) return -lastSign;
+          // ISO 8601 string은 사전순 비교 = 시간순 비교와 동일하다.
+          return a < b ? -1 : a > b ? 1 : 0;
+        },
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
@@ -318,6 +426,7 @@ export function ContentsTable({
       {
         headerName: "タイトル",
         field: "title",
+        sortable: true,
         flex: hasCategoryColumns ? 2 : 3,
         minWidth: 400,
         cellRenderer: TitleCellRenderer,
@@ -326,6 +435,7 @@ export function ContentsTable({
       {
         headerName: "添付",
         field: "attachmentCount",
+        sortable: true,
         width: 90,
         cellRenderer: AttachmentCellRenderer,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
@@ -334,6 +444,11 @@ export function ContentsTable({
       {
         headerName: "VIEW",
         field: "viewCount",
+        sortable: true,
+        // valueFormatter 만 있고 cellRenderer 가 없는 컬럼은 ag-grid 의 cellDataType 자동추론이
+        // 정렬 클릭을 먹통으로 만드는 경우가 있어(登録日 등과 동일 이슈), 추론을 끄고 comparator 를 직접 지정.
+        cellDataType: false,
+        comparator: (a: number, b: number) => a - b,
         width: 90,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
@@ -346,14 +461,40 @@ export function ContentsTable({
       baseCols.push(
         {
           headerName: "掲示対象",
+          colId: TARGETS_SORT_COL_ID,
+          sortable: true,
+          cellDataType: false,
+          // 콘텐츠당 표시순 첫 번째(=targetOrderRank 최솟값) 게시대상 기준 — 서버(route.ts
+          // sortTargets 분기)와 동일 기준. 대상 없음(targets=[])은 방향과 무관하게 항상 뒤로
+          // (isDescending 상쇄 로직은 카테고리/更新日 comparator 와 동일 이유).
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const rankOf = (item?: ContentListItem) =>
+              item && item.targets.length > 0
+                ? Math.min(...item.targets.map((t) => targetOrderRank(t.roleCode)))
+                : null;
+            const a = rankOf(nodeA.data);
+            const b = rankOf(nodeB.data);
+            const lastSign = isDescending ? -1 : 1;
+            if (a === null && b === null) return 0;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
+            return a - b;
+          },
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
             // rowData 에서 이미 정렬된 targets 를 사용 (cellRenderer sort 비용 회피)
             const targets = params.data?.targets ?? [];
             if (targets.length === 0) return <span>-</span>;
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
-                {targets.map((t, i) => (
-                  <span key={i} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
+                {targets.map((t) => (
+                  // roleCode 는 콘텐츠당 unique(validateUniqueRoleCodes) — null(비회원)은 1건만 가능해 안전.
+                  <span key={t.roleCode ?? "__non_member__"} className="text-xs">{resolveTargetLabel(t.roleCode)}</span>
                 ))}
               </div>
             );
@@ -367,6 +508,23 @@ export function ContentsTable({
         {
           headerName: "担当部門",
           field: "authorDepartment",
+          sortable: true,
+          cellDataType: false,
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const a = nodeA.data?.authorDepartment ?? null;
+            const b = nodeB.data?.authorDepartment ?? null;
+            const lastSign = isDescending ? -1 : 1;
+            if (a === null && b === null) return 0;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
+            return a.localeCompare(b, "ja");
+          },
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
@@ -376,6 +534,23 @@ export function ContentsTable({
         {
           headerName: "最終確認者",
           field: "approverLevel",
+          sortable: true,
+          cellDataType: false,
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const a = nodeA.data?.approverLevel ?? null;
+            const b = nodeB.data?.approverLevel ?? null;
+            const lastSign = isDescending ? -1 : 1;
+            if (a === null && b === null) return 0;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
+            return a - b;
+          },
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
@@ -468,6 +643,25 @@ export function ContentsTable({
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
   };
 
+  const gridApiRef = useRef<GridApi<ContentListItem> | null>(null);
+
+  const handleGridReady = (event: GridReadyEvent<ContentListItem>) => {
+    gridApiRef.current = event.api;
+  };
+
+  // sortResetKey 가 변경되면 ag-grid 컬럼 정렬 UI 초기화 (검색/필터 변경 시 부모가 증가).
+  useEffect(() => {
+    gridApiRef.current?.applyColumnState({ state: [], defaultState: { sort: null } });
+  }, [sortResetKey]);
+
+  // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
+  // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
+  // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
+  const handleSortChanged = (event: SortChangedEvent<ContentListItem>) => {
+    const active = event.api.getColumnState().find((c) => c.sort);
+    onSortChange(active?.colId, active?.sort ?? undefined);
+  };
+
   const topBar = (
     <div className="flex items-center justify-between">
       <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
@@ -478,17 +672,28 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {showCreateButton && (
-          <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
-            <Button variant="primary" className="w-[90px]">
-              新規登録
-            </Button>
-          </Link>
-        )}
+        {/* 서버는 권한 로딩 전이라 항상 미노출 상태로 렌더 — 클라이언트에서 권한 확정 시점에
+            표시 여부가 갈리면 Link/없음 구조 자체가 달라져 hydration 에러가 난다.
+            노출 여부는 항상 마운트해두고 CSS(hidden)로만 제어해 트리 구조를 고정한다. */}
+        <Link
+          className={`hidden ${showCreateButton ? "lg:block" : ""}`}
+          href="/contents/create"
+          transitionTypes={["fade"]}
+        >
+          <Button variant="primary" className="w-[90px]">
+            新規登録
+          </Button>
+        </Link>
         <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
       </div>
     </div>
   );
+
+  // API 실패는 "결과 없음"과 구분되는 메시지로 안내 — 정렬/검색 파라미터 오류(400/500)가
+  // 조용히 빈 목록으로 보이는 것을 방지.
+  const emptyMessage = isError
+    ? "コンテンツの取得に失敗しました。時間をおいて再度お試しください。"
+    : "該当するコンテンツがありません。";
 
   return (
     <>
@@ -497,15 +702,27 @@ export function ContentsTable({
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
+          {/* rowData.length > 0 이면 TanStack Query 가 이전 성공 데이터를 유지한 채 isError=true
+              (백그라운드 refetch 실패)일 수 있어, emptyMessage(빈 목록일 때만 노출)와 별개로
+              항상 배너를 띄운다 — 오래된 목록이 조용히 계속 보이는 것을 방지. */}
+          {isError && (
+            <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
+              コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+            </p>
+          )}
+
           <div className="flex flex-col gap-6">
             <DataGrid<ContentListItem>
               columnDefs={columnDefs}
               rowData={rowData}
               className="contents-grid"
               loading={isLoading}
-              emptyMessage="該当するコンテンツがありません。"
+              emptyMessage={emptyMessage}
               autoHeight={!(isLoading || rowData.length === 0)}
               maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
+              onGridReady={handleGridReady}
+              onSortChanged={handleSortChanged}
+              suppressMultiSort
             />
             {totalPages > 0 && (
               <Pagination
@@ -523,12 +740,18 @@ export function ContentsTable({
         <div className="flex lg:hidden flex-col w-full">
           <div className="bg-white p-6">
             {topBar}
+            {/* 데스크톱과 동일 이유 — data.length>0(이전 성공 캐시) 이어도 isError 면 항상 배너 노출. */}
+            {isError && (
+              <p className="mt-2 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
+                コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+              </p>
+            )}
           </div>
           <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
           {data.length === 0 ? (
             <div className="flex items-center justify-center min-h-[300px] bg-white">
               <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
-                該当するコンテンツがありません。
+                {emptyMessage}
               </p>
             </div>
           ) : (
