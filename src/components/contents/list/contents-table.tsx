@@ -401,7 +401,8 @@ export function ContentsTable({
           if (a === null && b === null) return 0;
           if (a === null) return lastSign;
           if (b === null) return -lastSign;
-          return a.localeCompare(b);
+          // ISO 8601 string은 사전순 비교 = 시간순 비교와 동일하다.
+          return a < b ? -1 : a > b ? 1 : 0;
         },
         flex: 1,
         minWidth: 110,
@@ -514,8 +515,12 @@ export function ContentsTable({
           field: "approverLevel",
           sortable: true,
           cellDataType: false,
-          comparator: (a: number | null | undefined, b: number | null | undefined) =>
-            (a ?? -1) - (b ?? -1),
+          comparator: (a: number | null | undefined, b: number | null | undefined) => {
+            if (a == null && b == null) return 0;
+            if (a == null) return 1;
+            if (b == null) return -1;
+            return a - b;
+          },
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
