@@ -180,49 +180,6 @@ export async function GET(request: NextRequest) {
       ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
-    // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
-    // 주의: sortField==="updatedAt" 인 경우 이 값은 계산만 되고 실제로는 쓰이지 않는다 —
-    // 아래 inMemorySortKey 분기가 먼저 가로채 인메모리 정렬 경로로 처리하기 때문
-    // ("-"(미수정) 행을 방향과 무관하게 항상 뒤로 보내는 규칙은 단순 orderBy 로 표현 불가).
-    const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
-      if (sortField) {
-        const dir = sortDir ?? "asc";
-        switch (sortField) {
-          case "title":
-            return { title: dir };
-          case "createdAt":
-            return { createdAt: dir };
-          case "updatedAt":
-            return { updatedAt: dir };
-          case "authorDepartment":
-            return { authorDepartment: dir };
-          case "approverLevel":
-            return { approverLevel: dir };
-          case "attachmentCount":
-            return { attachments: { _count: dir } };
-          case "viewCount":
-            return { viewCount: dir };
-          default: {
-            // CONTENT_SORT_FIELDS 에 필드를 추가했는데 case 를 빠뜨리면 이 줄에서 컴파일 에러가
-            // 나서 알아챌 수 있다 — case 누락이 컴파일 통과 후 조용히 기본 정렬로 fallback 되는 것 방지.
-            const _exhaustive: never = sortField;
-            console.error("[GET /api/contents] 처리되지 않은 sortField:", _exhaustive);
-            return { createdAt: "desc" as const };
-          }
-        }
-      }
-      switch (sort) {
-        case "oldest":
-          return { createdAt: "asc" as const };
-        case "views":
-          return { viewCount: "desc" as const };
-        case "updated":
-          return { updatedAt: "desc" as const };
-        default:
-          return { createdAt: "desc" as const };
-      }
-    })();
-
     const includeOptions = {
       categories: {
         include: { category: CATEGORY_TREE_INCLUDE },
@@ -266,7 +223,16 @@ export async function GET(request: NextRequest) {
       if (a === null && b === null) return 0;
       if (a === null) return 1;
       if (b === null) return -1;
-      const cmp = typeof a === "string" && typeof b === "string" ? a.localeCompare(b, "ja") : (a as number) - (b as number);
+      // typeof 가드로 판별 — 향후 새 정렬 키 타입 추가 시 타입 혼재를 캐스팅 없이 런타임에서도 잡는다.
+      let cmp: number;
+      if (typeof a === "string" && typeof b === "string") {
+        cmp = a.localeCompare(b, "ja");
+      } else if (typeof a === "number" && typeof b === "number") {
+        cmp = a - b;
+      } else {
+        console.error("[GET /api/contents] compareNullsLast 타입 불일치:", { a, b });
+        cmp = 0;
+      }
       return dir === "asc" ? cmp : -cmp;
     };
 
@@ -283,20 +249,83 @@ export async function GET(request: NextRequest) {
       : null;
 
     if (inMemorySortKey) {
-      const allRows = await prisma.content.findMany({
-        where,
-        include: includeOptions,
-        orderBy: { createdAt: "desc" },
-      });
+      // DB 조회 실패를 mapRow/sort 등 이후 단계와 분리해 로그에서 원인을 구분할 수 있게 한다
+      // (최상위 catch 하나로 묶이면 "인메모리 정렬 중 DB 조회 실패"인지 다른 단계인지 알 수 없다).
+      let allRows;
+      try {
+        allRows = await prisma.content.findMany({
+          where,
+          include: includeOptions,
+          orderBy: { createdAt: "desc" },
+        });
+      } catch (dbError: unknown) {
+        logError("GET /api/contents inMemorySort DB조회", dbError, {
+          sortCategoryCode,
+          sortField,
+          sortTargets,
+        });
+        return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+      }
       const dir = sortDir ?? "asc";
       const withSortKey = allRows.map((c) => {
         const row = mapRow(c);
         return { row, key: inMemorySortKey(row) };
       });
+      // 유효하지 않은 sortCategoryCode(존재하지 않는 카테고리 코드) 는 모든 행이 null 키로
+      // 떨어져 "정렬이 안 되는 것처럼" 보이는데 로그가 없으면 원인 파악이 어렵다.
+      if (sortCategoryCode && withSortKey.length > 0 && withSortKey.every((x) => x.key === null)) {
+        console.warn(
+          "[GET /api/contents] sortCategoryCode 매칭 결과 없음 — 존재하지 않는 카테고리 코드일 수 있음:",
+          sortCategoryCode,
+        );
+      }
       withSortKey.sort((a, b) => compareNullsLast(a.key, b.key, dir));
       total = withSortKey.length;
       data = withSortKey.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map((x) => x.row);
     } else {
+      // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
+      // 이 분기(else)에 도달했다는 것 자체가 inMemorySortKey 가 null 이었다는 뜻이므로
+      // sortField==="updatedAt" 는 여기 오지 않는다 — 아래 case "updatedAt" 은 위 switch 를
+      // exhaustive(컴파일 타임 검증)하게 유지하기 위해서만 존재하는 도달 불가 분기.
+      const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
+        if (sortField) {
+          const dir = sortDir ?? "asc";
+          switch (sortField) {
+            case "title":
+              return { title: dir };
+            case "createdAt":
+              return { createdAt: dir };
+            case "updatedAt":
+              return { updatedAt: dir };
+            case "authorDepartment":
+              return { authorDepartment: dir };
+            case "approverLevel":
+              return { approverLevel: dir };
+            case "attachmentCount":
+              return { attachments: { _count: dir } };
+            case "viewCount":
+              return { viewCount: dir };
+            default: {
+              // CONTENT_SORT_FIELDS 에 필드를 추가했는데 case 를 빠뜨리면 이 줄에서 컴파일 에러가
+              // 나서 알아챌 수 있다 — case 누락이 컴파일 통과 후 조용히 기본 정렬로 fallback 되는 것 방지.
+              const _exhaustive: never = sortField;
+              console.error("[GET /api/contents] 처리되지 않은 sortField:", _exhaustive);
+              return { createdAt: "desc" as const };
+            }
+          }
+        }
+        switch (sort) {
+          case "oldest":
+            return { createdAt: "asc" as const };
+          case "views":
+            return { viewCount: "desc" as const };
+          case "updated":
+            return { updatedAt: "desc" as const };
+          default:
+            return { createdAt: "desc" as const };
+        }
+      })();
+
       const [contents, contentsTotal] = await Promise.all([
         prisma.content.findMany({
           where,

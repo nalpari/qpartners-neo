@@ -1691,7 +1691,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           {
             name: "sortField",
             in: "query",
-            description: "ag-grid 헤더 클릭 전체 데이터 정렬 대상 필드. 지정 시 sort(프리셋)보다 우선.",
+            description: "ag-grid 헤더 클릭 전체 데이터 정렬 대상 필드. 지정 시 sort(프리셋)보다 우선. sortCategoryCode / sortTargets 와 동시 지정 불가 (400).",
             schema: {
               type: "string",
               enum: ["title", "createdAt", "updatedAt", "attachmentCount", "authorDepartment", "approverLevel", "viewCount"],
@@ -1701,14 +1701,14 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "sortCategoryCode",
             in: "query",
             description:
-              "카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 자식 카테고리명 기준. sortField 보다 우선.",
+              "카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 자식 카테고리명 기준. sortField / sortTargets 와 동시 지정 불가 (400).",
             schema: { type: "string", maxLength: 50 },
           },
           {
             name: "sortTargets",
             in: "query",
             description:
-              "掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상 우선순위 기준. sortField/sortCategoryCode 보다 우선.",
+              "掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상 우선순위 기준. sortField / sortCategoryCode 와 동시 지정 불가 (400).",
             schema: { type: "boolean" },
           },
           { name: "sortDir", in: "query", description: "sortField/sortCategoryCode/sortTargets 지정 시 정렬 방향 (기본 asc).", schema: { type: "string", enum: ["asc", "desc"] } },

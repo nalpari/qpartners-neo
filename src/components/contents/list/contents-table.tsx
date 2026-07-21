@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { isAxiosError } from "axios";
 import type { ColDef, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -112,8 +113,14 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
+interface DownloadResult {
+  ok: boolean;
+  /** 실패 시 axios 응답 상태 코드 (네트워크 단절 등 응답 자체가 없으면 undefined) */
+  status?: number;
+}
+
 /** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
-async function downloadAllAttachments(contentId: number): Promise<boolean> {
+async function downloadAllAttachments(contentId: number): Promise<DownloadResult> {
   try {
     const { default: api } = await import("@/lib/axios");
     const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
@@ -133,10 +140,25 @@ async function downloadAllAttachments(contentId: number): Promise<boolean> {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
-    return true;
+    return { ok: true };
   } catch (err: unknown) {
     console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
-    return false;
+    const status = isAxiosError(err) ? err.response?.status : undefined;
+    return { ok: false, status };
+  }
+}
+
+/** status 코드별 안내 메시지 — download-all/route.ts 가 실제로 내려주는 상태코드(403/404/413/500)와 매칭. */
+function resolveDownloadErrorMessage(status: number | undefined): string {
+  switch (status) {
+    case 403:
+      return "この操作を行う権限がありません。";
+    case 404:
+      return "対象が見つかりません。既に削除された可能性があります。";
+    case 413:
+      return "ファイルサイズが大きすぎてダウンロードできません。";
+    default:
+      return "ファイルの一括ダウンロードに失敗しました。";
   }
 }
 
@@ -147,9 +169,9 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
   const contentId = params.data.id;
 
   const handleClick = async () => {
-    const ok = await downloadAllAttachments(contentId);
-    if (!ok) {
-      openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+    const result = await downloadAllAttachments(contentId);
+    if (!result.ok) {
+      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
     }
   };
 
@@ -203,9 +225,9 @@ function MobileAttachmentButton({ item }: { item: ContentListItem }) {
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     void (async () => {
-      const ok = await downloadAllAttachments(item.id);
-      if (!ok) {
-        openAlert({ type: "alert", message: "ファイルの一括ダウンロードに失敗しました。" });
+      const result = await downloadAllAttachments(item.id);
+      if (!result.ok) {
+        openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
       }
     })();
   };
@@ -633,6 +655,15 @@ export function ContentsTable({
         <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
           {topBar}
 
+          {/* rowData.length > 0 이면 TanStack Query 가 이전 성공 데이터를 유지한 채 isError=true
+              (백그라운드 refetch 실패)일 수 있어, emptyMessage(빈 목록일 때만 노출)와 별개로
+              항상 배너를 띄운다 — 오래된 목록이 조용히 계속 보이는 것을 방지. */}
+          {isError && (
+            <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
+              コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+            </p>
+          )}
+
           <div className="flex flex-col gap-6">
             <DataGrid<ContentListItem>
               columnDefs={columnDefs}
@@ -660,6 +691,12 @@ export function ContentsTable({
         <div className="flex lg:hidden flex-col w-full">
           <div className="bg-white p-6">
             {topBar}
+            {/* 데스크톱과 동일 이유 — data.length>0(이전 성공 캐시) 이어도 isError 면 항상 배너 노출. */}
+            {isError && (
+              <p className="mt-2 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
+                コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+              </p>
+            )}
           </div>
           <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
           {data.length === 0 ? (
