@@ -127,7 +127,12 @@ export const listContentsQuerySchema = z.object({
   sortCategoryCode: z.string().max(50).optional(),
   /** 掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상의 순위(targetOrderRank) 기준.
    *  sortField/sortCategoryCode 와 상호 배타적. */
-  sortTargets: z.coerce.boolean().optional(),
+  // z.coerce.boolean() 은 Boolean("false") === true 로 변환하므로 사용 불가.
+  // URL query string "true"/"false" 만 명시적으로 boolean 으로 변환한다.
+  sortTargets: z.preprocess(
+    (val) => (val === "true" ? true : val === "false" ? false : val),
+    z.boolean().optional(),
+  ),
   /** sortField/sortCategoryCode/sortTargets 중 하나가 지정된 경우에만 유효 (기본 asc). */
   sortDir: z.enum(["asc", "desc"]).optional(),
 }).superRefine((data, ctx) => {

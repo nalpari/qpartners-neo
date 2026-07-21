@@ -67,6 +67,16 @@ export async function GET(request: NextRequest) {
     // 비사내 사용자는 published만 조회 가능
     const effectiveStatus = internal ? status : "published";
 
+    // sortCategoryCode/sortTargets 는 전체 데이터를 메모리에 로드하는 경로이므로
+    // 비로그인 사용자의 반복 호출을 차단한다 (PUBLIC_GET_PATTERNS 로 비회원 GET 은 통과하지만
+    // 이 두 파라미터는 사내 화면 전용 기능 — 비회원이 사용할 이유가 없다).
+    if (!user && (sortCategoryCode ?? sortTargets)) {
+      return NextResponse.json(
+        { error: "このパラメータの使用には認証が必要です" },
+        { status: 401 },
+      );
+    }
+
     // AND 조건 배열로 중복 relation(categories/targets) 필터를 안전하게 조합.
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
     const andConditions: Prisma.ContentWhereInput[] = [];
@@ -305,7 +315,8 @@ export async function GET(request: NextRequest) {
               // null-last 동작과 어긋나므로 Prisma SortOrderInput으로 명시.
               return { authorDepartment: { sort: dir, nulls: "last" as const } };
             case "approverLevel":
-              return { approverLevel: dir };
+              // nullable 필드 — authorDepartment 와 동일하게 nulls: "last" 명시.
+              return { approverLevel: { sort: dir, nulls: "last" as const } };
             case "attachmentCount":
               return { attachments: { _count: dir } };
             case "viewCount":

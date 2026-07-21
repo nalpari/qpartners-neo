@@ -510,10 +510,19 @@ export function ContentsTable({
           field: "authorDepartment",
           sortable: true,
           cellDataType: false,
-          comparator: (a: string | null, b: string | null) => {
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const a = nodeA.data?.authorDepartment ?? null;
+            const b = nodeB.data?.authorDepartment ?? null;
+            const lastSign = isDescending ? -1 : 1;
             if (a === null && b === null) return 0;
-            if (a === null) return 1;
-            if (b === null) return -1;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
             return a.localeCompare(b, "ja");
           },
           flex: 1,
@@ -527,10 +536,19 @@ export function ContentsTable({
           field: "approverLevel",
           sortable: true,
           cellDataType: false,
-          comparator: (a: number | null | undefined, b: number | null | undefined) => {
-            if (a == null && b == null) return 0;
-            if (a == null) return 1;
-            if (b == null) return -1;
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const a = nodeA.data?.approverLevel ?? null;
+            const b = nodeB.data?.approverLevel ?? null;
+            const lastSign = isDescending ? -1 : 1;
+            if (a === null && b === null) return 0;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
             return a - b;
           },
           flex: 1,
