@@ -14,6 +14,7 @@ import {
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
+import { targetOrderRank } from "@/lib/target-role-order";
 import {
   createContentSchema,
   listContentsQuerySchema,
@@ -55,6 +56,10 @@ export async function GET(request: NextRequest) {
       department,
       internalOnly,
       sort,
+      sortField,
+      sortCategoryCode,
+      sortTargets,
+      sortDir,
     } = query.data;
 
     const internal = user ? isInternalUser(user.role) : false;
@@ -175,7 +180,27 @@ export async function GET(request: NextRequest) {
       ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
+    // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
     const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
+      if (sortField) {
+        const dir = sortDir ?? "asc";
+        switch (sortField) {
+          case "title":
+            return { title: dir };
+          case "createdAt":
+            return { createdAt: dir };
+          case "updatedAt":
+            return { updatedAt: dir };
+          case "authorDepartment":
+            return { authorDepartment: dir };
+          case "approverLevel":
+            return { approverLevel: dir };
+          case "attachmentCount":
+            return { attachments: { _count: dir } };
+          case "viewCount":
+            return { viewCount: dir };
+        }
+      }
       switch (sort) {
         case "oldest":
           return { createdAt: "asc" as const };
@@ -188,26 +213,17 @@ export async function GET(request: NextRequest) {
       }
     })();
 
-    const [contents, total] = await Promise.all([
-      prisma.content.findMany({
-        where,
-        include: {
-          categories: {
-            include: { category: CATEGORY_TREE_INCLUDE },
-          },
-          targets: { select: { roleCode: true, startAt: true, endAt: true } },
-          _count: { select: { attachments: true } },
-        },
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.content.count({ where }),
-    ]);
+    const includeOptions = {
+      categories: {
+        include: { category: CATEGORY_TREE_INCLUDE },
+      },
+      targets: { select: { roleCode: true, startAt: true, endAt: true } },
+      _count: { select: { attachments: true } },
+    } as const;
 
     // isNew/isUpdated 계산용 — where 절의 now 와 동일 스냅샷 사용 (정책 일관성)
     const nowMs = now.getTime();
-    const data = contents.map((c) => ({
+    const mapRow = (c: Prisma.ContentGetPayload<{ include: typeof includeOptions }>) => ({
       id: c.id,
       title: c.title,
       status: c.status,
@@ -225,7 +241,64 @@ export async function GET(request: NextRequest) {
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
-    }));
+    });
+
+    let data: ReturnType<typeof mapRow>[];
+    let total: number;
+
+    // "값 없음"(null)을 정렬 방향과 무관하게 항상 뒤로 보내는 비교자 — 카테고리 미매칭 콘텐츠(문자열 키),
+    // 미수정 콘텐츠(updatedAt 숫자 키) 양쪽에서 재사용.
+    const compareNullsLast = <K extends string | number>(
+      a: K | null,
+      b: K | null,
+      dir: "asc" | "desc",
+    ): number => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      const cmp = typeof a === "string" && typeof b === "string" ? a.localeCompare(b, "ja") : (a as number) - (b as number);
+      return dir === "asc" ? cmp : -cmp;
+    };
+
+    // DB orderBy 로 표현 불가한 정렬(다대다 집계, "실제 수정 여부" 판별)은 전체 로우를 가져와
+    // JS 에서 키를 계산해 정렬 후 페이지를 자른다 — 콘텐츠 총량이 적어(수백 건 내외) 무시 가능한 비용.
+    // 세 케이스가 상호 배타적이므로 우선순위(카테고리 > 更新日 > 掲示対象)로 하나만 활성화된다.
+    const inMemorySortKey: ((row: ReturnType<typeof mapRow>) => string | number | null) | null = sortCategoryCode
+      ? (row) => row.categories.find((cat) => cat.categoryCode === sortCategoryCode)?.children[0]?.name ?? null
+      : sortField === "updatedAt"
+      ? (row) => (row.hasBeenUpdated ? row.updatedAt.getTime() : null)
+      : sortTargets
+      ? (row) => (row.targets.length === 0 ? null : Math.min(...row.targets.map((t) => targetOrderRank(t.roleCode))))
+      : null;
+
+    if (inMemorySortKey) {
+      const allRows = await prisma.content.findMany({
+        where,
+        include: includeOptions,
+        orderBy: { createdAt: "desc" },
+      });
+      const dir = sortDir ?? "asc";
+      const withSortKey = allRows.map((c) => {
+        const row = mapRow(c);
+        return { row, key: inMemorySortKey(row) };
+      });
+      withSortKey.sort((a, b) => compareNullsLast(a.key, b.key, dir));
+      total = withSortKey.length;
+      data = withSortKey.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map((x) => x.row);
+    } else {
+      const [contents, contentsTotal] = await Promise.all([
+        prisma.content.findMany({
+          where,
+          include: includeOptions,
+          orderBy,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        prisma.content.count({ where }),
+      ]);
+      data = contents.map(mapRow);
+      total = contentsTotal;
+    }
 
     return NextResponse.json({
       data,

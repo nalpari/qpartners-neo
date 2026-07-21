@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import type { ColDef, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
@@ -21,6 +21,7 @@ import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode } from "./contents-contents";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { targetOrderRank } from "@/lib/target-role-order";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
 
 /** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 VIEW 뒤에 기존 sortOrder 순으로 배치. */
@@ -30,6 +31,18 @@ const PRIORITY_CATEGORY_ORDER: Record<string, number> = {
   DATA: 3, // 資料分類
   CONT: 4, // 内容分類
 };
+
+/** 掲示対象 컬럼 정렬 식별용 colId — 카테고리(categoryCode)·고정 필드와 겹치지 않는 예약값.
+ *  ContentsContents.handleSortChange 가 이 값으로 sortTargets=true 요청을 분기한다. */
+export const TARGETS_SORT_COL_ID = "__targets__";
+
+/** 정렬 키 — 콘텐츠당 해당 부모 카테고리의 "표시순 첫 번째" 자식 카테고리명 (없으면 null).
+ *  서버(route.ts)의 sortCategoryCode 로직과 동일 기준(children[0])을 사용해야 화면 정렬과
+ *  실제 서버 정렬 결과가 어긋나지 않는다. */
+function getFirstCategoryChildName(item: ContentListItem, parentCategoryCode: string): string | null {
+  const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
+  return matched?.children[0]?.name ?? null;
+}
 
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-")
  * 비사내 사용자(`isInternal = false`)에게는 사내전용 카테고리 라벨을 숨긴다.
@@ -220,6 +233,11 @@ interface ContentsTableProps {
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  /**
+   * ag-grid 헤더 클릭 전체 데이터 정렬 — colId 그대로 전달(field 인지 카테고리 categoryCode 인지는
+   * 호출자가 CONTENT_SORT_FIELDS 화이트리스트로 판별). 정렬 해제 시 둘 다 undefined.
+   */
+  onSortChange: (colId: string | undefined, dir: "asc" | "desc" | undefined) => void;
 }
 
 export function ContentsTable({
@@ -231,6 +249,7 @@ export function ContentsTable({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  onSortChange,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -264,6 +283,28 @@ export function ContentsTable({
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
     const toCategoryColumn = (parent: CategoryNode): ColDef<ContentListItem> => ({
       headerName: parent.name,
+      colId: parent.categoryCode,
+      sortable: true,
+      cellDataType: false,
+      // ag-grid 는 내림차순일 때 comparator 반환값의 부호를 자동으로 뒤집는다
+      // (compareRowNodes: `sort === "asc" ? result : -result`). "-"(매칭 없음) 행은
+      // 서버(route.ts sortCategoryCode 로직)와 동일하게 방향과 무관하게 항상 맨 뒤에 와야 하므로,
+      // isDescending 일 때 반대 부호를 반환해 grid 의 반전을 미리 상쇄한다.
+      comparator: (
+        _a: unknown,
+        _b: unknown,
+        nodeA: { data?: ContentListItem },
+        nodeB: { data?: ContentListItem },
+        isDescending: boolean,
+      ) => {
+        const a = nodeA.data ? getFirstCategoryChildName(nodeA.data, parent.categoryCode) : null;
+        const b = nodeB.data ? getFirstCategoryChildName(nodeB.data, parent.categoryCode) : null;
+        const lastSign = isDescending ? -1 : 1;
+        if (a === null && b === null) return 0;
+        if (a === null) return lastSign;
+        if (b === null) return -lastSign;
+        return a.localeCompare(b, "ja");
+      },
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
         return renderCategoryCell(params.data, parent.categoryCode, true, isInternal);
@@ -294,6 +335,12 @@ export function ContentsTable({
       {
         headerName: "登録日",
         field: "createdAt",
+        sortable: true,
+        // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
+        // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
+        // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
+        cellDataType: false,
+        comparator: (a: string, b: string) => a.localeCompare(b),
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
@@ -303,6 +350,26 @@ export function ContentsTable({
       {
         headerName: "更新日",
         field: "updatedAt",
+        sortable: true,
+        cellDataType: false,
+        // 미수정 콘텐츠는 DB 상 updatedAt=createdAt 로 채워져 null 이 아니지만 화면엔 "-"로 표시되므로,
+        // 서버(route.ts sortField==="updatedAt" 분기)와 동일하게 방향과 무관하게 항상 뒤로 보낸다.
+        // isDescending 상쇄 로직은 카테고리 컬럼 comparator 와 동일한 이유(ag-grid 자동 부호반전).
+        comparator: (
+          _a: string,
+          _b: string,
+          nodeA: { data?: ContentListItem },
+          nodeB: { data?: ContentListItem },
+          isDescending: boolean,
+        ) => {
+          const a = nodeA.data?.hasBeenUpdated ? nodeA.data.updatedAt : null;
+          const b = nodeB.data?.hasBeenUpdated ? nodeB.data.updatedAt : null;
+          const lastSign = isDescending ? -1 : 1;
+          if (a === null && b === null) return 0;
+          if (a === null) return lastSign;
+          if (b === null) return -lastSign;
+          return a.localeCompare(b);
+        },
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
@@ -318,6 +385,7 @@ export function ContentsTable({
       {
         headerName: "タイトル",
         field: "title",
+        sortable: true,
         flex: hasCategoryColumns ? 2 : 3,
         minWidth: 400,
         cellRenderer: TitleCellRenderer,
@@ -326,6 +394,7 @@ export function ContentsTable({
       {
         headerName: "添付",
         field: "attachmentCount",
+        sortable: true,
         width: 90,
         cellRenderer: AttachmentCellRenderer,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
@@ -334,6 +403,11 @@ export function ContentsTable({
       {
         headerName: "VIEW",
         field: "viewCount",
+        sortable: true,
+        // valueFormatter 만 있고 cellRenderer 가 없는 컬럼은 ag-grid 의 cellDataType 자동추론이
+        // 정렬 클릭을 먹통으로 만드는 경우가 있어(登録日 등과 동일 이슈), 추론을 끄고 comparator 를 직접 지정.
+        cellDataType: false,
+        comparator: (a: number, b: number) => a - b,
         width: 90,
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
         headerClass: "ag-header-cell-center",
@@ -346,6 +420,31 @@ export function ContentsTable({
       baseCols.push(
         {
           headerName: "掲示対象",
+          colId: TARGETS_SORT_COL_ID,
+          sortable: true,
+          cellDataType: false,
+          // 콘텐츠당 표시순 첫 번째(=targetOrderRank 최솟값) 게시대상 기준 — 서버(route.ts
+          // sortTargets 분기)와 동일 기준. 대상 없음(targets=[])은 방향과 무관하게 항상 뒤로
+          // (isDescending 상쇄 로직은 카테고리/更新日 comparator 와 동일 이유).
+          comparator: (
+            _a: unknown,
+            _b: unknown,
+            nodeA: { data?: ContentListItem },
+            nodeB: { data?: ContentListItem },
+            isDescending: boolean,
+          ) => {
+            const rankOf = (item?: ContentListItem) =>
+              item && item.targets.length > 0
+                ? Math.min(...item.targets.map((t) => targetOrderRank(t.roleCode)))
+                : null;
+            const a = rankOf(nodeA.data);
+            const b = rankOf(nodeB.data);
+            const lastSign = isDescending ? -1 : 1;
+            if (a === null && b === null) return 0;
+            if (a === null) return lastSign;
+            if (b === null) return -lastSign;
+            return a - b;
+          },
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
             // rowData 에서 이미 정렬된 targets 를 사용 (cellRenderer sort 비용 회피)
             const targets = params.data?.targets ?? [];
@@ -367,6 +466,9 @@ export function ContentsTable({
         {
           headerName: "担当部門",
           field: "authorDepartment",
+          sortable: true,
+          cellDataType: false,
+          comparator: (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? ""),
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
@@ -376,6 +478,10 @@ export function ContentsTable({
         {
           headerName: "最終確認者",
           field: "approverLevel",
+          sortable: true,
+          cellDataType: false,
+          comparator: (a: number | null | undefined, b: number | null | undefined) =>
+            (a ?? -1) - (b ?? -1),
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
@@ -468,6 +574,14 @@ export function ContentsTable({
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
   };
 
+  // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
+  // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
+  // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
+  const handleSortChanged = (event: SortChangedEvent<ContentListItem>) => {
+    const active = event.api.getColumnState().find((c) => c.sort);
+    onSortChange(active?.colId, active?.sort ?? undefined);
+  };
+
   const topBar = (
     <div className="flex items-center justify-between">
       <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
@@ -478,13 +592,18 @@ export function ContentsTable({
         件
       </p>
       <div className="flex items-center gap-[6px]">
-        {showCreateButton && (
-          <Link className="hidden lg:block" href="/contents/create" transitionTypes={["fade"]}>
-            <Button variant="primary" className="w-[90px]">
-              新規登録
-            </Button>
-          </Link>
-        )}
+        {/* 서버는 권한 로딩 전이라 항상 미노출 상태로 렌더 — 클라이언트에서 권한 확정 시점에
+            표시 여부가 갈리면 Link/없음 구조 자체가 달라져 hydration 에러가 난다.
+            노출 여부는 항상 마운트해두고 CSS(hidden)로만 제어해 트리 구조를 고정한다. */}
+        <Link
+          className={`hidden lg:block ${showCreateButton ? "" : "lg:hidden"}`}
+          href="/contents/create"
+          transitionTypes={["fade"]}
+        >
+          <Button variant="primary" className="w-[90px]">
+            新規登録
+          </Button>
+        </Link>
         <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
       </div>
     </div>
@@ -506,6 +625,7 @@ export function ContentsTable({
               emptyMessage="該当するコンテンツがありません。"
               autoHeight={!(isLoading || rowData.length === 0)}
               maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
+              onSortChanged={handleSortChanged}
             />
             {totalPages > 0 && (
               <Pagination

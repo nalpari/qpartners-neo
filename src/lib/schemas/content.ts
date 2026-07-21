@@ -12,6 +12,19 @@ export const NON_MEMBER_SENTINEL = "__NON_MEMBER__";
 
 const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 
+/** 콘텐츠 목록 ag-grid 헤더 클릭 정렬 대상 필드 — DB 컬럼과 1:1 매핑 가능한 것만 포함.
+ *  카테고리/掲示対象 처럼 관계형·집계 렌더링 컬럼은 단순 orderBy 매핑이 불가해 제외. */
+export const CONTENT_SORT_FIELDS = [
+  "title",
+  "createdAt",
+  "updatedAt",
+  "attachmentCount",
+  "authorDepartment",
+  "approverLevel",
+  "viewCount",
+] as const;
+export type ContentSortField = (typeof CONTENT_SORT_FIELDS)[number];
+
 /** roleCode 스키マ — string | null 허용 + 비회원 sentinel 변換. 형식 검증 포함. */
 const roleCodeWithSentinel = z
   .union([z.string().max(50), z.null()])
@@ -106,6 +119,15 @@ export const listContentsQuerySchema = z.object({
     .transform((v) => (v ? v.split(",").filter(Boolean) : undefined)),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
+  /** ag-grid 헤더 클릭 전체 데이터 정렬 — 지정 시 위 sort(프리셋) 대신 이 필드+방향을 사용. */
+  sortField: z.enum(CONTENT_SORT_FIELDS).optional(),
+  /** 카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 첫 번째(표시순) 자식 카테고리명 기준.
+   *  sortField 와 동시 지정 불가하며, 지정 시 sortField/sort(프리셋) 보다 우선한다. */
+  sortCategoryCode: z.string().max(50).optional(),
+  /** 掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상의 순위(targetOrderRank) 기준.
+   *  sortField/sortCategoryCode 보다 우선한다. */
+  sortTargets: z.coerce.boolean().optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 /**

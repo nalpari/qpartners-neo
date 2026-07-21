@@ -11,8 +11,9 @@ import {
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsSearch } from "./contents-search";
-import { ContentsTable } from "./contents-table";
+import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
 interface SearchFilters {
   keyword: string;
@@ -120,6 +121,17 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     shouldRestore: shouldRestoreList,
   });
 
+  // ag-grid 헤더 클릭 정렬 — searchParams(sessionStorage 복원 대상)와 달리 세션 간 비영속.
+  // 새로고침/메뉴 재진입 시 서버 기본 정렬(newest)로 초기화되는 편이 자연스럽다.
+  // field(고정 6개 필드) / categoryCode(동적 카테고리 컬럼) / targets(掲示対象) 는 상호 배타적
+  // — 항상 하나만 채워진다.
+  const [sort, setSort] = useState<{
+    field: ContentSortField | undefined;
+    categoryCode: string | undefined;
+    targets: boolean;
+    dir: "asc" | "desc" | undefined;
+  }>({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
   //   - false 이고 initialKeyword 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
@@ -197,7 +209,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트하여 두 번 fetch (20 → sort=1) 회피.
   const isContentsQueryEnabled = !isPageSizeLoading;
   const { data: contentsResponse, isLoading } = useQuery({
-    queryKey: ["contents", searchParams, pageSize, userScope],
+    queryKey: ["contents", searchParams, pageSize, userScope, sort],
     queryFn: async () => {
       const params: Record<string, string | number | boolean> = {
         page: searchParams.page,
@@ -208,6 +220,10 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
       if (searchParams.departments.length > 0) params.department = searchParams.departments.join(",");
       if (searchParams.internalOnly) params.internalOnly = true;
+      if (sort.field) params.sortField = sort.field;
+      if (sort.categoryCode) params.sortCategoryCode = sort.categoryCode;
+      if (sort.targets) params.sortTargets = true;
+      if (sort.dir) params.sortDir = sort.dir;
 
       const res = await api.get<{
         data: ContentListItem[];
@@ -229,6 +245,21 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const handlePageSizeChange = (newPageSize: number) => {
     setPageSize(newPageSize);
     // 페이지 사이즈 변경 시 page 만 1 로 리셋.
+    setSearchParams((prev) => ({ ...prev, page: 1 }));
+  };
+
+  // colId 우선순위: TARGETS_SORT_COL_ID(掲示対象) → 고정 6개 필드(field) → 그 외(동적 카테고리 categoryCode).
+  const handleSortChange = (colId: string | undefined, dir: "asc" | "desc" | undefined) => {
+    if (!colId) {
+      setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    } else if (colId === TARGETS_SORT_COL_ID) {
+      setSort({ field: undefined, categoryCode: undefined, targets: true, dir });
+    } else if ((CONTENT_SORT_FIELDS as readonly string[]).includes(colId)) {
+      setSort({ field: colId as ContentSortField, categoryCode: undefined, targets: false, dir });
+    } else {
+      setSort({ field: undefined, categoryCode: colId, targets: false, dir });
+    }
+    // 정렬 기준이 바뀌면 이전 페이지 번호가 무의미해지므로 1페이지로 리셋.
     setSearchParams((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -255,6 +286,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+        onSortChange={handleSortChange}
       />
     </main>
   );
