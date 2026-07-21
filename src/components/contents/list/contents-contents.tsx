@@ -201,8 +201,13 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const { data: categories = [], isError: isCategoriesError } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
-      const res = await api.get<{ data: CategoryNode[] }>("/categories?activeOnly=true");
-      return res.data.data;
+      try {
+        const res = await api.get<{ data: CategoryNode[] }>("/categories?activeOnly=true");
+        return res.data.data;
+      } catch (err: unknown) {
+        console.error("[ContentsContents] 카테고리 조회 실패:", err);
+        throw err;
+      }
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -226,11 +231,16 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       if (sort.targets) params.sortTargets = true;
       if (sort.dir) params.sortDir = sort.dir;
 
-      const res = await api.get<{
-        data: ContentListItem[];
-        meta: { total: number; page: number; pageSize: number; totalPages: number };
-      }>("/contents", { params });
-      return res.data;
+      try {
+        const res = await api.get<{
+          data: ContentListItem[];
+          meta: { total: number; page: number; pageSize: number; totalPages: number };
+        }>("/contents", { params });
+        return res.data;
+      } catch (err: unknown) {
+        console.error("[ContentsContents] 컨텐츠 목록 조회 실패:", err);
+        throw err;
+      }
     },
     enabled: isContentsQueryEnabled,
   });

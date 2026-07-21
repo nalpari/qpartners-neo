@@ -113,11 +113,10 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
-interface DownloadResult {
-  ok: boolean;
+type DownloadResult =
+  | { ok: true }
   /** 실패 시 axios 응답 상태 코드 (네트워크 단절 등 응답 자체가 없으면 undefined) */
-  status?: number;
-}
+  | { ok: false; status?: number };
 
 /** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
 async function downloadAllAttachments(contentId: number): Promise<DownloadResult> {
@@ -142,7 +141,11 @@ async function downloadAllAttachments(contentId: number): Promise<DownloadResult
     URL.revokeObjectURL(url);
     return { ok: true };
   } catch (err: unknown) {
-    console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+    if (isAxiosError(err)) {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", { status: err.response?.status, data: err.response?.data });
+    } else {
+      console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
+    }
     const status = isAxiosError(err) ? err.response?.status : undefined;
     return { ok: false, status };
   }
@@ -222,20 +225,18 @@ function MobileAttachmentButton({ item }: { item: ContentListItem }) {
 
   if (item.attachmentCount === 0) return null;
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    void (async () => {
-      const result = await downloadAllAttachments(item.id);
-      if (!result.ok) {
-        openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
-      }
-    })();
+    const result = await downloadAllAttachments(item.id);
+    if (!result.ok) {
+      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
+    }
   };
 
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={(e) => { void handleClick(e); }}
       className="flex items-center px-1 py-[3px] shrink-0 cursor-pointer"
       aria-label="添付ファイルダウンロード"
     >

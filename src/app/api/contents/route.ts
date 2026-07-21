@@ -285,8 +285,9 @@ export async function GET(request: NextRequest) {
     } else {
       // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
       // 이 분기(else)에 도달했다는 것 자체가 inMemorySortKey 가 null 이었다는 뜻이므로
-      // sortField==="updatedAt" 는 여기 오지 않는다 — 아래 case "updatedAt" 은 위 switch 를
-      // exhaustive(컴파일 타임 검증)하게 유지하기 위해서만 존재하는 도달 불가 분기.
+      // sortField==="updatedAt" 는 inMemorySortKey 를 채우므로 이 else 분기에 도달하지 않는다
+      // — 아래 case "updatedAt" 은 sortField switch 의 exhaustiveness(컴파일 타임 never 검증)를
+      // 위해 존재하는 도달 불가 분기.
       const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
         if (sortField) {
           const dir = sortDir ?? "asc";
@@ -326,16 +327,23 @@ export async function GET(request: NextRequest) {
         }
       })();
 
-      const [contents, contentsTotal] = await Promise.all([
-        prisma.content.findMany({
-          where,
-          include: includeOptions,
-          orderBy,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-        }),
-        prisma.content.count({ where }),
-      ]);
+      let dbResult;
+      try {
+        dbResult = await Promise.all([
+          prisma.content.findMany({
+            where,
+            include: includeOptions,
+            orderBy,
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+          }),
+          prisma.content.count({ where }),
+        ]);
+      } catch (dbError: unknown) {
+        logError("GET /api/contents DB정렬 DB조회", dbError, { sortField, sort });
+        return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+      }
+      const [contents, contentsTotal] = dbResult;
       data = contents.map(mapRow);
       total = contentsTotal;
     }
@@ -352,7 +360,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     logError("GET /api/contents", error);
     return NextResponse.json(
-      { error: "Failed to fetch contents" },
+      { error: "コンテンツの取得に失敗しました" },
       { status: 500 },
     );
   }

@@ -52,7 +52,7 @@ const contentTargetSchema = z
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
-/** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX は nullable roleCode の重複を許容するため、アプリ層で検証 */
+/** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX는 nullable roleCode 중복을 허용하므로 앱 레이어에서 검증 */
 function validateUniqueRoleCodes(
   targets: { roleCode: string | null }[] | undefined,
   ctx: z.RefinementCtx,
@@ -133,7 +133,11 @@ export const listContentsQuerySchema = z.object({
 }).superRefine((data, ctx) => {
   // 세 정렬 모드는 상호 배타적 — ag-grid 는 클릭된 컬럼 1개의 colId 만 보내므로 정상 흐름에서는
   // 항상 하나만 채워지지만, API 를 직접 호출하는 경우까지 대비해 서버에서도 명시적으로 막는다.
-  const sortModes = [data.sortField, data.sortCategoryCode, data.sortTargets].filter(Boolean);
+  const sortModes = [
+    data.sortField,
+    data.sortCategoryCode,
+    data.sortTargets === true ? true : undefined,
+  ].filter(Boolean);
   if (sortModes.length > 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
