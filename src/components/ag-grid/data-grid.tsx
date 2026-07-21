@@ -175,6 +175,7 @@ export function DataGrid<T>({
         onCellDoubleClicked={onCellDoubleClicked}
         onCellClicked={onCellClicked}
         onGridReady={onGridReady}
+        suppressMultiSort
         onSortChanged={onSortChanged}
       />
     </div>
