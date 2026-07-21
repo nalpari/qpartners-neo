@@ -503,7 +503,7 @@ export function ContentsTable({
           field: "authorDepartment",
           sortable: true,
           cellDataType: false,
-          comparator: (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? ""),
+          comparator: (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? "", "ja"),
           flex: 1,
           minWidth: 110,
           headerClass: "ag-header-cell-center",
