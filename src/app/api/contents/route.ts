@@ -67,15 +67,9 @@ export async function GET(request: NextRequest) {
     // 비사내 사용자는 published만 조회 가능
     const effectiveStatus = internal ? status : "published";
 
-    // sortCategoryCode/sortTargets 는 전체 데이터를 메모리에 로드하는 경로이므로
-    // 비로그인 사용자의 반복 호출을 차단한다 (PUBLIC_GET_PATTERNS 로 비회원 GET 은 통과하지만
-    // 이 두 파라미터는 사내 화면 전용 기능 — 비회원이 사용할 이유가 없다).
-    if (!user && (sortCategoryCode ?? sortTargets)) {
-      return NextResponse.json(
-        { error: "このパラメータの使用には認証が必要です" },
-        { status: 401 },
-      );
-    }
+    // sortCategoryCode/sortTargets 는 전체 데이터를 메모리에 로드하는 경로지만, 카테고리/掲示対象
+    // 컬럼 자체가 비회원 화면에도 노출되므로 정렬도 비회원에게 동일하게 허용한다.
+    // 콘텐츠 총량이 적어(수백 건 내외) 비회원 반복 호출로 인한 부하 우려는 낮음.
 
     // AND 조건 배열로 중복 relation(categories/targets) 필터를 안전하게 조합.
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
