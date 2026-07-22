@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { Prisma } from "@/generated/prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 import { resolveUserName, resolveUserNameUnknownType } from "@/lib/admin-name";
@@ -189,21 +188,26 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }
 
         // 권한별 5건 한도 일괄 검사 — N+1 루프 대신 단일 GROUP BY 집계 쿼리
+        // @@unique([homeNoticeId, roleCode]) 덕분에 homeNoticeId 카운트 = 역할별 공지 수
         if (codesToCheck.length > 0) {
-          const overLimit = await tx.$queryRaw<{ role_code: string }[]>`
-            SELECT hnt.role_code
-            FROM qp_home_notice_targets hnt
-            JOIN qp_home_notices hn ON hn.id = hnt.home_notice_id
-            WHERE hnt.role_code IN (${Prisma.join(codesToCheck)})
-              AND hn.id <> ${parsed.data}
-              AND hn.start_at <= ${finalEndAt}
-              AND hn.end_at   >= ${finalStartAt}
-            GROUP BY hnt.role_code
-            HAVING COUNT(DISTINCT hn.id) >= 5
-            LIMIT 1
-          `;
+          const overLimit = await tx.homeNoticeTarget.groupBy({
+            by: ["roleCode"],
+            where: {
+              roleCode: { in: codesToCheck },
+              homeNotice: {
+                id: { not: parsed.data },
+                startAt: { lte: finalEndAt },
+                endAt: { gte: finalStartAt },
+              },
+            },
+            having: {
+              homeNoticeId: { _count: { gte: 5 } },
+            },
+            orderBy: { roleCode: "asc" },
+            take: 1,
+          });
           if (overLimit.length > 0) {
-            throw new HomeNoticeUpdateError("LIMIT_EXCEEDED", overLimit[0].role_code);
+            throw new HomeNoticeUpdateError("LIMIT_EXCEEDED", overLimit[0].roleCode);
           }
         }
 
