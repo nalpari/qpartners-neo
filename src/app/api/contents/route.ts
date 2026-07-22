@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
 
     // sortCategoryCode/sortTargets 는 Prisma ORM 단독으로 정렬 불가한 경로로,
     // 1단계 ID 조회 → 2단계 $queryRaw 정렬 → 3단계 페이지 fetch 의 3단계 파이프라인을 사용한다.
-    // sortField=updatedAt 은 동일 3단계 구조지만 2단계가 인메모리 정렬이다 (아래 else if 분기 참조).
+    // sortField=updatedAt 은 동일 3단계 구조지만, 1단계에서 정렬 키 컬럼(createdAt/updatedAt)도
+    // 함께 select하고 2단계는 $queryRaw 대신 인메모리 정렬이다 (아래 else if 분기 참조).
     // 전체 row 인메모리 로드는 발생하지 않는다.
     // 카테고리/게시대상 컬럼 자체가 비회원 화면에도 노출되므로 정렬도 비회원에게 동일하게 허용한다.
 
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest) {
     });
 
     let data: ReturnType<typeof mapRow>[];
-    let total: number;
+    let total = 0;
 
     if (sortCategoryCode) {
       // DB 정렬: 카테고리 자식명 기준.
@@ -310,7 +311,7 @@ export async function GET(request: NextRequest) {
             }
             return [mapRow(row)];
           });
-          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          // 현재 페이지 탈락분만큼 total 근사 보정 — 다른 페이지의 탈락분은 미반영이므로 totalPages는 1~2 과대평가될 수 있음
           const dropped = pageIds.length - data.length;
           if (dropped > 0) total = Math.max(0, total - dropped);
         }
@@ -397,7 +398,7 @@ export async function GET(request: NextRequest) {
             }
             return [mapRow(row)];
           });
-          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          // 현재 페이지 탈락분만큼 total 근사 보정 — 다른 페이지의 탈락분은 미반영이므로 totalPages는 1~2 과대평가될 수 있음
           const dropped = pageIds.length - data.length;
           if (dropped > 0) total = Math.max(0, total - dropped);
         }
@@ -468,7 +469,7 @@ export async function GET(request: NextRequest) {
             }
             return [mapRow(row)];
           });
-          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          // 현재 페이지 탈락분만큼 total 근사 보정 — 다른 페이지의 탈락분은 미반영이므로 totalPages는 1~2 과대평가될 수 있음
           const dropped = pageIds.length - data.length;
           if (dropped > 0) total = Math.max(0, total - dropped);
         }
@@ -520,7 +521,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "不正なソートフィールドが指定されました" }, { status: 400 });
       }
 
-      let dbResult;
+      let dbResult: [Prisma.ContentGetPayload<{ include: typeof includeOptions }>[], number];
       try {
         dbResult = await Promise.all([
           prisma.content.findMany({
