@@ -277,10 +277,12 @@ export async function GET(request: NextRequest) {
           data = [];
         } else {
           // 3단계: 페이지 콘텐츠 full fetch + $queryRaw 정렬 순서 복원
+          // where 재적용: 1단계와 3단계 사이 레이스 컨디션(상태 변경 등)으로 접근 불가 콘텐츠가
+          // 응답에 포함되지 않도록 원본 where 조건을 유지한다.
           let pageRows: Prisma.ContentGetPayload<{ include: typeof includeOptions }>[];
           try {
             pageRows = await prisma.content.findMany({
-              where: { id: { in: pageIds } },
+              where: { AND: [where, { id: { in: pageIds } }] },
               include: includeOptions,
             });
           } catch (dbError: unknown) {
@@ -289,7 +291,15 @@ export async function GET(request: NextRequest) {
           }
           // findMany 는 IN 순서를 보장하지 않으므로 $queryRaw 순서로 재정렬
           const rowById = new Map(pageRows.map((r) => [r.id, r]));
-          data = pageIds.map((id) => mapRow(rowById.get(id)!));
+          data = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              // where 재적용으로 필터된 경우(레이스 컨디션) — 정상 흐름이므로 warn 수준
+              logError("GET /api/contents sortCategoryCode 순서복원 누락", new Error(`id=${id} not found`), { sortCategoryCode });
+              return [];
+            }
+            return [mapRow(row)];
+          });
         }
       }
     } else if (sortTargets) {
@@ -349,10 +359,11 @@ export async function GET(request: NextRequest) {
           data = [];
         } else {
           // 3단계: 페이지 콘텐츠 full fetch + $queryRaw 정렬 순서 복원
+          // where 재적용: sortCategoryCode 분기와 동일한 이유로 원본 where 조건 유지.
           let pageRows: Prisma.ContentGetPayload<{ include: typeof includeOptions }>[];
           try {
             pageRows = await prisma.content.findMany({
-              where: { id: { in: pageIds } },
+              where: { AND: [where, { id: { in: pageIds } }] },
               include: includeOptions,
             });
           } catch (dbError: unknown) {
@@ -360,7 +371,14 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
           }
           const rowById = new Map(pageRows.map((r) => [r.id, r]));
-          data = pageIds.map((id) => mapRow(rowById.get(id)!));
+          data = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              logError("GET /api/contents sortTargets 순서복원 누락", new Error(`id=${id} not found`), { sortTargets });
+              return [];
+            }
+            return [mapRow(row)];
+          });
         }
       }
     } else if (sortField === "updatedAt") {
