@@ -37,7 +37,7 @@ export function Footer() {
             </span>
             <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
             <span className="font-['Noto_Sans_JP'] font-normal text-[13px] leading-[1.5] text-[#767676] whitespace-nowrap">
-              お問い合わせ受付時間 : 平日10:00-12:00 13:00-17:00
+              お問い合わせ受付時間 : 平日10:00-12:00 13:00-18:00
             </span>
             <span className="w-px h-[10px] bg-[rgba(16,16,16,0.2)]" />
             <TermsButton />

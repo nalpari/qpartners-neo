@@ -27,6 +27,7 @@ export const editorI18n = {
     textColorReset: "色なし",
     highlight: "ハイライト",
     highlightReset: "ハイライトなし",
+    htmlSource: "HTMLソース",
     textColorPalette: {
       red: "赤",
       orange: "オレンジ",
@@ -61,6 +62,11 @@ export const editorI18n = {
   tableInsert: {
     sizeHint: "サイズを選択（最大 10 × 10）",
   },
+  htmlSourceMode: {
+    placeholder: "HTMLを入力…",
+    apply: "適用",
+    cancel: "キャンセル",
+  },
   tableMenu: {
     rowAddBefore: "上に行を追加",
     rowAddAfter: "下に行を追加",
@@ -89,6 +95,7 @@ export const editorI18n = {
     toolbar: "リッチテキストツールバー",
     editor: "リッチテキスト本文",
     tableMenu: "テーブル編集メニュー",
+    htmlSourceTextarea: "HTMLソース入力",
   },
 } as const;
 

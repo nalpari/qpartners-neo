@@ -1,5 +1,6 @@
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
+import Link from "@tiptap/extension-link";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
@@ -30,6 +31,7 @@ export interface BuildExtensionsOptions {
  * 인라인 마크 확장:
  *   TextStyle + Color  → <span style="color: …">
  *   Highlight(multicolor) → <mark style="background-color: …">
+ *   Link → <a href="…"> (HTML 소스 모드 입력 보존용, 툴바 버튼은 미제공)
  *
  * 비활성: video / audio / file / pageBreak / taskList / taskItem
  *   - StarterKit·extension-table 등에 처음부터 포함되지 않거나 본 함수에서 추가하지 않음.
@@ -45,6 +47,15 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
       inline: false,
       allowBase64: false,
       HTMLAttributes: { class: "rich-editor-inline-image" },
+    }),
+    // sanitize-html.ts SAFE_HREF_PATTERN(https?/mailto)과 동일한 스킴만 허용. (#은 서버 허용이나 autolink 비활성화로 불필요)
+    // 클릭 시 편집 화면 이탈 방지 위해 openOnClick은 false — 링크 편집은 HTML 소스 모드로만.
+    // target: null — 기본값 _blank가 mergeAttributes로 강제 적용되지 않도록 명시 해제.
+    Link.configure({
+      openOnClick: false,
+      autolink: false,
+      protocols: ["http", "https", "mailto"],
+      HTMLAttributes: { target: null, rel: "noopener noreferrer" },
     }),
     Table.configure({
       resizable: true,

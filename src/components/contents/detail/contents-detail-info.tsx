@@ -6,7 +6,6 @@ import { useAlertStore } from "@/lib/store";
 import { useApprover } from "@/hooks/use-approver";
 
 interface ContentsDetailInfoProps {
-  viewCount: number;
   authorDepartment: string | null;
   createdBy: string;
   /** QSP 조회된 게재담당자 이름 — null/미제공 시 createdBy(userId) 폴백 */
@@ -22,7 +21,6 @@ interface ContentsDetailInfoProps {
 }
 
 export function ContentsDetailInfo({
-  viewCount,
   authorDepartment,
   createdBy,
   createdByName,
@@ -73,14 +71,6 @@ export function ContentsDetailInfo({
       <div className="pt-6 lg:pt-0 pb-2 lg:pb-0 px-6 lg:px-0 w-full lg:w-[1440px]">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 pl-1">
-            <p className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">
-              景色{" "}
-              <span className="font-semibold text-[#E97923]">
-                {viewCount.toLocaleString()}
-              </span>
-              件
-            </p>
-            <div className="bg-[#DDE3E8] w-px h-3" />
             <button
               type="button"
               onClick={handleCopyUrl}

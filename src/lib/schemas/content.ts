@@ -12,6 +12,19 @@ export const NON_MEMBER_SENTINEL = "__NON_MEMBER__";
 
 const ROLE_CODE_FORMAT = /^[A-Z0-9][A-Z0-9_]*$/;
 
+/** 콘텐츠 목록 ag-grid 헤더 클릭 정렬 대상 필드 — DB 컬럼과 1:1 매핑 가능한 것만 포함.
+ *  카테고리/掲示対象 처럼 관계형·집계 렌더링 컬럼은 단순 orderBy 매핑이 불가해 제외. */
+export const CONTENT_SORT_FIELDS = [
+  "title",
+  "createdAt",
+  "updatedAt",
+  "attachmentCount",
+  "authorDepartment",
+  "approverLevel",
+  "viewCount",
+] as const;
+export type ContentSortField = (typeof CONTENT_SORT_FIELDS)[number];
+
 /** roleCode 스키マ — string | null 허용 + 비회원 sentinel 변換. 형식 검증 포함. */
 const roleCodeWithSentinel = z
   .union([z.string().max(50), z.null()])
@@ -39,7 +52,7 @@ const contentTargetSchema = z
     { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
   );
 
-/** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX は nullable roleCode の重複を許容するため、アプリ層で検証 */
+/** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX는 nullable roleCode 중복을 허용하므로 앱 레이어에서 검증 */
 function validateUniqueRoleCodes(
   targets: { roleCode: string | null }[] | undefined,
   ctx: z.RefinementCtx,
@@ -106,6 +119,44 @@ export const listContentsQuerySchema = z.object({
     .transform((v) => (v ? v.split(",").filter(Boolean) : undefined)),
   internalOnly: z.coerce.boolean().default(false),
   sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
+  /** ag-grid 헤더 클릭 전체 데이터 정렬 — 지정 시 위 sort(프리셋) 대신 이 필드+방향을 사용.
+   *  sortCategoryCode/sortTargets 와 상호 배타적(동시 지정 시 validation 오류, 아래 superRefine). */
+  sortField: z.enum(CONTENT_SORT_FIELDS).optional(),
+  /** 카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 첫 번째(표시순) 자식 카테고리명 기준.
+   *  sortField/sortTargets 와 상호 배타적. */
+  sortCategoryCode: z.string().max(50).optional(),
+  /** 掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상의 순위(targetOrderRank) 기준.
+   *  sortField/sortCategoryCode 와 상호 배타적. */
+  // z.coerce.boolean() 은 Boolean("false") === true 로 변환하므로 사용 불가.
+  // URL query string "true"/"false" 만 명시적으로 boolean 으로 변환한다.
+  sortTargets: z.preprocess(
+    (val) => (val === "true" ? true : val === "false" ? false : val),
+    z.boolean().optional(),
+  ),
+  /** sortField/sortCategoryCode/sortTargets 중 하나가 지정된 경우에만 유효 (기본 asc). */
+  sortDir: z.enum(["asc", "desc"]).optional(),
+}).superRefine((data, ctx) => {
+  // 세 정렬 모드는 상호 배타적 — ag-grid 는 클릭된 컬럼 1개의 colId 만 보내므로 정상 흐름에서는
+  // 항상 하나만 채워지지만, API 를 직접 호출하는 경우까지 대비해 서버에서도 명시적으로 막는다.
+  const sortModes = [
+    data.sortField,
+    data.sortCategoryCode,
+    data.sortTargets === true ? true : undefined,
+  ].filter(Boolean);
+  if (sortModes.length > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sortField"],
+      message: "sortField、sortCategoryCode、sortTargets は同時に指定できません",
+    });
+  }
+  if (data.sortDir && sortModes.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sortDir"],
+      message: "sortDir は sortField・sortCategoryCode・sortTargets のいずれかと併せて指定してください",
+    });
+  }
 });
 
 /**

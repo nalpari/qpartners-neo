@@ -5,6 +5,7 @@ import type { ChangeEvent } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import api from "@/lib/axios";
 import { prepareBodyForEditor } from "@/lib/rich-editor/prepare-body-for-editor";
+import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 import { buildExtensions } from "./editor-extensions";
 import { EditorToolbar } from "./editor-toolbar";
 import { TableBubbleMenu } from "./table-bubble-menu";
@@ -37,6 +38,8 @@ export function RichEditor({
   const isMountedRef = useRef(false);
 
   const [isUploading, setIsUploading] = useState(false);
+  const [isHtmlSourceMode, setIsHtmlSourceMode] = useState(false);
+  const [htmlSourceDraft, setHtmlSourceDraft] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggerImagePicker = useCallback(() => {
@@ -114,6 +117,47 @@ export function RichEditor({
     }
   };
 
+  // HTML 소스 모드 진입 — 현재 본문을 raw HTML로 캡처해 textarea에 표시.
+  // 업로드 중에는 진입을 차단한다 — 업로드가 완료되기 전 캡처하면 삽입 중인 이미지가 누락된다.
+  const handleEnterHtmlSource = useCallback(() => {
+    if (!editor || isUploading) return;
+    setHtmlSourceDraft(editor.getHTML());
+    setIsHtmlSourceMode(true);
+  }, [editor, isUploading]);
+
+  // 소스 모드 적용 — sanitize 후 setContent(emitUpdate: true)로 onChange까지 자연스럽게 전파.
+  // setContent 성공 시에만 소스 모드를 닫아 실패 시 사용자가 HTML을 수정할 수 있도록 한다.
+  // 업로드 중에는 적용을 차단한다 — 초안이 업로드 완료 전 스냅샷이므로 덮어쓰면 이미지가 유실된다.
+  const handleApplyHtmlSource = useCallback(() => {
+    if (!editor || isUploading) return;
+    const sanitized = sanitizeContentHtml(htmlSourceDraft);
+    // sanitize 실패(입력이 있는데 빈 문자열 반환) 시 에디터 내용 전체 삭제를 방지.
+    if (sanitized === "" && htmlSourceDraft.trim() !== "") {
+      const err = new Error("HTML sanitize 실패");
+      console.error("[RichEditor] HTML 소스 sanitize 실패:", err);
+      onParseErrorRef.current?.(err);
+      return;
+    }
+    try {
+      const success = editor.commands.setContent(sanitized, true);
+      if (!success) {
+        const err = new Error("setContent returned false");
+        console.error("[RichEditor] HTML 소스 적용 실패:", err);
+        onParseErrorRef.current?.(err);
+        return;
+      }
+      setIsHtmlSourceMode(false);
+    } catch (error: unknown) {
+      console.error("[RichEditor] HTML 소스 적용 실패:", error);
+      onParseErrorRef.current?.(error);
+      // 소스 모드 유지 — 사용자가 HTML을 수정 후 재시도할 수 있도록.
+    }
+  }, [editor, htmlSourceDraft, isUploading]);
+
+  const handleCancelHtmlSource = useCallback(() => {
+    setIsHtmlSourceMode(false);
+  }, []);
+
   if (!editor) return null;
 
   return (
@@ -140,12 +184,50 @@ export function RichEditor({
       >
         <div className="rich-editor-progress h-full bg-[#101010]" />
       </div>
-      <EditorToolbar editor={editor} onImageRequest={triggerImagePicker} />
-      <TableBubbleMenu editor={editor} />
-      <EditorContent
+      <EditorToolbar
         editor={editor}
-        className="px-4 py-3 prose prose-sm max-w-none font-['Noto_Sans_JP'] [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[120px]"
+        onImageRequest={triggerImagePicker}
+        htmlSourceMode={isHtmlSourceMode}
+        onToggleHtmlSource={isHtmlSourceMode ? handleApplyHtmlSource : handleEnterHtmlSource}
+        isUploading={isUploading}
       />
+      {isHtmlSourceMode && (
+        <div className="px-4 py-3">
+          <textarea
+            aria-label={editorI18n.ariaLabels.htmlSourceTextarea}
+            value={htmlSourceDraft}
+            onChange={(e) => setHtmlSourceDraft(e.target.value)}
+            placeholder={editorI18n.htmlSourceMode.placeholder}
+            className="w-full min-h-[200px] px-3 py-2 border border-[#EBEBEB] rounded-[6px] font-mono text-[13px] resize-y focus:outline-none focus:border-[#101010]"
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button
+              type="button"
+              onClick={handleCancelHtmlSource}
+              className="h-9 px-4 rounded border border-[#EBEBEB] bg-white text-[13px] text-[#101010] hover:bg-[#FAFAFA]"
+            >
+              {editorI18n.htmlSourceMode.cancel}
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyHtmlSource}
+              disabled={isUploading}
+              className="h-9 px-4 rounded bg-[#101010] text-[13px] text-white hover:bg-[#383838] disabled:opacity-40 disabled:pointer-events-none"
+            >
+              {editorI18n.htmlSourceMode.apply}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* EditorContent는 Tiptap이 DOM을 직접 관리하므로 조건부 언마운트하지 않고
+          display로만 숨긴다 — 언마운트 시 removeChild 류 DOM 불일치 에러 발생. */}
+      <div className={isHtmlSourceMode ? "hidden" : ""}>
+        <TableBubbleMenu editor={editor} />
+        <EditorContent
+          editor={editor}
+          className="px-4 py-3 prose prose-sm max-w-none font-['Noto_Sans_JP'] [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[120px]"
+        />
+      </div>
     </div>
   );
 }
