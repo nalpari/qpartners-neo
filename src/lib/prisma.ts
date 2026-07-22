@@ -29,6 +29,8 @@ function createPrismaClient(): PrismaClient {
     user: requireEnv("DB_USER"),
     password: requireEnv("DB_PASSWORD"),
     database: requireEnv("DB_NAME"),
+    // 클라이언트 단 쿼리 타임아웃 30초 — runaway 쿼리로 인한 커넥션 풀 고갈 방어
+    queryTimeout: 30_000,
   });
   return new PrismaClient({ adapter });
 }
