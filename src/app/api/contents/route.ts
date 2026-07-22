@@ -295,7 +295,7 @@ export async function GET(request: NextRequest) {
             const row = rowById.get(id);
             if (!row) {
               // where 재적용으로 필터된 경우(레이스 컨디션) — 정상 흐름이므로 warn 수준
-              logError("GET /api/contents sortCategoryCode 순서복원 누락", new Error(`id=${id} not found`), { sortCategoryCode });
+              console.warn("[GET /api/contents] sortCategoryCode 순서복원 누락 (레이스 컨디션):", { id, sortCategoryCode });
               return [];
             }
             return [mapRow(row)];
@@ -374,7 +374,7 @@ export async function GET(request: NextRequest) {
           data = pageIds.flatMap((id) => {
             const row = rowById.get(id);
             if (!row) {
-              logError("GET /api/contents sortTargets 순서복원 누락", new Error(`id=${id} not found`), { sortTargets });
+              console.warn("[GET /api/contents] sortTargets 순서복원 누락 (레이스 컨디션):", { id, sortTargets });
               return [];
             }
             return [mapRow(row)];
@@ -411,7 +411,7 @@ export async function GET(request: NextRequest) {
     } else {
       // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
       // sortField==="updatedAt" 는 위의 else if 분기에서 처리되므로 이 분기에 도달하지 않는다.
-      const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
+      const orderBy: Prisma.ContentOrderByWithRelationInput | null = (() => {
         if (sortField) {
           const dir = sortDir ?? "asc";
           switch (sortField) {
@@ -434,8 +434,8 @@ export async function GET(request: NextRequest) {
               // CONTENT_SORT_FIELDS 에 필드를 추가했는데 case 를 빠뜨리면 이 줄에서 컴파일 에러가
               // 나서 알아챌 수 있다 — case 누락이 컴파일 통과 후 조용히 기본 정렬로 fallback 되는 것 방지.
               const _exhaustive: never = sortField;
-              console.error("[GET /api/contents] 처리되지 않은 sortField:", _exhaustive);
-              return { createdAt: "desc" as const };
+              logError("GET /api/contents", new Error(`처리되지 않은 sortField: ${String(_exhaustive)}`));
+              return null;
             }
           }
         }
@@ -450,6 +450,10 @@ export async function GET(request: NextRequest) {
             return { createdAt: "desc" as const };
         }
       })();
+
+      if (orderBy === null) {
+        return NextResponse.json({ error: "不正なソートフィールドが指定されました" }, { status: 400 });
+      }
 
       let dbResult;
       try {
