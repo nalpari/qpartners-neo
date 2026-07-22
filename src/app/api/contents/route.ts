@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
 
     // sortCategoryCode/sortTargets 는 Prisma ORM 단독으로 정렬 불가한 경로로,
     // 1단계 ID 조회 → 2단계 $queryRaw 정렬 → 3단계 페이지 fetch 의 3단계 파이프라인을 사용한다.
+    // sortField=updatedAt 은 동일 3단계 구조지만 2단계가 인메모리 정렬이다 (아래 else if 분기 참조).
     // 전체 row 인메모리 로드는 발생하지 않는다.
     // 카테고리/게시대상 컬럼 자체가 비회원 화면에도 노출되므로 정렬도 비회원에게 동일하게 허용한다.
 
@@ -253,9 +254,10 @@ export async function GET(request: NextRequest) {
 
         // 2단계: 서브쿼리 정렬 + 페이지네이션 → ID만 반환 (sort_key IS NULL ASC = NULL 항상 뒤)
         // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
-        let sortedRows: { id: number | bigint }[];
+        // sort_key 컬럼도 SELECT에 포함되므로 타입에 반영 (미사용이나 실제 형태와 일치시킴).
+        let sortedRows: { id: number | bigint; sort_key: string | null }[];
         try {
-          sortedRows = await prisma.$queryRaw<{ id: number | bigint }[]>`
+          sortedRows = await prisma.$queryRaw<{ id: number | bigint; sort_key: string | null }[]>`
             SELECT c.id,
               (
                 SELECT ch.name
@@ -303,7 +305,8 @@ export async function GET(request: NextRequest) {
             const row = rowById.get(id);
             if (!row) {
               // where 재적용으로 필터된 경우(레이스 컨디션) — 정상 흐름이므로 warn 수준
-              logError("GET /api/contents sortCategoryCode 레이스컨디션", new Error("순서복원 누락"), { id, sortCategoryCode });
+              // 정상 흐름(레이스컨디션) — error 수준이 아니므로 warn으로 기록
+              console.warn("[GET /api/contents sortCategoryCode] 레이스컨디션 탈락", { id, sortCategoryCode });
               return [];
             }
             return [mapRow(row)];
@@ -337,9 +340,10 @@ export async function GET(request: NextRequest) {
 
         // 2단계: MIN(rank) 서브쿼리 정렬 + 페이지네이션
         // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
-        let sortedRows: { id: number | bigint }[];
+        // sort_key 컬럼도 SELECT에 포함되므로 타입에 반영 (미사용이나 실제 형태와 일치시킴).
+        let sortedRows: { id: number | bigint; sort_key: number | null }[];
         try {
-          sortedRows = await prisma.$queryRaw<{ id: number | bigint }[]>`
+          sortedRows = await prisma.$queryRaw<{ id: number | bigint; sort_key: number | null }[]>`
             SELECT c.id,
               (
                 SELECT MIN(
@@ -386,7 +390,8 @@ export async function GET(request: NextRequest) {
           data = pageIds.flatMap((id) => {
             const row = rowById.get(id);
             if (!row) {
-              logError("GET /api/contents sortTargets 레이스컨디션", new Error("순서복원 누락"), { id, sortTargets });
+              // 정상 흐름(레이스컨디션) — error 수준이 아니므로 warn으로 기록
+              console.warn("[GET /api/contents sortTargets] 레이스컨디션 탈락", { id, sortTargets });
               return [];
             }
             return [mapRow(row)];
@@ -454,7 +459,8 @@ export async function GET(request: NextRequest) {
           data = pageIds.flatMap((id) => {
             const row = rowById.get(id);
             if (!row) {
-              logError("GET /api/contents sortField=updatedAt 레이스컨디션", new Error("순서복원 누락"), { id });
+              // 정상 흐름(레이스컨디션) — error 수준이 아니므로 warn으로 기록
+              console.warn("[GET /api/contents sortField=updatedAt] 레이스컨디션 탈락", { id });
               return [];
             }
             return [mapRow(row)];
