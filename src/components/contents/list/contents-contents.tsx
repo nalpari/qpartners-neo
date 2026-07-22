@@ -11,8 +11,9 @@ import {
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsSearch } from "./contents-search";
-import { ContentsTable } from "./contents-table";
+import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
 interface SearchFilters {
   keyword: string;
@@ -120,6 +121,18 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     shouldRestore: shouldRestoreList,
   });
 
+  // ag-grid 헤더 클릭 정렬 — searchParams(sessionStorage 복원 대상)와 달리 세션 간 비영속.
+  // 새로고침/메뉴 재진입 시 서버 기본 정렬(newest)로 초기화되는 편이 자연스럽다.
+  // field(고정 6개 필드) / categoryCode(동적 카테고리 컬럼) / targets(掲示対象) 는 상호 배타적
+  // — 항상 하나만 채워진다.
+  const [sortResetKey, setSortResetKey] = useState(0);
+  const [sort, setSort] = useState<{
+    field: ContentSortField | undefined;
+    categoryCode: string | undefined;
+    targets: boolean;
+    dir: "asc" | "desc" | undefined;
+  }>({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
   //   - false 이고 initialKeyword 가 있으면 → 외부 진입 (홈 검색바 useHomeSearch
@@ -184,20 +197,26 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   });
   const userScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "anon";
 
-  // 카테고리 트리 조회
-  const { data: categories = [] } = useQuery({
+  // 카테고리 트리 조회 — 실패 시 data=[] 로 떨어져 카테고리 컬럼/필터가 조용히 사라지므로
+  // isError 를 노출해 사용자가 원인을 알 수 있게 한다.
+  const { data: categories = [], isError: isCategoriesError } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
-      const res = await api.get<{ data: CategoryNode[] }>("/categories?activeOnly=true");
-      return res.data.data;
+      try {
+        const res = await api.get<{ data: CategoryNode[] }>("/categories?activeOnly=true");
+        return res.data.data;
+      } catch (err: unknown) {
+        console.error("[ContentsContents] 카테고리 조회 실패:", err);
+        throw err;
+      }
     },
     staleTime: 5 * 60 * 1000,
   });
 
   // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트하여 두 번 fetch (20 → sort=1) 회피.
   const isContentsQueryEnabled = !isPageSizeLoading;
-  const { data: contentsResponse, isLoading } = useQuery({
-    queryKey: ["contents", searchParams, pageSize, userScope],
+  const { data: contentsResponse, isLoading, isError: isContentsError } = useQuery({
+    queryKey: ["contents", searchParams, pageSize, userScope, sort],
     queryFn: async () => {
       const params: Record<string, string | number | boolean> = {
         page: searchParams.page,
@@ -208,17 +227,28 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
       if (searchParams.departments.length > 0) params.department = searchParams.departments.join(",");
       if (searchParams.internalOnly) params.internalOnly = true;
+      if (sort.field) params.sortField = sort.field;
+      if (sort.categoryCode) params.sortCategoryCode = sort.categoryCode;
+      if (sort.targets) params.sortTargets = true;
+      if (sort.dir) params.sortDir = sort.dir;
 
-      const res = await api.get<{
-        data: ContentListItem[];
-        meta: { total: number; page: number; pageSize: number; totalPages: number };
-      }>("/contents", { params });
-      return res.data;
+      try {
+        const res = await api.get<{
+          data: ContentListItem[];
+          meta: { total: number; page: number; pageSize: number; totalPages: number };
+        }>("/contents", { params });
+        return res.data;
+      } catch (err: unknown) {
+        console.error("[ContentsContents] 컨텐츠 목록 조회 실패:", err);
+        throw err;
+      }
     },
     enabled: isContentsQueryEnabled,
   });
 
   const handleSearch = (filters: SearchFilters) => {
+    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSortResetKey((k) => k + 1);
     setSearchParams({ ...filters, page: 1 });
   };
 
@@ -228,12 +258,40 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
 
   const handlePageSizeChange = (newPageSize: number) => {
     setPageSize(newPageSize);
+    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSortResetKey((k) => k + 1);
     // 페이지 사이즈 변경 시 page 만 1 로 리셋.
+    setSearchParams((prev) => ({ ...prev, page: 1 }));
+  };
+
+  // colId 우선순위: TARGETS_SORT_COL_ID(掲示対象) → 고정 7개 필드(field) → 그 외(동적 카테고리 categoryCode).
+  // 카테고리 컬럼의 colId 는 항상 categories 응답의 categoryCode 값이므로, 화이트리스트에
+  // 없는 colId(예: ag-grid 버전업으로 내부 colId 체계가 바뀐 경우)는 그대로 sortCategoryCode
+  // 로 흘려보내지 않고 경고 로그만 남기고 정렬을 무시한다.
+  const handleSortChange = (colId: string | undefined, dir: "asc" | "desc" | undefined) => {
+    if (!colId) {
+      setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    } else if (colId === TARGETS_SORT_COL_ID) {
+      setSort({ field: undefined, categoryCode: undefined, targets: true, dir });
+    } else if ((CONTENT_SORT_FIELDS as readonly string[]).includes(colId)) {
+      setSort({ field: colId as ContentSortField, categoryCode: undefined, targets: false, dir });
+    } else if (categories.some((c) => c.categoryCode === colId)) {
+      setSort({ field: undefined, categoryCode: colId, targets: false, dir });
+    } else {
+      console.warn("[ContentsContents] 알 수 없는 정렬 colId — 무시:", colId);
+      setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    }
+    // 정렬 기준이 바뀌면 이전 페이지 번호가 무의미해지므로 1페이지로 리셋.
     setSearchParams((prev) => ({ ...prev, page: 1 }));
   };
 
   return (
     <main className="flex flex-col items-center gap-[10px] lg:gap-[18px] w-full pb-[10px] lg:pb-[48px]">
+      {isCategoriesError && (
+        <p className="w-[1440px] max-w-full px-6 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
+          カテゴリの読み込みに失敗しました。カテゴリ列・フィルターが表示されない場合があります。
+        </p>
+      )}
       <ContentsSearch
         // 복원 시 폼 state 가 초기값으로 동기화되도록 key 로 리마운트 제어
         // (react-hooks/set-state-in-effect 정책 — 부모에서 key prop 으로 리마운트 권장 패턴).
@@ -252,9 +310,12 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         // 쿼리 게이트(enabled=false) 시 isLoading=false 로 떨어지므로,
         // PAGE_SIZE 공통코드 로딩 중인 빈 시간을 로딩 상태로 표시 — 빈 화면 방지.
         isLoading={isLoading || !isContentsQueryEnabled}
+        isError={isContentsError}
         pageSize={pageSize}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+        onSortChange={handleSortChange}
+        sortResetKey={sortResetKey}
       />
     </main>
   );

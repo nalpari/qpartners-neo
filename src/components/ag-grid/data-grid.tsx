@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   CellStyleModule,
   ClientSideRowModelModule,
+  ColumnApiModule,
   DragAndDropModule,
   ModuleRegistry,
   RenderApiModule,
@@ -17,12 +18,15 @@ import {
   type CellDoubleClickedEvent,
   type CellClickedEvent,
   type GridReadyEvent,
+  type SortChangedEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
 // AG Grid v32+ 모듈 분리 정책:
 //   - `api.getRowNode()` 는 RowApiModule 에 포함 → codes/permissions 테이블의 더블클릭 수정
 //     플로우에서 필수. 누락 시 런타임 error #200 (moduleName=RowApi).
+//   - `api.getColumnState()` 는 ColumnApiModule 에 포함 → 헤더 클릭 정렬(onSortChanged) 콜백에서
+//     활성 정렬 컬럼을 조회할 때 필수. 누락 시 런타임 error #200 (moduleName=ColumnApi).
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
   CellStyleModule,
@@ -31,6 +35,7 @@ ModuleRegistry.registerModules([
   DragAndDropModule,
   RenderApiModule,
   RowApiModule,
+  ColumnApiModule,
 ]);
 
 const customTheme = themeQuartz.withParams({
@@ -77,6 +82,10 @@ interface DataGridProps<T> {
   onCellDoubleClicked?: (event: CellDoubleClickedEvent<T>) => void;
   onCellClicked?: (event: CellClickedEvent<T>) => void;
   onGridReady?: (event: GridReadyEvent<T>) => void;
+  /** 헤더 클릭 정렬 변경 시 호출 — 서버사이드 정렬을 쓰는 그리드만 지정 (opt-in, 미지정 시 기존 동작 그대로). */
+  onSortChanged?: (event: SortChangedEvent<T>) => void;
+  /** true 시 멀티 컬럼 정렬 비활성화. 서버 단일 컬럼 정렬과 UI 불일치가 발생하는 그리드만 지정. */
+  suppressMultiSort?: boolean;
 }
 
 const DEFAULT_MAX_HEIGHT = 500;
@@ -96,6 +105,8 @@ export function DataGrid<T>({
   onCellDoubleClicked,
   onCellClicked,
   onGridReady,
+  onSortChanged,
+  suppressMultiSort = false,
 }: DataGridProps<T>) {
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -167,6 +178,8 @@ export function DataGrid<T>({
         onCellDoubleClicked={onCellDoubleClicked}
         onCellClicked={onCellClicked}
         onGridReady={onGridReady}
+        suppressMultiSort={suppressMultiSort}
+        onSortChanged={onSortChanged}
       />
     </div>
   );

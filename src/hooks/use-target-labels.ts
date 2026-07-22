@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import api from "@/lib/axios";
+import { targetOrderRank } from "@/lib/target-role-order";
 
 /**
  * 콘텐츠 게시대상 / 홈공지 / 대량메일 / 권한관리 공용 라벨 훅.
@@ -39,16 +40,6 @@ const ROLE_CODES_HIDDEN_FROM_CONTENT_TARGET: ReadonlySet<string> = new Set([
   "SUPER_ADMIN",
   "ADMIN",
 ]);
-
-/** 6 기본 권한 표시 우선 순서 — 그 외 추가 권한은 roleCode 알파벳 순으로 뒤에 배치. */
-const SYSTEM_ROLE_ORDER: Record<string, number> = {
-  SUPER_ADMIN: 1,
-  ADMIN: 2,
-  "1ST_STORE": 3,
-  "2ND_STORE": 4,
-  SEKO: 5,
-  GENERAL: 6,
-};
 
 export interface TargetRoleOption {
   /** roleCode — null = 비회원 sentinel */
@@ -87,12 +78,6 @@ export function useTargetLabels() {
       return byCode.get(roleCode)?.isActive ?? false;
     };
 
-    /** 정렬 헬퍼 — 6 기본 권한 우선, 그 외 roleCode 알파벳 순 */
-    const orderRank = (roleCode: string | null): number => {
-      if (roleCode === null) return 999; // 비회원은 마지막
-      return SYSTEM_ROLE_ORDER[roleCode] ?? 100;
-    };
-
     /** 활성 옵션 (member 대상) — 홈공지/대량메일/회원관리/검색 필터용. 비회원 제외. */
     const memberOptions: TargetRoleOption[] = (data ?? [])
       .filter((r) => r.isActive)
@@ -103,8 +88,8 @@ export function useTargetLabels() {
         isSystem: r.isSystem,
       }))
       .sort((a, b) => {
-        const ra = orderRank(a.roleCode);
-        const rb = orderRank(b.roleCode);
+        const ra = targetOrderRank(a.roleCode);
+        const rb = targetOrderRank(b.roleCode);
         if (ra !== rb) return ra - rb;
         return (a.roleCode ?? "").localeCompare(b.roleCode ?? "");
       });
@@ -125,8 +110,8 @@ export function useTargetLabels() {
       targets: readonly T[],
     ): T[] =>
       [...targets].sort((a, b) => {
-        const ra = orderRank(a.roleCode);
-        const rb = orderRank(b.roleCode);
+        const ra = targetOrderRank(a.roleCode);
+        const rb = targetOrderRank(b.roleCode);
         if (ra !== rb) return ra - rb;
         return (a.roleCode ?? "").localeCompare(b.roleCode ?? "");
       });

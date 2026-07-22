@@ -280,19 +280,24 @@ export async function POST(request: NextRequest) {
     const notice = await prisma.$transaction(
       async (tx) => {
         // 권한별 5건 한도 일괄 검사 — N+1 루프 대신 단일 GROUP BY 집계 쿼리
-        const overLimit = await tx.$queryRaw<{ role_code: string }[]>`
-          SELECT hnt.role_code
-          FROM qp_home_notice_targets hnt
-          JOIN qp_home_notices hn ON hn.id = hnt.home_notice_id
-          WHERE hnt.role_code IN (${Prisma.join(result.data.targetRoleCodes)})
-            AND hn.start_at <= ${result.data.endAt}
-            AND hn.end_at   >= ${result.data.startAt}
-          GROUP BY hnt.role_code
-          HAVING COUNT(DISTINCT hn.id) >= 5
-          LIMIT 1
-        `;
+        // @@unique([homeNoticeId, roleCode]) 덕분에 homeNoticeId 카운트 = 역할별 공지 수
+        const overLimit = await tx.homeNoticeTarget.groupBy({
+          by: ["roleCode"],
+          where: {
+            roleCode: { in: result.data.targetRoleCodes },
+            homeNotice: {
+              startAt: { lte: result.data.endAt },
+              endAt: { gte: result.data.startAt },
+            },
+          },
+          having: {
+            homeNoticeId: { _count: { gte: 5 } },
+          },
+          orderBy: { roleCode: "asc" },
+          take: 1,
+        });
         if (overLimit.length > 0) {
-          throw new HomeNoticeCreateError("LIMIT_EXCEEDED", overLimit[0].role_code);
+          throw new HomeNoticeCreateError("LIMIT_EXCEEDED", overLimit[0].roleCode);
         }
 
         return tx.homeNotice.create({
