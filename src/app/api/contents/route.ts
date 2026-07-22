@@ -300,6 +300,9 @@ export async function GET(request: NextRequest) {
             }
             return [mapRow(row)];
           });
+          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          const dropped = pageIds.length - data.length;
+          if (dropped > 0) total -= dropped;
         }
       }
     } else if (sortTargets) {
@@ -379,6 +382,9 @@ export async function GET(request: NextRequest) {
             }
             return [mapRow(row)];
           });
+          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          const dropped = pageIds.length - data.length;
+          if (dropped > 0) total -= dropped;
         }
       }
     } else if (sortField === "updatedAt") {
