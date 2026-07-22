@@ -13,6 +13,7 @@ import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
+import { resolveSendSchedule, STATUS_SAVE_MESSAGE } from "@/lib/mass-mail/schedule";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -254,10 +255,14 @@ interface CreateRecordParams {
   sanitizedBody: string;
   userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
   writtenFiles: PersistedAttachment[];
+  /** resolveSendSchedule 로 파생된 저장 status (draft/pending/scheduled) */
+  status: "draft" | "pending" | "scheduled";
+  /** resolveSendSchedule 로 파생된 저장 scheduledSendAt (즉시=now, 예약=지정값, 초안=지정값 or null) */
+  scheduledSendAt: Date | null;
 }
 
 async function createMassMailRecord(params: CreateRecordParams): Promise<number> {
-  const { user, data, sanitizedBody, userType, writtenFiles } = params;
+  const { user, data, sanitizedBody, userType, writtenFiles, status, scheduledSendAt } = params;
 
   const txResult = await prisma.$transaction(async (tx) => {
     const massMail = await tx.massMail.create({
@@ -268,7 +273,8 @@ async function createMassMailRecord(params: CreateRecordParams): Promise<number>
         optOut: data.optOut,
         subject: data.subject,
         body: sanitizedBody,
-        status: data.status,
+        status,
+        scheduledSendAt,
         createdBy: user.userId,
         createdByName: user.name ?? null,
         updatedBy: user.userId,
@@ -402,6 +408,7 @@ export async function GET(request: NextRequest) {
       senderName: mail.senderName,
       senderId: mail.userId,
       createdByName: mail.createdByName ?? null,
+      scheduledSendAt: mail.scheduledSendAt?.toISOString() ?? null,
       sentAt: mail.sentAt?.toISOString() ?? null,
       createdAt: mail.createdAt.toISOString(),
     }));
@@ -435,6 +442,15 @@ export async function POST(request: NextRequest) {
     if (parsed instanceof NextResponse) return parsed;
     const { user, data, sanitizedBody, userType, files } = parsed;
 
+    // 즉시/예약/초안 파생 — 첨부 디스크 기록 전에 검증해 무효 예약 시 orphan 파일 방지.
+    const schedule = resolveSendSchedule(data.status, data.scheduledSendAt);
+    if (!schedule.ok) {
+      return NextResponse.json(
+        { error: "未来の日時を選択してください" },
+        { status: 400 },
+      );
+    }
+
     const persistResult = await persistAttachments(files);
     if (persistResult instanceof NextResponse) return persistResult;
     writtenFiles = persistResult.writtenFiles;
@@ -444,6 +460,7 @@ export async function POST(request: NextRequest) {
     try {
       massMailId = await createMassMailRecord({
         user, data, sanitizedBody, userType, writtenFiles,
+        status: schedule.status, scheduledSendAt: schedule.scheduledSendAt,
       });
     } catch (dbError: unknown) {
       await cleanupAttachments(writtenFiles, LOG_TAG_POST, uploadDir);
@@ -452,13 +469,11 @@ export async function POST(request: NextRequest) {
       throw dbError;
     }
 
-    const statusMsg = data.status === "pending"
-      ? "メール送信を受け付けました。"
-      : "下書きとして保存しました。";
+    const statusMsg = STATUS_SAVE_MESSAGE[schedule.status];
 
-    console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${data.status}`);
+    console.log(`[POST /api/admin/mass-mails] 대량메일 등록 완료 — id: ${massMailId}, status: ${schedule.status}`);
 
-    if (data.status === "pending") {
+    if (schedule.triggerSend) {
       processMassMailSend({ massMailId }).catch((err: unknown) => {
         console.error(
           `[POST /api/admin/mass-mails] CRITICAL — 비동기 발송 fire-and-forget 새어남. 좀비 감지 의존. massMailId: ${massMailId}`,
@@ -468,7 +483,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { data: { id: massMailId, status: data.status, message: statusMsg } },
+      { data: { id: massMailId, status: schedule.status, message: statusMsg } },
       { status: 201 },
     );
   } catch (error: unknown) {

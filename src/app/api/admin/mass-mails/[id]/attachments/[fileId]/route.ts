@@ -40,7 +40,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 3. 메일 존재 + 소유권 + 상태 확인
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
-      select: { id: true, userType: true, userId: true, status: true },
+      select: { id: true, userType: true, userId: true, status: true, scheduledSendAt: true },
     });
 
     if (!mail) {
@@ -57,10 +57,16 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 발송된 메일의 첨부는 삭제 불가 — 下書き(draft)만 허용 (PUT/DELETE 핸들러와 동일 정책).
-    if (mail.status !== "draft") {
+    // 첨부 삭제는 편집 조작 — 下書き(draft) 또는 미도래 예약(scheduled + scheduledSendAt>now)만 허용
+    // (PUT/DELETE 핸들러와 동일 정책).
+    const isEditable =
+      mail.status === "draft" ||
+      (mail.status === "scheduled" &&
+        mail.scheduledSendAt !== null &&
+        mail.scheduledSendAt.getTime() > Date.now());
+    if (!isEditable) {
       return NextResponse.json(
-        { error: "下書き以外のメールは編集できません" },
+        { error: "下書きまたは予約(未送信)のメールのみ編集できます" },
         { status: 400 },
       );
     }

@@ -122,6 +122,32 @@ export async function runBatchOnce(): Promise<void> {
       );
     }
 
+    // 1.5. 예약 도래 처리 — scheduled + scheduledSendAt<=now → pending 전이.
+    //      전이를 targets SELECT 이전에 수행해, 도래한 예약 건이 이번 cycle 의 pending 처리 루프에서
+    //      바로 수집+발송되도록 한다. 낙관적 락(status='scheduled' AND scheduledSendAt<=now)으로
+    //      동시 전이/외부 상태변경을 방어 — 중복 발송 없음. scheduled 는 send 트리거를 받은 적이
+    //      없으므로(오직 배치가 발송) in-flight 경합 대상이 아니다.
+    const dueNow = new Date();
+    const dueScheduled = await prisma.massMail.findMany({
+      where: { status: "scheduled", scheduledSendAt: { lte: dueNow } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: CYCLE_MAX_TARGETS,
+    });
+    let promotedScheduled = 0;
+    for (const due of dueScheduled) {
+      const promoted = await prisma.massMail.updateMany({
+        where: { id: due.id, status: "scheduled", scheduledSendAt: { lte: dueNow } },
+        data: { status: "pending" },
+      });
+      promotedScheduled += promoted.count;
+    }
+    if (promotedScheduled > 0) {
+      console.log(
+        `${LOG_TAG} 예약 도래 — ${promotedScheduled}건 scheduled → pending 전이 (이번 cycle 발송 대상 포함)`,
+      );
+    }
+
     // 2. 처리 대상 SELECT — pending/sending 상태의 mass_mail
     //    (send_failed 는 운영자 [再送信] 수동 영역으로 둠 — Plan §3.3 3단계)
     const targets = await prisma.massMail.findMany({

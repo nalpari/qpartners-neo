@@ -21,6 +21,8 @@ import { BulkMailFormInfo } from "./bulk-mail-form-info";
 import { BulkMailFormTargets, BulkMailFormNewsletter } from "./bulk-mail-form-targets";
 import { BulkMailFormTitle, BulkMailFormBody } from "./bulk-mail-form-content";
 import { BulkMailFormAttachment } from "./bulk-mail-form-attachment";
+import { BulkMailFormSchedule } from "./bulk-mail-form-schedule";
+import type { SendType } from "./bulk-mail-form-schedule";
 import type {
   FormMode,
   FormInitialData,
@@ -65,6 +67,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     initialData?.targetRoleCodes ?? [],
   );
   const [optOut, setOptOut] = useState(initialData?.optOut ?? false);
+  // 발송 타이밍 — 예정일시가 있으면 예약, 없으면 즉시(기본). create/copy 는 항상 즉시.
+  const [sendType, setSendType] = useState<SendType>(
+    initialData?.scheduledSendAt ? "scheduled" : "immediate",
+  );
+  const [scheduledSendAt, setScheduledSendAt] = useState<Date | null>(
+    initialData?.scheduledSendAt ? new Date(initialData.scheduledSendAt) : null,
+  );
   const [subject, setSubject] = useState(initialData?.subject ?? "");
   const [body, setBody] = useState(initialData?.body ?? "");
   const [files, setFiles] = useState<File[]>([]);
@@ -168,6 +177,13 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     if (bodyHasSignature(body) && isHtmlEmpty(stripSignatureLines(body))) {
       return "本文は必須入力項目です。";
     }
+    // 예약발송 — 일시 필수 + 미래 검증. 서버가 저장 시 재검증(400/409)하지만 UX 상 사전 차단.
+    if (sendType === "scheduled") {
+      if (!scheduledSendAt) return "配信日時は必須入力項目です。";
+      if (scheduledSendAt.getTime() <= Date.now()) {
+        return "配信日時は未来の日時を選択してください。";
+      }
+    }
     return null;
   }
 
@@ -219,6 +235,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         const fd = buildFormData({
           senderName, targetRoleCodes, optOut, subject, body,
           status: "pending", files, deleteAttachmentIds: deletedAttachmentIds,
+          scheduledSendAt: sendType === "scheduled" ? scheduledSendAt : undefined,
         });
         submitMutation.mutate(fd);
       },
@@ -242,6 +259,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
     const fd = buildFormData({
       senderName, targetRoleCodes, optOut, subject, body,
       status: "draft", files, deleteAttachmentIds: deletedAttachmentIds,
+      scheduledSendAt: sendType === "scheduled" ? scheduledSendAt : undefined,
     });
     draftMutation.mutate(fd);
   };
@@ -327,6 +345,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           createdBy={initialData?.createdBy ?? ""}
           createdByName={initialData?.createdByName ?? null}
           sentAt={showSentAt && initialData?.sentAt ? formatMailDate(initialData.sentAt) : (showSentAt && initialData?.createdAt ? formatMailDate(initialData.createdAt) : "")}
+          scheduledSendAt={showSentAt && initialData?.scheduledSendAt ? formatMailDate(initialData.scheduledSendAt) : ""}
         />
       </section>
 
@@ -347,6 +366,19 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           disabled={isFormDisabled}
         />
       </section>
+
+      {/* 발송 타이밍 카드 (즉시/예약) — 상세 모드에서는 미노출(예정일시는 관리정보 카드에 표시) */}
+      {!isDetail && (
+        <section className={`${cardClass} flex flex-col gap-4`}>
+          <BulkMailFormSchedule
+            sendType={sendType}
+            onSendTypeChange={setSendType}
+            scheduledSendAt={scheduledSendAt}
+            onScheduledSendAtChange={setScheduledSendAt}
+            disabled={isFormDisabled}
+          />
+        </section>
+      )}
 
       {/* 제목 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>

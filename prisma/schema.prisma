@@ -345,6 +345,9 @@ model MassMail {
   subject            String                  @db.VarChar(500)
   body               String                  @db.MediumText
   status             MailStatus              @default(draft)
+  /// 예약발송 지정 일시. 즉시발송은 저장 시각(now), 예약발송은 미래 시각, draft 는 null 가능.
+  /// scheduled 상태의 건은 이 시각이 도래하면 auto-retry-batch 가 pending 으로 전이 후 발송.
+  scheduledSendAt    DateTime?               @map("scheduled_send_at")
   sentAt             DateTime?               @map("sent_at")
   sentTotal          Int                     @default(0) @map("sent_total")
   sentSuccess        Int                     @default(0) @map("sent_success")
@@ -365,6 +368,8 @@ model MassMail {
   /// 좀비 감지 핫 패스 — auto-retry-batch 가 3분마다 sending+updatedAt<cutoff 스캔.
   /// 단일 status 인덱스만으론 sending 전체 read 후 메모리 필터 → 적체 시 비용 폭주.
   @@index([status, updatedAt], map: "idx_status_updated_at")
+  /// 예약발송 도래 스캔 핫 패스 — auto-retry-batch 가 3분마다 scheduled+scheduledSendAt<=now 스캔.
+  @@index([status, scheduledSendAt], map: "idx_status_scheduled_send_at")
   @@map("qp_mass_mails")
 }
 
@@ -488,6 +493,7 @@ enum ContentStatus {
 enum MailStatus {
   draft
   pending
+  scheduled
   sending
   sent
   send_failed

@@ -25,6 +25,8 @@ interface BulkMailFormInfoProps {
   createdBy: string;
   createdByName: string | null;
   sentAt: string;
+  /** 예약(또는 즉시) 발송 예정 일시 (포맷 완료 문자열). 값이 있으면 配信予定日時 필드 노출. */
+  scheduledSendAt?: string;
 }
 
 /** 등록자 표시: 이름(ID) 형식. 이름 없으면 ID만, 둘 다 없으면 "—" */
@@ -39,11 +41,13 @@ export function BulkMailFormInfo({
   createdBy,
   createdByName,
   sentAt,
+  scheduledSendAt,
 }: BulkMailFormInfoProps) {
   return (
     <div className="flex flex-wrap gap-[18px]">
       <InfoField label="差出人表示名" value={senderName} />
       <InfoField label="登録者" value={formatRegistrant(createdBy, createdByName)} />
+      {scheduledSendAt ? <InfoField label="配信予定日時" value={scheduledSendAt} /> : null}
       <InfoField label="配信日" value={sentAt} />
     </div>
   );
