@@ -227,7 +227,7 @@ export async function GET(request: NextRequest) {
       // DB 정렬: 카테고리 자식명 기준.
       // 상관 서브쿼리로 각 콘텐츠의 정렬 키(sortCategoryCode 부모 아래 첫 번째 자식명)를 계산해
       // DB에서 ORDER BY + 페이지네이션 적용 → 전체 로우 인메모리 로드 불필요.
-      // children[0] は sortOrder ASC → id ASC 基準 (buildCategoryTree・クライアント getFirstCategoryChildName と同一).
+      // children[0] 은 sortOrder ASC → id ASC 기준 (buildCategoryTree 및 클라이언트 getFirstCategoryChildName 과 동일).
 
       // 1단계: where 조건 매칭 ID 목록 (경량 select)
       let idRows: { id: number }[];
@@ -303,7 +303,7 @@ export async function GET(request: NextRequest) {
             const row = rowById.get(id);
             if (!row) {
               // where 재적용으로 필터된 경우(레이스 컨디션) — 정상 흐름이므로 warn 수준
-              console.warn("[GET /api/contents] sortCategoryCode 순서복원 누락 (레이스 컨디션):", { id, sortCategoryCode });
+              logError("GET /api/contents sortCategoryCode 레이스컨디션", new Error("순서복원 누락"), { id, sortCategoryCode });
               return [];
             }
             return [mapRow(row)];
@@ -386,7 +386,7 @@ export async function GET(request: NextRequest) {
           data = pageIds.flatMap((id) => {
             const row = rowById.get(id);
             if (!row) {
-              console.warn("[GET /api/contents] sortTargets 순서복원 누락 (레이스 컨디션):", { id, sortTargets });
+              logError("GET /api/contents sortTargets 레이스컨디션", new Error("순서복원 누락"), { id, sortTargets });
               return [];
             }
             return [mapRow(row)];
@@ -397,32 +397,73 @@ export async function GET(request: NextRequest) {
         }
       }
     } else if (sortField === "updatedAt") {
-      // 인메모리 정렬: "실제 수정 여부"(updatedAt !== createdAt) 는 DB 단에서 표현 불가.
-      let allRows: Prisma.ContentGetPayload<{ include: typeof includeOptions }>[];
+      // 인메모리 정렬: "실제 수정 여부"(updatedAt !== createdAt, hasBeenUpdated 참조)를 기준으로 하므로
+      // DB ORDER BY 로 표현 불가 → 1단계 경량 select → 인메모리 정렬 → 3단계 페이지 full fetch.
+      // DB 조회 시 createdAt DESC 는 동점(hasBeenUpdated === false) 처리를 위한 보조 정렬.
+
+      // 1단계: 정렬 키 컬럼만 select (전체 row 인메모리 로드 방지)
+      let idRows: { id: number; createdAt: Date; updatedAt: Date }[];
       try {
-        allRows = await prisma.content.findMany({
+        idRows = await prisma.content.findMany({
           where,
-          include: includeOptions,
+          select: { id: true, createdAt: true, updatedAt: true },
           orderBy: { createdAt: "desc" },
         });
       } catch (dbError: unknown) {
-        logError("GET /api/contents sortField=updatedAt DB조회", dbError, { sortField });
+        logError("GET /api/contents sortField=updatedAt ID조회", dbError, { sortField });
         return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
       }
-      const dir = sortDir ?? "asc";
-      const withSortKey = allRows.map((c) => {
-        const row = mapRow(c);
-        return { row, key: row.hasBeenUpdated ? row.updatedAt.getTime() : null };
-      });
-      withSortKey.sort((a, b) => {
-        if (a.key === null && b.key === null) return 0;
-        if (a.key === null) return 1;
-        if (b.key === null) return -1;
-        const cmp = a.key - b.key;
-        return dir === "asc" ? cmp : -cmp;
-      });
-      total = withSortKey.length;
-      data = withSortKey.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map((x) => x.row);
+      total = idRows.length;
+
+      if (total === 0) {
+        data = [];
+      } else {
+        // 2단계: 인메모리 정렬 + 페이지 슬라이싱
+        const dir = sortDir ?? "asc";
+        const withSortKey = idRows.map((r) => ({
+          id: r.id,
+          key: r.updatedAt.getTime() !== r.createdAt.getTime() ? r.updatedAt.getTime() : null,
+        }));
+        withSortKey.sort((a, b) => {
+          if (a.key === null && b.key === null) return 0;
+          if (a.key === null) return 1;
+          if (b.key === null) return -1;
+          const cmp = a.key - b.key;
+          return dir === "asc" ? cmp : -cmp;
+        });
+        const pageIds = withSortKey
+          .slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+          .map((r) => r.id);
+
+        if (pageIds.length === 0) {
+          data = [];
+        } else {
+          // 3단계: 페이지 콘텐츠 full fetch + 인메모리 정렬 순서 복원
+          // where 재적용: sortCategoryCode 분기와 동일한 이유로 원본 where 조건 유지.
+          let pageRows: Prisma.ContentGetPayload<{ include: typeof includeOptions }>[];
+          try {
+            pageRows = await prisma.content.findMany({
+              where: { AND: [where, { id: { in: pageIds } }] },
+              include: includeOptions,
+            });
+          } catch (dbError: unknown) {
+            logError("GET /api/contents sortField=updatedAt 페이지조회", dbError, { sortField });
+            return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+          }
+          const rowById = new Map(pageRows.map((r) => [r.id, r]));
+          data = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              logError("GET /api/contents sortField=updatedAt 레이스컨디션", new Error("순서복원 누락"), { id });
+              return [];
+            }
+            return [mapRow(row)];
+          });
+          // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
+          const dropped = pageIds.length - data.length;
+          if (dropped > 0) total = Math.max(0, total - dropped);
+        }
+      }
     } else {
       // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
       // sortField==="updatedAt" 는 위의 else if 분기에서 처리되므로 이 분기에 도달하지 않는다.
