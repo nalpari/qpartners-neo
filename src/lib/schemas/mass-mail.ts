@@ -83,6 +83,23 @@ export const massMailCreateSchema = z.object({
     .refine((v) => !/[\r\n]/.test(v), { message: "件名に改行を含めることはできません" }),
   body: z.string().min(1, "本文は必須です"),
   status: z.enum(["draft", "pending"]),
+  /**
+   * 예약발송 일시 — FormData 문자열(ISO, Date.toISOString())로 전달. 즉시발송은 미전송(서버가 now 세팅).
+   * 존재 시 유효한 datetime 이어야 하며, 미래 여부(예약 유효성)는 라우트에서 검증(create 400 / edit 409).
+   * 빈 문자열/미전송은 undefined 로 정규화.
+   */
+  scheduledSendAt: z
+    .string()
+    .optional()
+    .transform((val, ctx) => {
+      if (val === undefined || val.trim() === "") return undefined;
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "配信日時の形式が正しくありません" });
+        return z.NEVER;
+      }
+      return d;
+    }),
 });
 
 export type MassMailCreateInput = z.infer<typeof massMailCreateSchema>;

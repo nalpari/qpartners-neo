@@ -40,6 +40,8 @@ export interface MassMailListItem {
   senderName: string;
   senderId: string;
   createdByName: string | null;
+  /** 예약(또는 즉시) 발송 예정 일시. draft 는 null 가능. */
+  scheduledSendAt: string | null;
   sentAt: string | null;
   createdAt: string;
 }
@@ -69,6 +71,7 @@ export interface MassMailSearchParams {
 export const STATUS_LABEL_MAP: Record<MassMailStatus, string> = {
   draft: "下書き",
   pending: "配信待ち",
+  scheduled: "予約",
   sending: "配信中",
   sent: "配信完了",
   send_failed: "送信失敗",
@@ -93,6 +96,10 @@ export interface MassMailDetail {
   subject: string;
   body: string;
   status: MassMailStatus;
+  /** 예약(또는 즉시) 발송 예정 일시. draft 는 null 가능. */
+  scheduledSendAt: string | null;
+  /** 편집 가능 여부 (서버 시간 기준) — draft 또는 미도래 예약(scheduled + scheduledSendAt>now). */
+  editable: boolean;
   sentAt: string | null;
   /** 발송 대상 총 건수 (수집 완료 후 확정) */
   sentTotal: number;
@@ -208,6 +215,8 @@ export interface FormInitialData {
   optOut: boolean;
   subject: string;
   body: string;
+  /** 예약(또는 즉시) 발송 예정 일시. draft 는 null 가능. */
+  scheduledSendAt: string | null;
   sentAt: string | null;
   createdBy: string;
   createdByName: string | null;
@@ -230,6 +239,7 @@ export function toFormInitialData(detail: MassMailDetail): FormInitialData {
     optOut: detail.optOut,
     subject: detail.subject,
     body: detail.body,
+    scheduledSendAt: detail.scheduledSendAt,
     sentAt: detail.sentAt,
     createdBy: detail.createdBy,
     createdByName: detail.createdByName,
@@ -262,6 +272,11 @@ export function buildFormData(params: {
   subject: string;
   body: string;
   status: "draft" | "pending";
+  /**
+   * 예약발송 일시. 지정 시 ISO(UTC) 문자열로 전송 — 서버가 미래면 status=scheduled 로 저장.
+   * 즉시발송은 undefined/null 로 미전송(서버가 저장 시각을 scheduledSendAt 로 기록).
+   */
+  scheduledSendAt?: Date | null;
   files: File[];
   /** 편집 모드: 삭제할 기존 서버 첨부파일 ID 목록 (PUT 라우트 deleteAttachmentIds). */
   deleteAttachmentIds?: number[];
@@ -272,6 +287,10 @@ export function buildFormData(params: {
   fd.append("body", params.body);
   fd.append("status", params.status);
   fd.append("optOut", String(params.optOut));
+  // 예약발송 일시 — 지정 시에만 append. 서버 massMailCreateSchema.scheduledSendAt 이 파싱.
+  if (params.scheduledSendAt) {
+    fd.append("scheduledSendAt", params.scheduledSendAt.toISOString());
+  }
   // BE massMailCreateSchema.targetRoleCodesField 가 JSON parse → fallback comma split 양쪽 지원.
   // JSON 직렬화 우선 — comma 가 포함된 권한코드(미래 예약문자) 안전.
   fd.append("targetRoleCodes", JSON.stringify(params.targetRoleCodes));

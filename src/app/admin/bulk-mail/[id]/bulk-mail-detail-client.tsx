@@ -61,9 +61,10 @@ export function BulkMailDetailClient({ id }: BulkMailDetailClientProps) {
   // 수정/삭제 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
   const canModify = canModifyClient(user, detail);
 
-  // Design Ref: §4.3 — draft → edit, sent/pending → detail
-  // 권한 없으면 draft라도 detail 모드로 강등 (편집/삭제 UI 차단)
-  const mode = (detail.status === "draft" && canModify) ? "edit" : "detail";
+  // Design Ref: §4.3 — 편집 가능(draft 또는 미도래 예약) → edit, 그 외(발송/도래) → detail.
+  // editable 은 서버가 진입 시점(서버 시간) 기준으로 산출 — 미도래 예약도 편집 허용.
+  // 권한 없으면 편집 가능 상태라도 detail 모드로 강등 (편집/삭제 UI 차단).
+  const mode = (detail.editable && canModify) ? "edit" : "detail";
 
   // edit 모드 진입 시 레거시 draft(textarea 시대 저장본 — 서명 미포함) 의 본문에 서명을 자동 보강.
   // 사용자가 그대로 발송해도 서명 없는 메일이 나가지 않도록 방어.
