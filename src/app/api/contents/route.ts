@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
@@ -13,8 +13,8 @@ import {
 } from "@/lib/inline-image-cleanup";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
-import { targetOrderRank } from "@/lib/target-role-order";
 import {
   createContentSchema,
   listContentsQuerySchema,
@@ -67,14 +67,16 @@ export async function GET(request: NextRequest) {
     // 비사내 사용자는 published만 조회 가능
     const effectiveStatus = internal ? status : "published";
 
-    // sortCategoryCode/sortTargets 는 전체 데이터를 메모리에 로드하는 경로이므로
-    // 비로그인 사용자의 반복 호출을 차단한다 (PUBLIC_GET_PATTERNS 로 비회원 GET 은 통과하지만
-    // 이 두 파라미터는 사내 화면 전용 기능 — 비회원이 사용할 이유가 없다).
-    if (!user && (sortCategoryCode ?? sortTargets)) {
-      return NextResponse.json(
-        { error: "このパラメータの使用には認証が必要です" },
-        { status: 401 },
-      );
+    // sortCategoryCode/sortTargets 는 Prisma ORM 단독으로 정렬 불가한 경로로,
+    // 1단계 ID 조회 → 2단계 $queryRaw 정렬 → 3단계 페이지 fetch 의 3단계 파이프라인을 사용한다.
+    // sortField=updatedAt 은 동일 3단계 구조지만, 1단계에서 정렬 키 컬럼(createdAt/updatedAt)도
+    // 함께 select하고 2단계는 $queryRaw 대신 인메모리 정렬이다 (아래 else if 분기 참조).
+    // 전체 row 인메모리 로드는 발생하지 않는다.
+
+    // sortTargets: 掲示対象 컬럼은 UI에서 isInternal 분기 안에서만 렌더링되므로 사내 전용.
+    // 비사내 사용자가 직접 API를 호출해도 의미 없는 정보이며, 공개 경로의 DB 부하 방지를 위해 차단.
+    if (sortTargets === true && !internal) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     // AND 조건 배열로 중복 relation(categories/targets) 필터를 안전하게 조합.
@@ -92,6 +94,8 @@ export async function GET(request: NextRequest) {
     //
     // Number("")==0, !isNaN(0)==true 로 0 이 통과되는 것을 막기 위해 양의 정수만 허용.
     // Number.isInteger 는 NaN/Infinity 도 제외하므로 isFinite 중복 불필요.
+    // sortCategoryCode 단일 SQL 분기에서 재사용하므로 스코프 밖으로 호이스트
+    let filteredContentIds: number[] | null = null;
     let categoryEmpty = false;
     if (categoryIds) {
       const parsedIds = categoryIds
@@ -99,16 +103,23 @@ export async function GET(request: NextRequest) {
         .map(Number)
         .filter((n) => Number.isInteger(n) && n > 0);
       if (parsedIds.length > 0) {
-        const ccRows = await prisma.contentCategory.findMany({
-          where: { categoryId: { in: parsedIds } },
-          select: { contentId: true },
-          distinct: ["contentId"],
-        });
-        const filteredContentIds = ccRows.map((r) => r.contentId);
-        if (filteredContentIds.length === 0) {
+        let ccRows: { contentId: number }[];
+        try {
+          ccRows = await prisma.contentCategory.findMany({
+            where: { categoryId: { in: parsedIds } },
+            select: { contentId: true },
+            distinct: ["contentId"],
+          });
+        } catch (dbError: unknown) {
+          logError("GET /api/contents categoryIds 필터조회", dbError, { parsedIds });
+          return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+        }
+        const ids = ccRows.map((r) => r.contentId);
+        if (ids.length === 0) {
           // 매핑된 콘텐츠가 없음 → fast-path 0 응답
           categoryEmpty = true;
         } else {
+          filteredContentIds = ids;
           andConditions.push({ id: { in: filteredContentIds } });
         }
       }
@@ -220,87 +231,326 @@ export async function GET(request: NextRequest) {
       attachmentCount: c._count.attachments,
     });
 
-    let data: ReturnType<typeof mapRow>[];
-    let total: number;
+    let data: ReturnType<typeof mapRow>[] = [];
+    let total = 0;
 
-    // "값 없음"(null)을 정렬 방향과 무관하게 항상 뒤로 보내는 비교자 — 카테고리 미매칭 콘텐츠(문자열 키),
-    // 미수정 콘텐츠(updatedAt 숫자 키), 게시대상 없는 콘텐츠(targetOrderRank 숫자 키) 세 곳에서 재사용.
-    const compareNullsLast = <K extends string | number>(
-      a: K | null,
-      b: K | null,
-      dir: "asc" | "desc",
-    ): number => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      // typeof 가드로 판별 — 향후 새 정렬 키 타입 추가 시 타입 혼재를 캐스팅 없이 런타임에서도 잡는다.
-      let cmp: number;
-      if (typeof a === "string" && typeof b === "string") {
-        cmp = a.localeCompare(b, "ja");
-      } else if (typeof a === "number" && typeof b === "number") {
-        cmp = a - b;
-      } else {
-        console.error("[GET /api/contents] compareNullsLast 타입 불일치:", { a, b });
-        cmp = 0;
+    if (sortCategoryCode) {
+      // DB 정렬: 카테고리 자식명 기준.
+      // 전체 ID materialization 없이 WHERE + 정렬 + 페이지네이션 + COUNT를 단일 SQL로 처리.
+      // children[0] 은 sortOrder ASC → id ASC 기준 (buildCategoryTree 및 클라이언트 getFirstCategoryChildName 과 동일).
+
+      // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분)
+      if (!internal) {
+        const ip =
+          request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+          request.headers.get("x-real-ip") ??
+          null;
+        const rlKey = ip
+          ? `contents-sort:${ip}`
+          : `contents-sort:user:${user?.userId ?? "anon"}`;
+        const rlLimit = ip ? 60 : 20;
+        if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
+          return NextResponse.json(
+            { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
+            { status: 429 },
+          );
+        }
       }
-      return dir === "asc" ? cmp : -cmp;
-    };
 
-    // DB orderBy 로 표현 불가한 정렬(다대다 집계, "실제 수정 여부" 판별)은 전체 로우를 가져와
-    // JS 에서 키를 계산해 정렬 후 페이지를 자른다 — 콘텐츠 총량이 적어(수백 건 내외) 무시 가능한 비용.
-    // 세 케이스는 Zod superRefine(listContentsQuerySchema)이 동시 지정을 막아 항상 하나만 채워진다
-    // — 아래 삼항연산자 순서(카테고리 > 更新日 > 掲示対象)는 그 보장 위에서의 평가 순서일 뿐 우선순위 의미는 없다.
-    // children[0] は buildCategoryTree が sortOrder ASC → id ASC で安定ソートして返す先頭要素
-    // — クライアント(getFirstCategoryChildName)と同一基準で決定論的 (ソート一致保証).
-    const inMemorySortKey: ((row: ReturnType<typeof mapRow>) => string | number | null) | null = sortCategoryCode
-      ? (row) => row.categories.find((cat) => cat.categoryCode === sortCategoryCode)?.children[0]?.name ?? null
-      : sortField === "updatedAt"
-      ? (row) => (row.hasBeenUpdated ? row.updatedAt.getTime() : null)
-      : sortTargets
-      ? (row) => (row.targets.length === 0 ? null : Math.min(...row.targets.map((t) => targetOrderRank(t.roleCode))))
-      : null;
+      // WHERE 조건을 SQL fragment로 직접 구성 — Prisma WHERE와 동일한 필터 로직
+      const sqlConds: Prisma.Sql[] = [
+        Prisma.sql`c.status = ${effectiveStatus}`,
+      ];
 
-    if (inMemorySortKey) {
-      // DB 조회 실패를 mapRow/sort 등 이후 단계와 분리해 로그에서 원인을 구분할 수 있게 한다
-      // (최상위 catch 하나로 묶이면 "인메모리 정렬 중 DB 조회 실패"인지 다른 단계인지 알 수 없다).
-      let allRows;
+      if (keyword) {
+        const kw = `%${keyword}%`;
+        sqlConds.push(Prisma.sql`(c.title LIKE ${kw} OR c.body LIKE ${kw})`);
+      }
+
+      if (department && department.length > 0) {
+        sqlConds.push(Prisma.sql`c.author_department IN (${Prisma.join(department)})`);
+      }
+
+      if (filteredContentIds !== null) {
+        sqlConds.push(Prisma.sql`c.id IN (${Prisma.join(filteredContentIds)})`);
+      }
+
+      // targets 필터 — Prisma andConditions의 targets 조건을 SQL EXISTS로 재현
+      if (internal) {
+        if (internalOnly) {
+          // targets.none { OR [roleCode=null, roleCode NOT IN INTERNAL_ROLE_CODES] }
+          // = 외부 게시대상(비사내 row)이 하나도 없음 → 사내 전용 콘텐츠
+          sqlConds.push(Prisma.sql`NOT EXISTS (
+            SELECT 1 FROM qp_content_targets ct
+            WHERE ct.content_id = c.id
+              AND (ct.role_code IS NULL OR ct.role_code NOT IN (${Prisma.join([...INTERNAL_ROLE_CODES])}))
+          )`);
+        } else if (roleCode !== undefined) {
+          if (roleCode === null) {
+            sqlConds.push(Prisma.sql`EXISTS (
+              SELECT 1 FROM qp_content_targets ct
+              WHERE ct.content_id = c.id AND ct.role_code IS NULL
+            )`);
+          } else {
+            sqlConds.push(Prisma.sql`EXISTS (
+              SELECT 1 FROM qp_content_targets ct
+              WHERE ct.content_id = c.id AND ct.role_code = ${roleCode}
+            )`);
+          }
+        }
+      } else {
+        // 비사내: 세션 역할 기반 게시대상 + 게시기간 필터 (Prisma WHERE와 동일)
+        const userRole = user?.role ?? null;
+        if (userRole === null) {
+          sqlConds.push(Prisma.sql`EXISTS (
+            SELECT 1 FROM qp_content_targets ct
+            WHERE ct.content_id = c.id
+              AND ct.role_code IS NULL
+              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+          )`);
+        } else {
+          sqlConds.push(Prisma.sql`EXISTS (
+            SELECT 1 FROM qp_content_targets ct
+            WHERE ct.content_id = c.id
+              AND ct.role_code = ${userRole}
+              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+          )`);
+        }
+      }
+
+      const whereSql = Prisma.join(sqlConds, " AND ");
+
+      // 비사내 사용자는 사내 전용 카테고리를 정렬 키에서도 제외 (buildCategoryTree 와 동일 정책)
+      const internalOnlyFilter = internal
+        ? Prisma.empty
+        : Prisma.sql`AND ch.is_internal_only = 0 AND par.is_internal_only = 0`;
+      const dir = sortDir ?? "asc";
+      const sortDirSql = dir === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const offset = (page - 1) * pageSize;
+
+      // 1단계: 정렬 + 페이지네이션 + COUNT 동시 실행 (전체 ID IN 절 불필요)
+      // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
+      let sortedRows: { id: number | bigint; sort_key: string | null }[];
+      let countRows: [{ total: bigint }];
       try {
-        allRows = await prisma.content.findMany({
-          where,
-          include: includeOptions,
-          orderBy: { createdAt: "desc" },
-        });
+        [sortedRows, countRows] = await Promise.all([
+          prisma.$queryRaw<{ id: number | bigint; sort_key: string | null }[]>`
+            SELECT c.id,
+              (
+                SELECT ch.name
+                FROM qp_content_categories cc
+                JOIN qp_categories ch ON cc.category_id = ch.id
+                JOIN qp_categories par ON ch.parent_id = par.id
+                WHERE cc.content_id = c.id
+                  AND par.category_code = ${sortCategoryCode}
+                  AND ch.is_active = 1
+                  AND par.is_active = 1
+                  ${internalOnlyFilter}
+                ORDER BY ch.sort_order ASC, ch.id ASC
+                LIMIT 1
+              ) AS sort_key
+            FROM qp_contents c
+            WHERE ${whereSql}
+            ORDER BY (sort_key IS NULL) ASC, sort_key ${sortDirSql}, c.created_at DESC, c.id ASC
+            LIMIT ${pageSize} OFFSET ${offset}
+          `,
+          prisma.$queryRaw<[{ total: bigint }]>`
+            SELECT COUNT(*) AS total FROM qp_contents c WHERE ${whereSql}
+          `,
+        ]);
       } catch (dbError: unknown) {
-        logError("GET /api/contents inMemorySort DB조회", dbError, {
-          sortCategoryCode,
-          sortField,
-          sortTargets,
-        });
+        logError("GET /api/contents sortCategoryCode 정렬쿼리", dbError, { sortCategoryCode });
         return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
       }
-      const dir = sortDir ?? "asc";
-      const withSortKey = allRows.map((c) => {
-        const row = mapRow(c);
-        return { row, key: inMemorySortKey(row) };
-      });
-      // 유효하지 않은 sortCategoryCode(존재하지 않는 카테고리 코드) 는 모든 행이 null 키로
-      // 떨어져 "정렬이 안 되는 것처럼" 보이는데 로그가 없으면 원인 파악이 어렵다.
-      if (sortCategoryCode && withSortKey.length > 0 && withSortKey.every((x) => x.key === null)) {
-        console.warn(
-          "[GET /api/contents] sortCategoryCode 매칭 결과 없음 — 존재하지 않는 카테고리 코드일 수 있음:",
-          sortCategoryCode,
-        );
+
+      total = Number(countRows[0].total);
+      const pageIds = sortedRows.map((r) => Number(r.id));
+
+      if (pageIds.length === 0) {
+        data = [];
+      } else {
+        // 2단계: 페이지 콘텐츠 full fetch + $queryRaw 정렬 순서 복원
+        // where 재적용: SQL 쿼리와 full fetch 사이 레이스 컨디션(상태 변경 등)으로
+        // 접근 불가 콘텐츠가 응답에 포함되지 않도록 원본 where 조건을 유지한다.
+        let pageRows: Prisma.ContentGetPayload<{ include: typeof includeOptions }>[];
+        try {
+          pageRows = await prisma.content.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: includeOptions,
+          });
+        } catch (dbError: unknown) {
+          logError("GET /api/contents sortCategoryCode 페이지조회", dbError, { sortCategoryCode });
+          return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+        }
+        // findMany 는 IN 순서를 보장하지 않으므로 $queryRaw 순서로 재정렬
+        const rowById = new Map(pageRows.map((r) => [r.id, r]));
+        data = pageIds.flatMap((id) => {
+          const row = rowById.get(id);
+          if (!row) {
+            // 정상 흐름(레이스컨디션) — error 수준이 아니므로 warn으로 기록
+            console.warn("[GET /api/contents sortCategoryCode] 레이스컨디션 탈락", { id, sortCategoryCode });
+            return [];
+          }
+          return [mapRow(row)];
+        });
+        // COUNT 쿼리가 total의 기준이므로 레이스컨디션 탈락분만 근사 보정
+        const dropped = pageIds.length - data.length;
+        if (dropped > 0) total = Math.max(0, total - dropped);
       }
-      withSortKey.sort((a, b) => compareNullsLast(a.key, b.key, dir));
-      total = withSortKey.length;
-      data = withSortKey.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map((x) => x.row);
+    } else if (sortTargets === true) {
+      // DB 정렬: 게시대상 roleCode rank 기준.
+      // Prisma ORM 은 relation 집계값(MIN rank)에 대한 ORDER BY 를 지원하지 않으므로 $queryRaw 를 사용한다.
+      // targetOrderRank(src/lib/target-role-order.ts) 와 동일 순위를 SQL CASE 로 표현.
+      // ⚠️ target-role-order.ts 수정 시 아래 SQL CASE 문도 반드시 동기화할 것.
+      // Repeatable Read 트랜잭션으로 1~3단계를 동일 스냅샷에서 실행 — 스냅샷 불일치(Finding 3) 해소.
+
+      const dir = sortDir ?? "asc";
+      const sortDirSql = dir === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const offset = (page - 1) * pageSize;
+
+      try {
+        const txResult = await prisma.$transaction(async (tx) => {
+          // 1단계: where 조건 매칭 ID 목록
+          const idRows = await tx.content.findMany({ where, select: { id: true } });
+          const txTotal = idRows.length;
+
+          if (txTotal === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          const allIds = idRows.map((r) => r.id);
+
+          // 2단계: MIN(rank) 서브쿼리 정렬 + 페이지네이션
+          // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
+          const sortedRows = await tx.$queryRaw<{ id: number | bigint; sort_key: number | null }[]>`
+            SELECT c.id,
+              (
+                SELECT MIN(
+                  CASE ct.role_code
+                    WHEN 'SUPER_ADMIN' THEN 1
+                    WHEN 'ADMIN'       THEN 2
+                    WHEN '1ST_STORE'   THEN 3
+                    WHEN '2ND_STORE'   THEN 4
+                    WHEN 'SEKO'        THEN 5
+                    WHEN 'GENERAL'     THEN 6
+                    ELSE CASE WHEN ct.role_code IS NULL THEN 999 ELSE 100 END
+                  END
+                )
+                FROM qp_content_targets ct
+                WHERE ct.content_id = c.id
+              ) AS sort_key
+            FROM qp_contents c
+            WHERE c.id IN (${Prisma.join(allIds)})
+            ORDER BY (sort_key IS NULL) ASC, sort_key ${sortDirSql}, c.created_at DESC, c.id ASC
+            LIMIT ${pageSize} OFFSET ${offset}
+          `;
+
+          const pageIds = sortedRows.map((r) => Number(r.id));
+          if (pageIds.length === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          // 3단계: 페이지 콘텐츠 full fetch + $queryRaw 정렬 순서 복원
+          const pageRows = await tx.content.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: includeOptions,
+          });
+
+          const rowById = new Map(pageRows.map((r) => [r.id, r]));
+          const txData = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              // Repeatable Read 내 ID 탈락은 실제 데이터 불일치이므로 warn 기록
+              console.warn("[GET /api/contents sortTargets] 트랜잭션 내 ID 탈락", { id });
+              return [];
+            }
+            return [mapRow(row)];
+          });
+
+          return { txTotal, txData };
+        }, { isolationLevel: "RepeatableRead" });
+
+        total = txResult.txTotal;
+        data = txResult.txData;
+      } catch (dbError: unknown) {
+        logError("GET /api/contents sortTargets DB조회", dbError, { sortTargets });
+        return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+      }
+    } else if (sortField === "updatedAt") {
+      // 인메모리 정렬: "실제 수정 여부"(updatedAt !== createdAt, hasBeenUpdated 참조)를 기준으로 하므로
+      // DB ORDER BY 로 표현 불가 → 1단계 경량 select → 인메모리 정렬 → 3단계 페이지 full fetch.
+      // Repeatable Read 트랜잭션으로 1·3단계를 동일 스냅샷에서 실행 — 스냅샷 불일치(Finding 3) 해소.
+      // 최종 동점 처리는 Array.prototype.sort 의 안정 정렬(Node.js v11+)에 의존하므로
+      // 실행환경 변경 시 재검토가 필요하다.
+
+      const dir = sortDir ?? "asc";
+
+      try {
+        const txResult = await prisma.$transaction(async (tx) => {
+          // 1단계: 정렬 키 컬럼만 select (전체 row 인메모리 로드 방지)
+          const idRows = await tx.content.findMany({
+            where,
+            select: { id: true, createdAt: true, updatedAt: true },
+            orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+          });
+          const txTotal = idRows.length;
+
+          if (txTotal === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          // 2단계: 인메모리 정렬 + 페이지 슬라이싱 (DB 조회 없음)
+          const withSortKey = idRows.map((r) => ({
+            id: r.id,
+            key: r.updatedAt.getTime() !== r.createdAt.getTime() ? r.updatedAt.getTime() : null,
+          }));
+          withSortKey.sort((a, b) => {
+            if (a.key === null && b.key === null) return 0;
+            if (a.key === null) return 1;
+            if (b.key === null) return -1;
+            const cmp = a.key - b.key;
+            return dir === "asc" ? cmp : -cmp;
+          });
+          const pageIds = withSortKey
+            .slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+            .map((r) => r.id);
+
+          if (pageIds.length === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          // 3단계: 페이지 콘텐츠 full fetch + 인메모리 정렬 순서 복원
+          const pageRows = await tx.content.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: includeOptions,
+          });
+
+          const rowById = new Map(pageRows.map((r) => [r.id, r]));
+          const txData = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              // Repeatable Read 내 ID 탈락은 실제 데이터 불일치이므로 warn 기록
+              console.warn("[GET /api/contents sortField=updatedAt] 트랜잭션 내 ID 탈락", { id });
+              return [];
+            }
+            return [mapRow(row)];
+          });
+
+          return { txTotal, txData };
+        }, { isolationLevel: "RepeatableRead" });
+
+        total = txResult.txTotal;
+        data = txResult.txData;
+      } catch (dbError: unknown) {
+        logError("GET /api/contents sortField=updatedAt DB조회", dbError, { sortField });
+        return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+      }
     } else {
       // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
-      // 이 분기(else)에 도달했다는 것 자체가 inMemorySortKey 가 null 이었다는 뜻이므로
-      // sortField==="updatedAt" 는 inMemorySortKey 를 채우므로 이 else 분기에 도달하지 않는다
-      // — 아래 case "updatedAt" 은 sortField switch 의 exhaustiveness(컴파일 타임 never 검증)를
-      // 위해 존재하는 도달 불가 분기.
-      const orderBy: Prisma.ContentOrderByWithRelationInput = (() => {
+      // sortField==="updatedAt" 는 위의 else if 분기에서 처리되므로 이 분기에 도달하지 않는다.
+      const orderBy: Prisma.ContentOrderByWithRelationInput | null = (() => {
         if (sortField) {
           const dir = sortDir ?? "asc";
           switch (sortField) {
@@ -308,8 +558,6 @@ export async function GET(request: NextRequest) {
               return { title: dir };
             case "createdAt":
               return { createdAt: dir };
-            case "updatedAt":
-              return { updatedAt: dir };
             case "authorDepartment":
               // nullable 필드 — DB 기본 NULL 정렬(ASC 시 앞)이 클라이언트 comparator의
               // null-last 동작과 어긋나므로 Prisma SortOrderInput으로 명시.
@@ -325,8 +573,8 @@ export async function GET(request: NextRequest) {
               // CONTENT_SORT_FIELDS 에 필드를 추가했는데 case 를 빠뜨리면 이 줄에서 컴파일 에러가
               // 나서 알아챌 수 있다 — case 누락이 컴파일 통과 후 조용히 기본 정렬로 fallback 되는 것 방지.
               const _exhaustive: never = sortField;
-              console.error("[GET /api/contents] 처리되지 않은 sortField:", _exhaustive);
-              return { createdAt: "desc" as const };
+              logError("GET /api/contents", new Error(`처리되지 않은 sortField: ${String(_exhaustive)}`));
+              return null;
             }
           }
         }
@@ -342,7 +590,11 @@ export async function GET(request: NextRequest) {
         }
       })();
 
-      let dbResult;
+      if (orderBy === null) {
+        return NextResponse.json({ error: "不正なソートフィールドが指定されました" }, { status: 400 });
+      }
+
+      let dbResult: [Prisma.ContentGetPayload<{ include: typeof includeOptions }>[], number];
       try {
         dbResult = await Promise.all([
           prisma.content.findMany({
