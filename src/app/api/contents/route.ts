@@ -304,7 +304,6 @@ export async function GET(request: NextRequest) {
           data = pageIds.flatMap((id) => {
             const row = rowById.get(id);
             if (!row) {
-              // where 재적용으로 필터된 경우(레이스 컨디션) — 정상 흐름이므로 warn 수준
               // 정상 흐름(레이스컨디션) — error 수준이 아니므로 warn으로 기록
               console.warn("[GET /api/contents sortCategoryCode] 레이스컨디션 탈락", { id, sortCategoryCode });
               return [];
