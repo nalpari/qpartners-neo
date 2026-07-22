@@ -124,7 +124,7 @@ export const listContentsQuerySchema = z.object({
   sortField: z.enum(CONTENT_SORT_FIELDS).optional(),
   /** 카테고리 컬럼(부모 categoryCode) 헤더 클릭 정렬 — 콘텐츠당 첫 번째(표시순) 자식 카테고리명 기준.
    *  sortField/sortTargets 와 상호 배타적. */
-  sortCategoryCode: z.string().min(1).max(50).regex(/^[A-Za-z0-9_]+$/).optional(),
+  sortCategoryCode: z.string().min(1).max(50).optional(),
   /** 掲示対象(targets) 컬럼 헤더 클릭 정렬 — 콘텐츠당 표시순 첫 번째 게시대상의 순위(targetOrderRank) 기준.
    *  sortField/sortCategoryCode 와 상호 배타적. */
   // z.coerce.boolean() 은 Boolean("false") === true 로 변환하므로 사용 불가.
