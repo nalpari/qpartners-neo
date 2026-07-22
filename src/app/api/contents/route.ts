@@ -274,8 +274,8 @@ export async function GET(request: NextRequest) {
               ) AS sort_key
             FROM qp_contents c
             WHERE c.id IN (${Prisma.join(allIds)})
-            ORDER BY sort_key IS NULL ASC, sort_key ${sortDirSql}, c.created_at DESC
-            LIMIT ${Prisma.raw(String(pageSize))} OFFSET ${Prisma.raw(String(offset))}
+            ORDER BY (sort_key IS NULL) ASC, sort_key ${sortDirSql}, c.created_at DESC
+            LIMIT ${pageSize} OFFSET ${offset}
           `;
         } catch (dbError: unknown) {
           logError("GET /api/contents sortCategoryCode 정렬쿼리", dbError, { sortCategoryCode });
@@ -318,7 +318,9 @@ export async function GET(request: NextRequest) {
       }
     } else if (sortTargets) {
       // DB 정렬: 게시대상 roleCode rank 기준.
-      // TARGET_SYSTEM_ROLE_ORDER(src/lib/target-role-order.ts) 와 동일 순위를 SQL CASE 로 표현.
+      // Prisma ORM 은 relation 집계값(MIN rank)에 대한 ORDER BY 를 지원하지 않으므로 $queryRaw 를 사용한다.
+      // targetOrderRank(src/lib/target-role-order.ts) 와 동일 순위를 SQL CASE 로 표현.
+      // ⚠️ target-role-order.ts 수정 시 아래 SQL CASE 문도 반드시 동기화할 것.
 
       // 1단계: where 조건 매칭 ID 목록
       let idRows: { id: number }[];
@@ -362,8 +364,8 @@ export async function GET(request: NextRequest) {
               ) AS sort_key
             FROM qp_contents c
             WHERE c.id IN (${Prisma.join(allIds)})
-            ORDER BY sort_key IS NULL ASC, sort_key ${sortDirSql}, c.created_at DESC
-            LIMIT ${Prisma.raw(String(pageSize))} OFFSET ${Prisma.raw(String(offset))}
+            ORDER BY (sort_key IS NULL) ASC, sort_key ${sortDirSql}, c.created_at DESC
+            LIMIT ${pageSize} OFFSET ${offset}
           `;
         } catch (dbError: unknown) {
           logError("GET /api/contents sortTargets 정렬쿼리", dbError, { sortTargets });
@@ -404,7 +406,9 @@ export async function GET(request: NextRequest) {
     } else if (sortField === "updatedAt") {
       // 인메모리 정렬: "실제 수정 여부"(updatedAt !== createdAt, hasBeenUpdated 참조)를 기준으로 하므로
       // DB ORDER BY 로 표현 불가 → 1단계 경량 select → 인메모리 정렬 → 3단계 페이지 full fetch.
-      // DB 조회 시 createdAt DESC 는 동점(hasBeenUpdated === false) 처리를 위한 보조 정렬.
+      // DB 조회 시 createdAt DESC 는 인메모리 정렬의 동점 입력 순서를 결정한다.
+      // 최종 동점 처리는 Array.prototype.sort 의 안정 정렬(Node.js v11+)에 의존하므로
+      // 실행환경 변경 시 재검토가 필요하다.
 
       // 1단계: 정렬 키 컬럼만 select (전체 row 인메모리 로드 방지)
       let idRows: { id: number; createdAt: Date; updatedAt: Date }[];
