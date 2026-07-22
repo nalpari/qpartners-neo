@@ -66,9 +66,10 @@ export async function GET(request: NextRequest) {
     // 비사내 사용자는 published만 조회 가능
     const effectiveStatus = internal ? status : "published";
 
-    // sortCategoryCode/sortTargets 는 전체 데이터를 메모리에 로드하는 경로지만, 카테고리/掲示対象
-    // 컬럼 자체가 비회원 화면에도 노출되므로 정렬도 비회원에게 동일하게 허용한다.
-    // 콘텐츠 총량이 적어(수백 건 내외) 비회원 반복 호출로 인한 부하 우려는 낮음.
+    // sortCategoryCode/sortTargets 는 Prisma ORM 단독으로 정렬 불가한 경로로,
+    // 1단계 ID 조회 → 2단계 $queryRaw 정렬 → 3단계 페이지 fetch 의 3단계 파이프라인을 사용한다.
+    // 전체 row 인메모리 로드는 발생하지 않는다.
+    // 카테고리/게시대상 컬럼 자체가 비회원 화면에도 노출되므로 정렬도 비회원에게 동일하게 허용한다.
 
     // AND 조건 배열로 중복 relation(categories/targets) 필터를 안전하게 조합.
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
@@ -92,11 +93,17 @@ export async function GET(request: NextRequest) {
         .map(Number)
         .filter((n) => Number.isInteger(n) && n > 0);
       if (parsedIds.length > 0) {
-        const ccRows = await prisma.contentCategory.findMany({
-          where: { categoryId: { in: parsedIds } },
-          select: { contentId: true },
-          distinct: ["contentId"],
-        });
+        let ccRows: { contentId: number }[];
+        try {
+          ccRows = await prisma.contentCategory.findMany({
+            where: { categoryId: { in: parsedIds } },
+            select: { contentId: true },
+            distinct: ["contentId"],
+          });
+        } catch (dbError: unknown) {
+          logError("GET /api/contents categoryIds 필터조회", dbError, { parsedIds });
+          return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+        }
         const filteredContentIds = ccRows.map((r) => r.contentId);
         if (filteredContentIds.length === 0) {
           // 매핑된 콘텐츠가 없음 → fast-path 0 응답
@@ -245,9 +252,10 @@ export async function GET(request: NextRequest) {
         const offset = (page - 1) * pageSize;
 
         // 2단계: 서브쿼리 정렬 + 페이지네이션 → ID만 반환 (sort_key IS NULL ASC = NULL 항상 뒤)
-        let sortedRows: { id: number }[];
+        // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
+        let sortedRows: { id: number | bigint }[];
         try {
-          sortedRows = await prisma.$queryRaw<{ id: number }[]>`
+          sortedRows = await prisma.$queryRaw<{ id: number | bigint }[]>`
             SELECT c.id,
               (
                 SELECT ch.name
@@ -272,7 +280,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
         }
 
-        const pageIds = sortedRows.map((r) => r.id);
+        const pageIds = sortedRows.map((r) => Number(r.id));
         if (pageIds.length === 0) {
           data = [];
         } else {
@@ -302,7 +310,7 @@ export async function GET(request: NextRequest) {
           });
           // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
           const dropped = pageIds.length - data.length;
-          if (dropped > 0) total -= dropped;
+          if (dropped > 0) total = Math.max(0, total - dropped);
         }
       }
     } else if (sortTargets) {
@@ -328,9 +336,10 @@ export async function GET(request: NextRequest) {
         const offset = (page - 1) * pageSize;
 
         // 2단계: MIN(rank) 서브쿼리 정렬 + 페이지네이션
-        let sortedRows: { id: number }[];
+        // $queryRaw 제네릭 파라미터는 컴파일 타임 단언. Number()로 BigInt 도달 시에도 안전하게 변환.
+        let sortedRows: { id: number | bigint }[];
         try {
-          sortedRows = await prisma.$queryRaw<{ id: number }[]>`
+          sortedRows = await prisma.$queryRaw<{ id: number | bigint }[]>`
             SELECT c.id,
               (
                 SELECT MIN(
@@ -357,7 +366,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
         }
 
-        const pageIds = sortedRows.map((r) => r.id);
+        const pageIds = sortedRows.map((r) => Number(r.id));
         if (pageIds.length === 0) {
           data = [];
         } else {
@@ -384,7 +393,7 @@ export async function GET(request: NextRequest) {
           });
           // 레이스 컨디션으로 탈락한 항목만큼 total 보정 (meta.totalPages 정합성 유지)
           const dropped = pageIds.length - data.length;
-          if (dropped > 0) total -= dropped;
+          if (dropped > 0) total = Math.max(0, total - dropped);
         }
       }
     } else if (sortField === "updatedAt") {
