@@ -222,7 +222,7 @@ export async function GET(request: NextRequest) {
       attachmentCount: c._count.attachments,
     });
 
-    let data: ReturnType<typeof mapRow>[];
+    let data: ReturnType<typeof mapRow>[] = [];
     let total = 0;
 
     if (sortCategoryCode) {
@@ -316,7 +316,7 @@ export async function GET(request: NextRequest) {
           if (dropped > 0) total = Math.max(0, total - dropped);
         }
       }
-    } else if (sortTargets) {
+    } else if (sortTargets === true) {
       // DB 정렬: 게시대상 roleCode rank 기준.
       // Prisma ORM 은 relation 집계값(MIN rank)에 대한 ORDER BY 를 지원하지 않으므로 $queryRaw 를 사용한다.
       // targetOrderRank(src/lib/target-role-order.ts) 와 동일 순위를 SQL CASE 로 표현.
