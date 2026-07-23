@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
@@ -43,16 +43,16 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     isOnLink ? editor.getAttributes("link").target === "_blank" : true,
   );
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
 
   useLayoutEffect(() => {
     const container = containerRef.current;
     const trigger = triggerRef.current;
     if (!container || !trigger) {
-      console.warn("[LinkPopover] useLayoutEffect: ref 미연결 상태로 팝오버 닫힘", {
+      console.warn("[LinkPopover] useLayoutEffect: ref 미연결 상태", {
         container: !!container,
         trigger: !!trigger,
       });
-      onClose();
       return;
     }
     const rect = trigger.getBoundingClientRect();
@@ -64,7 +64,7 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     container.style.top = `${rect.bottom + 4}px`;
     container.style.left = `${left}px`;
     container.style.visibility = "visible";
-  }, [triggerRef, onClose]);
+  }, [triggerRef]);
 
   useEffect(() => {
     if (canApply) inputRef.current?.focus();
@@ -149,11 +149,11 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
               }
             }}
             placeholder={t.placeholder}
-            aria-describedby={error ? "link-popover-error" : undefined}
+            aria-describedby={error ? errorId : undefined}
             aria-invalid={error ? true : undefined}
             className="w-full h-8 px-2 text-[13px] border border-[#EBEBEB] rounded focus:outline-none focus:border-[#101010]"
           />
-          {error && <p id="link-popover-error" className="mt-1 text-[12px] text-[#FF1A1A]">{error}</p>}
+          {error && <p id={errorId} className="mt-1 text-[12px] text-[#FF1A1A]">{error}</p>}
           <label className="flex items-center gap-2 mt-2 text-[12px] text-[#505050] select-none">
             <input
               type="checkbox"
