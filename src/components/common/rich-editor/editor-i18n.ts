@@ -27,6 +27,7 @@ export const editorI18n = {
     textColorReset: "色なし",
     highlight: "ハイライト",
     highlightReset: "ハイライトなし",
+    link: "リンク",
     htmlSource: "HTMLソース",
     textColorPalette: {
       red: "赤",
@@ -61,6 +62,15 @@ export const editorI18n = {
   },
   tableInsert: {
     sizeHint: "サイズを選択（最大 10 × 10）",
+  },
+  linkPopover: {
+    title: "リンク",
+    placeholder: "https://example.com",
+    apply: "適用",
+    remove: "リンク解除",
+    errorEmpty: "URLを入力してください",
+    errorScheme: "http・https・mailto のいずれかで始まるURLを入力してください",
+    errorNoSelection: "リンクを設定するテキストを選択してください",
   },
   htmlSourceMode: {
     placeholder: "HTMLを入力…",
