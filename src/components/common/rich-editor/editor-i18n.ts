@@ -71,6 +71,8 @@ export const editorI18n = {
     errorEmpty: "URLを入力してください",
     errorScheme: "http・https・mailto のいずれかで始まるURLを入力してください",
     errorNoSelection: "リンクを設定するテキストを選択してください",
+    errorApplyFailed: "リンクの設定に失敗しました。テキストを選択し直してください。",
+    errorRemoveFailed: "リンクの解除に失敗しました。再度お試しください。",
   },
   htmlSourceMode: {
     placeholder: "HTMLを入力…",

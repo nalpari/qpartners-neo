@@ -33,7 +33,10 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
   // 다루지 않는다(입력창에 포커스가 가 있는 한 에디터 선택은 유지됨).
   const [isOnLink] = useState(() => editor.isActive("link"));
   const [canApply] = useState(() => !editor.state.selection.empty || editor.isActive("link"));
-  const [url, setUrl] = useState(() => (editor.getAttributes("link").href as string | undefined) ?? "");
+  const [url, setUrl] = useState(() => {
+    const href = editor.getAttributes("link").href;
+    return typeof href === "string" ? href : "";
+  });
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -88,12 +91,14 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
       return;
     }
     // extendMarkRange: 커서가 기존 링크 위(선택 없음)여도 그 링크 전체 범위에 적용.
-    editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
+    const applied = editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
+    if (!applied) { setError(t.errorApplyFailed); return; }
     onClose();
   };
 
   const handleRemove = () => {
-    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    const removed = editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    if (!removed) { setError(t.errorRemoveFailed); return; }
     onClose();
   };
 
