@@ -43,7 +43,14 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
   useLayoutEffect(() => {
     const container = containerRef.current;
     const trigger = triggerRef.current;
-    if (!container || !trigger) { onClose(); return; }
+    if (!container || !trigger) {
+      console.warn("[LinkPopover] useLayoutEffect: ref 미연결 상태로 팝오버 닫힘", {
+        container: !!container,
+        trigger: !!trigger,
+      });
+      onClose();
+      return;
+    }
     const rect = trigger.getBoundingClientRect();
     const left = clamp(
       rect.left,
@@ -107,6 +114,7 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     <div
       ref={containerRef}
       role="dialog"
+      aria-modal="true"
       aria-label={t.title}
       className="fixed z-50 invisible bg-white border border-[#EBEBEB] rounded-[6px] shadow-md p-3 font-['Noto_Sans_JP']"
       style={{ width: POPOVER_WIDTH }}
@@ -131,9 +139,11 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
               }
             }}
             placeholder={t.placeholder}
+            aria-describedby={error ? "link-popover-error" : undefined}
+            aria-invalid={error ? true : undefined}
             className="w-full h-8 px-2 text-[13px] border border-[#EBEBEB] rounded focus:outline-none focus:border-[#101010]"
           />
-          {error && <p className="mt-1 text-[12px] text-[#FF1A1A]">{error}</p>}
+          {error && <p id="link-popover-error" className="mt-1 text-[12px] text-[#FF1A1A]">{error}</p>}
           <div className="flex gap-2 mt-3">
             {isOnLink && (
               <button

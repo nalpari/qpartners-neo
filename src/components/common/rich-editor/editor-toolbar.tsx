@@ -380,8 +380,8 @@ export function EditorToolbar({
         type="button"
         aria-label={t.undo}
         title={`${t.undo} (${t.shortcuts.undo})`}
-        disabled={!isEditable}
-        className={btn(false)}
+        disabled={!isEditable || !editor.can().undo()}
+        className={btn(false, !editor.can().undo())}
         onClick={() => editor.chain().focus().undo().run()}
       >
         ↶
@@ -390,8 +390,8 @@ export function EditorToolbar({
         type="button"
         aria-label={t.redo}
         title={`${t.redo} (${t.shortcuts.redo})`}
-        disabled={!isEditable}
-        className={btn(false)}
+        disabled={!isEditable || !editor.can().redo()}
+        className={btn(false, !editor.can().redo())}
         onClick={() => editor.chain().focus().redo().run()}
       >
         ↷

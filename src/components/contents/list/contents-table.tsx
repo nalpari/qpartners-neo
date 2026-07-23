@@ -242,21 +242,17 @@ function MobileContentCard({
   };
 
   return (
-    <div
-      className="bg-white px-6 py-5 cursor-pointer flex flex-col gap-3"
-      onClick={onClick}
-      role="button"
-      aria-label={item.title}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-    >
+    // stretched button 패턴: absolute inset-0 버튼으로 카드 전체 클릭 영역을 확보하고,
+    // 내부 다운로드 <button>은 relative로 stacking order상 위에 위치해 중첩을 회피한다.
+    <div className="relative bg-white px-6 py-5 flex flex-col gap-3">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-pointer"
+        aria-label={item.title}
+        onClick={onClick}
+      />
       {/* 상단 — 登録日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭. */}
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
         <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
         <MobileMetaBadge label="VIEW" value={item.viewCount.toLocaleString()} />
         {item.attachmentCount > 0 && (
@@ -283,7 +279,7 @@ function MobileContentCard({
       </div>
 
       {/* 하단 — 제목(볼드) */}
-      <p className="font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
+      <p className="relative font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
         {item.title}
       </p>
     </div>
