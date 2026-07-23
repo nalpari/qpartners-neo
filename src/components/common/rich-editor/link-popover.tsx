@@ -159,6 +159,7 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
   );
 }
 
+// max(min, max): min > max(좁은 뷰포트 등)일 때 min 쪽으로 클램프해 음수 left를 방지한다.
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }

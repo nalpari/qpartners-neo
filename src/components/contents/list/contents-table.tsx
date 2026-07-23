@@ -246,6 +246,7 @@ function MobileContentCard({
       className="bg-white px-6 py-5 cursor-pointer flex flex-col gap-3"
       onClick={onClick}
       role="button"
+      aria-label={item.title}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
