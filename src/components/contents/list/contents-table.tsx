@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import type { ReactNode, MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -201,7 +202,7 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
 
 /** 상세 화면(contents-detail-body.tsx MetaBadge)과 동일한 라벨(흰 배경 박스) + 값 스타일.
  *  value 는 문자열뿐 아니라 아이콘(添付 뱃지)도 받을 수 있게 ReactNode 로 둔다. */
-function MobileMetaBadge({ label, value }: { label: string; value: React.ReactNode }) {
+function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
       <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-white border border-[#EEE] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
@@ -214,7 +215,7 @@ function MobileMetaBadge({ label, value }: { label: string; value: React.ReactNo
   );
 }
 
-/** 모바일 목록 카드 — 상단: 登録日/添付/VIEW 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목. */
+/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목. */
 
 function MobileContentCard({
   item,
@@ -225,7 +226,7 @@ function MobileContentCard({
 }) {
   const { openAlert } = useAlertStore();
 
-  const handleDownload = (e: React.MouseEvent) => {
+  const handleDownload = (e: MouseEvent) => {
     e.stopPropagation();
     void (async () => {
       const result = await downloadAllAttachments(item.id);

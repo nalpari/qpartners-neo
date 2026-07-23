@@ -20,7 +20,7 @@ export interface LinkPopoverProps {
 
 /**
  * 툴바 🔗 버튼이 띄우는 링크 입력 팝오버.
- * - 커서가 기존 링크 위에 있으면 href 를 프리필하고 "리ンク解除" 버튼을 노출한다.
+ * - 커서가 기존 링크 위에 있으면 href 를 프리필하고 "リンク解除" 버튼을 노출한다.
  * - 선택 영역이 없고 기존 링크 위도 아니면(적용 대상 불명) 안내만 표시하고 입력을 막는다.
  * - InsertTablePopover/ColorPopover 와 동일하게 portal + fixed 좌표로 렌더링한다.
  */
@@ -42,7 +42,7 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
   useLayoutEffect(() => {
     const container = containerRef.current;
     const trigger = triggerRef.current;
-    if (!container || !trigger) return;
+    if (!container || !trigger) { onClose(); return; }
     const rect = trigger.getBoundingClientRect();
     const left = clamp(
       rect.left,
@@ -52,7 +52,7 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     container.style.top = `${rect.bottom + 4}px`;
     container.style.left = `${left}px`;
     container.style.visibility = "visible";
-  }, [triggerRef]);
+  }, [triggerRef, onClose]);
 
   useEffect(() => {
     if (canApply) inputRef.current?.focus();
@@ -65,9 +65,9 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     const onMouseDown = (e: MouseEvent) => {
       const el = containerRef.current;
       if (!el) return;
-      const target = e.target as Node;
-      if (el.contains(target)) return;
-      if (triggerRef.current?.contains(target)) return;
+      if (!(e.target instanceof Node)) return;
+      if (el.contains(e.target)) return;
+      if (triggerRef.current?.contains(e.target)) return;
       onClose();
     };
     document.addEventListener("keydown", onKey);
