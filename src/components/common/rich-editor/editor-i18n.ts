@@ -66,6 +66,7 @@ export const editorI18n = {
   linkPopover: {
     title: "リンク",
     placeholder: "https://example.com",
+    newTab: "新しいタブで開く",
     apply: "適用",
     remove: "リンク解除",
     errorEmpty: "URLを入力してください",

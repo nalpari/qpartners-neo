@@ -38,6 +38,10 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
     const href = editor.getAttributes("link").href;
     return typeof href === "string" ? href : "";
   });
+  // 기존 링크 편집 시엔 실제 현재 상태(target)를 반영하고, 신규 링크는 항상 체크(새 탭)로 시작한다.
+  const [newTab, setNewTab] = useState(() =>
+    isOnLink ? editor.getAttributes("link").target === "_blank" : true,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -99,7 +103,13 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
       return;
     }
     // extendMarkRange: 커서가 기존 링크 위(선택 없음)여도 그 링크 전체 범위에 적용.
-    const applied = editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
+    // target 은 체크박스 값 그대로 — 새 탭이면 "_blank", 아니면 null(속성 미부여, 현재 창에서 이동).
+    const applied = editor
+      .chain()
+      .focus()
+      .extendMarkRange("link")
+      .setLink({ href: trimmed, target: newTab ? "_blank" : null })
+      .run();
     if (!applied) { setError(t.errorApplyFailed); return; }
     onClose();
   };
@@ -144,6 +154,14 @@ export function LinkPopover({ editor, onClose, triggerRef }: LinkPopoverProps) {
             className="w-full h-8 px-2 text-[13px] border border-[#EBEBEB] rounded focus:outline-none focus:border-[#101010]"
           />
           {error && <p id="link-popover-error" className="mt-1 text-[12px] text-[#FF1A1A]">{error}</p>}
+          <label className="flex items-center gap-2 mt-2 text-[12px] text-[#505050] select-none">
+            <input
+              type="checkbox"
+              checked={newTab}
+              onChange={(e) => setNewTab(e.target.checked)}
+            />
+            {t.newTab}
+          </label>
           <div className="flex gap-2 mt-3">
             {isOnLink && (
               <button
