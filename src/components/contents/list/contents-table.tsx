@@ -139,8 +139,12 @@ async function downloadAllAttachments(contentId: number): Promise<DownloadResult
     const a = document.createElement("a");
     a.href = url;
     a.download = fileName;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    // 브라우저가 Blob URL을 읽기 전에 즉시 해제하면 일부 브라우저에서 0바이트 다운로드가
+    // 발생하므로, 충분한 시간을 준 뒤 해제한다.
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     return { ok: true };
   } catch (err: unknown) {
     if (isAxiosError(err)) {
