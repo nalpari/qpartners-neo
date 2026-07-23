@@ -31,7 +31,7 @@ export interface BuildExtensionsOptions {
  * 인라인 마크 확장:
  *   TextStyle + Color  → <span style="color: …">
  *   Highlight(multicolor) → <mark style="background-color: …">
- *   Link → <a href="…"> (HTML 소스 모드 입력 보존용, 툴바 버튼은 미제공)
+ *   Link → <a href="…"> (툴바 🔗 버튼 + HTML 소스 모드 양쪽에서 입력 가능)
  *
  * 비활성: video / audio / file / pageBreak / taskList / taskItem
  *   - StarterKit·extension-table 등에 처음부터 포함되지 않거나 본 함수에서 추가하지 않음.
@@ -48,9 +48,12 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
       allowBase64: false,
       HTMLAttributes: { class: "rich-editor-inline-image" },
     }),
-    // sanitize-html.ts SAFE_HREF_PATTERN(https?/mailto)과 동일한 스킴만 허용. (#은 서버 허용이나 autolink 비활성화로 불필요)
-    // 클릭 시 편집 화면 이탈 방지 위해 openOnClick은 false — 링크 편집은 HTML 소스 모드로만.
+    // sanitize-html.ts SAFE_HREF_PATTERN은 https?/mailto/# 을 허용하나, 에디터 클라이언트 측은
+    // autolink 비활성화로 # 입력 경로가 없으므로 protocols에서 제외.
+    // 클릭 시 편집 화면 이탈 방지 위해 openOnClick은 false — 링크 편집은 툴바 🔗 버튼/HTML 소스 모드로.
     // target: null — 기본값 _blank가 mergeAttributes로 강제 적용되지 않도록 명시 해제.
+    // rel은 HTMLAttributes에 직접 명시. sanitize-html.ts afterSanitizeAttributes는 HTML 소스 모드 등
+    // target=_blank 링크에 대한 추가 방어층으로 별도 동작.
     Link.configure({
       openOnClick: false,
       autolink: false,

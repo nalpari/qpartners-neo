@@ -44,7 +44,7 @@ export function ContentsDetailCategory({
     };
   });
 
-  const [categoryOpen, setCategoryOpen] = useState(true);
+  const [categoryOpen, setCategoryOpen] = useState(false);
 
   if (groupedCategories.every((g) => g.normalValues.length === 0 && g.internalValues.length === 0)) return null;
 

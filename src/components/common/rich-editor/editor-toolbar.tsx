@@ -5,6 +5,7 @@ import { type Editor } from "@tiptap/react";
 import { editorI18n } from "./editor-i18n";
 import { InsertTablePopover } from "./insert-table-popover";
 import { ColorPopover } from "./color-popover";
+import { LinkPopover } from "./link-popover";
 import { HIGHLIGHT_PALETTE, TEXT_COLOR_PALETTE } from "./editor-colors";
 import { FONT_SIZE_OPTIONS } from "./font-size";
 
@@ -40,6 +41,8 @@ export function EditorToolbar({
   const textColorButtonRef = useRef<HTMLButtonElement>(null);
   const [highlightOpen, setHighlightOpen] = useState(false);
   const highlightButtonRef = useRef<HTMLButtonElement>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const linkButtonRef = useRef<HTMLButtonElement>(null);
 
   const activeTextColor =
     (editor.getAttributes("textStyle").color as string | undefined) ?? null;
@@ -262,6 +265,30 @@ export function EditorToolbar({
         )}
       </div>
 
+      {/* G2.7 — 링크 */}
+      <div className="relative">
+        <button
+          ref={linkButtonRef}
+          type="button"
+          aria-label={t.link}
+          title={t.link}
+          aria-haspopup="dialog"
+          aria-expanded={linkOpen}
+          className={btn(linkOpen || editor.isActive("link"))}
+          onClick={() => setLinkOpen((o) => !o)}
+          disabled={!isEditable || isUploading}
+        >
+          🔗
+        </button>
+        {linkOpen && (
+          <LinkPopover
+            editor={editor}
+            onClose={() => setLinkOpen(false)}
+            triggerRef={linkButtonRef}
+          />
+        )}
+      </div>
+
       {divider}
 
       {/* G3 — 리스트 */}
@@ -353,8 +380,8 @@ export function EditorToolbar({
         type="button"
         aria-label={t.undo}
         title={`${t.undo} (${t.shortcuts.undo})`}
-        disabled={!isEditable}
-        className={btn(false)}
+        disabled={!isEditable || !editor.can().undo()}
+        className={btn(false, !editor.can().undo())}
         onClick={() => editor.chain().focus().undo().run()}
       >
         ↶
@@ -363,8 +390,8 @@ export function EditorToolbar({
         type="button"
         aria-label={t.redo}
         title={`${t.redo} (${t.shortcuts.redo})`}
-        disabled={!isEditable}
-        className={btn(false)}
+        disabled={!isEditable || !editor.can().redo()}
+        className={btn(false, !editor.can().redo())}
         onClick={() => editor.chain().focus().redo().run()}
       >
         ↷
