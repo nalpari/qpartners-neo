@@ -8,7 +8,8 @@ import { editorI18n } from "./editor-i18n";
 
 const POPOVER_WIDTH = 280;
 const VIEWPORT_MARGIN = 8;
-// editor-extensions.ts Link.configure({ protocols }) / sanitize-html.ts SAFE_HREF_PATTERN 과 동일 스킴만 허용.
+// editor-extensions.ts protocols(https?/mailto)와 일치. sanitize-html.ts는 # 도 허용하나
+// 팝오버 입력에서는 앵커 링크를 지원하지 않으므로 제외.
 const SAFE_HREF_PATTERN = /^(https?:|mailto:)/i;
 
 export interface LinkPopoverProps {

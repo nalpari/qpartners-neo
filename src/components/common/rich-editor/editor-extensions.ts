@@ -48,7 +48,8 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
       allowBase64: false,
       HTMLAttributes: { class: "rich-editor-inline-image" },
     }),
-    // sanitize-html.ts SAFE_HREF_PATTERN(https?/mailto)과 동일한 스킴만 허용. (#은 서버 허용이나 autolink 비활성화로 불필요)
+    // sanitize-html.ts SAFE_HREF_PATTERN은 https?/mailto/# 을 허용하나, 에디터 클라이언트 측은
+    // autolink 비활성화로 # 입력 경로가 없으므로 protocols에서 제외.
     // 클릭 시 편집 화면 이탈 방지 위해 openOnClick은 false — 링크 편집은 툴바 🔗 버튼/HTML 소스 모드로.
     // target: null — 기본값 _blank가 mergeAttributes로 강제 적용되지 않도록 명시 해제.
     // rel은 HTMLAttributes에 직접 명시. sanitize-html.ts afterSanitizeAttributes는 HTML 소스 모드 등

@@ -56,7 +56,7 @@ function renderCategoryCell(
   parentCategoryCode: string,
   inlineStyle: boolean,
   isInternal: boolean,
-): React.ReactNode {
+): ReactNode {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
   if (!matched || matched.children.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
@@ -219,7 +219,8 @@ function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) 
   );
 }
 
-/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목. */
+/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
+ *  NEW/UPDATE 뱃지는 컴팩트 카드 디자인 방침에 따라 의도적으로 미표시. */
 
 function MobileContentCard({
   item,
