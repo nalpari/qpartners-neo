@@ -278,8 +278,9 @@ function MobileContentCard({
         )}
       </div>
 
-      {/* 하단 — 제목(볼드) */}
-      <p className="relative font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
+      {/* 하단 — 제목(볼드). position 미지정(non-positioned) 유지 — relative 를 주면 stacking
+          순서상 absolute 오버레이 버튼(위 stretched button) 보다 위로 올라와 클릭을 가로챈다. */}
+      <p className="font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
         {item.title}
       </p>
     </div>
