@@ -50,12 +50,13 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
     }),
     // sanitize-html.ts SAFE_HREF_PATTERN(https?/mailto)과 동일한 스킴만 허용. (#은 서버 허용이나 autolink 비활성화로 불필요)
     // 클릭 시 편집 화면 이탈 방지 위해 openOnClick은 false — 링크 편집은 툴바 🔗 버튼/HTML 소스 모드로.
-    // target: "_blank" — 모든 링크를 새 창으로. rel은 target=_blank 조합 시 탭재킹 방지를 위해 항상 동반.
+    // target: null — 기본값 _blank가 mergeAttributes로 강제 적용되지 않도록 명시 해제.
+    // rel은 sanitize-html.ts afterSanitizeAttributes에서 target=_blank 링크에 서버 사이드로 부여.
     Link.configure({
       openOnClick: false,
       autolink: false,
       protocols: ["http", "https", "mailto"],
-      HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" },
+      HTMLAttributes: { target: null, rel: "noopener noreferrer" },
     }),
     Table.configure({
       resizable: true,

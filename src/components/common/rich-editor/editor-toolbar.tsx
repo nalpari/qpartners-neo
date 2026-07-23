@@ -276,7 +276,7 @@ export function EditorToolbar({
           aria-expanded={linkOpen}
           className={btn(linkOpen || editor.isActive("link"))}
           onClick={() => setLinkOpen((o) => !o)}
-          disabled={!isEditable}
+          disabled={!isEditable || isUploading}
         >
           🔗
         </button>
