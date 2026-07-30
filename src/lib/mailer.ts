@@ -15,6 +15,16 @@ if (APP_ENV_RAW && !VALID_APP_ENV.has(APP_ENV_RAW)) {
   );
 }
 const isNonProd = APP_ENV_RAW !== "production";
+
+/**
+ * 비운영(APP_ENV !== "production") 발송 시 본문 상단에 붙는 테스트 안내 배너.
+ * HTML 메일이므로 개행은 <br /> 로 렌더. 운영(production)에는 미적용.
+ */
+const TEST_MAIL_BANNER =
+  "------------------------------------------------------------ -------------------------------<br />" +
+  "- This Mail is Test mail. Please ignore this email --------------------<br />" +
+  "------------------------------------------------------------ -------------------------------<br />";
+
 /** Ethereal 사용 조건: 비운영 환경 + 명시적 opt-in (SMTP_USE_ETHEREAL=true) */
 const useEtherealFlag = isNonProd && process.env.SMTP_USE_ETHEREAL === "true";
 
@@ -159,14 +169,19 @@ export async function sendMail({ to, subject, html, bcc, fromName, attachments }
     throw error;
   }
 
+  // 비운영 발송은 실제 메일과 혼동을 막기 위해 제목/본문에 테스트 표시 (운영은 원본 그대로).
+  // 공통 유틸이므로 모든 메일(2FA/비번재설정/알림/대량메일)에 자동 적용된다.
+  const effectiveSubject = isNonProd ? `(System Test) ${subject}` : subject;
+  const effectiveHtml = isNonProd ? `${TEST_MAIL_BANNER}${html}` : html;
+
   let rawInfo: nodemailer.SentMessageInfo;
   try {
     rawInfo = await transporter.sendMail({
       // 객체 형태 — nodemailer 가 RFC 2047 인코딩과 quote 처리를 알아서 수행해 헤더 인젝션 추가 방어.
       from: { name: displayName, address: from },
       to,
-      subject,
-      html,
+      subject: effectiveSubject,
+      html: effectiveHtml,
       ...(bcc !== undefined ? { bcc } : {}),
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
     });
