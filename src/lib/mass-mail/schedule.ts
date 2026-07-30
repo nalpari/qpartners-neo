@@ -8,7 +8,7 @@
  * - draft: 저장만. scheduledSendAt 제공값 보존(없으면 null), 트리거 안 함.
  * - pending + scheduledSendAt(미래): 예약 → status='scheduled', 트리거 안 함(배치가 도래 시 발송).
  * - pending + scheduledSendAt(과거/현재): 예약 의도이나 무효 → PAST_SCHEDULE(라우트가 create 400 / edit 409).
- * - pending + scheduledSendAt 없음: 즉시발송 → status='pending', scheduledSendAt=now, 트리거.
+ * - pending + scheduledSendAt 없음: 즉시발송 → status='pending', scheduledSendAt=null, 트리거.
  */
 
 /** 저장 결과 status (POST/PUT 이 파생하는 값 — 전송/발송 트리거 대상만). */
@@ -26,7 +26,7 @@ export type ResolvedSchedule =
       ok: true;
       /** DB 저장 status */
       status: SavedStatus;
-      /** DB 저장 scheduledSendAt (즉시=now, 예약=지정값, 초안=지정값 or null) */
+      /** DB 저장 scheduledSendAt (즉시=null, 예약=지정값, 초안=지정값 or null) */
       scheduledSendAt: Date | null;
       /** true 면 저장 후 processMassMailSend fire-and-forget 트리거 */
       triggerSend: boolean;
@@ -50,6 +50,8 @@ export function resolveSendSchedule(
     return { ok: true, status: "scheduled", scheduledSendAt, triggerSend: false };
   }
 
-  // 즉시발송 — scheduledSendAt 미전송. 저장 시각을 기록해 모든 메일이 예정일시를 갖게 함.
-  return { ok: true, status: "pending", scheduledSendAt: now, triggerSend: true };
+  // 즉시발송 — scheduledSendAt 미전송 → null 저장. null=즉시, 값=예약으로 구분되어
+  // 상세 화면에서 등록 기준(即時/予約)을 정확히 복원할 수 있다. (예약 스캔은 status='scheduled'
+  // 전용, pending 발송 루프는 scheduledSendAt 미참조 — auto-retry-batch 확인 완료.)
+  return { ok: true, status: "pending", scheduledSendAt: null, triggerSend: true };
 }

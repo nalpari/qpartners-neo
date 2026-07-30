@@ -345,7 +345,6 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
           createdBy={initialData?.createdBy ?? ""}
           createdByName={initialData?.createdByName ?? null}
           sentAt={showSentAt && initialData?.sentAt ? formatMailDate(initialData.sentAt) : (showSentAt && initialData?.createdAt ? formatMailDate(initialData.createdAt) : "")}
-          scheduledSendAt={showSentAt && initialData?.scheduledSendAt ? formatMailDate(initialData.scheduledSendAt) : ""}
         />
       </section>
 
@@ -367,18 +366,18 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
         />
       </section>
 
-      {/* 발송 타이밍 카드 (즉시/예약) — 상세 모드에서는 미노출(예정일시는 관리정보 카드에 표시) */}
-      {!isDetail && (
-        <section className={`${cardClass} flex flex-col gap-4`}>
-          <BulkMailFormSchedule
-            sendType={sendType}
-            onSendTypeChange={setSendType}
-            scheduledSendAt={scheduledSendAt}
-            onScheduledSendAtChange={setScheduledSendAt}
-            disabled={isFormDisabled}
-          />
-        </section>
-      )}
+      {/* 발송 타이밍 카드 (즉시/예약) — 전 모드 노출. 상세/권한 readonly 시 disabled 로
+          등록 기준(即時/予約 + 예약일시)을 그대로 표시. 즉시발송은 scheduledSendAt=null 이므로
+          即時配信 라디오만, 예약은 予約配信 + 일시가 비활성 상태로 노출된다. */}
+      <section className={`${cardClass} flex flex-col gap-4`}>
+        <BulkMailFormSchedule
+          sendType={sendType}
+          onSendTypeChange={setSendType}
+          scheduledSendAt={scheduledSendAt}
+          onScheduledSendAtChange={setScheduledSendAt}
+          disabled={isFormDisabled}
+        />
+      </section>
 
       {/* 제목 카드 */}
       <section className={`${cardClass} flex flex-col gap-4`}>
