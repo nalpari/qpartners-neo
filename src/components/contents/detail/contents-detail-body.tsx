@@ -62,6 +62,7 @@ export function ContentsDetailBody({
           <div className="flex items-center gap-3">
             <MetaBadge label="登録日" value={formattedCreated} />
             {hasBeenUpdated && <MetaBadge label="更新日" value={formattedUpdated} />}
+            <MetaBadge label="VIEW" value={viewCount.toLocaleString()} />
           </div>
           <h1 className="font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
             {title}

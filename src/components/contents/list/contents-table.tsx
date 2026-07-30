@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import type { ReactNode, MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,9 +13,7 @@ import {
   Button,
   Pagination,
   PageSizeSelect,
-  MobileCardList,
 } from "@/components/common";
-import type { MobileCardField } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
@@ -57,7 +56,7 @@ function renderCategoryCell(
   parentCategoryCode: string,
   inlineStyle: boolean,
   isInternal: boolean,
-): React.ReactNode {
+): ReactNode {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
   if (!matched || matched.children.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
@@ -140,8 +139,12 @@ async function downloadAllAttachments(contentId: number): Promise<DownloadResult
     const a = document.createElement("a");
     a.href = url;
     a.download = fileName;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    // 브라우저가 Blob URL을 읽기 전에 즉시 해제하면 일부 브라우저에서 0바이트 다운로드가
+    // 발생하므로, 충분한 시간을 준 뒤 해제한다.
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     return { ok: true };
   } catch (err: unknown) {
     if (isAxiosError(err)) {
@@ -201,56 +204,86 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
   );
 }
 
-function renderMobileTitle(item: ContentListItem) {
+/** 상세 화면(contents-detail-body.tsx MetaBadge)과 동일한 라벨(흰 배경 박스) + 값 스타일.
+ *  value 는 문자열뿐 아니라 아이콘(添付 뱃지)도 받을 수 있게 ReactNode 로 둔다. */
+function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      {(item.isNew || (item.hasBeenUpdated && item.isUpdated)) && (
-        <div className="flex items-center gap-1">
-          {item.isNew && (
-            <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2]">
-              NEW
-            </span>
-          )}
-          {item.hasBeenUpdated && item.isUpdated && (
-            <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D]">
-              UPDATE
-            </span>
-          )}
-        </div>
-      )}
-      <p className="text-[#555] break-words whitespace-normal">{item.title}</p>
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-white border border-[#EEE] font-pretendard font-medium text-[13px] leading-[1.5] text-[#999]">
+        {label}
+      </span>
+      <span className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#999] flex items-center">
+        {value}
+      </span>
     </div>
   );
 }
 
-function MobileAttachmentButton({ item }: { item: ContentListItem }) {
+/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
+ *  NEW/UPDATE 뱃지는 컴팩트 카드 디자인 방침에 따라 의도적으로 미표시. */
+
+function MobileContentCard({
+  item,
+  onClick,
+}: {
+  item: ContentListItem;
+  onClick: () => void;
+}) {
   const { openAlert } = useAlertStore();
 
-  if (item.attachmentCount === 0) return null;
-
-  const handleClick = async (e: React.MouseEvent) => {
+  const handleDownload = (e: MouseEvent) => {
     e.stopPropagation();
-    const result = await downloadAllAttachments(item.id);
-    if (!result.ok) {
-      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
-    }
+    void (async () => {
+      const result = await downloadAllAttachments(item.id);
+      if (!result.ok) {
+        openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
+      }
+    })();
   };
 
   return (
-    <button
-      type="button"
-      onClick={(e) => { void handleClick(e); }}
-      className="flex items-center px-1 py-[3px] shrink-0 cursor-pointer"
-      aria-label="添付ファイルダウンロード"
-    >
-      <Image
-        src="/asset/images/layout/download_icon.svg"
-        alt="添付ファイル"
-        width={16}
-        height={18}
-        unoptimized
+    // stretched button 패턴: absolute inset-0 버튼으로 카드 전체 클릭 영역을 확보하고,
+    // 내부 다운로드 <button>은 relative로 stacking order상 위에 위치해 중첩을 회피한다.
+    <div className="relative bg-white px-6 py-5 flex flex-col gap-3">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-pointer"
+        aria-label={item.title}
+        onClick={onClick}
       />
-    </button>
+      {/* 상단 — 登録日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭. */}
+      <div className="relative flex items-center gap-3">
+        <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
+        <MobileMetaBadge label="VIEW" value={item.viewCount.toLocaleString()} />
+        {item.attachmentCount > 0 && (
+          <button
+            type="button"
+            onClick={handleDownload}
+            aria-label="添付ファイルダウンロード"
+            className="cursor-pointer"
+          >
+            <MobileMetaBadge
+              label="添付"
+              value={
+                <Image
+                  src="/asset/images/layout/download_icon.svg"
+                  alt="添付ファイル"
+                  width={14}
+                  height={16}
+                  unoptimized
+                />
+              }
+            />
+          </button>
+        )}
+      </div>
+
+      {/* 하단 — 제목(볼드). position 미지정(non-positioned) 유지 — relative 를 주면 stacking
+          순서상 absolute 오버레이 버튼(위 stretched button) 보다 위로 올라와 클릭을 가로챈다. */}
+      <p className="font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
+        {item.title}
+      </p>
+    </div>
   );
 }
 
@@ -580,65 +613,6 @@ export function ContentsTable({
     });
   }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
-  const mobileFields = useMemo<MobileCardField<ContentListItem>[]>(() => {
-    // 모바일 목록은 카테고리 항목 비노출 — 사용자 요청에 따라 컴팩트 카드로 운영.
-    // 첨부 다운로드 버튼(MobileAttachmentButton)은 기존 첫 행(첫 카테고리)에 부여돼 있었으므로
-    // 카테고리 제거 후에는 첫 표시 필드인 タイトル 행으로 옮긴다.
-    const base: MobileCardField<ContentListItem>[] = [
-      {
-        label: "タイトル",
-        key: "title",
-        render: renderMobileTitle,
-        action: (item) => <MobileAttachmentButton item={item} />,
-      },
-      {
-        label: "登録日",
-        key: "createdAt",
-        render: (item) => item.createdAt ? formatDate(item.createdAt) : "-",
-      },
-      {
-        label: "更新日",
-        key: "updatedAt",
-        // 서버 hasBeenUpdated 단일 출처
-        render: (item) => {
-          if (!item.hasBeenUpdated || !item.updatedAt) return "-";
-          return formatDate(item.updatedAt);
-        },
-      },
-    ];
-
-    if (isInternal) {
-      base.push(
-        {
-          label: "掲示対象",
-          key: "targets" as keyof ContentListItem,
-          render: (item) => {
-            // rowData 에서 이미 정렬된 targets 사용
-            if (item.targets.length === 0) return "-";
-            return item.targets.map((t) => resolveTargetLabel(t.roleCode)).join(", ");
-          },
-        },
-        {
-          label: "担当部門",
-          key: "authorDepartment",
-          render: (item) => orDash(item.authorDepartment),
-        },
-        {
-          label: "最終確認者",
-          key: "approverLevel",
-          render: (item) => {
-            const lv = item.approverLevel;
-            if (lv == null) return "-";
-            if (isLoadingApprover) return "…";
-            return approverLabelMap[lv] ?? `Lv.${lv}`;
-          },
-        },
-      );
-    }
-
-    return base;
-  }, [isInternal, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
-
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
   };
@@ -755,12 +729,15 @@ export function ContentsTable({
               </p>
             </div>
           ) : (
-            <MobileCardList<ContentListItem>
-              data={rowData}
-              fields={mobileFields}
-              keyExtractor={(item) => String(item.id)}
-              onItemClick={handleMobileItemClick}
-            />
+            <div className="flex flex-col divide-y divide-[#EFF4F8]">
+              {rowData.map((item) => (
+                <MobileContentCard
+                  key={item.id}
+                  item={item}
+                  onClick={() => handleMobileItemClick(item)}
+                />
+              ))}
+            </div>
           )}
 
           {currentPage < totalPages && (
