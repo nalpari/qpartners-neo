@@ -298,7 +298,7 @@ type LogData = {
   userType: string | null;
   errorMessage: string | null;
   /** 진입~종료 wrapper 패턴에서 라우트 진입 시각을 명시하기 위한 override.
-   *  미지정 시 Prisma `@default(now())` 가 적용된다. */
+   *  미지정 시 DB default(`UTC_TIMESTAMP(3)`) 가 UTC 로 채운다. */
   createdAt?: Date;
 };
 
