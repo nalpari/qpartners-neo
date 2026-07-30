@@ -257,7 +257,7 @@ interface CreateRecordParams {
   writtenFiles: PersistedAttachment[];
   /** resolveSendSchedule 로 파생된 저장 status (draft/pending/scheduled) */
   status: "draft" | "pending" | "scheduled";
-  /** resolveSendSchedule 로 파생된 저장 scheduledSendAt (즉시=now, 예약=지정값, 초안=지정값 or null) */
+  /** resolveSendSchedule 로 파생된 저장 scheduledSendAt (즉시=null, 예약=지정값, 초안=지정값 or null) */
   scheduledSendAt: Date | null;
 }
 

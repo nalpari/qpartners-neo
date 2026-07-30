@@ -345,7 +345,7 @@ model MassMail {
   subject         String                  @db.VarChar(500)
   body            String                  @db.MediumText
   status          MailStatus              @default(draft)
-  /// 예약발송 지정 일시. 즉시발송은 저장 시각(now), 예약발송은 미래 시각, draft 는 null 가능.
+  /// 예약발송 지정 일시. 즉시발송은 null, 예약발송은 미래 시각, draft 는 null 가능.
   /// scheduled 상태의 건은 이 시각이 도래하면 auto-retry-batch 가 pending 으로 전이 후 발송.
   scheduledSendAt DateTime?               @map("scheduled_send_at")
   sentAt          DateTime?               @map("sent_at")

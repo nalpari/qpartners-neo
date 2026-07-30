@@ -274,7 +274,7 @@ export function buildFormData(params: {
   status: "draft" | "pending";
   /**
    * 예약발송 일시. 지정 시 ISO(UTC) 문자열로 전송 — 서버가 미래면 status=scheduled 로 저장.
-   * 즉시발송은 undefined/null 로 미전송(서버가 저장 시각을 scheduledSendAt 로 기록).
+   * 즉시발송은 undefined/null 로 미전송(서버가 scheduledSendAt 를 null 로 저장).
    */
   scheduledSendAt?: Date | null;
   files: File[];
