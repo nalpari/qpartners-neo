@@ -59,19 +59,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 규칙
 
-- subject는 **한글**, 50자 이내, 동사 원형으로 시작 (e.g. `Add`, `Fix`, `Update`)
+- `<type>` 접두사만 **영어**, subject와 body는 **한글**로 작성
+- subject는 50자 이내, "무엇을 했는지"를 간결하게 서술 (e.g. `~ 추가`, `~ 수정`, `~ 전환`)
 - body는 선택사항이며, "무엇을 왜" 변경했는지 간결하게 서술
 - body 작성 시 subject와 빈 줄로 구분
 
 ### 예시
 
 ```
-feat: Add user authentication with JWT
+feat: JWT 기반 사용자 인증 추가
 
-Implement login/signup API routes with JWT token generation
-and middleware-based route protection.
+로그인/회원가입 API route와 JWT 토큰 발급을 구현하고
+미들웨어에서 라우트 보호를 적용한다.
 ```
 
 ```
-fix: Resolve prisma client singleton leak in dev mode
+fix: 개발 모드 Prisma 클라이언트 싱글톤 누수 수정
 ```
