@@ -83,7 +83,7 @@ export function BulkMailFormSchedule({
       </h3>
       {/* min-h-[44px] — 예약 선택 시 나타나는 일시 입력(높이 44px)과 동일 높이를 항상 확보해
           즉시↔예약 전환 시 카드/배경이 위아래로 밀리는 레이아웃 점프를 방지. */}
-      <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 min-h-[44px]">
+      <div className="flex flex-wrap items-center min-h-[44px] gap-x-[18px] gap-y-2">
         <Radio
           name="sendType"
           checked={sendType === "immediate"}
