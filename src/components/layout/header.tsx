@@ -21,7 +21,8 @@ import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-t
 /** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
 const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
   { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
-  { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
+  // 비로그인(게스트) 노출 숨김 — 정의는 보존(삭제 아님). 복원 시 주석 해제.
+  // { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
 ];
 
 /**
