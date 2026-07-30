@@ -13,7 +13,7 @@ import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
-import { resolveSendSchedule, STATUS_SAVE_MESSAGE } from "@/lib/mass-mail/schedule";
+import { resolveSendSchedule, STATUS_SAVE_MESSAGE, type SavedStatus } from "@/lib/mass-mail/schedule";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import { userTpSchema } from "@/lib/schemas/common";
@@ -255,8 +255,8 @@ interface CreateRecordParams {
   sanitizedBody: string;
   userType: "ADMIN" | "STORE" | "SEKO" | "GENERAL";
   writtenFiles: PersistedAttachment[];
-  /** resolveSendSchedule 로 파생된 저장 status (draft/pending/scheduled) */
-  status: "draft" | "pending" | "scheduled";
+  /** resolveSendSchedule 로 파생된 저장 status — SavedStatus 재사용(중복 정의 방지) */
+  status: SavedStatus;
   /** resolveSendSchedule 로 파생된 저장 scheduledSendAt (즉시=null, 예약=지정값, 초안=지정값 or null) */
   scheduledSendAt: Date | null;
 }

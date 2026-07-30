@@ -34,7 +34,7 @@ import { prisma } from "@/lib/prisma";
 const LOG_TAG = "[mass-mail/auto-retry-batch]";
 
 /** 한 cycle 에서 처리할 최대 mass_mail 건수 — 백로그가 커도 cycle 시간이 폭주하지 않도록 */
-const CYCLE_MAX_TARGETS = 200;
+const CYCLE_MAX_TARGETS = 500;
 
 /**
  * cycle 전체가 throw 한 횟수가 이 값에 연속 도달하면 setInterval 타이머를 해제한다.
@@ -134,14 +134,21 @@ export async function runBatchOnce(): Promise<void> {
       orderBy: { id: "asc" },
       take: CYCLE_MAX_TARGETS,
     });
-    let promotedScheduled = 0;
-    for (const due of dueScheduled) {
-      const promoted = await prisma.massMail.updateMany({
-        where: { id: due.id, status: "scheduled", scheduledSendAt: { lte: dueNow } },
-        data: { status: "pending" },
-      });
-      promotedScheduled += promoted.count;
+    if (dueScheduled.length === CYCLE_MAX_TARGETS) {
+      // pending SELECT 상한 경고와 동일 — 같은 분 대량 예약 시 초과분이 조용히 다음 cycle 로 밀리는 것을 알린다.
+      console.warn(`${LOG_TAG} 예약 도래 대상이 상한(${CYCLE_MAX_TARGETS})에 도달 — 예약 적체/발송 지연 가능`);
     }
+    // 단일 bulk updateMany — 낙관적 락(status='scheduled' AND scheduledSendAt<=now)이 WHERE 에 그대로
+    // 있어 SELECT 이후 상태가 바뀐 행은 매칭되지 않는다(per-row 루프와 동일 보장). 좀비 승격과 동일 idiom.
+    const promotedResult = await prisma.massMail.updateMany({
+      where: {
+        id: { in: dueScheduled.map((d) => d.id) },
+        status: "scheduled",
+        scheduledSendAt: { lte: dueNow },
+      },
+      data: { status: "pending" },
+    });
+    const promotedScheduled = promotedResult.count;
     if (promotedScheduled > 0) {
       console.log(
         `${LOG_TAG} 예약 도래 — ${promotedScheduled}건 scheduled → pending 전이 (이번 cycle 발송 대상 포함)`,

@@ -68,7 +68,7 @@ export function BulkMailDetailClient({ id }: BulkMailDetailClientProps) {
 
   // edit 모드 진입 시 레거시 draft(textarea 시대 저장본 — 서명 미포함) 의 본문에 서명을 자동 보강.
   // 사용자가 그대로 발송해도 서명 없는 메일이 나가지 않도록 방어.
-  // detail 모드는 발송 완료된 메일의 비활성 미리보기이므로 본문을 원본 그대로 보존.
+  // detail 모드는 편집 불가 상태(발송/발송중/도래 예약) 또는 권한 없는 열람의 비활성 미리보기이므로 본문을 원본 그대로 보존.
   const initialData = toFormInitialData(detail);
   const finalInitialData = mode === "edit"
     ? { ...initialData, body: ensureBodyHasSignature(initialData.body) }
