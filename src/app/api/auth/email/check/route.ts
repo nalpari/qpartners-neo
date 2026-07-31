@@ -5,8 +5,9 @@ import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
+import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 
-// POST /api/auth/email/check — 이메일 중복 체크
+// POST /api/auth/email/check — 이메일 중복 체크 (관리자 대리등록 전용)
 //
 // QSP userDetail 을 두 키로 병렬 조회한다:
 //   1) loginId 단독 → BC_QP_USER.user_id 컬럼 매칭 (newUserReq 가 검사하는 컬럼)
@@ -183,6 +184,16 @@ function isDecisive(outcome: LookupOutcome): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    // 권한 확인 — 슈퍼관리자/관리자(SUPER_ADMIN·ADMIN) 역할만 대리등록용 이메일 체크 허용.
+    //    매트릭스가 아닌 역할 기준 고정 (다른 역할에 create 권한이 부여돼도 차단).
+    const authUser = getUserFromHeaders(request.headers);
+    if (!authUser) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
+    if (!isInternalUser(authUser.role)) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+
     let body: unknown;
     try {
       body = await request.json();

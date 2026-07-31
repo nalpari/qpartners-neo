@@ -20,6 +20,9 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
   const isExternal = registrationUrl.startsWith("http");
   const openPopup = usePopupStore((s) => s.openPopup);
 
+  // 일반회원은 관리자만 등록 가능하도록 전환 — 셀프 회원가입 진입점 제거.
+  const showRegistration = activeTab !== "general";
+
   return (
     <>
       {/* PC 레이아웃 — 가로 + 구분선 */}
@@ -28,13 +31,17 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
         />
-        <span className="w-px h-3 bg-[#D9D9D9]" />
-        <LinkItem
-          label="会員登録"
-          href={registrationUrl}
-          isHighlight
-          isExternal={isExternal}
-        />
+        {showRegistration && (
+          <>
+            <span className="w-px h-3 bg-[#D9D9D9]" />
+            <LinkItem
+              label="会員登録"
+              href={registrationUrl}
+              isHighlight
+              isExternal={isExternal}
+            />
+          </>
+        )}
       </div>
 
       {/* 모바일 레이아웃 — 세로 박스 */}
@@ -42,15 +49,21 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
         <MobileButtonLinkItem
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
-          className="rounded-t-[4px] border border-[#EEE]"
+          className={
+            showRegistration
+              ? "rounded-t-[4px] border border-[#EEE]"
+              : "rounded-[4px] border border-[#EEE]"
+          }
         />
-        <MobileLinkItem
-          label="会員登録"
-          href={registrationUrl}
-          isHighlight
-          isExternal={isExternal}
-          className="rounded-b-[4px] border-x border-b border-[#EEE]"
-        />
+        {showRegistration && (
+          <MobileLinkItem
+            label="会員登録"
+            href={registrationUrl}
+            isHighlight
+            isExternal={isExternal}
+            className="rounded-b-[4px] border-x border-b border-[#EEE]"
+          />
+        )}
       </div>
     </>
   );

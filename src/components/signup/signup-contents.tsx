@@ -33,32 +33,34 @@ const EMAIL_CHECK_MESSAGES: Record<
     "リクエストが多すぎます。しばらく経ってから再度お試しください",
 };
 
+const INITIAL_FORM = {
+  companyName: "",
+  companyNameKana: "",
+  postalCode: "",
+  address1: "",
+  address2: "",
+  phone: "",
+  fax: "",
+  lastName: "",
+  firstName: "",
+  lastNameKana: "",
+  firstNameKana: "",
+  email: "",
+  password: "",
+  passwordConfirm: "",
+  department: "",
+  position: "",
+  newsletter: true,
+  agreeTerms: false,
+};
+
 export function SignupContents() {
   const router = useRouter();
   const { openPopup } = usePopupStore();
   const { openAlert } = useAlertStore();
 
   // 폼 상태
-  const [form, setForm] = useState({
-    companyName: "",
-    companyNameKana: "",
-    postalCode: "",
-    address1: "",
-    address2: "",
-    phone: "",
-    fax: "",
-    lastName: "",
-    firstName: "",
-    lastNameKana: "",
-    firstNameKana: "",
-    email: "",
-    password: "",
-    passwordConfirm: "",
-    department: "",
-    position: "",
-    newsletter: true,
-    agreeTerms: false,
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
 
   // UI 상태
   const [emailCheckStatus, setEmailCheckStatus] =
@@ -69,6 +71,16 @@ export function SignupContents() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // 관리자 대리등록 — 등록 완료 후 폼 전체 초기화(연속 등록 지원).
+  const resetForm = () => {
+    setForm(INITIAL_FORM);
+    setEmailCheckStatus("idle");
+    setShowPassword(false);
+    setShowPasswordConfirm(false);
+    setSubmitError(null);
+    setFieldErrors({});
+  };
 
   // 폼 필드 업데이트 헬퍼
   const updateField = (field: keyof typeof form, value: string | boolean) => {
@@ -196,7 +208,12 @@ export function SignupContents() {
       // 표시 규칙: "성 + 반각공백 + 명". popup 측에서 様 앞 전각공백을 별도로 추가하므로
       // 최종 표기는 "성 명　様" (반각·전각공백 차이 의도적).
       const displayName = `${form.lastName} ${form.firstName}`;
-      openPopup("signup-complete", { userName: displayName, userId: email });
+      // 확인 시 폼을 초기화해 같은 화면에서 다음 회원을 연속 등록할 수 있게 한다.
+      openPopup("signup-complete", {
+        userName: displayName,
+        userId: email,
+        onConfirm: resetForm,
+      });
     } catch (error) {
       console.error("[Signup] 회원가입 실패:", error);
       if (isAxiosError(error) && error.response) {

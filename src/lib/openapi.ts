@@ -444,8 +444,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/signup": {
       post: {
         tags: ["Auth"],
-        summary: "일반 회원가입 (QSP 프록시)",
-        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 가입 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
+        summary: "일반회원 관리자 대리등록 (QSP 프록시)",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원을 등록한다. 슈퍼관리자/관리자(SUPER_ADMIN·ADMIN) 역할만 호출 가능 — 셀프 회원가입은 폐지됨. 성공 시 대상 회원에게 승인완료 메일 발송 — 메일 발송 실패 시에도 등록 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
         requestBody: {
           required: true,
           content: {
@@ -488,6 +488,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("権限がありません (SUPER_ADMIN·ADMIN 역할만 허용)"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
@@ -686,10 +688,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/email/check": {
       post: {
         tags: ["Auth"],
-        summary: "이메일 중복 체크",
+        summary: "이메일 중복 체크 (관리자 대리등록 전용)",
         description:
           "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
-          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용. " +
+          "슈퍼관리자/관리자(SUPER_ADMIN·ADMIN) 역할만 호출 가능 — 셀프 회원가입 폐지에 따른 대리등록 전용.",
         requestBody: {
           required: true,
           content: {
@@ -725,6 +728,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("유효한 이메일 주소를 입력해주세요"),
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("権限がありません (SUPER_ADMIN·ADMIN 역할만 허용)"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "429": errorResponse("요청 횟수 초과"),
           "502": errorResponse("외부 서버 오류"),

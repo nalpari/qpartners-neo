@@ -7,8 +7,9 @@ import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Pagination, PageSizeSelect } from "@/components/common";
+import { Pagination, PageSizeSelect, Button } from "@/components/common";
 import { usePopupStore } from "@/lib/store";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
 import { useUserType } from "@/hooks/use-user-type";
@@ -73,6 +74,15 @@ export function MembersTable({
   // USER_TYPE 공통코드 reverseMap — 백엔드가 응답하는 일본어 라벨을 다시 영문 코드로 매핑.
   // 코드관리 변경 시 ["common-code","USER_TYPE"] invalidate 로 즉시 갱신됨.
   const { reverseMap: userTypeReverseMap } = useUserType();
+
+  // 일반회원 신규등록 버튼 — 슈퍼관리자/관리자(userTp="ADMIN" = authRole SUPER_ADMIN·ADMIN)만 노출.
+  // 매트릭스(ADM_MEMBER create) 대신 역할로 고정 — 다른 역할에 create 권한이 부여돼도 노출 안 됨.
+  const isInternal = useIsInternal();
+
+  // 새 탭에서 회원등록 화면(/signup — 관리자 대리등록 모드)을 연다.
+  const handleCreateMember = () => {
+    window.open("/signup", "_blank", "noopener,noreferrer");
+  };
   const gridContext = useMemo(
     () => ({ userTypeReverseMap }),
     [userTypeReverseMap],
@@ -192,7 +202,14 @@ export function MembersTable({
           </span>
           件
         </p>
-        <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
+        <div className="flex items-center gap-3">
+          {isInternal && (
+            <Button variant="primary" onClick={handleCreateMember}>
+              一般会員 新規登録
+            </Button>
+          )}
+          <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
+        </div>
       </div>
 
       {/* AG Grid + Pagination */}

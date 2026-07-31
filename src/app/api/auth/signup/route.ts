@@ -12,10 +12,21 @@ import {
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_URL } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 
-// POST /api/auth/signup — 일반 회원가입 (QSP newUserReq 프록시 + 승인완료 메일)
+// POST /api/auth/signup — 일반회원 관리자 대리등록 (QSP newUserReq 프록시 + 승인완료 메일)
 export async function POST(request: NextRequest) {
   try {
+    // 0. 권한 확인 — 슈퍼관리자/관리자(SUPER_ADMIN·ADMIN) 역할만 일반회원 등록 가능.
+    //    매트릭스가 아닌 역할 기준 고정 (다른 역할에 create 권한이 부여돼도 차단).
+    const authUser = getUserFromHeaders(request.headers);
+    if (!authUser) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
+    if (!isInternalUser(authUser.role)) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+
     // 1. Request body 파싱 + Zod 검증
     let body: unknown;
     try {

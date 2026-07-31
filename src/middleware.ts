@@ -10,8 +10,8 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
-  "/api/auth/signup",
-  "/api/auth/email/check",
+  // /api/auth/signup, /api/auth/email/check 는 관리자 대리등록 전용으로 전환되어 PUBLIC 에서 제외.
+  // (핸들러에서 isInternalUser 로 SUPER_ADMIN·ADMIN 역할만 허용)
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
