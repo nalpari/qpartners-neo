@@ -93,7 +93,7 @@ export async function middleware(request: NextRequest) {
   if (isPublicPath(pathname) || isPublicGet) {
     // GET 조회 경로에 한해 JWT가 있으면 사용자 정보 헤더 주입 (최소 권한 원칙)
     // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
-    // POST 경로(/api/inquiry, /api/auth/signup 등)에는 헤더 주입하지 않음
+    // POST 경로(/api/inquiry 등)에는 헤더 주입하지 않음
     if (isPublicGet) {
       const publicToken = request.cookies.get(COOKIE_NAME)?.value;
       if (publicToken) {

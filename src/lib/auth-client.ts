@@ -35,8 +35,10 @@ export function canModifyClient(
  * ⚠️ 캐시 `clear()` 를 여기서 하지 않는다:
  *   로그아웃 순간에는 현재 화면(회원관리 등)이 아직 마운트되어 있어, `clear()` 가 활성 쿼리
  *   (회원목록/메뉴 등, 로그인 게이팅이 없는 쿼리)의 즉시 재요청을 유발한다. 이때 서버는 이미
- *   쿠키를 삭제한 상태라 401 이 발생한다. 이전 세션 캐시 purge 는 화면 언마운트 이후 시점,
- *   즉 다음 로그인 전환에서 QueryProvider 가 1회 수행한다.
+ *   쿠키를 삭제한 상태라 401 이 발생한다.
+ *   대신 위 `dispatchAuthChange()` 가 QueryProvider 의 로그아웃 전환 분기를 트리거해
+ *   `["auth","login-user-info"]`(user) 캐시만 즉시 null 처리한다(헤더 등 user 파생 UI 정리, 재요청 없음).
+ *   전체 캐시 purge(`clear()`)는 화면 언마운트 이후 시점, 즉 다음 로그인 전환에서 QueryProvider 가 1회 수행한다.
  */
 export async function performLogout(queryClient: QueryClient): Promise<void> {
   try {
