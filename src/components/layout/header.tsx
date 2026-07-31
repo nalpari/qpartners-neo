@@ -216,7 +216,10 @@ export function Gnb() {
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  const isLoggedIn = user != null;
+  // 로그인 상태는 인증 플래그를 기준으로 판정 — 로그아웃 시 캐시(user)가 남아 있어도
+  // hasAuthFlag=false 면 즉시 비로그인으로 표시. (로그아웃은 캐시를 clear 하지 않으므로
+  // user != null 단독 판정 시 헤더가 로그인 상태로 잔존하던 문제 방지. auth-client#performLogout 참조)
+  const isLoggedIn = hasAuthFlag && user != null;
   // QSP userNm 이 공백 문자열인 경우(`"   "`) truthy 라 삼항 가드를 통과해 "　様" 만 단독
   // 렌더되는 회귀를 차단. 정규화 결과 빈 문자열이면 아예 렌더하지 않는다.
   const userDisplayName = formatUserDisplayName(user?.userNm);

@@ -1,7 +1,9 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,6 +24,41 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         },
       })
   );
+
+  // 세션 캐시 purge 정책 (auth-client#performLogout 참조):
+  // 로그아웃 시점에는 clear 하지 않고(활성 쿼리 재요청 → 401 방지), 로그아웃→로그인 "전환"
+  // 시점에 이전 세션 캐시를 1회 비운다. 이 시점엔 이전 화면이 이미 언마운트되어 재요청이 없고,
+  // 쿠키도 유효(로그인 완료)하므로 안전하다. 다른 탭 로그인(storage 이벤트)도 동일 처리.
+  const wasLoggedInRef = useRef(false);
+  useEffect(() => {
+    const readFlag = () => {
+      try {
+        return localStorage.getItem(AUTH_FLAG_KEY) === "1";
+      } catch {
+        return false;
+      }
+    };
+    wasLoggedInRef.current = readFlag();
+
+    const handleAuthChange = () => {
+      const isLoggedIn = readFlag();
+      // 로그아웃→로그인 전환에서만 purge. 이미 로그인 상태의 재-dispatch 는 무시.
+      if (isLoggedIn && !wasLoggedInRef.current) {
+        queryClient.clear();
+      }
+      wasLoggedInRef.current = isLoggedIn;
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === AUTH_FLAG_KEY) handleAuthChange();
+    };
+
+    window.addEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

@@ -30,7 +30,13 @@ export function canModifyClient(
  * 클라이언트 사이드 로그아웃 처리
  * - /api/auth/logout 호출 (실패해도 로컬 상태 정리)
  * - AUTH_FLAG_KEY 제거 + 이벤트 발행
- * - TanStack Query 캐시 전체 클리어
+ * - 진행 중인 쿼리 취소 (재요청 유발 없음)
+ *
+ * ⚠️ 캐시 `clear()` 를 여기서 하지 않는다:
+ *   로그아웃 순간에는 현재 화면(회원관리 등)이 아직 마운트되어 있어, `clear()` 가 활성 쿼리
+ *   (회원목록/메뉴 등, 로그인 게이팅이 없는 쿼리)의 즉시 재요청을 유발한다. 이때 서버는 이미
+ *   쿠키를 삭제한 상태라 401 이 발생한다. 이전 세션 캐시 purge 는 화면 언마운트 이후 시점,
+ *   즉 다음 로그인 전환에서 QueryProvider 가 1회 수행한다.
  */
 export async function performLogout(queryClient: QueryClient): Promise<void> {
   try {
@@ -40,6 +46,7 @@ export async function performLogout(queryClient: QueryClient): Promise<void> {
   } finally {
     localStorage.removeItem(AUTH_FLAG_KEY);
     dispatchAuthChange();
-    queryClient.clear();
+    // 진행 중 요청만 취소 — cancel 은 재요청을 트리거하지 않으므로 401 을 유발하지 않는다.
+    void queryClient.cancelQueries();
   }
 }
