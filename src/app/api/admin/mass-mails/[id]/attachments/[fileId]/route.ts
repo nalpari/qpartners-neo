@@ -40,7 +40,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // 3. 메일 존재 + 소유권 + 상태 확인
     const mail = await prisma.massMail.findUnique({
       where: { id: idResult.data },
-      select: { id: true, userType: true, userId: true, status: true },
+      select: { id: true, userType: true, userId: true, status: true, scheduledSendAt: true },
     });
 
     if (!mail) {
@@ -57,10 +57,17 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 발송된 메일의 첨부는 삭제 불가 — 下書き(draft)만 허용 (PUT/DELETE 핸들러와 동일 정책).
-    if (mail.status !== "draft") {
+    // 첨부 삭제는 편집 조작 — 下書き(draft) 또는 미도래 예약(scheduled + scheduledSendAt>now)만 허용
+    // (PUT/DELETE 핸들러와 동일 정책). now 는 아래 낙관적 락과 동일 스냅샷을 재사용한다.
+    const now = new Date();
+    const isEditable =
+      mail.status === "draft" ||
+      (mail.status === "scheduled" &&
+        mail.scheduledSendAt !== null &&
+        mail.scheduledSendAt.getTime() > now.getTime());
+    if (!isEditable) {
       return NextResponse.json(
-        { error: "下書き以外のメールは編集できません" },
+        { error: "下書きまたは予約(未送信)のメールのみ編集できます" },
         { status: 400 },
       );
     }
@@ -75,10 +82,35 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "添付ファイルが見つかりません" }, { status: 404 });
     }
 
-    // 5. DB 삭제 — 동시 DELETE race 는 P2025 → 404 로 수렴 (500 아님).
+    // 5. DB 삭제 — 낙관적 락으로 감싼다. 검사(3)~삭제 사이에 예약이 도래해 배치가 pending 으로
+    //    승격 후 발송을 시작하는 race 를 차단하기 위해, 메일이 여전히 편집 가능한 상태(draft 또는
+    //    미도래 예약)일 때만 첨부를 삭제한다. 메일 단건 PUT/DELETE 핸들러와 동일한 원자적 가드.
+    //    - 가드 실패(count 0): 편집 불가 상태로 전이됨 → 409
+    //    - 동시 첨부 DELETE(P2025): 404 로 수렴 (500 아님)
     try {
-      await prisma.massMailAttachment.delete({ where: { id: fileIdResult.data } });
+      await prisma.$transaction(async (tx) => {
+        const guard = await tx.massMail.updateMany({
+          where: {
+            id: idResult.data,
+            OR: [
+              { status: "draft" },
+              { status: "scheduled", scheduledSendAt: { gt: now } },
+            ],
+          },
+          data: { updatedBy: user.userId },
+        });
+        if (guard.count === 0) {
+          throw new Error("NOT_EDITABLE");
+        }
+        await tx.massMailAttachment.delete({ where: { id: fileIdResult.data } });
+      });
     } catch (dbError: unknown) {
+      if (dbError instanceof Error && dbError.message === "NOT_EDITABLE") {
+        return NextResponse.json(
+          { error: "下書きまたは予約(未送信)のメールのみ編集できます" },
+          { status: 409 },
+        );
+      }
       if (
         dbError instanceof Prisma.PrismaClientKnownRequestError &&
         dbError.code === "P2025"
