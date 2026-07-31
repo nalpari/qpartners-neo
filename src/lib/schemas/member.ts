@@ -285,6 +285,7 @@ const qspMemberItemSchema = z.object({
   regDt: z.string().nullable(),
   storeLvl: z.string().nullable().optional(),
   newsRcptYn: z.enum(["Y", "N"]).nullable().optional(),
+  authCd: z.string().nullable().optional(),
 });
 
 export type QspMemberItem = z.infer<typeof qspMemberItemSchema>;

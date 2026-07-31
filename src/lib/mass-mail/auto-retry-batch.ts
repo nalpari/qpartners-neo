@@ -34,7 +34,7 @@ import { prisma } from "@/lib/prisma";
 const LOG_TAG = "[mass-mail/auto-retry-batch]";
 
 /** 한 cycle 에서 처리할 최대 mass_mail 건수 — 백로그가 커도 cycle 시간이 폭주하지 않도록 */
-const CYCLE_MAX_TARGETS = 200;
+const CYCLE_MAX_TARGETS = 500;
 
 /**
  * cycle 전체가 throw 한 횟수가 이 값에 연속 도달하면 setInterval 타이머를 해제한다.
@@ -119,6 +119,39 @@ export async function runBatchOnce(): Promise<void> {
       });
       console.warn(
         `${LOG_TAG} 좀비 감지 — ${zombieResult.count}건 sending → send_failed 자동 승격 (threshold=${MASS_MAIL_DEFAULTS.zombieThresholdMs}ms, ids=[${realZombieIds.join(", ")}])`,
+      );
+    }
+
+    // 1.5. 예약 도래 처리 — scheduled + scheduledSendAt<=now → pending 전이.
+    //      전이를 targets SELECT 이전에 수행해, 도래한 예약 건이 이번 cycle 의 pending 처리 루프에서
+    //      바로 수집+발송되도록 한다. 낙관적 락(status='scheduled' AND scheduledSendAt<=now)으로
+    //      동시 전이/외부 상태변경을 방어 — 중복 발송 없음. scheduled 는 send 트리거를 받은 적이
+    //      없으므로(오직 배치가 발송) in-flight 경합 대상이 아니다.
+    const dueNow = new Date();
+    const dueScheduled = await prisma.massMail.findMany({
+      where: { status: "scheduled", scheduledSendAt: { lte: dueNow } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: CYCLE_MAX_TARGETS,
+    });
+    if (dueScheduled.length === CYCLE_MAX_TARGETS) {
+      // pending SELECT 상한 경고와 동일 — 같은 분 대량 예약 시 초과분이 조용히 다음 cycle 로 밀리는 것을 알린다.
+      console.warn(`${LOG_TAG} 예약 도래 대상이 상한(${CYCLE_MAX_TARGETS})에 도달 — 예약 적체/발송 지연 가능`);
+    }
+    // 단일 bulk updateMany — 낙관적 락(status='scheduled' AND scheduledSendAt<=now)이 WHERE 에 그대로
+    // 있어 SELECT 이후 상태가 바뀐 행은 매칭되지 않는다(per-row 루프와 동일 보장). 좀비 승격과 동일 idiom.
+    const promotedResult = await prisma.massMail.updateMany({
+      where: {
+        id: { in: dueScheduled.map((d) => d.id) },
+        status: "scheduled",
+        scheduledSendAt: { lte: dueNow },
+      },
+      data: { status: "pending" },
+    });
+    const promotedScheduled = promotedResult.count;
+    if (promotedScheduled > 0) {
+      console.log(
+        `${LOG_TAG} 예약 도래 — ${promotedScheduled}건 scheduled → pending 전이 (이번 cycle 발송 대상 포함)`,
       );
     }
 

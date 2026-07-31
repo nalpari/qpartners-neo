@@ -10,11 +10,10 @@
  * - boolean 6개 → targetRoleCodes 배열 (qp_roles.roleCode)
  * - RecipientAuthRole enum → String snapshot (FK 없음)
  *
- * 운영자 정의 추가 권한 발송 (2026-05-29):
+ * 운영자 정의 추가 권한 발송 (2026-05-29 / 2026-07-30 개선):
  * - 커스텀 권한은 GENERAL userTp 회원에게만 authCd 로 부여됨 (회원관리 정책).
- * - userListMng 응답에는 authCd 가 없으므로 GENERAL 회원의 userDetail 을
- *   chunk 병렬 호출하여 authCd 를 보강한 뒤 effective role 매칭.
- * - userDetail 호출 실패는 skip + stats 카운트로 추적.
+ * - userListMng 목록 응답의 authCd 로 effective role 을 직접 매칭한다.
+ *   (구: GENERAL 회원별 userDetail 를 N+1 호출해 authCd 보강 → 목록 응답 authCd 사용으로 개선)
  *
  * Plan: mass-mail-send.plan.md §5
  * Design: mass-mail-send.design.md §2
@@ -24,12 +23,8 @@ import { resolveActiveRoleCodes } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS, MASS_MAIL_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
-import { fetchQspUserDetail } from "@/lib/qsp-member";
 import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { qspMemberListResponseSchema, lookupStatCd } from "@/lib/schemas/member";
-
-/** GENERAL userDetail 보강 시 chunk 당 병렬 호출 수 — QSP 부하 제한 */
-const AUTH_CD_LOOKUP_CHUNK = 8;
 
 /** SUPER_ADMIN/ADMIN 격상 차단용 — resolveAuthRole(auth.ts) 와 동일 정책 */
 const ADMIN_ROLE_CODES: ReadonlySet<string> = new Set(["SUPER_ADMIN", "ADMIN"]);
@@ -56,6 +51,7 @@ interface QspMemberItem {
   statCd: string | null;
   storeLvl?: string | null;
   newsRcptYn?: "Y" | "N" | null;
+  authCd?: string | null;
 }
 
 interface CollectionContext {
@@ -136,59 +132,21 @@ interface RecipientStats {
   invalidEmail: number;
   newsRcptOptOut: number;
   superAdminOnlyExcluded: number;
-  /** GENERAL 회원 authCd 보강 실패(userDetail 비정상/네트워크 등) — 해당 회원은 skip */
-  authCdLookupFailed: number;
-}
-
-/**
- * GENERAL 회원의 authCd 보강.
- * - userListMng 응답에 authCd 가 없어 effective role(authCd) 매칭이 불가능하므로
- *   userDetail 을 chunk 병렬 호출하여 보강.
- * - 호출 실패는 null + stats 카운트 — 해당 회원은 매핑 시 effective role 결정 불가로 skip.
- *
- * @returns Map<userId, authCd | null>
- */
-async function fetchAuthCdMap(
-  userIds: readonly string[],
-  callerRoute: string,
-  loginId: string,
-  stats: RecipientStats,
-): Promise<Map<string, string | null>> {
-  const result = new Map<string, string | null>();
-  for (let i = 0; i < userIds.length; i += AUTH_CD_LOOKUP_CHUNK) {
-    const chunk = userIds.slice(i, i + AUTH_CD_LOOKUP_CHUNK);
-    const settled = await Promise.allSettled(
-      chunk.map((uid) =>
-        fetchQspUserDetail(uid, "GENERAL", callerRoute, loginId),
-      ),
-    );
-    for (let j = 0; j < chunk.length; j++) {
-      const uid = chunk[j];
-      const r = settled[j];
-      if (r.status === "fulfilled" && r.value.ok) {
-        result.set(uid, r.value.detail.authCd ?? null);
-      } else {
-        stats.authCdLookupFailed++;
-        result.set(uid, null);
-      }
-    }
-  }
-  return result;
 }
 
 /**
  * QSP 응답 아이템 → 필터 + authRoleCode 매핑 결정. null 반환 시 제외.
  *
- * GENERAL 분기는 authCdMap 이 주어진 경우 effective role(=authCd 우선) 정확 계산.
- * authCdMap 이 null 이면 기존 동작(=무조건 GENERAL 로 매칭) 유지 — 커스텀 권한 targets 가
- * 없는 경우 N+1 호출 비용을 피하기 위한 분기 (resolveAuthRole 와의 미세 불일치는 trade-off).
+ * GENERAL 분기는 useAuthCd=true 일 때 목록 응답의 authCd 로 effective role 을 정확 계산.
+ * useAuthCd=false 면 기존 동작(=무조건 GENERAL 로 매칭) 유지 — 커스텀 권한 targets 가
+ * 없는 경우의 매칭 의미를 보존 (resolveAuthRole 와의 미세 불일치는 trade-off).
  */
 function mapRecipient(
   item: QspMemberItem,
   targets: CollectTargets,
   superAdminIds: Set<string>,
   activeRoleCodes: ReadonlySet<string>,
-  authCdMap: ReadonlyMap<string, string | null> | null,
+  useAuthCd: boolean,
   stats: RecipientStats,
 ): CollectedRecipient | null {
   if (lookupStatCd(item.statCd) !== "active") return null;
@@ -228,11 +186,11 @@ function mapRecipient(
       }
       break;
     case "GENERAL": {
-      // authCdMap 이 있으면 resolveAuthRole 와 동일 정책으로 effective role 정확 계산.
-      // 없으면(=커스텀 targets 없음) 기존 동작 유지 — userTp=GENERAL 회원은 모두 GENERAL 매칭.
+      // useAuthCd 면 목록 응답의 authCd 로 resolveAuthRole 와 동일 정책의 effective role 계산.
+      // 아니면(=커스텀 targets 없음) 기존 동작 유지 — userTp=GENERAL 회원은 모두 GENERAL 매칭.
       let effectiveRole = "GENERAL";
-      if (authCdMap) {
-        const authCd = authCdMap.get(item.userId) ?? null;
+      if (useAuthCd) {
+        const authCd = item.authCd ?? null;
         if (authCd && activeRoleCodes.has(authCd) && !ADMIN_ROLE_CODES.has(authCd)) {
           effectiveRole = authCd;
         }
@@ -337,7 +295,6 @@ export async function collectRecipients(
     invalidEmail: 0,
     newsRcptOptOut: 0,
     superAdminOnlyExcluded: 0,
-    authCdLookupFailed: 0,
   };
 
   const fetchedByUserType = new Map<string, QspMemberItem[]>();
@@ -356,31 +313,21 @@ export async function collectRecipients(
     );
   }
 
-  // 커스텀 권한 발송 시에만 GENERAL 회원의 authCd 를 userDetail 로 보강 (chunk 병렬).
-  // 6 기본 권한만 발송하는 경우 보강 skip — N+1 호출 비용을 피하고 기존 동작 유지.
-  let authCdMap: Map<string, string | null> | null = null;
+  // 커스텀 권한 발송 시에만 목록 응답 authCd 로 effective role 계산.
+  // 6 기본 권한만 발송하는 경우 GENERAL 회원은 모두 GENERAL 로 매칭(기존 동작 유지).
+  const useAuthCd = customRoles.length > 0;
   let activeRoleCodes: ReadonlySet<string> = new Set<string>();
-  if (customRoles.length > 0) {
+  if (useAuthCd) {
     activeRoleCodes = await resolveActiveRoleCodes();
-    const generalItems = fetchedByUserType.get("GENERAL") ?? [];
-    const generalActiveIds = generalItems
-      .filter((i) => lookupStatCd(i.statCd) === "active" && i.userId)
-      .map((i) => i.userId);
-    authCdMap = await fetchAuthCdMap(
-      generalActiveIds,
-      callerRoute,
-      loginId,
-      stats,
-    );
     console.log(
-      `[collect-recipients] GENERAL authCd 보강 완료 — 대상 ${generalActiveIds.length}명, 실패 ${stats.authCdLookupFailed}명, customRoles=${customRoles.join(",")}`,
+      `[collect-recipients] 커스텀 권한 발송 — 목록 authCd 로 effective role 매칭 (customRoles=${customRoles.join(",")})`,
     );
   }
 
   for (const userTp of userTypes) {
     const items = fetchedByUserType.get(userTp) ?? [];
     for (const item of items) {
-      const mapped = mapRecipient(item, targets, superAdminIds, activeRoleCodes, authCdMap, stats);
+      const mapped = mapRecipient(item, targets, superAdminIds, activeRoleCodes, useAuthCd, stats);
       if (!mapped) continue;
       if (!dedupedByEmail.has(mapped.email)) {
         dedupedByEmail.set(mapped.email, mapped);
@@ -399,9 +346,6 @@ export async function collectRecipients(
   if (stats.newsRcptOptOut > 0) statsParts.push(`newsRcptOptOut=${stats.newsRcptOptOut}`);
   if (stats.superAdminOnlyExcluded > 0) {
     statsParts.push(`superAdminOnlyExcluded=${stats.superAdminOnlyExcluded}`);
-  }
-  if (stats.authCdLookupFailed > 0) {
-    statsParts.push(`authCdLookupFailed=${stats.authCdLookupFailed}`);
   }
   if (statsParts.length > 0) {
     console.warn(`[collect-recipients] silent 제외/폴백 카운트 — ${statsParts.join(", ")}`);

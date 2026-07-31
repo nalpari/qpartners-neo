@@ -17,6 +17,7 @@ import {
   FAILED_RECIPIENTS_RESPONSE_LIMIT,
 } from "@/lib/mass-mail/constants";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
+import { resolveSendSchedule, STATUS_SAVE_MESSAGE } from "@/lib/mass-mail/schedule";
 import { isInsideDir } from "@/lib/path-safety";
 import { prisma } from "@/lib/prisma";
 import {
@@ -95,6 +96,15 @@ export async function GET(request: NextRequest, { params }: Params) {
     });
     const authorIsSuperAdmin = authorResult.isSuperAdmin;
 
+    // 편집 가능 여부(서버 시간 기준) — draft 또는 미도래 예약(scheduled + scheduledSendAt>now).
+    // 클라이언트에서 Date.now() 를 render 중 호출하지 않도록(React Compiler purity) 서버가 진입 시점 기준으로 산출.
+    // 저장 시점 재검증은 PUT 낙관적 락이 담당.
+    const editable =
+      mail.status === "draft" ||
+      (mail.status === "scheduled" &&
+        mail.scheduledSendAt !== null &&
+        mail.scheduledSendAt.getTime() > Date.now());
+
     // 4. 발송대상 매핑 (공통 유틸 사용)
     // 5. 응답 매핑
     const mapped = {
@@ -106,6 +116,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       subject: mail.subject,
       body: mail.body,
       status: mail.status,
+      scheduledSendAt: mail.scheduledSendAt?.toISOString() ?? null,
+      editable,
       sentAt: mail.sentAt?.toISOString() ?? null,
       sentTotal: mail.sentTotal,
       sentSuccess: mail.sentSuccess,
@@ -175,6 +187,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         userType: true,
         userId: true,
         status: true,
+        scheduledSendAt: true,
         attachments: { select: { filePath: true } },
       },
     });
@@ -195,16 +208,38 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 발송된 메일은 삭제 불가 — 下書き(draft)만 허용
-    if (mail.status !== "draft") {
+    // 삭제(예약취소) 허용: 下書き(draft) 또는 미도래 예약(scheduled + scheduledSendAt>now)만.
+    // 발송된/발송 중/도래한 메일은 삭제 불가.
+    const now = new Date();
+    const deletable =
+      mail.status === "draft" ||
+      (mail.status === "scheduled" &&
+        mail.scheduledSendAt !== null &&
+        mail.scheduledSendAt.getTime() > now.getTime());
+    if (!deletable) {
       return NextResponse.json(
-        { error: "下書き以外のメールは削除できません" },
+        { error: "下書きまたは予約(未送信)のメールのみ削除できます" },
         { status: 400 },
       );
     }
 
-    // 4. DB 삭제 (Cascade로 첨부파일 레코드도 삭제)
-    await prisma.massMail.delete({ where: { id: idResult.data } });
+    // 4. DB 삭제 (Cascade로 첨부파일 레코드도 삭제).
+    //    낙관적 조건 — 검사 후 삭제 사이에 예약이 도래해 배치가 발송을 시작하는 race 차단.
+    const deleted = await prisma.massMail.deleteMany({
+      where: {
+        id: idResult.data,
+        OR: [
+          { status: "draft" },
+          { status: "scheduled", scheduledSendAt: { gt: now } },
+        ],
+      },
+    });
+    if (deleted.count === 0) {
+      return NextResponse.json(
+        { error: "現在の状態では削除できません" },
+        { status: 409 },
+      );
+    }
 
     // 5. 첨부파일 디스크 정리 (DB 삭제 성공 후 — best-effort)
     // contents 라우트와 동일하게 비교 대상 디렉토리를 resolve() 절대경로화 — 상대경로/심볼릭 링크 환경 false negative 방지.
@@ -297,9 +332,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    if (existing.status !== "draft") {
+    // 편집 허용: 下書き(draft) 또는 미도래 예약(scheduled + scheduledSendAt>now)만.
+    // 진입 시점엔 미도래라 편집 가능해도, 저장 시점 도래 시 아래 낙관적 락이 409 로 차단.
+    const now = new Date();
+    const isEditable =
+      existing.status === "draft" ||
+      (existing.status === "scheduled" &&
+        existing.scheduledSendAt !== null &&
+        existing.scheduledSendAt.getTime() > now.getTime());
+    if (!isEditable) {
       return NextResponse.json(
-        { error: "下書き以外のメールは編集できません" },
+        { error: "下書きまたは予約(未送信)のメールのみ編集できます" },
         { status: 400 },
       );
     }
@@ -423,6 +466,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
+    // 즉시/예약/초안 파생 — 무효 예약(과거/현재)은 첨부 기록 전에 400 으로 차단.
+    const schedule = resolveSendSchedule(data.status, data.scheduledSendAt, now);
+    if (!schedule.ok) {
+      return NextResponse.json(
+        { error: "未来の日時を選択してください" },
+        { status: 400 },
+      );
+    }
+
     // 7. 신규 첨부파일 디스크 기록
     if (newFiles.length > 0) {
       const tempId = randomUUID();
@@ -483,20 +535,27 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
         // 메일 본문 업데이트 (낙관적 락: status=draft 조건으로 TOCTOU 방어)
         const updated = await tx.massMail.updateMany({
-          where: { id: idResult.data, status: "draft" },
+          where: {
+            id: idResult.data,
+            OR: [
+              { status: "draft" },
+              { status: "scheduled", scheduledSendAt: { gt: now } },
+            ],
+          },
           data: {
             senderName: data.senderName,
             optOut: data.optOut,
             subject: data.subject,
             body: sanitizedBody,
-            status: data.status,
+            status: schedule.status,
+            scheduledSendAt: schedule.scheduledSendAt,
             createdBy: user.userId,
             createdByName: user.name ?? null,
             updatedBy: user.userId,
           },
         });
         if (updated.count === 0) {
-          throw new Error("NOT_DRAFT_ANYMORE");
+          throw new Error("NOT_EDITABLE");
         }
 
         // MassMailTarget 갱신 — 전체 삭제 후 재생성 (Target Dynamic from Role)
@@ -545,16 +604,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    const statusMsg = data.status === "pending"
-      ? "メール送信を受け付けました。"
-      : "下書きとして保存しました。";
+    const statusMsg = STATUS_SAVE_MESSAGE[schedule.status];
 
-    console.log(`[PUT /api/admin/mass-mails/:id] 대량메일 수정 완료 — id: ${idResult.data}, status: ${data.status}`);
+    console.log(`[PUT /api/admin/mass-mails/:id] 대량메일 수정 완료 — id: ${idResult.data}, status: ${schedule.status}`);
 
-    // 비동기 발송 트리거 (Fire-and-Forget) — draft→pending 전이 시.
+    // 비동기 발송 트리거 (Fire-and-Forget) — 즉시발송 전이 시(draft/scheduled→pending).
+    // 예약(scheduled) 저장은 트리거하지 않고 배치가 도래 시 발송한다.
     // processMassMailSend 가 자체 외부 안전망(markSendFailed best-effort) 을 가지므로 이 catch
     // 는 그조차 새어나온 catastrophic 케이스 전용 — CRITICAL 마커로 알람 가능성 표시.
-    if (data.status === "pending") {
+    if (schedule.triggerSend) {
       processMassMailSend({ massMailId: idResult.data }).catch((err: unknown) => {
         console.error(
           `[PUT /api/admin/mass-mails/:id] CRITICAL — 비동기 발송 fire-and-forget 새어남 (markSendFailed 마저 실패). 좀비 감지 의존. massMailId: ${idResult.data}`,
@@ -564,13 +622,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     return NextResponse.json({
-      data: { id: idResult.data, status: data.status, message: statusMsg },
+      data: { id: idResult.data, status: schedule.status, message: statusMsg },
     });
   } catch (error: unknown) {
     await cleanupAttachments(writtenFiles, LOG_TAG_PUT, uploadDir);
-    if (error instanceof Error && error.message === "NOT_DRAFT_ANYMORE") {
+    if (error instanceof Error && error.message === "NOT_EDITABLE") {
       return NextResponse.json(
-        { error: "このメールは既に下書き状態ではないため、編集できません" },
+        { error: "このメールは編集可能な状態ではないため、編集できません" },
         { status: 409 },
       );
     }
