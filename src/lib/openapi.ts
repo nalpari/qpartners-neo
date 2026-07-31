@@ -688,11 +688,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/email/check": {
       post: {
         tags: ["Auth"],
-        summary: "이메일 중복 체크 (관리자 대리등록 전용)",
+        summary: "이메일 중복 체크",
         description:
           "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
           "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용. " +
-          "슈퍼관리자/관리자(SUPER_ADMIN·ADMIN) 역할만 호출 가능 — 셀프 회원가입 폐지에 따른 대리등록 전용.",
+          "공유 유틸(read-only) — 관리자 대리등록 및 비밀번호 초기화/최초 로그인 흐름에서 비로그인 포함 호출 가능.",
         requestBody: {
           required: true,
           content: {
@@ -728,8 +728,6 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("유효한 이메일 주소를 입력해주세요"),
-          "401": errorResponse("認証が必要です"),
-          "403": errorResponse("権限がありません (SUPER_ADMIN·ADMIN 역할만 허용)"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "429": errorResponse("요청 횟수 초과"),
           "502": errorResponse("외부 서버 오류"),

@@ -10,8 +10,11 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
-  // /api/auth/signup, /api/auth/email/check 는 관리자 대리등록 전용으로 전환되어 PUBLIC 에서 제외.
-  // (핸들러에서 isInternalUser 로 SUPER_ADMIN·ADMIN 역할만 허용)
+  // /api/auth/signup 은 관리자 대리등록 전용으로 전환되어 PUBLIC 에서 제외 (핸들러 isInternalUser 가드).
+  // /api/auth/email/check 는 회원등록 외에 비밀번호 초기화/최초 로그인(personal-info-popup)에서도
+  // 비로그인·2FA 미완료 사용자가 호출한다. 중복확인(read-only)이라 생성 권한과 무관하므로 PUBLIC 유지
+  // (enumeration 방어는 route handler 내부 IP/email rate limit 이 담당).
+  "/api/auth/email/check",
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",

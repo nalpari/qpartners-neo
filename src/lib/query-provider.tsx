@@ -36,7 +36,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     const readFlag = () => {
       try {
         return localStorage.getItem(AUTH_FLAG_KEY) === "1";
-      } catch {
+      } catch (error) {
+        // localStorage 접근 실패(Safari 시크릿·샌드박스 iframe·SecurityError 등)를 silent 로 삼키면
+        // 로그인 전환 감지 실패 → clear() 누락 → 세션 캐시 유출을 디버깅 불가하게 만든다.
+        console.warn("[QueryProvider] AUTH_FLAG localStorage 접근 실패:", error);
         return false;
       }
     };
