@@ -25,10 +25,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       })
   );
 
-  // 세션 캐시 purge 정책 (auth-client#performLogout 참조):
-  // 로그아웃 시점에는 clear 하지 않고(활성 쿼리 재요청 → 401 방지), 로그아웃→로그인 "전환"
-  // 시점에 이전 세션 캐시를 1회 비운다. 이 시점엔 이전 화면이 이미 언마운트되어 재요청이 없고,
-  // 쿠키도 유효(로그인 완료)하므로 안전하다. 다른 탭 로그인(storage 이벤트)도 동일 처리.
+  // 세션 캐시 정책 (auth-client#performLogout 참조):
+  // - 로그인 전환(로그아웃→로그인): 이전 세션 캐시 전체 purge. 새 쿠키가 유효해 재요청해도 200.
+  // - 로그아웃/타임아웃 전환(로그인→로그아웃): user 캐시만 제거해 헤더/relatedSites 등 user 파생
+  //   UI 를 즉시 비로그인으로 정리. 이 시점엔 쿠키가 없으므로 clear(재요청 유발) 대신
+  //   setQueryData(null) 사용 → 401 미발생.
+  // 두 전환 모두 AUTH_CHANGE_EVENT(로그인/로그아웃) + storage(다른 탭)로 감지한다.
   const wasLoggedInRef = useRef(false);
   useEffect(() => {
     const readFlag = () => {
@@ -42,9 +44,13 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
     const handleAuthChange = () => {
       const isLoggedIn = readFlag();
-      // 로그아웃→로그인 전환에서만 purge. 이미 로그인 상태의 재-dispatch 는 무시.
       if (isLoggedIn && !wasLoggedInRef.current) {
+        // 로그아웃→로그인 전환 — 이전 세션 캐시 전체 purge (쿠키 유효 → 재요청 200).
         queryClient.clear();
+      } else if (!isLoggedIn && wasLoggedInRef.current) {
+        // 로그인→로그아웃/타임아웃 전환 — user 만 제거해 user 파생 UI(헤더/relatedSites) 정리.
+        // setQueryData 는 재요청을 유발하지 않으므로 쿠키 삭제 후에도 401 이 없다.
+        queryClient.setQueryData(["auth", "login-user-info"], null);
       }
       wasLoggedInRef.current = isLoggedIn;
     };
