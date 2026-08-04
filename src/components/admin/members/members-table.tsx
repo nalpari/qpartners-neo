@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Pagination, PageSizeSelect, Button } from "@/components/common";
-import { usePopupStore } from "@/lib/store";
+import { usePopupStore, useAlertStore } from "@/lib/store";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
@@ -78,10 +78,18 @@ export function MembersTable({
   // 일반회원 신규등록 버튼 — 슈퍼관리자/관리자(userTp="ADMIN" = authRole SUPER_ADMIN·ADMIN)만 노출.
   // 매트릭스(ADM_MEMBER create) 대신 역할로 고정 — 다른 역할에 create 권한이 부여돼도 노출 안 됨.
   const isInternal = useIsInternal();
+  const openAlert = useAlertStore((s) => s.openAlert);
 
   // 새 탭에서 회원등록 화면(/signup — 관리자 대리등록 모드)을 연다.
+  // 팝업 차단 시 window.open 은 null 을 반환 → 무반응 대신 사용자에게 안내.
   const handleCreateMember = () => {
-    window.open("/signup", "_blank", "noopener,noreferrer");
+    const win = window.open("/signup", "_blank", "noopener,noreferrer");
+    if (!win) {
+      openAlert({
+        type: "alert",
+        message: "ポップアップがブロックされました。ブラウザの設定をご確認ください。",
+      });
+    }
   };
   const gridContext = useMemo(
     () => ({ userTypeReverseMap }),
