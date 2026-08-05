@@ -622,14 +622,6 @@ export function Gnb() {
                     ログイン
                   </span>
                 </Link>
-                <Link
-                  href="/signup"
-                  className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                >
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap flex-1 text-center">
-                    会員登録
-                  </span>
-                </Link>
               </div>
             )}
           </div>
@@ -813,14 +805,6 @@ export function Gnb() {
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   ログイン
-                </Link>
-                <span className="w-px h-[10px] bg-[#5b5b5b]" />
-                <Link
-                  href="/signup"
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap flex-1 text-center"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  会員登録
                 </Link>
               </div>
             )}
