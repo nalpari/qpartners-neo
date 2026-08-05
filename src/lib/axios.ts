@@ -1,5 +1,5 @@
 import axios from "axios";
-import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, AUTH_EXPIRED_EVENT } from "@/components/login/types";
 
 const api = axios.create({
   baseURL: "/api",
@@ -47,6 +47,9 @@ api.interceptors.response.use(
           if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
             localStorage.removeItem(AUTH_FLAG_KEY);
             window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+            // 수동 만료 신호 — 능동 로그아웃과 달리 화면 이동 주체가 없으므로 AuthLossRedirect 가
+            // 보호 화면에서 /login 으로 전환한다(다른 탭은 AUTH_FLAG 제거로 storage 이벤트가 처리).
+            window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
           }
         } catch (e) {
           console.warn("[axios] AUTH_FLAG_KEY 정리 실패:", e);

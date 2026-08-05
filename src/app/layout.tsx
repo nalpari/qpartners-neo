@@ -9,6 +9,7 @@ import { Location } from "@/components/layout/location";
 import { PopupController } from "@/components/common/popup-controller";
 import { AlertDialog } from "@/components/common/alert-dialog";
 import { AdminTransitionRefresh } from "@/components/common/admin-transition-refresh";
+import { AuthLossRedirect } from "@/components/common/auth-loss-redirect";
 import "@/style/style.scss";
 import "./globals.css";
 
@@ -89,6 +90,7 @@ export default function RootLayout({
       >
         <QueryProvider>
           <AdminTransitionRefresh />
+          <AuthLossRedirect />
           <div className="wrap">
             <Gnb />
             <Location />

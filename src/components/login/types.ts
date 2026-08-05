@@ -15,6 +15,9 @@ export const SAVED_ID_KEY = "savedLoginId";
 export const SAVED_TAB_KEY = "savedLoginTab";
 export const AUTH_FLAG_KEY = "qp-auth-active";
 export const AUTH_CHANGE_EVENT = "qp-auth-change";
+// 수동 세션 만료(in-place 401) 전용 신호. 능동 로그아웃(performLogout→AUTH_CHANGE_EVENT)과 구분해
+// AuthLossRedirect 가 보호 화면에서만 /login 으로 전환하도록 한다. axios 401 인터셉터가 발행.
+export const AUTH_EXPIRED_EVENT = "qp-auth-expired";
 
 export function dispatchAuthChange() {
   window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
