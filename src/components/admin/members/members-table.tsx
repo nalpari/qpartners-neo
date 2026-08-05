@@ -81,10 +81,14 @@ export function MembersTable({
   const openAlert = useAlertStore((s) => s.openAlert);
 
   // 새 탭에서 회원등록 화면(/signup — 관리자 대리등록 모드)을 연다.
-  // 팝업 차단 시 window.open 은 null 을 반환 → 무반응 대신 사용자에게 안내.
+  // noopener feature 를 주면 정상 개설에도 반환값이 null 이라 차단 판정이 불가하다(WHATWG HTML).
+  // 따라서 feature 없이 열고 opener 를 수동으로 끊어(reverse tabnabbing 방지) 보안을 유지하면서,
+  // 반환값(null=차단)으로만 팝업 차단을 감지해 안내한다. (/signup 은 same-origin 이라 opener=null 적용 가능)
   const handleCreateMember = () => {
-    const win = window.open("/signup", "_blank", "noopener,noreferrer");
-    if (!win) {
+    const win = window.open("/signup", "_blank");
+    if (win) {
+      win.opener = null;
+    } else {
       openAlert({
         type: "alert",
         message: "ポップアップがブロックされました。ブラウザの設定をご確認ください。",
