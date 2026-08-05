@@ -11,7 +11,7 @@ import {
   SIGNUP_COMPLETE_SUBJECT,
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_URL } from "@/lib/config";
-import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 
 // POST /api/auth/signup — 일반회원 관리자 대리등록 (QSP newUserReq 프록시 + 승인완료 메일)
@@ -114,8 +114,10 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "newUserReq",
           callerRoute: "[POST /api/auth/signup]",
-          userId: maskEmail(email),
-          userType: "GENERAL",
+          // 대리등록 행위자(관리자)를 기록 — 생성 대상(GENERAL 이메일/이름/userTp)은 마스킹된 요청 본문에 보존된다.
+          // 셀프가입 폐지 후 행위자≠대상이므로, 어떤 관리자가 계정을 만들었는지 추적 가능하도록 actor 를 남긴다.
+          userId: maskUserId(authUser.userId),
+          userType: authUser.userType,
         },
       );
     } catch (error: unknown) {
