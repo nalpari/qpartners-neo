@@ -47,18 +47,20 @@ export function AuthLossRedirect() {
       }
     };
 
-    // 다른 탭 로그아웃 — AUTH_FLAG 가 "1" 이 아닌 값으로 바뀐 경우(제거)만 상실로 처리. 로그인("1")은 무시.
+    // 다른 탭 로그아웃 — AUTH_FLAG 가 "1" 이 아닌 값으로 바뀐 경우(제거)만 상실로 처리한다.
+    // `storage` 이벤트는 값이 실제로 변한 다른 탭에서만 발생하므로, 여기 걸리면 이 탭의 능동 로그아웃이
+    // 아님이 보장된다. 로그인 전환("1")은 상실이 아니므로 무시한다.
     const handleStorage = (e: StorageEvent) => {
       if (e.key === AUTH_FLAG_KEY && e.newValue !== "1") redirectIfProtected();
     };
-    // in-place 401 세션 만료
-    const handleExpired = () => redirectIfProtected();
 
+    // in-place 401 세션 만료 — axios 인터셉터가 dispatch. 이벤트 인자를 쓰지 않으므로 wrapper 없이
+    // redirectIfProtected 를 그대로 리스너로 등록한다(add/remove 에 동일 참조 사용).
     window.addEventListener("storage", handleStorage);
-    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+    window.addEventListener(AUTH_EXPIRED_EVENT, redirectIfProtected);
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, redirectIfProtected);
     };
   }, [pathname, router]);
 
