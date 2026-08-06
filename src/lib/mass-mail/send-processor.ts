@@ -19,6 +19,12 @@ import { MASS_MAIL_DEFAULTS, UPLOAD_DIR } from "@/lib/config";
 import { maskEmail } from "@/lib/interface-logger";
 import { sendMail } from "@/lib/mailer";
 import type { SendMailAttachment } from "@/lib/mailer";
+import {
+  acquireBatchLock,
+  massMailLockName,
+  releaseBatchLock,
+  startLeaseRenewal,
+} from "@/lib/mass-mail/batch-lock";
 import { collectRecipients } from "@/lib/mass-mail/collect-recipients";
 import type { CollectTargets } from "@/lib/mass-mail/collect-recipients";
 import { isPermanentSmtpFailure, ORPHAN_SEND_SENTINEL } from "@/lib/mass-mail/constants";
@@ -28,37 +34,42 @@ import { prisma } from "@/lib/prisma";
 const LOG_TAG = "[mass-mail/send-processor]";
 
 /**
- * 현재 발송 파이프라인(수집+sendLoop+promote)이 실행 중인 massMailId 집합.
- * auto-retry-batch 가 배치 cycle 에서 진입 직전 이 값을 확인해 in-flight 와의 경합
- * (중복 SMTP 발송 / QSP userListMng 이중 호출 / 좀비 오판정) 을 차단.
+ * 발송 파이프라인(수집+sendLoop+promote) 중복 진입 차단 가드 — mass_mail 단위 분산 락.
  *
- * globalThis 에 보관 — Next.js dev HMR 시 모듈 재-import 로 새 Set 이 생성돼
- * 가드가 우회되는 것을 방지. PM2 single instance 가정은 유지 (다중 인스턴스 시 분산 락 필요).
+ * 인-메모리 Set 이 아닌 `qp_batch_locks` 행을 쓰는 이유: 운영은 2 인스턴스로 기동되고
+ * 프로세스 로컬 상태는 인스턴스 간 경합을 막지 못한다. 특히 관리자 [発送]/[再送信] 은
+ * 배치 cycle 락 대상이 아니므로, 인스턴스 A 의 수동 발송 진행 중에 인스턴스 B 의 배치가
+ * 같은 mass_mail(status='sending' 도 배치 대상) 을 집어 같은 pending 수신자에게
+ * 이중 SMTP 발송하는 경로가 존재했다.
+ *
+ * - 락 획득 실패(= 다른 인스턴스/경로가 처리 중)면 조용히 skip
+ * - 실행 중에는 리스를 자동 갱신하므로 sendLoop 이 리스 기간보다 길어도 안전
+ * - 홀더 프로세스가 죽으면 리스 만료로 자동 회수 (영구 데드락 없음)
+ *
+ * DB 오류로 락 획득 자체가 실패하면 throw — 호출자가 fail-closed 처리한다 (발송하지 않음).
  */
-type SendProcessorGlobals = { __inFlightMassMails?: Set<number> };
-const sendProcessorGlobals = globalThis as unknown as SendProcessorGlobals;
-export const inFlightMassMails: Set<number> =
-  sendProcessorGlobals.__inFlightMassMails ??
-  (sendProcessorGlobals.__inFlightMassMails = new Set<number>());
-
-/**
- * 발송 파이프라인 중복 진입 차단 가드.
- * - 이미 inFlightMassMails 에 있으면 조용히 skip (log)
- * - 없으면 add → work() 실행 → finally delete
- */
-export async function runWithInFlightGuard(
+export async function runWithMassMailLock(
   massMailId: number,
   work: () => Promise<void>,
 ): Promise<void> {
-  if (inFlightMassMails.has(massMailId)) {
+  const lockName = massMailLockName(massMailId);
+  const leaseMs = MASS_MAIL_DEFAULTS.batchLeaseMs;
+
+  const holder = await acquireBatchLock(lockName, leaseMs);
+  if (!holder) {
     console.warn(`${LOG_TAG} massMailId ${massMailId} 이미 진행 중 — 중복 진입 skip`);
     return;
   }
-  inFlightMassMails.add(massMailId);
+
+  const stopRenewal = startLeaseRenewal(lockName, holder, leaseMs);
   try {
     await work();
   } finally {
-    inFlightMassMails.delete(massMailId);
+    stopRenewal();
+    await releaseBatchLock(lockName, holder).catch((error: unknown) => {
+      // 해제 실패해도 리스 만료로 자동 회수된다 (최대 leaseMs 지연).
+      console.error(`${LOG_TAG} massMailId ${massMailId} 락 해제 실패 — 리스 만료로 자동 회수됨:`, error);
+    });
   }
 }
 
@@ -238,7 +249,7 @@ ${body}
  */
 /**
  * 단일 발송 루프 본체. 직접 호출 금지 — processMassMailSend / processMassMailRetry /
- * auto-retry-batch 가 runWithInFlightGuard 로 감싼 뒤 호출해야 중복 진입이 차단됨.
+ * auto-retry-batch 가 runWithMassMailLock 으로 감싼 뒤 호출해야 중복 진입이 차단됨.
  */
 export async function sendLoop(massMailId: number, throttleMs: number): Promise<void> {
   const massMail = await prisma.massMail.findUnique({
@@ -467,13 +478,13 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
   const maxRetries = options.maxRetries ?? MASS_MAIL_DEFAULTS.maxRetries;
   const retryDelayMs = options.retryDelayMs ?? MASS_MAIL_DEFAULTS.retryDelayMs;
 
-  // 외부 try — runWithInFlightGuard 자체 throw / 미예측 예외에 대한 마지막 안전망.
+  // 외부 try — runWithMassMailLock 자체 throw(락 DB 오류 등) / 미예측 예외에 대한 마지막 안전망.
   // 호출자(API route) 는 fire-and-forget 으로 호출 후 200 을 즉시 응답하므로,
   // 여기서 throw 가 새어나가면 mass_mail 이 pending 잔존 + 운영자 인지 채널 0.
   // 이중 보호: 1) 내부 try/catch 가 markSendFailed 로 status 전이 / 2) 외부 catch 가 markSendFailed 재호출 + CRITICAL 로그.
   // 자가복구 fallback: 외부 catch 가 markSendFailed 마저 실패해도 auto-retry-batch 의 좀비 감지가 zombieThresholdMs 후 send_failed 승격.
   try {
-    await runWithInFlightGuard(massMailId, async () => {
+    await runWithMassMailLock(massMailId, async () => {
   try {
     const mail = await prisma.massMail.findUnique({
       where: { id: massMailId },
@@ -520,7 +531,7 @@ export async function processMassMailSend(options: SendProcessorOptions): Promis
     });
   } catch (outerError: unknown) {
     console.error(
-      `${LOG_TAG} CRITICAL — processMassMailSend 외부 안전망 발동 (runWithInFlightGuard 자체 throw). massMailId: ${massMailId}`,
+      `${LOG_TAG} CRITICAL — processMassMailSend 외부 안전망 발동 (runWithMassMailLock 자체 throw). massMailId: ${massMailId}`,
       outerError,
     );
     // 마지막 best-effort markSendFailed — 이 호출도 실패 시 좀비 감지가 처리.
@@ -545,7 +556,7 @@ export async function processMassMailRetry(massMailId: number): Promise<void> {
 
   // processMassMailSend 와 동일한 외부 안전망 — 상세 주석은 그쪽 참조.
   try {
-    await runWithInFlightGuard(massMailId, async () => {
+    await runWithMassMailLock(massMailId, async () => {
   try {
     const existingRecipients = await prisma.massMailRecipient.count({ where: { massMailId } });
     if (existingRecipients === 0) {
