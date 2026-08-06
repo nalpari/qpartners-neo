@@ -181,7 +181,7 @@ export function SignupContents() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await api.post<{ data: { email: string } }>(
+      const res = await api.post<{ data: { email: string; mailDelivery: "sent" | "failed" } }>(
         "/auth/signup",
         {
           email: form.email.trim().toLowerCase(),
@@ -204,14 +204,16 @@ export function SignupContents() {
         }
       );
 
-      const { email } = res.data.data;
+      const { email, mailDelivery } = res.data.data;
       // 표시 규칙: "성 + 반각공백 + 명". popup 측에서 様 앞 전각공백을 별도로 추가하므로
       // 최종 표기는 "성 명　様" (반각·전각공백 차이 의도적).
       const displayName = `${form.lastName} ${form.firstName}`;
       // 확인 시 폼을 초기화해 같은 화면에서 다음 회원을 연속 등록할 수 있게 한다.
+      // mailDelivery: 완료 메일 발송 실패 시 팝업에서 관리자에게 별도 연락을 안내(누락 방지).
       openPopup("signup-complete", {
         userName: displayName,
         userId: email,
+        mailDelivery,
         onConfirm: resetForm,
       });
     } catch (error) {

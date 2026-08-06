@@ -75,8 +75,10 @@ export function MembersTable({
   // 코드관리 변경 시 ["common-code","USER_TYPE"] invalidate 로 즉시 갱신됨.
   const { reverseMap: userTypeReverseMap } = useUserType();
 
-  // 일반회원 신규등록 버튼 — 슈퍼관리자/관리자(userTp="ADMIN" = authRole SUPER_ADMIN·ADMIN)만 노출.
-  // 매트릭스(ADM_MEMBER create) 대신 역할로 고정 — 다른 역할에 create 권한이 부여돼도 노출 안 됨.
+  // 일반회원 신규등록 버튼 — useIsInternal(userTp="ADMIN") 기준으로 노출하는 UI 힌트.
+  // (userTp="ADMIN" ⟺ authRole SUPER_ADMIN·ADMIN 이라 실질 동일 집합)
+  // 실제 생성 권한은 서버 가드(/signup 페이지 + /api/auth/signup 의 isInternalUser(authRole))가 판정한다.
+  // 매트릭스(ADM_MEMBER create)가 아닌 역할 기준이라, 다른 역할에 create 권한이 부여돼도 노출/생성 안 됨.
   const isInternal = useIsInternal();
   const openAlert = useAlertStore((s) => s.openAlert);
 

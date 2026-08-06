@@ -13,6 +13,9 @@ export function SignupCompletePopup() {
   const userName = (popupData.userName as string) ?? "";
   const userId = (popupData.userId as string) ?? "";
   const onConfirm = popupData.onConfirm as (() => void) | undefined;
+  // 완료 메일 발송 결과 — 서버가 mailDelivery="failed" 를 보내면(등록은 성공, 메일만 실패)
+  // 관리자에게 회원 별도 연락을 안내한다. 미전달 시 성공으로 간주.
+  const mailFailed = popupData.mailDelivery === "failed";
 
   const handleClose = () => {
     setIsClosing(true);
@@ -71,6 +74,17 @@ export function SignupCompletePopup() {
                 ID: {userId || "interplug@co.kr"}
               </p>
             </div>
+
+            {/* 완료 메일 발송 실패 안내 — 등록은 완료됐으나 통지 메일이 실패한 경우 */}
+            {mailFailed && (
+              <div className="flex flex-col bg-[#FDF2F2] border border-[#F5C2C2] rounded-[4px] px-5 py-4 w-full leading-[1.5]">
+                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] text-[#C0392B] w-full">
+                  完了メールの送信に失敗しました。
+                  <br />
+                  会員へ別途ご連絡ください。
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 버튼 */}
