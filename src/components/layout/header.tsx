@@ -18,11 +18,21 @@ import { useAlertStore } from "@/lib/store";
 import { ADMIN_MENU, MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
-/** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
-const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+/**
+ * Gnb 상단 네비 fallback — 비로그인(게스트) 전용.
+ * お問い合わせ 미노출 (게스트 한정 요구사항). 복원 시 AUTH 쪽과 동일 항목 추가.
+ */
+const GNB_FALLBACK_MENUS_GUEST: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
   { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
-  // 비로그인(게스트) 노출 숨김 — 정의는 보존(삭제 아님). 복원 시 주석 해제.
-  // { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
+];
+
+/**
+ * Gnb 상단 네비 fallback — 인증 사용자 전용.
+ * menuTree 초기 로딩 중 / `/api/menus` 실패 시 사용되므로, 장애 상황에서도 문의 경로를 유지한다.
+ */
+const GNB_FALLBACK_MENUS_AUTH: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+  ...GNB_FALLBACK_MENUS_GUEST,
+  { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
 ];
 
 /**
@@ -234,14 +244,17 @@ export function Gnb() {
 
   // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
   const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
+  // fallback 선택 — 인증 상태가 확실히 비로그인(hasAuthFlag=false) 일 때만 문의를 제외한다.
+  // 인증 사용자는 menuTree 로딩 중/API 실패 시에도 문의 메뉴를 유지 (게스트 한정 요구사항 준수).
+  const fallbackMenus = hasAuthFlag ? GNB_FALLBACK_MENUS_AUTH : GNB_FALLBACK_MENUS_GUEST;
   const pcMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "pc");
-    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
-  }, [menuTree]);
+    return filtered.length > 0 ? filtered : fallbackMenus;
+  }, [menuTree, fallbackMenus]);
   const mobileMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "mobile");
-    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
-  }, [menuTree]);
+    return filtered.length > 0 ? filtered : fallbackMenus;
+  }, [menuTree, fallbackMenus]);
 
   // RBAC — GNB 메뉴 클릭 시 매트릭스 canRead 가 false 면 이동 차단 + alert.
   // 비로그인 상태는 기존 Link 동작(서버 가드가 /login 유도)을 그대로 사용.
