@@ -42,7 +42,13 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
     const inactiveRoleCodes = new Set(
       allOptions.filter((o) => !o.isActive && o.roleCode).map((o) => o.roleCode!),
     );
-    return rawUserTypeOptions.filter((o) => !inactiveRoleCodes.has(o.value));
+    // SEKO(施工店) 는 별도 관리 화면 소관이라 회원관리 목록 검색 대상이 아니므로 선택지에서 제외.
+    // 목록 API 도 동일 정책 (`memberListQuerySchema.userType` = ADMIN/STORE/GENERAL).
+    // 이 화면 한정 필터 — 표시·역매핑용 SEKO 는 useUserType()/USER_TYPE_LABEL 에 그대로 유지된다
+    // (members-table, member-detail-popup 에서 기존 SEKO 회원 행 표기에 필요).
+    return rawUserTypeOptions.filter(
+      (o) => o.value !== "SEKO" && !inactiveRoleCodes.has(o.value),
+    );
   }, [rawUserTypeOptions, allOptions]);
 
   const updateLocal = (key: keyof LocalFields) => (value: string) => {
