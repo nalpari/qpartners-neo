@@ -178,7 +178,7 @@ try {
   await conn.query(
     `UPDATE qp_menus
         SET is_active = 0,
-            updated_at = NOW(3)
+            updated_at = UTC_TIMESTAMP(3)
       WHERE menu_code IN (?, ?, ?, ?, ?, ?, ?)`,
     ["MEMBERS", "BULK_MAIL", "NOTICES", "CATEGORIES", "PERMISSIONS", "MENUS", "CODES"],
   );
@@ -188,14 +188,14 @@ try {
     await conn.query(
       `INSERT INTO qp_menus
          (menu_code, menu_name, page_url, parent_id, sort_order, is_active, show_in_top_nav, show_in_mobile, created_at, updated_at, created_by)
-       VALUES (?, ?, ?, NULL, ?, 1, 1, 1, NOW(3), NOW(3), 'SYSTEM')
+       VALUES (?, ?, ?, NULL, ?, 1, 1, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), 'SYSTEM')
        ON DUPLICATE KEY UPDATE
          menu_name = VALUES(menu_name),
          page_url = VALUES(page_url),
          parent_id = NULL,
          sort_order = VALUES(sort_order),
          is_active = 1,
-         updated_at = NOW(3)`,
+         updated_at = UTC_TIMESTAMP(3)`,
       [m.menuCode, m.menuName, m.pageUrl, m.sortOrder],
     );
   }
@@ -222,14 +222,14 @@ try {
       await conn.query(
         `INSERT INTO qp_menus
            (menu_code, menu_name, page_url, parent_id, sort_order, is_active, show_in_top_nav, show_in_mobile, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, NOW(3), NOW(3), 'SYSTEM')
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), 'SYSTEM')
          ON DUPLICATE KEY UPDATE
            menu_name = VALUES(menu_name),
            page_url = VALUES(page_url),
            parent_id = VALUES(parent_id),
            sort_order = VALUES(sort_order),
            is_active = 1,
-           updated_at = NOW(3)`,
+           updated_at = UTC_TIMESTAMP(3)`,
         // ADMIN 하위만 top_nav/mobile 노출, 나머지 신규 2-Level 은 UI 숨김 (매트릭스 용도)
         [m.menuCode, m.menuName, m.pageUrl, parentId, m.sortOrder,
          parentId === parentIdByCode.get("ADMIN") ? 1 : 0,
@@ -250,12 +250,12 @@ try {
     await conn.query(
       `INSERT INTO qp_roles
          (role_code, role_name, description, is_active, created_at, updated_at, created_by)
-       VALUES (?, ?, ?, 1, NOW(3), NOW(3), 'SYSTEM')
+       VALUES (?, ?, ?, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), 'SYSTEM')
        ON DUPLICATE KEY UPDATE
          role_name = VALUES(role_name),
          description = VALUES(description),
          is_active = 1,
-         updated_at = NOW(3)`,
+         updated_at = UTC_TIMESTAMP(3)`,
       [r.roleCode, r.roleName, r.description],
     );
   }
@@ -277,13 +277,13 @@ try {
   await conn.batch(
     `INSERT INTO qp_role_menu_permissions
        (role_code, menu_code, can_read, can_create, can_update, can_delete, created_at, updated_at, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3), 'SYSTEM')
+     VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), 'SYSTEM')
      ON DUPLICATE KEY UPDATE
        can_read = VALUES(can_read),
        can_create = VALUES(can_create),
        can_update = VALUES(can_update),
        can_delete = VALUES(can_delete),
-       updated_at = NOW(3)`,
+       updated_at = UTC_TIMESTAMP(3)`,
     permissionRows,
   );
   const permCount = permissionRows.length;
