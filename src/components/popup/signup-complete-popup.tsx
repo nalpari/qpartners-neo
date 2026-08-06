@@ -23,15 +23,15 @@ export function SignupCompletePopup() {
   };
 
   // 관리자 대리등록 흐름 — 확인 시 팝업을 닫고 등록 폼을 초기화(연속 등록)한다.
-  // 로그인 화면 이동/자동입력(prefillEmail)은 셀프가입 폐지로 제거됨.
+  // 셀프가입 폐지로 로그인 화면 이동/ID 자동입력 로직은 제거됨.
   const handleConfirm = () => {
     handleClose();
     onConfirm?.();
   };
 
   return (
-    // 회원등록 완료 안내 → 사용자가 [確認] 버튼으로만 닫도록 강제.
-    // dim 클릭·X 버튼으로 임의 닫힘 시 폼 초기화(연속 등록) 흐름이 끊긴다.
+    // 회원등록 완료 안내 — dim 클릭·X 버튼 핸들러를 두지 않아 [確認] 버튼으로만 닫힌다.
+    // 확인 경로로만 폼 초기화(연속 등록)가 이어지도록 닫기 수단을 의도적으로 단일화했다.
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
     >

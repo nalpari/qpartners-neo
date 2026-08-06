@@ -3,11 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { usePopupStore, useAppStore } from "@/lib/store";
+import { usePopupStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
@@ -33,20 +33,9 @@ interface LoginContentsProps {
 }
 
 export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null, initialResetToken = null }: LoginContentsProps) {
-  // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
-  const prefillRef = useRef(useAppStore.getState().prefillEmail);
+  const [activeTab, setActiveTab] = useState<TabType>(initialSavedTab);
+  const [id, setId] = useState(initialSavedId);
 
-  const [activeTab, setActiveTab] = useState<TabType>(
-    prefillRef.current ? "general" : initialSavedTab
-  );
-  const [id, setId] = useState(prefillRef.current || initialSavedId);
-
-  useEffect(() => {
-    if (prefillRef.current) {
-      useAppStore.getState().clearPrefillEmail();
-      prefillRef.current = "";
-    }
-  }, []);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");
@@ -54,7 +43,6 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   const [notice, setNotice] = useState<string | null>(initialError);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const openPopup = usePopupStore((s) => s.openPopup);
 
   // 비밀번호 초기화 메일 → /login?reset-token=… 진입 시 verify 후 PersonalInfoPopup 자동 오픈.
@@ -141,8 +129,10 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         }
         openPopup("two-factor-auth", { userId: userData.userId, userTp: userData.userTp });
       } else {
-        // 2FA 완료 또는 미요구: 캐시 세팅 → 플래그 설정 → 이벤트 발행 순서 보장
-        queryClient.setQueryData(["auth", "login-user-info"], userData);
+        // 2FA 완료 또는 미요구: 플래그 설정 → 이벤트 발행.
+        // user 캐시는 여기서 세팅하지 않는다 — dispatchAuthChange 가 트리거하는 QueryProvider
+        // 로그인 전환 clear() 로 즉시(동기) purge 되므로 무의미하다. 헤더 등 user 파생 UI 는
+        // clear 후 useQuery(플래그 기반)의 재조회로 채워진다.
         try {
           localStorage.setItem(AUTH_FLAG_KEY, "1");
         } catch (storageErr) {
