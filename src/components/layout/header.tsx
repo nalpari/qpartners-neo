@@ -19,8 +19,9 @@ import { ADMIN_MENU, MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
 /**
- * Gnb 상단 네비 fallback — 비로그인(게스트) 전용.
- * お問い合わせ 미노출 (게스트 한정 요구사항). 복원 시 AUTH 쪽과 동일 항목 추가.
+ * Gnb 상단 네비 fallback — 비로그인(게스트) 전용. お問い合わせ 미노출 (게스트 한정 요구사항).
+ * 게스트에게 문의를 다시 노출하게 되면 이 배열에 항목을 추가하지 말고 두 배열을 하나로 합칠 것 —
+ * AUTH 가 이 배열을 spread 하므로, 여기에 문의를 추가하면 AUTH 에서 중복 항목이 된다.
  */
 const GNB_FALLBACK_MENUS_GUEST: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
   { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
@@ -29,6 +30,8 @@ const GNB_FALLBACK_MENUS_GUEST: readonly { menuCode: string; menuName: string; p
 /**
  * Gnb 상단 네비 fallback — 인증 사용자 전용.
  * menuTree 초기 로딩 중 / `/api/menus` 실패 시 사용되므로, 장애 상황에서도 문의 경로를 유지한다.
+ * 단 hasAuthFlag 가 아직 false 인 SSR/hydration 이전 렌더에서는 GUEST 쪽이 선택된다 —
+ * 상세는 아래 fallback 선택 로직 주석 참조.
  */
 const GNB_FALLBACK_MENUS_AUTH: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
   ...GNB_FALLBACK_MENUS_GUEST,
@@ -244,8 +247,12 @@ export function Gnb() {
 
   // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
   const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
-  // fallback 선택 — 인증 상태가 확실히 비로그인(hasAuthFlag=false) 일 때만 문의를 제외한다.
-  // 인증 사용자는 menuTree 로딩 중/API 실패 시에도 문의 메뉴를 유지 (게스트 한정 요구사항 준수).
+  // fallback 선택 — hasAuthFlag=false 일 때만 문의를 제외한다.
+  // 주의: false 는 "비로그인 확정" 이 아니라 "비로그인 또는 미확정" 이다 — SSR/hydration 이전
+  // (getServerSnapshot=false) 과 localStorage 읽기 실패(catch→false) 에서도 false 가 된다.
+  // 따라서 인증 사용자도 첫 페인트에는 GUEST 를 지나가고 hydration 후 AUTH 로 수렴한다
+  // (로그인 버튼·톱니바퀴 등 기존 헤더 요소와 동일한 전환 패턴).
+  // 게스트 한정 처리를 이 분기에 추가할 때는 위 미확정 케이스를 반드시 고려할 것.
   const fallbackMenus = hasAuthFlag ? GNB_FALLBACK_MENUS_AUTH : GNB_FALLBACK_MENUS_GUEST;
   const pcMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "pc");
