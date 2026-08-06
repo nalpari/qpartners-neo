@@ -114,8 +114,9 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "newUserReq",
           callerRoute: "[POST /api/auth/signup]",
-          // 대리등록 행위자(관리자)를 기록 — 생성 대상(GENERAL 이메일/이름/userTp)은 마스킹된 요청 본문에 보존된다.
-          // 셀프가입 폐지 후 행위자≠대상이므로, 어떤 관리자가 계정을 만들었는지 추적 가능하도록 actor 를 남긴다.
+          // 대리등록 행위자(관리자)를 userId/userType 에 기록 — 어떤 관리자가 계정을 만들었는지 추적용.
+          // 생성 대상은 request_body 에 보존된다: 본문의 userId(=대상 이메일)는 오등록·악용 조사를 위해
+          // 평문으로 유지하고(의도적), email 키·pwd 등 민감값은 interface-logger 가 마스킹한다.
           userId: maskUserId(authUser.userId),
           userType: authUser.userType,
         },
