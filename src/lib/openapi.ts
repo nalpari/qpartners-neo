@@ -481,10 +481,18 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "Validation failed",
+            description:
+              "두 가지 형태로 응답한다 — 클라이언트는 `fields` 배열의 유무로 원인을 구분한다.\n\n" +
+              "- **Zod 검증 실패**: `{ error: \"Validation failed\", fields: [...] }` — 입력 오류. 사용자에게 입력 확인을 안내.\n" +
+              "- **QSP 등록 실패 / JSON 파싱 실패**: `{ error }` (fields 없음) — 입력과 무관한 실패. 원인은 서버 로그에만 기록되며 클라이언트 메시지는 일반화된다.",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                schema: {
+                  oneOf: [
+                    { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                    { $ref: "#/components/schemas/ErrorResponse" },
+                  ],
+                },
               },
             },
           },

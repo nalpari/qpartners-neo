@@ -55,7 +55,15 @@ const INITIAL_FORM = {
   // Why: 셀프 회원가입 폐지로 본 화면은 SUPER_ADMIN·ADMIN 이 회원을 대신 등록하는 경로가 되었다.
   //   동의 주체인 본인이 화면 앞에 없으므로 운영자에게 체크를 요구하는 것은 의미가 없다
   //   (약관 동의 자체는 오프라인·별도 경로에서 취득하는 것을 전제).
-  // 필드와 validate() 가드는 남겨 둔다 — 향후 동의 UI 를 되살릴 때 게이트가 그대로 동작하도록.
+  //
+  // ⚠ 현재 상태: 이 값을 false 로 바꾸는 writer 가 없어(`updateField("agreeTerms", …)` 호출 0건)
+  //   validate() 의 agreeTerms 가드는 도달 불가다. 또한 본 PR 이 체크박스·[見る] 버튼과 함께
+  //   `fieldErrors.agreeTerms` 를 표시하던 <p> 를 PC·MO 양쪽에서 모두 제거했다.
+  //
+  // ⚠ 동의 UI 를 되살릴 때는 아래 3개를 전부 복구해야 한다. validate() 가드만 살아있는 상태에서
+  //   초기값을 false 로 되돌리면, 미동의 시 handleSubmit 이 조용히 return 해
+  //   [会員登録] 버튼이 아무 반응 없이 죽는다(에러 표시·네트워크 요청 없음).
+  //     1) Checkbox + [見る] 버튼  2) fieldErrors.agreeTerms 표시 <p> (PC/MO 2곳)  3) 초기값 false
   agreeTerms: true,
 };
 
@@ -131,8 +139,9 @@ export function SignupContents() {
     } else if (form.password !== form.passwordConfirm) {
       errors.passwordConfirm = "パスワードが一致しません";
     }
-    // 동의 UI 미노출 상태에서는 항상 통과 — 향후 UI 복구 시를 대비한 잔존 가드
-    // (INITIAL_FORM.agreeTerms 주석 참조).
+    // 현재 도달 불가 — agreeTerms 를 false 로 만드는 writer 가 없다(INITIAL_FORM 에서 true 고정).
+    // 동의 UI 복구 시의 안전망으로 남겨두되, 이 errors 키를 렌더하는 곳이 현재 없으므로
+    // 발동하면 무반응 제출이 된다. 복구 절차는 INITIAL_FORM.agreeTerms 주석 참조.
     if (!form.agreeTerms) errors.agreeTerms = "利用規約に同意してください";
 
     setFieldErrors(errors);
@@ -229,16 +238,36 @@ export function SignupContents() {
         const serverMsg = extractApiError(error);
         if (serverMsg) console.warn("[Signup] 서버 메시지:", serverMsg);
         const status = error.response.status;
-        if (status === 409) {
+        if (status === 401) {
+          // 세션 만료. 본 화면은 회원관리 목록에서 새 탭으로 열려 장시간 방치되기 쉬운 반면
+          // JWT 는 8시간(jwt.ts TOKEN_EXPIRY) 만 유효하므로 실사용에서 도달하는 경로다.
+          //
+          // 자동 리다이렉트하지 않는 이유: 입력한 20여 개 필드가 전부 유실된다.
+          // JWT 쿠키는 탭 간 공유되므로, 다른 탭에서 재로그인한 뒤 이 탭에서 다시 제출하면
+          // 입력값을 보존한 채 그대로 성공한다. 그 절차를 문구로 안내한다.
+          setSubmitError(
+            "セッションの有効期限が切れました。別のタブで再度ログインしてから、もう一度「会員登録」を押してください。入力内容は保持されます。",
+          );
+        } else if (status === 403) {
+          // 방어적 분기 — 403 의 두 발생원(middleware 2FA 미완료 / 핸들러 isInternalUser 거부)은
+          // 모두 페이지 진입 시 /signup 서버 가드가 이미 차단한다. 따라서 진입 후 세션 상태가
+          // 바뀐 경우(권한 회수 등)에만 도달하며, 재시도로는 해소되지 않으므로 문의를 안내한다.
+          setSubmitError("この操作の権限がありません。管理者にお問い合わせください");
+        } else if (status === 409) {
           setSubmitError("既に使用中のメールアドレスです");
         } else if (status === 400) {
-          // 400 은 두 갈래다 — Zod 검증 실패(응답에 `fields` 동반) vs QSP 등록 실패(`fields` 없음).
-          // 후자까지 "입력 확인" 으로 안내하면 입력에 문제가 없는데도 사용자가 폼을 계속 고치게 되어
-          // 원인 파악이 불가능해진다(QSP 측 DB 제약 위반 등). 서버 메시지를 그대로 노출해 구분한다.
+          // 400 은 "입력 오류" 와 "입력과 무관한 등록 실패" 두 원인을 겸한다.
+          // 후자까지 "입력 확인" 으로 안내하면 입력에 문제가 없는데도 사용자가 폼을 계속 고치게 되므로,
+          // 응답에 `fields` 배열이 실렸는지(= Zod 검증 실패인지)로 구분한다.
+          //
+          // 후자에 serverMsg 를 노출하지 않는 이유: QSP 실패 메시지는 route.ts 에서 이미
+          // `会員登録に失敗しました` 로 일반화되어 있어 얻는 정보가 없고(rules/api.md — QSP 에러
+          // 직접 노출 금지), JSON 파싱 실패 경로의 영문 `Invalid JSON body` 가 일본어 UI 에
+          // 그대로 노출되는 통로만 열린다. 실제 원인은 서버 로그에서 확인한다.
           setSubmitError(
             hasValidationFields(error.response.data)
               ? "入力内容を確認してください"
-              : (serverMsg ?? "会員登録に失敗しました"),
+              : "会員登録に失敗しました",
           );
         } else {
           setSubmitError("サーバーエラーが発生しました。しばらくしてからお試しください。");

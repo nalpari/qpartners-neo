@@ -21,9 +21,11 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 //   되었으나, 본 라우트는 PUBLIC(middleware PUBLIC_PATHS) 을 유지한다. 호출부가 둘이기 때문:
 //     1) `signup-contents.tsx`      — 관리자 대리 등록 (인증된 ADMIN)
 //     2) `personal-info-popup.tsx`  — 会員情報の設定 의 최초 로그인(pwdInitYn=N) + email 미등록 경로.
-//        이 시점 세션은 `twoFactorVerified === false` 라 middleware 2FA 게이트(TWO_FACTOR_PATHS)
-//        대상이 아니며, PUBLIC 에서 빼면 403「2段階認証が必要です」로 막혀 최초 로그인 사용자가
-//        비밀번호 설정을 완료할 수 없다.
+//        이 시점 세션은 JWT 는 있으나 `twoFactorVerified === false` 다.
+//        본 경로는 middleware 의 2FA 예외 허용목록(TWO_FACTOR_PATHS)에 **포함되어 있지 않으므로**,
+//        PUBLIC 에서 빼는 순간 2FA 게이트에 걸려 403「2段階認証が必要です」로 차단된다.
+//        그러면 최초 로그인 사용자가 비밀번호 설정을 영원히 완료할 수 없다.
+//        → PUBLIC 유지가 이 경로를 살리는 유일한 수단이다. 이 엔트리를 지우지 말 것.
 //   실제 회원 생성은 `/api/auth/signup` 에서만 일어나므로 권한 가드는 그쪽에 건다.
 //   본 라우트는 조회 전용이며, 회원 존재 여부 노출은 아래 IP + Email 2차원 rate limit 으로 방어한다.
 
