@@ -94,6 +94,21 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
  *
  * 종전 `isAdmin` / `requireAdmin` 은 admin 라우트 가드의 role 하드코딩 분기였으나
  * 매트릭스 단일 의존 정책으로 전체 폐지됨. `isInternalUser` 만 비즈니스 판정용으로 잔존.
+ *
+ * ─── 예외: 사용자 유형 자체로 통제하는 관문 ───
+ * 위 금지는 "메뉴별 CRUD 역량을 매트릭스로 통제해야 하는 admin/* 라우트" 를 대상으로 한다.
+ * 반면 **메뉴 권한이 아니라 사용자 유형(사내 관리자냐 아니냐) 자체가 판정 기준인 관문** 은
+ * 매트릭스로 표현할 대상이 아니므로 본 함수를 가드로 사용해도 된다.
+ *
+ * 현행 해당 사례 — 일반회원 대리 등록 (셀프 회원가입 폐지, 2026-08-07):
+ *   · `src/app/api/auth/signup/route.ts`
+ *   · `src/app/(auth)/signup/page.tsx`
+ * 이 경로들은 `admin/*` 이 아니며, "ADM_MEMBER.canCreate 를 가진 자" 가 아니라
+ * "사내 관리자" 를 통과 조건으로 삼는 것이 설계 의도다. 따라서 `requireMenuPermission`
+ * (`ADM_MEMBER`, `create`) 로 치환하면 오히려 의도와 어긋난다.
+ *
+ * 판별 기준: 운영자가 권한관리 화면에서 켜고 끌 수 있어야 하는 역량이면 매트릭스 가드,
+ * 사용자 유형에 본질적으로 종속되어 토글 대상이 아니면 본 함수 가드.
  */
 export function isInternalUser(role: string): boolean {
   return role === "SUPER_ADMIN" || role === "ADMIN";

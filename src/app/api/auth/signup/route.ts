@@ -19,6 +19,10 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 // 셀프 회원가입 폐지 — SUPER_ADMIN·ADMIN 이 회원관리 화면에서 대리 등록하는 전용 경로.
 // middleware PUBLIC_PATHS 에서 제외되어 있어 미인증 요청은 여기 도달 전 401 로 차단되며,
 // 본 핸들러의 isInternalUser 가드는 일반 로그인 사용자(GENERAL/STORE/SEKO)의 호출을 막는다.
+//
+// 가드로 requireMenuPermission("ADM_MEMBER", "create") 대신 isInternalUser 를 쓰는 이유:
+// 회원등록은 운영자가 권한관리 화면에서 켜고 끄는 메뉴 역량이 아니라, 사용자 유형(사내 관리자)
+// 자체가 통과 조건인 관문이기 때문이다. 상세는 `auth.ts#isInternalUser` 의 예외 조항 참조.
 export async function POST(request: NextRequest) {
   try {
     // 0. 권한 가드 — 사내 사용자(SUPER_ADMIN | ADMIN) 전용
