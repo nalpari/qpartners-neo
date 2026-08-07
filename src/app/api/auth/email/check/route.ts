@@ -21,6 +21,10 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 //   되었으나, 본 라우트는 PUBLIC(middleware PUBLIC_PATHS) 을 유지한다. 호출부가 둘이기 때문:
 //     1) `signup-contents.tsx`      — 관리자 대리 등록 (인증된 ADMIN)
 //     2) `personal-info-popup.tsx`  — 会員情報の設定 의 최초 로그인(pwdInitYn=N) + email 미등록 경로.
+//        ※ 호출 주체 오해 주의: [重複チェック] 버튼의 렌더 조건은 `!hasExistingEmail && !hasResetToken`
+//          이다(personal-info-popup.tsx :207/:218/:224). 즉 reset-token 진입(pwdInitYn=Y)에서는
+//          `hasResetToken === true` 라 버튼 자체가 렌더되지 않으므로, 세션 없는 익명 호출 경로는
+//          존재하지 않는다. 아래 근거는 오직 "JWT 는 있으나 2FA 미완료" 세션에만 해당한다.
 //        이 시점 세션은 JWT 는 있으나 `twoFactorVerified === false` 다.
 //        본 경로는 middleware 의 2FA 예외 허용목록(TWO_FACTOR_PATHS)에 **포함되어 있지 않으므로**,
 //        PUBLIC 에서 빼는 순간 2FA 게이트에 걸려 403「2段階認証が必要です」로 차단된다.

@@ -137,8 +137,11 @@ export async function POST(request: NextRequest) {
           direction: "OUTBOUND",
           apiName: "newUserReq",
           callerRoute: "[POST /api/auth/signup]",
-          userId: maskEmail(email),
-          userType: "GENERAL",
+          // 대리 등록이므로 인터페이스 로그는 생성 대상이 아니라 **행위자(관리자)** 에게 귀속시킨다.
+          // `[PUT /api/admin/members/:id]` 의 updateUserDtlMng 호출과 동일 관례.
+          // 생성 대상은 requestBody 에 남으므로 추적 가능하다.
+          userId: maskEmail(actor.userId),
+          userType: actor.userType,
         },
       );
     } catch (error: unknown) {
@@ -187,7 +190,10 @@ export async function POST(request: NextRequest) {
     // 4. 성공/실패 판별
     if (qsp.result.resultCode !== "S") {
       const msg = qsp.result.resultMsg;
-      console.error("[POST /api/auth/signup] QSP 등록 실패:", msg);
+      console.error("[POST /api/auth/signup] QSP 등록 실패:", msg, {
+        targetUserId: maskEmail(email),
+        byAdmin: maskEmail(actor.userId),
+      });
 
       // 이메일 중복 판별: QSP 메시지에 "既に" (이미) 포함 시 409 Conflict
       const isDuplicate = msg?.includes("既に") || msg?.includes("すでに") || msg?.includes("already");
@@ -220,7 +226,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. 성공 응답
+    // 6. 감사 로그 — 대리 등록은 "누가 이 계정을 만들었나" 가 사후 추궁 대상이 되는 조작이다.
+    //    QSP 측 기록에는 joinSourceCd="QPARTNERS" 만 남아 행위자를 특정할 수 없으므로
+    //    본 로그가 유일한 단서가 된다. `[PUT /api/admin/members/:id]` 완료 로그와 동일 형식.
+    console.log("[POST /api/auth/signup] 일반회원 대리 등록 완료", {
+      targetUserId: maskEmail(email),
+      targetUserTp: "GENERAL",
+      byAdmin: maskEmail(actor.userId),
+      mailDelivery,
+    });
+
+    // 7. 성공 응답
     return NextResponse.json({
       data: {
         userName,

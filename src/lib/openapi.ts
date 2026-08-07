@@ -488,7 +488,11 @@ export const openApiSpec: OpenAPIV3.Document = {
             content: {
               "application/json": {
                 schema: {
-                  oneOf: [
+                  // anyOf 사용 — oneOf 는 "정확히 하나만 매칭" 을 요구하는데,
+                  // ErrorResponse 에 additionalProperties: false 가 없어 Zod 실패 본문
+                  // `{ error, fields }` 가 두 브랜치 모두에 매칭된다. oneOf 로 두면
+                  // 스펙이 문서화하려던 바로 그 응답을 엄격한 검증기가 거부하게 된다.
+                  anyOf: [
                     { $ref: "#/components/schemas/AuthValidationErrorResponse" },
                     { $ref: "#/components/schemas/ErrorResponse" },
                   ],
