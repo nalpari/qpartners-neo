@@ -444,8 +444,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/signup": {
       post: {
         tags: ["Auth"],
-        summary: "일반 회원가입 (QSP 프록시)",
-        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 가입 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
+        summary: "일반회원 등록 (QSP 프록시, SUPER_ADMIN·ADMIN 전용)",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원 등록 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 등록 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.\n\n**셀프 회원가입 폐지** — JWT 쿠키 필요. 사내 사용자(SUPER_ADMIN | ADMIN) 만 호출 가능하며, 그 외 로그인 사용자는 403.",
         requestBody: {
           required: true,
           content: {
@@ -488,6 +488,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("権限がありません (사내 사용자 아님)"),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
@@ -689,7 +691,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "이메일 중복 체크",
         description:
           "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
-          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.\n\n" +
+          "인증 불요(PUBLIC) — 관리자 대리 등록(/signup) 과 会員情報の設定(최초 로그인, 2FA 미완료 상태) 양쪽에서 호출된다.",
         requestBody: {
           required: true,
           content: {

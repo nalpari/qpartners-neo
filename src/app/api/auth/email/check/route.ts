@@ -16,11 +16,28 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 //
 // race: 본 체크와 newUserReq 사이는 원자적이지 않다. 동시 가입 시 동일 e_mail 다중 생성 여지는
 // QSP newUserReq 정책 보강(별도 트랙)으로 해결한다.
+//
+// [PUBLIC 유지 근거] 일반회원 셀프 가입 폐지로 `/api/auth/signup` 은 SUPER_ADMIN·ADMIN 전용이
+//   되었으나, 본 라우트는 PUBLIC(middleware PUBLIC_PATHS) 을 유지한다. 호출부가 둘이기 때문:
+//     1) `signup-contents.tsx`      — 관리자 대리 등록 (인증된 ADMIN)
+//     2) `personal-info-popup.tsx`  — 会員情報の設定 의 최초 로그인(pwdInitYn=N) + email 미등록 경로.
+//        이 시점 세션은 `twoFactorVerified === false` 라 middleware 2FA 게이트(TWO_FACTOR_PATHS)
+//        대상이 아니며, PUBLIC 에서 빼면 403「2段階認証が必要です」로 막혀 최초 로그인 사용자가
+//        비밀번호 설정을 완료할 수 없다.
+//   실제 회원 생성은 `/api/auth/signup` 에서만 일어나므로 권한 가드는 그쪽에 건다.
+//   본 라우트는 조회 전용이며, 회원 존재 여부 노출은 아래 IP + Email 2차원 rate limit 으로 방어한다.
 
 const LOG = "[POST /api/auth/email/check]";
 const QSP_TIMEOUT_MS = 10_000;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 // IP 차원: 동일 IP 의 분산 enumeration 시도 차단 (1h 내 30회).
+//
+// [의도적 유지] 일반회원 셀프 가입 폐지(관리자 대리 등록 전환) 이후에도 30회 그대로 둔다.
+//   전환으로 등록 트래픽이 관리자 사무실 IP 한 곳으로 몰리므로 산술적으로는 1h 내 30건 초과 시
+//   429 가 발생할 수 있으나, 시간당 30명 신규 등록은 현 운영 규모에서 발생하지 않는 시나리오다.
+//   방어값을 선제적으로 완화하면 익명 enumeration 방어만 약해지고 얻는 게 없으므로,
+//   실제 대량 온보딩 요건이 접수되는 시점에 상향한다 (YAGNI).
+//   ※ 상향 시 Email 차원(RATE_EMAIL_LIMIT) 은 표적 enumeration 방어라 함께 올릴 필요 없음.
 const RATE_IP_LIMIT = 30;
 // Email 차원: 동일 이메일 표적 enumeration 시도 차단 (1h 내 10회).
 // 두 차원은 독립 적용 — 한쪽이라도 초과 시 429. IP 가 없으면 Email 차원만 적용 → effective 10/h.

@@ -10,7 +10,14 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
-  "/api/auth/signup",
+  // NOTE: /api/auth/signup 은 일반회원 셀프 가입 폐지에 따라 PUBLIC 에서 제외됨 —
+  //       SUPER_ADMIN·ADMIN 만 호출 가능(핸들러 isInternalUser 가드).
+  //
+  // /api/auth/email/check 는 PUBLIC 유지 — 관리자 대리 등록(/signup) 외에
+  //   `PersonalInfoPopup`(会員情報の設定) 의 최초 로그인(pwdInitYn=N) + email 미등록 경로가
+  //   2FA 미완료 상태에서 호출한다. PUBLIC 에서 빼면 이 경로가 403 「2段階認証が必要です」로
+  //   막혀 최초 로그인 사용자가 비밀번호 설정을 끝낼 수 없다.
+  //   회원 존재 여부 노출은 라우트 자체의 IP + Email 2차원 rate limit 으로 방어한다.
   "/api/auth/email/check",
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
@@ -90,7 +97,7 @@ export async function middleware(request: NextRequest) {
   if (isPublicPath(pathname) || isPublicGet) {
     // GET 조회 경로에 한해 JWT가 있으면 사용자 정보 헤더 주입 (최소 권한 원칙)
     // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
-    // POST 경로(/api/inquiry, /api/auth/signup 등)에는 헤더 주입하지 않음
+    // POST 경로(/api/inquiry 등)에는 헤더 주입하지 않음
     if (isPublicGet) {
       const publicToken = request.cookies.get(COOKIE_NAME)?.value;
       if (publicToken) {

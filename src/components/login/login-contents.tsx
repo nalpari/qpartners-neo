@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { usePopupStore, useAppStore } from "@/lib/store";
+import { usePopupStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
 import { LoginForm } from "@/components/login/login-form";
@@ -33,20 +33,8 @@ interface LoginContentsProps {
 }
 
 export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer", initialError = null, initialResetToken = null }: LoginContentsProps) {
-  // 가입완료 후 ID 자동입력 — useRef로 초기값 스냅샷, useEffect로 cleanup (purity 준수)
-  const prefillRef = useRef(useAppStore.getState().prefillEmail);
-
-  const [activeTab, setActiveTab] = useState<TabType>(
-    prefillRef.current ? "general" : initialSavedTab
-  );
-  const [id, setId] = useState(prefillRef.current || initialSavedId);
-
-  useEffect(() => {
-    if (prefillRef.current) {
-      useAppStore.getState().clearPrefillEmail();
-      prefillRef.current = "";
-    }
-  }, []);
+  const [activeTab, setActiveTab] = useState<TabType>(initialSavedTab);
+  const [id, setId] = useState(initialSavedId);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [saveId, setSaveId] = useState(initialSavedId !== "");

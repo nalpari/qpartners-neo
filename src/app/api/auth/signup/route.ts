@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import {
   signupRequestSchema,
   qspResponseSchema,
@@ -13,9 +14,32 @@ import {
 import { QSP_API, SITE_URL } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 
-// POST /api/auth/signup — 일반 회원가입 (QSP newUserReq 프록시 + 승인완료 메일)
+// POST /api/auth/signup — 일반회원 등록 (QSP newUserReq 프록시 + 승인완료 메일)
+//
+// 셀프 회원가입 폐지 — SUPER_ADMIN·ADMIN 이 회원관리 화면에서 대리 등록하는 전용 경로.
+// middleware PUBLIC_PATHS 에서 제외되어 있어 미인증 요청은 여기 도달 전 401 로 차단되며,
+// 본 핸들러의 isInternalUser 가드는 일반 로그인 사용자(GENERAL/STORE/SEKO)의 호출을 막는다.
 export async function POST(request: NextRequest) {
   try {
+    // 0. 권한 가드 — 사내 사용자(SUPER_ADMIN | ADMIN) 전용
+    const actor = getUserFromHeaders(request.headers);
+    if (!actor) {
+      return NextResponse.json(
+        { error: "認証が必要です" },
+        { status: 401 },
+      );
+    }
+    if (!isInternalUser(actor.role)) {
+      console.warn(
+        "[POST /api/auth/signup] 권한 거부 — 사내 사용자 아님, role:",
+        actor.role,
+      );
+      return NextResponse.json(
+        { error: "権限がありません" },
+        { status: 403 },
+      );
+    }
+
     // 1. Request body 파싱 + Zod 검증
     let body: unknown;
     try {
@@ -35,6 +59,12 @@ export async function POST(request: NextRequest) {
         field: i.path.join("."),
         message: i.message,
       }));
+      // 필드명만 로깅 — 입력값(PII) 은 제외. 서버 로그만으로 400 의 원인이
+      // Zod 검증인지 QSP 등록 실패인지 구분 가능하게 한다.
+      console.warn(
+        "[POST /api/auth/signup] Zod 검증 실패 — 필드:",
+        fields.map((f) => f.field).join(", "),
+      );
       return NextResponse.json(
         { error: "Validation failed", fields },
         { status: 400 },
