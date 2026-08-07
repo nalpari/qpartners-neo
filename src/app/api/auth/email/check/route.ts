@@ -23,6 +23,22 @@ import { emailSchema, qspResponseSchema } from "@/lib/schemas/signup";
 
 const LOG = "[POST /api/auth/email/check]";
 const QSP_TIMEOUT_MS = 10_000;
+/**
+ * Rate limit 한도는 익명 셀프가입 기준으로 산정된 값을 **의도적으로 유지**한다.
+ *
+ * 관리자 대리등록(`/signup`)이 이 엔드포인트를 공유하게 되면서 "관리자 대량 등록이 IP 한도에
+ * 걸려 차단될 수 있다"는 지적이 반복적으로 제기되지만, 아래 근거로 현행 유지를 결정했다.
+ *
+ *  - 카운터는 등록 건수가 아니라 `重複チェック` 클릭 횟수로 소모된다. 이메일 수정 시에만
+ *    체크 상태가 초기화되므로(`signup-contents.tsx` `updateField`) 회원 1명당 1~2회다.
+ *    → 시간당 20명 이상을 한 IP 에서 등록해야 30회에 도달하며, 그런 운영 볼륨은 없다.
+ *  - 한도를 관리자용으로 완화하려면 엔드포인트 분리 또는 JWT 기반 예외가 필요한데,
+ *    이 엔드포인트는 비밀번호 초기화·최초 로그인(`personal-info-popup`)의 비로그인·2FA
+ *    미완료 사용자도 호출하는 공개 경로다. 열거 방어를 약화시키는 대가가 이득보다 크다.
+ *
+ * 볼륨이 실제로 늘어나 429 가 관측되면, 한도 상향이 아니라 인증된 관리자 전용 경로 분리로
+ * 대응할 것 (공개 경로의 방어 수준을 유지하기 위함).
+ */
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 // IP 차원: 동일 IP 의 분산 enumeration 시도 차단 (1h 내 30회).
 const RATE_IP_LIMIT = 30;

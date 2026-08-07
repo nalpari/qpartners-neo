@@ -235,7 +235,14 @@ export function Gnb() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
-  const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
+  const { data: menuTreeData } = useMenuTree({ enabled: hasAuthFlag });
+  // 로그아웃 후 캐시 잔존 대응 — `performLogout` 은 `clear()` 대신 `cancelQueries()` 만 호출하므로
+  // (활성 쿼리 재요청 → 401 회피 목적) `["menus", activeOnly]` 캐시는 로그아웃 후에도 남는다.
+  // 이 응답은 역할별 매트릭스로 필터된 결과인데 queryKey 에 역할이 없어, AuthLossRedirect 가
+  // 이동시키지 않는 공개 화면(`/`, `/contents`)에서 로그아웃하면 `enabled` 만 false 가 되고
+  // data 는 살아남아 이전 세션의 메뉴가 계속 렌더된다. hasAuthFlag 로 게이트해 즉시 fallback 으로
+  // 수렴시킨다 (공개 화면의 게스트 뷰 degrade 를 flag 기반으로 처리하는 기존 방식과 동일).
+  const menuTree = hasAuthFlag ? menuTreeData : undefined;
   const pcMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "pc");
     return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
