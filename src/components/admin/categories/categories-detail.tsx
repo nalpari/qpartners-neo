@@ -278,7 +278,7 @@ export function CategoriesDetail({
       </div>
 
       <p className="text-[14px] text-[#101010] font-['Noto_Sans_JP']">
-        ※カテゴリはDepth-2までのみ管理できます.
+        ※カテゴリはDepth-2までのみ管理できます。
       </p>
     </section>
   );

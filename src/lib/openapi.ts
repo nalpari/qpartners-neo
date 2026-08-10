@@ -316,7 +316,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": {
             description:
-              "リクエスト形式または target パラメータが不適格. route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
+              "リクエスト形式または target パラメータが不適格。route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -336,7 +336,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("認証が必要です"),
           "500": {
             description:
-              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類.",
+              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類。",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
