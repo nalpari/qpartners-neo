@@ -43,15 +43,63 @@ const CYCLE_MAX_TARGETS = 500;
 const g = batchState;
 
 /**
- * 배치 1 cycle — `POST /api/batch/mass-mail` 이 락을 획득한 뒤 호출한다.
+ * 배치 1 cycle 의 결과 요약 — 라우트가 한 줄 로그로 남겨 운영자가 성공/실패를 즉시 판별한다.
+ * (cycle 은 백그라운드 실행이라 HTTP 응답에는 담기지 않으므로, 로그가 유일한 결과 채널)
  */
-export async function runBatchOnce(): Promise<void> {
+export interface BatchCycleResult {
+  /** cycle 이 예외 없이 끝났는지 — false 면 `error` 에 사유 */
+  ok: boolean;
+  /** 실행하지 않고 건너뛴 사유 (없으면 실제 실행됨) */
+  skipped?: string;
+  /** 처리 대상 mass_mail 건수 */
+  targets: number;
+  /** 정상 처리된 mass_mail 건수 */
+  processed: number;
+  /** 처리 중 예외가 발생한 mass_mail 건수 */
+  failedMails: number;
+  /** 발송 성공 수신자 합계 */
+  sent: number;
+  /** 발송 실패 수신자 합계 */
+  failed: number;
+  /** 좀비 승격 건수 (sending → send_failed) */
+  zombies: number;
+  /** 예약 도래 전이 건수 (scheduled → pending) */
+  promotedScheduled: number;
+  elapsedMs: number;
+  /** ok=false 일 때의 에러 메시지 */
+  error?: string;
+}
+
+/**
+ * 배치 1 cycle — `POST /api/batch/mass-mail` 이 락을 획득한 뒤 호출한다.
+ *
+ * throw 하지 않는다 — 모든 실패를 `BatchCycleResult` 에 담아 반환하므로
+ * 호출자는 결과만 보고 성공/실패 로그를 남기면 된다.
+ */
+export async function runBatchOnce(): Promise<BatchCycleResult> {
+  const startedAt = Date.now();
+  const empty = {
+    targets: 0,
+    processed: 0,
+    failedMails: 0,
+    sent: 0,
+    failed: 0,
+    zombies: 0,
+    promotedScheduled: 0,
+  };
+
   if (g.__massMailBatchRunning) {
     console.warn(`${LOG_TAG} 직전 cycle 가 아직 실행 중 — 이번 cycle skip`);
-    return;
+    return { ok: true, skipped: "직전 cycle 실행 중", ...empty, elapsedMs: 0 };
   }
   g.__massMailBatchRunning = true;
-  const startedAt = Date.now();
+
+  let zombies = 0;
+  let promotedScheduled = 0;
+  let targetCount = 0;
+  let failedMails = 0;
+  let sentTotal = 0;
+  let failedTotal = 0;
 
   try {
     // 1. 좀비 감지: sending + updated_at < NOW - zombieThreshold → send_failed 자동 승격.
@@ -87,6 +135,7 @@ export async function runBatchOnce(): Promise<void> {
         where: { id: { in: realZombieIds }, status: "sending" },
         data: { status: "send_failed" },
       });
+      zombies = zombieResult.count;
       console.warn(
         `${LOG_TAG} 좀비 감지 — ${zombieResult.count}건 sending → send_failed 자동 승격 (threshold=${MASS_MAIL_DEFAULTS.zombieThresholdMs}ms, ids=[${realZombieIds.join(", ")}])`,
       );
@@ -118,7 +167,7 @@ export async function runBatchOnce(): Promise<void> {
       },
       data: { status: "pending" },
     });
-    const promotedScheduled = promotedResult.count;
+    promotedScheduled = promotedResult.count;
     if (promotedScheduled > 0) {
       console.log(
         `${LOG_TAG} 예약 도래 — ${promotedScheduled}건 scheduled → pending 전이 (이번 cycle 발송 대상 포함)`,
@@ -134,9 +183,16 @@ export async function runBatchOnce(): Promise<void> {
       take: CYCLE_MAX_TARGETS,
     });
 
+    targetCount = targets.length;
     if (targets.length === 0) {
       console.log(`${LOG_TAG} 처리 대상 없음 — cycle 종료 (소요 ${Date.now() - startedAt}ms)`);
-      return;
+      return {
+        ok: true,
+        ...empty,
+        zombies,
+        promotedScheduled,
+        elapsedMs: Date.now() - startedAt,
+      };
     }
     if (targets.length === CYCLE_MAX_TARGETS) {
       console.warn(`${LOG_TAG} cycle 대상이 상한(${CYCLE_MAX_TARGETS})에 도달 — 백로그 적체 가능`);
@@ -179,17 +235,23 @@ export async function runBatchOnce(): Promise<void> {
             });
             if (pendingCount > 0) {
               console.log(`${LOG_TAG} mass_mail ${mail.id}: pending ${pendingCount}건 → sendLoop`);
-              await sendLoop(mail.id, MASS_MAIL_DEFAULTS.throttleMs);
+              const loopResult = await sendLoop(mail.id, MASS_MAIL_DEFAULTS.throttleMs);
+              sentTotal += loopResult.sent;
+              failedTotal += loopResult.failed;
             }
 
             // 2-c. mass_mail.status 자동 갱신 — 모든 recipients 가 sent/failed 면 sent
             await maybePromoteToSent(mail.id);
             processedCount++;
           } catch (error: unknown) {
+            // sendLoop 이 도중에 throw 해도 그 시점까지의 발송 건수는 집계되지 않는다
+            // (반환 전 throw). 이 mail 은 실패로 계상되고 다음 cycle 에서 이어서 처리된다.
+            failedMails++;
             console.error(`${LOG_TAG} mass_mail ${mail.id} 처리 실패 — 다음 mail 로 진행.`, error);
           }
         });
       } catch (lockError: unknown) {
+        failedMails++;
         console.error(`${LOG_TAG} mass_mail ${mail.id} 락 획득/해제 실패 — 다음 mail 로 진행.`, lockError);
       }
     }
@@ -198,6 +260,17 @@ export async function runBatchOnce(): Promise<void> {
     console.log(`${LOG_TAG} cycle 완료 — 처리: ${processedCount}/${targets.length}건, 소요: ${elapsed}ms`);
     // 정상 cycle 1회로 연속 실패 카운터 리셋 — 일시 장애 후 자가복구 정상 인정.
     g.__massMailBatchConsecutiveFailures = 0;
+    return {
+      ok: true,
+      targets: targetCount,
+      processed: processedCount,
+      failedMails,
+      sent: sentTotal,
+      failed: failedTotal,
+      zombies,
+      promotedScheduled,
+      elapsedMs: elapsed,
+    };
   } catch (error: unknown) {
     const failures = (g.__massMailBatchConsecutiveFailures ?? 0) + 1;
     g.__massMailBatchConsecutiveFailures = failures;
@@ -212,6 +285,18 @@ export async function runBatchOnce(): Promise<void> {
         `${LOG_TAG} CRITICAL — cycle 연속 실패 ${failures}회 도달. /api/health 503 으로 노출. 운영자 확인 필요.`,
       );
     }
+    return {
+      ok: false,
+      targets: targetCount,
+      processed: 0,
+      failedMails,
+      sent: sentTotal,
+      failed: failedTotal,
+      zombies,
+      promotedScheduled,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     g.__massMailBatchRunning = false;
   }

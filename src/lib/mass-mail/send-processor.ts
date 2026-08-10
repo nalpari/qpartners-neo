@@ -247,11 +247,19 @@ ${body}
  *
  * 루프 완료 후 pending 이 남아있으면 DB/네트워크 장애로 간주 → throw (runWithRetry 가 이어받음).
  */
+/** sendLoop 1회의 발송 결과 — 배치 cycle 요약 로그 집계에 사용. */
+export interface SendLoopResult {
+  /** SMTP 발송 성공 수신자 건수 */
+  sent: number;
+  /** 발송 실패(영구 실패 + retry 소진) 수신자 건수 */
+  failed: number;
+}
+
 /**
  * 단일 발송 루프 본체. 직접 호출 금지 — processMassMailSend / processMassMailRetry /
  * auto-retry-batch 가 runWithMassMailLock 으로 감싼 뒤 호출해야 중복 진입이 차단됨.
  */
-export async function sendLoop(massMailId: number, throttleMs: number): Promise<void> {
+export async function sendLoop(massMailId: number, throttleMs: number): Promise<SendLoopResult> {
   const massMail = await prisma.massMail.findUnique({
     where: { id: massMailId },
     select: { subject: true, body: true, senderName: true },
@@ -466,6 +474,8 @@ export async function sendLoop(massMailId: number, throttleMs: number): Promise<
   if (remaining > 0) {
     throw new Error(`루프 완료 후에도 pending 수신자 ${remaining}건 잔존 — 전체 장애 간주`);
   }
+
+  return { sent: successCount, failed: failedCount };
 }
 
 /**

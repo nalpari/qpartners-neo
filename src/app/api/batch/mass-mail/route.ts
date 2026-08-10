@@ -21,6 +21,7 @@ import { NextResponse } from "next/server";
 import { getBatchApiToken, MASS_MAIL_DEFAULTS } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
 import { runBatchOnce } from "@/lib/mass-mail/auto-retry-batch";
+import type { BatchCycleResult } from "@/lib/mass-mail/auto-retry-batch";
 import {
   acquireBatchLock,
   MASS_MAIL_LOCK_NAME,
@@ -45,6 +46,32 @@ function isAuthorized(authHeader: string | null, expected: string): boolean {
   const providedDigest = createHash("sha256").update(provided).digest();
   const expectedDigest = createHash("sha256").update(expected).digest();
   return timingSafeEqual(providedDigest, expectedDigest);
+}
+
+/**
+ * cycle 결과를 운영자가 한 눈에 읽을 수 있는 한 줄로 변환.
+ *
+ * `status=OK|ERROR|SKIP` 를 맨 앞에 두어 `grep "status=ERROR"` 로 실패만 추릴 수 있게 한다.
+ * PII 없음 — 건수/시간만 담는다.
+ */
+function formatCycleResult(result: BatchCycleResult): string {
+  if (result.skipped) {
+    return `status=SKIP | 사유=${result.skipped}`;
+  }
+
+  const parts = [
+    `status=${result.ok ? "OK" : "ERROR"}`,
+    `대상 ${result.targets}건`,
+    `처리 ${result.processed}건`,
+    `처리실패 ${result.failedMails}건`,
+    `발송성공 ${result.sent}건`,
+    `발송실패 ${result.failed}건`,
+    `좀비승격 ${result.zombies}건`,
+    `예약도래 ${result.promotedScheduled}건`,
+    `소요 ${result.elapsedMs}ms`,
+  ];
+  if (result.error) parts.push(`error=${result.error}`);
+  return parts.join(" | ");
 }
 
 export async function POST(request: NextRequest) {
@@ -86,11 +113,14 @@ export async function POST(request: NextRequest) {
     void (async () => {
       const stopRenewal = startLeaseRenewal(MASS_MAIL_LOCK_NAME, holder, leaseMs);
       try {
-        await runBatchOnce();
+        const result = await runBatchOnce();
+        // cycle 결과 한 줄 요약 — 응답에는 결과가 담기지 않으므로 이 로그가 유일한 결과 채널.
+        // `grep "cycle 결과"` 한 번으로 성공/실패를 판별할 수 있도록 고정 포맷으로 남긴다.
+        console.log(`${LOG_TAG} cycle 결과 — ${formatCycleResult(result)}`);
       } catch (error: unknown) {
         // runBatchOnce 는 내부에서 자체 try/catch 하지만, 예기치 못한 throw 로도
         // 락 해제가 누락되지 않도록 최상위에서 한 번 더 잡는다.
-        console.error(`${LOG_TAG} cycle 실행 중 예외:`, error);
+        console.error(`${LOG_TAG} cycle 결과 — status=ERROR | cycle 실행 중 예외:`, error);
       } finally {
         stopRenewal();
         await releaseBatchLock(MASS_MAIL_LOCK_NAME, holder).catch((error: unknown) => {
