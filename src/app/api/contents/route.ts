@@ -195,6 +195,9 @@ export async function GET(request: NextRequest) {
         OR: [
           { title: { contains: keyword } },
           { body: { contains: keyword } },
+          // 첨부파일명 부분일치 — sortCategoryCode 분기의 raw SQL EXISTS 와 동일 조건.
+          // 한쪽만 수정하면 카테고리 정렬 상태에서 검색 결과가 달라지므로 함께 유지할 것.
+          { attachments: { some: { fileName: { contains: keyword } } } },
         ],
       }),
       ...(department && department.length > 0 && { authorDepartment: { in: department } }),
@@ -264,7 +267,11 @@ export async function GET(request: NextRequest) {
 
       if (keyword) {
         const kw = `%${keyword}%`;
-        sqlConds.push(Prisma.sql`(c.title LIKE ${kw} OR c.body LIKE ${kw})`);
+        // Prisma where 절의 keyword OR 조건과 동일 — 첨부파일명 포함 (한쪽만 수정 금지).
+        sqlConds.push(Prisma.sql`(c.title LIKE ${kw} OR c.body LIKE ${kw} OR EXISTS (
+          SELECT 1 FROM qp_content_attachments a
+          WHERE a.content_id = c.id AND a.file_name LIKE ${kw}
+        ))`);
       }
 
       if (department && department.length > 0) {
