@@ -589,3 +589,21 @@ model QpInterfaceLog {
   @@index([resultCode])
   @@map("qp_interface_log")
 }
+
+/// 배치 분산 락 (리스 방식)
+/// 외부 스케줄러가 배치 엔드포인트를 호출할 때, LB 가 어느 인스턴스로 라우팅해도
+/// 한 시점에 한 인스턴스만 실행되도록 원자적 UPDATE 로 리스를 획득한다.
+/// (운영 2 인스턴스 — 프로세스 로컬 플래그로는 인스턴스 간 중복을 막을 수 없음)
+model BatchLock {
+  /// 락 이름 = 배치 식별자 (예: 'mass-mail')
+  name      String   @id @db.VarChar(64)
+  /// 리스 만료 시각. 이 시각을 지나면 다른 인스턴스가 획득 가능 —
+  /// 홀더 프로세스가 죽어도 영구 데드락이 되지 않게 하는 안전장치.
+  /// 정상 종료 시에는 홀더가 즉시 만료 처리(= 해제)한다.
+  expiresAt DateTime @map("expires_at")
+  /// 현재 홀더 (실행 1회당 유일) — 갱신/해제 시 본인 소유 확인 및 운영 추적용
+  holder    String   @db.VarChar(191)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("qp_batch_locks")
+}
