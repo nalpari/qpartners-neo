@@ -38,7 +38,11 @@ export function ContentsFormCategory({
         {categories.map((parent) => (
           <div key={parent.id} className="flex gap-1 items-stretch min-h-[58px]">
             <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+              <span
+                className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap overflow-hidden text-ellipsis ${
+                  parent.isInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+                }`}
+              >
                 {parent.name}
               </span>
             </div>

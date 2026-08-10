@@ -39,6 +39,8 @@ export function ContentsDetailCategory({
 
     return {
       label: parent.name,
+      // 그룹 라벨(1depth) 적색 판정 — 자식과 독립적으로 부모 자신의 값으로만 결정한다.
+      labelInternalOnly: parent.isInternalOnly,
       normalValues: normalItems.map((c) => c.name),
       internalValues: isInternal ? internalItems.map((c) => c.name) : [],
     };
@@ -57,7 +59,11 @@ export function ContentsDetailCategory({
         className="border border-[#EAF0F6] rounded-[6px] flex flex-col"
       >
         <div className="bg-[#F7F9FB] border-b border-[#EFF4F8] px-4 py-[10px] rounded-t-[6px]">
-          <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+          <p
+            className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] truncate ${
+              group.labelInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+            }`}
+          >
             {group.label}
           </p>
         </div>
