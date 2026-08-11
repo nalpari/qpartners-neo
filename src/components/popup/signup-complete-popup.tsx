@@ -59,9 +59,9 @@ export function SignupCompletePopup() {
                 {userName || "登録したユーザー名を表示"}　様
               </p>
               <p className="font-['Noto_Sans_JP'] font-normal text-[14px] text-[#101010] w-full">
-                一般会員登録が完了しました.
+                一般会員登録が完了しました。
                 <br />
-                下記情報でログイン後、Q.PARTNERをご利用ください.
+                下記情報でログイン後、Q.PARTNERをご利用ください。
               </p>
             </div>
 

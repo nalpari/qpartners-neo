@@ -1,6 +1,7 @@
 "use client";
 
 import { Checkbox } from "@/components/common";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 
 interface ContentsFormCategoryProps {
@@ -14,6 +15,9 @@ export function ContentsFormCategory({
   selectedIds,
   onSelectedIdsChange,
 }: ContentsFormCategoryProps) {
+  // 적색은 사내 사용자 전용 표식 — 비사내 작성자에게는 기본색으로 유지한다(항목 자체는 숨기지 않음).
+  const isInternal = useIsInternal();
+
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     onSelectedIdsChange(
       checked
@@ -29,16 +33,22 @@ export function ContentsFormCategory({
           カテゴリ
           <span className="text-[#FF1A1A]">*</span>
         </h2>
-        <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#FF1A1A]">
-          赤い文字は社内のみ表示
-        </span>
+        {isInternal && (
+          <span className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#FF1A1A]">
+            赤い文字は社内のみ表示
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-1">
         {categories.map((parent) => (
           <div key={parent.id} className="flex gap-1 items-stretch min-h-[58px]">
             <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-              <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+              <span
+                className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap overflow-hidden text-ellipsis ${
+                  isInternal && parent.isInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+                }`}
+              >
                 {parent.name}
               </span>
             </div>
@@ -50,7 +60,7 @@ export function ContentsFormCategory({
                   onChange={(checked) => handleCheckboxChange(child.id, checked)}
                   label={child.name}
                   className={
-                    child.isInternalOnly
+                    isInternal && child.isInternalOnly
                       ? "[&>span:last-child]:!text-[#FF1A1A]"
                       : ""
                   }

@@ -317,7 +317,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": {
             description:
-              "リクエスト形式または target パラメータが不適格. route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
+              "リクエスト形式または target パラメータが不適格。route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -337,7 +337,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("認証が必要です"),
           "500": {
             description:
-              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類.",
+              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類。",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -1691,10 +1691,12 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Content"],
         summary: "콘텐츠 목록 조회",
+        description:
+          "비사내 사용자의 `keyword` 검색 또는 `sortCategoryCode` 정렬 요청에는 rate limit 이 적용된다 — IP당 60회/분, IP 헤더 불명 시 계정(비로그인은 anon) 기준 20회/분. 초과 시 429. 두 경로 모두 선행 와일드카드 LIKE·상관 서브쿼리라 인덱스 활용이 어려워 DB 부하 가드가 필요하다. 단순 페이징은 제한 대상이 아니며, 사내 사용자는 전 경로 제한 없음.",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "타이틀·본문·첨부파일명 부분일치 검색", schema: { type: "string" } },
           { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
@@ -1759,6 +1761,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": validationErrorResponse,
+          "429": errorResponse(
+            "요청 횟수 초과 — 비사내 사용자의 keyword 검색 / sortCategoryCode 정렬에 한해 적용 (IP당 60회/분, IP 불명 시 20회/분)",
+          ),
           "500": errorResponse("서버 에러"),
         },
       },

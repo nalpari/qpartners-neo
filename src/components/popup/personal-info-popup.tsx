@@ -256,7 +256,7 @@ export function PersonalInfoPopup() {
                   )}
                   {emailCheckResult === "fail" && (
                     <p className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#ff1a1a]">
-                      既に使用中のメールです.
+                      既に使用中のメールです。
                     </p>
                   )}
                   {emailCheckResult === "error" && (

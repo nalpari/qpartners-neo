@@ -262,11 +262,11 @@ export function TwoFactorAuthPopup() {
             <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#101010] text-center w-full whitespace-pre-wrap">
               <span className="text-[#e97923]">会員様のメールアドレス</span>
               <span className="font-normal">
-                {"で '2段階認証' 通知メールが送信されました.\nメールに含まれる"}
+                {"で '2段階認証' 通知メールが送信されました。\nメールに含まれる"}
               </span>
               <span className="text-[#e97923]">認証番号の6桁</span>
               <span className="font-normal">
-                {"を入力してください.\n認証番号を入力しなければサイトを利用できません.\n認証をキャンセルするとログイン画面に移動します."}
+                {"を入力してください。\n認証番号を入力しなければサイトを利用できません。\n認証をキャンセルするとログイン画面に移動します。"}
               </span>
             </p>
           </div>
