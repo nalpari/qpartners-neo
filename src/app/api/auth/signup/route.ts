@@ -12,7 +12,7 @@ import {
   SIGNUP_COMPLETE_SUBJECT,
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_URL } from "@/lib/config";
-import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail, maskUserId } from "@/lib/interface-logger";
 
 // POST /api/auth/signup — 일반회원 등록 (QSP newUserReq 프록시 + 승인완료 메일)
 //
@@ -98,6 +98,18 @@ export async function POST(request: NextRequest) {
     // 본 핸들러도 동일 baseline 으로 정규화해 두 라우트 결과 불일치(대소문자 변형 중복회원)를 차단.
     const email = rawEmail.trim().toLowerCase();
 
+    // 감사 컨텍스트 — 성공/실패 양쪽 로그에서 공유한다.
+    // 아래 QSP 호출 이후의 4개 502 출구는 모두 "쓰기 성립 여부 불명" 구간이다:
+    // 타임아웃(AbortSignal 10s)이 QSP 커밋 직전에 터지거나, 커밋 후 응답만 깨질 수 있다.
+    // 계정은 실제로 생성됐는데 클라이언트에는 실패로 보이면, 관리자가 재시도 → 409(중복) 를
+    // 보고 "남의 주소" 로 오해해 포기하기 쉽다. 이 경우 계정은 살아있고 생성자 기록만 없어진다.
+    // 따라서 해당 출구들에도 성공 로그와 동일한 target/actor 를 남겨 수동 확인이 가능하게 한다.
+    // `stage` 는 어느 지점에서 끊겼는지 = 커밋 가능성이 얼마나 높은지를 구분하는 단서다.
+    const auditCtx = {
+      targetUserId: maskEmail(email),
+      byAdmin: maskUserId(actor.userId),
+    };
+
     // 2. QSP newUserReq I/F 호출
     let qspResponse: Response;
     try {
@@ -139,13 +151,21 @@ export async function POST(request: NextRequest) {
           callerRoute: "[POST /api/auth/signup]",
           // 대리 등록이므로 인터페이스 로그는 생성 대상이 아니라 **행위자(관리자)** 에게 귀속시킨다.
           // `[PUT /api/admin/members/:id]` 의 updateUserDtlMng 호출과 동일 관례.
-          // 생성 대상은 requestBody 에 남으므로 추적 가능하다.
-          userId: maskEmail(actor.userId),
+          // 생성 대상은 requestBody 의 email 키에 남으므로 추적 가능하다.
+          //
+          // maskEmail 이 아니라 maskUserId 를 쓰는 이유: 관리자 계정은 이메일이 아니라 로그인 ID
+          // (예: "1301011") 로 인증한다. maskEmail 은 "@" 가 없으면 원문을 그대로 반환하므로
+          // 관리자 ID 가 평문으로 DB(qp_interface_log.user_id) 에 적재된다.
+          // (logout/password-init/deptList 라우트가 동일 이유로 maskUserId 를 사용)
+          userId: maskUserId(actor.userId),
           userType: actor.userType,
         },
       );
     } catch (error: unknown) {
-      console.error("[POST /api/auth/signup] QSP API 호출 실패:", error);
+      console.error(
+        "[POST /api/auth/signup] QSP API 호출 실패 — 등록 성립 여부 불명(수동 확인 필요)",
+        { ...auditCtx, stage: "transport", error },
+      );
       return NextResponse.json(
         { error: "外部サーバーに接続できません" },
         { status: 502 },
@@ -154,7 +174,10 @@ export async function POST(request: NextRequest) {
 
     // I6: QSP HTTP 비정상 응답 처리
     if (!qspResponse.ok) {
-      console.error("[POST /api/auth/signup] QSP 비정상 응답:", qspResponse.status);
+      console.error(
+        "[POST /api/auth/signup] QSP 비정상 응답 — 등록 성립 여부 불명(수동 확인 필요)",
+        { ...auditCtx, stage: "http-status", status: qspResponse.status },
+      );
       return NextResponse.json(
         { error: "外部サーバーエラーが発生しました" },
         { status: 502 },
@@ -166,7 +189,10 @@ export async function POST(request: NextRequest) {
     try {
       qspBody = await qspResponse.json();
     } catch (error: unknown) {
-      console.error("[POST /api/auth/signup] QSP 응답 JSON 파싱 실패:", error);
+      console.error(
+        "[POST /api/auth/signup] QSP 응답 JSON 파싱 실패 — 등록 성립 여부 불명(수동 확인 필요)",
+        { ...auditCtx, stage: "response-parse", error },
+      );
       return NextResponse.json(
         { error: "外部サーバーの応答を処理できません" },
         { status: 502 },
@@ -176,8 +202,8 @@ export async function POST(request: NextRequest) {
     const parsed = qspResponseSchema.safeParse(qspBody);
     if (!parsed.success) {
       console.error(
-        "[POST /api/auth/signup] QSP 응답 스키마 불일치:",
-        parsed.error.issues,
+        "[POST /api/auth/signup] QSP 응답 스키마 불일치 — 등록 성립 여부 불명(수동 확인 필요)",
+        { ...auditCtx, stage: "response-schema", issues: parsed.error.issues },
       );
       return NextResponse.json(
         { error: "外部サーバーの応答形式が正しくありません" },
@@ -190,10 +216,7 @@ export async function POST(request: NextRequest) {
     // 4. 성공/실패 판별
     if (qsp.result.resultCode !== "S") {
       const msg = qsp.result.resultMsg;
-      console.error("[POST /api/auth/signup] QSP 등록 실패:", msg, {
-        targetUserId: maskEmail(email),
-        byAdmin: maskEmail(actor.userId),
-      });
+      console.error("[POST /api/auth/signup] QSP 등록 실패:", msg, auditCtx);
 
       // 이메일 중복 판별: QSP 메시지에 "既に" (이미) 포함 시 409 Conflict
       const isDuplicate = msg?.includes("既に") || msg?.includes("すでに") || msg?.includes("already");
@@ -227,12 +250,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. 감사 로그 — 대리 등록은 "누가 이 계정을 만들었나" 가 사후 추궁 대상이 되는 조작이다.
-    //    QSP 측 기록에는 joinSourceCd="QPARTNERS" 만 남아 행위자를 특정할 수 없으므로
-    //    본 로그가 유일한 단서가 된다. `[PUT /api/admin/members/:id]` 완료 로그와 동일 형식.
+    //    QSP 로 보내는 payload 에는 행위자 식별자가 없으므로(accsSiteCd/joinSourceCd 는 사이트 코드일 뿐)
+    //    QSP 측 기록만으로는 행위자를 특정할 수 없다. 추적은 두 경로로 이중화되어 있다:
+    //      (1) qp_interface_log 의 user_id/user_type — 위 fetchWithLog 컨텍스트에서 적재 (durable)
+    //      (2) 본 완료 로그 — mailDelivery 등 (1) 에 없는 필드를 포함
+    //    `[PUT /api/admin/members/:id]` 완료 로그와 동일 형식.
     console.log("[POST /api/auth/signup] 일반회원 대리 등록 완료", {
-      targetUserId: maskEmail(email),
+      ...auditCtx,
       targetUserTp: "GENERAL",
-      byAdmin: maskEmail(actor.userId),
       mailDelivery,
     });
 

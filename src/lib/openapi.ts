@@ -501,7 +501,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("認証が必要です"),
-          "403": errorResponse("権限がありません (사내 사용자 아님)"),
+          "403": errorResponse(
+            "발생원 2가지 — `2段階認証が必要です` (middleware, 2FA 미완료) / `権限がありません` (handler, 사내 사용자 아님). " +
+            "응답 형태가 동일해 기계적 구분은 불가하며, 클라이언트는 양쪽 조치를 모두 담은 단일 문구로 안내한다.",
+          ),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
