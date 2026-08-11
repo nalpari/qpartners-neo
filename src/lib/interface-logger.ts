@@ -33,6 +33,11 @@ const SENSITIVE_KEYS = new Set([
   "chgPwd",
   "newPassword",
   "currentPassword",
+  // 세션/인증 토큰 — SEKO login 응답 data.token(Bearer 24h) 등이 로그에 평문 저장되지 않도록.
+  // URL 쿼리(URL_SENSITIVE_QUERY_KEYS)와 동일 집합을 body 마스킹에도 적용.
+  "token",
+  "accessToken",
+  "refreshToken",
   // 사용자 자유기입 PII 가능 — 탈퇴 사유(유저 불만·개인정보 혼입 가능)
   "resignRsn",
   "resignRemark",
@@ -104,7 +109,7 @@ function maskObjectFields(
 // `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
