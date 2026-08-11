@@ -2268,7 +2268,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치 / relCode1 길이 초과(100자)"),
           "404": errorResponse("해당 코드 없음"),
           "500": errorResponse("서버 에러"),
         },
