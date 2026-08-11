@@ -5,10 +5,14 @@ import Link from "next/link";
 import { usePopupStore } from "@/lib/store";
 import type { TabType } from "@/components/login/types";
 
-const REGISTRATION_URLS: Record<TabType, string> = {
+/**
+ * 회원타입별 가입 안내 URL.
+ * `general` 은 셀프 회원가입 폐지(관리자 등록 전용 전환)로 노출 대상이 아니므로 null.
+ */
+const REGISTRATION_URLS: Record<TabType, string | null> = {
   dealer: "https://www.hanasys.jp/join",
   installer: "https://q-partners.q-cells.jp/seminar/",
-  general: "/signup",
+  general: null,
 };
 
 interface LoginLinksProps {
@@ -17,7 +21,7 @@ interface LoginLinksProps {
 
 export function LoginLinks({ activeTab }: LoginLinksProps) {
   const registrationUrl = REGISTRATION_URLS[activeTab];
-  const isExternal = registrationUrl.startsWith("http");
+  const isExternal = registrationUrl?.startsWith("http") ?? false;
   const openPopup = usePopupStore((s) => s.openPopup);
 
   return (
@@ -28,29 +32,36 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
         />
-        <span className="w-px h-3 bg-[#D9D9D9]" />
-        <LinkItem
-          label="会員登録"
-          href={registrationUrl}
-          isHighlight
-          isExternal={isExternal}
-        />
+        {registrationUrl && (
+          <>
+            <span className="w-px h-3 bg-[#D9D9D9]" />
+            <LinkItem
+              label="会員登録"
+              href={registrationUrl}
+              isHighlight
+              isExternal={isExternal}
+            />
+          </>
+        )}
       </div>
 
       {/* 모바일 레이아웃 — 세로 박스 */}
+      {/* 会員登録 미노출 탭(一般会員)에서는 パスワードの初期化 단독 박스가 되므로 상하 모두 라운딩 */}
       <div className="flex lg:hidden flex-col w-full">
         <MobileButtonLinkItem
           label="パスワードの初期化"
           onClick={() => openPopup("password-reset", { activeTab })}
-          className="rounded-t-[4px] border border-[#EEE]"
+          className={`border border-[#EEE] ${registrationUrl ? "rounded-t-[4px]" : "rounded-[4px]"}`}
         />
-        <MobileLinkItem
-          label="会員登録"
-          href={registrationUrl}
-          isHighlight
-          isExternal={isExternal}
-          className="rounded-b-[4px] border-x border-b border-[#EEE]"
-        />
+        {registrationUrl && (
+          <MobileLinkItem
+            label="会員登録"
+            href={registrationUrl}
+            isHighlight
+            isExternal={isExternal}
+            className="rounded-b-[4px] border-x border-b border-[#EEE]"
+          />
+        )}
       </div>
     </>
   );

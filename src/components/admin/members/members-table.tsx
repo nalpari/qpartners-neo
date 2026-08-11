@@ -12,6 +12,7 @@ import { usePopupStore } from "@/lib/store";
 import type { MemberListItem, MemberListResponse, MemberSearchFilters } from "./members-types";
 import { STATUS_LABEL_MAP, formatDateTime, formatDate } from "./members-types";
 import { useUserType } from "@/hooks/use-user-type";
+import { useIsInternal } from "@/hooks/use-is-internal";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 
 // AG Grid cellRenderer 는 컴포넌트 외부 함수라 React hook 직접 사용 불가.
@@ -77,6 +78,10 @@ export function MembersTable({
     () => ({ userTypeReverseMap }),
     [userTypeReverseMap],
   );
+
+  // [一般会員 新規登録] 노출 제어 — UI hint 전용.
+  // 실제 권한 판정은 /signup 페이지 가드와 /api/auth/signup 핸들러의 isInternalUser 가 담당.
+  const isInternal = useIsInternal();
 
   // Design Ref: §4.3 — useQuery
   // staleTime: 0 + refetchOnMount/Focus 활성 — 최근접속일시(lastLoginAt) 등 외부에서 변경되는
@@ -192,7 +197,21 @@ export function MembersTable({
           </span>
           件
         </p>
-        <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
+        <div className="flex items-center gap-2">
+          {/* 신규 탭으로 여는 이유: 회원관리 목록의 검색조건·페이지 상태를 유지한 채
+              연속 등록 후 목록으로 돌아올 수 있게 하기 위함. */}
+          {isInternal && (
+            <a
+              href="/signup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center h-[42px] min-w-[68px] px-4 rounded-[4px] bg-[#E97923] border border-[#CB6212] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-center whitespace-nowrap transition-colors duration-150 hover:bg-[#B05713] hover:border-[#8A4007] hover:shadow-none"
+            >
+              一般会員 新規登録
+            </a>
+          )}
+          <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
+        </div>
       </div>
 
       {/* AG Grid + Pagination */}

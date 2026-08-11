@@ -445,8 +445,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/signup": {
       post: {
         tags: ["Auth"],
-        summary: "일반 회원가입 (QSP 프록시)",
-        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 가입 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
+        summary: "일반회원 등록 (QSP 프록시, SUPER_ADMIN·ADMIN 전용)",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원 등록 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 등록 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.\n\n**셀프 회원가입 폐지** — JWT 쿠키 필요. 사내 사용자(SUPER_ADMIN | ADMIN) 만 호출 가능하며, 그 외 로그인 사용자는 403.",
         requestBody: {
           required: true,
           content: {
@@ -482,13 +482,30 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "Validation failed",
+            description:
+              "두 가지 형태로 응답한다 — 클라이언트는 `fields` 배열의 유무로 원인을 구분한다.\n\n" +
+              "- **Zod 검증 실패**: `{ error: \"Validation failed\", fields: [...] }` — 입력 오류. 사용자에게 입력 확인을 안내.\n" +
+              "- **QSP 등록 실패 / JSON 파싱 실패**: `{ error }` (fields 없음) — 입력과 무관한 실패. 원인은 서버 로그에만 기록되며 클라이언트 메시지는 일반화된다.",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                schema: {
+                  // anyOf 사용 — oneOf 는 "정확히 하나만 매칭" 을 요구하는데,
+                  // ErrorResponse 에 additionalProperties: false 가 없어 Zod 실패 본문
+                  // `{ error, fields }` 가 두 브랜치 모두에 매칭된다. oneOf 로 두면
+                  // 스펙이 문서화하려던 바로 그 응답을 엄격한 검증기가 거부하게 된다.
+                  anyOf: [
+                    { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                    { $ref: "#/components/schemas/ErrorResponse" },
+                  ],
+                },
               },
             },
           },
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse(
+            "발생원 2가지 — `2段階認証が必要です` (middleware, 2FA 미완료) / `権限がありません` (handler, 사내 사용자 아님). " +
+            "응답 형태가 동일해 기계적 구분은 불가하며, 클라이언트는 양쪽 조치를 모두 담은 단일 문구로 안내한다.",
+          ),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
@@ -690,7 +707,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "이메일 중복 체크",
         description:
           "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
-          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.\n\n" +
+          "인증 불요(PUBLIC) — 관리자 대리 등록(/signup) 과 会員情報の設定(최초 로그인, 2FA 미완료 상태) 양쪽에서 호출된다.",
         requestBody: {
           required: true,
           content: {

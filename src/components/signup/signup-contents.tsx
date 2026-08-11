@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
-import { InputBox, Button, Checkbox, Radio } from "@/components/common";
+import { InputBox, Button, Radio } from "@/components/common";
 import { Spinner } from "@/components/common/spinner";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
@@ -33,32 +32,60 @@ const EMAIL_CHECK_MESSAGES: Record<
     "リクエストが多すぎます。しばらく経ってから再度お試しください",
 };
 
+const INITIAL_FORM = {
+  companyName: "",
+  companyNameKana: "",
+  postalCode: "",
+  address1: "",
+  address2: "",
+  phone: "",
+  fax: "",
+  lastName: "",
+  firstName: "",
+  lastNameKana: "",
+  firstNameKana: "",
+  email: "",
+  password: "",
+  passwordConfirm: "",
+  department: "",
+  position: "",
+  newsletter: true,
+  // 이용약관 동의 — 화면에서는 미노출이며 항상 동의(true) 상태로 시작한다.
+  //
+  // Why: 셀프 회원가입 폐지로 본 화면은 SUPER_ADMIN·ADMIN 이 회원을 대신 등록하는 경로가 되었다.
+  //   동의 주체인 본인이 화면 앞에 없으므로 운영자에게 체크를 요구하는 것은 의미가 없다
+  //   (약관 동의 자체는 오프라인·별도 경로에서 취득하는 것을 전제).
+  //
+  // ⚠ 현재 상태: 이 값을 false 로 바꾸는 writer 가 없어(`updateField("agreeTerms", …)` 호출 0건)
+  //   validate() 의 agreeTerms 가드는 도달 불가다. 또한 본 PR 이 체크박스·[見る] 버튼과 함께
+  //   `fieldErrors.agreeTerms` 를 표시하던 <p> 를 PC·MO 양쪽에서 모두 제거했다.
+  //
+  // ⚠ 동의 UI 를 되살릴 때는 아래 3개를 전부 복구해야 한다. validate() 가드만 살아있는 상태에서
+  //   초기값을 false 로 되돌리면, 미동의 시 handleSubmit 이 조용히 return 해
+  //   [会員登録] 버튼이 아무 반응 없이 죽는다(에러 표시·네트워크 요청 없음).
+  //     1) Checkbox + [見る] 버튼  2) fieldErrors.agreeTerms 표시 <p> (PC/MO 2곳)  3) 초기값 false
+  agreeTerms: true,
+};
+
+/**
+ * `/api/auth/signup` 400 응답이 Zod 검증 실패인지 판별.
+ * 검증 실패 응답에만 `fields: [{ field, message }]` 가 실린다 (route.ts 참조).
+ */
+function hasValidationFields(body: unknown): boolean {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "fields" in body &&
+    Array.isArray((body as Record<string, unknown>).fields)
+  );
+}
+
 export function SignupContents() {
-  const router = useRouter();
   const { openPopup } = usePopupStore();
   const { openAlert } = useAlertStore();
 
   // 폼 상태
-  const [form, setForm] = useState({
-    companyName: "",
-    companyNameKana: "",
-    postalCode: "",
-    address1: "",
-    address2: "",
-    phone: "",
-    fax: "",
-    lastName: "",
-    firstName: "",
-    lastNameKana: "",
-    firstNameKana: "",
-    email: "",
-    password: "",
-    passwordConfirm: "",
-    department: "",
-    position: "",
-    newsletter: true,
-    agreeTerms: false,
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
 
   // UI 상태
   const [emailCheckStatus, setEmailCheckStatus] =
@@ -112,6 +139,9 @@ export function SignupContents() {
     } else if (form.password !== form.passwordConfirm) {
       errors.passwordConfirm = "パスワードが一致しません";
     }
+    // 현재 도달 불가 — agreeTerms 를 false 로 만드는 writer 가 없다(INITIAL_FORM 에서 true 고정).
+    // 동의 UI 복구 시의 안전망으로 남겨두되, 이 errors 키를 렌더하는 곳이 현재 없으므로
+    // 발동하면 무반응 제출이 된다. 복구 절차는 INITIAL_FORM.agreeTerms 주석 참조.
     if (!form.agreeTerms) errors.agreeTerms = "利用規約に同意してください";
 
     setFieldErrors(errors);
@@ -196,17 +226,62 @@ export function SignupContents() {
       // 표시 규칙: "성 + 반각공백 + 명". popup 측에서 様 앞 전각공백을 별도로 추가하므로
       // 최종 표기는 "성 명　様" (반각·전각공백 차이 의도적).
       const displayName = `${form.lastName} ${form.firstName}`;
-      openPopup("signup-complete", { userName: displayName, userId: email });
+      // 관리자 대리 등록 화면 — [確認] 으로 폼을 초기화해 연속 등록을 지원한다.
+      openPopup("signup-complete", {
+        userName: displayName,
+        userId: email,
+        onConfirm: resetForm,
+      });
     } catch (error) {
       console.error("[Signup] 회원가입 실패:", error);
       if (isAxiosError(error) && error.response) {
         const serverMsg = extractApiError(error);
         if (serverMsg) console.warn("[Signup] 서버 메시지:", serverMsg);
         const status = error.response.status;
-        if (status === 409) {
+        if (status === 401) {
+          // 세션 만료. 본 화면은 회원관리 목록에서 새 탭으로 열려 장시간 방치되기 쉬운 반면
+          // JWT 는 8시간(jwt.ts TOKEN_EXPIRY) 만 유효하므로 실사용에서 도달하는 경로다.
+          //
+          // 자동 리다이렉트하지 않는 이유: 입력한 20여 개 필드가 전부 유실된다.
+          // JWT 쿠키는 탭 간 공유되므로, 다른 탭에서 재로그인한 뒤 이 탭에서 다시 제출하면
+          // 입력값을 보존한 채 그대로 성공한다. 그 절차를 문구로 안내한다.
+          //
+          // ⚠ "2段階認証まで" 를 반드시 명시할 것: 로그인 1차 인증만으로 쿠키가 세팅되고
+          //   그 토큰은 twoFactorVerified=false 다(login/route.ts). 2FA 미완료 상태로 재제출하면
+          //   middleware 가 403 을 반환해 아래 분기로 떨어진다.
+          setSubmitError(
+            "セッションの有効期限が切れました。別のタブで2段階認証まで完了してから、もう一度「会員登録」を押してください。入力内容は保持されます。",
+          );
+        } else if (status === 403) {
+          // 403 의 두 발생원은 사용자 조치가 정반대다:
+          //   · middleware 2FA 미완료 → 본인이 다른 탭에서 2FA 만 끝내면 즉시 해소 (수초)
+          //   · 핸들러 isInternalUser 거부 → 재시도로 해소 불가, 문의 필요
+          // 페이지 진입 시 가드가 둘 다 선차단하지만, 그건 탭을 열던 시점의 검사다.
+          // 위 401 안내에 따라 세션을 교체하면 2FA 미완료 상태가 새로 만들어지므로 실제로 도달한다.
+          //
+          // 두 원인을 기계적으로 구분하려면 서버가 판별 코드를 내려줘야 하는데, 그러려면 전 라우트
+          // 공용인 middleware 응답을 바꿔야 한다. 이 화면 하나를 위해 공용 경계를 건드리지 않고,
+          // 대신 양쪽 조치를 모두 담은 단일 문구로 안내한다(유저 대면 문구 매칭은 문구 변경에
+          // 조용히 깨지므로 채택하지 않음). 2FA 케이스는 위 401 안내에서 이미 예방된다.
+          setSubmitError(
+            "この操作を実行できませんでした。2段階認証が未完了の場合は、別のタブで完了してからもう一度お試しください（入力内容は保持されます）。解決しない場合は管理者にお問い合わせください。",
+          );
+        } else if (status === 409) {
           setSubmitError("既に使用中のメールアドレスです");
         } else if (status === 400) {
-          setSubmitError("入力内容を確認してください");
+          // 400 은 "입력 오류" 와 "입력과 무관한 등록 실패" 두 원인을 겸한다.
+          // 후자까지 "입력 확인" 으로 안내하면 입력에 문제가 없는데도 사용자가 폼을 계속 고치게 되므로,
+          // 응답에 `fields` 배열이 실렸는지(= Zod 검증 실패인지)로 구분한다.
+          //
+          // 후자에 serverMsg 를 노출하지 않는 이유: QSP 실패 메시지는 route.ts 에서 이미
+          // `会員登録に失敗しました` 로 일반화되어 있어 얻는 정보가 없고(rules/api.md — QSP 에러
+          // 직접 노출 금지), JSON 파싱 실패 경로의 영문 `Invalid JSON body` 가 일본어 UI 에
+          // 그대로 노출되는 통로만 열린다. 실제 원인은 서버 로그에서 확인한다.
+          setSubmitError(
+            hasValidationFields(error.response.data)
+              ? "入力内容を確認してください"
+              : "会員登録に失敗しました",
+          );
         } else {
           setSubmitError("サーバーエラーが発生しました。しばらくしてからお試しください。");
         }
@@ -218,9 +293,14 @@ export function SignupContents() {
     }
   };
 
-  // 취소
-  const handleCancel = () => {
-    router.push("/login");
+  // 등록 완료 후 연속 등록 — 입력값·검증상태를 전부 초기 상태로 되돌린다.
+  const resetForm = () => {
+    setForm(INITIAL_FORM);
+    setEmailCheckStatus("idle");
+    setFieldErrors({});
+    setSubmitError(null);
+    setShowPassword(false);
+    setShowPasswordConfirm(false);
   };
 
   // 주소검색
@@ -481,33 +561,11 @@ export function SignupContents() {
               </p>
             )}
 
-            {/* MO 하단: 이용약관 + 버튼 (회원정보 카드 내부) */}
+            {/* MO 하단: 등록 버튼 (회원정보 카드 내부).
+                이용약관 동의 영역과 キャンセル 버튼은 관리자 대리 등록 전환으로 미노출 —
+                상세 사유는 INITIAL_FORM.agreeTerms 주석 참조. */}
             <div className="flex flex-col gap-[18px] items-center w-full pt-6 lg:hidden">
-              <div className="flex flex-col items-start gap-2 w-full">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={form.agreeTerms}
-                    onChange={(checked) => updateField("agreeTerms", checked)}
-                    label="利用規約の同意 (必須)"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => openPopup("terms")}
-                    className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
-                  >
-                    見る
-                  </button>
-                </div>
-                {fieldErrors.agreeTerms && (
-                  <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
-                    {fieldErrors.agreeTerms}
-                  </p>
-                )}
-              </div>
               <div className="flex gap-2 w-full">
-                <Button variant="secondary" onClick={handleCancel} fullWidth>
-                  キャンセル
-                </Button>
                 <Button
                   variant="primary"
                   onClick={handleSubmit}
@@ -520,31 +578,10 @@ export function SignupContents() {
           </section>
       </div>
 
-      {/* PC 하단: 이용약관 + 버튼 (카드 밖, 회색 배경 위) */}
-      <div className="hidden lg:flex items-center justify-between w-full max-w-[1440px] pb-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <Checkbox
-            checked={form.agreeTerms}
-            onChange={(checked) => updateField("agreeTerms", checked)}
-            label="利用規約の同意 (必須)"
-          />
-          <button
-            type="button"
-            onClick={() => openPopup("terms")}
-            className="font-['Noto_Sans_JP'] font-medium text-sm text-[#0051FF] underline cursor-pointer shrink-0"
-          >
-            見る
-          </button>
-          {fieldErrors.agreeTerms && (
-            <p className="font-['Noto_Sans_JP'] text-[13px] text-[#FF1A1A] leading-[1.5]">
-              {fieldErrors.agreeTerms}
-            </p>
-          )}
-        </div>
+      {/* PC 하단: 등록 버튼 (카드 밖, 회색 배경 위).
+          이용약관 동의 영역이 사라져 좌측 요소가 없으므로 justify-end 로 우측 정렬. */}
+      <div className="hidden lg:flex items-center justify-end w-full max-w-[1440px] pb-1">
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={handleCancel} className="w-[97px]">
-            キャンセル
-          </Button>
           <Button
             variant="primary"
             onClick={handleSubmit}

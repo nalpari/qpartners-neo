@@ -631,6 +631,8 @@ export function Gnb() {
                 </div>
               </>
             ) : (
+              // 一般会員 셀프 회원가입 폐지 — 비로그인 헤더에 会員登録 진입점을 두지 않는다
+              // (/signup 은 SUPER_ADMIN·ADMIN 전용 페이지로 전환됨).
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
@@ -638,14 +640,6 @@ export function Gnb() {
                 >
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap ">
                     ログイン
-                  </span>
-                </Link>
-                <Link
-                  href="/signup"
-                  className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                >
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap flex-1 text-center">
-                    会員登録
                   </span>
                 </Link>
               </div>
@@ -824,6 +818,7 @@ export function Gnb() {
                 </button>
               </div>
             ) : (
+              // 一般会員 셀프 회원가입 폐지 — PC 헤더와 동일하게 会員登録 진입점 제거.
               <div className="flex items-center justify-center gap-4 px-7">
                 <Link
                   href="/login"
@@ -831,14 +826,6 @@ export function Gnb() {
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   ログイン
-                </Link>
-                <span className="w-px h-[10px] bg-[#5b5b5b]" />
-                <Link
-                  href="/signup"
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap flex-1 text-center"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  会員登録
                 </Link>
               </div>
             )}

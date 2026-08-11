@@ -1,20 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { usePopupStore, useAppStore } from "@/lib/store";
+import { usePopupStore } from "@/lib/store";
 import { Button } from "@/components/common";
 
 const CLOSE_ANIMATION_MS = 200;
 
 export function SignupCompletePopup() {
-  const router = useRouter();
   const { popupData, closePopup } = usePopupStore();
-  const setPrefillEmail = useAppStore((s) => s.setPrefillEmail);
   const [isClosing, setIsClosing] = useState(false);
 
   const userName = (popupData.userName as string) ?? "";
   const userId = (popupData.userId as string) ?? "";
+  // 등록 폼 초기화 콜백 — SignupContents 가 주입 (연속 등록 지원).
+  const onConfirm = popupData.onConfirm as (() => void) | undefined;
 
   const handleClose = () => {
     setIsClosing(true);
@@ -24,16 +23,15 @@ export function SignupCompletePopup() {
     }, CLOSE_ANIMATION_MS);
   };
 
-  // Design Ref: §5.3 — 로그인 이동 시 ID 자동입력을 위해 prefillEmail 설정
-  const handleGoLogin = () => {
-    setPrefillEmail(userId);
+  // 관리자 대리 등록 — 로그인 화면 이동 대신 폼을 초기화해 다음 회원을 이어서 등록한다.
+  const handleConfirm = () => {
     handleClose();
-    router.push("/login");
+    onConfirm?.();
   };
 
   return (
-    // 회원가입 완료 안내 → 사용자가 [ログイン画面に移動] 버튼으로만 닫도록 강제.
-    // dim 클릭·X 버튼으로 임의 닫힘 시 prefillEmail 설정 + 로그인 화면 이동 흐름이 끊긴다.
+    // 등록 완료 안내 → 사용자가 [確認] 버튼으로만 닫도록 강제.
+    // dim 클릭·X 버튼으로 임의 닫힘 시 폼 초기화 흐름이 끊긴다.
     <div
       className={`popup-overlay ${isClosing ? "popup-overlay--closing" : ""}`}
     >
@@ -79,10 +77,10 @@ export function SignupCompletePopup() {
           <div className="flex flex-col items-center w-full pb-1">
             <Button
               variant="primary"
-              onClick={handleGoLogin}
+              onClick={handleConfirm}
               className="w-full lg:w-[149px]"
             >
-              ログイン画面に移動
+              確認
             </Button>
           </div>
         </div>
