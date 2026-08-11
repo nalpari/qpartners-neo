@@ -4,8 +4,10 @@
  * 서버 stdout 로그는 인스턴스별로 흩어지고 재시작 시 유실되므로,
  * cycle 결과만 별도 컬렉션(`mass_mail_batch_logs`)에 축적해 조회 가능하게 한다.
  *
- * 인증: PocketBase 슈퍼유저 로그인(토큰은 모듈 스코프 캐시, 401/403 시 1회 재인증 후 재시도).
- * 컬렉션 API rule 은 전부 슈퍼유저 전용이므로 외부에서 위조 레코드를 넣을 수 없다.
+ * 인증: 로그 기록 전용 계정 로그인(토큰은 모듈 스코프 캐시, 401/403 시 1회 재인증 후 재시도).
+ * 이 계정에는 `mass_mail_batch_logs` 의 create 권한만 부여하고 나머지 rule 은 슈퍼유저 전용으로
+ * 비워 둔다 — 위조 레코드를 막으면서, 자격증명이 유출되어도 피해가 로그 1건 작성에 그친다.
+ * 슈퍼유저 계정을 쓰면 유출 시 PocketBase 인스턴스 전체를 내주게 되므로 사용하지 않는다.
  *
  * 이 모듈은 **절대 throw 하지 않는다** — 로깅 실패가 배치 자체를 실패시키면 안 되므로
  * 모든 에러를 console.error 로 흡수한다. env 미설정 시에는 경고 후 no-op.
@@ -17,6 +19,8 @@ import type { BatchCycleResult } from "@/lib/mass-mail/auto-retry-batch";
 
 const LOG_TAG = "[pocketbase-log]";
 const COLLECTION = "mass_mail_batch_logs";
+/** 로그 기록 전용 auth 컬렉션 — create 권한만 가진 계정이 속한다 (`_superusers` 금지). */
+const AUTH_COLLECTION = "batch_log_writers";
 /** PocketBase 응답 대기 상한 — 원격이 행 걸려도 배치 락 해제를 지연시키지 않는다. */
 const TIMEOUT_MS = 5_000;
 
@@ -39,13 +43,13 @@ let warnedMissingConfig = false;
 
 function getConfig(): PocketBaseConfig | null {
   const url = process.env.POCKETBASE_URL?.trim();
-  const email = process.env.POCKETBASE_ADMIN_EMAIL?.trim();
-  const password = process.env.POCKETBASE_ADMIN_PASSWORD;
+  const email = process.env.POCKETBASE_LOG_USER_EMAIL?.trim();
+  const password = process.env.POCKETBASE_LOG_USER_PASSWORD;
   if (!url || !email || !password) {
     if (!warnedMissingConfig) {
       warnedMissingConfig = true;
       console.warn(
-        `${LOG_TAG} POCKETBASE_URL / POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD 미설정 — 배치 로그 원격 기록 비활성화`,
+        `${LOG_TAG} POCKETBASE_URL / POCKETBASE_LOG_USER_EMAIL / POCKETBASE_LOG_USER_PASSWORD 미설정 — 배치 로그 원격 기록 비활성화`,
       );
     }
     return null;
@@ -55,7 +59,7 @@ function getConfig(): PocketBaseConfig | null {
 
 async function authenticate(cfg: PocketBaseConfig): Promise<string> {
   const res = await fetch(
-    `${cfg.url}/api/collections/_superusers/auth-with-password`,
+    `${cfg.url}/api/collections/${AUTH_COLLECTION}/auth-with-password`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -64,7 +68,7 @@ async function authenticate(cfg: PocketBaseConfig): Promise<string> {
     },
   );
   if (!res.ok) {
-    throw new Error(`슈퍼유저 인증 실패 (status=${res.status})`);
+    throw new Error(`배치 로그 계정 인증 실패 (status=${res.status})`);
   }
   const parsed = authSchema.safeParse(await res.json());
   if (!parsed.success) {
