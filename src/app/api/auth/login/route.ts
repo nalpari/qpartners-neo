@@ -59,13 +59,47 @@ export async function POST(request: NextRequest) {
   if (userTp === "SEKO") {
     const sekoResult = await sekoLogin(loginId, pwd, "[POST /api/auth/login][SEKO]");
     if (!sekoResult.ok) {
-      // 사용자 열거 방지 — QSP 경로와 동일 메시지/상태.
+      // 자격증명 거부(401)는 사용자 열거 방지를 위해 일반 메시지로, 인프라 장애(502류)는 구분해 응답 — QSP 경로와 동일.
+      // (모든 실패를 401 로 뭉개면 커넥터 다운/스키마 불일치 등 장애가 "ID/PW 오류"로 오인됨)
+      if (sekoResult.error.status === 401) {
+        return NextResponse.json(
+          { error: "IDまたはパスワードが正しくありません" },
+          { status: 401 },
+        );
+      }
       return NextResponse.json(
-        { error: "IDまたはパスワードが正しくありません" },
-        { status: 401 },
+        { error: "外部認証サーバーエラーが発生しました" },
+        { status: 502 },
       );
     }
     const s = sekoResult.data;
+
+    // 권한 사용가능여부(QpRole.isActive) 검증 — QSP 경로(6-1)와 동일 정책.
+    // 관리자가 SEKO 역할을 비활성화(isActive=false)하면 로그인 차단.
+    // fail-closed(레코드 미존재 → 차단) / fail-open(조회 실패 → 가용성 우선 통과).
+    try {
+      const sekoRole = await prisma.qpRole.findUnique({
+        where: { roleCode: "SEKO" },
+        select: { isActive: true },
+      });
+      if (sekoRole === null) {
+        console.error("[POST /api/auth/login][SEKO] QpRole(SEKO) 레코드 미존재 — 로그인 차단 (fail-closed)");
+        return NextResponse.json(
+          { error: "権限情報が存在しないためログインできません" },
+          { status: 403 },
+        );
+      }
+      if (!sekoRole.isActive) {
+        console.warn("[POST /api/auth/login][SEKO] 비활성 SEKO 권한 로그인 차단");
+        return NextResponse.json(
+          { error: "権限が無効のためログインできません" },
+          { status: 403 },
+        );
+      }
+    } catch (error) {
+      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 가용성 우선(QSP 경로와 동일).
+      console.error("[POST /api/auth/login][SEKO] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    }
 
     // 로컬 테스트 편의 우회: SEKO 초기화(changePwd)/2FA(save2faVerified) 흐름 미배선 구간을
     // 건너뛰고 홈까지 진입시켜 후속 API(getUserInfo 등)를 화면에서 테스트하기 위한 임시 스위치.
@@ -93,6 +127,8 @@ export async function POST(request: NextRequest) {
       // SEKO 2FA 미구현 → 스킵. 초기화 필요("Y")면 false 로 두어 personal-info popup(초기화 흐름) 진입.
       // devBypassInit 시 true 로 강제하여 홈 진입.
       twoFactorVerified: devBypassInit ? true : (s.pwdInitYn !== "Y"),
+      // SEKO telNo 는 개인 휴대전화(회사 전화 아님) — 문의하기 자동입력 목적상 의도적으로 JWT 에 포함.
+      // JWT 는 httpOnly + 운영 HTTPS 로만 전송되어 유출 표면 제한. 장기적으로 on-demand fetch 검토 대상(PR #27 리뷰).
       telNo: s.telNo,
       loginNotiYn: null,
       // AS-IS Connector Bearer 토큰(24h) — 후속 Bearer API(getUserInfo 등) 호출용. JWT 에만 보관.

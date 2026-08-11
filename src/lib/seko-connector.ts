@@ -45,6 +45,13 @@ function sekoBaseUrl(): string {
       "SEKO_CONNECTOR_BASE_URL is not set (시공점 Connector base URL 미설정)",
     );
   }
+  // 비밀번호 평문 전송(login/changePwd 등) 보호 — 운영에서는 HTTPS 강제(dev http 허용).
+  // config.ts 의 QSP_BASE_URL HTTPS 가드와 동일 정책(APP_ENV=production 기준).
+  if (process.env.APP_ENV === "production" && !url.startsWith("https://")) {
+    throw new ConfigError(
+      "SEKO_CONNECTOR_BASE_URL must use HTTPS in production (시공점 Connector 비밀번호 평문 전송 보호)",
+    );
+  }
   return url.replace(/\/+$/, "");
 }
 
