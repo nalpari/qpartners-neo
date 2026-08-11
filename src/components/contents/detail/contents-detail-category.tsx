@@ -40,7 +40,8 @@ export function ContentsDetailCategory({
     return {
       label: parent.name,
       // 그룹 라벨(1depth) 적색 판정 — 자식과 독립적으로 부모 자신의 값으로만 결정한다.
-      labelInternalOnly: parent.isInternalOnly,
+      // 적색은 사내 사용자 전용 표식 — 비사내에는 숨기지 않고 기본색으로 유지한다.
+      labelInternalOnly: isInternal && parent.isInternalOnly,
       normalValues: normalItems.map((c) => c.name),
       internalValues: isInternal ? internalItems.map((c) => c.name) : [],
     };
