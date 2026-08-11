@@ -35,7 +35,9 @@ const INITIAL_LOCAL: LocalFields = {
 export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
   const [local, setLocal] = useState<LocalFields>(INITIAL_LOCAL);
   // USER_TYPE 공통코드에서 동적으로 옵션 수급 (코드관리 변경 즉시 반영). fallback 내장.
-  const { searchOptions: rawUserTypeOptions } = useUserType();
+  // relCode1="Y" — 회원관리 검색 노출 대상만 수급. 시공점(SEKO)은 "N" 이라 제외된다.
+  // (목록 API의 memberListQuerySchema 가 SEKO 를 허용하지 않아, 선택 가능하면 400 이 난다)
+  const { searchOptions: rawUserTypeOptions } = useUserType({ relCode1: "Y" });
   // 권한관리 isActive=N인 roleCode를 회원유형 옵션에서 제외
   const { allOptions } = useTargetLabels();
   const userTypeOptions = useMemo(() => {
