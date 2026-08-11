@@ -12,7 +12,7 @@ import {
   SIGNUP_COMPLETE_SUBJECT,
 } from "@/lib/mail-templates/signup-complete";
 import { QSP_API, SITE_URL } from "@/lib/config";
-import { fetchWithLog, maskEmail, maskUserId } from "@/lib/interface-logger";
+import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 
 // POST /api/auth/signup — 일반회원 등록 (QSP newUserReq 프록시 + 승인완료 메일)
 //
@@ -105,9 +105,12 @@ export async function POST(request: NextRequest) {
     // 보고 "남의 주소" 로 오해해 포기하기 쉽다. 이 경우 계정은 살아있고 생성자 기록만 없어진다.
     // 따라서 해당 출구들에도 성공 로그와 동일한 target/actor 를 남겨 수동 확인이 가능하게 한다.
     // `stage` 는 어느 지점에서 끊겼는지 = 커밋 가능성이 얼마나 높은지를 구분하는 단서다.
+    //
+    // byAdmin 은 마스킹하지 않는다 — 상세 근거는 아래 fetchWithLog 컨텍스트 주석 참조.
+    // targetUserId 는 등록 대상(고객)의 이메일이므로 반드시 마스킹을 유지한다.
     const auditCtx = {
       targetUserId: maskEmail(email),
-      byAdmin: maskUserId(actor.userId),
+      byAdmin: actor.userId,
     };
 
     // 2. QSP newUserReq I/F 호출
@@ -153,11 +156,19 @@ export async function POST(request: NextRequest) {
           // `[PUT /api/admin/members/:id]` 의 updateUserDtlMng 호출과 동일 관례.
           // 생성 대상은 requestBody 의 email 키에 남으므로 추적 가능하다.
           //
-          // maskEmail 이 아니라 maskUserId 를 쓰는 이유: 관리자 계정은 이메일이 아니라 로그인 ID
-          // (예: "1301011") 로 인증한다. maskEmail 은 "@" 가 없으면 원문을 그대로 반환하므로
-          // 관리자 ID 가 평문으로 DB(qp_interface_log.user_id) 에 적재된다.
-          // (logout/password-init/deptList 라우트가 동일 이유로 maskUserId 를 사용)
-          userId: maskUserId(actor.userId),
+          // 행위자 ID 를 마스킹하지 않는 이유 — 감사 목적과 정면으로 충돌하기 때문이다:
+          //   · `maskUserId` 는 비이메일 입력에서 앞 2자만 남긴다(interface-logger.ts).
+          //     관리자 loginId 는 전부 "13" 으로 시작하는 번호대(1301011, 1301000 …)라
+          //     전 관리자가 "13***" 하나로 붕괴해 "누가 만들었나" 를 영영 답할 수 없게 된다.
+          //   · PII 로깅 금지 규칙(.claude/rules/api.md)의 대상은 이메일 주소·토큰·비밀번호이며
+          //     내부 직원 식별자는 포함하지 않는다.
+          //   · 본 저장소는 이미 모든 createdBy/updatedBy 컬럼과 admin/mass-mails 로그에
+          //     관리자 ID 를 원본으로 보관한다 — 원본 기록이 지배적 관행이다.
+          //   · logout/password-init/deptList 가 maskUserId 를 쓰는 것은 그 라우트들의 행위자가
+          //     **고객**(STORE/SEKO/GENERAL) 이기 때문이다. 대리 등록의 행위자는 내부 직원이라
+          //     성격이 다르며, 그 선례를 그대로 적용하면 안 된다.
+          // 반면 등록 대상(auditCtx.targetUserId)은 고객 이메일이므로 계속 마스킹한다.
+          userId: actor.userId,
           userType: actor.userType,
         },
       );
@@ -251,9 +262,14 @@ export async function POST(request: NextRequest) {
 
     // 6. 감사 로그 — 대리 등록은 "누가 이 계정을 만들었나" 가 사후 추궁 대상이 되는 조작이다.
     //    QSP 로 보내는 payload 에는 행위자 식별자가 없으므로(accsSiteCd/joinSourceCd 는 사이트 코드일 뿐)
-    //    QSP 측 기록만으로는 행위자를 특정할 수 없다. 추적은 두 경로로 이중화되어 있다:
-    //      (1) qp_interface_log 의 user_id/user_type — 위 fetchWithLog 컨텍스트에서 적재 (durable)
-    //      (2) 본 완료 로그 — mailDelivery 등 (1) 에 없는 필드를 포함
+    //    QSP 측 기록만으로는 행위자를 특정할 수 없다. 추적 수단은 둘이며 보장 수준이 다르다:
+    //      (1) 본 완료 로그 — console 은 동기 호출이므로 1차 추적 수단.
+    //      (2) qp_interface_log 의 user_id/user_type — 위 fetchWithLog 컨텍스트에서 적재.
+    //          단 writeLog(interface-logger.ts)는 fire-and-forget 이라 await·재시도가 없다.
+    //          insert 실패나 프로세스 조기 종료 시 유실될 수 있는 **best-effort** 기록이며,
+    //          보조 수단으로만 취급해야 한다.
+    //    즉 어느 쪽도 유실 불가를 보장하지 않는다. 보장이 필요하면 전용 감사 저장소
+    //    (호출 전 PENDING 영속화 → 결과 갱신 + 명시적 실패 정책)가 필요하며 현재 범위 밖이다.
     //    `[PUT /api/admin/members/:id]` 완료 로그와 동일 형식.
     console.log("[POST /api/auth/signup] 일반회원 대리 등록 완료", {
       ...auditCtx,
