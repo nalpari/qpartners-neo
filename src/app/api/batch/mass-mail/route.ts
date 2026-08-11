@@ -118,12 +118,15 @@ export async function POST(request: NextRequest) {
         // cycle 결과 한 줄 요약 — 응답에는 결과가 담기지 않으므로 이 로그가 유일한 결과 채널.
         // `grep "cycle 결과"` 한 번으로 성공/실패를 판별할 수 있도록 고정 포맷으로 남긴다.
         console.log(`${LOG_TAG} cycle 결과 — ${formatCycleResult(result)}`);
-        await logBatchCycle({ ...result, holder });
+        // await 하지 않는다 — 원격 기록은 부가 기능이므로 아래 finally 의 락 해제를 막으면 안 된다.
+        // (PocketBase 무응답 시 최대 20초간 락을 붙들고 있어 다음 cron tick 이 skip 된다)
+        // logBatchCycle 은 no-throw 계약이므로 unhandled rejection 이 발생하지 않는다.
+        void logBatchCycle({ ...result, holder });
       } catch (error: unknown) {
         // runBatchOnce 는 내부에서 자체 try/catch 하지만, 예기치 못한 throw 로도
         // 락 해제가 누락되지 않도록 최상위에서 한 번 더 잡는다.
         console.error(`${LOG_TAG} cycle 결과 — status=ERROR | cycle 실행 중 예외:`, error);
-        await logBatchCycle({
+        void logBatchCycle({
           holder,
           ok: false,
           error: error instanceof Error ? error.message : String(error),
