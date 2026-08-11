@@ -28,6 +28,9 @@ const PUBLIC_PATHS = [
   // 응답은 ok: boolean 만 노출(민감정보 없음) → 인증 불요.
   "/api/health",
   "/api/health/db",
+  // 외부 스케줄러가 호출하는 배치 트리거 — 쿠키 세션을 가질 수 없으므로 JWT 대상 외.
+  // 인증은 route handler 가 Authorization: Bearer <BATCH_API_TOKEN> 으로 직접 검증한다.
+  "/api/batch/mass-mail",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */

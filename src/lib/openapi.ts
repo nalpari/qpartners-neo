@@ -61,6 +61,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "Member", description: "회원관리 (관리자 전용)" },
     { name: "MassMail", description: "대량메일 발송 (관리자 전용)" },
     { name: "Master", description: "QSP 마스터 데이터 (부서 등)" },
+    { name: "Batch", description: "배치 트리거 (외부 스케줄러 전용)" },
   ],
 
   paths: {
@@ -3434,6 +3435,68 @@ export const openApiSpec: OpenAPIV3.Document = {
           "403": errorResponse("権限がありません"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류 (QSP 응답 비정상/스키마 불일치/resultCode≠S)"),
+        },
+      },
+    },
+    // ─── Batch ───
+    "/batch/mass-mail": {
+      post: {
+        tags: ["Batch"],
+        summary: "대량메일 자동 재시도 배치 1 cycle 트리거",
+        description:
+          "외부 스케줄러(cron 등)가 주기적으로 호출하는 배치 트리거. 프로세스 내 setInterval 을 대체한 라우트로, " +
+          "cycle 주기는 스케줄러가 소유한다.\n\n" +
+          "**cycle 내용**: 좀비 감지(sending 장기 정체 → send_failed) / 예약 도래(scheduled → pending) / " +
+          "수신자 수집 복구 / pending 수신자 발송 / 전건 종결 시 sent 승격.\n\n" +
+          "**인증**: `Authorization: Bearer <BATCH_API_TOKEN>` (쿠키 세션 아님). 토큰 미설정 환경에서는 500 으로 fail-closed.\n\n" +
+          "**중복 방어**: `qp_batch_locks` 리스 락으로 인스턴스 간 상호배제. 다른 인스턴스가 실행 중이면 " +
+          "실행하지 않고 200 `{ skipped: true }` 를 반환하므로, 스케줄러는 200/202 를 모두 정상으로 취급하면 된다.\n\n" +
+          "**결과 확인**: cycle 은 백그라운드에서 진행되어 응답에 처리 결과가 담기지 않는다. 처리 내역은 서버 로그, " +
+          "반복 실패는 `GET /api/health` 503 으로 확인한다.",
+        security: [],
+        parameters: [
+          {
+            name: "Authorization",
+            in: "header",
+            required: true,
+            schema: { type: "string" },
+            description: "`Bearer <BATCH_API_TOKEN>`",
+          },
+        ],
+        responses: {
+          "202": {
+            description: "cycle 실행 시작 (백그라운드)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    started: { type: "boolean", example: true },
+                    skipped: { type: "boolean", example: false },
+                  },
+                  required: ["started", "skipped"],
+                },
+              },
+            },
+          },
+          "200": {
+            description: "다른 인스턴스가 실행 중이어서 skip (정상)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    started: { type: "boolean", example: false },
+                    skipped: { type: "boolean", example: true },
+                    reason: { type: "string", example: "locked" },
+                  },
+                  required: ["started", "skipped"],
+                },
+              },
+            },
+          },
+          "401": errorResponse("토큰 누락 또는 불일치"),
+          "500": errorResponse("BATCH_API_TOKEN 미설정 등 설정 에러 / 락 획득 실패"),
         },
       },
     },

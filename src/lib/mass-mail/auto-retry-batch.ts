@@ -1,7 +1,7 @@
 /**
- * 대량메일 자동 재시도 배치 (3분 cron)
+ * 대량메일 자동 재시도 배치 (외부 스케줄러 구동)
  *
- * Plan §4.6 / Design §4.6 (mass-mail-send) — 3분 cron 자동 복구.
+ * Plan §4.6 / Design §4.6 (mass-mail-send) — 주기적 자동 복구.
  *
  * **목적**
  *   - 좀비 감지: status='sending' 인 채로 zombieThresholdMs 경과한 mass_mail → send_failed 자동 승격
@@ -10,23 +10,27 @@
  *   - status 자동 전이: 모든 recipients 가 종결되면 mass_mail.status='sent'
  *
  * **동작 모델**
- *   - Next.js 기동 시 `instrumentation.ts:register()` 가 startAutoRetryBatch() 호출
- *   - setInterval 로 BATCH_INTERVAL_MS (기본 3분) 마다 runBatchOnce() 실행
- *   - PM2 single instance 가정 — 인스턴스 다중화 시 분산 락 필요 (Design §4.6 후속)
+ *   - 외부 스케줄러(cron 등)가 `POST /api/batch/mass-mail` 을 주기적으로 호출 → runBatchOnce() 1회 실행
+ *   - 프로세스 내 setInterval 을 쓰지 않는다 — 운영 2 인스턴스가 각자 타이머를 돌려
+ *     같은 mass_mail 을 이중 발송하는 문제가 있었음. 주기 설정은 스케줄러 쪽 책임.
+ *   - 인스턴스 간 중복 실행은 2단 리스 락으로 차단 (batch-lock.ts, `qp_batch_locks`)
+ *     · cycle 락(`mass-mail`): 라우트가 획득 — 배치 cycle 끼리의 상호배제
+ *     · mail 락(`mass-mail:{id}`): runWithMassMailLock 이 획득 — 배치와 관리자 [発送]/[再送信]
+ *       사이의 상호배제 (수동 경로는 cycle 락 대상이 아니므로 mail 단위 락이 필요)
  *
  * **안전장치**
- *   - isRunning 플래그로 cycle 중첩 방지 (직전 cycle 가 아직 실행 중이면 skip)
+ *   - __massMailBatchRunning 플래그로 같은 프로세스 내 cycle 중첩 방지 (분산 락의 프로세스 내 보완층)
  *   - 한 mass_mail 처리 실패가 batch 전체를 죽이지 않도록 try/catch 분리
- *   - batchIntervalMs=0 인 경우 배치 비활성 (테스트/개발 환경용)
- *   - 타이머는 globalThis 에 보관 — Next.js dev HMR 리로드 시 중복 setInterval 방지
+ *   - cycle 연속 실패가 BATCH_FAILURE_THRESHOLD 에 도달하면 /api/health 가 503 노출
  */
 
 import { MASS_MAIL_DEFAULTS } from "@/lib/config";
+import { massMailLockName } from "@/lib/mass-mail/batch-lock";
+import { BATCH_FAILURE_THRESHOLD, batchState } from "@/lib/mass-mail/batch-state";
 import {
   collectAndQueueRecipients,
-  inFlightMassMails,
   maybePromoteToSent,
-  runWithInFlightGuard,
+  runWithMassMailLock,
   sendLoop,
 } from "@/lib/mass-mail/send-processor";
 import { prisma } from "@/lib/prisma";
@@ -36,77 +40,91 @@ const LOG_TAG = "[mass-mail/auto-retry-batch]";
 /** 한 cycle 에서 처리할 최대 mass_mail 건수 — 백로그가 커도 cycle 시간이 폭주하지 않도록 */
 const CYCLE_MAX_TARGETS = 500;
 
-/**
- * cycle 전체가 throw 한 횟수가 이 값에 연속 도달하면 setInterval 타이머를 해제한다.
- * 같은 원인이 무한 반복되는 사일런트 루프를 차단하고 /api/health 가 503 으로 노출되도록 fail-closed.
- * 임계 도달 후 자동 복구는 process 재기동 (= instrumentation 재실행) 으로만 가능 — 운영자가 즉시 인지.
- */
-const CYCLE_FAILURE_THRESHOLD = 5;
-
-// HMR dev 환경에서 모듈 재-import 시에도 단일 타이머 유지.
-type BatchGlobals = {
-  __massMailBatchTimer?: NodeJS.Timeout | null;
-  __massMailBatchRunning?: boolean;
-  __massMailBatchConsecutiveFailures?: number;
-};
-const g = globalThis as unknown as BatchGlobals;
+const g = batchState;
 
 /**
- * 서버 기동 시 1회 호출 — setInterval 등록.
- * 중복 호출 시 무시 (idempotent).
+ * 배치 1 cycle 의 결과 요약 — 라우트가 한 줄 로그로 남겨 운영자가 성공/실패를 즉시 판별한다.
+ * (cycle 은 백그라운드 실행이라 HTTP 응답에는 담기지 않으므로, 로그가 유일한 결과 채널)
  */
-export function startAutoRetryBatch(): void {
-  if (g.__massMailBatchTimer) {
-    console.warn(`${LOG_TAG} 이미 등록된 배치 — 중복 시작 시도 무시`);
-    return;
-  }
-
-  const intervalMs = MASS_MAIL_DEFAULTS.batchIntervalMs;
-  if (intervalMs <= 0) {
-    console.log(`${LOG_TAG} MASS_MAIL_BATCH_INTERVAL_MS=${intervalMs} → 배치 비활성 (개발/테스트 환경 추정)`);
-    return;
-  }
-
-  console.log(`${LOG_TAG} 자동 재시도 배치 등록 — interval=${intervalMs}ms (${Math.round(intervalMs / 1000)}초)`);
-  g.__massMailBatchTimer = setInterval(() => {
-    runBatchOnce().catch((err: unknown) => {
-      console.error(`${LOG_TAG} unhandled cycle error:`, err);
-    });
-  }, intervalMs);
-}
-
-export function stopAutoRetryBatch(): void {
-  if (g.__massMailBatchTimer) {
-    clearInterval(g.__massMailBatchTimer);
-    g.__massMailBatchTimer = null;
-    console.log(`${LOG_TAG} 자동 재시도 배치 해제`);
-  }
+export interface BatchCycleResult {
+  /** cycle 이 예외 없이 끝났는지 — false 면 `error` 에 사유 */
+  ok: boolean;
+  /** 실행하지 않고 건너뛴 사유 (없으면 실제 실행됨) */
+  skipped?: string;
+  /** 처리 대상 mass_mail 건수 */
+  targets: number;
+  /** 정상 처리된 mass_mail 건수 */
+  processed: number;
+  /** 처리 중 예외가 발생한 mass_mail 건수 */
+  failedMails: number;
+  /** 발송 성공 수신자 합계 */
+  sent: number;
+  /** 발송 실패 수신자 합계 */
+  failed: number;
+  /** 좀비 승격 건수 (sending → send_failed) */
+  zombies: number;
+  /** 예약 도래 전이 건수 (scheduled → pending) */
+  promotedScheduled: number;
+  elapsedMs: number;
+  /** ok=false 일 때의 에러 메시지 */
+  error?: string;
 }
 
 /**
- * 배치 1 cycle — 외부에서도 호출 가능 (수동 트리거 / 테스트용).
+ * 배치 1 cycle — `POST /api/batch/mass-mail` 이 락을 획득한 뒤 호출한다.
+ *
+ * throw 하지 않는다 — 모든 실패를 `BatchCycleResult` 에 담아 반환하므로
+ * 호출자는 결과만 보고 성공/실패 로그를 남기면 된다.
  */
-export async function runBatchOnce(): Promise<void> {
+export async function runBatchOnce(): Promise<BatchCycleResult> {
+  const startedAt = Date.now();
+  const empty = {
+    targets: 0,
+    processed: 0,
+    failedMails: 0,
+    sent: 0,
+    failed: 0,
+    zombies: 0,
+    promotedScheduled: 0,
+  };
+
   if (g.__massMailBatchRunning) {
     console.warn(`${LOG_TAG} 직전 cycle 가 아직 실행 중 — 이번 cycle skip`);
-    return;
+    return { ok: true, skipped: "직전 cycle 실행 중", ...empty, elapsedMs: 0 };
   }
   g.__massMailBatchRunning = true;
-  const startedAt = Date.now();
+
+  let zombies = 0;
+  let promotedScheduled = 0;
+  let targetCount = 0;
+  let failedMails = 0;
+  let sentTotal = 0;
+  let failedTotal = 0;
 
   try {
     // 1. 좀비 감지: sending + updated_at < NOW - zombieThreshold → send_failed 자동 승격.
-    //    현재 프로세스에서 sendLoop 실행 중인 mass_mail 은 제외 — heartbeat 가 느릴 때도
-    //    in-flight 를 좀비로 오판정하지 않도록 인-메모리 마커로 추가 방어 (PM2 single instance 가정).
+    //    발송 파이프라인 락을 보유 중인 mass_mail 은 제외 — heartbeat 가 느릴 때도
+    //    in-flight 를 좀비로 오판정하지 않도록 추가 방어. 락은 DB 기반이므로
+    //    다른 인스턴스에서 발송 중인 건도 정확히 식별된다 (인-메모리 Set 은 인스턴스 간 무력).
     const zombieCutoff = new Date(Date.now() - MASS_MAIL_DEFAULTS.zombieThresholdMs);
     const zombieCandidates = await prisma.massMail.findMany({
       where: { status: "sending", updatedAt: { lt: zombieCutoff } },
       select: { id: true, updatedAt: true },
     });
-    const inFlightIds = zombieCandidates.filter((z) => inFlightMassMails.has(z.id)).map((z) => z.id);
-    const realZombieIds = zombieCandidates
-      .map((z) => z.id)
-      .filter((id) => !inFlightMassMails.has(id));
+    const heldLocks =
+      zombieCandidates.length === 0
+        ? []
+        : await prisma.batchLock.findMany({
+            where: {
+              name: { in: zombieCandidates.map((z) => massMailLockName(z.id)) },
+              expiresAt: { gt: new Date() },
+            },
+            select: { name: true },
+          });
+    const heldLockNames = new Set(heldLocks.map((lock) => lock.name));
+    const isInFlight = (id: number) => heldLockNames.has(massMailLockName(id));
+    const inFlightIds = zombieCandidates.map((z) => z.id).filter(isInFlight);
+    const realZombieIds = zombieCandidates.map((z) => z.id).filter((id) => !isInFlight(id));
     if (inFlightIds.length > 0) {
       console.log(
         `${LOG_TAG} 좀비 후보 중 in-flight ${inFlightIds.length}건 제외 — ids=[${inFlightIds.join(", ")}]`,
@@ -117,6 +135,7 @@ export async function runBatchOnce(): Promise<void> {
         where: { id: { in: realZombieIds }, status: "sending" },
         data: { status: "send_failed" },
       });
+      zombies = zombieResult.count;
       console.warn(
         `${LOG_TAG} 좀비 감지 — ${zombieResult.count}건 sending → send_failed 자동 승격 (threshold=${MASS_MAIL_DEFAULTS.zombieThresholdMs}ms, ids=[${realZombieIds.join(", ")}])`,
       );
@@ -148,7 +167,7 @@ export async function runBatchOnce(): Promise<void> {
       },
       data: { status: "pending" },
     });
-    const promotedScheduled = promotedResult.count;
+    promotedScheduled = promotedResult.count;
     if (promotedScheduled > 0) {
       console.log(
         `${LOG_TAG} 예약 도래 — ${promotedScheduled}건 scheduled → pending 전이 (이번 cycle 발송 대상 포함)`,
@@ -164,9 +183,16 @@ export async function runBatchOnce(): Promise<void> {
       take: CYCLE_MAX_TARGETS,
     });
 
+    targetCount = targets.length;
     if (targets.length === 0) {
       console.log(`${LOG_TAG} 처리 대상 없음 — cycle 종료 (소요 ${Date.now() - startedAt}ms)`);
-      return;
+      return {
+        ok: true,
+        ...empty,
+        zombies,
+        promotedScheduled,
+        elapsedMs: Date.now() - startedAt,
+      };
     }
     if (targets.length === CYCLE_MAX_TARGETS) {
       console.warn(`${LOG_TAG} cycle 대상이 상한(${CYCLE_MAX_TARGETS})에 도달 — 백로그 적체 가능`);
@@ -182,62 +208,95 @@ export async function runBatchOnce(): Promise<void> {
       }
       const fromStatus = mail.status;
 
-      // runWithInFlightGuard 가 inFlightMassMails.has 체크 + add/delete 담당.
-      // 다른 경로(processMassMailSend / processMassMailRetry)에서 같은 mass_mail 을
-      // 수집/발송 중이면 자동으로 skip → 중복 SMTP 발송 + QSP 이중 호출 + 좀비 오판정 차단.
-      await runWithInFlightGuard(mail.id, async () => {
-        try {
-          // 2-a. recipients 가 0건이면 수집부터 (수집 단계 실패 복구)
-          const existingCount = await prisma.massMailRecipient.count({
-            where: { massMailId: mail.id },
-          });
-          if (existingCount === 0) {
-            console.log(`${LOG_TAG} mass_mail ${mail.id}: recipients 0건 → 수집 재시도 (status=${fromStatus})`);
-            await collectAndQueueRecipients(mail.id, fromStatus);
-          }
+      // runWithMassMailLock 이 mass_mail 단위 분산 락의 획득/갱신/해제를 담당.
+      // 다른 경로(processMassMailSend / processMassMailRetry)가 — 다른 인스턴스에서라도 —
+      // 같은 mass_mail 을 수집/발송 중이면 자동 skip
+      // → 중복 SMTP 발송 + QSP 이중 호출 + 좀비 오판정 차단.
+      // 락 획득 자체가 DB 오류로 실패하면 이 건만 포기하고 다음 mail 로 진행 (cycle 전체 중단 방지).
+      try {
+        await runWithMassMailLock(mail.id, async () => {
+          try {
+            // 2-a. recipients 가 0건이면 수집부터 (수집 단계 실패 복구)
+            const existingCount = await prisma.massMailRecipient.count({
+              where: { massMailId: mail.id },
+            });
+            if (existingCount === 0) {
+              console.log(`${LOG_TAG} mass_mail ${mail.id}: recipients 0건 → 수집 재시도 (status=${fromStatus})`);
+              await collectAndQueueRecipients(mail.id, fromStatus);
+            }
 
-          // 2-b. pending recipient (retry 여력 있음) 이 있으면 sendLoop
-          const pendingCount = await prisma.massMailRecipient.count({
-            where: {
-              massMailId: mail.id,
-              status: "pending",
-              retryCount: { lt: MASS_MAIL_DEFAULTS.recipientMaxRetry },
-            },
-          });
-          if (pendingCount > 0) {
-            console.log(`${LOG_TAG} mass_mail ${mail.id}: pending ${pendingCount}건 → sendLoop`);
-            await sendLoop(mail.id, MASS_MAIL_DEFAULTS.throttleMs);
-          }
+            // 2-b. pending recipient (retry 여력 있음) 이 있으면 sendLoop
+            const pendingCount = await prisma.massMailRecipient.count({
+              where: {
+                massMailId: mail.id,
+                status: "pending",
+                retryCount: { lt: MASS_MAIL_DEFAULTS.recipientMaxRetry },
+              },
+            });
+            if (pendingCount > 0) {
+              console.log(`${LOG_TAG} mass_mail ${mail.id}: pending ${pendingCount}건 → sendLoop`);
+              const loopResult = await sendLoop(mail.id, MASS_MAIL_DEFAULTS.throttleMs);
+              sentTotal += loopResult.sent;
+              failedTotal += loopResult.failed;
+            }
 
-          // 2-c. mass_mail.status 자동 갱신 — 모든 recipients 가 sent/failed 면 sent
-          await maybePromoteToSent(mail.id);
-          processedCount++;
-        } catch (error: unknown) {
-          console.error(`${LOG_TAG} mass_mail ${mail.id} 처리 실패 — 다음 mail 로 진행.`, error);
-        }
-      });
+            // 2-c. mass_mail.status 자동 갱신 — 모든 recipients 가 sent/failed 면 sent
+            await maybePromoteToSent(mail.id);
+            processedCount++;
+          } catch (error: unknown) {
+            // sendLoop 이 도중에 throw 해도 그 시점까지의 발송 건수는 집계되지 않는다
+            // (반환 전 throw). 이 mail 은 실패로 계상되고 다음 cycle 에서 이어서 처리된다.
+            failedMails++;
+            console.error(`${LOG_TAG} mass_mail ${mail.id} 처리 실패 — 다음 mail 로 진행.`, error);
+          }
+        });
+      } catch (lockError: unknown) {
+        failedMails++;
+        console.error(`${LOG_TAG} mass_mail ${mail.id} 락 획득/해제 실패 — 다음 mail 로 진행.`, lockError);
+      }
     }
 
     const elapsed = Date.now() - startedAt;
     console.log(`${LOG_TAG} cycle 완료 — 처리: ${processedCount}/${targets.length}건, 소요: ${elapsed}ms`);
     // 정상 cycle 1회로 연속 실패 카운터 리셋 — 일시 장애 후 자가복구 정상 인정.
     g.__massMailBatchConsecutiveFailures = 0;
+    return {
+      ok: true,
+      targets: targetCount,
+      processed: processedCount,
+      failedMails,
+      sent: sentTotal,
+      failed: failedTotal,
+      zombies,
+      promotedScheduled,
+      elapsedMs: elapsed,
+    };
   } catch (error: unknown) {
     const failures = (g.__massMailBatchConsecutiveFailures ?? 0) + 1;
     g.__massMailBatchConsecutiveFailures = failures;
     console.error(
-      `${LOG_TAG} cycle 전체 실패 (${failures}/${CYCLE_FAILURE_THRESHOLD}):`,
+      `${LOG_TAG} cycle 전체 실패 (${failures}/${BATCH_FAILURE_THRESHOLD}):`,
       error,
     );
-    if (failures >= CYCLE_FAILURE_THRESHOLD && g.__massMailBatchTimer) {
-      // 같은 원인이 반복 중이라고 판단 — 타이머 해제 + health probe 503 노출.
-      // 운영자 인지 후 process 재기동 (instrumentation 재실행) 으로만 복구.
-      clearInterval(g.__massMailBatchTimer);
-      g.__massMailBatchTimer = null;
+    if (failures >= BATCH_FAILURE_THRESHOLD) {
+      // 같은 원인이 반복 중이라고 판단 — /api/health 가 503 을 노출해 운영자가 즉시 인지.
+      // 정상 cycle 1회로 카운터가 리셋되므로 원인 해소 후에는 재기동 없이 자가복구된다.
       console.error(
-        `${LOG_TAG} CRITICAL — cycle 연속 실패 ${failures}회 도달, 배치 타이머 해제. /api/health 503 으로 노출. 운영자 수동 개입 후 process 재기동 필요.`,
+        `${LOG_TAG} CRITICAL — cycle 연속 실패 ${failures}회 도달. /api/health 503 으로 노출. 운영자 확인 필요.`,
       );
     }
+    return {
+      ok: false,
+      targets: targetCount,
+      processed: 0,
+      failedMails,
+      sent: sentTotal,
+      failed: failedTotal,
+      zombies,
+      promotedScheduled,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     g.__massMailBatchRunning = false;
   }
