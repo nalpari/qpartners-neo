@@ -1673,6 +1673,8 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Content"],
         summary: "콘텐츠 목록 조회",
+        description:
+          "비사내 사용자의 `keyword` 검색 또는 `sortCategoryCode` 정렬 요청에는 rate limit 이 적용된다 — IP당 60회/분, IP 헤더 불명 시 계정(비로그인은 anon) 기준 20회/분. 초과 시 429. 두 경로 모두 선행 와일드카드 LIKE·상관 서브쿼리라 인덱스 활용이 어려워 DB 부하 가드가 필요하다. 단순 페이징은 제한 대상이 아니며, 사내 사용자는 전 경로 제한 없음.",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
@@ -1741,6 +1743,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": validationErrorResponse,
+          "429": errorResponse(
+            "요청 횟수 초과 — 비사내 사용자의 keyword 검색 / sortCategoryCode 정렬에 한해 적용 (IP당 60회/분, IP 불명 시 20회/분)",
+          ),
           "500": errorResponse("서버 에러"),
         },
       },

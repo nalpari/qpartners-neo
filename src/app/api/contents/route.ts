@@ -204,6 +204,32 @@ export async function GET(request: NextRequest) {
       ...(andConditions.length > 0 && { AND: andConditions }),
     };
 
+    // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분).
+    //
+    // 대상은 인덱스로 값싸게 처리되지 않는 두 경로:
+    //   - keyword 검색 — title/body 선행 와일드카드 LIKE + attachments 상관 EXISTS(fileName LIKE).
+    //     findMany 와 count 가 각각 평가하므로 불일치 검색어를 반복해도 매번 full 비용이 든다.
+    //   - sortCategoryCode — 카테고리 자식명 기준 정렬 raw SQL.
+    // 단순 페이징(keyword·정렬 없음)은 제외한다 — NAT 뒤 공유 IP 에서 일반 열람이 막히지 않도록.
+    //
+    // 쿼리 실행 전에 둔다 — 차단 대상 요청이 DB 를 한 번도 건드리지 않아야 의미가 있다.
+    if (!internal && (keyword || sortCategoryCode)) {
+      const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+        request.headers.get("x-real-ip") ??
+        null;
+      const rlKey = ip
+        ? `contents-search:${ip}`
+        : `contents-search:user:${user?.userId ?? "anon"}`;
+      const rlLimit = ip ? 60 : 20;
+      if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
+        return NextResponse.json(
+          { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
+          { status: 429 },
+        );
+      }
+    }
+
     const includeOptions = {
       categories: {
         include: { category: CATEGORY_TREE_INCLUDE },
@@ -241,24 +267,6 @@ export async function GET(request: NextRequest) {
       // DB 정렬: 카테고리 자식명 기준.
       // 전체 ID materialization 없이 WHERE + 정렬 + 페이지네이션 + COUNT를 단일 SQL로 처리.
       // children[0] 은 sortOrder ASC → id ASC 기준 (buildCategoryTree 및 클라이언트 getFirstCategoryChildName 과 동일).
-
-      // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분)
-      if (!internal) {
-        const ip =
-          request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-          request.headers.get("x-real-ip") ??
-          null;
-        const rlKey = ip
-          ? `contents-sort:${ip}`
-          : `contents-sort:user:${user?.userId ?? "anon"}`;
-        const rlLimit = ip ? 60 : 20;
-        if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
-          return NextResponse.json(
-            { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
-            { status: 429 },
-          );
-        }
-      }
 
       // WHERE 조건을 SQL fragment로 직접 구성 — Prisma WHERE와 동일한 필터 로직
       const sqlConds: Prisma.Sql[] = [
