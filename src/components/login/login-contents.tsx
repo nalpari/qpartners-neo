@@ -185,50 +185,69 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
   };
 
   return (
-    <main className="flex items-start justify-center w-full mt-[10px] lg:mt-0  lg:pb-[120px]">
+    <main className="flex flex-col items-center w-full mt-[10px] lg:mt-0  lg:pb-[120px]">
       {/* 로딩 오버레이 — 전체 화면 dim + 클릭 차단 (탭/체크박스는 z-[51]로 위에 배치) */}
       {isSubmitting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <Spinner size={48} className="text-white" />
         </div>
       )}
-      <div className="flex w-full bg-white overflow-hidden lg:max-w-[1440px] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
-        {/* PC 좌측 — 이미지 패널 */}
-        <div className="hidden lg:flex relative flex-col items-start overflow-hidden rounded-l-[12px] w-[860px] shrink-0 min-h-[600px]">
-          <Image
-            src="/asset/images/contents/login_img.png"
-            alt=""
-            fill
-            sizes="860px"
-            className="object-cover"
-            priority
-          />
-          
-        </div>
-
-        {/* 우측 — 로그인 폼 */}
-        <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:p-[80px] lg:gap-8">
-          {/* 로딩 중에도 탭/체크박스 클릭 허용 — 오버레이(z-50) 위 */}
-          <div className="relative z-[51]">
-            <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
+      <div className="flex flex-col w-full bg-white overflow-hidden lg:max-w-[1440px] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
+        <div className="flex w-full">
+          {/* PC 좌측 — 이미지 패널 */}
+          {/* 높이를 원본 이미지 높이(860x682)와 동일한 682px 로 고정한다.
+              object-cover 배율은 max(860/860, H/682) 이므로 H<=682 이면 배율 1 —
+              확대·좌우 크롭이 전혀 없어 어느 탭에서도 Q.PARTNERS 로고 위치가 동일하다.
+              (H 를 682 초과로 두면 좌우가 (860*H/682-860)/2 만큼 잘려 로고가 밀린다.)
+              안내문구가 있는 既存Q.PARTNERS会員 탭은 폼 높이가 704px 라 이미지 아래에
+              22px 흰 여백이 생기지만, 이미지 원본 유지를 우선한다. */}
+          <div className="hidden lg:block relative overflow-hidden w-[860px] shrink-0 h-[682px]">
+            <Image
+              src="/asset/images/contents/login_img.png"
+              alt=""
+              fill
+              sizes="860px"
+              className="object-cover"
+              priority
+            />
           </div>
-          <LoginForm
-            activeTab={activeTab}
-            id={id}
-            password={password}
-            showPassword={showPassword}
-            saveId={saveId}
-            error={error ?? notice}
-            isSubmitting={isSubmitting}
-            onIdChange={(v) => { setId(v); setError(null); }}
-            onPasswordChange={(v) => { setPassword(v); setError(null); }}
-            onTogglePassword={() => setShowPassword((prev) => !prev)}
-            onSaveIdChange={setSaveId}
-            onClearId={() => { setId(""); setError(null); }}
-            onSubmit={handleSubmit}
-          />
-          <LoginLinks activeTab={activeTab} />
-        </section>
+
+          {/* 우측 — 로그인 폼 */}
+          <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:p-[80px] lg:pb-[60px] lg:gap-8">
+            {/* 로딩 중에도 탭/체크박스 클릭 허용 — 오버레이(z-50) 위 */}
+            <div className="relative z-[51]">
+              <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
+            </div>
+            <LoginForm
+              activeTab={activeTab}
+              id={id}
+              password={password}
+              showPassword={showPassword}
+              saveId={saveId}
+              error={error ?? notice}
+              isSubmitting={isSubmitting}
+              onIdChange={(v) => { setId(v); setError(null); }}
+              onPasswordChange={(v) => { setPassword(v); setError(null); }}
+              onTogglePassword={() => setShowPassword((prev) => !prev)}
+              onSaveIdChange={setSaveId}
+              onClearId={() => { setId(""); setError(null); }}
+              onSubmit={handleSubmit}
+            />
+            <LoginLinks activeTab={activeTab} />
+
+            {/* 既存Q.PARTNERS会員 탭 전용 안내 — 대상 회원 범위 및 신규등록 미접수 고지.
+                이 문구로 섹션이 682px 를 넘어가지만, 좌측 패널은 h-[682px] 고정이라
+                이미지가 재확대되지 않는다 (대신 이미지 아래에 흰 여백이 생김). */}
+            {activeTab === "general" && (
+              <div className="flex flex-col w-full -mt-3 lg:-mt-4 px-3 py-2 bg-[#F7F9FB] rounded-[8px] font-['Noto_Sans_JP'] text-[11px] leading-[1.6] text-[#666]">
+                <p>
+                  既存Q.PARTNERS（2026年8月以前）に登録された会員のうち販売店会員と施工店会員に該当されない方はこちらからログインしてください。
+                </p>
+                <p>販売店会員・施工店会員以外の新規登録は受け付けておりません。</p>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </main>
   );

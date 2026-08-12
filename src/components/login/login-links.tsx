@@ -46,7 +46,7 @@ export function LoginLinks({ activeTab }: LoginLinksProps) {
       </div>
 
       {/* 모바일 레이아웃 — 세로 박스 */}
-      {/* 会員登録 미노출 탭(一般会員)에서는 パスワードの初期化 단독 박스가 되므로 상하 모두 라운딩 */}
+      {/* 会員登録 미노출 탭(既存Q.PARTNERS会員)에서는 パスワードの初期化 단독 박스가 되므로 상하 모두 라운딩 */}
       <div className="flex lg:hidden flex-col w-full">
         <MobileButtonLinkItem
           label="パスワードの初期化"

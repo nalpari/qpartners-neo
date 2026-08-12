@@ -21,7 +21,7 @@ const TAB_CONFIG = {
     pwPlaceholder: "パスワードを入力してください",
   },
   general: {
-    title: "一般会員としてご登録の方",
+    title: "既存Q.PARTNERS会員としてご登録の方",
     description:
       "※ご登録時のメールアドレスとパスワードを入力してください。",
     idPlaceholder: "メールアドレスを入力してください",
