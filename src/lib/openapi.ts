@@ -69,8 +69,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "로그인 (QSP 프록시)",
-        description: `QSP 외부 로그인 API를 프록시하여 인증 처리. 성공 시 JWT httpOnly 쿠키 설정.
+        summary: "로그인 (QSP 프록시 / SEKO 커넥터)",
+        description: `userTp 에 따라 인증 경로가 갈린다. 성공 시 JWT httpOnly 쿠키 설정.
+
+- **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
+- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 미배선(후속 I/F 브랜치 예정). Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -112,7 +115,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                                 "FAIL_CLOSED",
                               ],
                               description:
-                                "2FA 판정 사유 — NODE_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
+                                "2FA 판정 사유 — APP_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
                             },
                           },
                         },
@@ -132,8 +135,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
-          "403": errorResponse("2FA 대상이나 이메일 미등록 — 로그인 차단"),
-          "502": errorResponse("외부 인증 서버 오류"),
+          "403": errorResponse("2FA 대상이나 이메일 미등록, 또는 SEKO 권한(QpRole) 미존재·비활성 — 로그인 차단"),
+          "502": errorResponse("외부 인증 서버(QSP / SEKO Connector) 오류"),
+          "500": errorResponse("JWT 생성 실패 또는 서버 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
         },
       },
     },
