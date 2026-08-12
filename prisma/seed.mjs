@@ -136,7 +136,10 @@ function buildPermissions(roleCode) {
     }
     // 비관리자: 일반 메뉴 read only, 관리 메뉴 전부 false
     if (GENERAL_MENUS.includes(menuCode)) {
-      return { menuCode, canRead: true, canCreate: false, canUpdate: false, canDelete: false };
+      // SEKO 는 마이페이지에서 뉴스수신여부(newsRcptYn) 를 자체 수정 → 修正 버튼 노출용 canUpdate.
+      // (버튼 게이트: useMenuPermission(MYPAGE).canUpdate. 기존 수동 DB patch 를 시드에 정식 반영)
+      const canUpdate = roleCode === "SEKO" && menuCode === "MYPAGE";
+      return { menuCode, canRead: true, canCreate: false, canUpdate, canDelete: false };
     }
     return { menuCode, canRead: false, canCreate: false, canUpdate: false, canDelete: false };
   });

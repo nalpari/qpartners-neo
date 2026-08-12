@@ -2661,7 +2661,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["MyPage"],
         summary: "프로필 조회",
-        description: "JWT에서 사용자 정보 추출 후 회원유형별 QSP API 조회",
+        description: "JWT에서 사용자 정보 추출 후 회원유형별 조회 (STORE/GENERAL/ADMIN = QSP, SEKO = Connector getUserInfo)",
         responses: {
           "200": {
             description: "프로필 정보",
@@ -2706,7 +2706,6 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("施工店会員は別途API使用"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "404": errorResponse("ユーザー情報なし"),
@@ -2718,7 +2717,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["MyPage"],
         summary: "프로필 수정",
         description:
-          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능. " +
+          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE/SEKO: 뉴스레터(newsRcptYn)만 수정 가능 (SEKO=Connector updateUserInfo). " +
           "QSP 수정 성공 후 변경 직전 `attrChgYn === \"Y\"` 인 회원에게 속성 변경 알림 메일 발송 (fire-and-forget). " +
           "메일 발송 결과는 응답에 영향 없음 (실패 시 warn 로깅만).",
         requestBody: {
@@ -2766,7 +2765,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("Validation 실패 / 施工店会員は別途API使用"),
+          "400": errorResponse("Validation 실패"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("내부 에러 / JWT email 누락 등 사용자 정보 불완전 (재로그인 유도)"),

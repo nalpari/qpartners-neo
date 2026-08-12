@@ -212,6 +212,12 @@ export function MypageInfo() {
           setEditData(null);
           queryClient.invalidateQueries({ queryKey: ["mypage", "profile"] });
 
+          // 저장 직후 화면 즉시 반영 — 뉴스레터 수신여부(전 유형 공통 수정 가능)를 낙관적으로 갱신.
+          // no-store 로 refetch 최신화도 하지만, 네트워크 지연 중에도 화면이 바로 새 값으로 바뀌도록 보강.
+          queryClient.setQueryData<ProfileData>(["mypage", "profile"], (prev) =>
+            prev ? { ...prev, newsRcptYn: snapshot.newsRcptYn } : prev,
+          );
+
           // GNB 회사명/성명 즉시 반영 — 재로그인 없이 헤더·홈·콘텐츠 작성 폼 등
           // ["auth", "login-user-info"] 캐시 구독자 전체에 새 값 전파.
           //

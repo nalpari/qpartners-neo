@@ -50,3 +50,49 @@ export const sekoLoginResponseSchema = z.object({
   data: sekoLoginDataSchema.nullable(),
   result: sekoResultSchema,
 });
+
+// ─── No.3 Seko User Info API (/api/seko/getUserInfo) ───
+
+const sekoUserInfoDataSchema = z.object({
+  userId: z.string(),
+  loginId: z.string(),
+  // 성/이름: 엣지 계정 대비 nullable (호출부가 `?? ""` 방어 — 스키마-소비부 정합, 코드리뷰 반영).
+  sei: z.string().nullable(),
+  mei: z.string().nullable(),
+  seiKana: z.string().nullable(),
+  meiKana: z.string().nullable(),
+  email: z.string().nullable(),
+  userType: z.string(),
+  // 시공점 종류 (4=시공점/5=델타/6=스미토모/7=델타 SAVeR-H2). 문자열 대비 coerce.
+  supplierKind: z.coerce.number().int().nullable(),
+  storeName: z.string().nullable(),
+  storeNameKana: z.string().nullable(),
+  zipcode: z.string().nullable(),
+  pref: z.coerce.number().int().nullable(),
+  address1: z.string().nullable(),
+  address2: z.string().nullable(),
+  telNo: z.string().nullable(),
+  fax: z.string().nullable(),
+  sekoId: z.string().nullable(),
+  sekoStatus: z.coerce.number().int().nullable(),
+  sekoIssueDate: z.string().nullable(),
+  sekoLimit: z.string().nullable(),
+  deltaStatus: z.coerce.number().int().nullable(),
+  status: z.string().nullable(),
+  // note-46 에서 getUserInfo/updateUserInfo 에 추가(초기값 Y). 구계정 대비 nullable.
+  newsRcptYn: z.enum(["Y", "N"]).nullable(),
+});
+
+export type SekoUserInfoData = z.infer<typeof sekoUserInfoDataSchema>;
+
+export const sekoUserInfoResponseSchema = z.object({
+  data: sekoUserInfoDataSchema.nullable(),
+  result: sekoResultSchema,
+});
+
+// ─── No.4 Seko User Info Update API (/api/seko/updateUserInfo) ───
+// TO-BE 는 newsRcptYn(뉴스 수신)만 갱신. 성공 시 data:null, result.resultCode 로만 성공 판정.
+export const sekoUpdateResponseSchema = z.object({
+  data: z.unknown().nullable(),
+  result: sekoResultSchema,
+});

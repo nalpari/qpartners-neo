@@ -24,7 +24,10 @@ import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
   sekoLoginResponseSchema,
+  sekoUpdateResponseSchema,
+  sekoUserInfoResponseSchema,
   type SekoLoginData,
+  type SekoUserInfoData,
 } from "@/lib/schemas/seko";
 
 export type SekoFetchError = {
@@ -113,15 +116,151 @@ export async function sekoLogin(
 
   const { data, result } = parsed.data;
   if (result.resultCode !== "S" || !data) {
-    // 비즈니스 거부(자격증명 오류·비번 미초기화 등) — HTTP 400 이라도 여기서 처리.
+    // 비즈니스 거부(자격증명 오류·비번 미초기화 등)는 문서화된 HTTP 400.
+    // 5xx(인프라 장애)는 자격오류로 뭉개지 않고 502 로 분리(코드리뷰 I1 반영).
     console.warn(
       `${logTag} SEKO 로그인 거부 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
+    const status = response.status >= 500 ? 502 : 401;
     return {
       ok: false,
-      error: { error: "ログインに失敗しました", status: 401, errorCode: result.errorCode },
+      error: { error: "ログインに失敗しました", status, errorCode: result.errorCode },
     };
   }
 
   return { ok: true, data };
+}
+
+/**
+ * No.3 Seko User Info API — 시공점 회원정보 조회 (Bearer).
+ * login 응답 token 을 Authorization 헤더로 전달한다. loginId=email(사양).
+ */
+export async function sekoGetUserInfo(
+  loginId: string,
+  token: string,
+  logTag: string,
+): Promise<
+  | { ok: true; data: SekoUserInfoData }
+  | { ok: false; error: SekoFetchError }
+> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/getUserInfo"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ loginId }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "getUserInfo",
+        callerRoute: logTag,
+        userId: maskUserId(loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 회원정보 조회 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 회원정보 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoUserInfoResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 회원정보 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 회원정보 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    // 토큰 만료(NO_AUTHENTICATION)면 401, 5xx 는 502, 그 외 502.
+    const status = result.errorCode === "NO_AUTHENTICATION_ERROR" ? 401 : 502;
+    return {
+      ok: false,
+      error: { error: "会員情報を照会できません", status, errorCode: result.errorCode },
+    };
+  }
+
+  return { ok: true, data };
+}
+
+/**
+ * No.4 Seko User Info Update API — 시공점 회원정보 수정 (Bearer).
+ * TO-BE 에서는 **newsRcptYn(뉴스 수신 여부)만** 갱신한다 (QA#8 — 회사정보 갱신 화면 없음).
+ */
+export async function sekoUpdateUserInfo(
+  userId: string,
+  loginId: string,
+  newsRcptYn: "Y" | "N",
+  token: string,
+  logTag: string,
+): Promise<{ ok: true } | { ok: false; error: SekoFetchError }> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/updateUserInfo"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, loginId, newsRcptYn }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "updateUserInfo",
+        callerRoute: logTag,
+        userId: maskUserId(loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 회원정보 수정 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 회원정보 수정 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoUpdateResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 회원정보 수정 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { result } = parsed.data;
+  if (result.resultCode !== "S") {
+    console.warn(
+      `${logTag} SEKO 회원정보 수정 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    const status = result.errorCode === "NO_AUTHENTICATION_ERROR" ? 401 : 502;
+    return {
+      ok: false,
+      error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode },
+    };
+  }
+
+  return { ok: true };
 }

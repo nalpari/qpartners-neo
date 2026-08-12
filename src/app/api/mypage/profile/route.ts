@@ -17,6 +17,7 @@ import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
+import { sekoGetUserInfo, sekoUpdateUserInfo } from "@/lib/seko-connector";
 
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
@@ -47,11 +48,58 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 시공점은 別途 API を使用
+    // 시공점(SEKO) — AS-IS Q.Partners Connector getUserInfo 로 조회 (QSP 미경유).
     if (user.userTp === "SEKO") {
+      if (!user.sekoToken) {
+        console.error(
+          "[GET /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return NextResponse.json(
+          { error: "セッションが無効です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+      // 시공점 loginId = email (사양). login 응답 email 을 loginId 로 사용.
+      const sekoLoginId = user.email ?? user.userId;
+      const infoResult = await sekoGetUserInfo(
+        sekoLoginId,
+        user.sekoToken,
+        "[GET /api/mypage/profile][SEKO]",
+      );
+      if (!infoResult.ok) {
+        return NextResponse.json(
+          { error: infoResult.error.error },
+          { status: infoResult.error.status },
+        );
+      }
+      const s = infoResult.data;
+      const sekoProfile = {
+        userType: "SEKO" as const,
+        userName: `${s.sei} ${s.mei}`.trim() || null,
+        userNameKana: [s.seiKana, s.meiKana].filter(Boolean).join(" ") || null,
+        sei: s.sei,
+        mei: s.mei,
+        seiKana: s.seiKana,
+        meiKana: s.meiKana,
+        email: s.email,
+        compNm: s.storeName,
+        compNmKana: s.storeNameKana,
+        zipcode: s.zipcode,
+        address1: s.address1,
+        address2: s.address2,
+        telNo: s.telNo,
+        fax: s.fax,
+        department: null,
+        jobTitle: null,
+        corporateNo: null,
+        newsRcptYn: s.newsRcptYn ?? "N",
+        newsRcptDate: null,
+      };
+      // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
       return NextResponse.json(
-        { error: "施工店会員はこのAPIをご利用いただけません" },
-        { status: 400 },
+        { data: sekoProfile },
+        { headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -186,7 +234,11 @@ export async function GET(request: NextRequest) {
       profile.withdrawAvailable = true;
     }
 
-    return NextResponse.json({ data: profile });
+    // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
+    return NextResponse.json(
+      { data: profile },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("[GET /api/mypage/profile]", error);
     return NextResponse.json(
@@ -213,12 +265,53 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 시공점은 別途 API を使用
+    // 시공점(SEKO) — AS-IS Connector updateUserInfo 로 newsRcptYn 만 갱신 (QA#8).
     if (user.userTp === "SEKO") {
-      return NextResponse.json(
-        { error: "施工店会員はこのAPIをご利用いただけません" },
-        { status: 400 },
+      if (!user.sekoToken) {
+        console.error(
+          "[PUT /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return NextResponse.json(
+          { error: "セッションが無効です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+      let sekoBody: unknown;
+      try {
+        sekoBody = await request.json();
+      } catch (error) {
+        console.warn("[PUT /api/mypage/profile][SEKO] Request body 파싱 실패:", error);
+        return NextResponse.json(
+          { error: "リクエスト形式が正しくありません" },
+          { status: 400 },
+        );
+      }
+      const nry =
+        typeof sekoBody === "object" && sekoBody !== null && !Array.isArray(sekoBody)
+          ? (sekoBody as Record<string, unknown>).newsRcptYn
+          : undefined;
+      if (nry !== "Y" && nry !== "N") {
+        return NextResponse.json(
+          { error: "入力内容に不備があります" },
+          { status: 400 },
+        );
+      }
+      const sekoLoginId = user.email ?? user.userId;
+      const upd = await sekoUpdateUserInfo(
+        user.userId,
+        sekoLoginId,
+        nry,
+        user.sekoToken,
+        "[PUT /api/mypage/profile][SEKO]",
       );
+      if (!upd.ok) {
+        return NextResponse.json(
+          { error: upd.error.error },
+          { status: upd.error.status },
+        );
+      }
+      return NextResponse.json({ data: { message: "保存されました" } });
     }
 
     // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
