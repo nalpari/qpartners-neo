@@ -196,33 +196,40 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
         <div className="flex w-full">
           {/* PC 좌측 — 이미지 패널 */}
           {/* 높이 702px 고정 — 세 탭 중 가장 높은 폼(에러 배너 표시 시 702.8px)에 맞춘 값이다.
-              패널이 폼보다 높아 카드 높이를 패널이 결정하므로, 어느 탭·어느 상태에서도
-              이미지가 카드 바닥까지 채워져 하단 흰 여백이 생기지 않는다.
-              원본 이미지는 860x682 이고 패널 폭은 860px 고정이라 object-cover 배율은
-              max(860/860, H/682) 다. H=702 → 배율 1.0293, 렌더 폭 885.2px 로 좌우가
-              각 12.6px 잘리고 Q.PARTNERS 로고 좌측 여백이 62px → 51.2px 로 당겨진다.
-              여백 0 과 크롭 0 은 양립하지 않는다 — H 를 키우면 여백이 줄고 크롭이 커진다.
-              (682px 이면 크롭 0 이지만 에러 배너 시 20.8px 여백이 생긴다.)
-              둘 다 없애려면 860x702 크기의 이미지 리소스가 필요하다. */}
-          <div className="hidden lg:block relative overflow-hidden w-[860px] shrink-0 h-[702px]">
+              패널이 폼보다 높아 카드 높이를 패널이 결정하므로 하단 흰 여백이 생기지 않는다.
+
+              폭은 카드 폭에 따라 3단계다. 패널이 shrink-0 이라 폼 컬럼은 카드에서 패널을
+              뺀 나머지를 갖는데, 설계폭(카드 1440px)의 860px 를 좁은 화면에서도 유지하면
+              폼이 고갈된다 — 안내문구가 4줄까지 접혀 폼이 782px 로 늘어나 여백이 80px 생기고,
+              탭 슬롯도 81px 로 줄어 라벨(131px)이 넘친다. 그래서 2xl(1536px) 부터만 860px 를
+              쓰고, 그 미만에서는 패널을 좁혀 폼 폭을 확보한다.
+              ※ 명명된 브레이크포인트를 쓴다 — min-[1456px] 같은 임의 미디어 변형은 Tailwind 가
+                lg/xl 보다 앞에 배치해 넓은 화면에서 lg 값에 밀린다(실측 확인).
+
+              object-left — 원본 860x682 를 H=702 로 덮으면 배율 1.0293, 렌더 폭 885.2px 다.
+              기본값(가운데)으로 자르면 패널이 좁을수록 좌측이 크게 잘려 Q.PARTNERS 로고가
+              사라진다(패널 520px 기준 좌측 182px 크롭). 좌측 정렬하면 어느 폭에서든 로고
+              좌측 여백이 63.8px 로 원본(62px)과 거의 같고, 대신 우측 발광부가 잘린다. */}
+          <div className="hidden lg:block relative overflow-hidden shrink-0 h-[702px] lg:w-[520px] xl:w-[640px] 2xl:w-[860px]">
             <Image
               src="/asset/images/contents/login_img.png"
               alt=""
               fill
-              sizes="860px"
-              className="object-cover"
+              sizes="(min-width: 1536px) 860px, (min-width: 1280px) 640px, 520px"
+              className="object-cover object-left"
               priority
             />
           </div>
 
           {/* 우측 — 로그인 폼 */}
           {/* lg:pb-[60px] — 안내문구가 추가되며 늘어난 폼 높이를 흡수하는 값이다.
-              80px 이면 폼이 좌측 패널(702px)보다 높아져 이미지 아래 여백이 생긴다.
+              80px 이면 에러 배너 표시 시 폼이 좌측 패널(702px)보다 높아져 여백이 생긴다.
               3개 탭 공통 적용.
-              lg:min-w-0 — flex item 의 자동 최소 폭은 min-content 라, 좌측 패널이
-              w-[860px] shrink-0 인 상태에서 카드가 1440px 미만이면 이 섹션이 min-content
-              폭을 고수하며 카드 밖으로 넘쳐 우측 패딩이 잘렸다(카드 1265px 기준 34px). */}
-          <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:min-w-0 lg:p-[80px] lg:pb-[60px] lg:gap-8">
+              lg:px-[40px] — 좌우 패딩 160px 는 설계폭에서만 감당 가능하다. 카드가 좁을 때는
+              패딩만으로 탭 슬롯이 라벨(131px)보다 작아지므로 절반으로 줄인다.
+              lg:min-w-0 — flex item 의 자동 최소 폭은 min-content 라, 이 값이 없으면 섹션이
+              min-content 폭을 고수하며 카드 밖으로 넘쳐 우측 패딩이 잘린다(카드 1265px 기준 16px). */}
+          <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:min-w-0 lg:px-[40px] lg:pt-[80px] lg:pb-[60px] lg:gap-8 2xl:px-[80px]">
             {/* 로딩 중에도 탭/체크박스 클릭 허용 — 오버레이(z-50) 위 */}
             <div className="relative z-[51]">
               <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
