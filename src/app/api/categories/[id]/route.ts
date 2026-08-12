@@ -82,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       shiftedCount: number;
     } | null = null;
 
-    const category = await prisma.$transaction(
+    const { category, internalCascadeCount } = await prisma.$transaction(
       async (tx) => {
         // sortOrder가 명시적으로 전달된 경우에만 같은 parentId 형제들 자동 재정렬
         // NOTE: parentId는 updateCategorySchema에서 수정 불가. 변경 시 이 로직도 수정 필요
@@ -137,16 +137,44 @@ export async function PUT(request: NextRequest, { params }: Params) {
           // newOrder === current.sortOrder: 형제 재정렬 불필요
         }
 
-        return tx.category.update({
+        const updated = await tx.category.update({
           where: { id: parsed.data },
           data: result.data,
         });
+
+        // 사내전용 하위 전파 — 1Depth 를 Y 로 바꾸면 이미 등록된 2Depth 도 전부 Y 가 된다.
+        //
+        // 단방향인 이유: Y→N 은 전파하지 않는다. 자식은 기존 Y 설정을 유지한 채 개별 편집이
+        // 가능해지는 것이 확정 정책이며, 되돌릴 때 자식 설정까지 일괄로 날리면 복구 불가능하다.
+        // 부모가 Y 인 동안 자식 라디오는 FE 에서 잠기므로(categories-detail), 여기서의 일괄
+        // 승격과 FE 표시가 어긋나지 않는다.
+        //
+        // 대상이 2Depth 면 자식이 없어 count=0 (카테고리는 Depth-2 까지만 관리).
+        // 같은 트랜잭션(Serializable) 안이라 부모만 Y 이고 자식은 N 인 중간 상태가 노출되지 않는다.
+        let cascadedChildCount = 0;
+        if (result.data.isInternalOnly === true) {
+          const cascaded = await tx.category.updateMany({
+            where: { parentId: parsed.data, isInternalOnly: false },
+            data: { isInternalOnly: true },
+          });
+          cascadedChildCount = cascaded.count;
+        }
+
+        return { category: updated, internalCascadeCount: cascadedChildCount };
       },
       { isolationLevel: "Serializable" },
     );
 
     if (reorderLog) {
       console.log("[PUT /api/categories/:id] sortOrder 재정렬", reorderLog);
+    }
+
+    // 구조적 감사 로그 — PII 없음(ID/건수만). 사내전용 승격은 노출 범위를 좁히는 변경이라 추적 대상.
+    if (internalCascadeCount > 0) {
+      console.info("[PUT /api/categories/:id] 사내전용 하위 전파", {
+        categoryId: parsed.data,
+        cascadedChildCount: internalCascadeCount,
+      });
     }
 
     return NextResponse.json({ data: category });
