@@ -28,16 +28,16 @@ export async function GET(request: NextRequest) {
     // 화면단 필터(콘텐츠 검색/상세/등록 폼/목록 그리드)만으로는 API 직접 호출을 막지 못해
     // 사내전용 분류의 이름과 트리 구조가 그대로 새어 나간다 → 응답 단계에서 제외한다.
     //
-    // activeOnly=false 경로는 위에서 ADM_CATEGORY.read 가드를 통과한 관리자 화면 전용이므로
-    // 전체 트리를 그대로 돌려준다. 관리자는 사내전용 여부 자체를 편집해야 하고, 여기서 숨기면
-    // 보이지 않는 부모 밑에 자식을 만드는 상황이 생긴다.
+    // 판정 기준은 요청자의 역할(isInternalUser) 하나뿐이다. activeOnly 는 활성 상태 필터일 뿐
+    // 권한 신호가 아니므로 여기에 얹지 않는다 — resolveMenuPermission 은 역할 유형을 가리지 않고
+    // 매트릭스만 조회하므로, 비사내 역할에 ADM_CATEGORY.read 가 부여되면 activeOnly=false 만으로
+    // 사내전용 트리가 열리게 된다 (최소 권한 원칙 위배).
     const user = getUserFromHeaders(request.headers);
     const internal = user ? isInternalUser(user.role) : false;
-    const canSeeInternal = internal || !activeOnly;
 
     // internalOnly(관리자 「社内専用のみ表示」 필터) 와 동시 적용 시 차단이 우선한다 —
     // 비사내 사용자가 internalOnly=true 로 요청하면 결과 0건이 정답.
-    const internalOnlyFilter = !canSeeInternal
+    const internalOnlyFilter = !internal
       ? { isInternalOnly: false }
       : internalOnly
         ? { isInternalOnly: true }

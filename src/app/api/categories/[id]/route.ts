@@ -137,6 +137,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
           // newOrder === current.sortOrder: 형제 재정렬 불필요
         }
 
+        // 사내전용 해제 가드 — 부모가 사내전용인 자식은 N 으로 되돌릴 수 없다.
+        // POST 의 상속 강제와 짝을 이루는 PUT 측 방어. 화면에서는 라디오가 잠겨 있지만
+        // API 직접 호출로 "자식 ≥ 부모" 불변식이 깨지면, 이후 부모를 N 으로 되돌리는 시점에
+        // 그 자식 분류가 외부로 노출된다. 같은 트랜잭션(Serializable) 안이라 검사와 갱신
+        // 사이에 부모가 바뀌는 TOCTOU 도 없다.
+        if (result.data.isInternalOnly === false) {
+          const target = await tx.category.findUnique({
+            where: { id: parsed.data },
+            select: { parent: { select: { isInternalOnly: true } } },
+          });
+          if (!target) {
+            throw new CategoryError("NOT_FOUND");
+          }
+          if (target.parent?.isInternalOnly === true) {
+            throw new CategoryError("INTERNAL_PARENT_LOCKED");
+          }
+        }
+
         const updated = await tx.category.update({
           where: { id: parsed.data },
           data: result.data,
@@ -181,6 +199,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
   } catch (error) {
     if (error instanceof CategoryError && error.kind === "NOT_FOUND") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (error instanceof CategoryError && error.kind === "INTERNAL_PARENT_LOCKED") {
+      return NextResponse.json(
+        { error: "親カテゴリが社内会員専用のため、社内会員専用を解除できません" },
+        { status: 400 },
+      );
     }
     if (
       error instanceof PrismaClientKnownRequestError &&
