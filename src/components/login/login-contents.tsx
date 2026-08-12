@@ -199,8 +199,11 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
               object-cover 배율은 max(860/860, H/682) 이므로 H<=682 이면 배율 1 —
               확대·좌우 크롭이 전혀 없어 어느 탭에서도 Q.PARTNERS 로고 위치가 동일하다.
               (H 를 682 초과로 두면 좌우가 (860*H/682-860)/2 만큼 잘려 로고가 밀린다.)
-              안내문구가 있는 既存Q.PARTNERS会員 탭은 폼 높이가 704px 라 이미지 아래에
-              22px 흰 여백이 생기지만, 이미지 원본 유지를 우선한다. */}
+              안내문구가 붙는 既存Q.PARTNERS会員 탭만 폼이 682px 를 넘겨 이미지 아래에
+              여백이 남는다. 여백 크기는 안내문구 줄 수에 좌우된다 — 카드 1440px(설계폭)
+              에서는 2줄/683px 라 1.3px 이지만, 카드가 좁아져 3줄로 접히면(예: 세로
+              스크롤바로 1425px) 704px 가 되어 22px 까지 벌어진다. 폼 에러 배너가 뜨면
+              더 늘어난다. 상한은 없으며, 이미지 원본 유지를 우선한 결과다. */}
           <div className="hidden lg:block relative overflow-hidden w-[860px] shrink-0 h-[682px]">
             <Image
               src="/asset/images/contents/login_img.png"
@@ -213,7 +216,12 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           </div>
 
           {/* 우측 — 로그인 폼 */}
-          <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:p-[80px] lg:pb-[60px] lg:gap-8">
+          {/* lg:pb-[60px] — 안내문구가 추가되며 늘어난 높이를 흡수해 이미지 아래 여백을
+              줄이는 값이다 (80px 이면 설계폭에서도 21px 가 남는다). 3개 탭 공통 적용.
+              lg:min-w-0 — flex item 의 자동 최소 폭은 min-content 라, 좌측 패널이
+              w-[860px] shrink-0 인 상태에서 카드가 1440px 미만이면 이 섹션이 min-content
+              폭을 고수하며 카드 밖으로 넘쳐 우측 패딩이 잘렸다(카드 1265px 기준 34px). */}
+          <section className="flex flex-col flex-1 w-full px-6 py-[34px] gap-[26px] lg:min-w-0 lg:p-[80px] lg:pb-[60px] lg:gap-8">
             {/* 로딩 중에도 탭/체크박스 클릭 허용 — 오버레이(z-50) 위 */}
             <div className="relative z-[51]">
               <LoginTabs activeTab={activeTab} onChange={handleTabChange} />
@@ -237,7 +245,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
 
             {/* 既存Q.PARTNERS会員 탭 전용 안내 — 대상 회원 범위 및 신규등록 미접수 고지.
                 이 문구로 섹션이 682px 를 넘어가지만, 좌측 패널은 h-[682px] 고정이라
-                이미지가 재확대되지 않는다 (대신 이미지 아래에 흰 여백이 생김). */}
+                이미지가 재확대되지 않는다 (여백 크기는 위 패널 주석 참조).
+                -mt-3/-mt-4 는 부모 section 의 gap-[26px]/lg:gap-8 을 부분 상쇄하는 값이다.
+                → section 의 gap 을 바꾸면 이 값도 함께 조정해야 한다. */}
             {activeTab === "general" && (
               <div className="flex flex-col w-full -mt-3 lg:-mt-4 px-3 py-2 bg-[#F7F9FB] rounded-[8px] font-['Noto_Sans_JP'] text-[11px] leading-[1.6] text-[#666]">
                 <p>
