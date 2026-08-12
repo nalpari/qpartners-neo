@@ -41,7 +41,9 @@ const sekoLoginDataSchema = z.object({
   userType: z.string(),
   pwdInitYn: z.enum(["Y", "N"]),
   // 사양서 예시는 문자열 "20", 실제 응답은 int 30 — 양쪽 수용(coerce).
-  groupKind: z.coerce.number().int().nullable(),
+  // 현재 소비처 없음. nullish 로 필드 누락(undefined)까지 허용 — coerce 가 NaN 을 만들어
+  // 미사용 필드 하나 때문에 로그인 전체가 502 로 떨어지는 것을 방지한다.
+  groupKind: z.coerce.number().int().nullish(),
 });
 
 export type SekoLoginData = z.infer<typeof sekoLoginDataSchema>;

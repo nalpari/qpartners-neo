@@ -23,5 +23,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ data: user });
+  // sekoToken(SEKO Connector Bearer) 은 서버 전용 — JWT 페이로드에만 보관하고 클라이언트
+  // 응답에서는 제외한다. login 라우트와 동일 패턴(undefined 는 JSON 직렬화에서 생략됨).
+  return NextResponse.json({ data: { ...user, sekoToken: undefined } });
 }
