@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireMenuPermission } from "@/lib/auth";
+import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/schemas/category";
 
@@ -22,6 +22,27 @@ export async function GET(request: NextRequest) {
       if (auth instanceof NextResponse) return auth;
     }
 
+    // 사내전용 카테고리 서버측 차단.
+    //
+    // 이 라우트는 middleware PUBLIC_GET_PATTERNS 에 등록돼 비로그인 GET 이 가능하다.
+    // 화면단 필터(콘텐츠 검색/상세/등록 폼/목록 그리드)만으로는 API 직접 호출을 막지 못해
+    // 사내전용 분류의 이름과 트리 구조가 그대로 새어 나간다 → 응답 단계에서 제외한다.
+    //
+    // activeOnly=false 경로는 위에서 ADM_CATEGORY.read 가드를 통과한 관리자 화면 전용이므로
+    // 전체 트리를 그대로 돌려준다. 관리자는 사내전용 여부 자체를 편집해야 하고, 여기서 숨기면
+    // 보이지 않는 부모 밑에 자식을 만드는 상황이 생긴다.
+    const user = getUserFromHeaders(request.headers);
+    const internal = user ? isInternalUser(user.role) : false;
+    const canSeeInternal = internal || !activeOnly;
+
+    // internalOnly(관리자 「社内専用のみ表示」 필터) 와 동시 적용 시 차단이 우선한다 —
+    // 비사내 사용자가 internalOnly=true 로 요청하면 결과 0건이 정답.
+    const internalOnlyFilter = !canSeeInternal
+      ? { isInternalOnly: false }
+      : internalOnly
+        ? { isInternalOnly: true }
+        : {};
+
     // isVisible 은 "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출" 토글 전용 정책.
     // API 응답에서 isVisible=false 부모를 제거하면 콘텐츠 목록의 검색 체크박스·콘텐츠 상세·
     // 등록 폼의 카테고리 선택 등 다른 모든 화면에서도 동시에 사라지는 회귀가 발생.
@@ -31,13 +52,14 @@ export async function GET(request: NextRequest) {
       where: {
         parentId: null,
         ...(activeOnly && { isActive: true }),
-        ...(internalOnly && { isInternalOnly: true }),
+        ...internalOnlyFilter,
       },
       include: {
         children: {
+          // 부모가 일반(N)이어도 사내전용 자식은 개별로 존재할 수 있으므로 자식에도 동일 적용.
           where: {
             ...(activeOnly && { isActive: true }),
-            ...(internalOnly && { isInternalOnly: true }),
+            ...internalOnlyFilter,
           },
           orderBy: { sortOrder: "asc" },
         },

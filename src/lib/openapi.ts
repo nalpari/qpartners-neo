@@ -2371,11 +2371,14 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Category"],
         summary: "카테고리 트리 목록 조회",
+        description:
+          "비로그인 GET 이 허용된 공개 경로입니다. 사내 사용자(SUPER_ADMIN/ADMIN)가 아니면 `isInternalOnly=true` 인 카테고리는 1Depth·2Depth 모두 응답에서 제외됩니다 — 화면단 필터와 무관하게 서버에서 강제합니다. `activeOnly=false` 요청은 ADM_CATEGORY.read 권한이 필요한 관리자 경로이므로 사내전용을 포함한 전체 트리를 반환합니다.",
         parameters: [
           {
             name: "internalOnly",
             in: "query",
-            description: "사내전용만 조회 (기본 false)",
+            description:
+              "사내전용만 조회 (기본 false). 관리자 화면의 「社内専用のみ表示」 필터용이며 권한 필터가 아닙니다. 사내전용을 볼 수 없는 요청자가 true 로 호출하면 결과는 0건입니다.",
             schema: { type: "string", default: "false" },
           },
           {
