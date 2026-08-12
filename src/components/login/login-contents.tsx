@@ -195,16 +195,16 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
       <div className="flex flex-col w-full bg-white overflow-hidden lg:max-w-[1440px] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         <div className="flex w-full">
           {/* PC 좌측 — 이미지 패널 */}
-          {/* 높이를 원본 이미지 높이(860x682)와 동일한 682px 로 고정한다.
-              object-cover 배율은 max(860/860, H/682) 이므로 H<=682 이면 배율 1 —
-              확대·좌우 크롭이 전혀 없어 어느 탭에서도 Q.PARTNERS 로고 위치가 동일하다.
-              (H 를 682 초과로 두면 좌우가 (860*H/682-860)/2 만큼 잘려 로고가 밀린다.)
-              안내문구가 붙는 既存Q.PARTNERS会員 탭만 폼이 682px 를 넘겨 이미지 아래에
-              여백이 남는다. 여백 크기는 안내문구 줄 수에 좌우된다 — 카드 1440px(설계폭)
-              에서는 2줄/683px 라 1.3px 이지만, 카드가 좁아져 3줄로 접히면(예: 세로
-              스크롤바로 1425px) 704px 가 되어 22px 까지 벌어진다. 폼 에러 배너가 뜨면
-              더 늘어난다. 상한은 없으며, 이미지 원본 유지를 우선한 결과다. */}
-          <div className="hidden lg:block relative overflow-hidden w-[860px] shrink-0 h-[682px]">
+          {/* 높이 702px 고정 — 세 탭 중 가장 높은 폼(에러 배너 표시 시 702.8px)에 맞춘 값이다.
+              패널이 폼보다 높아 카드 높이를 패널이 결정하므로, 어느 탭·어느 상태에서도
+              이미지가 카드 바닥까지 채워져 하단 흰 여백이 생기지 않는다.
+              원본 이미지는 860x682 이고 패널 폭은 860px 고정이라 object-cover 배율은
+              max(860/860, H/682) 다. H=702 → 배율 1.0293, 렌더 폭 885.2px 로 좌우가
+              각 12.6px 잘리고 Q.PARTNERS 로고 좌측 여백이 62px → 51.2px 로 당겨진다.
+              여백 0 과 크롭 0 은 양립하지 않는다 — H 를 키우면 여백이 줄고 크롭이 커진다.
+              (682px 이면 크롭 0 이지만 에러 배너 시 20.8px 여백이 생긴다.)
+              둘 다 없애려면 860x702 크기의 이미지 리소스가 필요하다. */}
+          <div className="hidden lg:block relative overflow-hidden w-[860px] shrink-0 h-[702px]">
             <Image
               src="/asset/images/contents/login_img.png"
               alt=""
@@ -216,8 +216,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           </div>
 
           {/* 우측 — 로그인 폼 */}
-          {/* lg:pb-[60px] — 안내문구가 추가되며 늘어난 높이를 흡수해 이미지 아래 여백을
-              줄이는 값이다 (80px 이면 설계폭에서도 21px 가 남는다). 3개 탭 공통 적용.
+          {/* lg:pb-[60px] — 안내문구가 추가되며 늘어난 폼 높이를 흡수하는 값이다.
+              80px 이면 폼이 좌측 패널(702px)보다 높아져 이미지 아래 여백이 생긴다.
+              3개 탭 공통 적용.
               lg:min-w-0 — flex item 의 자동 최소 폭은 min-content 라, 좌측 패널이
               w-[860px] shrink-0 인 상태에서 카드가 1440px 미만이면 이 섹션이 min-content
               폭을 고수하며 카드 밖으로 넘쳐 우측 패딩이 잘렸다(카드 1265px 기준 34px). */}
@@ -244,8 +245,6 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
             <LoginLinks activeTab={activeTab} />
 
             {/* 既存Q.PARTNERS会員 탭 전용 안내 — 대상 회원 범위 및 신규등록 미접수 고지.
-                이 문구로 섹션이 682px 를 넘어가지만, 좌측 패널은 h-[682px] 고정이라
-                이미지가 재확대되지 않는다 (여백 크기는 위 패널 주석 참조).
                 -mt-3/-mt-4 는 부모 section 의 gap-[26px]/lg:gap-8 을 부분 상쇄하는 값이다.
                 → section 의 gap 을 바꾸면 이 값도 함께 조정해야 한다. */}
             {activeTab === "general" && (

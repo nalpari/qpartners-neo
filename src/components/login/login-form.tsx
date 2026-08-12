@@ -188,8 +188,12 @@ export function LoginForm({
       </div>
 
       {/* 에러 메시지 */}
+      {/* 음수 마진으로 상하 여백을 좁힌다 — 상단은 form 의 gap-6/lg:gap-[30px],
+          하단은 부모 section 의 gap-8 에서 오는 값이라 그대로 두면 과하게 벌어진다.
+          에러 블록 자체에 걸어야 에러가 없을 때의 레이아웃은 그대로 유지된다.
+          → form/section 의 gap 을 바꾸면 이 값도 함께 조정해야 한다. */}
       {error && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-2 -mt-3 -mb-2 lg:-mt-[18px] lg:-mb-3">
           <Image
             src="/asset/images/contents/warning_icon.svg"
             alt=""
