@@ -60,8 +60,19 @@ export async function GET(request: NextRequest) {
           { status: 401 },
         );
       }
-      // 시공점 loginId = email (사양). login 응답 email 을 loginId 로 사용.
-      const sekoLoginId = user.email ?? user.userId;
+      // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
+      // email 누락은 세션 결손 — userId(다른 식별자)로 대체 전송하지 않고 재로그인 유도.
+      if (!user.email) {
+        console.error(
+          "[GET /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return NextResponse.json(
+          { error: "セッション情報が不完全です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+      const sekoLoginId = user.email;
       const infoResult = await sekoGetUserInfo(
         sekoLoginId,
         user.sekoToken,
@@ -76,7 +87,7 @@ export async function GET(request: NextRequest) {
       const s = infoResult.data;
       const sekoProfile = {
         userType: "SEKO" as const,
-        userName: `${s.sei} ${s.mei}`.trim() || null,
+        userName: [s.sei, s.mei].filter(Boolean).join(" ") || null,
         userNameKana: [s.seiKana, s.meiKana].filter(Boolean).join(" ") || null,
         sei: s.sei,
         mei: s.mei,
@@ -297,7 +308,18 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         );
       }
-      const sekoLoginId = user.email ?? user.userId;
+      // 시공점 loginId = email (사양). email 누락 시 userId 대체 금지 — 재로그인 유도.
+      if (!user.email) {
+        console.error(
+          "[PUT /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return NextResponse.json(
+          { error: "セッション情報が不完全です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+      const sekoLoginId = user.email;
       const upd = await sekoUpdateUserInfo(
         user.userId,
         sekoLoginId,

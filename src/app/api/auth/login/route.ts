@@ -115,7 +115,9 @@ export async function POST(request: NextRequest) {
       userTp: "SEKO",
       compCd: null,
       compNm: null,
-      email: s.email,
+      // 시공점 loginId=email(사양). 응답 email 이 null 이어도 loginId 로 보장 —
+      // mypage 등 후속 SEKO 호출의 식별자(loginId) 결손/오전송 방지.
+      email: s.email ?? s.loginId,
       deptNm: null,
       authCd: null,
       storeLvl: null,
