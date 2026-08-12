@@ -130,6 +130,9 @@ export const loginUserSchema = qspLoginUserSchema
     // 2FA 검증 성공(verify) 시점에 발송한다. verify route 에서 발송 조건 판별을 위해
     // JWT 페이로드에 포함. nullish 폴백: 구 JWT 호환 (필드 부재 → 발송 안 함).
     loginNotiYn: z.enum(["Y", "N"]).nullish(),
+    // 시공점(SEKO) 전용 — AS-IS Connector Bearer 토큰(24h). Bearer 계열 API 호출에 사용.
+    // ⚠️ httpOnly JWT 페이로드에만 보관하고 클라이언트 응답 body 로는 노출하지 않는다(서버 전용).
+    sekoToken: z.string().optional(),
   });
 
 export type LoginUser = z.infer<typeof loginUserSchema>;

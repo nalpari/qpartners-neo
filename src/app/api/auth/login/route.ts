@@ -14,6 +14,7 @@ import { extractClientIp } from "@/lib/notification-mail/utils";
 import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
+import { sekoLogin } from "@/lib/seko-connector";
 
 /** QpRole 검증 대상 authRole → roleCode 매핑 (SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님) */
 const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
@@ -50,9 +51,117 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2. QSP API 호출
   const { loginId, pwd, userTp } = result.data;
 
+  // ─── 시공점(SEKO) 분기 — AS-IS Q.Partners Connector 경유 (QSP 미경유) ───
+  // ⚠️ WIP (로그인 배선 검증용). 미구현: SEKO 2FA(save2faVerified) / 비번초기화(changePwd·resetPwd) 흐름.
+  //    아래 QSP 경로는 무손상 — SEKO 는 여기서 자체 종결한다.
+  if (userTp === "SEKO") {
+    const sekoResult = await sekoLogin(loginId, pwd, "[POST /api/auth/login][SEKO]");
+    if (!sekoResult.ok) {
+      // 자격증명 거부(401)는 사용자 열거 방지를 위해 일반 메시지로, 인프라 장애(502류)는 구분해 응답 — QSP 경로와 동일.
+      // (모든 실패를 401 로 뭉개면 커넥터 다운/스키마 불일치 등 장애가 "ID/PW 오류"로 오인됨)
+      if (sekoResult.error.status === 401) {
+        return NextResponse.json(
+          { error: "IDまたはパスワードが正しくありません" },
+          { status: 401 },
+        );
+      }
+      return NextResponse.json(
+        { error: "外部認証サーバーエラーが発生しました" },
+        { status: 502 },
+      );
+    }
+    const s = sekoResult.data;
+
+    // 권한 사용가능여부(QpRole.isActive) 검증 — QSP 경로(6-1)와 동일 정책.
+    // 관리자가 SEKO 역할을 비활성화(isActive=false)하면 로그인 차단.
+    // fail-closed(레코드 미존재 → 차단) / fail-open(조회 실패 → 가용성 우선 통과).
+    try {
+      const sekoRole = await prisma.qpRole.findUnique({
+        where: { roleCode: "SEKO" },
+        select: { isActive: true },
+      });
+      if (sekoRole === null) {
+        console.error("[POST /api/auth/login][SEKO] QpRole(SEKO) 레코드 미존재 — 로그인 차단 (fail-closed)");
+        return NextResponse.json(
+          { error: "権限情報が存在しないためログインできません" },
+          { status: 403 },
+        );
+      }
+      if (!sekoRole.isActive) {
+        console.warn("[POST /api/auth/login][SEKO] 비활성 SEKO 권한 로그인 차단");
+        return NextResponse.json(
+          { error: "権限が無効のためログインできません" },
+          { status: 403 },
+        );
+      }
+    } catch (error) {
+      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 가용성 우선(QSP 경로와 동일).
+      console.error("[POST /api/auth/login][SEKO] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    }
+
+    // 로컬 테스트 편의 우회: SEKO 초기화(changePwd)/2FA(save2faVerified) 흐름 미배선 구간을
+    // 건너뛰고 홈까지 진입시켜 후속 API(getUserInfo 등)를 화면에서 테스트하기 위한 임시 스위치.
+    // 반드시 APP_ENV !== "production" + SEKO_DEV_BYPASS_INIT=true 동시 충족 시에만 활성 — 운영 무영향.
+    // TODO: SEKO pwdInit/2FA 흐름 구현 완료 시 제거.
+    const devBypassInit =
+      process.env.APP_ENV !== "production" &&
+      process.env.SEKO_DEV_BYPASS_INIT === "true";
+
+    const sekoUser: LoginUser = {
+      userId: s.userId,
+      userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,
+      userTp: "SEKO",
+      compCd: null,
+      compNm: null,
+      email: s.email,
+      deptNm: null,
+      authCd: null,
+      storeLvl: null,
+      statCd: null,
+      authRole: "SEKO",
+      // SEKO pwdInitYn 의미가 QSP 와 반대 — SEKO "Y"=초기화 필요 → TO-BE "N"(최초 로그인) 로 매핑.
+      // devBypassInit 시 팝업 스킵을 위해 "Y"(=초기화 불요) 로 강제.
+      pwdInitYn: devBypassInit ? "Y" : (s.pwdInitYn === "Y" ? "N" : "Y"),
+      // SEKO 2FA 미구현 → 스킵. 초기화 필요("Y")면 false 로 두어 personal-info popup(초기화 흐름) 진입.
+      // devBypassInit 시 true 로 강제하여 홈 진입.
+      twoFactorVerified: devBypassInit ? true : (s.pwdInitYn !== "Y"),
+      // SEKO telNo 는 개인 휴대전화(회사 전화 아님) — 문의하기 자동입력 목적상 의도적으로 JWT 에 포함.
+      // JWT 는 httpOnly + 운영 HTTPS 로만 전송되어 유출 표면 제한. 장기적으로 on-demand fetch 검토 대상(PR #27 리뷰).
+      telNo: s.telNo,
+      loginNotiYn: null,
+      // AS-IS Connector Bearer 토큰(24h) — 후속 Bearer API(getUserInfo 등) 호출용. JWT 에만 보관.
+      sekoToken: s.token,
+    };
+
+    let sekoJwt: string;
+    try {
+      sekoJwt = await signToken(sekoUser);
+    } catch (error) {
+      console.error("[POST /api/auth/login][SEKO] JWT 생성 실패:", error);
+      return NextResponse.json(
+        { error: "認証処理中にサーバーエラーが発生しました" },
+        { status: 500 },
+      );
+    }
+
+    // 클라이언트 응답에는 sekoToken(Bearer) 를 노출하지 않는다 — httpOnly JWT 에만 보관.
+    // (undefined 필드는 JSON 직렬화에서 제외됨)
+    const sekoResponse = NextResponse.json({
+      data: { ...sekoUser, sekoToken: undefined },
+    });
+    sekoResponse.cookies.set(COOKIE_NAME, sekoJwt, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 8, // 8시간
+    });
+    return sekoResponse;
+  }
+
+  // 2. QSP API 호출 (STORE / GENERAL / ADMIN)
   const qspRequestBody = {
     loginId,
     pwd,
