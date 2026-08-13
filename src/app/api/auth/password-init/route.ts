@@ -11,6 +11,7 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sekoChangePwd } from "@/lib/seko-connector";
 
 // ─── 요청 스키마 ───
 
@@ -100,6 +101,78 @@ export async function POST(request: NextRequest) {
     }
 
     const { newPassword } = result.data;
+
+    // 4-1. 시공점(SEKO) — AS-IS Q.Partners Connector changePwd(chgType=I) 로 초기 설정 (QSP 미경유).
+    //      SEKO 는 userDetail 상당 API 가 없고 회원정보는 로그인 응답으로 이미 JWT 에 반영되어 있으므로
+    //      여기서 자체 종결한다(아래 QSP 경로 무손상).
+    if (user.userTp === "SEKO") {
+      if (!user.sekoToken) {
+        console.error("[POST /api/auth/password-init] SEKO 세션 토큰 없음 — 재로그인 필요");
+        return NextResponse.json(
+          { error: "セッションが無効です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+      // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
+      // 누락은 세션 결손 — 다른 식별자로 대체 전송하지 않고 재로그인 유도(mypage 라우트와 동일 정책).
+      if (!user.email) {
+        console.error("[POST /api/auth/password-init] SEKO email(=loginId) 누락 — 재로그인 필요");
+        return NextResponse.json(
+          { error: "セッション情報が不完全です。再度ログインしてください" },
+          { status: 401 },
+        );
+      }
+
+      const changeResult = await sekoChangePwd(
+        { chgType: "I", loginId: user.email, newPwd: newPassword },
+        user.sekoToken,
+        "[POST /api/auth/password-init][SEKO]",
+      );
+      if (!changeResult.ok) {
+        return NextResponse.json(
+          { error: changeResult.error.error },
+          { status: changeResult.error.status },
+        );
+      }
+
+      // JWT 재발급 — 초기화 완료 반영. 회원정보는 로그인 시점 값 유지(SEKO 재조회 API 불요),
+      // Bearer 토큰(sekoToken)도 그대로 승계해 후속 마이페이지 호출이 끊기지 않도록 한다.
+      const sekoUpdatedUser: LoginUser = {
+        ...user,
+        // 비번 설정 직후 → "Y"(초기화 불요). 다음 로그인부터 personal-info popup 미진입.
+        pwdInitYn: "Y",
+        // SEKO 2FA(No.9 save2faVerified) 미배선 — QSP 경로와 동일하게 초기화 직후 skip.
+        twoFactorVerified: true,
+      };
+
+      let sekoJwt: string;
+      try {
+        sekoJwt = await signToken(sekoUpdatedUser);
+      } catch (error) {
+        console.error("[POST /api/auth/password-init][SEKO] JWT 생성 실패:", error);
+        return NextResponse.json(
+          { error: "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。" },
+          { status: 500 },
+        );
+      }
+
+      // 클라이언트 응답에는 sekoToken(Connector Bearer) 을 노출하지 않는다 — httpOnly JWT 에만 보관.
+      const sekoResponse = NextResponse.json({
+        data: {
+          message: "保存されました。",
+          user: { ...sekoUpdatedUser, sekoToken: undefined },
+          requireTwoFactor: false,
+        },
+      });
+      sekoResponse.cookies.set(COOKIE_NAME, sekoJwt, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
+      return sekoResponse;
+    }
 
     // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
     // QSP userDetail 은 모든 userTp(GENERAL/STORE/ADMIN)에서 loginId(User ID)를 필수로 요구한다.
@@ -244,9 +317,9 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
+      // SEKO 는 위(4-1)에서 자체 종결하므로 여기 도달하지 않는다 (QSP 경로 전용 폴백).
       authRole = user.userTp === "ADMIN" ? "ADMIN"
         : user.userTp === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
-        : user.userTp === "SEKO" ? "SEKO"
         : "GENERAL";
     }
 

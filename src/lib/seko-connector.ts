@@ -16,15 +16,15 @@
  * 접속정보(base URL)는 환경변수 주입 — 미설정 시 **호출 시점** ConfigError.
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
- * 본 파일은 커넥터 기반(공통 helper + No.2 Login)을 정의한다.
- * 나머지 API(getUserInfo/updateUserInfo/changePwd/getUserList/email·check 등)는 각 I/F 브랜치에서 추가된다.
+ * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change.
+ * 나머지 API(autologin/fileDownload/getUserList/email·check/2FA/resetPwd)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
   sekoLoginResponseSchema,
-  sekoUpdateResponseSchema,
+  sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
   type SekoLoginData,
   type SekoUserInfoData,
@@ -244,7 +244,7 @@ export async function sekoUpdateUserInfo(
     return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
   }
 
-  const parsed = sekoUpdateResponseSchema.safeParse(body);
+  const parsed = sekoNoDataResponseSchema.safeParse(body);
   if (!parsed.success) {
     console.error(`${logTag} SEKO 회원정보 수정 응답 스키마 불일치:`, parsed.error.issues);
     return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
@@ -259,6 +259,97 @@ export async function sekoUpdateUserInfo(
     return {
       ok: false,
       error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode },
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * No.6 Seko Password Change API — 시공점 비밀번호 변경 (Bearer).
+ *
+ * chgType 2종 (사양서 20260811):
+ *  - `"I"` = 초기화 후 변경(최초 로그인 personal-info 팝업) — 현재 비밀번호 불요
+ *  - `"C"` = 마이페이지 변경 — 현재 비밀번호(`pwd`) 필수
+ *
+ * 사양상 `pwd` 는 chgType=C 에서만 필수이므로, discriminated union 으로
+ * 호출부의 누락을 컴파일 타임에 차단한다.
+ */
+export type SekoChangePwdInput =
+  | { chgType: "I"; loginId: string; newPwd: string }
+  | { chgType: "C"; loginId: string; currentPwd: string; newPwd: string };
+
+export async function sekoChangePwd(
+  input: SekoChangePwdInput,
+  token: string,
+  logTag: string,
+): Promise<{ ok: true } | { ok: false; error: SekoFetchError }> {
+  const requestBody =
+    input.chgType === "C"
+      ? {
+          loginId: input.loginId,
+          chgType: "C",
+          pwd: input.currentPwd,
+          chgPwd: input.newPwd,
+        }
+      : { loginId: input.loginId, chgType: "I", chgPwd: input.newPwd };
+
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/changePwd"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify(requestBody),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "changePwd",
+        callerRoute: logTag,
+        userId: maskUserId(input.loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 비밀번호 변경 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 비밀번호 변경 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoNoDataResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 비밀번호 변경 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { result } = parsed.data;
+  if (result.resultCode !== "S") {
+    console.warn(
+      `${logTag} SEKO 비밀번호 변경 실패 (chgType: ${input.chgType}, resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    // 토큰 만료/무효 → 401(재로그인), 5xx(인프라 장애) → 502,
+    // 그 외 비즈니스 거부(현재 비밀번호 불일치·정책 위반 등) → 400.
+    const status =
+      result.errorCode === "NO_AUTHENTICATION_ERROR"
+        ? 401
+        : response.status >= 500
+          ? 502
+          : 400;
+    return {
+      ok: false,
+      error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode },
     };
   }
 

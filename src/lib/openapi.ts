@@ -651,7 +651,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
-        description: "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true).",
+        description:
+          "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
+          "회원유형별 연동처: STORE/GENERAL/ADMIN=QSP userPwdChg(chgType=I), SEKO=AS-IS Connector changePwd(chgType=I, Bearer). " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {
@@ -2781,7 +2784,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MyPage"],
         summary: "비밀번호 변경",
-        description: "QSP userPwdChg API 호출 (chgType=C)",
+        description:
+          "QSP userPwdChg API 호출 (chgType=C). " +
+          "시공점(SEKO)은 AS-IS Q.Partners Connector changePwd(chgType=C, Bearer) 호출 — 현재 비밀번호 필수. " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {

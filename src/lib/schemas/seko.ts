@@ -92,9 +92,10 @@ export const sekoUserInfoResponseSchema = z.object({
   result: sekoResultSchema,
 });
 
-// ─── No.4 Seko User Info Update API (/api/seko/updateUserInfo) ───
-// TO-BE 는 newsRcptYn(뉴스 수신)만 갱신. 성공 시 data:null, result.resultCode 로만 성공 판정.
-export const sekoUpdateResponseSchema = z.object({
+// ─── 공용: data 없는 응답 (No.4 updateUserInfo / No.6 changePwd) ───
+// 성공 시 data:null, result.resultCode 로만 성공 판정.
+// (No.4 는 newsRcptYn 만 갱신, No.6 은 비밀번호 변경 — 둘 다 반환 데이터 없음)
+export const sekoNoDataResponseSchema = z.object({
   data: z.unknown().nullable(),
   result: sekoResultSchema,
 });
