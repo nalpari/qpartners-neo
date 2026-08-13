@@ -13,13 +13,23 @@ import { z } from "zod";
  * 나머지 API 응답 스키마는 각 I/F 브랜치에서 추가된다.
  */
 
-/** SEKO Connector 공용 응답 result 구조 */
+/**
+ * SEKO Connector 공용 응답 result 구조.
+ *
+ * 성공/실패 판정에 쓰는 `resultCode` 만 strict 로 두고 나머지는 결손에 관대하게 둔다.
+ * 이 스키마는 모든 응답이 통과하는 단일 지점이라, 미소비 필드 하나가 빠지는 것만으로
+ * 정상적인 비즈니스 거부(errorCode 가 담겨 온)까지 전부 502 "応答形式が正しくありません" 로
+ * 뭉개지고 401/400 매핑 로직이 실행조차 되지 않는다.
+ * (사양서와 실물이 이미 1회 어긋난 시스템 — `resultMsg` → `resultMessage`)
+ */
 export const sekoResultSchema = z.object({
-  code: z.number(),
-  message: z.string(),
+  code: z.number().nullish(),
+  message: z.string().nullish(),
+  // 판정 근거 — 유지. 여기서 관대해지면 fail-closed 가 깨진다.
   resultCode: z.string(),
-  resultMessage: z.string(),
-  errorCode: z.string().optional(),
+  resultMessage: z.string().nullish(),
+  // 오류 응답에만 포함(실측). null 로 명시 전송하는 구현도 수용.
+  errorCode: z.string().nullish(),
 });
 
 export type SekoResult = z.infer<typeof sekoResultSchema>;
@@ -31,8 +41,11 @@ const sekoLoginDataSchema = z.object({
   expiredAt: z.string(),
   userId: z.string(),
   loginId: z.string(),
-  sei: z.string(),
-  mei: z.string(),
+  // getUserInfo 스키마와 동일 정책 — 엣지 계정 대비 nullable.
+  // login 은 실패 시 로그인 자체가 502 로 막히므로 더 관대해야 한다
+  // (호출부 login/route.ts 의 `?? ""` 폴백이 이 완화로 비로소 유효해진다).
+  sei: z.string().nullable(),
+  mei: z.string().nullable(),
   seiKana: z.string().nullable(),
   meiKana: z.string().nullable(),
   email: z.string().nullable(),

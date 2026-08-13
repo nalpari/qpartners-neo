@@ -311,9 +311,14 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
-      // SEKO 는 위(4-1)에서 자체 종결하므로 여기 도달하지 않는다 (QSP 경로 전용 폴백).
-      authRole = user.userTp === "ADMIN" ? "ADMIN"
-        : user.userTp === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
+      // 폴백 매핑은 resolveAuthRole 본체와 일치해야 한다(.claude/rules/api.md "최소 권한 원칙").
+      // SEKO 는 위(4-1)에서 자체 종결하므로 현재는 도달하지 않지만, 그 분기가 이동·삭제될 때
+      // 조용히 GENERAL 로 강등되지 않도록 전 유형을 명시적으로 열거한다.
+      // (narrowing 된 user.userTp 를 그대로 쓰면 SEKO 비교가 dead code 로 판정되므로 string 으로 받는다)
+      const userTpRaw: string = user.userTp;
+      authRole = userTpRaw === "ADMIN" ? "ADMIN"
+        : userTpRaw === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
+        : userTpRaw === "SEKO" ? "SEKO"
         : "GENERAL";
     }
 

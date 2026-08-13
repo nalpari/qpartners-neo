@@ -52,8 +52,8 @@ const SEKO_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   "AUTHENTICATION_ERROR",
 ]);
 
-function isSekoAuthError(errorCode: string | undefined): boolean {
-  return errorCode !== undefined && SEKO_AUTH_ERROR_CODES.has(errorCode);
+function isSekoAuthError(errorCode: string | null | undefined): boolean {
+  return errorCode != null && SEKO_AUTH_ERROR_CODES.has(errorCode);
 }
 
 /** SEKO Connector base URL (env `SEKO_CONNECTOR_BASE_URL`). 끝 슬래시 제거. */
@@ -141,7 +141,7 @@ export async function sekoLogin(
     const status = response.status >= 500 ? 502 : 401;
     return {
       ok: false,
-      error: { error: "ログインに失敗しました", status, errorCode: result.errorCode },
+      error: { error: "ログインに失敗しました", status, errorCode: result.errorCode ?? undefined },
     };
   }
 
@@ -209,7 +209,7 @@ export async function sekoGetUserInfo(
     const status = isSekoAuthError(result.errorCode) ? 401 : 502;
     return {
       ok: false,
-      error: { error: "会員情報を照会できません", status, errorCode: result.errorCode },
+      error: { error: "会員情報を照会できません", status, errorCode: result.errorCode ?? undefined },
     };
   }
 
@@ -275,7 +275,7 @@ export async function sekoUpdateUserInfo(
     const status = isSekoAuthError(result.errorCode) ? 401 : 502;
     return {
       ok: false,
-      error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode },
+      error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode ?? undefined },
     };
   }
 
@@ -296,20 +296,38 @@ export type SekoChangePwdInput =
   | { chgType: "I"; loginId: string; newPwd: string }
   | { chgType: "C"; loginId: string; currentPwd: string; newPwd: string };
 
+/**
+ * 요청 body 조립 — switch + never 소진 검사.
+ *
+ * 삼항 else 폴백으로 두면 union 에 3번째 chgType(No.10 resetPwd 등)이 추가돼도 컴파일러가
+ * 막지 못하고, 그 케이스가 "초기화 변경(현재 비밀번호 불요)" 으로 전송된다.
+ * 침묵하며 깨지는 방향이 보안 완화 쪽이므로 소진 검사로 차단한다.
+ */
+function buildChangePwdBody(input: SekoChangePwdInput): Record<string, string> {
+  switch (input.chgType) {
+    case "C":
+      return {
+        loginId: input.loginId,
+        // 리터럴 재타이핑 금지 — discriminant 를 그대로 재사용한다.
+        chgType: input.chgType,
+        pwd: input.currentPwd,
+        chgPwd: input.newPwd,
+      };
+    case "I":
+      return { loginId: input.loginId, chgType: input.chgType, chgPwd: input.newPwd };
+    default: {
+      const exhaustive: never = input;
+      throw new Error(`Unhandled SEKO chgType: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
 export async function sekoChangePwd(
   input: SekoChangePwdInput,
   token: string,
   logTag: string,
 ): Promise<{ ok: true } | { ok: false; error: SekoFetchError }> {
-  const requestBody =
-    input.chgType === "C"
-      ? {
-          loginId: input.loginId,
-          chgType: "C",
-          pwd: input.currentPwd,
-          chgPwd: input.newPwd,
-        }
-      : { loginId: input.loginId, chgType: "I", chgPwd: input.newPwd };
+  const requestBody = buildChangePwdBody(input);
 
   let response: Response;
   try {
@@ -365,7 +383,7 @@ export async function sekoChangePwd(
         : 400;
     return {
       ok: false,
-      error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode },
+      error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode ?? undefined },
     };
   }
 
