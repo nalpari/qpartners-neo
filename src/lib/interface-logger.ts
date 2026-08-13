@@ -95,9 +95,25 @@ const PII_KEYS = new Set([
   "fax",
   // ─ 사업자·자격 식별번호
   "compBizNo",
+  // QSP 는 같은 법인번호를 API 마다 다른 이름으로 다룬다 — updateUserDtl 요청은 `bizNo`,
+  // userDetail 응답은 `corporateNo`(schemas/member.ts qspMemberDetailSchema). 셋 다 필요하다.
   "bizNo",
+  "corporateNo",
   "sekoId",
 ]);
+
+/**
+ * 사용자 식별자 키 — `maskUserId` 로 축약한다(이메일이면 부분 마스킹, 아니면 앞 2자).
+ *
+ * QSP 는 GENERAL 회원의 `userId` 가 곧 이메일이다(`schemas/member.ts` "userId=이메일 문자열").
+ * `qp_interface_log.user_id` 컬럼은 전 호출처가 마스킹하는데 body 안의 같은 값이 평문으로
+ * 남으면 그 통제가 무력화된다 — 예: signup 의 `{ userId: email, email }` 은 한쪽만 가려진다.
+ * `updBy`(수정자)도 같은 형태로 관리자 이메일을 담는다.
+ *
+ * `maskEmail` 이 아니라 `maskUserId` 를 쓰는 이유: STORE 등 `@` 없는 식별자도 축약해야 하는데
+ * `maskEmail` 은 `@` 가 없으면 원문을 통과시킨다.
+ */
+const USER_ID_KEYS = new Set(["userId", "updBy"]);
 
 // ─ 제외: `deptNm`/`pstnNm`
 //   부서·직위 "명칭" 은 개인정보가 아니라 코드 카탈로그 값이다. 특히 `deptNm` 은 부서 마스터
@@ -105,6 +121,12 @@ const PII_KEYS = new Set([
 //   (`src/lib/schemas/master.ts`). 전역 키 마스킹에 넣으면 `{ deptCd: "001", deptNm: "***" }`
 //   가 되어 개인정보 보호 효과 없이 진단 가치만 사라진다.
 //   782e11b 에서 `reason` 을 regex 에서 제거한 것과 동일한 false-positive 패턴이다.
+//
+//   **감수하는 부작용**: 두 키는 마스터 카탈로그 전용이 아니다. 회원가입·마이페이지의
+//   부서/직위는 자유기입(schemas/signup.ts·mypage.ts)이라 개인의 소속이 평문으로 남는다.
+//   단독 식별력은 낮지만 마스킹된 성명과 결합하면 재식별 보조가 될 수 있다.
+//   근본 해결은 maskObjectFields 가 apiName 을 받아 `deptList` 에서만 제외하는 것이나,
+//   현재 시그니처로는 전역 on/off 뿐이라 카탈로그 진단을 살리는 쪽을 택했다.
 
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
@@ -148,10 +170,16 @@ function maskObjectFields(
     const val = obj[key];
     if (SENSITIVE_KEYS.has(key)) {
       masked[key] = "***";
-    } else if (PII_KEYS.has(key) && val != null) {
+    } else if (PII_KEYS.has(key) && val != null && val !== "") {
       // 값 타입을 가리지 않는다 — zipcode/telNo 는 문자열/숫자 양쪽으로 오므로
       // `typeof val === "string"` 으로 좁히면 숫자 응답이 평문으로 통과한다.
+      //
+      // 빈 문자열은 마스킹하지 않는다 — `qsp-member.ts` 의 buildQspPreservedFields 가 QSP
+      // full-replace 로부터 값을 지키려고 null 을 "" 로 바꿔 보내므로, ""(값 없음)과
+      // 실제 값을 구분할 수 있어야 "필드가 통째로 날아갔다" 는 사고를 로그로 추적할 수 있다.
       masked[key] = "***";
+    } else if (USER_ID_KEYS.has(key) && typeof val === "string") {
+      masked[key] = maskUserId(val);
     } else if (EMAIL_KEYS.has(key) && typeof val === "string") {
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
@@ -172,11 +200,13 @@ function maskObjectFields(
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 // 값 부분은 **문자열과 숫자를 모두** 매칭한다 — zipcode/telNo 가 int 로 오는 사례가 있어
 // 문자열만 잡으면 파싱 실패 경로에서 그대로 평문 저장된다.
-// 키 목록 불변식: (SENSITIVE_KEYS − `reason`) ∪ PII_KEYS.
+// 키 목록 불변식: (SENSITIVE_KEYS − `reason`) ∪ PII_KEYS ∪ EMAIL_KEYS ∪ USER_ID_KEYS.
 //   `reason` 은 위 근거대로 **의도적으로 제외**한다 — 되돌려 넣으면 782e11b 의 수정이 무효화된다.
-//   그 외 키를 한쪽에만 추가하면 JSON 파싱 성공/실패 경로에서 마스킹이 갈리므로 함께 고칠 것.
+//   EMAIL_KEYS/USER_ID_KEYS 는 객체 경로에서 부분 마스킹(`ab***@x.com`)이지만 이 폴백에서는 전체 치환된다 —
+//   파싱이 실패한 본문은 구조를 신뢰할 수 없어 더 보수적으로 가린다. 누락보다 과잉이 안전하다.
+//   그 외 키를 한쪽에만 추가하면 파싱 성공/실패 경로에서 마스킹이 갈리므로 함께 고칠 것.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|userNm|userNmKana|user1stNm|user2ndNm|user1stNmKana|user2ndNmKana|uptNm|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|compAddr|compAddr2|compPostCd|address1|address2|zipcode|compTelNo|compFaxNo|telNo|fax|compBizNo|bizNo|sekoId)"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|userNm|userNmKana|user1stNm|user2ndNm|user1stNmKana|user2ndNmKana|uptNm|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|compAddr|compAddr2|compPostCd|address1|address2|zipcode|compTelNo|compFaxNo|telNo|fax|compBizNo|bizNo|corporateNo|sekoId|email|loginId|userId|updBy)"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
@@ -220,6 +250,11 @@ const URL_SENSITIVE_QUERY_KEYS = new Set([
   "token",
   "accesstoken",
   "refreshtoken",
+  // PII·식별자 키는 **body 집합에서 파생**한다. 손으로 나열하면 body 만 막고 URL 은 뚫린 채
+  // 남는다 — 실제로 회원관리 검색은 `?userNm=山田太郎&compNm=…` 로 나가므로(admin/members
+  // route) PII_KEYS 확장이 URL 에 반영되지 않으면 검색어가 그대로 request_url 에 저장된다.
+  // 쿼리 키 비교는 소문자 기준이므로 정규화해서 넣는다.
+  ...[...PII_KEYS, ...USER_ID_KEYS].map((key) => key.toLowerCase()),
 ]);
 
 function maskSensitiveQueryInUrl(input: string): string {
