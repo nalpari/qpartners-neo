@@ -40,6 +40,22 @@ export type SekoFetchError = {
 const SEKO_TIMEOUT_MS = 10_000;
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
+/**
+ * 재로그인이 필요한 인증 실패 errorCode (2026-08-13 preview 실측).
+ *  - `NO_AUTHENTICATION_ERROR`: Authorization 헤더 누락
+ *  - `AUTHENTICATION_ERROR`: 토큰 무효/만료 (Bearer 24h 경과 포함)
+ * 둘 다 401 로 매핑해 세션 만료 안내·재로그인 유도로 이어지게 한다.
+ * (한쪽만 처리하면 토큰 만료가 502/400 으로 나가 사용자가 원인을 알 수 없다.)
+ */
+const SEKO_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
+  "NO_AUTHENTICATION_ERROR",
+  "AUTHENTICATION_ERROR",
+]);
+
+function isSekoAuthError(errorCode: string | undefined): boolean {
+  return errorCode !== undefined && SEKO_AUTH_ERROR_CODES.has(errorCode);
+}
+
 /** SEKO Connector base URL (env `SEKO_CONNECTOR_BASE_URL`). 끝 슬래시 제거. */
 function sekoBaseUrl(): string {
   const url = process.env.SEKO_CONNECTOR_BASE_URL?.trim();
@@ -116,7 +132,8 @@ export async function sekoLogin(
 
   const { data, result } = parsed.data;
   if (result.resultCode !== "S" || !data) {
-    // 비즈니스 거부(자격증명 오류·비번 미초기화 등)는 문서화된 HTTP 400.
+    // 비즈니스 거부(자격증명 오류 `INVALID_LOGIN_ID_OR_PASSWORD_ERROR`·비번 미초기화
+    // `PASSWORD_INIT_REQUIRED_ERROR` 등)는 문서화된 HTTP 400.
     // 5xx(인프라 장애)는 자격오류로 뭉개지 않고 502 로 분리(코드리뷰 I1 반영).
     console.warn(
       `${logTag} SEKO 로그인 거부 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
@@ -188,8 +205,8 @@ export async function sekoGetUserInfo(
     console.warn(
       `${logTag} SEKO 회원정보 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    // 토큰 만료(NO_AUTHENTICATION)면 401, 5xx 는 502, 그 외 502.
-    const status = result.errorCode === "NO_AUTHENTICATION_ERROR" ? 401 : 502;
+    // 인증 실패(헤더 누락·토큰 만료)면 401(재로그인), 그 외는 502.
+    const status = isSekoAuthError(result.errorCode) ? 401 : 502;
     return {
       ok: false,
       error: { error: "会員情報を照会できません", status, errorCode: result.errorCode },
@@ -255,7 +272,7 @@ export async function sekoUpdateUserInfo(
     console.warn(
       `${logTag} SEKO 회원정보 수정 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    const status = result.errorCode === "NO_AUTHENTICATION_ERROR" ? 401 : 502;
+    const status = isSekoAuthError(result.errorCode) ? 401 : 502;
     return {
       ok: false,
       error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode },
@@ -339,14 +356,13 @@ export async function sekoChangePwd(
     console.warn(
       `${logTag} SEKO 비밀번호 변경 실패 (chgType: ${input.chgType}, resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    // 토큰 만료/무효 → 401(재로그인), 5xx(인프라 장애) → 502,
+    // 인증 실패(헤더 누락·토큰 만료) → 401(재로그인), 5xx(인프라 장애) → 502,
     // 그 외 비즈니스 거부(현재 비밀번호 불일치·정책 위반 등) → 400.
-    const status =
-      result.errorCode === "NO_AUTHENTICATION_ERROR"
-        ? 401
-        : response.status >= 500
-          ? 502
-          : 400;
+    const status = isSekoAuthError(result.errorCode)
+      ? 401
+      : response.status >= 500
+        ? 502
+        : 400;
     return {
       ok: false,
       error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode },
