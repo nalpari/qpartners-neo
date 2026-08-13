@@ -145,6 +145,20 @@ export async function POST(request: NextRequest) {
   }
   const validUserTp = userTpParsed.data;
 
+  // 3-1. 시공점(SEKO) — 재설정 미지원(No.10 resetPwd 미배선). request 라우트에서 이미 차단되므로
+  //      정상 흐름에서는 SEKO 토큰이 발급되지 않으나, 차단 이전에 발급된 잔여 토큰 대비 방어한다.
+  //      토큰 소모 전에 거부 — 재설정이 불가한 요청으로 토큰을 낭비시키지 않는다.
+  // `resetToken.userType`(DB 원본 문자열)으로 검사한다 — `validUserTp` 로 좁히면 아래 authRole
+  // 폴백의 SEKO 분기가 dead code 로 판정되어 삭제 압력을 받고, 그 경우 차단 해제 시 SEKO 가
+  // GENERAL 로 강등된다(.claude/rules/api.md "본체와 폴백 매핑 일치").
+  if (resetToken.userType === "SEKO") {
+    console.warn("[POST /api/auth/password-reset/confirm] SEKO 토큰 — Connector 미배선으로 차단 (501)");
+    return NextResponse.json(
+      { error: "施工店会員のパスワード再設定は現在ご利用いただけません。" },
+      { status: 501 },
+    );
+  }
+
   // 4. 토큰 원자적 사용 처리 (TOCTOU 방지 — 동시 요청 시 하나만 성공)
   let updated;
   try {

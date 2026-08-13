@@ -520,7 +520,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156).",
+        description:
+          "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156). " +
+          "시공점(SEKO)은 501 — 인증이 AS-IS Connector 로 종결되는데 재설정만 QSP 로 나가면 변경이 반영되지 않으므로 명시 차단.",
         requestBody: {
           required: true,
           content: {
@@ -596,6 +598,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("유효하지 않거나 만료된 링크입니다."),
           "429": errorResponse("リクエストが多すぎます。しばらく経ってから再度お試しください。"),
           "500": errorResponse("サーバーエラーが発生しました。"),
+          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.8/No.10 미배선"),
         },
       },
     },
@@ -642,6 +645,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "500": errorResponse("비밀번호 변경 실패"),
+          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.10 미배선 (잔여 토큰 방어)"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
