@@ -2247,11 +2247,12 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Code"],
         summary: "공통코드 공개 조회 (headerCode 기반)",
         parameters: [
-          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (공개 허용: INQUIRY_TYPE, PAGE_SIZE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+          { name: "headerCode", in: "query", required: true, description: "코드 헤더 코드 (공개 허용: INQUIRY_TYPE, PAGE_SIZE, APPROVER, USER_TYPE)", schema: { type: "string", pattern: "^[A-Z0-9_]{1,50}$", maxLength: 50 } },
+          { name: "relCode1", in: "query", required: false, description: "지정 시 해당 rel_code1 값을 가진 코드만 반환. 미지정 시 전체. 예) headerCode=USER_TYPE&relCode1=Y — 회원관리 검색 SelectBox 노출 대상만 (시공점은 N 이라 제외)", schema: { type: "string", maxLength: 100 } },
         ],
         responses: {
           "200": {
-            description: "코드 상세 목록",
+            description: "코드 상세 목록 (내부 운영 필드 제외 — code/codeName 만 반환)",
             content: {
               "application/json": {
                 schema: {
@@ -2263,10 +2264,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                         type: "object",
                         properties: {
                           code: { type: "string" },
-                          displayCode: { type: "string" },
                           codeName: { type: "string" },
-                          codeNameEtc: { type: "string", nullable: true },
-                          sortOrder: { type: "integer" },
                         },
                       },
                     },
@@ -2275,7 +2273,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치 / relCode1 길이 초과(100자)"),
           "404": errorResponse("해당 코드 없음"),
           "500": errorResponse("서버 에러"),
         },
