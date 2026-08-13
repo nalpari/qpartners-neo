@@ -18,7 +18,7 @@ export type InterfaceLogParams = {
    * true 지정 시 응답 본문 전체를 `[masked:cipher-response]` 로 치환하여 저장.
    * 응답 객체 안에 `userId` 키 등으로 cipher / 토큰이 포함되는 API 전용
    * (예: QSP autoLoginEncryptData — 응답 `data.userId` 가 base64 cipher).
-   * SENSITIVE_KEYS / PII_KEYS / EMAIL_KEYS 의 키 단위 마스킹으로는 누락되는 케이스를 fail-closed 로 차단.
+   * SENSITIVE_KEYS / EMAIL_KEYS 의 키 단위 마스킹으로는 누락되는 케이스를 fail-closed 로 차단.
    */
   maskResponseBody?: boolean;
 };
@@ -47,25 +47,6 @@ const SENSITIVE_KEYS = new Set([
 // loginId: GENERAL 회원의 경우 userId === email 이므로 이메일 주소가 그대로 로그에 남는다.
 // EMAIL_KEYS 로 마스킹해 GENERAL/ADMIN/STORE 모두 공통 처리.
 const EMAIL_KEYS = new Set(["email", "loginId"]);
-
-// 개인정보(이름/상호/주소/연락처) — 응답 본문에 평문으로 잔존하지 않도록 키 단위 마스킹.
-// QSP userDetail 과 SEKO getUserInfo 가 동일 필드명을 사용하므로 공통 집합으로 처리한다.
-// 응답 구조/resultCode 는 보존되어 스키마 불일치 진단은 그대로 가능 (maskResponseBody 전체 치환과 대비).
-const PII_KEYS = new Set([
-  "sei",
-  "mei",
-  "seiKana",
-  "meiKana",
-  "compNm",
-  "compNmKana",
-  "storeName",
-  "storeNameKana",
-  "zipcode",
-  "address1",
-  "address2",
-  "telNo",
-  "fax",
-]);
 
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
@@ -109,8 +90,6 @@ function maskObjectFields(
     const val = obj[key];
     if (SENSITIVE_KEYS.has(key)) {
       masked[key] = "***";
-    } else if (PII_KEYS.has(key) && typeof val === "string") {
-      masked[key] = "***";
     } else if (EMAIL_KEYS.has(key) && typeof val === "string") {
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
@@ -130,7 +109,7 @@ function maskObjectFields(
 // `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|zipcode|address1|address2|telNo|fax)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
@@ -285,7 +264,7 @@ export async function fetchWithLog(
   const resultCode = extractResultCode(responseBodyText);
 
   // cipher / 토큰 응답 API 는 본문 전체를 통째로 마스킹.
-  // 키 단위 마스킹(SENSITIVE_KEYS / PII_KEYS / EMAIL_KEYS)으로는 응답 스키마가 `userId` 등 일반 키명에
+  // 키 단위 마스킹(SENSITIVE_KEYS / EMAIL_KEYS)으로는 응답 스키마가 `userId` 등 일반 키명에
   // cipher 를 담는 케이스(QSP autoLoginEncryptData)를 잡지 못하므로 fail-closed.
   // 단, body 자체가 null(읽기 실패)일 때는 placeholder 대신 null 유지 — 운영 진단 시
   // "본문 비었던 건지 / 마스킹된 건지" 구분 가능.
