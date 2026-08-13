@@ -9,7 +9,7 @@ import type { ProfileData, EditFormData } from "./mypage-info";
 const USER_TYPE_LABELS: Record<string, string> = {
   ADMIN: "管理者",
   STORE: "販売店",
-  GENERAL: "一般会員",
+  GENERAL: "既存Q.PARTNERS会員",
   SEKO: "施工店",
 };
 

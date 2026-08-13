@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 /**
  * 일반회원 등록 페이지 — SUPER_ADMIN·ADMIN 전용 (셀프 회원가입 폐지).
  *
- * 관리자 회원관리 목록의 [一般会員 新規登録] 버튼에서 새 탭으로 진입한다.
+ * 관리자 회원관리 목록의 [既存Q.PARTNERS会員 新規登録] 버튼에서 새 탭으로 진입한다.
  * 가드 규칙은 `requirePageMenuPermission` 과 동일 정책을 따르되, 판정 기준은
  * 메뉴 매트릭스가 아니라 사내 사용자 여부(`isInternalUser`) 다 —
  * 회원등록은 운영자가 토글하는 메뉴 역량이 아니라 사용자 유형에 종속되는 관문이므로

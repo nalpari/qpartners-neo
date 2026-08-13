@@ -20,7 +20,7 @@ const VIRTUAL_PAGE_PATH = "/login/password-reset";
 const MEMBER_TYPES: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
   { key: "installer", label: "施工店会員" },
-  { key: "general", label: "一般会員" },
+  { key: "general", label: "既存Q.PARTNERS会員" },
 ];
 
 interface ResetFormData {

@@ -188,7 +188,7 @@ export function SignupContents() {
 
     openAlert({
       type: "confirm",
-      message: "Q.PARTNERSの一般会員として登録しますか？",
+      message: "既存Q.PARTNERS会員として登録しますか？",
       confirmLabel: "確認",
       cancelLabel: "キャンセル",
       onConfirm: submitSignup,
@@ -339,7 +339,7 @@ export function SignupContents() {
               {/* 회원유형 (Read Only) */}
               <FormRow label="会員タイプ">
                 <p className="font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5] lg:pl-6">
-                  一般会員
+                  既存Q.PARTNERS会員
                 </p>
               </FormRow>
 
@@ -697,7 +697,7 @@ function HeaderCard() {
       {/* PC: 가로 배치 */}
       <div className="hidden lg:flex items-center h-[60px]">
         <p className="flex-1 font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5]">
-          本画面は一般会員登録のためのページです。
+          本画面は既存Q.PARTNERS会員登録のためのページです。
           <br />
           販売店会員および施工店会員は各会員タイプボタンをクリックして該当ページに移動してください。
         </p>
@@ -714,7 +714,7 @@ function HeaderCard() {
       {/* MO: 세로 배치 */}
       <div className="flex flex-col gap-6 lg:hidden">
         <p className="font-['Noto_Sans_JP'] text-sm text-[#101010] leading-[1.5]">
-          本画面は一般会員登録のためのページです。
+          本画面は既存Q.PARTNERS会員登録のためのページです。
           <br />
           販売店会員および施工店会員は各会員タイプボタンをクリックして該当ページに移動してください。
         </p>

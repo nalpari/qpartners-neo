@@ -79,7 +79,7 @@ export function MembersTable({
     [userTypeReverseMap],
   );
 
-  // [一般会員 新規登録] 노출 제어 — UI hint 전용.
+  // [既存Q.PARTNERS会員 新規登録] 노출 제어 — UI hint 전용.
   // 실제 권한 판정은 /signup 페이지 가드와 /api/auth/signup 핸들러의 isInternalUser 가 담당.
   const isInternal = useIsInternal();
 
@@ -207,7 +207,7 @@ export function MembersTable({
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center h-[42px] min-w-[68px] px-4 rounded-[4px] bg-[#E97923] border border-[#CB6212] text-white shadow-[0.5px_1.5px_1px_0px_rgba(0,0,0,0.15)] font-['Noto_Sans_JP'] font-medium text-[13px] leading-[1.5] text-center whitespace-nowrap transition-colors duration-150 hover:bg-[#B05713] hover:border-[#8A4007] hover:shadow-none"
             >
-              一般会員 新規登録
+              既存Q.PARTNERS会員 新規登録
             </a>
           )}
           <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
