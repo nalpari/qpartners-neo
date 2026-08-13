@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { z } from "zod";
 
-import { getUserFromRequest, signToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest, signToken, COOKIE_NAME, sessionInvalidResponse } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -108,19 +108,13 @@ export async function POST(request: NextRequest) {
     if (user.userTp === "SEKO") {
       if (!user.sekoToken) {
         console.error("[POST /api/auth/password-init] SEKO 세션 토큰 없음 — 재로그인 필요");
-        return NextResponse.json(
-          { error: "セッションが無効です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
       }
       // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
       // 누락은 세션 결손 — 다른 식별자로 대체 전송하지 않고 재로그인 유도(mypage 라우트와 동일 정책).
       if (!user.email) {
         console.error("[POST /api/auth/password-init] SEKO email(=loginId) 누락 — 재로그인 필요");
-        return NextResponse.json(
-          { error: "セッション情報が不完全です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
       }
 
       const changeResult = await sekoChangePwd(

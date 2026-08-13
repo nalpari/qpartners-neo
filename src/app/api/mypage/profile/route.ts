@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
-import { COOKIE_NAME, getUserFromRequest, signToken } from "@/lib/jwt";
+import { COOKIE_NAME, getUserFromRequest, signToken, sessionInvalidResponse } from "@/lib/jwt";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { sendAttrChangeNotification } from "@/lib/notification-mail/attr-change-mail";
 import {
@@ -55,10 +55,7 @@ export async function GET(request: NextRequest) {
           "[GET /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
           buildUserLogContext(user),
         );
-        return NextResponse.json(
-          { error: "セッションが無効です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
       }
       // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
       // email 누락은 세션 결손 — userId(다른 식별자)로 대체 전송하지 않고 재로그인 유도.
@@ -67,10 +64,7 @@ export async function GET(request: NextRequest) {
           "[GET /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
           buildUserLogContext(user),
         );
-        return NextResponse.json(
-          { error: "セッション情報が不完全です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
       }
       const sekoLoginId = user.email;
       const infoResult = await sekoGetUserInfo(
@@ -287,10 +281,7 @@ export async function PUT(request: NextRequest) {
           "[PUT /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
           buildUserLogContext(user),
         );
-        return NextResponse.json(
-          { error: "セッションが無効です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
       }
       let sekoBody: unknown;
       try {
@@ -318,10 +309,7 @@ export async function PUT(request: NextRequest) {
           "[PUT /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
           buildUserLogContext(user),
         );
-        return NextResponse.json(
-          { error: "セッション情報が不完全です。再度ログインしてください" },
-          { status: 401 },
-        );
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
       }
       const sekoLoginId = user.email;
       const upd = await sekoUpdateUserInfo(
