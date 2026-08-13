@@ -97,10 +97,14 @@ const PII_KEYS = new Set([
   "compBizNo",
   "bizNo",
   "sekoId",
-  // ─ 소속·직위 — 단독 식별성은 낮으나 회사명을 가리면서 남기면 방어가 무의미해진다
-  "deptNm",
-  "pstnNm",
 ]);
+
+// ─ 제외: `deptNm`/`pstnNm`
+//   부서·직위 "명칭" 은 개인정보가 아니라 코드 카탈로그 값이다. 특히 `deptNm` 은 부서 마스터
+//   조회(`apiName: "deptList"`)의 정상 응답 필드로, 스키마가 `{ deptCd, deptNm }` 만 담는다
+//   (`src/lib/schemas/master.ts`). 전역 키 마스킹에 넣으면 `{ deptCd: "001", deptNm: "***" }`
+//   가 되어 개인정보 보호 효과 없이 진단 가치만 사라진다.
+//   782e11b 에서 `reason` 을 regex 에서 제거한 것과 동일한 false-positive 패턴이다.
 
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
@@ -168,9 +172,11 @@ function maskObjectFields(
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
 // 값 부분은 **문자열과 숫자를 모두** 매칭한다 — zipcode/telNo 가 int 로 오는 사례가 있어
 // 문자열만 잡으면 파싱 실패 경로에서 그대로 평문 저장된다.
-// 키 목록은 SENSITIVE_KEYS + PII_KEYS 와 동기화되어야 한다(한쪽만 고치면 경로별로 갈린다).
+// 키 목록 불변식: (SENSITIVE_KEYS − `reason`) ∪ PII_KEYS.
+//   `reason` 은 위 근거대로 **의도적으로 제외**한다 — 되돌려 넣으면 782e11b 의 수정이 무효화된다.
+//   그 외 키를 한쪽에만 추가하면 JSON 파싱 성공/실패 경로에서 마스킹이 갈리므로 함께 고칠 것.
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|userNm|userNmKana|user1stNm|user2ndNm|user1stNmKana|user2ndNmKana|uptNm|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|compAddr|compAddr2|compPostCd|address1|address2|zipcode|compTelNo|compFaxNo|telNo|fax|compBizNo|bizNo|sekoId|deptNm|pstnNm)"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|userNm|userNmKana|user1stNm|user2ndNm|user1stNmKana|user2ndNmKana|uptNm|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|compAddr|compAddr2|compPostCd|address1|address2|zipcode|compTelNo|compFaxNo|telNo|fax|compBizNo|bizNo|sekoId)"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
