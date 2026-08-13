@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
 import {
   loginRequestSchema,
   qspLoginResponseSchema,
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
   const { loginId, pwd, userTp } = result.data;
 
   // ─── 시공점(SEKO) 분기 — AS-IS Q.Partners Connector 경유 (QSP 미경유) ───
-  // ⚠️ WIP (로그인 배선 검증용). 미구현: SEKO 2FA(save2faVerified) / 비번초기화(changePwd·resetPwd) 흐름.
+  // 미배선 잔여: SEKO 2FA(No.9 save2faVerified) / 비번리셋(No.10 resetPwd).
   //    아래 QSP 경로는 무손상 — SEKO 는 여기서 자체 종결한다.
   if (userTp === "SEKO") {
     const sekoResult = await sekoLogin(loginId, pwd, "[POST /api/auth/login][SEKO]");
@@ -101,32 +103,25 @@ export async function POST(request: NextRequest) {
       console.error("[POST /api/auth/login][SEKO] QpRole.isActive 조회 실패 — 통과 처리:", error);
     }
 
-    // 로컬 테스트 편의 우회: SEKO 초기화(changePwd)/2FA(save2faVerified) 흐름 미배선 구간을
-    // 건너뛰고 홈까지 진입시켜 후속 API(getUserInfo 등)를 화면에서 테스트하기 위한 임시 스위치.
-    // 반드시 APP_ENV !== "production" + SEKO_DEV_BYPASS_INIT=true 동시 충족 시에만 활성 — 운영 무영향.
-    // TODO: SEKO pwdInit/2FA 흐름 구현 완료 시 제거.
-    const devBypassInit =
-      process.env.APP_ENV !== "production" &&
-      process.env.SEKO_DEV_BYPASS_INIT === "true";
-
     const sekoUser: LoginUser = {
       userId: s.userId,
       userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,
       userTp: "SEKO",
       compCd: null,
       compNm: null,
-      email: s.email,
+      // 시공점 loginId=email(사양). 응답 email 이 null 이어도 loginId 로 보장 —
+      // mypage 등 후속 SEKO 호출의 식별자(loginId) 결손/오전송 방지.
+      email: s.email ?? s.loginId,
       deptNm: null,
       authCd: null,
       storeLvl: null,
       statCd: null,
       authRole: "SEKO",
       // SEKO pwdInitYn 의미가 QSP 와 반대 — SEKO "Y"=초기화 필요 → TO-BE "N"(최초 로그인) 로 매핑.
-      // devBypassInit 시 팝업 스킵을 위해 "Y"(=초기화 불요) 로 강제.
-      pwdInitYn: devBypassInit ? "Y" : (s.pwdInitYn === "Y" ? "N" : "Y"),
-      // SEKO 2FA 미구현 → 스킵. 초기화 필요("Y")면 false 로 두어 personal-info popup(초기화 흐름) 진입.
-      // devBypassInit 시 true 로 강제하여 홈 진입.
-      twoFactorVerified: devBypassInit ? true : (s.pwdInitYn !== "Y"),
+      pwdInitYn: s.pwdInitYn === "Y" ? "N" : "Y",
+      // SEKO 2FA(No.9) 미배선 → 스킵. 초기화 필요("Y")면 false 로 두어 personal-info popup
+      // (초기화 흐름 → password-init SEKO 분기 → changePwd chgType=I) 로 진입시킨다.
+      twoFactorVerified: s.pwdInitYn !== "Y",
       // SEKO telNo 는 개인 휴대전화(회사 전화 아님) — 문의하기 자동입력 목적상 의도적으로 JWT 에 포함.
       // JWT 는 httpOnly + 운영 HTTPS 로만 전송되어 유출 표면 제한. 장기적으로 on-demand fetch 검토 대상(PR #27 리뷰).
       telNo: s.telNo,
@@ -541,7 +536,17 @@ export async function POST(request: NextRequest) {
 
   return response;
  } catch (error) {
-    console.error("[POST /api/auth/login]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[POST /api/auth/login] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[POST /api/auth/login]", error);
     return NextResponse.json(
       { error: "ログイン処理中にサーバーエラーが発生しました" },
       { status: 500 },

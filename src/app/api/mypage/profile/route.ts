@@ -1,10 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
+import { z } from "zod";
+
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
-import { COOKIE_NAME, getUserFromRequest, signToken } from "@/lib/jwt";
+import { COOKIE_NAME, getUserFromRequest, signToken, sessionInvalidResponse } from "@/lib/jwt";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { MENU } from "@/lib/menu-codes";
 import { sendAttrChangeNotification } from "@/lib/notification-mail/attr-change-mail";
 import {
   fetchQspUserDetail,
@@ -17,12 +23,18 @@ import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
+import { sekoGetUserInfo, sekoUpdateUserInfo } from "@/lib/seko-connector";
 
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
 
 // GENERAL 회원은 userId == email 이므로 로그 기록 시 반드시 제외한다
 // (.claude/rules/api.md: "이메일 주소를 로그에 기록하지 않음")
+/** SEKO PUT 입력 — TO-BE 가 갱신하는 필드는 newsRcptYn 뿐이다 (QA#8). */
+const sekoProfileUpdateSchema = z.object({
+  newsRcptYn: z.enum(["Y", "N"], { message: "ニュース受信設定の値が正しくありません" }),
+});
+
 function buildUserLogContext(user: { userId: string; userTp: string }) {
   return {
     userTp: user.userTp,
@@ -47,11 +59,69 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 시공점은 別途 API を使用
+    // 시공점(SEKO) — AS-IS Q.Partners Connector getUserInfo 로 조회 (QSP 미경유).
     if (user.userTp === "SEKO") {
+      if (!user.sekoToken) {
+        console.error(
+          "[GET /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+      }
+      // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
+      // email 누락은 세션 결손 — userId(다른 식별자)로 대체 전송하지 않고 재로그인 유도.
+      if (!user.email) {
+        console.error(
+          "[GET /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
+      }
+      const sekoLoginId = user.email;
+      const infoResult = await sekoGetUserInfo(
+        sekoLoginId,
+        user.sekoToken,
+        "[GET /api/mypage/profile][SEKO]",
+      );
+      if (!infoResult.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (infoResult.error.status === 401) {
+          return sessionInvalidResponse(infoResult.error.error);
+        }
+        return NextResponse.json(
+          { error: infoResult.error.error },
+          { status: infoResult.error.status },
+        );
+      }
+      const s = infoResult.data;
+      const sekoProfile = {
+        userType: "SEKO" as const,
+        userName: [s.sei, s.mei].filter(Boolean).join(" ") || null,
+        userNameKana: [s.seiKana, s.meiKana].filter(Boolean).join(" ") || null,
+        sei: s.sei ?? "",
+        mei: s.mei ?? "",
+        seiKana: s.seiKana ?? "",
+        meiKana: s.meiKana ?? "",
+        email: s.email ?? "",
+        compNm: s.storeName ?? "",
+        compNmKana: s.storeNameKana ?? "",
+        zipcode: s.zipcode ?? "",
+        address1: s.address1 ?? "",
+        address2: s.address2 ?? "",
+        telNo: s.telNo ?? "",
+        fax: s.fax ?? "",
+        department: null,
+        jobTitle: null,
+        corporateNo: null,
+        newsRcptYn: s.newsRcptYn ?? "N",
+        newsRcptDate: null,
+      };
+      // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
       return NextResponse.json(
-        { error: "施工店会員はこのAPIをご利用いただけません" },
-        { status: 400 },
+        { data: sekoProfile },
+        { headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -156,18 +226,22 @@ export async function GET(request: NextRequest) {
       // 공백 기준이라 실패해서 "-" 표시되던 이슈 해결 — 원본 값을 함께 노출.
       userName: d.userNm,
       userNameKana: d.userNmKana,
-      sei: d.user2ndNm ?? seiFromNm ?? null,
-      mei: d.user1stNm ?? meiFromNm ?? null,
-      seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? null,
-      meiKana: d.user1stNmKana ?? meiKanaFromNm ?? null,
-      email: d.email,
-      compNm: d.compNm,
-      compNmKana: d.compNmKana,
-      zipcode: d.compPostCd,
-      address1: d.compAddr,
-      address2: d.compAddr2,
-      telNo: d.compTelNo,
-      fax: d.compFaxNo,
+      // 아래 12필드는 OpenAPI 스펙·FE `ProfileData` 가 모두 non-nullable string 이므로 "" 로 정규화한다.
+      // (SEKO 분기와 동일 계약 — 같은 엔드포인트가 회원유형에 따라 null/"" 로 갈리지 않도록)
+      // 저장 경로 영향 없음: FE `createEditFormData` 가 편집 필드를 이미 `|| ""` 로 정규화해
+      // PUT payload 는 종전과 동일하다. 값 없음 표시는 FE 의 `|| "-"` 가 그대로 처리한다.
+      sei: d.user2ndNm ?? seiFromNm ?? "",
+      mei: d.user1stNm ?? meiFromNm ?? "",
+      seiKana: d.user2ndNmKana ?? seiKanaFromNm ?? "",
+      meiKana: d.user1stNmKana ?? meiKanaFromNm ?? "",
+      email: d.email ?? "",
+      compNm: d.compNm ?? "",
+      compNmKana: d.compNmKana ?? "",
+      zipcode: d.compPostCd ?? "",
+      address1: d.compAddr ?? "",
+      address2: d.compAddr2 ?? "",
+      telNo: d.compTelNo ?? "",
+      fax: d.compFaxNo ?? "",
       newsRcptYn: d.newsRcptYn ?? "N",
       // QSP 가 "YYYY.MM.DD HH:mm:ss" 로 내려주는 경우 FE formatDate(new Date()) 가 파싱 실패 →
       // ISO 8601 (+09:00) 로 정규화. null/포맷 불일치는 null 유지 (FE 에서 "許可"/"拒否" 단독 표시).
@@ -186,9 +260,23 @@ export async function GET(request: NextRequest) {
       profile.withdrawAvailable = true;
     }
 
-    return NextResponse.json({ data: profile });
+    // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
+    return NextResponse.json(
+      { data: profile },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    console.error("[GET /api/mypage/profile]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[GET /api/mypage/profile] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[GET /api/mypage/profile]", error);
     return NextResponse.json(
       { error: "プロフィール照会中にエラーが発生しました" },
       { status: 500 },
@@ -213,12 +301,80 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // 시공점은 別途 API を使用
+    // 시공점(SEKO) — AS-IS Connector updateUserInfo 로 newsRcptYn 만 갱신 (QA#8).
     if (user.userTp === "SEKO") {
-      return NextResponse.json(
-        { error: "施工店会員はこのAPIをご利用いただけません" },
-        { status: 400 },
+      if (!user.sekoToken) {
+        console.error(
+          "[PUT /api/mypage/profile] SEKO 세션 토큰 없음 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+      }
+      let sekoBody: unknown;
+      try {
+        sekoBody = await request.json();
+      } catch (error) {
+        console.warn("[PUT /api/mypage/profile][SEKO] Request body 파싱 실패:", error);
+        return NextResponse.json(
+          { error: "リクエスト形式が正しくありません" },
+          { status: 400 },
+        );
+      }
+      // 권한 회수를 서버에서 강제한다 — UI 버튼 숨김(useMenuPermission)만으로는 직접 PUT 호출을
+      // 막지 못한다. seed 는 SEKO/MYPAGE canUpdate 를 두지 않으므로(권한 정본 = 권한관리 화면)
+      // 서버 강제가 없으면 관리자가 수정 권한을 회수해도 newsRcptYn 을 계속 변경할 수 있다.
+      //
+      // ※ QSP 경로(GENERAL/STORE/ADMIN)는 종전과 동일하게 미적용 — 마이페이지 라우트 6종 전체에
+      //   RBAC 을 거는 것은 별도 과제다(환경별 MYPAGE.can_update 실측이 선행되지 않으면
+      //   기존 사용자의 마이페이지 수정이 중단된다). 본 분기는 이 브랜치가 새로 연 경로에 한정.
+      const permResult = await requireMenuPermission(request.headers, MENU.MYPAGE, "update");
+      if (permResult instanceof NextResponse) {
+        return permResult;
+      }
+
+      // 외부 입력은 `as` 캐스팅 금지 — Zod safeParse (.claude/rules/api.md).
+      // SEKO 는 newsRcptYn 만 갱신하므로(QA#8) 그 외 필드는 스키마에서 strip 된다.
+      const sekoParsed = sekoProfileUpdateSchema.safeParse(sekoBody);
+      if (!sekoParsed.success) {
+        console.warn("[PUT /api/mypage/profile][SEKO] 입력 검증 실패:", {
+          issues: sekoParsed.error.issues,
+          ...buildUserLogContext(user),
+        });
+        return NextResponse.json(
+          { error: "入力内容に不備があります" },
+          { status: 400 },
+        );
+      }
+      const nry = sekoParsed.data.newsRcptYn;
+      // 시공점 loginId = email (사양). email 누락 시 userId 대체 금지 — 재로그인 유도.
+      if (!user.email) {
+        console.error(
+          "[PUT /api/mypage/profile] SEKO email(=loginId) 누락 — 재로그인 필요",
+          buildUserLogContext(user),
+        );
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
+      }
+      const sekoLoginId = user.email;
+      const upd = await sekoUpdateUserInfo(
+        user.userId,
+        sekoLoginId,
+        nry,
+        user.sekoToken,
+        "[PUT /api/mypage/profile][SEKO]",
       );
+      if (!upd.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (upd.error.status === 401) {
+          return sessionInvalidResponse(upd.error.error);
+        }
+        return NextResponse.json(
+          { error: upd.error.error },
+          { status: upd.error.status },
+        );
+      }
+      return NextResponse.json({ data: { message: "保存されました" } });
     }
 
     // QSP 가 email=null 로 응답한 계정은 본 API 가 지원하지 않는다 (loginUserSchema.email 은 nullable).
@@ -516,7 +672,17 @@ export async function PUT(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[PUT /api/mypage/profile]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[PUT /api/mypage/profile] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[PUT /api/mypage/profile]", error);
     return NextResponse.json(
       { error: "プロフィール修正中にエラーが発生しました" },
       { status: 500 },

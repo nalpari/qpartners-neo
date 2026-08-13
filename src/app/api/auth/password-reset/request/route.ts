@@ -236,27 +236,18 @@ export async function POST(request: NextRequest) {
         lookupBlocker = "schema";
       }
     } else if (userTp === "SEKO") {
-      const r = await lookupQspUserForReset(
-        { email: email!, userTp: "SEKO" },
-        " (lookup SEKO)",
+      // 시공점 — 비밀번호 재설정 미지원 (AS-IS Connector No.8 email/check · No.10 resetPwd 미배선).
+      // SEKO 인증은 Connector 로 종결되는데(login route) 재설정만 QSP 로 나가면 "保存されました" 200
+      // 을 받고도 새 비밀번호로 로그인할 수 없다 — QSP 기록과 Connector 인증 소스가 다르기 때문.
+      // 아무것도 반영하지 않으면서 성공을 반환하지 않도록 501 로 명시 차단한다
+      // (seko-info/seko-file 라우트와 동일 정책).
+      //
+      // No.8·No.10 배선 시 이 블록을 sekoEmailCheck 호출로 교체한다 — QSP lookup 으로 되돌리지 말 것.
+      console.warn(`${LOG} SEKO 비밀번호 재설정 요청 — Connector 미배선으로 차단 (501)`);
+      return NextResponse.json(
+        { error: "施工店会員のパスワード再設定は現在ご利用いただけません。" },
+        { status: 501 },
       );
-      if (r.kind === "found" && r.detail.email) {
-        resolvedDetail = r.detail;
-      } else if (r.kind === "found" && !r.detail.email) {
-        // 정상 회원이지만 응답 email 평문 부재 → 메일 발송 불가, fail-closed.
-        // STORE email 불일치(mismatch) 와 구분되도록 별도 blocker 로 분류
-        // (운영 로그 진단 시 원인 식별 — Boston Review MEDIUM #3, 2026-05-06).
-        console.error(
-          `${LOG} SEKO 응답 data.email 부재 — 메일 발송 불가, fail-closed`,
-        );
-        lookupBlocker = "no-email";
-      } else if (r.kind === "ambiguous") {
-        lookupBlocker = "ambiguous";
-      } else if (r.kind === "transport-error") {
-        lookupBlocker = "transport";
-      } else if (r.kind === "schema-error") {
-        lookupBlocker = "schema";
-      }
     } else if (userTp === "GENERAL") {
       // 입력값 X — loginId 우선, 없으면 email (Zod 가 둘 중 하나는 보장)
       const inputValue = (loginId ?? email ?? "").trim();

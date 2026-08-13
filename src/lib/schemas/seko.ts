@@ -13,13 +13,23 @@ import { z } from "zod";
  * 나머지 API 응답 스키마는 각 I/F 브랜치에서 추가된다.
  */
 
-/** SEKO Connector 공용 응답 result 구조 */
+/**
+ * SEKO Connector 공용 응답 result 구조.
+ *
+ * 성공/실패 판정에 쓰는 `resultCode` 만 strict 로 두고 나머지는 결손에 관대하게 둔다.
+ * 이 스키마는 모든 응답이 통과하는 단일 지점이라, 미소비 필드 하나가 빠지는 것만으로
+ * 정상적인 비즈니스 거부(errorCode 가 담겨 온)까지 전부 502 "応答形式が正しくありません" 로
+ * 뭉개지고 401/400 매핑 로직이 실행조차 되지 않는다.
+ * (사양서와 실물이 이미 1회 어긋난 시스템 — `resultMsg` → `resultMessage`)
+ */
 export const sekoResultSchema = z.object({
-  code: z.number(),
-  message: z.string(),
+  code: z.number().nullish(),
+  message: z.string().nullish(),
+  // 판정 근거 — 유지. 여기서 관대해지면 fail-closed 가 깨진다.
   resultCode: z.string(),
-  resultMessage: z.string(),
-  errorCode: z.string().optional(),
+  resultMessage: z.string().nullish(),
+  // 오류 응답에만 포함(실측). null 로 명시 전송하는 구현도 수용.
+  errorCode: z.string().nullish(),
 });
 
 export type SekoResult = z.infer<typeof sekoResultSchema>;
@@ -31,8 +41,11 @@ const sekoLoginDataSchema = z.object({
   expiredAt: z.string(),
   userId: z.string(),
   loginId: z.string(),
-  sei: z.string(),
-  mei: z.string(),
+  // getUserInfo 스키마와 동일 정책 — 엣지 계정 대비 nullable.
+  // login 은 실패 시 로그인 자체가 502 로 막히므로 더 관대해야 한다
+  // (호출부 login/route.ts 의 `?? ""` 폴백이 이 완화로 비로소 유효해진다).
+  sei: z.string().nullable(),
+  mei: z.string().nullable(),
   seiKana: z.string().nullable(),
   meiKana: z.string().nullable(),
   email: z.string().nullable(),
@@ -41,12 +54,61 @@ const sekoLoginDataSchema = z.object({
   userType: z.string(),
   pwdInitYn: z.enum(["Y", "N"]),
   // 사양서 예시는 문자열 "20", 실제 응답은 int 30 — 양쪽 수용(coerce).
-  groupKind: z.coerce.number().int().nullable(),
+  // 현재 소비처 없음. nullish 로 필드 누락(undefined)까지 허용 — coerce 가 NaN 을 만들어
+  // 미사용 필드 하나 때문에 로그인 전체가 502 로 떨어지는 것을 방지한다.
+  groupKind: z.coerce.number().int().nullish(),
 });
 
 export type SekoLoginData = z.infer<typeof sekoLoginDataSchema>;
 
 export const sekoLoginResponseSchema = z.object({
   data: sekoLoginDataSchema.nullable(),
+  result: sekoResultSchema,
+});
+
+// ─── No.3 Seko User Info API (/api/seko/getUserInfo) ───
+
+const sekoUserInfoDataSchema = z.object({
+  userId: z.string(),
+  loginId: z.string(),
+  // 성/이름: 엣지 계정 대비 nullable (호출부가 `?? ""` 방어 — 스키마-소비부 정합, 코드리뷰 반영).
+  sei: z.string().nullable(),
+  mei: z.string().nullable(),
+  seiKana: z.string().nullable(),
+  meiKana: z.string().nullable(),
+  email: z.string().nullable(),
+  userType: z.string(),
+  // 시공점 종류 (4=시공점/5=델타/6=스미토모/7=델타 SAVeR-H2). 문자열 대비 coerce.
+  supplierKind: z.coerce.number().int().nullable(),
+  storeName: z.string().nullable(),
+  storeNameKana: z.string().nullable(),
+  zipcode: z.string().nullable(),
+  pref: z.coerce.number().int().nullable(),
+  address1: z.string().nullable(),
+  address2: z.string().nullable(),
+  telNo: z.string().nullable(),
+  fax: z.string().nullable(),
+  sekoId: z.string().nullable(),
+  sekoStatus: z.coerce.number().int().nullable(),
+  sekoIssueDate: z.string().nullable(),
+  sekoLimit: z.string().nullable(),
+  deltaStatus: z.coerce.number().int().nullable(),
+  status: z.string().nullable(),
+  // note-46 에서 getUserInfo/updateUserInfo 에 추가(초기값 Y). 구계정 대비 nullable.
+  newsRcptYn: z.enum(["Y", "N"]).nullable(),
+});
+
+export type SekoUserInfoData = z.infer<typeof sekoUserInfoDataSchema>;
+
+export const sekoUserInfoResponseSchema = z.object({
+  data: sekoUserInfoDataSchema.nullable(),
+  result: sekoResultSchema,
+});
+
+// ─── 공용: data 없는 응답 (No.4 updateUserInfo / No.6 changePwd) ───
+// 성공 시 data:null, result.resultCode 로만 성공 판정.
+// (No.4 는 newsRcptYn 만 갱신, No.6 은 비밀번호 변경 — 둘 다 반환 데이터 없음)
+export const sekoNoDataResponseSchema = z.object({
+  data: z.unknown().nullable(),
   result: sekoResultSchema,
 });

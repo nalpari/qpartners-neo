@@ -69,8 +69,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "로그인 (QSP 프록시)",
-        description: `QSP 외부 로그인 API를 프록시하여 인증 처리. 성공 시 JWT httpOnly 쿠키 설정.
+        summary: "로그인 (QSP 프록시 / SEKO 커넥터)",
+        description: `userTp 에 따라 인증 경로가 갈린다. 성공 시 JWT httpOnly 쿠키 설정.
+
+- **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
+- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 미배선(후속 I/F 브랜치 예정). Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -112,7 +115,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                                 "FAIL_CLOSED",
                               ],
                               description:
-                                "2FA 판정 사유 — NODE_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
+                                "2FA 판정 사유 — APP_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
                             },
                           },
                         },
@@ -132,8 +135,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
-          "403": errorResponse("2FA 대상이나 이메일 미등록 — 로그인 차단"),
-          "502": errorResponse("외부 인증 서버 오류"),
+          "403": errorResponse("2FA 대상이나 이메일 미등록, 또는 SEKO 권한(QpRole) 미존재·비활성 — 로그인 차단"),
+          "502": errorResponse("외부 인증 서버(QSP / SEKO Connector) 오류"),
+          "500": errorResponse("JWT 생성 실패 또는 서버 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
         },
       },
     },
@@ -516,7 +520,9 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156).",
+        description:
+          "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156). " +
+          "시공점(SEKO)은 501 — 인증이 AS-IS Connector 로 종결되는데 재설정만 QSP 로 나가면 변경이 반영되지 않으므로 명시 차단.",
         requestBody: {
           required: true,
           content: {
@@ -592,6 +598,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("유효하지 않거나 만료된 링크입니다."),
           "429": errorResponse("リクエストが多すぎます。しばらく経ってから再度お試しください。"),
           "500": errorResponse("サーバーエラーが発生しました。"),
+          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.8/No.10 미배선"),
         },
       },
     },
@@ -638,6 +645,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "500": errorResponse("비밀번호 변경 실패"),
+          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.10 미배선 (잔여 토큰 방어)"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
@@ -647,7 +655,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
-        description: "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true).",
+        description:
+          "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
+          "회원유형별 연동처: STORE/GENERAL/ADMIN=QSP userPwdChg(chgType=I), SEKO=AS-IS Connector changePwd(chgType=I, Bearer). " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {
@@ -2659,7 +2670,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["MyPage"],
         summary: "프로필 조회",
-        description: "JWT에서 사용자 정보 추출 후 회원유형별 QSP API 조회",
+        description: "JWT에서 사용자 정보 추출 후 회원유형별 조회 (STORE/GENERAL/ADMIN = QSP, SEKO = Connector getUserInfo)",
         responses: {
           "200": {
             description: "프로필 정보",
@@ -2674,10 +2685,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                         userType: { type: "string", enum: [...userTpValues] },
                         userName: { type: "string", nullable: true, description: "원본 성명 (QSP userNm). Q.Order 매핑: 성명 단일 필드" },
                         userNameKana: { type: "string", nullable: true, description: "원본 성명 히라가나 (QSP userNmKana). Q.Order 매핑: 담당자명 후리가나 단일 필드" },
-                        sei: { type: "string", nullable: true },
-                        mei: { type: "string", nullable: true },
-                        seiKana: { type: "string", nullable: true },
-                        meiKana: { type: "string", nullable: true },
+                        sei: { type: "string", description: "값 없음은 빈 문자열 (전 회원유형 공통)" },
+                        mei: { type: "string" },
+                        seiKana: { type: "string" },
+                        meiKana: { type: "string" },
                         email: { type: "string" },
                         compNm: { type: "string" },
                         compNmKana: { type: "string" },
@@ -2704,7 +2715,6 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("施工店会員は別途API使用"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "404": errorResponse("ユーザー情報なし"),
@@ -2716,7 +2726,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["MyPage"],
         summary: "프로필 수정",
         description:
-          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능. " +
+          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE/SEKO: 뉴스레터(newsRcptYn)만 수정 가능 (SEKO=Connector updateUserInfo). " +
           "QSP 수정 성공 후 변경 직전 `attrChgYn === \"Y\"` 인 회원에게 속성 변경 알림 메일 발송 (fire-and-forget). " +
           "메일 발송 결과는 응답에 영향 없음 (실패 시 warn 로깅만).",
         requestBody: {
@@ -2764,7 +2774,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("Validation 실패 / 施工店会員は別途API使用"),
+          "400": errorResponse("Validation 실패"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("내부 에러 / JWT email 누락 등 사용자 정보 불완전 (재로그인 유도)"),
@@ -2776,7 +2786,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MyPage"],
         summary: "비밀번호 변경",
-        description: "QSP userPwdChg API 호출 (chgType=C)",
+        description:
+          "QSP userPwdChg API 호출 (chgType=C). " +
+          "시공점(SEKO)은 AS-IS Q.Partners Connector changePwd(chgType=C, Bearer) 호출 — 현재 비밀번호 필수. " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {
@@ -2811,8 +2824,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("현재 비밀번호 불일치 또는 정책 위반"),
-          "401": errorResponse("인증 필요"),
+          "401": errorResponse("인증 필요 / 세션 결손·SEKO Connector 토큰 만료 (인증 쿠키 삭제됨)"),
+          "403": errorResponse("2단계 인증 미완료"),
           "429": errorResponse("요청 횟수 초과 (5분간 5회 제한)"),
+          "500": errorResponse("서버 오류 / 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
