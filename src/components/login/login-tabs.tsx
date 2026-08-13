@@ -5,7 +5,7 @@ import type { TabType } from "@/components/login/types";
 const TABS: { key: TabType; label: string }[] = [
   { key: "dealer", label: "販売店会員" },
   { key: "installer", label: "施工店会員" },
-  { key: "general", label: "一般会員" },
+  { key: "general", label: "既存Q.PARTNERS会員" },
 ];
 
 interface LoginTabsProps {
@@ -23,7 +23,19 @@ export function LoginTabs({ activeTab, onChange }: LoginTabsProps) {
             key={tab.key}
             type="button"
             onClick={() => onChange(tab.key)}
-            className={`flex-1 pb-3 border-b-2 font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] leading-[1.5] text-center transition-all duration-200 ${
+            // PC(카드 최대폭 1440px 기준): 기존 디자인대로 탭 폭(=하단 보더 길이)을 균등 3분할.
+            //   min-w-0 이 없으면 flex item 의 자동 최소 폭이 콘텐츠 폭이라 라벨이 긴
+            //   既存Q.PARTNERS会員 탭이 넓어져 균등분할이 깨진다.
+            //   폰트는 13px 이 상한이다 — 슬롯 140px 대비 라벨 실측(활성 font-medium 기준)
+            //   13px 131.2px(여유 9px) / 14px 141.2px(1.2px 넘침) / 15px 151.3px(11px 넘침).
+            //   PC·MO 동일 13px 이라 lg: 분기가 없다.
+            //   슬롯 폭은 좌측 이미지 패널 폭에 좌우된다 — 패널을 설계폭의 860px 로 고정하면
+            //   카드 1265px 에서 슬롯이 81.7px 까지 줄어 라벨이 넘쳤다. login-contents.tsx 에서
+            //   패널 폭과 폼 좌우 패딩을 카드 폭에 따라 단계적으로 줄여 슬롯을 확보한다.
+            // MO: 균등분할 시 긴 라벨을 한 줄에 담으려면 11px 이하로 내려가야 해 가독성이
+            //   떨어지므로 grow+basis-auto 로 각 탭이 라벨 폭을 확보한 뒤 남는 공간을
+            //   균등하게 나눠 갖도록 한다.
+            className={`grow basis-auto lg:flex-1 lg:min-w-0 pb-3 border-b-2 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-center whitespace-nowrap transition-all duration-200 ${
               isActive
                 ? "border-[#E97923] text-[#E97923] font-medium"
                 : "border-[#999] text-[#999] font-normal"

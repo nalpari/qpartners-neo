@@ -363,7 +363,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "一般会員以外はニュースレター・二次認証・属性変更通知・ログイン通知のみ変更可能です",
+              "既存Q.PARTNERS会員以外はニュースレター・二次認証・属性変更通知・ログイン通知のみ変更可能です",
             details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
           },
           { status: 400 },
@@ -465,7 +465,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }
         if (result.data.userRole === "GENERAL") {
           return NextResponse.json(
-            { error: "自分自身のアカウントを一般会員に降格することはできません" },
+            { error: "自分自身のアカウントを既存Q.PARTNERS会員に降格することはできません" },
             { status: 400 },
           );
         }
@@ -490,7 +490,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.userRole !== undefined) {
       if (preDetail && preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
-          { error: "ユーザー権限の変更は一般会員のみ可能です" },
+          { error: "ユーザー権限の変更は既存Q.PARTNERS会員のみ可能です" },
           { status: 400 },
         );
       }

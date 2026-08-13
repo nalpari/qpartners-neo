@@ -631,7 +631,7 @@ export function Gnb() {
                 </div>
               </>
             ) : (
-              // 一般会員 셀프 회원가입 폐지 — 비로그인 헤더에 会員登録 진입점을 두지 않는다
+              // 既存Q.PARTNERS会員 셀프 회원가입 폐지 — 비로그인 헤더에 会員登録 진입점을 두지 않는다
               // (/signup 은 SUPER_ADMIN·ADMIN 전용 페이지로 전환됨).
               <div className="flex items-center gap-2">
                 <Link
@@ -818,7 +818,7 @@ export function Gnb() {
                 </button>
               </div>
             ) : (
-              // 一般会員 셀프 회원가입 폐지 — PC 헤더와 동일하게 会員登録 진입점 제거.
+              // 既存Q.PARTNERS会員 셀프 회원가입 폐지 — PC 헤더와 동일하게 会員登録 진입점 제거.
               <div className="flex items-center justify-center gap-4 px-7">
                 <Link
                   href="/login"

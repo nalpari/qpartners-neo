@@ -165,8 +165,8 @@ export function MemberDetailPopup() {
 
     if (status === 400 && msg.includes("自分自身")) {
       openAlert({ type: "alert", message: "自分自身のアカウントは変更できません。" });
-    } else if (status === 400 && msg.includes("一般会員のみ")) {
-      openAlert({ type: "alert", message: "ユーザー権限の変更は一般会員のみ可能です。" });
+    } else if (status === 400 && msg.includes("ユーザー権限の変更は")) {
+      openAlert({ type: "alert", message: "ユーザー権限の変更は既存Q.PARTNERS会員のみ可能です。" });
     } else if (status === 400 && msg.includes("アクティブ")) {
       openAlert({ type: "alert", message: "アクティブな会員のみパスワード初期化が可能です。" });
     // 권한 부여 불가(SUPER_ADMIN/ADMIN) — 백엔드 메시지 그대로 노출해 운영자 원인 파악 가능 (Redmine #2178).
