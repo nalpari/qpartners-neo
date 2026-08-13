@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
+import { z } from "zod";
+
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { COOKIE_NAME, getUserFromRequest, signToken, sessionInvalidResponse } from "@/lib/jwt";
@@ -24,6 +28,11 @@ const QSP_LOG_MSG_MAX_LEN = 200;
 
 // GENERAL 회원은 userId == email 이므로 로그 기록 시 반드시 제외한다
 // (.claude/rules/api.md: "이메일 주소를 로그에 기록하지 않음")
+/** SEKO PUT 입력 — TO-BE 가 갱신하는 필드는 newsRcptYn 뿐이다 (QA#8). */
+const sekoProfileUpdateSchema = z.object({
+  newsRcptYn: z.enum(["Y", "N"], { message: "ニュース受信設定の値が正しくありません" }),
+});
+
 function buildUserLogContext(user: { userId: string; userTp: string }) {
   return {
     userTp: user.userTp,
@@ -249,7 +258,17 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    console.error("[GET /api/mypage/profile]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[GET /api/mypage/profile] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[GET /api/mypage/profile]", error);
     return NextResponse.json(
       { error: "プロフィール照会中にエラーが発生しました" },
       { status: 500 },
@@ -293,16 +312,20 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         );
       }
-      const nry =
-        typeof sekoBody === "object" && sekoBody !== null && !Array.isArray(sekoBody)
-          ? (sekoBody as Record<string, unknown>).newsRcptYn
-          : undefined;
-      if (nry !== "Y" && nry !== "N") {
+      // 외부 입력은 `as` 캐스팅 금지 — Zod safeParse (.claude/rules/api.md).
+      // SEKO 는 newsRcptYn 만 갱신하므로(QA#8) 그 외 필드는 스키마에서 strip 된다.
+      const sekoParsed = sekoProfileUpdateSchema.safeParse(sekoBody);
+      if (!sekoParsed.success) {
+        console.warn("[PUT /api/mypage/profile][SEKO] 입력 검증 실패:", {
+          issues: sekoParsed.error.issues,
+          ...buildUserLogContext(user),
+        });
         return NextResponse.json(
           { error: "入力内容に不備があります" },
           { status: 400 },
         );
       }
+      const nry = sekoParsed.data.newsRcptYn;
       // 시공점 loginId = email (사양). email 누락 시 userId 대체 금지 — 재로그인 유도.
       if (!user.email) {
         console.error(
@@ -623,7 +646,17 @@ export async function PUT(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[PUT /api/mypage/profile]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[PUT /api/mypage/profile] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[PUT /api/mypage/profile]", error);
     return NextResponse.json(
       { error: "プロフィール修正中にエラーが発生しました" },
       { status: 500 },

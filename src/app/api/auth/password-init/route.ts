@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
 import { z } from "zod";
 
 import { getUserFromRequest, signToken, COOKIE_NAME, sessionInvalidResponse } from "@/lib/jwt";
@@ -372,7 +374,17 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[POST /api/auth/password-init]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[POST /api/auth/password-init] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[POST /api/auth/password-init]", error);
     return NextResponse.json(
       { error: "パスワード変更処理中にサーバーエラーが発生しました" },
       { status: 500 },

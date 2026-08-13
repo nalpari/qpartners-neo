@@ -56,6 +56,26 @@ function isSekoAuthError(errorCode: string | null | undefined): boolean {
   return errorCode != null && SEKO_AUTH_ERROR_CODES.has(errorCode);
 }
 
+/**
+ * SEKO 실패 → TO-BE HTTP status 매핑 (Bearer 계열 공통).
+ *  - 인증 실패(헤더 누락·토큰 만료) → 401 (재로그인 유도)
+ *  - 커넥터/인프라 5xx            → 502 (외부 장애)
+ *  - 그 외 비즈니스 거부           → 400 (호출측 입력 문제)
+ *
+ * SEKO 는 비즈니스 거부도 HTTP 400 + resultCode="E" 로 응답한다. 이를 502 로 접으면
+ * 사용자는 영구적 거부에 대해 "しばらくしてからお試しください" 안내를 받아 무한 재시도하고,
+ * 운영은 우리 쪽 입력 오류를 외부 장애 알람으로 계상한다.
+ * (login 은 사용자 열거 방지를 위해 자격증명 거부를 401 로 고정 — 이 헬퍼를 쓰지 않는다.)
+ */
+function mapSekoFailureStatus(
+  httpStatus: number,
+  errorCode: string | null | undefined,
+): number {
+  if (isSekoAuthError(errorCode)) return 401;
+  if (httpStatus >= 500) return 502;
+  return 400;
+}
+
 /** SEKO Connector base URL (env `SEKO_CONNECTOR_BASE_URL`). 끝 슬래시 제거. */
 function sekoBaseUrl(): string {
   const url = process.env.SEKO_CONNECTOR_BASE_URL?.trim();
@@ -205,8 +225,7 @@ export async function sekoGetUserInfo(
     console.warn(
       `${logTag} SEKO 회원정보 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    // 인증 실패(헤더 누락·토큰 만료)면 401(재로그인), 그 외는 502.
-    const status = isSekoAuthError(result.errorCode) ? 401 : 502;
+    const status = mapSekoFailureStatus(response.status, result.errorCode);
     return {
       ok: false,
       error: { error: "会員情報を照会できません", status, errorCode: result.errorCode ?? undefined },
@@ -272,7 +291,7 @@ export async function sekoUpdateUserInfo(
     console.warn(
       `${logTag} SEKO 회원정보 수정 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    const status = isSekoAuthError(result.errorCode) ? 401 : 502;
+    const status = mapSekoFailureStatus(response.status, result.errorCode);
     return {
       ok: false,
       error: { error: "会員情報の修正に失敗しました", status, errorCode: result.errorCode ?? undefined },
@@ -374,13 +393,7 @@ export async function sekoChangePwd(
     console.warn(
       `${logTag} SEKO 비밀번호 변경 실패 (chgType: ${input.chgType}, resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
-    // 인증 실패(헤더 누락·토큰 만료) → 401(재로그인), 5xx(인프라 장애) → 502,
-    // 그 외 비즈니스 거부(현재 비밀번호 불일치·정책 위반 등) → 400.
-    const status = isSekoAuthError(result.errorCode)
-      ? 401
-      : response.status >= 500
-        ? 502
-        : 400;
+    const status = mapSekoFailureStatus(response.status, result.errorCode);
     return {
       ok: false,
       error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode ?? undefined },
