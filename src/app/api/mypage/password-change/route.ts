@@ -75,6 +75,12 @@ export async function POST(request: NextRequest) {
         "[POST /api/mypage/password-change][SEKO]",
       );
       if (!changeResult.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (changeResult.error.status === 401) {
+          return sessionInvalidResponse(changeResult.error.error);
+        }
         return NextResponse.json(
           { error: changeResult.error.error },
           { status: changeResult.error.status },

@@ -9,6 +9,8 @@ import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { COOKIE_NAME, getUserFromRequest, signToken, sessionInvalidResponse } from "@/lib/jwt";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { requireMenuPermission } from "@/lib/auth";
+import { MENU } from "@/lib/menu-codes";
 import { sendAttrChangeNotification } from "@/lib/notification-mail/attr-change-mail";
 import {
   fetchQspUserDetail,
@@ -82,6 +84,12 @@ export async function GET(request: NextRequest) {
         "[GET /api/mypage/profile][SEKO]",
       );
       if (!infoResult.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (infoResult.error.status === 401) {
+          return sessionInvalidResponse(infoResult.error.error);
+        }
         return NextResponse.json(
           { error: infoResult.error.error },
           { status: infoResult.error.status },
@@ -312,6 +320,18 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         );
       }
+      // 권한 회수를 서버에서 강제한다 — UI 버튼 숨김(useMenuPermission)만으로는 직접 PUT 호출을
+      // 막지 못한다. seed 는 SEKO/MYPAGE canUpdate 를 두지 않으므로(권한 정본 = 권한관리 화면)
+      // 서버 강제가 없으면 관리자가 수정 권한을 회수해도 newsRcptYn 을 계속 변경할 수 있다.
+      //
+      // ※ QSP 경로(GENERAL/STORE/ADMIN)는 종전과 동일하게 미적용 — 마이페이지 라우트 6종 전체에
+      //   RBAC 을 거는 것은 별도 과제다(환경별 MYPAGE.can_update 실측이 선행되지 않으면
+      //   기존 사용자의 마이페이지 수정이 중단된다). 본 분기는 이 브랜치가 새로 연 경로에 한정.
+      const permResult = await requireMenuPermission(request.headers, MENU.MYPAGE, "update");
+      if (permResult instanceof NextResponse) {
+        return permResult;
+      }
+
       // 외부 입력은 `as` 캐스팅 금지 — Zod safeParse (.claude/rules/api.md).
       // SEKO 는 newsRcptYn 만 갱신하므로(QA#8) 그 외 필드는 스키마에서 strip 된다.
       const sekoParsed = sekoProfileUpdateSchema.safeParse(sekoBody);
@@ -343,6 +363,12 @@ export async function PUT(request: NextRequest) {
         "[PUT /api/mypage/profile][SEKO]",
       );
       if (!upd.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (upd.error.status === 401) {
+          return sessionInvalidResponse(upd.error.error);
+        }
         return NextResponse.json(
           { error: upd.error.error },
           { status: upd.error.status },
