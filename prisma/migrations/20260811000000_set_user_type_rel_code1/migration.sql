@@ -17,13 +17,21 @@
 --    검색 셀렉트에 노출되지 않는다(opt-in). 노출이 필요하면 코드관리에서 'Y' 를 지정한다.
 --  - updated_by 는 건드리지 않는다 — 코드관리 API 도 이 컬럼을 설정하지 않는다.
 
+-- ADMIN/STORE/GENERAL 은 "미설정"인 행만 초기화한다.
+-- 코드관리 API 는 빈 입력을 NULL 로 저장하므로(use-code-details.ts) NULL/빈 문자열 = 미설정이고,
+-- 그 외 값은 운영자가 명시적으로 지정한 노출 정책이라 배포가 덮어써서는 안 된다.
+-- (조건 없이 'Y' 로 강제하면 운영자가 숨겨둔 회원유형이 배포 즉시 다시 노출되고,
+--  이미 'Y' 인 행까지 updated_at 이 갱신되어 코드관리 화면의 변경 이력이 오염된다.)
 UPDATE `qp_code_details` `d`
   JOIN `qp_code_headers` `h` ON `h`.`id` = `d`.`header_id`
 SET `d`.`rel_code1` = 'Y',
     `d`.`updated_at` = UTC_TIMESTAMP(3)
 WHERE `h`.`header_code` = 'USER_TYPE'
-  AND `d`.`code` IN ('ADMIN', 'STORE', 'GENERAL');
+  AND `d`.`code` IN ('ADMIN', 'STORE', 'GENERAL')
+  AND (`d`.`rel_code1` IS NULL OR `d`.`rel_code1` = '');
 
+-- SEKO 만 값 유무와 무관하게 'N' 으로 맞춘다. 노출되면 목록 API 가 400 을 반환하는
+-- 고장 상태이므로, 이미 'Y' 로 설정돼 있더라도 배포 시점에 바로잡아야 한다.
 UPDATE `qp_code_details` `d`
   JOIN `qp_code_headers` `h` ON `h`.`id` = `d`.`header_id`
 SET `d`.`rel_code1` = 'N',
