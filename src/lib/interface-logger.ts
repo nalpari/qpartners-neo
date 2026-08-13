@@ -48,6 +48,60 @@ const SENSITIVE_KEYS = new Set([
 // EMAIL_KEYS 로 마스킹해 GENERAL/ADMIN/STORE 모두 공통 처리.
 const EMAIL_KEYS = new Set(["email", "loginId"]);
 
+/**
+ * 개인정보 필드 — 값 전체를 `***` 로 치환한다.
+ *
+ * **QSP·SEKO 사양서 응답 필드 전수 조사 기준**(2026-08-13). 두 시스템은 같은 정보를 **다른
+ * 필드명**으로 내려주므로 양쪽을 모두 담아야 한다 — 한쪽만 넣으면 다른 쪽이 평문으로 남는다.
+ *   - QSP: `IP-DE-SI_QSP.Connector.API 인터페이스 사양서_v1.0.xlsx` (userDetail/login/
+ *     newUserReq/updateUserDtl/userListMng/saveResignReq 등 13개 API 응답)
+ *   - SEKO: `(AS-IS)Q.Partners.Connector.API 인터페이스 사양서_20260811.xlsx` (login/getUserInfo)
+ *
+ * 마스킹 후에도 응답 구조와 `result`/`resultCode`/`errorCode` 는 보존되므로 스키마 불일치·
+ * 비즈니스 거부 진단은 그대로 가능하다(`maskResponseBody` 전체 치환과 다른 점).
+ *
+ * 코드·플래그·일시(`authCd`/`statCd`/`newsRcptYn`/`secAuthDt` 등)는 개인 식별에 기여하지 않고
+ * 진단 가치가 크므로 대상에서 제외한다.
+ */
+const PII_KEYS = new Set([
+  // ─ 성명 (QSP: userNm 계열 / SEKO: sei·mei 계열)
+  "userNm",
+  "userNmKana",
+  "user1stNm",
+  "user2ndNm",
+  "user1stNmKana",
+  "user2ndNmKana",
+  "uptNm",
+  "sei",
+  "mei",
+  "seiKana",
+  "meiKana",
+  // ─ 회사·상호 (QSP: compNm / SEKO: storeName)
+  "compNm",
+  "compNmKana",
+  "storeName",
+  "storeNameKana",
+  // ─ 주소 (QSP: compAddr·compPostCd / SEKO: address·zipcode)
+  "compAddr",
+  "compAddr2",
+  "compPostCd",
+  "address1",
+  "address2",
+  "zipcode",
+  // ─ 연락처 (QSP: compTelNo·compFaxNo / SEKO: telNo·fax)
+  "compTelNo",
+  "compFaxNo",
+  "telNo",
+  "fax",
+  // ─ 사업자·자격 식별번호
+  "compBizNo",
+  "bizNo",
+  "sekoId",
+  // ─ 소속·직위 — 단독 식별성은 낮으나 회사명을 가리면서 남기면 방어가 무의미해진다
+  "deptNm",
+  "pstnNm",
+]);
+
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
 /** DB VARCHAR(500) 제한 — 말줄임 여유 포함 */
@@ -90,6 +144,10 @@ function maskObjectFields(
     const val = obj[key];
     if (SENSITIVE_KEYS.has(key)) {
       masked[key] = "***";
+    } else if (PII_KEYS.has(key) && val != null) {
+      // 값 타입을 가리지 않는다 — zipcode/telNo 는 문자열/숫자 양쪽으로 오므로
+      // `typeof val === "string"` 으로 좁히면 숫자 응답이 평문으로 통과한다.
+      masked[key] = "***";
     } else if (EMAIL_KEYS.has(key) && typeof val === "string") {
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
@@ -108,8 +166,11 @@ function maskObjectFields(
 // regex fallback — JSON 파싱 실패 경로에서만 동작하므로 false-positive 를 낮춘다.
 // `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
 // SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
+// 값 부분은 **문자열과 숫자를 모두** 매칭한다 — zipcode/telNo 가 int 로 오는 사례가 있어
+// 문자열만 잡으면 파싱 실패 경로에서 그대로 평문 저장된다.
+// 키 목록은 SENSITIVE_KEYS + PII_KEYS 와 동기화되어야 한다(한쪽만 고치면 경로별로 갈린다).
 const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark|userNm|userNmKana|user1stNm|user2ndNm|user1stNmKana|user2ndNmKana|uptNm|sei|mei|seiKana|meiKana|compNm|compNmKana|storeName|storeNameKana|compAddr|compAddr2|compPostCd|address1|address2|zipcode|compTelNo|compFaxNo|telNo|fax|compBizNo|bizNo|sekoId|deptNm|pstnNm)"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)/gi;
 
 function maskSensitiveFields(body: string | null | undefined): string | null {
   if (!body) return null;
