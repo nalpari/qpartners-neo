@@ -1,5 +1,5 @@
 ---
-globs:
+paths:
   - "src/**/*.ts"
   - "src/**/*.tsx"
   - "src/**/*.css"
