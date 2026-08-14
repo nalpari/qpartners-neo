@@ -12,6 +12,10 @@ export type InterfaceLogParams = {
   direction: "OUTBOUND" | "INBOUND";
   apiName: string;
   callerRoute: string;
+  /**
+   * `qp_interface_log.user_id` 에 남길 식별자. **원문을 넘겨도 된다** — 저장 직전
+   * `maskUserId` 로 중앙 마스킹된다(멱등이므로 호출부에서 이미 마스킹했어도 무방).
+   */
   userId?: string;
   userType?: string;
   /**
@@ -24,6 +28,24 @@ export type InterfaceLogParams = {
 };
 
 const MASKED_RESPONSE_PLACEHOLDER = "[masked:cipher-response]";
+
+/**
+ * JSON 파싱에 실패한 본문의 치환값.
+ *
+ * 구조를 신뢰할 수 없는 본문(값이 따옴표 없이 깨진 `{"userNm":山田太郎}`, HTML 에러 페이지,
+ * 절단된 응답 등)은 키 단위 마스킹도 정규식 폴백도 누락을 보장할 수 없다. 장애·버전 불일치
+ * 상황이야말로 fail-closed 가 가장 필요한 시점이므로 본문 전체를 통째로 가린다.
+ * 진단에 필요한 `responseStatus` / `durationMs` / `errorMessage` 는 별도 컬럼에 그대로 남는다.
+ */
+const UNPARSABLE_BODY_PLACEHOLDER = "[masked:unparsable-body]";
+
+/**
+ * 최상위 스칼라(JSON 문자열·숫자) 본문의 치환값.
+ *
+ * 파싱 자체는 성공했으나 키가 없어 값 단위 판별이 불가능한 경우다. 파싱 실패와 같은 placeholder
+ * 를 쓰면 운영자가 `"OK"` 같은 정상 스칼라 응답과 깨진 본문을 구분할 수 없어 분리한다.
+ */
+const SCALAR_BODY_PLACEHOLDER = "[masked:scalar-body]";
 
 const SENSITIVE_KEYS = new Set([
   "pwd",
@@ -47,6 +69,102 @@ const SENSITIVE_KEYS = new Set([
 // loginId: GENERAL 회원의 경우 userId === email 이므로 이메일 주소가 그대로 로그에 남는다.
 // EMAIL_KEYS 로 마스킹해 GENERAL/ADMIN/STORE 모두 공통 처리.
 const EMAIL_KEYS = new Set(["email", "loginId"]);
+
+/**
+ * 개인정보 필드 — 값 전체를 `***` 로 치환한다.
+ *
+ * **QSP·SEKO 사양서 응답 필드 전수 조사 기준**(2026-08-13). 두 시스템은 같은 정보를 **다른
+ * 필드명**으로 내려주므로 양쪽을 모두 담아야 한다 — 한쪽만 넣으면 다른 쪽이 평문으로 남는다.
+ *   - QSP: `IP-DE-SI_QSP.Connector.API 인터페이스 사양서_v1.0.xlsx` (userDetail/login/
+ *     newUserReq/updateUserDtl/userListMng/saveResignReq 등 13개 API 응답)
+ *   - SEKO: `(AS-IS)Q.Partners.Connector.API 인터페이스 사양서_20260811.xlsx` (login/getUserInfo)
+ *
+ * 마스킹 후에도 응답 구조와 `result`/`resultCode`/`errorCode` 는 보존되므로 스키마 불일치·
+ * 비즈니스 거부 진단은 그대로 가능하다(`maskResponseBody` 전체 치환과 다른 점).
+ *
+ * 코드·플래그·일시(`authCd`/`statCd`/`newsRcptYn`/`secAuthDt` 등)는 개인 식별에 기여하지 않고
+ * 진단 가치가 크므로 대상에서 제외한다.
+ */
+const PII_KEYS = new Set([
+  // ─ 성명 (QSP: userNm 계열 / SEKO: sei·mei 계열)
+  "userNm",
+  "userNmKana",
+  "user1stNm",
+  "user2ndNm",
+  "user1stNmKana",
+  "user2ndNmKana",
+  "uptNm",
+  "sei",
+  "mei",
+  "seiKana",
+  "meiKana",
+  // ─ 회사·상호 (QSP: compNm / SEKO: storeName)
+  "compNm",
+  "compNmKana",
+  "storeName",
+  "storeNameKana",
+  // ─ 주소 (QSP: compAddr·compPostCd / SEKO: address·zipcode)
+  "compAddr",
+  "compAddr2",
+  "compPostCd",
+  "address1",
+  "address2",
+  "zipcode",
+  // ─ 연락처 (QSP: compTelNo·compFaxNo / SEKO: telNo·fax)
+  "compTelNo",
+  "compFaxNo",
+  "telNo",
+  "fax",
+  // ─ 사업자·자격 식별번호
+  "compBizNo",
+  // QSP 는 같은 법인번호를 API 마다 다른 이름으로 다룬다 — updateUserDtl 요청은 `bizNo`,
+  // userDetail 응답은 `corporateNo`(schemas/member.ts qspMemberDetailSchema). 셋 다 필요하다.
+  "bizNo",
+  "corporateNo",
+  "sekoId",
+  // 직위 — 회원가입·마이페이지 자유기입(`schemas/signup.ts`·`mypage.ts`). `deptNm` 과 달리
+  // 마스터 카탈로그 API 가 없어 보존해서 얻을 진단 이득이 없으므로 상시 마스킹한다.
+  "pstnNm",
+]);
+
+/**
+ * 사용자 식별자 키 — `maskUserId` 로 축약한다(이메일이면 부분 마스킹, 아니면 앞 2자).
+ *
+ * QSP 는 GENERAL 회원의 `userId` 가 곧 이메일이다(`schemas/member.ts` "userId=이메일 문자열").
+ * `qp_interface_log.user_id` 컬럼은 전 호출처가 마스킹하는데 body 안의 같은 값이 평문으로
+ * 남으면 그 통제가 무력화된다 — 예: signup 의 `{ userId: email, email }` 은 한쪽만 가려진다.
+ * `updBy`(수정자)도 같은 형태로 관리자 이메일을 담는다.
+ *
+ * `maskEmail` 이 아니라 `maskUserId` 를 쓰는 이유: STORE 등 `@` 없는 식별자도 축약해야 하는데
+ * `maskEmail` 은 `@` 가 없으면 원문을 통과시킨다.
+ */
+const USER_ID_KEYS = new Set(["userId", "updBy"]);
+
+/**
+ * 부서 "명칭" — **기본 마스킹**, 마스터 카탈로그 조회에서만 보존한다.
+ *
+ * `deptNm` 은 두 가지 성격을 겸한다.
+ *   1) 코드 카탈로그 값 — `apiName: "deptList"` 응답은 `{ deptCd, deptNm }` 만 담는다
+ *      (`src/lib/schemas/master.ts`). 여기서 가리면 개인정보 보호 효과 없이 진단 가치만 사라진다.
+ *   2) 개인의 소속 — 회원가입·마이페이지의 부서는 자유기입이고(`schemas/signup.ts`·`mypage.ts`)
+ *      login/userDetail 응답에도 실려 나간다. 단독 식별력은 낮지만 다른 필드와 결합하면
+ *      재식별 보조가 되므로 개인정보로 다뤄야 한다.
+ *
+ * 따라서 전역 on/off 가 아니라 `apiName` 기준으로 분기한다 — (1) 의 카탈로그 API 에서만 보존.
+ * 같은 성격이던 `pstnNm` 은 대응하는 카탈로그 API 가 없어 `PII_KEYS` 로 옮겼다(예외 표면 축소).
+ */
+const CATALOG_NAME_KEYS = new Set(["deptNm"]);
+
+/**
+ * `CATALOG_NAME_KEYS` 를 마스킹하지 않는 apiName 집합 (마스터 카탈로그 조회 전용).
+ * 사용자 개인 데이터를 응답에 담지 않는 API 만 추가할 것 — 여기에 넣는 순간 그 API 의
+ * `deptNm` 은 전 경로에서 평문 저장된다.
+ *
+ * 로깅은 zod 검증 **이전**의 원문에 대해 이뤄지고 응답 스키마는 non-strict 라 미지 키를 조용히
+ * 버리므로, 여기 등재된 API 의 실제 페이로드가 바뀌면(개인 데이터 추가) 파싱 실패로 드러나지
+ * 않고 로그에만 평문으로 남는다 — 사양 변경 시 이 목록을 재검증할 것.
+ */
+const CATALOG_API_NAMES = new Set(["deptList"]);
 
 const MAX_BODY_LENGTH = 8_000;
 const MAX_MASK_DEPTH = 10;
@@ -82,6 +200,7 @@ function truncateBody(text: string | null): string | null {
 
 function maskObjectFields(
   obj: Record<string, unknown>,
+  preserveCatalogNames: boolean,
   depth = 0,
 ): Record<string, unknown> {
   if (depth > MAX_MASK_DEPTH) return { "[truncated]": true };
@@ -90,14 +209,33 @@ function maskObjectFields(
     const val = obj[key];
     if (SENSITIVE_KEYS.has(key)) {
       masked[key] = "***";
+    } else if (PII_KEYS.has(key) && val != null && val !== "") {
+      // 값 타입을 가리지 않는다 — zipcode/telNo 는 문자열/숫자 양쪽으로 오므로
+      // `typeof val === "string"` 으로 좁히면 숫자 응답이 평문으로 통과한다.
+      //
+      // 빈 문자열은 마스킹하지 않는다 — `qsp-member.ts` 의 buildQspPreservedFields 가 QSP
+      // full-replace 로부터 값을 지키려고 null 을 "" 로 바꿔 보내므로, ""(값 없음)과
+      // 실제 값을 구분할 수 있어야 "필드가 통째로 날아갔다" 는 사고를 로그로 추적할 수 있다.
+      masked[key] = "***";
+    } else if (
+      CATALOG_NAME_KEYS.has(key) &&
+      !preserveCatalogNames &&
+      val != null &&
+      val !== ""
+    ) {
+      masked[key] = "***";
+    } else if (USER_ID_KEYS.has(key) && typeof val === "string") {
+      masked[key] = maskUserId(val);
     } else if (EMAIL_KEYS.has(key) && typeof val === "string") {
       masked[key] = maskEmail(val);
     } else if (Array.isArray(val)) {
       masked[key] = val.map((item) =>
-        isRecord(item) ? maskObjectFields(item, depth + 1) : item,
+        isRecord(item)
+          ? maskObjectFields(item, preserveCatalogNames, depth + 1)
+          : item,
       );
     } else if (isRecord(val)) {
-      masked[key] = maskObjectFields(val, depth + 1);
+      masked[key] = maskObjectFields(val, preserveCatalogNames, depth + 1);
     } else {
       masked[key] = val;
     }
@@ -105,31 +243,44 @@ function maskObjectFields(
   return masked;
 }
 
-// regex fallback — JSON 파싱 실패 경로에서만 동작하므로 false-positive 를 낮춘다.
-// `reason` 은 범용 키명이라 향후 다른 API(반품/거절 사유 등)에서 디버깅 방해 가능 → 전용 네임스페이스 키만 유지.
-// SENSITIVE_KEYS (객체 레벨) 에는 `reason` 이 남아 있어 JSON 파싱 성공 경로에서 1차 방어 동작.
-const SENSITIVE_PATTERN =
-  /("(?:pwd|password|newPwd|curPwd|chgPwd|newPassword|currentPassword|token|accessToken|refreshToken|resignRsn|resignRemark)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
-
-function maskSensitiveFields(body: string | null | undefined): string | null {
+/**
+ * 로그 저장용 본문 마스킹.
+ *
+ * JSON 으로 파싱된 경우에만 키 단위 마스킹을 적용하고, 파싱에 실패하면 본문 전체를
+ * `UNPARSABLE_BODY_PLACEHOLDER` 로 치환한다(fail-closed). 이전에는 정규식 폴백으로 부분
+ * 복구를 시도했으나, 값 형식까지 손상된 본문(`{"userNm":山田太郎}` 등)에는 매칭되지 않아
+ * 가장 마스킹이 필요한 장애 상황에서 PII 가 평문으로 남았다.
+ *
+ * @param preserveCatalogNames `CATALOG_NAME_KEYS`(deptNm) 보존 여부.
+ *   마스터 카탈로그 조회(`CATALOG_API_NAMES`)에서만 true.
+ */
+function maskSensitiveFields(
+  body: string | null | undefined,
+  preserveCatalogNames: boolean,
+): string | null {
   if (!body) return null;
   try {
     const parsed: unknown = JSON.parse(body);
     if (isRecord(parsed)) {
-      const masked = maskObjectFields(parsed);
+      const masked = maskObjectFields(parsed, preserveCatalogNames);
       return truncateBody(JSON.stringify(masked));
     }
     if (Array.isArray(parsed)) {
       const masked = parsed.map((item) =>
-        isRecord(item) ? maskObjectFields(item) : item,
+        isRecord(item) ? maskObjectFields(item, preserveCatalogNames) : item,
       );
       return truncateBody(JSON.stringify(masked));
     }
-    return truncateBody(body);
-  } catch (error: unknown) {
-    console.warn("[InterfaceLogger] JSON 파싱 실패 — regex fallback 마스킹:", error);
-    const fallback = body.replace(SENSITIVE_PATTERN, '$1"***"');
-    return truncateBody(fallback);
+    // 최상위 스칼라(JSON 문자열·숫자) — 키가 없어 값 단위 판별이 불가능하므로 보수적으로 가린다.
+    return SCALAR_BODY_PLACEHOLDER;
+  } catch {
+    // 의도적 bare catch — SyntaxError 메시지는 파싱에 실패한 **입력 조각을 그대로 포함**하므로
+    // 오류 객체를 로그에 넘기면 콘솔로 PII 가 재노출된다(마스킹 우회 경로).
+    // 진단은 본문 길이 등 비민감 메타데이터로만 수행한다.
+    console.warn(
+      `[InterfaceLogger] 본문 JSON 파싱 실패 — 전체 마스킹 처리 (length=${body.length})`,
+    );
+    return UNPARSABLE_BODY_PLACEHOLDER;
   }
 }
 
@@ -153,6 +304,15 @@ const URL_SENSITIVE_QUERY_KEYS = new Set([
   "token",
   "accesstoken",
   "refreshtoken",
+  // PII·식별자 키는 **body 집합에서 파생**한다. 손으로 나열하면 body 만 막고 URL 은 뚫린 채
+  // 남는다 — 실제로 회원관리 검색은 `?userNm=山田太郎&compNm=…` 로 나가므로(admin/members
+  // route) PII_KEYS 확장이 URL 에 반영되지 않으면 검색어가 그대로 request_url 에 저장된다.
+  // 쿼리 키 비교는 소문자 기준이므로 정규화해서 넣는다.
+  // 카탈로그 키도 포함한다 — URL 은 apiName 분기가 없으므로 보수적으로 항상 가린다.
+  // `deptList` 요청 URL 은 `deptNm` 을 파라미터로 갖지 않아 카탈로그 진단 손실이 없다.
+  ...[...PII_KEYS, ...USER_ID_KEYS, ...CATALOG_NAME_KEYS].map((key) =>
+    key.toLowerCase(),
+  ),
 ]);
 
 function maskSensitiveQueryInUrl(input: string): string {
@@ -193,8 +353,11 @@ function extractResultCode(responseBody: string | null): string | null {
       }
     }
     return null;
-  } catch (error: unknown) {
-    console.warn("[InterfaceLogger] resultCode 추출 실패:", error);
+  } catch {
+    // 의도적 bare catch — maskSensitiveFields 와 동일 이유(SyntaxError 메시지에 입력 조각 포함).
+    console.warn(
+      `[InterfaceLogger] resultCode 추출 실패 — 응답 본문 JSON 파싱 불가 (length=${responseBody.length})`,
+    );
     return null;
   }
 }
@@ -215,6 +378,7 @@ export async function fetchWithLog(
   const method = (init.method ?? "GET").toUpperCase();
 
   const requestBody = typeof init.body === "string" ? init.body : null;
+  const preserveCatalogNames = CATALOG_API_NAMES.has(params.apiName);
 
   const baseLog = {
     traceId,
@@ -223,9 +387,12 @@ export async function fetchWithLog(
     apiName: params.apiName,
     method,
     requestUrl: maskSensitiveQueryInUrl(url),
-    requestBody: maskSensitiveFields(requestBody),
+    requestBody: maskSensitiveFields(requestBody, preserveCatalogNames),
     callerRoute: params.callerRoute,
-    userId: params.userId ?? null,
+    // 저장 직전 중앙 마스킹 — 호출부가 `maskEmail` 만 적용하면 `@` 없는 STORE/SEKO 로그인 ID 가
+    // 원문 그대로 통과한다(`maskEmail` 은 `@` 없으면 입력을 반환). 두 함수 모두 멱등이므로
+    // 호출부의 기존 마스킹과 중복 적용해도 결과가 바뀌지 않는다.
+    userId: params.userId != null ? maskUserId(params.userId) : null,
     userType: params.userType ?? null,
   };
 
@@ -272,7 +439,7 @@ export async function fetchWithLog(
     ? responseBodyText !== null
       ? MASKED_RESPONSE_PLACEHOLDER
       : null
-    : maskSensitiveFields(responseBodyText);
+    : maskSensitiveFields(responseBodyText, preserveCatalogNames);
 
   writeLog({
     ...baseLog,
@@ -329,6 +496,7 @@ export type InboundLogParams = {
   /** INBOUND 진입 결과 — "S"(성공) / "F"(실패) / null(미정). 호출부 오타 방지 위해 union 으로 좁힘. */
   resultCode: "S" | "F" | null;
   durationMs: number;
+  /** `InterfaceLogParams.userId` 와 동일 — 저장 직전 `maskUserId` 로 중앙 마스킹된다. */
   userId?: string | null;
   userType?: string | null;
   errorMessage?: string | null;
@@ -345,6 +513,8 @@ export type InboundLogParams = {
  *  - `system` 은 "QSP" 로 통일 — 자동로그인 흐름이 QSP 사용자 기반이라
  *    OUTBOUND `userDetail` 호출과 동일 system 으로 묶여 진단 시 일관 조회 가능.
  *  - `requestUrl` 은 `maskSensitiveQueryInUrl` 로 cipher / loginId / email 마스킹.
+ *  - `userId` 는 `maskUserId` 로 중앙 마스킹 (비이메일 식별자 포함).
+ *  - `errorMessage` 는 쿼리 민감값 마스킹 후 `MAX_ERROR_MSG_LENGTH` 로 절단.
  *  - GET 진입이라 `requestBody` 는 항상 null. `responseBody` 도 INBOUND 측은 의미 없어 null.
  *  - fire-and-forget — 로그 기록 실패가 본 요청 흐름을 블로킹하지 않음.
  *
@@ -365,9 +535,19 @@ export function logInbound(params: InboundLogParams): void {
     resultCode: params.resultCode,
     durationMs: params.durationMs,
     callerRoute: params.callerRoute,
-    userId: params.userId ?? null,
+    // fetchWithLog 와 동일한 중앙 마스킹 (비이메일 식별자 원문 저장 차단).
+    userId: params.userId != null ? maskUserId(params.userId) : null,
     userType: params.userType ?? null,
-    errorMessage: params.errorMessage ?? null,
+    // fetchWithLog 와 동일 처리 — 쿼리 민감값 마스킹 + 절단.
+    // 절단이 없으면 VARCHAR(500) 초과 시 insert 가 깨지고 fire-and-forget 의 catch 로 흡수되어
+    // INBOUND 감사 행 자체가 유실된다(외부 호출자가 로그를 침묵시킬 수 있는 경로).
+    errorMessage:
+      params.errorMessage != null
+        ? maskSensitiveQueryInUrl(params.errorMessage).slice(
+            0,
+            MAX_ERROR_MSG_LENGTH,
+          )
+        : null,
     createdAt: params.createdAt,
   });
 }
