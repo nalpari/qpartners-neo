@@ -90,6 +90,13 @@ export function ContentsSearch({
   const isDeptEmpty =
     isInternal && !isDeptLoading && !isDeptLoadError && deptItems.length === 0;
 
+  // 사내전용 1depth 는 비사내 사용자에게 행 자체를 노출하지 않는다 — 부모 카테고리명도
+  // 사내 정보이므로 기본색으로 보여주는 것이 아니라 숨긴다.
+  // (자식은 아래 map 안에서 개별 판정 — 1depth 가 N 이어도 사내전용 자식은 숨긴다)
+  const visibleCategories = categories.filter(
+    (parent) => isInternal || !parent.isInternalOnly,
+  );
+
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
       checked ? [...prev, categoryId] : prev.filter((id) => id !== categoryId)
@@ -187,7 +194,7 @@ export function ContentsSearch({
         {/* 데스크톱: 테이블 형식 */}
         <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[34px]">
           <div className="flex flex-col gap-1">
-            {categories.map((parent) => (
+            {visibleCategories.map((parent) => (
               <div key={parent.id} className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
                   <span
@@ -289,7 +296,7 @@ export function ContentsSearch({
         {/* 모바일: 세로 나열 형식 */}
         <div className="block lg:hidden bg-white px-6 py-[34px]">
           <div className="flex flex-col gap-[18px]">
-            {categories.map((parent, idx) => (
+            {visibleCategories.map((parent, idx) => (
               <div
                 key={parent.id}
                 className={`flex flex-col gap-3 ${idx > 0 ? "border-t border-[#EFF4F8] pt-[18px]" : ""}`}

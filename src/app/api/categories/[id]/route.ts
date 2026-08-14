@@ -82,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       shiftedCount: number;
     } | null = null;
 
-    const category = await prisma.$transaction(
+    const { category, internalCascadeCount } = await prisma.$transaction(
       async (tx) => {
         // sortOrder가 명시적으로 전달된 경우에만 같은 parentId 형제들 자동 재정렬
         // NOTE: parentId는 updateCategorySchema에서 수정 불가. 변경 시 이 로직도 수정 필요
@@ -137,10 +137,48 @@ export async function PUT(request: NextRequest, { params }: Params) {
           // newOrder === current.sortOrder: 형제 재정렬 불필요
         }
 
-        return tx.category.update({
+        // 사내전용 해제 가드 — 부모가 사내전용인 자식은 N 으로 되돌릴 수 없다.
+        // POST 의 상속 강제와 짝을 이루는 PUT 측 방어. 화면에서는 라디오가 잠겨 있지만
+        // API 직접 호출로 "자식 ≥ 부모" 불변식이 깨지면, 이후 부모를 N 으로 되돌리는 시점에
+        // 그 자식 분류가 외부로 노출된다. 같은 트랜잭션(Serializable) 안이라 검사와 갱신
+        // 사이에 부모가 바뀌는 TOCTOU 도 없다.
+        if (result.data.isInternalOnly === false) {
+          const target = await tx.category.findUnique({
+            where: { id: parsed.data },
+            select: { parent: { select: { isInternalOnly: true } } },
+          });
+          if (!target) {
+            throw new CategoryError("NOT_FOUND");
+          }
+          if (target.parent?.isInternalOnly === true) {
+            throw new CategoryError("INTERNAL_PARENT_LOCKED");
+          }
+        }
+
+        const updated = await tx.category.update({
           where: { id: parsed.data },
           data: result.data,
         });
+
+        // 사내전용 하위 전파 — 1Depth 를 Y 로 바꾸면 이미 등록된 2Depth 도 전부 Y 가 된다.
+        //
+        // 단방향인 이유: Y→N 은 전파하지 않는다. 자식은 기존 Y 설정을 유지한 채 개별 편집이
+        // 가능해지는 것이 확정 정책이며, 되돌릴 때 자식 설정까지 일괄로 날리면 복구 불가능하다.
+        // 부모가 Y 인 동안 자식 라디오는 FE 에서 잠기므로(categories-detail), 여기서의 일괄
+        // 승격과 FE 표시가 어긋나지 않는다.
+        //
+        // 대상이 2Depth 면 자식이 없어 count=0 (카테고리는 Depth-2 까지만 관리).
+        // 같은 트랜잭션(Serializable) 안이라 부모만 Y 이고 자식은 N 인 중간 상태가 노출되지 않는다.
+        let cascadedChildCount = 0;
+        if (result.data.isInternalOnly === true) {
+          const cascaded = await tx.category.updateMany({
+            where: { parentId: parsed.data, isInternalOnly: false },
+            data: { isInternalOnly: true },
+          });
+          cascadedChildCount = cascaded.count;
+        }
+
+        return { category: updated, internalCascadeCount: cascadedChildCount };
       },
       { isolationLevel: "Serializable" },
     );
@@ -149,10 +187,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
       console.log("[PUT /api/categories/:id] sortOrder 재정렬", reorderLog);
     }
 
+    // 구조적 감사 로그 — PII 없음(ID/건수만). 사내전용 승격은 노출 범위를 좁히는 변경이라 추적 대상.
+    if (internalCascadeCount > 0) {
+      console.info("[PUT /api/categories/:id] 사내전용 하위 전파", {
+        categoryId: parsed.data,
+        cascadedChildCount: internalCascadeCount,
+      });
+    }
+
     return NextResponse.json({ data: category });
   } catch (error) {
     if (error instanceof CategoryError && error.kind === "NOT_FOUND") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (error instanceof CategoryError && error.kind === "INTERNAL_PARENT_LOCKED") {
+      return NextResponse.json(
+        { error: "親カテゴリが社内会員専用のため、社内会員専用を解除できません" },
+        { status: 400 },
+      );
     }
     if (
       error instanceof PrismaClientKnownRequestError &&

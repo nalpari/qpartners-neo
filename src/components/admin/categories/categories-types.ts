@@ -83,6 +83,12 @@ const STATUS_ERROR_MAP: Record<number, string> = {
 const BAD_REQUEST_PATTERNS: { keyword: string; message: string }[] = [
   { keyword: "콘텐츠", message: "コンテンツが紐づいているため削除できません。" },
   { keyword: "2Depth", message: "カテゴリはDepth-2までのみ登録できます。" },
+  // 사내전용 부모를 둔 자식의 해제 시도 — 화면에서는 라디오가 잠겨 도달하지 않지만,
+  // 잠금 우회(키보드/직접 호출) 시 GENERIC_ERROR 대신 사유를 그대로 보여준다.
+  {
+    keyword: "社内会員専用",
+    message: "親カテゴリが社内会員専用のため、この項目は変更できません。",
+  },
 ];
 
 /** 에러 응답에서 error 필드 안전 추출 */

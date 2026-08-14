@@ -25,8 +25,11 @@ export function ContentsDetailCategory({
   categoryTree,
   isInternal,
 }: ContentsDetailCategoryProps) {
-  // 부모 그룹(parentId=null) 추출
-  const parentGroups = categoryTree.filter((c) => c.parentId === null);
+  // 부모 그룹(parentId=null) 추출.
+  // 사내전용 1depth 는 비사내 사용자에게 그룹 자체를 노출하지 않는다 — 부모 카테고리명도 사내 정보.
+  const parentGroups = categoryTree.filter(
+    (c) => c.parentId === null && (isInternal || !c.isInternalOnly),
+  );
 
   // 각 그룹별 매칭된 자식 카테고리 구성
   const groupedCategories = parentGroups.map((parent) => {

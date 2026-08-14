@@ -2380,11 +2380,14 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Category"],
         summary: "카테고리 트리 목록 조회",
+        description:
+          "비로그인 GET 이 허용된 공개 경로입니다. 사내 사용자(SUPER_ADMIN/ADMIN)가 아니면 `isInternalOnly=true` 인 카테고리는 1Depth·2Depth 모두 응답에서 제외됩니다 — 화면단 필터와 무관하게 서버에서 강제합니다. 판정 기준은 요청자의 역할 하나뿐이며 `activeOnly` 는 활성 상태 필터일 뿐 권한 신호가 아닙니다 (`activeOnly=false` 는 별개로 ADM_CATEGORY.read 권한을 요구합니다).",
         parameters: [
           {
             name: "internalOnly",
             in: "query",
-            description: "사내전용만 조회 (기본 false)",
+            description:
+              "사내전용만 조회 (기본 false). 관리자 화면의 「社内専用のみ表示」 필터용이며 권한 필터가 아닙니다. 사내전용을 볼 수 없는 요청자가 true 로 호출하면 결과는 0건입니다.",
             schema: { type: "string", default: "false" },
           },
           {
@@ -2417,7 +2420,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다.",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다. 상위 카테고리가 사내전용(`isInternalOnly: true`)이면 요청값과 무관하게 자식도 사내전용으로 강제 저장됩니다 (400 거절이 아닌 승격).",
         requestBody: {
           required: true,
           content: {
@@ -2453,7 +2456,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
         description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다.",
+          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다. `isInternalOnly: true` 를 전송하면 같은 트랜잭션에서 하위 카테고리도 모두 사내전용(Y)으로 승격됩니다 — 반대로 `false` 는 하위에 전파되지 않으며, 기존 자식의 Y 설정은 유지된 채 개별 편집이 가능해집니다. 단, 부모가 사내전용인 자식에 `isInternalOnly: false` 를 전송하면 \"자식 ≥ 부모\" 불변식 위반으로 400 거절됩니다.",
         parameters: [
           {
             name: "id",

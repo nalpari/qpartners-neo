@@ -86,6 +86,16 @@ export function CategoriesDetail({
   // Design Ref: §4.3 — categoryCode 비활성화 조건
   const isCodeDisabled = isEditMode || form.parentId !== null || isFormDisabled;
 
+  // 1Depth 가 사내전용이면 그 하위 2Depth 는 사내전용으로 고정 (변경 불가).
+  // 반대로 1Depth 가 일반이면 2Depth 는 사내전용/일반 모두 선택 가능하다 — 즉 1Depth 가
+  // Y→N 으로 바뀐 뒤에는 기존 Y 자식이 값을 유지한 채 다시 편집 가능해진다.
+  // effectiveInternalOnly 를 저장 payload 에도 그대로 써서, 부모가 Y 인데 자식이 N 으로
+  // 남아 있는 과거 데이터가 수정 저장 시 자동 교정되게 한다.
+  const parentNode =
+    form.parentId !== null ? treeData.find((p) => p.id === form.parentId) : undefined;
+  const isInternalLockedByParent = parentNode?.isInternalOnly === true;
+  const effectiveInternalOnly = form.isInternalOnly || isInternalLockedByParent;
+
   const updateField = <K extends keyof CategoryFormState>(
     key: K,
     value: CategoryFormState[K],
@@ -149,7 +159,7 @@ export function CategoriesDetail({
             <Button
               variant="primary"
               disabled={!hasSelection || isSaving}
-              onClick={() => onSave(form)}
+              onClick={() => onSave({ ...form, isInternalOnly: effectiveInternalOnly })}
             >
               保存
             </Button>
@@ -159,23 +169,29 @@ export function CategoriesDetail({
 
       {/* Form Rows */}
       <div className="flex flex-col gap-[4px]">
-        {/* Row 1: 社内会員専用 — 제약 없이 항상 편집 가능 (2Depth/수정모드 모두) — 단, RBAC readonly 시 비활성 */}
+        {/* Row 1: 社内会員専用 — 부모(1Depth)가 사내전용이면 Y 고정·변경 불가.
+            그 외에는 자유 편집 (RBAC readonly 시 비활성). */}
         <FormRow label="社内会員専用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
-              checked={form.isInternalOnly}
+              checked={effectiveInternalOnly}
               onChange={() => updateField("isInternalOnly", true)}
               label="Y"
               name="isInternalOnly"
-              disabled={isFormDisabled}
+              disabled={isFormDisabled || isInternalLockedByParent}
             />
             <Radio
-              checked={!form.isInternalOnly}
+              checked={!effectiveInternalOnly}
               onChange={() => updateField("isInternalOnly", false)}
               label="N"
               name="isInternalOnly"
-              disabled={isFormDisabled}
+              disabled={isFormDisabled || isInternalLockedByParent}
             />
+            {isInternalLockedByParent && (
+              <span className="text-[13px] text-[#45576f] font-['Noto_Sans_JP']">
+                ※親カテゴリが社内会員専用のため変更できません。
+              </span>
+            )}
           </div>
         </FormRow>
 

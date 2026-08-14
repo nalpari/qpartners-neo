@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
-import { requireMenuPermission } from "@/lib/auth";
+import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/schemas/category";
 
@@ -22,6 +22,27 @@ export async function GET(request: NextRequest) {
       if (auth instanceof NextResponse) return auth;
     }
 
+    // 사내전용 카테고리 서버측 차단.
+    //
+    // 이 라우트는 middleware PUBLIC_GET_PATTERNS 에 등록돼 비로그인 GET 이 가능하다.
+    // 화면단 필터(콘텐츠 검색/상세/등록 폼/목록 그리드)만으로는 API 직접 호출을 막지 못해
+    // 사내전용 분류의 이름과 트리 구조가 그대로 새어 나간다 → 응답 단계에서 제외한다.
+    //
+    // 판정 기준은 요청자의 역할(isInternalUser) 하나뿐이다. activeOnly 는 활성 상태 필터일 뿐
+    // 권한 신호가 아니므로 여기에 얹지 않는다 — resolveMenuPermission 은 역할 유형을 가리지 않고
+    // 매트릭스만 조회하므로, 비사내 역할에 ADM_CATEGORY.read 가 부여되면 activeOnly=false 만으로
+    // 사내전용 트리가 열리게 된다 (최소 권한 원칙 위배).
+    const user = getUserFromHeaders(request.headers);
+    const internal = user ? isInternalUser(user.role) : false;
+
+    // internalOnly(관리자 「社内専用のみ表示」 필터) 와 동시 적용 시 차단이 우선한다 —
+    // 비사내 사용자가 internalOnly=true 로 요청하면 결과 0건이 정답.
+    const internalOnlyFilter = !internal
+      ? { isInternalOnly: false }
+      : internalOnly
+        ? { isInternalOnly: true }
+        : {};
+
     // isVisible 은 "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출" 토글 전용 정책.
     // API 응답에서 isVisible=false 부모를 제거하면 콘텐츠 목록의 검색 체크박스·콘텐츠 상세·
     // 등록 폼의 카테고리 선택 등 다른 모든 화면에서도 동시에 사라지는 회귀가 발생.
@@ -31,13 +52,14 @@ export async function GET(request: NextRequest) {
       where: {
         parentId: null,
         ...(activeOnly && { isActive: true }),
-        ...(internalOnly && { isInternalOnly: true }),
+        ...internalOnlyFilter,
       },
       include: {
         children: {
+          // 부모가 일반(N)이어도 사내전용 자식은 개별로 존재할 수 있으므로 자식에도 동일 적용.
           where: {
             ...(activeOnly && { isActive: true }),
-            ...(internalOnly && { isInternalOnly: true }),
+            ...internalOnlyFilter,
           },
           orderBy: { sortOrder: "asc" },
         },
@@ -98,11 +120,13 @@ export async function POST(request: NextRequest) {
 
     const category = await prisma.$transaction(
       async (tx) => {
-        // 2Depth 제한: parent의 parentId가 not null이면 3Depth → 거부
+        // 2Depth 제한: parent의 parentId가 not null이면 3Depth → 거부.
+        // 같은 조회로 부모의 사내전용 여부도 함께 확인한다 (쿼리 추가 없음).
+        let isInternalOnly = result.data.isInternalOnly;
         if (result.data.parentId !== null) {
           const parent = await tx.category.findUnique({
             where: { id: result.data.parentId },
-            select: { parentId: true },
+            select: { parentId: true, isInternalOnly: true },
           });
 
           if (!parent) {
@@ -111,6 +135,18 @@ export async function POST(request: NextRequest) {
 
           if (parent.parentId !== null) {
             throw new CategoryError("DEPTH_EXCEEDED");
+          }
+
+          // 부모(1Depth)가 사내전용이면 자식도 사내전용으로 고정한다.
+          // 화면에서는 라디오가 잠기지만, API 직접 호출로 Y 부모 밑에 N 자식이 생기는 경로가
+          // 남아 있어 서버에서도 막는다. 400 거절이 아니라 승격으로 처리 — PUT 의 하위 전파와
+          // 같은 방향이라 "자식 ≥ 부모" 불변식이 두 라우트에서 동일하게 유지된다.
+          if (parent.isInternalOnly && !isInternalOnly) {
+            console.info(
+              "[POST /api/categories] 부모가 사내전용 — isInternalOnly 를 Y 로 강제",
+              { parentId: result.data.parentId },
+            );
+            isInternalOnly = true;
           }
         }
 
@@ -128,7 +164,7 @@ export async function POST(request: NextRequest) {
           shiftedCount: shifted.count,
         };
 
-        return tx.category.create({ data: result.data });
+        return tx.category.create({ data: { ...result.data, isInternalOnly } });
       },
       { isolationLevel: "Serializable" },
     );
