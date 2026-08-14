@@ -112,3 +112,21 @@ export const sekoNoDataResponseSchema = z.object({
   data: z.unknown().nullable(),
   result: sekoResultSchema,
 });
+
+// ─── No.8 Seko Email Check API (/api/seko/email/check) ───
+// ⚠️ 사양서(20260811)는 loginId+groupKind+sei+mei 4개 필수로 기재하나, 실제로 4개를 보내면
+//    400 INVALID_REQUEST 이고 **loginId 단독만** 200 이다 (2026-08-13 preview 실측).
+//    스키마·요청은 실물 기준으로 둔다.
+const sekoEmailCheckDataSchema = z.object({
+  exists: z.boolean(),
+  // 존재할 때만 채워진다. 이메일은 응답에 없으므로 호출부가 입력 loginId 를 그대로 쓴다
+  // (시공점은 loginId = email).
+  userId: z.string().nullish(),
+});
+
+export type SekoEmailCheckData = z.infer<typeof sekoEmailCheckDataSchema>;
+
+export const sekoEmailCheckResponseSchema = z.object({
+  data: sekoEmailCheckDataSchema.nullable(),
+  result: sekoResultSchema,
+});

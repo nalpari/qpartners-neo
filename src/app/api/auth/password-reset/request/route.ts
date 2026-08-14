@@ -16,6 +16,7 @@ import {
 import { SITE_DEFAULTS, SITE_URL, QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sekoEmailCheck } from "@/lib/seko-connector";
 import {
   generateRawResetToken,
   hashResetToken,
@@ -202,6 +203,9 @@ export async function POST(request: NextRequest) {
     //    GENERAL : 입력값 X 를 loginId 단독 / email 단독으로 dual-key 병렬 조회 후 cross check.
     //              한쪽만 hit → 통과. 양쪽 hit + 동일 회원 → 통과. 양쪽 hit + 다른 회원 → fail-closed (ambiguous).
     let resolvedDetail: QspUserDetail | null = null;
+    // 시공점 전용 — QSP userDetail 을 거치지 않으므로(Connector 소관) 결과를 별도로 담는다.
+    // 아래 공통 로직(rate limit·토큰·메일)은 email/loginId 두 값만 쓰므로 여기서 합류시킨다.
+    let sekoResolved: { email: string; loginId: string } | null = null;
     let lookupBlocker:
       | "mismatch"
       | "no-email"
@@ -236,18 +240,22 @@ export async function POST(request: NextRequest) {
         lookupBlocker = "schema";
       }
     } else if (userTp === "SEKO") {
-      // 시공점 — 비밀번호 재설정 미지원 (AS-IS Connector No.8 email/check · No.10 resetPwd 미배선).
-      // SEKO 인증은 Connector 로 종결되는데(login route) 재설정만 QSP 로 나가면 "保存されました" 200
-      // 을 받고도 새 비밀번호로 로그인할 수 없다 — QSP 기록과 Connector 인증 소스가 다르기 때문.
-      // 아무것도 반영하지 않으면서 성공을 반환하지 않도록 501 로 명시 차단한다
-      // (seko-info/seko-file 라우트와 동일 정책).
+      // 시공점 — AS-IS Connector No.8 email/check 로 회원 존재만 확인한다 (QSP 미경유).
+      // 인증 소스가 Connector 이므로 QSP lookup 으로 되돌리면 재설정이 반영되지 않는다.
       //
-      // No.8·No.10 배선 시 이 블록을 sekoEmailCheck 호출로 교체한다 — QSP lookup 으로 되돌리지 말 것.
-      console.warn(`${LOG} SEKO 비밀번호 재설정 요청 — Connector 미배선으로 차단 (501)`);
-      return NextResponse.json(
-        { error: "施工店会員のパスワード再設定は現在ご利用いただけません。" },
-        { status: 501 },
-      );
+      // 요청은 loginId 단독 — 사양서의 groupKind/sei/mei 를 함께 보내면 400 INVALID_REQUEST 다
+      // (2026-08-13 실측). 응답에 email 이 없으나 시공점은 loginId = email 이라 입력값을 그대로 쓴다.
+      const checkResult = await sekoEmailCheck(email!, `${LOG} (SEKO)`);
+      if (!checkResult.ok) {
+        // 커넥터 장애·설정 오류는 회원 미존재와 구분해 transport 로 분류 —
+        // 아래에서 사용자 열거 방지를 위해 동일 문구로 응답하되 로그로는 원인을 남긴다.
+        console.error(`${LOG} SEKO 회원 존재확인 실패 — status=${checkResult.error.status}`);
+        lookupBlocker = "transport";
+      } else if (checkResult.data.exists) {
+        sekoResolved = { email: email!, loginId: email! };
+      } else {
+        console.warn(`${LOG} SEKO 회원 미존재`);
+      }
     } else if (userTp === "GENERAL") {
       // 입력값 X — loginId 우선, 없으면 email (Zod 가 둘 중 하나는 보장)
       const inputValue = (loginId ?? email ?? "").trim();
@@ -315,7 +323,7 @@ export async function POST(request: NextRequest) {
     }
 
     // not-found / mismatch / ambiguous → 404 (사용자 열거 방어 위해 동일 메시지)
-    if (!resolvedDetail || !resolvedDetail.email) {
+    if (!sekoResolved && (!resolvedDetail || !resolvedDetail.email)) {
       console.info(
         `${LOG} 회원 미존재/매칭실패 — userTp=${userTp}, blocker=${lookupBlocker ?? "not-found"}`,
       );
@@ -333,8 +341,17 @@ export async function POST(request: NextRequest) {
     //    케이스에서도 카운트 키와 토큰 저장 키가 모두 resolvedEmail 로 통일되어
     //    rate limit 이 정상 적용됨. userType 조건 포함 — 동일 email 이 다른 userType 에
     //    존재하는 경우 토큰 카운트 합산 차단 + idx_user(userType, userId) 복합 인덱스 활용.
-    const resolvedEmail = resolvedDetail.email;
-    const resolvedLoginId = resolvedDetail.userId;
+    // 위 가드를 통과했으므로 SEKO(sekoResolved) 또는 QSP(resolvedDetail.email) 한쪽은 채워져 있다.
+    const resolvedEmail = sekoResolved?.email ?? resolvedDetail?.email;
+    const resolvedLoginId = sekoResolved?.loginId ?? resolvedDetail?.userId;
+    if (!resolvedEmail || !resolvedLoginId) {
+      // 도달 불가 — 가드 변경 시 조용히 빈 값으로 토큰이 생성되지 않도록 fail-closed.
+      console.error(`${LOG} 식별자 결손 — userTp=${userTp}`);
+      return NextResponse.json(
+        { error: "サーバーエラーが発生しました。" },
+        { status: 500 },
+      );
+    }
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     let recentCount: number;
     try {
