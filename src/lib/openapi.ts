@@ -73,7 +73,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: `userTp 에 따라 인증 경로가 갈린다. 성공 시 JWT httpOnly 쿠키 설정.
 
 - **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
-- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 미배선(후속 I/F 브랜치 예정). Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
+- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |

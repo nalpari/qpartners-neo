@@ -60,7 +60,11 @@ const sekoLoginDataSchema = z.object({
   // No.9 2FA — note-51(2026-08-18) 로 login·getUserInfo 응답에 추가된 2차인증 일시.
   // 형식은 "YYYY-MM-DD HH:mm:ss" (QSP 의 "YYYY.MM.DD" 와 구분자가 다르다 — `parseSekoDate` 사용).
   // 한 번도 2FA 를 하지 않은 계정은 null 이므로 nullish (구계정의 필드 누락까지 허용).
-  secAuthDt: z.string().nullish(),
+  // coerce 는 groupKind 와 같은 이유 — 커넥터가 타입을 바꿔 보내도(epoch 숫자 등) 로그인 응답
+  // 파싱이 깨져 시공점 전체가 502 로 막히는 일을 막는다. nullish 가 null/undefined 를 먼저
+  // 처리하므로 coerce 가 "null" 문자열을 만들지 않고, 형식이 어긋나면 parseSekoDate 가 null 을
+  // 반환해 fail-closed(2FA 요구)로 안전하게 열화한다.
+  secAuthDt: z.coerce.string().nullish(),
 });
 
 export type SekoLoginData = z.infer<typeof sekoLoginDataSchema>;

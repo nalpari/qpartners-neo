@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { twoFactorVerifySchema } from "@/lib/schemas/two-factor";
-import { verifyToken, signToken, COOKIE_NAME } from "@/lib/jwt";
+import { verifyToken, signToken, COOKIE_NAME, sessionInvalidResponse } from "@/lib/jwt";
 import { timingSafeEqual } from "crypto";
 
 import { QSP_API } from "@/lib/config";
@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
   //    판정이 또 트리거되어 사용자가 매 세션 2FA 를 다시 받게 된다.
   //    실패 정책: 사용자 흐름은 통과시키되(같은 세션은 DB verified=true 로 검증 증거 보유)
   //    운영 로그로 명시 알람 — 다음 세션은 자연스러운 재인증으로 폴백.
+  //    단 SEKO 401(Bearer 만료)만은 fail-open 대상이 아니다 — 아래 분기 주석 참조.
   //
   //    인증 소스별 대상 API 가 다르다 — QSP 는 updateSecAuthDt, 시공점은 AS-IS Connector
   //    No.9 save2faVerified (QSP 미경유). 실패 처리 정책은 양쪽 동일하다.
@@ -190,6 +191,19 @@ export async function POST(request: NextRequest) {
             "[POST /api/auth/two-factor/verify][SEKO] save2faVerified 실패 — status:",
             saveResult.error.status,
           );
+          // 401(AUTHENTICATION_ERROR = Bearer 만료)은 secAuthDt 기록 실패와 성격이 다르다.
+          // JWT 에 담긴 sekoToken 이 죽었다는 뜻이라, 그대로 통과시키면 로컬 JWT 는 유효해
+          // middleware 가 지나보내고 후속 SEKO API 만 반복 401 이 되어 세션이 고착된다.
+          // 다른 Connector 호출부(password-init·mypage/password-change·mypage/profile)와 동일하게
+          // 쿠키를 만료시켜 재로그인으로 새 Bearer 를 받게 한다. 이번 검증은 DB 에 verified 로
+          // 남아 있고, secAuthDt 가 미갱신이라 재로그인 시 2FA 를 다시 받는 것이 정상 흐름이다.
+          // 문구는 다른 SEKO 세션 무효 경로와 동일하게 고정한다. 커넥터 원문
+          // ("2段階認証情報の保存に失敗しました")을 그대로 내보내면 2FA 팝업의 메시지 매핑에
+          // 걸리지 않아 "しばらくしてからお試しください"(재시도 안내)로 렌더되는데, 이 시점엔
+          // 쿠키가 이미 삭제돼 재시도가 반드시 실패한다 - 사용자가 팝업에 갇힌다.
+          if (saveResult.error.status === 401) {
+            return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+          }
         }
       } catch (error) {
         // ConfigError(SEKO_CONNECTOR_BASE_URL 미설정 등) 포함 — fail-open 정책상 여기서 흡수한다.
