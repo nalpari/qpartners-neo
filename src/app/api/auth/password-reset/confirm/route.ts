@@ -180,7 +180,23 @@ export async function POST(request: NextRequest) {
     // 입력 원본을 유지하므로 대소문자가 다를 수 있다 — Connector 호출에는 원본인 `loginId` 를 쓴다.
     const sekoLoginId = resetToken.loginId ?? resetToken.userId;
 
-    const resetResult = await sekoResetPwd(sekoLoginId, newPassword, SEKO_LOG);
+    // `sekoResetPwd` 는 실패를 Result 로 돌려주지만 `ConfigError`(SEKO_API_KEY /
+    // SEKO_CONNECTOR_BASE_URL 미설정·운영 https 위반)만은 rethrow 한다. 이 예외는 fetch **이전**
+    // 에 발생하므로 Connector 에 요청이 도달하지 않았음이 확정 — 비밀번호는 그대로다.
+    // 잡지 않으면 라우트 최상위 catch 로 빠져 토큰만 소모한 채 500 이 되는데, 설정 오류는
+    // 결정적이라 링크를 재발급해도 같은 결과가 나온다(= 사용자 탈출구 없음). 롤백하고 종결한다.
+    let resetResult: Awaited<ReturnType<typeof sekoResetPwd>>;
+    try {
+      resetResult = await sekoResetPwd(sekoLoginId, newPassword, SEKO_LOG);
+    } catch (error) {
+      console.error(`${SEKO_LOG} 설정 오류로 재설정 호출 불가:`, error);
+      return rollbackAndRespond(
+        token,
+        "パスワードの再設定に失敗しました。しばらくしてから再度お試しください。",
+        "パスワードの再設定に失敗しました。お手数ですが再度リンクの発行をお願いします。",
+        500,
+      );
+    }
     if (!resetResult.ok) {
       // 재설정 자체가 실패 — 비밀번호는 바뀌지 않았으므로 토큰을 되돌려 재시도를 허용한다.
       return rollbackAndRespond(
@@ -212,7 +228,24 @@ export async function POST(request: NextRequest) {
     // 실패 시 자동 로그인을 포기하고 로그인 화면으로 유도한다.
     // 비밀번호는 이미 변경된 상태이므로 토큰 롤백은 하지 않는다 — 되돌리면 옛 비밀번호 기준의
     // 재설정 링크가 되살아나 혼선만 커진다.
-    const loginResult = await sekoLogin(sekoLoginId, newPassword, SEKO_LOG);
+    // 여기서도 rethrow 되는 예외는 ConfigError 뿐이다. 앞선 resetPwd 가 성공했으므로 base URL 은
+    // 이미 유효해 실질적으로 도달 불가하지만, 잡지 않으면 최상위 catch 의
+    // "パスワード変更処理中にサーバーエラーが発生しました" 가 나간다 — 비밀번호가 이미 바뀐 사실을
+    // **부정하는** 안내라 사용자가 옛 비밀번호로 재시도하게 된다.
+    // 비밀번호는 이미 바뀐 상태이므로 아래 `!ok` 경로와 동일하게 토큰 롤백은 하지 않는다.
+    let loginResult: Awaited<ReturnType<typeof sekoLogin>>;
+    try {
+      loginResult = await sekoLogin(sekoLoginId, newPassword, SEKO_LOG);
+    } catch (error) {
+      console.error(`${SEKO_LOG} 설정 오류로 자동 로그인 호출 불가:`, error);
+      return NextResponse.json(
+        {
+          error:
+            "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。",
+        },
+        { status: 500 },
+      );
+    }
     if (!loginResult.ok) {
       console.error(`${SEKO_LOG} 재설정 후 자동 로그인 실패 — status=${loginResult.error.status}`);
       return NextResponse.json(
