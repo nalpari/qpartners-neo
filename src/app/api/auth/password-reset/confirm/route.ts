@@ -198,7 +198,24 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!resetResult.ok) {
-      // 재설정 자체가 실패 — 비밀번호는 바뀌지 않았으므로 토큰을 되돌려 재시도를 허용한다.
+      if (resetResult.indeterminate) {
+        // 타임아웃·응답 파싱 실패·스키마 불일치 — Connector 가 비밀번호를 이미 바꾼 뒤 응답만
+        // 유실됐을 수 있다. 여기서 토큰을 되살리면 "재설정은 성공했는데 링크는 만료 전까지 다시
+        // 쓸 수 있는" 상태가 되어 일회용 토큰 불변식이 깨진다 → 토큰은 소비 상태로 유지한다.
+        // 사용자 탈출구는 (1) 새 비밀번호로 로그인, (2) 링크 재발급 두 가지이며 둘 다 안내한다.
+        console.error(
+          `${SEKO_LOG} 재설정 결과 불명 — 토큰 소비 유지 (status=${resetResult.error.status})`,
+        );
+        return NextResponse.json(
+          {
+            error:
+              "パスワードが変更された可能性があります。新しいパスワードでログインをお試しください。ログインできない場合は、お手数ですが再度リンクの発行をお願いします。",
+          },
+          { status: resetResult.error.status },
+        );
+      }
+      // Connector 가 명시적으로 거부(resultCode !== "S") — 비밀번호가 바뀌지 않았음이 확정이므로
+      // 토큰을 되돌려 같은 링크로 재시도할 수 있게 한다.
       return rollbackAndRespond(
         token,
         "パスワードの再設定に失敗しました。しばらくしてから再度お試しください。",

@@ -40,6 +40,22 @@ export type SekoFetchError = {
   errorCode?: string;
 };
 
+/**
+ * `sekoResetPwd` 전용 결과 타입 — 실패 시 **처리 여부가 확정인지**를 함께 돌려준다.
+ *
+ * 호출부(`password-reset/confirm`)가 일회용 토큰을 롤백할지 판단하는 유일한 근거다.
+ * - `indeterminate: false` — Connector 가 명시적으로 거부(`resultCode !== "S"`). 비밀번호가
+ *   바뀌지 않았음이 확정이므로 토큰을 되살려 재시도를 허용해도 안전하다.
+ * - `indeterminate: true` — 타임아웃·응답 파싱 실패·스키마 불일치. Connector 가 비밀번호를 이미
+ *   바꾼 뒤 응답만 유실됐을 수 있다. 이때 토큰을 되살리면 "재설정은 성공했는데 링크는 다시
+ *   쓸 수 있는" 상태가 되어 일회용 불변식이 깨진다 — 호출부는 토큰을 소비 상태로 유지한다.
+ *
+ * 다른 Connector 함수는 이 구분이 필요 없다(조회이거나, 호출부가 토큰을 다루지 않는다).
+ */
+export type SekoResetPwdResult =
+  | { ok: true }
+  | { ok: false; error: SekoFetchError; indeterminate: boolean };
+
 const SEKO_TIMEOUT_MS = 10_000;
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
@@ -510,7 +526,7 @@ export async function sekoResetPwd(
   loginId: string,
   newPwd: string,
   logTag: string,
-): Promise<{ ok: true } | { ok: false; error: SekoFetchError }> {
+): Promise<SekoResetPwdResult> {
   let response: Response;
   try {
     response = await fetchWithLog(
@@ -534,7 +550,12 @@ export async function sekoResetPwd(
   } catch (error: unknown) {
     if (error instanceof ConfigError) throw error;
     console.error(`${logTag} SEKO 비밀번호 재설정 호출 실패:`, error);
-    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+    // 타임아웃 포함 — 요청이 도달해 처리까지 끝난 뒤 응답만 유실됐을 수 있다.
+    return {
+      ok: false,
+      error: { error: "外部サーバーに接続できません", status: 502 },
+      indeterminate: true,
+    };
   }
 
   let body: unknown;
@@ -542,13 +563,23 @@ export async function sekoResetPwd(
     body = await response.json();
   } catch (error: unknown) {
     console.error(`${logTag} SEKO 비밀번호 재설정 응답 파싱 실패 (status: ${response.status}):`, error);
-    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+    // 응답 본문을 읽지 못했으므로 resultCode 를 알 수 없다 — 처리 여부 불명.
+    return {
+      ok: false,
+      error: { error: "外部サーバーの応答を処理できません", status: 502 },
+      indeterminate: true,
+    };
   }
 
   const parsed = sekoNoDataResponseSchema.safeParse(body);
   if (!parsed.success) {
     console.error(`${logTag} SEKO 비밀번호 재설정 응답 스키마 불일치:`, parsed.error.issues);
-    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+    // 위와 동일 — resultCode 를 신뢰할 수 없으므로 실패로 단정하지 않는다.
+    return {
+      ok: false,
+      error: { error: "外部サーバーの応答形式が正しくありません", status: 502 },
+      indeterminate: true,
+    };
   }
 
   const { result } = parsed.data;
@@ -563,6 +594,8 @@ export async function sekoResetPwd(
         status: mapSekoFailureStatus(response.status, result.errorCode),
         errorCode: result.errorCode ?? undefined,
       },
+      // Connector 가 명시적으로 거부했다 — 비밀번호는 그대로임이 확정.
+      indeterminate: false,
     };
   }
 
