@@ -14,6 +14,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
 import { sekoLogin, sekoResetPwd } from "@/lib/seko-connector";
+import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
@@ -175,7 +176,8 @@ export async function POST(request: NextRequest) {
   //      강등된다(.claude/rules/api.md "본체와 폴백 매핑 일치").
   if (resetToken.userType === "SEKO") {
     const SEKO_LOG = "[POST /api/auth/password-reset/confirm][SEKO]";
-    // 시공점 loginId = email. request 라우트가 두 값을 같게 저장하지만 컬럼 우선순위는 동일하게 둔다.
+    // 시공점 loginId = email. 단 request 라우트가 `userId` 는 소문자 정규화해 저장하고 `loginId` 는
+    // 입력 원본을 유지하므로 대소문자가 다를 수 있다 — Connector 호출에는 원본인 `loginId` 를 쓴다.
     const sekoLoginId = resetToken.loginId ?? resetToken.userId;
 
     const resetResult = await sekoResetPwd(sekoLoginId, newPassword, SEKO_LOG);
@@ -186,6 +188,22 @@ export async function POST(request: NextRequest) {
         "パスワードの再設定に失敗しました。しばらくしてから再度お試しください。",
         "パスワードの再設定に失敗しました。お手数ですが再度リンクの発行をお願いします。",
         resetResult.error.status,
+      );
+    }
+
+    // 권한 사용가능여부(QpRole.isActive) 검증 — 로그인 라우트(SEKO 분기)와 동일 게이트.
+    // 이 분기는 인증 쿠키를 발급하므로 로그인과 동일하게 통과해야 한다. 빠뜨리면 관리자가
+    // SEKO 역할을 비활성화해도 "비밀번호 재설정 → 자동 로그인" 경로로 세션을 받을 수 있다
+    // (middleware/rbac-guard 는 요청마다 isActive 를 재검사하지 않는 일회성 게이트).
+    //
+    // 위치는 resetPwd **성공 후** — 재설정 자체는 회원 본인이 발급받은 토큰으로 수행한 정당한
+    // 요청이므로 되돌리지 않는다. 차단 대상은 세션 발급뿐이다. 따라서 토큰 롤백도 하지 않는다
+    // (비밀번호는 이미 바뀐 상태 — 옛 비밀번호 기준 링크를 되살리면 혼선만 커진다).
+    const sekoGate = await checkRoleActive("SEKO", SEKO_LOG);
+    if (!sekoGate.active) {
+      return NextResponse.json(
+        { error: `パスワードは変更されました。${sekoGate.message}。管理者にお問い合わせください。` },
+        { status: 403 },
       );
     }
 
@@ -443,6 +461,26 @@ export async function POST(request: NextRequest) {
       : validUserTp === "STORE" ? "2ND_STORE"
       : validUserTp === "SEKO" ? "SEKO"
       : "GENERAL";
+  }
+
+  // 권한 사용가능여부(QpRole.isActive) 검증 — 로그인 라우트 6-1 과 동일 게이트.
+  // 위 SEKO 분기와 같은 이유로 QSP 경로(STORE/GENERAL/동적 권한)도 통과해야 한다. 여기가 빠지면
+  // 로그인은 403 인데 "비밀번호 재설정 → 자동 로그인" 으로는 세션이 나가는 정책 불일치가 생긴다.
+  // authRole 확정 후에 검사한다 — 검증 대상 roleCode 가 authRole 에서 도출되기 때문.
+  const roleCodeToCheck = resolveGateRoleCode(authRole);
+  if (roleCodeToCheck) {
+    const gate = await checkRoleActive(
+      roleCodeToCheck,
+      "[POST /api/auth/password-reset/confirm]",
+      { userTp: validUserTp, authRole },
+    );
+    if (!gate.active) {
+      // 비밀번호는 이미 변경 완료 — SEKO 분기와 동일하게 토큰 롤백 없이 세션 발급만 차단한다.
+      return NextResponse.json(
+        { error: `パスワードは変更されました。${gate.message}。管理者にお問い合わせください。` },
+        { status: 403 },
+      );
+    }
   }
 
   const user: LoginUser = {

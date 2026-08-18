@@ -17,14 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
 import { sekoLogin } from "@/lib/seko-connector";
-
-/** QpRole 검증 대상 authRole → roleCode 매핑 (SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님) */
-const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
-  "1ST_STORE": "1ST_STORE",
-  "2ND_STORE": "2ND_STORE",
-  "SEKO": "SEKO",
-  "GENERAL": "GENERAL",
-};
+import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -76,31 +69,11 @@ export async function POST(request: NextRequest) {
     }
     const s = sekoResult.data;
 
-    // 권한 사용가능여부(QpRole.isActive) 검증 — QSP 경로(6-1)와 동일 정책.
+    // 권한 사용가능여부(QpRole.isActive) 검증 — QSP 경로(6-1)·password-reset/confirm 과 동일 정책.
     // 관리자가 SEKO 역할을 비활성화(isActive=false)하면 로그인 차단.
-    // fail-closed(레코드 미존재 → 차단) / fail-open(조회 실패 → 가용성 우선 통과).
-    try {
-      const sekoRole = await prisma.qpRole.findUnique({
-        where: { roleCode: "SEKO" },
-        select: { isActive: true },
-      });
-      if (sekoRole === null) {
-        console.error("[POST /api/auth/login][SEKO] QpRole(SEKO) 레코드 미존재 — 로그인 차단 (fail-closed)");
-        return NextResponse.json(
-          { error: "権限情報が存在しないためログインできません" },
-          { status: 403 },
-        );
-      }
-      if (!sekoRole.isActive) {
-        console.warn("[POST /api/auth/login][SEKO] 비활성 SEKO 권한 로그인 차단");
-        return NextResponse.json(
-          { error: "権限が無効のためログインできません" },
-          { status: 403 },
-        );
-      }
-    } catch (error) {
-      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 가용성 우선(QSP 경로와 동일).
-      console.error("[POST /api/auth/login][SEKO] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    const sekoGate = await checkRoleActive("SEKO", "[POST /api/auth/login][SEKO]");
+    if (!sekoGate.active) {
+      return NextResponse.json({ error: sekoGate.message }, { status: 403 });
     }
 
     const sekoUser: LoginUser = {
@@ -422,39 +395,14 @@ export async function POST(request: NextRequest) {
   // 6-1. 권한 사용가능여부(QpRole.isActive) 검증
   // SUPER_ADMIN/ADMIN 은 시스템 권한이라 isActive 검증 대상이 아님 (항상 활성).
   // 나머지 시스템 역할 + 동적 권한(authCd 기반) 모두 검증 대상.
-  const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole] ?? (
-    authRole !== "SUPER_ADMIN" && authRole !== "ADMIN" ? authRole : undefined
-  );
+  const roleCodeToCheck = resolveGateRoleCode(authRole);
   if (roleCodeToCheck) {
-    try {
-      const role = await prisma.qpRole.findUnique({
-        where: { roleCode: roleCodeToCheck },
-        select: { isActive: true },
-      });
-      if (role === null) {
-        // QpRole 레코드 미존재 — DB 데이터 정합성 문제. fail-closed 차단.
-        console.error("[POST /api/auth/login] QpRole 레코드 미존재 — 로그인 차단 (fail-closed)", {
-          roleCode: roleCodeToCheck,
-          authRole,
-        });
-        return NextResponse.json(
-          { error: "権限情報が存在しないためログインできません" },
-          { status: 403 },
-        );
-      } else if (!role.isActive) {
-        console.warn("[POST /api/auth/login] 비활성 권한 로그인 차단", {
-          userTp: qsp.data.userTp,
-          authRole,
-        });
-        return NextResponse.json(
-          { error: "権限が無効のためログインできません" },
-          { status: 403 },
-        );
-      }
-    } catch (error) {
-      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 서비스 가용성 우선
-      // (권한 테이블 장애로 전체 사용자 로그인 불가 방지)
-      console.error("[POST /api/auth/login] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    const gate = await checkRoleActive(roleCodeToCheck, "[POST /api/auth/login]", {
+      userTp: qsp.data.userTp,
+      authRole,
+    });
+    if (!gate.active) {
+      return NextResponse.json({ error: gate.message }, { status: 403 });
     }
   }
 

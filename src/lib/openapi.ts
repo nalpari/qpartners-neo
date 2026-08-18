@@ -644,6 +644,9 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "403": errorResponse(
+            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
+          ),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse("외부 서버 오류"),
         },

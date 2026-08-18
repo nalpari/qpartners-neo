@@ -252,7 +252,15 @@ export async function POST(request: NextRequest) {
         console.error(`${LOG} SEKO 회원 존재확인 실패 — status=${checkResult.error.status}`);
         lookupBlocker = "transport";
       } else if (checkResult.data.exists) {
-        sekoResolved = { email: email!, loginId: email! };
+        // email 은 `.trim().toLowerCase()` 로 정규화한다 — STORE 분기와 동일 정책.
+        // 이 값이 rate limit 카운트 키이자 토큰의 `userId` 이므로, 정규화하지 않으면
+        // `User@example.com` 과 `user@example.com` 이 별개 버킷이 되어 시간당 한도를 우회한다.
+        // (STORE/GENERAL 은 QSP 응답 email 이 정본이라 정규화 소스가 있으나, SEKO 는 No.8
+        //  email/check 응답에 email 이 없어 입력값을 직접 정규화하는 수밖에 없다.)
+        //
+        // loginId 는 **입력 원본을 유지**한다 — Connector 호출 식별자(No.10 resetPwd·login)로
+        // 그대로 재사용되므로, email/check 가 200 을 준 바로 그 표기를 보내는 편이 안전하다.
+        sekoResolved = { email: email!.trim().toLowerCase(), loginId: email! };
       } else {
         console.warn(`${LOG} SEKO 회원 미존재`);
       }
