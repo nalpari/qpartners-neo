@@ -522,7 +522,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "비밀번호 초기화 요청 (메일 발송)",
         description:
           "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156). " +
-          "시공점(SEKO)은 501 — 인증이 AS-IS Connector 로 종결되는데 재설정만 QSP 로 나가면 변경이 반영되지 않으므로 명시 차단.",
+          "회원유형별 조회처: STORE/GENERAL/ADMIN=QSP userDetail, 시공점(SEKO)=AS-IS Connector email/check(X-Api-Key). " +
+          "SEKO 는 loginId=email 이므로 입력 이메일을 그대로 수신자로 사용.",
         requestBody: {
           required: true,
           content: {
@@ -598,7 +599,6 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("유효하지 않거나 만료된 링크입니다."),
           "429": errorResponse("リクエストが多すぎます。しばらく経ってから再度お試しください。"),
           "500": errorResponse("サーバーエラーが発生しました。"),
-          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.8/No.10 미배선"),
         },
       },
     },
@@ -606,7 +606,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 변경 확정 + 자동 로그인",
-        description: "토큰 검증 후 QSP 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인.",
+        description:
+          "토큰 검증 후 회원유형별 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인. " +
+          "회원유형별 변경처: STORE/GENERAL/ADMIN=QSP chgPwd, 시공점(SEKO)=AS-IS Connector resetPwd(X-Api-Key). " +
+          "SEKO 는 재설정 후 새 비밀번호로 Connector 재로그인해 Bearer(sekoToken)를 세션에 담는다.",
         requestBody: {
           required: true,
           content: {
@@ -644,9 +647,16 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "401": errorResponse(
+            "SEKO Connector 인증 오류(X-Api-Key 무효/누락) — 비밀번호 미변경, 토큰 롤백되어 링크 재사용 가능",
+          ),
+          "403": errorResponse(
+            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
+          ),
           "500": errorResponse("비밀번호 변경 실패"),
-          "501": errorResponse("시공점(SEKO) 미지원 — AS-IS Connector No.10 미배선 (잔여 토큰 방어)"),
-          "502": errorResponse("외부 서버 오류"),
+          "502": errorResponse(
+            "외부 서버 오류. SEKO 는 재설정 결과 불명(타임아웃·응답 파싱 실패·스키마 불일치) 포함 — 토큰은 소비 상태 유지",
+          ),
         },
       },
     },

@@ -16,16 +16,19 @@
  * 접속정보(base URL)는 환경변수 주입 — 미설정 시 **호출 시점** ConfigError.
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
- * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change.
- * 나머지 API(autologin/fileDownload/getUserList/email·check/2FA/resetPwd)는 각 I/F 브랜치에서 추가된다.
+ * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change /
+ * No.8 Email Check / No.10 Password Reset.
+ * 나머지 API(autologin/fileDownload/getUserList/2FA)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
+  sekoEmailCheckResponseSchema,
   sekoLoginResponseSchema,
   sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
+  type SekoEmailCheckData,
   type SekoLoginData,
   type SekoUserInfoData,
 } from "@/lib/schemas/seko";
@@ -36,6 +39,22 @@ export type SekoFetchError = {
   /** SEKO result.errorCode — 화면분기(비번만료/미초기화 등) 처리용. 호출부에서 사용. */
   errorCode?: string;
 };
+
+/**
+ * `sekoResetPwd` 전용 결과 타입 — 실패 시 **처리 여부가 확정인지**를 함께 돌려준다.
+ *
+ * 호출부(`password-reset/confirm`)가 일회용 토큰을 롤백할지 판단하는 유일한 근거다.
+ * - `indeterminate: false` — Connector 가 명시적으로 거부(`resultCode !== "S"`). 비밀번호가
+ *   바뀌지 않았음이 확정이므로 토큰을 되살려 재시도를 허용해도 안전하다.
+ * - `indeterminate: true` — 타임아웃·응답 파싱 실패·스키마 불일치. Connector 가 비밀번호를 이미
+ *   바꾼 뒤 응답만 유실됐을 수 있다. 이때 토큰을 되살리면 "재설정은 성공했는데 링크는 다시
+ *   쓸 수 있는" 상태가 되어 일회용 불변식이 깨진다 — 호출부는 토큰을 소비 상태로 유지한다.
+ *
+ * 다른 Connector 함수는 이 구분이 필요 없다(조회이거나, 호출부가 토큰을 다루지 않는다).
+ */
+export type SekoResetPwdResult =
+  | { ok: true }
+  | { ok: false; error: SekoFetchError; indeterminate: boolean };
 
 const SEKO_TIMEOUT_MS = 10_000;
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
@@ -96,6 +115,20 @@ function sekoBaseUrl(): string {
 
 function sekoEndpoint(path: string): string {
   return `${sekoBaseUrl()}${path}`;
+}
+
+/**
+ * X-Api-Key 계열 API 용 서버 고정키 (env `SEKO_API_KEY`).
+ * Bearer 계열과 달리 로그인 세션이 없는 상태(비밀번호 분실 등)에서 호출하므로 서버 키를 쓴다.
+ */
+function sekoApiKeyHeader(): { "X-Api-Key": string } {
+  const key = process.env.SEKO_API_KEY?.trim();
+  if (!key) {
+    throw new ConfigError(
+      "SEKO_API_KEY is not set (시공점 Connector X-Api-Key 미설정)",
+    );
+  }
+  return { "X-Api-Key": key };
 }
 
 /**
@@ -397,6 +430,172 @@ export async function sekoChangePwd(
     return {
       ok: false,
       error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode ?? undefined },
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * No.8 Seko Email Check API — 시공점 회원 존재 확인 (X-Api-Key).
+ *
+ * 비밀번호 분실 등 **로그인 불가 상태**에서 호출하므로 Bearer 가 아닌 서버 고정키를 쓴다.
+ *
+ * ⚠️ 요청 파라미터는 `loginId` **단독**이다. 사양서(20260811)는 `groupKind`/`sei`/`mei` 를
+ * 필수로 기재하나, 실제로 4개를 보내면 `400 INVALID_REQUEST` 이고 loginId 단독만 200 이다
+ * (2026-08-13 preview 실측). 사양서가 정정되기 전까지 실물 기준을 유지한다.
+ *
+ * 응답에 이메일이 없다 — 시공점은 loginId = email 이므로 호출부가 입력값을 그대로 쓴다.
+ */
+export async function sekoEmailCheck(
+  loginId: string,
+  logTag: string,
+): Promise<
+  | { ok: true; data: SekoEmailCheckData }
+  | { ok: false; error: SekoFetchError }
+> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/email/check"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, ...sekoApiKeyHeader() },
+        body: JSON.stringify({ loginId }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "emailCheck",
+        callerRoute: logTag,
+        userId: maskUserId(loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 회원 존재확인 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 회원 존재확인 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoEmailCheckResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 회원 존재확인 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 회원 존재확인 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    return {
+      ok: false,
+      error: {
+        error: "会員情報を確認できません",
+        status: mapSekoFailureStatus(response.status, result.errorCode),
+        errorCode: result.errorCode ?? undefined,
+      },
+    };
+  }
+
+  return { ok: true, data };
+}
+
+/**
+ * No.10 Seko Password Reset API — 시공점 비밀번호 재설정 (X-Api-Key).
+ *
+ * Bearer·현재 비밀번호 **모두 불요** — loginId + 새 비밀번호만으로 재설정한다.
+ * 로그인 자체가 불가한 사용자(비밀번호 분실·미설정)를 위한 API 이며,
+ * 로그인은 되지만 비밀번호 설정이 필요한 경우(180일 경과 등)는 No.6 `changePwd(chgType=I)` 를 쓴다.
+ *
+ * 재설정 후에도 `pwdInitYn` 은 `N` 을 유지한다(2026-08-14 preview 실측) — 다음 로그인에서
+ * 초기화 팝업이 다시 뜨지 않는다.
+ */
+export async function sekoResetPwd(
+  loginId: string,
+  newPwd: string,
+  logTag: string,
+): Promise<SekoResetPwdResult> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/resetPwd"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, ...sekoApiKeyHeader() },
+        body: JSON.stringify({ loginId, chgPwd: newPwd }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "resetPwd",
+        callerRoute: logTag,
+        userId: maskUserId(loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 비밀번호 재설정 호출 실패:`, error);
+    // 타임아웃 포함 — 요청이 도달해 처리까지 끝난 뒤 응답만 유실됐을 수 있다.
+    return {
+      ok: false,
+      error: { error: "外部サーバーに接続できません", status: 502 },
+      indeterminate: true,
+    };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 비밀번호 재설정 응답 파싱 실패 (status: ${response.status}):`, error);
+    // 응답 본문을 읽지 못했으므로 resultCode 를 알 수 없다 — 처리 여부 불명.
+    return {
+      ok: false,
+      error: { error: "外部サーバーの応答を処理できません", status: 502 },
+      indeterminate: true,
+    };
+  }
+
+  const parsed = sekoNoDataResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 비밀번호 재설정 응답 스키마 불일치:`, parsed.error.issues);
+    // 위와 동일 — resultCode 를 신뢰할 수 없으므로 실패로 단정하지 않는다.
+    return {
+      ok: false,
+      error: { error: "外部サーバーの応答形式が正しくありません", status: 502 },
+      indeterminate: true,
+    };
+  }
+
+  const { result } = parsed.data;
+  if (result.resultCode !== "S") {
+    console.warn(
+      `${logTag} SEKO 비밀번호 재설정 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    return {
+      ok: false,
+      error: {
+        error: "パスワードの再設定に失敗しました",
+        status: mapSekoFailureStatus(response.status, result.errorCode),
+        errorCode: result.errorCode ?? undefined,
+      },
+      // Connector 가 명시적으로 거부했다 — 비밀번호는 그대로임이 확정.
+      indeterminate: false,
     };
   }
 
