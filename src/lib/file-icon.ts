@@ -22,6 +22,7 @@ const ICON_SRC_MAP: Record<FileIconKind, string> = {
 const EXT_TO_KIND: Record<string, FileIconKind> = {
   pdf: "pdf",
   xlsx: "excel",
+  xlsm: "excel",
   xls: "excel",
   csv: "excel",
   docx: "word",
@@ -55,6 +56,7 @@ function kindByMime(mimeType: string | null): FileIconKind {
   if (mimeType === "application/pdf") return "pdf";
   if (
     mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mimeType === "application/vnd.ms-excel.sheet.macroEnabled.12" ||
     mimeType === "application/vnd.ms-excel" ||
     mimeType === "text/csv"
   ) return "excel";

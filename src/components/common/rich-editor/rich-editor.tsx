@@ -20,6 +20,7 @@ export function RichEditor({
   placeholder,
   editable = true,
   ariaLabel,
+  allowYoutubeEmbed = false,
 }: RichEditorProps) {
   // 부모가 매 렌더마다 새 함수를 넘겨도 extension이 재생성되지 않도록 ref로 잡는다.
   const onUploadErrorRef = useRef(onUploadError);
@@ -66,6 +67,7 @@ export function RichEditor({
       onUploadError: (e) => onUploadErrorRef.current?.(e),
       onUploadingChange: setIsUploading,
       triggerImagePicker,
+      allowYoutubeEmbed,
     }),
     onUpdate: ({ editor: ed }) => {
       if (!isMountedRef.current) return;
@@ -130,7 +132,7 @@ export function RichEditor({
   // 업로드 중에는 적용을 차단한다 — 초안이 업로드 완료 전 스냅샷이므로 덮어쓰면 이미지가 유실된다.
   const handleApplyHtmlSource = useCallback(() => {
     if (!editor || isUploading) return;
-    const sanitized = sanitizeContentHtml(htmlSourceDraft);
+    const sanitized = sanitizeContentHtml(htmlSourceDraft, { allowYoutubeEmbed });
     // sanitize 실패(입력이 있는데 빈 문자열 반환) 시 에디터 내용 전체 삭제를 방지.
     if (sanitized === "" && htmlSourceDraft.trim() !== "") {
       const err = new Error("HTML sanitize 실패");
@@ -152,7 +154,7 @@ export function RichEditor({
       onParseErrorRef.current?.(error);
       // 소스 모드 유지 — 사용자가 HTML을 수정 후 재시도할 수 있도록.
     }
-  }, [editor, htmlSourceDraft, isUploading]);
+  }, [editor, htmlSourceDraft, isUploading, allowYoutubeEmbed]);
 
   const handleCancelHtmlSource = useCallback(() => {
     setIsHtmlSourceMode(false);

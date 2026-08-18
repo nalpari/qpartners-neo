@@ -105,6 +105,34 @@ function isSafeSpanMarkStyle(tagName: string, value: string): boolean {
   return true;
 }
 
+// ─── YouTube 임베드 (opt-in) ───
+// iframe 은 기본 차단이다. 임의 도메인 iframe 은 클릭재킹·피싱 UI 삽입 벡터이고,
+// 이 파일의 다른 화이트리스트(href/img src/style/class)를 좁혀둔 방침과도 어긋난다.
+// 콘텐츠 본문 경로에서만 `allowYoutubeEmbed` 로 열고, 그때도 YouTube embed URL 만 통과시킨다.
+// 메일 경로는 계속 차단 — 메일 클라이언트가 iframe 을 대부분 렌더하지 않아 허용해도 의미가 없다.
+const YOUTUBE_EMBED_TAGS = ["iframe"];
+const YOUTUBE_EMBED_ATTR = [
+  "allowfullscreen",
+  "frameborder",
+  "allow",
+  "referrerpolicy",
+  "width",
+  "height",
+  // Tiptap Youtube extension 이 iframe 을 감싸는 래퍼 <div data-youtube-video>
+  "data-youtube-video",
+];
+/**
+ * youtube.com / youtube-nocookie.com 의 `/embed/{11자 videoId}` 만 허용.
+ * query string 은 start·rel·si 등 파라미터 보존용으로 제한된 문자셋만 통과시킨다.
+ *
+ * editor-extensions.ts 의 Youtube parseHTML 도 이 패턴을 재사용한다 —
+ * "sanitize 는 통과했는데 에디터가 파싱을 거부" 하는 판정 불일치를 막기 위한 단일 출처.
+ */
+export const SAFE_YOUTUBE_SRC_PATTERN =
+  /^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/embed\/[A-Za-z0-9_-]{11}(?:\?[A-Za-z0-9_=&%.,-]*)?$/;
+// iframe 크기 — 숫자만. `100%` 등 단위 표기는 레이아웃 위조 여지가 있어 제외하고 CSS 로 처리한다.
+const SAFE_IFRAME_DIMENSION_PATTERN = /^\d{1,4}$/;
+
 // <input> 화이트리스트 — 체크리스트 fallback 표시용. 그 외 type은 element 자체 제거.
 const SAFE_INPUT_TYPES = new Set(["checkbox"]);
 
@@ -129,6 +157,10 @@ function isSafeClassValue(value: string): boolean {
 }
 
 let hooksRegistered = false;
+
+// 훅은 1회만 등록되므로 호출별 옵션을 인자로 받을 수 없다.
+// DOMPurify.sanitize 는 동기 실행이라 호출 직전 세팅 → finally 리셋으로 안전하게 전달된다.
+let allowYoutubeEmbedForCurrentCall = false;
 
 function ensureHooksRegistered(): void {
   if (hooksRegistered) return;
@@ -172,6 +204,21 @@ function ensureHooksRegistered(): void {
         data.keepAttr = false;
       }
     }
+    // iframe[src] — YouTube embed 화이트리스트. 불일치 시 속성 제거하고,
+    // uponSanitizeElement 에서 element 자체도 제거한다 (src 없는 빈 iframe 잔존 방지).
+    if (node.tagName === "IFRAME" && data.attrName === "src") {
+      if (!SAFE_YOUTUBE_SRC_PATTERN.test(data.attrValue)) {
+        data.keepAttr = false;
+      }
+    }
+    // width/height — iframe 전용. 다른 태그에 붙으면 레이아웃 위조 여지가 있어 제거한다.
+    if (data.attrName === "width" || data.attrName === "height") {
+      const validTag = node.tagName === "IFRAME";
+      const validValue = SAFE_IFRAME_DIMENSION_PATTERN.test(data.attrValue);
+      if (!validTag || !validValue) {
+        data.keepAttr = false;
+      }
+    }
     // colwidth — TD/TH 에만 허용 + 값은 숫자(또는 쉼표 구분 숫자) 만 통과.
     if (data.attrName === "colwidth") {
       const validTag = COLWIDTH_ALLOWED_TAGS.has(node.tagName);
@@ -191,6 +238,16 @@ function ensureHooksRegistered(): void {
         el.parentNode?.removeChild(el);
       }
     }
+    // <iframe>은 allowYoutubeEmbed 경로에서 YouTube embed src 인 것만 통과.
+    // ALLOWED_TAGS 로도 걸러지지만, src 불일치로 속성만 떨어진 빈 iframe 을 남기지 않기 위해
+    // element 단위로 한 번 더 판정한다.
+    if (data.tagName === "iframe") {
+      const el = node as Element;
+      const src = el.getAttribute?.("src") ?? "";
+      if (!allowYoutubeEmbedForCurrentCall || !SAFE_YOUTUBE_SRC_PATTERN.test(src)) {
+        el.parentNode?.removeChild(el);
+      }
+    }
   });
 
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -201,6 +258,17 @@ function ensureHooksRegistered(): void {
   });
 }
 
+export interface SanitizeContentHtmlOptions {
+  /**
+   * YouTube 임베드 iframe 허용 여부 (기본 false).
+   *
+   * 콘텐츠 본문 경로(에디터 HTML 소스 적용 / 콘텐츠 상세 렌더)에서만 true 로 켠다.
+   * 대량메일 경로는 false 를 유지한다 — 메일 클라이언트가 iframe 을 대부분 차단하므로
+   * 허용해도 수신자에게 보이지 않고, 허용 표면만 넓어진다.
+   */
+  allowYoutubeEmbed?: boolean;
+}
+
 /**
  * 사용자 본문 HTML(BlockNote/Tiptap 출력 또는 레거시)을 렌더 안전한 HTML로 정제한다.
  * - 허용 태그·속성 외 제거
@@ -208,14 +276,24 @@ function ensureHooksRegistered(): void {
  * - 위험한 href/src 스킴 제거
  * - <input>은 type="checkbox"만 통과 (그 외 element 제거)
  * - target=_blank 링크에 rel=noopener noreferrer 부여
+ * - <iframe>은 기본 차단. `allowYoutubeEmbed` 시에만 YouTube embed URL 에 한해 통과
  */
-export function sanitizeContentHtml(html: string | null | undefined): string {
+export function sanitizeContentHtml(
+  html: string | null | undefined,
+  options?: SanitizeContentHtmlOptions,
+): string {
   if (!html) return "";
+  const allowYoutubeEmbed = options?.allowYoutubeEmbed === true;
   try {
     ensureHooksRegistered();
+    allowYoutubeEmbedForCurrentCall = allowYoutubeEmbed;
     return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS,
-      ALLOWED_ATTR,
+      ALLOWED_TAGS: allowYoutubeEmbed
+        ? [...ALLOWED_TAGS, ...YOUTUBE_EMBED_TAGS]
+        : ALLOWED_TAGS,
+      ALLOWED_ATTR: allowYoutubeEmbed
+        ? [...ALLOWED_ATTR, ...YOUTUBE_EMBED_ATTR]
+        : ALLOWED_ATTR,
       // 임의 data-* 통과 차단 — 필요한 data-type / data-checked / data-language 는 ALLOWED_ATTR 에 명시.
       ALLOW_DATA_ATTR: false,
       // 임의 aria-* 통과 차단 — Tiptap 출력은 ARIA 를 본문 노드에 부착하지 않음(툴바/팝오버 한정),
@@ -225,5 +303,9 @@ export function sanitizeContentHtml(html: string | null | undefined): string {
   } catch (error: unknown) {
     console.error("[sanitizeContentHtml] sanitize 실패:", error);
     return "";
+  } finally {
+    // 다음 호출이 기본(차단) 상태로 시작하도록 반드시 되돌린다 — 옵션 누수 시
+    // 메일 경로에서 iframe 이 통과하게 된다.
+    allowYoutubeEmbedForCurrentCall = false;
   }
 }
