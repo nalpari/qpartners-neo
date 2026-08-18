@@ -10,10 +10,26 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import Youtube from "@tiptap/extension-youtube";
+import { nodePasteRule } from "@tiptap/core";
 import { SAFE_YOUTUBE_SRC_PATTERN } from "@/lib/rich-editor/sanitize-html";
 import { InlineImagePaste } from "./inline-image-paste";
 import { SlashCommand } from "./editor-slash-menu";
 import { FontSize } from "./font-size";
+
+/**
+ * 붙여넣기로 임베드 전환할 YouTube "동영상" URL 패턴.
+ *
+ * 확장의 기본 paste 규칙(YOUTUBE_REGEX)은 도메인만 맞으면 전부 소비해서,
+ * `/results?search_query=…`, `/feed/subscriptions` 처럼 **비디오 ID 가 없는 URL** 까지
+ * youtube 노드로 바꾼다. 그런데 renderHTML 의 embed URL 생성은 그 경우 null 을 돌려주므로
+ * src 없는 iframe 이 되고, sanitize 가 그걸 걷어내면서 붙여넣은 URL 이 통째로 사라진다.
+ *
+ * 그래서 embed URL 을 확실히 만들 수 있는 형태 — watch?v= / shorts / live / embed /
+ * youtu.be — 에 11자 비디오 ID 가 붙은 경우만 매칭한다. 그 외 YouTube URL 은
+ * 규칙이 매칭되지 않아 평소처럼 텍스트로 남는다.
+ */
+const YOUTUBE_VIDEO_URL_PASTE_PATTERN =
+  /https?:\/\/(?:(?:www|m|music)\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^\s&]*&)*v=|embed\/|shorts\/|live\/)|youtu\.be\/)[A-Za-z0-9_-]{11}(?![A-Za-z0-9_-])\S*/g;
 
 /**
  * Youtube 확장의 parseHTML 보강.
@@ -28,6 +44,21 @@ import { FontSize } from "./font-size";
  * DB 에 이미 단독 iframe 으로 저장된 본문을 수정 화면에서 다시 열 때도 이 규칙이 받는다.
  */
 const YoutubeEmbed = Youtube.extend({
+  /**
+   * 기본 paste 규칙 대체 — base 의 addPasteHandler 경로는 더 이상 타지 않는다.
+   * src 로 match[0](매칭된 URL)만 쓰는 것도 의도적. base 는 match.input, 즉 붙여넣은
+   * 문자열 전체를 src 에 넣어 URL 앞뒤에 다른 텍스트가 섞이면 그대로 깨진다.
+   */
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        find: YOUTUBE_VIDEO_URL_PASTE_PATTERN,
+        type: this.type,
+        getAttributes: (match) => ({ src: match[0] }),
+      }),
+    ];
+  },
+
   parseHTML() {
     return [
       { tag: "div[data-youtube-video] iframe" },
@@ -91,7 +122,8 @@ export function buildExtensions(opts: BuildExtensionsOptions) {
         // YouTube 임베드 — <div data-youtube-video><iframe src="…/embed/{id}"></iframe></div>
         //
         // 삽입 경로 2가지 (별도 UI 없음):
-        //   1. 에디터에 YouTube URL 붙여넣기 → addPasteHandler 가 임베드로 변환.
+        //   1. 에디터에 YouTube **동영상** URL 붙여넣기 → 위 addPasteRules 가 임베드로 변환.
+        //      비디오 ID 가 없는 YouTube URL(검색/피드/채널 등)은 매칭되지 않아 텍스트로 남는다.
         //      Link.autolink=false 라 URL 이 링크로 먼저 잡히는 충돌이 없고,
         //      InlineImagePaste 는 이미지 파일이 아니면 false 를 반환해 이 핸들러로 넘어온다.
         //   2. HTML 소스 모드에 YouTube 퍼가기 코드(iframe) 붙여넣기 → sanitize 통과 후 파싱.
