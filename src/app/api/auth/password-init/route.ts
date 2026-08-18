@@ -143,7 +143,8 @@ export async function POST(request: NextRequest) {
         ...user,
         // 비번 설정 직후 → "Y"(초기화 불요). 다음 로그인부터 personal-info popup 미진입.
         pwdInitYn: "Y",
-        // SEKO 2FA(No.9 save2faVerified) 미배선 — QSP 경로와 동일하게 초기화 직후 skip.
+        // 초기화 직후 2FA skip — QSP 경로(같은 파일 아래 `twoFactorVerified: true`)와 동일 정책.
+        // 최초 비밀번호 설정을 막 마친 세션이므로 본인 확인이 방금 이뤄진 것으로 본다.
         twoFactorVerified: true,
       };
 

@@ -816,7 +816,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["TwoFactor"],
         summary: "2차 인증번호 검증",
-        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + QSP 2차인증 일시 갱신.",
+        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + 2차인증 일시 갱신 (QSP: updateSecAuthDt / 시공점: AS-IS Connector No.9 save2faVerified). 갱신 실패는 fail-open — 로그인 흐름은 통과하고 다음 세션에 재인증.",
         requestBody: {
           required: true,
           content: {

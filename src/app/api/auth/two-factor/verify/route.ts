@@ -9,6 +9,7 @@ import { timingSafeEqual } from "crypto";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { hashOtp } from "@/lib/auth-utils";
+import { sekoSave2faVerified, formatSekoDateTime } from "@/lib/seko-connector";
 import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
 import { extractClientIp } from "@/lib/notification-mail/utils";
 
@@ -154,49 +155,89 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 7. QSP 2차인증 일시 갱신 — await 로 결과 확정 후 진행 (fail-open).
+  // 7. 2차인증 일시 갱신 — await 로 결과 확정 후 진행 (fail-open).
   //    fire-and-forget 으로 두면 Next.js 런타임이 응답 반환 직후 이벤트 루프를 종료해
   //    fetch 자체가 중단될 가능성이 있고, secAuthDt 가 갱신 안 되면 다음 로그인 만료
   //    판정이 또 트리거되어 사용자가 매 세션 2FA 를 다시 받게 된다.
   //    실패 정책: 사용자 흐름은 통과시키되(같은 세션은 DB verified=true 로 검증 증거 보유)
   //    운영 로그로 명시 알람 — 다음 세션은 자연스러운 재인증으로 폴백.
-  let qspUpdateOk = false;
-  try {
-    const qspUpdateRes = await fetchWithLog(
-      QSP_API.updateSecAuthDt,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify({
-          userTp,
-          loginId: userId,
-          accsSiteCd: "QPARTNERS",
-        }),
-      },
-      {
-        system: "QSP",
-        direction: "OUTBOUND",
-        apiName: "updateSecAuthDt",
-        callerRoute: "[POST /api/auth/two-factor/verify]",
-        userId: maskEmail(userId),
-        userType: userTp,
-      },
-    );
-    qspUpdateOk = qspUpdateRes.ok;
-    if (!qspUpdateOk) {
+  //
+  //    인증 소스별 대상 API 가 다르다 — QSP 는 updateSecAuthDt, 시공점은 AS-IS Connector
+  //    No.9 save2faVerified (QSP 미경유). 실패 처리 정책은 양쪽 동일하다.
+  let secAuthUpdateOk = false;
+
+  if (userTp === "SEKO") {
+    // 시공점 — Bearer 는 로그인 시 JWT 에 담아둔 sekoToken 을 쓴다.
+    // loginId 는 email(시공점은 loginId = email), userId 는 Connector 내부 ID 로 둘 다 필수다.
+    const sekoLoginId = user.email;
+    if (!user.sekoToken || !sekoLoginId) {
       console.error(
-        "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt HTTP 오류:",
-        qspUpdateRes.status,
+        "[POST /api/auth/two-factor/verify][SEKO] 세션에 sekoToken/loginId 없음 — 2차인증 일시 저장 생략",
+        { userId: maskEmail(userId), hasToken: !!user.sekoToken, hasLoginId: !!sekoLoginId },
+      );
+    } else {
+      try {
+        const saveResult = await sekoSave2faVerified(
+          userId,
+          sekoLoginId,
+          formatSekoDateTime(new Date()),
+          user.sekoToken,
+          "[POST /api/auth/two-factor/verify][SEKO]",
+        );
+        secAuthUpdateOk = saveResult.ok;
+        if (!saveResult.ok) {
+          console.error(
+            "[POST /api/auth/two-factor/verify][SEKO] save2faVerified 실패 — status:",
+            saveResult.error.status,
+          );
+        }
+      } catch (error) {
+        // ConfigError(SEKO_CONNECTOR_BASE_URL 미설정 등) 포함 — fail-open 정책상 여기서 흡수한다.
+        console.error(
+          "[POST /api/auth/two-factor/verify][SEKO] save2faVerified 호출 실패:",
+          error instanceof Error ? { message: error.message } : error,
+        );
+      }
+    }
+  } else {
+    try {
+      const qspUpdateRes = await fetchWithLog(
+        QSP_API.updateSecAuthDt,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({
+            userTp,
+            loginId: userId,
+            accsSiteCd: "QPARTNERS",
+          }),
+        },
+        {
+          system: "QSP",
+          direction: "OUTBOUND",
+          apiName: "updateSecAuthDt",
+          callerRoute: "[POST /api/auth/two-factor/verify]",
+          userId: maskEmail(userId),
+          userType: userTp,
+        },
+      );
+      secAuthUpdateOk = qspUpdateRes.ok;
+      if (!secAuthUpdateOk) {
+        console.error(
+          "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt HTTP 오류:",
+          qspUpdateRes.status,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt 네트워크 실패:",
+        error instanceof Error ? { message: error.message } : error,
       );
     }
-  } catch (error) {
-    console.error(
-      "[POST /api/auth/two-factor/verify] QSP updateSecAuthDt 네트워크 실패:",
-      error instanceof Error ? { message: error.message } : error,
-    );
   }
-  if (!qspUpdateOk) {
+
+  if (!secAuthUpdateOk) {
     // 운영 모니터링용 — 다음 로그인에서 동일 사용자가 재인증 요구될 가능성 알람.
     console.warn(
       "[POST /api/auth/two-factor/verify] secAuthDt 갱신 실패 — 다음 로그인 재인증 가능성",

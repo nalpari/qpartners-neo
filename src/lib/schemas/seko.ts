@@ -57,6 +57,10 @@ const sekoLoginDataSchema = z.object({
   // 현재 소비처 없음. nullish 로 필드 누락(undefined)까지 허용 — coerce 가 NaN 을 만들어
   // 미사용 필드 하나 때문에 로그인 전체가 502 로 떨어지는 것을 방지한다.
   groupKind: z.coerce.number().int().nullish(),
+  // No.9 2FA — note-51(2026-08-18) 로 login·getUserInfo 응답에 추가된 2차인증 일시.
+  // 형식은 "YYYY-MM-DD HH:mm:ss" (QSP 의 "YYYY.MM.DD" 와 구분자가 다르다 — `parseSekoDate` 사용).
+  // 한 번도 2FA 를 하지 않은 계정은 null 이므로 nullish (구계정의 필드 누락까지 허용).
+  secAuthDt: z.string().nullish(),
 });
 
 export type SekoLoginData = z.infer<typeof sekoLoginDataSchema>;

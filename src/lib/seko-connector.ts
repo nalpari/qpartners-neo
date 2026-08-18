@@ -17,8 +17,8 @@
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
  * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change /
- * No.8 Email Check / No.10 Password Reset.
- * 나머지 API(autologin/fileDownload/getUserList/2FA)는 각 I/F 브랜치에서 추가된다.
+ * No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
+ * 나머지 API(autologin/fileDownload/getUserList)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
@@ -430,6 +430,139 @@ export async function sekoChangePwd(
     return {
       ok: false,
       error: { error: "パスワード変更に失敗しました", status, errorCode: result.errorCode ?? undefined },
+    };
+  }
+
+  return { ok: true };
+}
+
+// ─── No.9 Seko 2FA Save API ───
+
+/** SEKO 날짜 포맷 — `YYYY-MM-DD HH:mm:ss` (시각 생략 허용). QSP 는 `.` 구분자라 파서를 공유할 수 없다. */
+const SEKO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/;
+
+/**
+ * SEKO `secAuthDt` → ISO datetime(+09:00). 포맷 불일치·rollover 는 `null`.
+ *
+ * `parseQspDate` 의 안전장치를 구분자만 바꿔 미러링한다 — 정규식 통과 후에도 JST 성분을
+ * cross-check 해 rollover(`2026-02-30` → 3/2, `25:00:00` → 익일 01:00)를 걸러낸다.
+ *
+ * ⚠️ `null` 은 호출부에서 **fail-closed(2FA 필요)** 로 처리해야 한다. 만료 판정 불가를
+ * "최근 인증됨" 으로 접으면 2FA 가 조용히 무력화된다.
+ * 원문은 로그에 남기지 않는다(길이만) — PII 회피 + 포맷 드리프트 감지용.
+ */
+export function parseSekoDate(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const match = SEKO_DATE_RE.exec(trimmed);
+  if (!match) {
+    console.warn(`[parseSekoDate] SEKO 날짜 포맷 불일치 — drift 가능성, length=${trimmed.length}`);
+    return null;
+  }
+
+  const [, yyyy, mm, dd, hh = "00", min = "00", ss = "00"] = match;
+  const probe = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`);
+  if (Number.isNaN(probe.getTime())) {
+    console.warn(`[parseSekoDate] 유효하지 않은 날짜, length=${trimmed.length}`);
+    return null;
+  }
+  // +09:00 으로 파싱한 UTC ms 에 9h 를 더해 UTC 로 읽으면 JST 성분이 된다 (Intl 비의존).
+  const jst = new Date(probe.getTime() + 9 * 60 * 60 * 1000);
+  if (
+    jst.getUTCFullYear() !== Number(yyyy) ||
+    jst.getUTCMonth() + 1 !== Number(mm) ||
+    jst.getUTCDate() !== Number(dd) ||
+    jst.getUTCHours() !== Number(hh) ||
+    jst.getUTCMinutes() !== Number(min) ||
+    jst.getUTCSeconds() !== Number(ss)
+  ) {
+    console.warn(`[parseSekoDate] rollover 감지 — length=${trimmed.length}`);
+    return null;
+  }
+
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+09:00`;
+}
+
+/**
+ * 현재 시각 → SEKO 요청용 `YYYY-MM-DD HH:mm:ss` (JST).
+ * ISO 문자열을 보내면 Connector 가 거부하므로 이 포맷을 강제한다(2026-08-18 실측).
+ */
+export function formatSekoDateTime(date: Date): string {
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${jst.getUTCFullYear()}-${pad(jst.getUTCMonth() + 1)}-${pad(jst.getUTCDate())}` +
+    ` ${pad(jst.getUTCHours())}:${pad(jst.getUTCMinutes())}:${pad(jst.getUTCSeconds())}`
+  );
+}
+
+/**
+ * No.9 Seko 2FA Save API — 2차인증 완료 일시 저장 (Bearer).
+ *
+ * TO-BE 에서 2FA 를 통과한 직후 호출해 AS-IS 의 `secAuthDt` 를 갱신한다. 이 값이 다음 로그인의
+ * 재인증 주기 판정 근거이므로, 갱신에 실패하면 사용자가 매 세션 2FA 를 다시 받게 된다.
+ * (QSP 경로의 `updateSecAuthDt` 와 같은 자리 — 호출부는 QSP 와 동일하게 fail-open 으로 다룬다.)
+ *
+ * 과거 일시로도 덮어쓸 수 있다(2026-08-18 실측) — 테스트에서 만료 상태를 만들 때 쓴다.
+ */
+export async function sekoSave2faVerified(
+  userId: string,
+  loginId: string,
+  secAuthDt: string,
+  token: string,
+  logTag: string,
+): Promise<{ ok: true } | { ok: false; error: SekoFetchError }> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/save2faVerified"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, loginId, secAuthDt }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "save2faVerified",
+        callerRoute: logTag,
+        userId: maskUserId(loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 2차인증 일시 저장 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 2차인증 일시 저장 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoNoDataResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 2차인증 일시 저장 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { result } = parsed.data;
+  if (result.resultCode !== "S") {
+    console.warn(
+      `${logTag} SEKO 2차인증 일시 저장 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    const status = mapSekoFailureStatus(response.status, result.errorCode);
+    return {
+      ok: false,
+      error: { error: "2段階認証情報の保存に失敗しました", status, errorCode: result.errorCode ?? undefined },
     };
   }
 
