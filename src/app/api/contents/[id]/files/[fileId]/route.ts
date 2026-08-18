@@ -9,6 +9,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { canModifyResource, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import {
+  containsOOXMLMacro,
   isLegacyOfficeOLE2,
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_MB,
@@ -299,6 +300,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
     if (isLegacyOfficeOLE2(head)) {
       console.warn("[PUT /api/contents/:id/files/:fileId] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+        fileName: rawFile.name,
+        size: rawFile.size,
+        contentId: parsedId.data,
+        fileId: parsedFileId.data,
+      });
+    }
+    // OOXML VBA 매크로 감지 — 감사 로깅만 수행 (차단 X, 운영 요청으로 xlsm 허용 중).
+    if (containsOOXMLMacro(buffer)) {
+      console.warn("[PUT /api/contents/:id/files/:fileId] OOXML VBA 매크로 감지 — 첨부 추적:", {
         fileName: rawFile.name,
         size: rawFile.size,
         contentId: parsedId.data,

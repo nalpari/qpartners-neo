@@ -16,9 +16,11 @@
  *   운영 요청(2026-08-13)으로 contents·mail 양쪽에 허용 추가. 같은 계열인 docm/pptm 은 요청이
  *   없어 계속 차단한다. 다운로드는 Content-Disposition: attachment + X-Content-Type-Options:
  *   nosniff 로 브라우저 인라인 실행이 차단되지만, **수신자가 Excel 로 열면 매크로는 실행된다**.
- *   본 코드베이스에 매크로 스캔 수단은 없다 — 신뢰 가능한 작성자만 업로드한다는 전제.
+ *   본 코드베이스에 악성코드 스캔 수단은 없다 — 신뢰 가능한 작성자만 업로드한다는 전제.
  *   특히 mail 정책은 외부 수신자에게 그대로 전달되므로, 사고 발생 시 우선 회수 대상.
- *   차단 격상 또는 매크로 스캐너 도입은 별도 검토 [PR #222 보안 리뷰 후속].
+ *   업로드 시 `containsOOXMLMacro` 로 매크로 포함 여부를 감사 로깅해 회수 대상 식별을
+ *   가능하게 했다 (차단 X — 매크로 실행 자체가 허용 목적이므로 차단하면 기능이 무력화된다).
+ *   차단 격상 또는 매크로 스캐너 도입은 별도 검토 [PR #222 보안 리뷰 후속, PR #267 Codex HIGH].
  *
  * NOTE(security): Legacy Office (doc/xls/ppt) — OLE2 매크로 실행 위험.
  *   contents 정책은 doc/xls/ppt 를, mail 정책은 xls/ppt 를 허용한다
@@ -63,6 +65,7 @@ export const ALLOWED_EXTENSIONS_CONTENTS = new Set([
  *   - 구버전 Office xls/ppt: OLE2 매크로 위험은 라우트의 isLegacyOfficeOLE2 감사 로깅으로 추적
  *   - xlsm (2026-08-13): 매크로 실행 가능 Excel. 상단 NOTE(security) 참조 —
  *     외부 수신자가 여는 순간 매크로가 실행될 수 있는 유일한 mail 허용 확장자.
+ *     라우트의 containsOOXMLMacro 감사 로깅으로 매크로 포함 첨부를 추적한다.
  *
  * 변경 시 mass-mails 운영 요구사항 검토 + 수신자 보안 영향 평가 필요.
  */
@@ -240,6 +243,42 @@ export function isLegacyOfficeOLE2(head: Uint8Array): boolean {
     head[6] === 0x1a &&
     head[7] === 0xe1
   );
+}
+
+/** OOXML 패키지 안에서 VBA 매크로 프로젝트가 담기는 엔트리 이름 (xl/ · word/ · ppt/ 공통 suffix). */
+const VBA_PROJECT_ENTRY_NAME = "vbaProject.bin";
+
+/**
+ * OOXML(xlsm/docm/pptm) 패키지에 VBA 매크로가 실제로 들어있는지 판정 — **감사 로깅 전용, 차단 X**.
+ *
+ * OOXML 은 zip 이고 zip 은 엔트리 이름을 local file header / central directory 에 **무압축 평문**
+ * 으로 담는다. 따라서 압축 해제나 외부 라이브러리 없이 바이트 검색만으로 `xl/vbaProject.bin`
+ * 존재를 확인할 수 있다.
+ *
+ * mail 정책은 xlsm 을 외부 수신자에게 그대로 발송하므로(상단 NOTE(security)), 사고 발생 시
+ * "어떤 첨부가 매크로를 품고 있었는지" 를 로그로 되짚을 수 있어야 한다. 확장자만으로는
+ * 매크로 없는 xlsm 과 구분되지 않아 추적 가치가 낮다.
+ *
+ * 판정은 파일이 주장하는 확장자·MIME 이 아니라 실제 바이트 기준이라, 확장자를 xlsx 로 바꿔
+ * 올린 매크로 파일도 잡힌다.
+ *
+ * ponytail: 전체 버퍼를 순차 스캔한다(50MB 상한이라 1회 pass 로 충분). 업로드 처리량이
+ *   문제되면 central directory 만 읽도록 EOCD 파싱으로 교체.
+ */
+export function containsOOXMLMacro(bytes: Uint8Array): boolean {
+  // zip local file header 시그니처 "PK\x03\x04" 가 아니면 OOXML 이 아니다.
+  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return false;
+
+  const needleLength = VBA_PROJECT_ENTRY_NAME.length;
+  const firstCharCode = VBA_PROJECT_ENTRY_NAME.charCodeAt(0);
+  outer: for (let i = 0; i <= bytes.length - needleLength; i++) {
+    if (bytes[i] !== firstCharCode) continue;
+    for (let j = 1; j < needleLength; j++) {
+      if (bytes[i + j] !== VBA_PROJECT_ENTRY_NAME.charCodeAt(j)) continue outer;
+    }
+    return true;
+  }
+  return false;
 }
 
 /**
