@@ -9,8 +9,16 @@
  * 차단 정책 (의도적 제외 — 화이트리스트 외 확장자 추가 시에도 보안 위협 확장자 절대 금지):
  *   - svg/html/htm/js: stored XSS
  *   - exe/bat/cmd/sh/ps1/msi/dmg/app/jar: 실행 파일
- *   - docm/xlsm/pptm: VBA 매크로 실행 가능 Office (OOXML 기반)
+ *   - docm/pptm: VBA 매크로 실행 가능 Office (OOXML 기반)
  *   - vbs/wsf/hta: Windows 스크립트
+ *
+ * NOTE(security): xlsm — 매크로 실행 가능 Excel(OOXML). 원래 docm/pptm 과 함께 차단 대상이었으나
+ *   운영 요청(2026-08-13)으로 contents·mail 양쪽에 허용 추가. 같은 계열인 docm/pptm 은 요청이
+ *   없어 계속 차단한다. 다운로드는 Content-Disposition: attachment + X-Content-Type-Options:
+ *   nosniff 로 브라우저 인라인 실행이 차단되지만, **수신자가 Excel 로 열면 매크로는 실행된다**.
+ *   본 코드베이스에 매크로 스캔 수단은 없다 — 신뢰 가능한 작성자만 업로드한다는 전제.
+ *   특히 mail 정책은 외부 수신자에게 그대로 전달되므로, 사고 발생 시 우선 회수 대상.
+ *   차단 격상 또는 매크로 스캐너 도입은 별도 검토 [PR #222 보안 리뷰 후속].
  *
  * NOTE(security): Legacy Office (doc/xls/ppt) — OLE2 매크로 실행 위험.
  *   contents 정책은 doc/xls/ppt 를, mail 정책은 xls/ppt 를 허용한다
@@ -34,7 +42,7 @@ export const MAX_FILE_SIZE_MB = Math.floor(MAX_FILE_SIZE / (1024 * 1024));
  * Office 신/구버전 + 한글 + 일반 텍스트/마크다운 + 이미지 + 압축 + 미디어.
  */
 export const ALLOWED_EXTENSIONS_CONTENTS = new Set([
-  "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt",
+  "pdf", "docx", "doc", "xlsx", "xlsm", "xls", "pptx", "ppt",
   "txt", "csv", "md", "hwp", "hwpx",
   "jpg", "jpeg", "png", "gif", "webp", "bmp",
   "zip", "rar", "7z",
@@ -53,11 +61,13 @@ export const ALLOWED_EXTENSIONS_CONTENTS = new Set([
  * 허용 추가(운영 요청, 2026-05-29):
  *   - txt: plain text, 실행/스크립트 위험 없음
  *   - 구버전 Office xls/ppt: OLE2 매크로 위험은 라우트의 isLegacyOfficeOLE2 감사 로깅으로 추적
+ *   - xlsm (2026-08-13): 매크로 실행 가능 Excel. 상단 NOTE(security) 참조 —
+ *     외부 수신자가 여는 순간 매크로가 실행될 수 있는 유일한 mail 허용 확장자.
  *
  * 변경 시 mass-mails 운영 요구사항 검토 + 수신자 보안 영향 평가 필요.
  */
 export const ALLOWED_EXTENSIONS_MAIL = new Set([
-  "pdf", "docx", "xlsx", "xls", "pptx", "ppt",
+  "pdf", "docx", "xlsx", "xlsm", "xls", "pptx", "ppt",
   "txt",
   "jpg", "jpeg", "png", "gif", "webp", "bmp",
 ]);
@@ -71,6 +81,8 @@ export const ALLOWED_MIMES_CONTENTS = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  // xlsm — 매크로 사용 Excel. 확장자 화이트리스트와 짝을 맞춘다(MIME 만 빠지면 업로드가 거부됨).
+  "application/vnd.ms-excel.sheet.macroEnabled.12",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.ms-powerpoint",
@@ -99,6 +111,7 @@ export const ALLOWED_MIMES_MAIL = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel.sheet.macroEnabled.12",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.ms-powerpoint",
@@ -124,9 +137,21 @@ export const ALLOWED_IMAGE_MIMES = new Set<string>([
 /** 업로드 정책 — 콘텐츠 게시 첨부 / 메일 첨부 구분. */
 export type UploadPolicy = "contents" | "mail";
 
-const POLICY_MAP: Record<UploadPolicy, { exts: Set<string>; mimes: string[] }> = {
-  contents: { exts: ALLOWED_EXTENSIONS_CONTENTS, mimes: ALLOWED_MIMES_CONTENTS },
-  mail: { exts: ALLOWED_EXTENSIONS_MAIL, mimes: ALLOWED_MIMES_MAIL },
+/**
+ * MIME 비교용 소문자 Set.
+ *
+ * File API 는 `file.type` 을 ASCII 소문자로 정규화해 전달한다. 화이트리스트에는 IANA 등록
+ * 표기(예: `application/vnd.ms-excel.sheet.macroEnabled.12`)를 그대로 두는 편이 읽기 좋으므로,
+ * 비교 시점에만 양쪽을 소문자로 맞춘다. 대소문자가 섞인 MIME 을 추가했을 때 확장자는 통과하고
+ * 형식만 거부되는 회귀(2026-08-13 xlsm)를 구조적으로 차단한다.
+ */
+function toLowerMimeSet(mimes: string[]): Set<string> {
+  return new Set(mimes.map((m) => m.toLowerCase()));
+}
+
+const POLICY_MAP: Record<UploadPolicy, { exts: Set<string>; mimes: Set<string> }> = {
+  contents: { exts: ALLOWED_EXTENSIONS_CONTENTS, mimes: toLowerMimeSet(ALLOWED_MIMES_CONTENTS) },
+  mail: { exts: ALLOWED_EXTENSIONS_MAIL, mimes: toLowerMimeSet(ALLOWED_MIMES_MAIL) },
 };
 
 export type FileValidationResult =
@@ -159,7 +184,9 @@ export function validateFile(file: File, policy: UploadPolicy = "contents"): Fil
   //   리뷰 대응: 감사 로그용 경고 출력 (확장자 기반 통과지만 비정상 흐름으로 추적 가능하게 함).
   //   TODO(후속): magic-byte 기반 검사 도입 (별도 의존성 추가 필요로 이번 PR에서는 보류)
   // - 비어있지 않은 경우: 명시 화이트리스트만 통과 (svg+xml 우회 방지)
-  const mime = file.type || "";
+  // file.type 은 이미 소문자지만, 서버가 multipart 헤더에서 직접 조립한 File 등
+  // 비-브라우저 경로도 있으므로 명시적으로 정규화한다 (화이트리스트도 소문자 Set).
+  const mime = (file.type || "").toLowerCase();
   if (!mime) {
     console.warn("[file-validation] 빈 MIME 수신 — 확장자 기반 통과:", {
       fileName: file.name,
@@ -167,7 +194,10 @@ export function validateFile(file: File, policy: UploadPolicy = "contents"): Fil
       size: file.size,
       policy,
     });
-  } else if (!mimes.includes(mime) && !ALLOWED_IMAGE_MIMES.has(mime)) {
+  } else if (!mimes.has(mime) && !ALLOWED_IMAGE_MIMES.has(mime)) {
+    // 거부된 MIME 을 남긴다 — 확장자는 화이트리스트에 있는데 형식만 거부되는 경우
+    // 실제 수신 MIME 을 모르면 원인 추적이 불가능하다 (PII 없음: 타입 문자열/확장자만).
+    console.warn("[file-validation] 허용되지 않은 MIME:", { ext, mime, policy });
     return { ok: false, error: `許可されていないファイル形式です: ${file.name}` };
   }
 
