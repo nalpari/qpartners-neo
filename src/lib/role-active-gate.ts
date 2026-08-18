@@ -2,7 +2,7 @@
  * 권한 사용가능여부(`QpRole.isActive`) 게이트 — 세션 발급 시점의 일회성 검사.
  *
  * `middleware.ts` / `rbac-guard.ts` 는 요청마다 `QpRole.isActive` 를 재검사하지 않으므로,
- * **인증 쿠키를 발급하는 모든 경로**가 이 게이트를 통과해야 한다. 한 경로라도 빠지면
+ * 인증 쿠키를 신규 발급하는 경로는 이 게이트를 통과해야 한다. 빠진 경로가 있으면
  * 관리자가 역할을 비활성화(`isActive=false`)해도 그 경로로 세션을 받을 수 있다.
  *
  * 정책(로그인 라우트 원본):
@@ -14,7 +14,12 @@
  * 권한 매트릭스 가드가 걸린 API 는 이 게이트를 통과한 뒤에도 매 요청 차단된다. 이 게이트가
  * **유일한 방어선**인 곳은 매트릭스 가드가 없는 라우트(`/api/mypage/*` 등)와 페이지 진입이다.
  *
- * 사용처: `POST /api/auth/login`(SEKO·QSP), `POST /api/auth/password-reset/confirm`(SEKO·QSP)
+ * 적용 현황 — 세션을 **신규 발급**하는 경로 4개 중 2개만 적용됐다:
+ * - 적용: `POST /api/auth/login`(SEKO·QSP), `POST /api/auth/password-reset/confirm`(SEKO·QSP)
+ * - 미적용: `POST /api/auth/auto-login/inbound`, `POST /api/auth/password-init`
+ *   두 경로는 `statCd` 만 검사하고 `QpRole.isActive` 는 보지 않는다. 외부 3사 연동 회귀
+ *   위험이 있어 이 브랜치에서 함께 손대지 않았다 — 별도 검증과 함께 후속 처리한다.
+ *   (`two-factor/verify`·`mypage/profile` 은 기존 세션의 JWT 재발급이라 대상 아님)
  */
 
 import { prisma } from "@/lib/prisma";

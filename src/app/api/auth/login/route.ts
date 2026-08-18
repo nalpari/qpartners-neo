@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const { loginId, pwd, userTp } = result.data;
 
   // ─── 시공점(SEKO) 분기 — AS-IS Q.Partners Connector 경유 (QSP 미경유) ───
-  // 미배선 잔여: SEKO 2FA(No.9 save2faVerified) / 비번리셋(No.10 resetPwd).
+  // 미배선 잔여: SEKO 2FA(No.9 save2faVerified).
   //    아래 QSP 경로는 무손상 — SEKO 는 여기서 자체 종결한다.
   if (userTp === "SEKO") {
     const sekoResult = await sekoLogin(loginId, pwd, "[POST /api/auth/login][SEKO]");

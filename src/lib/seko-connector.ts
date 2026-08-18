@@ -18,7 +18,7 @@
  *
  * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change /
  * No.8 Email Check / No.10 Password Reset.
- * 나머지 API(autologin/fileDownload/getUserList/email·check/2FA/resetPwd)는 각 I/F 브랜치에서 추가된다.
+ * 나머지 API(autologin/fileDownload/getUserList/2FA)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";

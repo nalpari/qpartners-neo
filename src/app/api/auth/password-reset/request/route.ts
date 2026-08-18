@@ -248,7 +248,8 @@ export async function POST(request: NextRequest) {
       const checkResult = await sekoEmailCheck(email!, `${LOG} (SEKO)`);
       if (!checkResult.ok) {
         // 커넥터 장애·설정 오류는 회원 미존재와 구분해 transport 로 분류 —
-        // 아래에서 사용자 열거 방지를 위해 동일 문구로 응답하되 로그로는 원인을 남긴다.
+        // 미존재(404)로 뭉개지 않고 QSP 장애 경로와 동일하게 502 로 응답한다.
+        // (열거 방지는 404 문구를 QSP 와 통일해 달성하고, 외부 장애는 재시도 가능하도록 분리)
         console.error(`${LOG} SEKO 회원 존재확인 실패 — status=${checkResult.error.status}`);
         lookupBlocker = "transport";
       } else if (checkResult.data.exists) {
