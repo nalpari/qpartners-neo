@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -240,10 +239,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       openAlert({ type: "alert", message: "タイトルは必須入力項目です。" });
       return;
     }
-    if (isHtmlEmpty(content)) {
-      openAlert({ type: "alert", message: "内容は必須入力項目です。" });
-      return;
-    }
+    // 内容(본문)은 필수 아님 — 서버 스키마의 body 도 optional.
     // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 함.
     if (selectedCategoryIds.length === 0) {
       openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
