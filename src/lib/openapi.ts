@@ -73,7 +73,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description: `userTp 에 따라 인증 경로가 갈린다. 성공 시 JWT httpOnly 쿠키 설정.
 
 - **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
-- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 미배선(후속 I/F 브랜치 예정). Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
+- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -108,10 +108,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                               type: "string",
                               enum: [
                                 "DISABLED_BY_ADMIN",
-                                "PWD_INIT_PRIORITY",
                                 "FIRST_TIME_REQUIRED",
                                 "EXPIRED_REQUIRED",
                                 "WITHIN_VALIDITY",
+                                "FUTURE_SKEW",
                                 "FAIL_CLOSED",
                               ],
                               description:
@@ -666,7 +666,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
         description:
-          "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
+          "JWT 인증 상태에서 비밀번호 변경. **초기화 필요 상태(pwdInitYn=\"N\")에서만** 호출 가능 — 현재 비밀번호를 검증하지 않는 경로라 2차인증 완료 여부(twoFactorVerified)는 판단에 쓰지 않는다. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
           "회원유형별 연동처: STORE/GENERAL/ADMIN=QSP userPwdChg(chgType=I), SEKO=AS-IS Connector changePwd(chgType=I, Bearer). " +
           "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
@@ -714,7 +714,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("初回ログイン時のみ有効 (twoFactorVerified=true 시 거부)"),
+          "403": errorResponse("初回ログイン時のみ有効 (pwdInitYn !== \"N\" 시 거부)"),
           "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse("외부 서버 오류"),
@@ -816,7 +816,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["TwoFactor"],
         summary: "2차 인증번호 검증",
-        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + QSP 2차인증 일시 갱신.",
+        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + 2차인증 일시 갱신 (QSP: updateSecAuthDt / 시공점: AS-IS Connector No.9 save2faVerified). 갱신 실패는 fail-open — 로그인 흐름은 통과하고 다음 세션에 재인증. 단 시공점 Connector 가 401(Bearer 만료)을 반환하면 예외로 인증 쿠키를 만료시키고 401 을 반환한다 — 죽은 Bearer 를 담은 세션이 유지되면 이후 시공점 API 가 전부 실패하기 때문.",
         requestBody: {
           required: true,
           content: {
@@ -3097,7 +3097,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse(
-            "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
+            "검증 실패 / 권한별 수정 제한 위반 / SEKO 회원 twoFactorEnabled 변경 차단 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
           ),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.update)"),
