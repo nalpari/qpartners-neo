@@ -108,10 +108,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                               type: "string",
                               enum: [
                                 "DISABLED_BY_ADMIN",
-                                "PWD_INIT_PRIORITY",
                                 "FIRST_TIME_REQUIRED",
                                 "EXPIRED_REQUIRED",
                                 "WITHIN_VALIDITY",
+                                "FUTURE_SKEW",
                                 "FAIL_CLOSED",
                               ],
                               description:

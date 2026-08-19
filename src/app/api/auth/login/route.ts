@@ -8,6 +8,7 @@ import {
   qspLoginResponseSchema,
 } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { emailSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
@@ -99,12 +100,22 @@ export async function POST(request: NextRequest) {
     });
 
     // OTP 수신처는 `s.email ?? s.loginId` 폴백을 쓴다(시공점 사양: loginId = email).
-    // 사양을 어긴 레거시 계정이 있으면 인증번호가 닿지 않아 진입이 막히므로, 2FA 를 요구하는데
-    // email 이 비어 폴백에 의존하는 경우를 운영 로그로 드러낸다.
-    if (sekoRequireTwoFactor && !s.email) {
+    // 따라서 `!s.email` 자체는 차단 사유가 아니다 — 사양대로면 loginId 로 인증번호가 닿는다.
+    //
+    // 차단해야 하는 것은 **수신 불가**, 즉 폴백까지 포함한 최종 수신처가 메일주소 형태가
+    // 아닌 경우다(사양을 어긴 레거시 계정). 그대로 통과시키면 2FA 팝업 → send 500 →
+    // 진입 불가인데, SEKO 는 관리자 해제(QSP `secAuthYn`) 대응 필드가 없어 운영자가
+    // 풀어줄 수단이 0건이라 영구 락아웃이 된다. QSP 경로(6-1)와 같은 문구로 차단해
+    // 최소한 "관리자에게 문의" 안내가 화면에 뜨게 한다.
+    const sekoOtpRecipient = s.email ?? s.loginId;
+    if (sekoRequireTwoFactor && !emailSchema.safeParse(sekoOtpRecipient).success) {
       console.warn(
-        "[POST /api/auth/login][SEKO] 2FA 요구 + email 미등록 — loginId 폴백으로 발송",
-        { userId: maskEmail(s.loginId) },
+        "[POST /api/auth/login][SEKO] 2FA 대상이나 수신 가능한 메일주소 없음 — 로그인 차단",
+        { userId: maskEmail(s.loginId), hasEmail: !!s.email },
+      );
+      return NextResponse.json(
+        { error: "2段階認証に必要なメール情報が登録されていません。管理者にお問い合わせください。" },
+        { status: 403 },
       );
     }
 
@@ -116,7 +127,7 @@ export async function POST(request: NextRequest) {
       compNm: null,
       // 시공점 loginId=email(사양). 응답 email 이 null 이어도 loginId 로 보장 —
       // mypage 등 후속 SEKO 호출의 식별자(loginId) 결손/오전송 방지.
-      email: s.email ?? s.loginId,
+      email: sekoOtpRecipient,
       deptNm: null,
       authCd: null,
       storeLvl: null,
