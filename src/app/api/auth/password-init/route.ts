@@ -58,11 +58,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. 접근 제어 가드 — 최초 로그인 상태에서만 호출 허용.
-    //    twoFactorVerified === false 또는 pwdInitYn === "N" (login route 가 GENERAL/SEKO 의
-    //    twoFactorVerified=true 를 false 강제하므로 사실상 첫 조건만으로 충분하나, defense-in-depth
-    //    차원에서 pwdInitYn=N 도 명시적으로 통과 처리해 회귀 방어)
-    if (user.twoFactorVerified && user.pwdInitYn !== "N") {
+    // 2. 접근 제어 가드 — **초기화 필요 상태에서만** 호출 허용.
+    //    이 라우트는 현재 비밀번호 검증 없이 새 비밀번호를 설정하므로(최초 로그인 전제),
+    //    2FA 미완료 상태에서 열려 있으면 비밀번호가 유출된 계정에서 2FA 를 통째로 우회하는
+    //    경로가 된다 — 로그인 → 2FA 팝업 무시 → 여기서 비밀번호 교체 → 재발급 JWT 는
+    //    twoFactorVerified=true. 그래서 twoFactorVerified 는 판단에 쓰지 않는다.
+    //
+    //    ⚠️ 종전 조건은 `twoFactorVerified && pwdInitYn !== "N"` 이었다. "login route 가
+    //    GENERAL/SEKO 의 twoFactorVerified 를 false 로 강제하므로 첫 조건만으로 충분" 이라는
+    //    전제였는데, SEKO 2FA 배선(No.9) 이후 "2FA 필요 + 초기화 불요" 조합이 생기면서
+    //    twoFactorVerified=false + pwdInitYn="Y" 가 가드를 통과하게 됐다.
+    if (user.pwdInitYn !== "N") {
       return NextResponse.json(
         { error: "この操作は初回ログイン時のみ有効です" },
         { status: 403 },

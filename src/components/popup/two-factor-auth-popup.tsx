@@ -237,6 +237,8 @@ export function TwoFactorAuthPopup() {
         // 세션 종료는 팝업 안에서 복구가 불가능하다 - 인라인 에러로 남겨두면 사용자가
         // "재시도" 안내를 보며 갇히므로, 알림 후 로그인 화면으로 내보낸다.
         if (serverError?.includes(SESSION_INVALID_PATTERN)) {
+          // 세션이 끊겼으므로 이전 사용자 기준으로 채워진 서버 상태를 남기지 않는다.
+          queryClient.clear();
           closePopup();
           openAlert({ type: "alert", message: "セッションが無効です。再度ログインしてください。" });
           router.replace("/login");

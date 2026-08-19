@@ -21,6 +21,9 @@ export type TwoFactorReason =
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** `secAuthDt` 미래 허용 오차 — 이 값을 넘어서는 미래 시각은 이상값으로 보고 fail-closed. */
+const FUTURE_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
+
 /**
  * `SEC_AUTH_VALIDITY` 공통코드 → 재인증 주기(일). 미등록·이상값·조회 실패는 `null`.
  *
@@ -97,7 +100,19 @@ export async function evaluateTwoFactorRequirement(params: {
     return { requireTwoFactor: true, reason: "FAIL_CLOSED" };
   }
 
-  const requireTwoFactor = Date.now() >= authMs + validityDays * MS_PER_DAY;
+  // 미래 날짜 상한 — `secAuthDt` 가 현재보다 앞서면 만료식이 영원히 성립하지 않아 2FA 가
+  // 무기한 면제된다(fail-open). 외부 시스템이 주는 값이라 서버 시계 어긋남이나 데이터
+  // 훼손으로 도달 가능하므로, 판정 불가와 같은 등급으로 보아 fail-closed 로 접는다.
+  // 소규모 시계 오차(양 시스템 NTP 편차)까지 막지 않도록 허용 오차를 둔다.
+  const now = Date.now();
+  if (authMs > now + FUTURE_SKEW_TOLERANCE_MS) {
+    console.error(
+      `${logTag} secAuthDt 가 미래 시각 — 2FA 필요로 처리 (skew: ${Math.round((authMs - now) / 1000)}s)`,
+    );
+    return { requireTwoFactor: true, reason: "FAIL_CLOSED" };
+  }
+
+  const requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
   return {
     requireTwoFactor,
     reason: requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY",

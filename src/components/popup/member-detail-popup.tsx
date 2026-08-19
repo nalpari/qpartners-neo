@@ -396,6 +396,10 @@ function MemberEditForm({
   const { reverseMap: dynamicReverseMap } = useUserType();
   const memberTp = dynamicReverseMap[member.userType] ?? "";
   const isGeneral = memberTp === "GENERAL";
+  // 시공점은 2차인증 설정 대상이 아니다 — 로그인이 AS-IS Connector 경유(QSP 미경유)라
+  // QSP 의 secAuthYn 을 읽지 않는다. 서버도 SEKO 의 twoFactorEnabled 를 400 으로 거부하므로,
+  // 보내면 무관한 항목(뉴스레터 등)만 바꾸는 저장까지 함께 실패한다.
+  const isSeko = memberTp === "SEKO";
   // 관리자 회원관리는 SEKO 를 대상에서 제외(목록 필터에서도 미노출).
   // 설사 상세 팝업에 SEKO 가 도달하더라도 BE 화이트리스트상 status 는 GENERAL 전용이므로
   // 편집 UI 자체를 표시하지 않는다 — 과거 `isGeneral || SEKO` 로직의 BE/FE 불일치 제거.
@@ -468,7 +472,7 @@ function MemberEditForm({
     };
     // 일반 경로(preDetail 존재) 또는 복구 경로에서만 2FA 전송.
     // 비복구 + preDetail null(삭제 상태 유지) 경로에서는 백엔드가 변경 차단(400).
-    if (!isQspNotFound || isRestoringToActive) {
+    if ((!isQspNotFound || isRestoringToActive) && !isSeko) {
       payload.twoFactorEnabled = twoFactorEnabled;
     }
     if (isStatusEditable) {
@@ -602,8 +606,8 @@ function MemberEditForm({
                     label: "二次認証",
                     children: (
                       <div className="flex items-center gap-3">
-                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly || (isQspNotFound && !isRestoringToActive)} />
-                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly || (isQspNotFound && !isRestoringToActive)} />
+                        <Radio name="twoFactor" value="true" checked={twoFactorEnabled === true} onChange={() => setTwoFactorEnabled(true)} label="有効" disabled={isReadOnly || isSeko || (isQspNotFound && !isRestoringToActive)} />
+                        <Radio name="twoFactor" value="false" checked={twoFactorEnabled === false} onChange={() => setTwoFactorEnabled(false)} label="無効" disabled={isReadOnly || isSeko || (isQspNotFound && !isRestoringToActive)} />
                       </div>
                     ),
                   }}

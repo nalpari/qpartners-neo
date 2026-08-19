@@ -666,7 +666,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
         description:
-          "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
+          "JWT 인증 상태에서 비밀번호 변경. **초기화 필요 상태(pwdInitYn=\"N\")에서만** 호출 가능 — 현재 비밀번호를 검증하지 않는 경로라 2차인증 완료 여부(twoFactorVerified)는 판단에 쓰지 않는다. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
           "회원유형별 연동처: STORE/GENERAL/ADMIN=QSP userPwdChg(chgType=I), SEKO=AS-IS Connector changePwd(chgType=I, Bearer). " +
           "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
@@ -714,7 +714,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("初回ログイン時のみ有効 (twoFactorVerified=true 시 거부)"),
+          "403": errorResponse("初回ログイン時のみ有効 (pwdInitYn !== \"N\" 시 거부)"),
           "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse("외부 서버 오류"),
@@ -816,7 +816,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["TwoFactor"],
         summary: "2차 인증번호 검증",
-        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + 2차인증 일시 갱신 (QSP: updateSecAuthDt / 시공점: AS-IS Connector No.9 save2faVerified). 갱신 실패는 fail-open — 로그인 흐름은 통과하고 다음 세션에 재인증.",
+        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + 2차인증 일시 갱신 (QSP: updateSecAuthDt / 시공점: AS-IS Connector No.9 save2faVerified). 갱신 실패는 fail-open — 로그인 흐름은 통과하고 다음 세션에 재인증. 단 시공점 Connector 가 401(Bearer 만료)을 반환하면 예외로 인증 쿠키를 만료시키고 401 을 반환한다 — 죽은 Bearer 를 담은 세션이 유지되면 이후 시공점 API 가 전부 실패하기 때문.",
         requestBody: {
           required: true,
           content: {
@@ -3097,7 +3097,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse(
-            "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
+            "검증 실패 / 권한별 수정 제한 위반 / SEKO 회원 twoFactorEnabled 변경 차단 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
           ),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.update)"),

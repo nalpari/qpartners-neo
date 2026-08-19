@@ -371,6 +371,24 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
+    // 4-0-a. SEKO 는 twoFactorEnabled 변경 대상에서 제외한다.
+    //   시공점 로그인은 AS-IS Connector 경유(QSP 미경유)라 QSP 의 secAuthYn 을 읽지 않는다.
+    //   저장만 성공하고 로그인은 계속 OTP 를 요구하므로, 관리자는 "2FA 를 껐다" 고 오인한 채
+    //   문의를 받게 된다. AS-IS 에 대응 필드가 생기기 전까지는 조용히 무시하지 말고 거부한다.
+    if (userTp === "SEKO" && result.data.twoFactorEnabled !== undefined) {
+      console.warn(
+        "[PUT /api/admin/members/:id] SEKO twoFactorEnabled 변경 시도 차단:",
+        { targetRawId: maskEmail(rawId) },
+      );
+      return NextResponse.json(
+        {
+          error: "施工店会員の二段階認証設定は変更できません",
+          details: [{ field: "twoFactorEnabled", message: "変更不可" }],
+        },
+        { status: 400 },
+      );
+    }
+
     // 4-0-b. STORE + preDetail null 명시 거부
     // QSP userDetail 이 F_NOT_USER 반환 → preDetail.storeLvl 확보 불가.
     // 상위 userListMng 응답에도 storeLvl 미포함으로 query param 대체 불가.

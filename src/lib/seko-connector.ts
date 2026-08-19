@@ -91,6 +91,13 @@ function mapSekoFailureStatus(
   errorCode: string | null | undefined,
 ): number {
   if (isSekoAuthError(errorCode)) return 401;
+  // errorCode 없는 HTTP 401 = 게이트웨이/프록시가 돌려준 인증 실패. 이걸 400 으로 접으면
+  // 호출부의 세션 종료 분기가 발동하지 않아 죽은 Bearer 를 담은 세션이 그대로 유지된다.
+  //
+  // 반대로 errorCode 가 실린 401 은 커넥터가 판단한 **비즈니스 거부**이므로 401 로 올리지
+  // 않는다. changePwd(chgType=C) 는 현재 비밀번호를 검증하는데, 이를 401 로 접으면 오타 한 번에
+  // 세션이 종료된다(호출부가 401 → sessionInvalidResponse). 인증 실패는 위 화이트리스트로만 판정.
+  if (httpStatus === 401 && errorCode == null) return 401;
   if (httpStatus >= 500) return 502;
   return 400;
 }
@@ -540,6 +547,17 @@ export async function sekoSave2faVerified(
     return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
   }
 
+  // 상태 판정을 본문 파싱보다 **앞**에 둔다. 401 인데 본문이 비었거나 HTML(프록시/게이트웨이
+  // 응답)이면 파싱·스키마 단계에서 502 로 접혀, 호출부의 401 세션 종료 분기가 영영 발동하지
+  // 않는다 — 죽은 Bearer 를 담은 twoFactorVerified=true 세션이 그대로 남는다.
+  if (response.status === 401) {
+    console.warn(`${logTag} SEKO 2차인증 일시 저장 인증 실패 (HTTP 401) — 세션 종료 대상`);
+    return {
+      ok: false,
+      error: { error: "2段階認証情報の保存に失敗しました", status: 401 },
+    };
+  }
+
   let body: unknown;
   try {
     body = await response.json();
@@ -555,9 +573,11 @@ export async function sekoSave2faVerified(
   }
 
   const { result } = parsed.data;
-  if (result.resultCode !== "S") {
+  // 상태와 본문을 함께 본다 — 비-2xx 인데 resultCode="S" 라는 이유로 성공 처리하면
+  // 기록되지 않은 secAuthDt 를 "기록됨" 으로 오인해 다음 로그인 판정이 어긋난다.
+  if (!response.ok || result.resultCode !== "S") {
     console.warn(
-      `${logTag} SEKO 2차인증 일시 저장 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+      `${logTag} SEKO 2차인증 일시 저장 실패 (http: ${response.status}, resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
     const status = mapSekoFailureStatus(response.status, result.errorCode);
     return {

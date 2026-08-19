@@ -91,10 +91,22 @@ export async function POST(request: NextRequest) {
       userTp: "SEKO",
       userId: maskEmail(s.loginId),
       hasSecAuthDt: !!s.secAuthDt,
-      hasEmail: !!(s.email ?? s.loginId),
+      // 응답 email 자체의 유무만 본다 — `s.email ?? s.loginId` 로 두면 loginId 가 스키마상
+      // 필수라 항상 true 가 되어, "메일 미등록 때문에 막혔는지" 를 로그로 구분할 수 없다.
+      hasEmail: !!s.email,
       requireTwoFactor: sekoRequireTwoFactor,
       twoFactorReason: sekoTwoFactorReason,
     });
+
+    // OTP 수신처는 `s.email ?? s.loginId` 폴백을 쓴다(시공점 사양: loginId = email).
+    // 사양을 어긴 레거시 계정이 있으면 인증번호가 닿지 않아 진입이 막히므로, 2FA 를 요구하는데
+    // email 이 비어 폴백에 의존하는 경우를 운영 로그로 드러낸다.
+    if (sekoRequireTwoFactor && !s.email) {
+      console.warn(
+        "[POST /api/auth/login][SEKO] 2FA 요구 + email 미등록 — loginId 폴백으로 발송",
+        { userId: maskEmail(s.loginId) },
+      );
+    }
 
     const sekoUser: LoginUser = {
       userId: s.userId,
