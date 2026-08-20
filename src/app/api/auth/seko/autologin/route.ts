@@ -1,9 +1,14 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { SITE_URL } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
-import { getUserFromRequest, sessionInvalidResponse } from "@/lib/jwt";
+import { clearSessionCookie, getUserFromRequest } from "@/lib/jwt";
 import { sekoAutoLogin } from "@/lib/seko-connector";
+import {
+  SEKO_AUTOLOGIN_RESULT_PATH,
+  type SekoAutoLoginFailureReason,
+} from "@/lib/seko-autologin-result";
 
 /**
  * GET /api/auth/seko/autologin — 시공점(SEKO) → AS-IS Q.Partners 자동로그인 이동.
@@ -13,57 +18,68 @@ import { sekoAutoLogin } from "@/lib/seko-connector";
  *
  * **화면(브라우저) 진입 전용 라우트다.** 응답이 리다이렉트이므로 fetch 로 호출하면 의미가 없고,
  * 무엇보다 발급 URL 이 **1회·1분** 유효라 미리 호출해 두면 그대로 소진된다. 호출부는 사용자가
- * 클릭한 시점에 `window.location` 으로 이 라우트에 진입해야 한다.
+ * 클릭한 시점에 새 창으로 이 라우트에 진입해야 한다.
+ *
+ * **실패는 전부 결과 페이지로 돌려보낸다** — JSON 을 반환하지 않는다. 이 라우트는 사용자가
+ * 새 창으로 들어오는 경로라 JSON 을 던지면 빈 탭에 원문이 뜨고, 부모 탭은 실패를 알 방법이
+ * 없어 대기 타이머가 그대로 발화해 사용자를 AS-IS 로 보내버린다(비로그인 착지).
+ * 결과 페이지가 `postMessage` 로 부모에게 사유를 넘긴다 — `lib/seko-autologin-result.ts` 참조.
+ *
+ * 그래서 이 경로는 `middleware.ts` 의 `PUBLIC_PATHS` 에 등록돼 있다. 미들웨어가 인증 실패를
+ * 선점하면 그 JSON 이 곧 위 상황이 되기 때문이며, 인가는 아래 4단 가드가 쿠키를 직접
+ * 재검증해 수행한다(헤더 주입값에 의존하지 않는다).
  *
  * 착지는 현재 **AS-IS 사이트 루트로 고정**이다. 요청 파라미터·URL 쿼리 어느 쪽으로도 화면을
  * 지정할 수 없음을 preview 에서 확인했다(ENDO 질의 중 — Redmine #1750 note-23·25 관련).
  * 지정 수단이 생기면 커넥터에 착지 경로 인자를 더하는 것으로 끝난다.
  */
-export async function GET(request: NextRequest) {
-  const mypageUrl = new URL("/mypage", request.nextUrl.origin);
 
+const LOG_TAG = "[GET /api/auth/seko/autologin]";
+
+/**
+ * 실패 결과 페이지로 리다이렉트.
+ *
+ * base 를 `SITE_URL` 로 고정한다 — `request.nextUrl.origin` 은 Host 헤더 파생이라
+ * 헤더 조작이 그대로 Location 에 반영된다(auto-login/inbound 와 동일 관례).
+ */
+function failureRedirect(reason: SekoAutoLoginFailureReason): NextResponse {
+  const url = new URL(SEKO_AUTOLOGIN_RESULT_PATH, SITE_URL);
+  url.searchParams.set("reason", reason);
+  return NextResponse.redirect(url, { status: 302 });
+}
+
+export async function GET(request: NextRequest) {
   try {
     const user = await getUserFromRequest(request);
     if (!user) {
-      return NextResponse.redirect(new URL("/login", request.nextUrl.origin));
+      // 쿠키 없음·만료·서명 불일치. 부모 탭도 로그인 화면으로 보내야 하므로 session 으로 알린다.
+      return failureRedirect("session");
     }
     // 시공점 회원 전용. 다른 유형에는 AS-IS 계정 자체가 없다.
     if (user.userTp !== "SEKO") {
-      return NextResponse.json(
-        { error: "施工店会員のみ利用可能です" },
-        { status: 403 },
-      );
+      return failureRedirect("not_seko");
     }
     if (!user.twoFactorVerified) {
-      return NextResponse.json(
-        { error: "2段階認証が必要です" },
-        { status: 403 },
-      );
+      return failureRedirect("two_factor");
     }
     if (!user.sekoToken) {
-      console.error("[GET /api/auth/seko/autologin] SEKO 세션 토큰 없음 — 재로그인 필요");
-      return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+      console.error(`${LOG_TAG} SEKO 세션 토큰 없음 — 재로그인 필요`);
+      return clearSessionCookie(failureRedirect("session"));
     }
 
-    const result = await sekoAutoLogin(
-      user.userId,
-      user.sekoToken,
-      "[GET /api/auth/seko/autologin]",
-    );
+    const result = await sekoAutoLogin(user.userId, user.sekoToken, LOG_TAG);
     if (!result.ok) {
       // Bearer 만료(401)는 쿠키를 만료시켜 재로그인으로 유도한다. 쿠키를 남기면 로컬 JWT 는
       // 유효해 middleware 가 통과시키고 SEKO 호출만 반복 401 이 되어 세션이 고착된다.
       if (result.error.status === 401) {
-        return sessionInvalidResponse(result.error.error);
+        return clearSessionCookie(failureRedirect("session"));
       }
-      // 그 외 실패는 화면 진입이므로 JSON 을 던지지 않고 마이페이지로 돌려보낸다 —
-      // 브라우저 주소창에 원문 JSON 이 노출되면 사용자가 복구 경로를 찾지 못한다.
-      mypageUrl.searchParams.set("error", "seko_autologin_failed");
-      return NextResponse.redirect(mypageUrl);
+      return failureRedirect("failed");
     }
 
     // 발급 URL 은 1회·1분 유효 — 중간 캐시가 들고 있으면 재방문 시 만료 링크를 재사용하게 된다.
     return NextResponse.redirect(result.autologinUrl, {
+      status: 302,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
@@ -71,14 +87,13 @@ export async function GET(request: NextRequest) {
     // 500 으로 접으면 운영자가 env 누락을 코드 버그와 구분할 수 없어 별도 로그를 남긴다.
     if (error instanceof ConfigError) {
       console.error(
-        "[GET /api/auth/seko/autologin] 설정 에러:",
+        `${LOG_TAG} 설정 에러:`,
         error.name,
         "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요",
       );
     } else {
-      console.error("[GET /api/auth/seko/autologin]", error);
+      console.error(LOG_TAG, error);
     }
-    mypageUrl.searchParams.set("error", "seko_autologin_failed");
-    return NextResponse.redirect(mypageUrl);
+    return failureRedirect("failed");
   }
 }

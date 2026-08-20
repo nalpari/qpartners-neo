@@ -2958,13 +2958,19 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "시공점 AS-IS 자동로그인 이동",
         description:
           "AS-IS Seko Auto Login API(No.1) 아웃바운드. 시공점 전용. " +
-          "커넥터에서 일회용 autologinUrl 을 받아 **302 리다이렉트**한다(JSON 응답 아님). " +
-          "발급 URL 은 1회·1분 유효라 프리페치 시 소진되므로, 화면은 클릭 시점에 window.location 으로 진입해야 한다. " +
+          "커넥터에서 일회용 autologinUrl 을 받아 **302 리다이렉트**한다. " +
+          "**성공·실패 모두 리다이렉트이며 JSON 을 반환하지 않는다** — 사용자가 새 창으로 진입하는 " +
+          "화면 라우트라 JSON 을 던지면 빈 탭에 원문이 뜨고 부모 탭이 실패를 알 수 없다. " +
+          "실패는 /seko-autologin-result?reason=... 로 보내고, 그 페이지가 postMessage 로 부모 탭에 사유를 전달한다. " +
+          "발급 URL 은 1회·1분 유효라 프리페치 시 소진되므로, 화면은 클릭 시점에 window.open 으로 진입해야 한다. " +
           "※ 착지는 현재 AS-IS 사이트 루트 고정 — 요청 파라미터·URL 쿼리로 화면 지정 불가(AS-IS 지원 확인 중).",
         responses: {
-          "302": { description: "AS-IS autologinUrl 로 리다이렉트 (실패 시 /mypage?error=seko_autologin_failed)" },
-          "401": errorResponse("세션 무효 (SEKO 토큰 없음·만료 시 쿠키 만료)"),
-          "403": errorResponse("시공점 회원 전용 또는 2단계 인증 미완료"),
+          "302": {
+            description:
+              "성공: AS-IS autologinUrl 로 리다이렉트. " +
+              "실패: /seko-autologin-result?reason=not_seko|two_factor|session|failed 로 리다이렉트 " +
+              "(reason=session 은 인증 쿠키를 함께 만료시킨다)",
+          },
         },
       },
     },

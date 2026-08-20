@@ -11,6 +11,11 @@ import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
+import {
+  SEKO_AUTOLOGIN_FAILURE_MESSAGE,
+  SEKO_AUTOLOGIN_RELOGIN_REASON,
+  parseSekoAutoLoginFailure,
+} from "@/lib/seko-autologin-result";
 
 /**
  * 마이페이지 「施工ID情報」 카드 데이터 — `GET /api/mypage/profile` 의 `sekoConstruction`.
@@ -65,6 +70,10 @@ const EMPTY_MESSAGE = "施工ID情報がありません";
  * 실측 왕복은 1초 내외다. 짧으면 세션이 심어지기 전에 이동해 **비로그인 상태로 도착**하고,
  * 길면 사용자가 AS-IS 홈을 그만큼 오래 보게 된다. 2배 여유로 2초를 잡았다.
  * 비로그인 도착 사례가 보고되면 이 값부터 올릴 것.
+ *
+ * 이 대기는 **성공 경로 전용**이다. 실패는 결과 페이지가 postMessage 로 알려 주므로 타이머가
+ * 취소된다 — 그러지 않으면 실패 화면 위로 이동이 겹쳐 모든 실패가 「AS-IS 에 비로그인 도착」
+ * 이라는 같은 증상이 된다(`lib/seko-autologin-result.ts` 참조).
  */
 const AUTOLOGIN_SETTLE_MS = 2000;
 
@@ -208,6 +217,13 @@ export function MypageInfoConstruction({
   const inFlightRef = useRef(false);
   const gridApiRef = useRef<GridApi<ConstructionRow> | null>(null);
   const navigatingRef = useRef(false);
+  // 진행 중인 자동로그인 1건의 정리 함수(타이머 해제 + 리스너 제거). 실패 통지가 오거나
+  // 언마운트될 때 호출한다.
+  const autoLoginCleanupRef = useRef<(() => void) | null>(null);
+
+  // 언마운트 시 남은 타이머·리스너 정리 — 마이페이지를 떠난 뒤 창이 이동하거나
+  // 사라진 컴포넌트가 alert 를 띄우는 것을 막는다.
+  useEffect(() => () => autoLoginCleanupRef.current?.(), []);
 
   /**
    * AS-IS Q.Partners 로 **자동로그인 후 지정 화면 이동** (No.1).
@@ -224,16 +240,22 @@ export function MypageInfoConstruction({
    * 로 감지하는 방법은 서드파티 쿠키 차단에 걸려 **테스트 환경에서만 실패**하므로 검증이
    * 불가능하다 — 어디서나 같게 동작하는 타이머를 택했다. 자동로그인 왕복은 실측 1초 내외다.
    *
+   * **실패는 타이머를 취소한다.** 실패 시 라우트가 창을 동일 오리진 결과 페이지로 보내고 그
+   * 페이지가 `postMessage` 로 사유를 넘긴다. 이 신호가 없으면 실패 화면 위로 2단계 이동이
+   * 겹쳐, 어떤 실패든 「AS-IS 에 비로그인 상태로 도착」이라는 같은 증상으로 뭉개진다.
+   * 성공에는 신호가 없다 — 그때 창은 이미 AS-IS(다른 오리진)로 넘어가 있다.
+   *
    * `fetch` 가 아니라 창 이동인 이유, `<a href>` 를 쓰지 않는 이유는 같다: 발급 URL 이
    * **1회·1분** 유효라 미리 받아두거나 프리페치되면 그대로 소진되어 사용자는
    * 「このリンクは無効か、有効期限が切れています」를 보게 된다.
    */
   const handleAutoLogin = (target: string | undefined) => {
     if (!target) {
-      // 서버가 링크를 못 내려준 경우(커넥터 base URL 미설정 등).
+      // `data` 가 아직 없는 경우 — 프로필 로딩 중이거나 조회에 실패했다.
+      // (커넥터 base URL 미설정이면 profile 응답 자체가 성립하지 않아 여기 오지 않는다.)
       openAlert({
         type: "alert",
-        message: "リンク情報を取得できませんでした。ページを再読み込みしてください。",
+        message: "施工ID情報を読み込み中です。しばらくしてからお試しください。",
       });
       return;
     }
@@ -242,8 +264,9 @@ export function MypageInfoConstruction({
     if (navigatingRef.current) return;
     navigatingRef.current = true;
 
-    // `noopener` 를 주면 window.open 이 null 을 반환해 창 제어권이 사라진다 — 2단계 이동을
-    // 해야 하므로 핸들을 유지한다. 여는 대상이 우리 라우트(→ AS-IS)라 신뢰 범위 안이다.
+    // `noopener` 를 주면 window.open 이 null 을 반환해 창 제어권이 사라진다 — 2단계 이동과
+    // 실패 통지(결과 페이지가 `window.opener` 로 보낸다) 모두 핸들·opener 가 있어야 한다.
+    // 여는 대상이 우리 라우트(→ AS-IS)라 신뢰 범위 안이다.
     const opened = window.open("/api/auth/seko/autologin", "_blank");
     if (!opened) {
       navigatingRef.current = false;
@@ -254,11 +277,47 @@ export function MypageInfoConstruction({
       return;
     }
 
-    window.setTimeout(() => {
-      navigatingRef.current = false;
+    const settleTimer = window.setTimeout(() => {
+      autoLoginCleanupRef.current?.();
       // 사용자가 이미 닫았으면 건드리지 않는다.
       if (!opened.closed) opened.location.href = target;
     }, AUTOLOGIN_SETTLE_MS);
+
+    const handleMessage = (event: MessageEvent) => {
+      // 오리진과 발신 창을 함께 본다 — 오리진만 보면 같은 사이트의 다른 탭·iframe 이 보낸
+      // 메시지로도 이동을 취소시킬 수 있다.
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== opened) return;
+      const failure = parseSekoAutoLoginFailure(event.data);
+      if (!failure) return;
+
+      autoLoginCleanupRef.current?.();
+      if (!opened.closed) opened.close();
+
+      // 서버가 인증 쿠키를 이미 지운 상태 — 부모 탭도 로그인 화면으로 보내지 않으면
+      // 로그인된 UI 를 띄운 채 이후 모든 요청이 401 로 실패한다.
+      // 확인·바깥클릭(취소) 어느 쪽으로 닫아도 이동해야 한다 — 한쪽만 걸면 빠져나갈 구멍이 남는다.
+      const toLogin =
+        failure.reason === SEKO_AUTOLOGIN_RELOGIN_REASON
+          ? () => {
+              window.location.href = "/login";
+            }
+          : undefined;
+      openAlert({
+        type: "alert",
+        message: SEKO_AUTOLOGIN_FAILURE_MESSAGE[failure.reason],
+        onConfirm: toLogin,
+        onCancel: toLogin,
+      });
+    };
+
+    window.addEventListener("message", handleMessage);
+    autoLoginCleanupRef.current = () => {
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("message", handleMessage);
+      navigatingRef.current = false;
+      autoLoginCleanupRef.current = null;
+    };
   };
 
   useEffect(() => {

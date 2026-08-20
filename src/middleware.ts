@@ -26,6 +26,16 @@ const PUBLIC_PATHS = [
   // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
   // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)
   "/api/auth/auto-login/inbound",
+  // 시공점(SEKO) → AS-IS 자동로그인 **화면 진입** 라우트. 인증이 불요한 게 아니라,
+  // 인증 실패를 라우트가 직접 다뤄야 해서 PUBLIC 에 둔다.
+  //
+  // 사용자가 새 창으로 진입하는 경로라 미들웨어의 401/403 **JSON 이 빈 탭에 그대로 뜬다**.
+  // 그러면 라우트가 실패를 결과 페이지로 돌려보내 부모 탭에 알리는 흐름(seko-autologin-result)이
+  // 통째로 건너뛰어져, 세션 만료(가장 흔한 실패)만 안내 없이 AS-IS 로 넘어간다.
+  //
+  // 인가는 약해지지 않는다 — 라우트가 헤더가 아니라 **쿠키를 직접 재검증**하고
+  // (`getUserFromRequest`) userTp/2FA/sekoToken 4단 가드를 자체 수행한다.
+  "/api/auth/seko/autologin",
   // 인증은 불요(public)하되, 운영 환경 노출은 route handler 에서 차단(production → 404, isApiDocsEnabled 가드).
   "/api/openapi",
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
