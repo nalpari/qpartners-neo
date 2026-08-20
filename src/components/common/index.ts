@@ -1,10 +1,10 @@
 export { Button } from "./button";
 export { Checkbox } from "./checkbox";
 export { DatePicker } from "./date-picker";
+export { DateTimePicker } from "./date-time-picker";
 export { InputBox } from "./input-box";
 export { Radio } from "./radio";
 export { SelectBox } from "./select-box";
-export { TimeSelect } from "./time-select";
 export { MultiSelectCombobox } from "./multi-select-combobox";
 export { PageSizeSelect } from "./page-size-select";
 export { PermissionGate } from "./permission-gate";

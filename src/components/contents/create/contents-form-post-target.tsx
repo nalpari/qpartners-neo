@@ -1,43 +1,31 @@
 "use client";
 
-import { Checkbox, DatePicker, TimeSelect } from "@/components/common";
+import { Checkbox, DateTimePicker } from "@/components/common";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
 import { jstHourStart } from "@/lib/jst-day";
-
-/**
- * 날짜와 시각을 각각 다른 입력이 담당하므로, 한쪽을 바꿀 때 다른 쪽 값을 보존해야 한다.
- * 두 헬퍼가 그 이식을 전담한다 — 분·초는 항상 0 (시 단위 정책).
- */
 
 /** 종료일을 처음 고를 때 채워지는 시각 — 그 날 끝까지 노출한다는 뜻. */
 const END_DEFAULT_HOUR = 23;
 
-/** `date` 의 날짜 부분에 `hour` 시를 얹은 새 Date. */
-function withHour(date: Date, hour: number): Date {
-  const next = new Date(date);
-  next.setHours(hour, 0, 0, 0);
-  return next;
-}
-
 /**
- * 날짜 선택 결과에 기존 시각을 이식. 기존 값이 없으면 `defaultHour`.
+ * 종료일시가 **정각 0시** 로 들어온 경우에만 23시로 세운다.
  *
- * 종료일의 defaultHour 가 23 인 이유: 종전 일 단위 정책에서 종료일 지정은 "그 날 종일 노출"
- * 이었다. 0시를 기본으로 두면 날짜를 고르는 순간 즉시 만료되어 의도와 정반대가 된다.
- * (기존 데이터도 같은 이유로 마이그레이션에서 23시로 보정한다)
+ * 빈 종료일(=상시 공개)에서 날짜 칸만 클릭하면 라이브러리가 00:00 을 붙인다. 그대로 두면
+ * 그 날이 시작하자마자 만료되어 의도와 정반대가 되므로, 종전 일 단위 정책에서 종료일 지정이
+ * "그 날 종일 노출" 이었던 것에 맞춰 보정한다(기존 데이터도 마이그레이션에서 23시로 보정).
+ *
+ * 시각을 직접 고른 값(10시 등)은 0시가 아니므로 건드리지 않는다 — 10시를 눌렀는데 23시가
+ * 찍히면 오동작이다. 시각 변경 경로는 라이브러리가 `onChange` 에 event 를 넘기지 않아
+ * 클릭 출처로는 구분할 수 없으므로, 이벤트가 아니라 값으로 판정한다.
+ *
+ * 트레이드오프: "그 날 0시 종료" 를 의도한 경우도 23시가 된다. 시작과 동시에 만료라 실사용
+ * 의미가 없고, 필요하면 전날 23시를 고르면 된다.
  */
-function mergeDate(
-  picked: Date | null,
-  previous: Date | null,
-  defaultHour = 0,
-): Date | null {
-  if (!picked) return null;
-  return withHour(picked, previous ? previous.getHours() : defaultHour);
-}
-
-/** 시각 입력의 표시값 — 날짜가 비어 있으면(=입력 잠금) 0시로 표기. */
-function hourOf(date: Date | null): number {
-  return date ? date.getHours() : 0;
+function applyEndDefaultHour(picked: Date | null): Date | null {
+  if (!picked || picked.getHours() !== 0 || picked.getMinutes() !== 0) return picked;
+  const next = new Date(picked);
+  next.setHours(END_DEFAULT_HOUR, 0, 0, 0);
+  return next;
 }
 
 /**
@@ -199,28 +187,13 @@ export function ContentsFormPostTarget({
     onPostTargetsChange({
       ...postTargets,
       targets: postTargets.targets.map((t) =>
-        // 날짜만 갈아끼우고 시각은 TimeSelect 가 정한 값을 유지한다.
         t.roleCode === roleCode
-          ? { ...t, [field]: mergeDate(date, t[field], field === "endDate" ? END_DEFAULT_HOUR : 0) }
+          ? {
+              ...t,
+              [field]: field === "endDate" ? applyEndDefaultHour(date) : date,
+            }
           : t,
       ),
-    });
-  };
-
-  const handleTargetHour = (
-    roleCode: string | null,
-    field: "startDate" | "endDate",
-    hour: number,
-  ) => {
-    onPostTargetsChange({
-      ...postTargets,
-      targets: postTargets.targets.map((t) => {
-        if (t.roleCode !== roleCode) return t;
-        const current = t[field];
-        // 날짜가 없으면 시각만 따로 보관할 곳이 없다 — UI 에서도 잠겨 있는 상태.
-        if (!current) return t;
-        return { ...t, [field]: withHour(current, hour) };
-      }),
     });
   };
 
@@ -265,57 +238,26 @@ export function ContentsFormPostTarget({
         />
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
-            <DatePicker
+            <DateTimePicker
               value={postTargets.allStartDate}
               onChange={(date) =>
-                onPostTargetsChange({
-                  ...postTargets,
-                  allStartDate: mergeDate(date, postTargets.allStartDate),
-                })
+                onPostTargetsChange({ ...postTargets, allStartDate: date })
               }
-              className="w-[150px]"
-            />
-            <TimeSelect
-              value={hourOf(postTargets.allStartDate)}
-              onChange={(hour) =>
-                onPostTargetsChange({
-                  ...postTargets,
-                  allStartDate: postTargets.allStartDate
-                    ? withHour(postTargets.allStartDate, hour)
-                    : null,
-                })
-              }
-              disabled={!postTargets.allStartDate}
-              ariaLabel="開始時間を選択"
-              className="w-[80px]"
+              className="w-[190px]"
             />
             <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
               ~
             </span>
-            <DatePicker
+            <DateTimePicker
               value={postTargets.allEndDate}
               onChange={(date) =>
                 onPostTargetsChange({
                   ...postTargets,
-                  allEndDate: mergeDate(date, postTargets.allEndDate, END_DEFAULT_HOUR),
+                  allEndDate: applyEndDefaultHour(date),
                 })
               }
-              placeholder="終了日なし"
-              className="w-[150px]"
-            />
-            <TimeSelect
-              value={hourOf(postTargets.allEndDate)}
-              onChange={(hour) =>
-                onPostTargetsChange({
-                  ...postTargets,
-                  allEndDate: postTargets.allEndDate
-                    ? withHour(postTargets.allEndDate, hour)
-                    : null,
-                })
-              }
-              disabled={!postTargets.allEndDate}
-              ariaLabel="終了時間を選択"
-              className="w-[80px]"
+              placeholder="終了日時なし（常時公開）"
+              className="w-[190px]"
             />
           </div>
           <button
@@ -372,41 +314,23 @@ export function ContentsFormPostTarget({
                       disabled={(!available && !target.checked) || isForcedRow(opt.roleCode)}
                     />
                     <div className="flex flex-1 items-center gap-1">
-                      <DatePicker
+                      <DateTimePicker
                         value={target.startDate}
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "startDate", date)
                         }
                         disabled={!target.checked}
                       />
-                      <TimeSelect
-                        value={hourOf(target.startDate)}
-                        onChange={(hour) =>
-                          handleTargetHour(opt.roleCode, "startDate", hour)
-                        }
-                        disabled={!target.checked || !target.startDate}
-                        ariaLabel={`${opt.label} 開始時間を選択`}
-                        className="w-[80px]"
-                      />
                       <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">
                         ~
                       </span>
-                      <DatePicker
+                      <DateTimePicker
                         value={target.endDate}
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "endDate", date)
                         }
-                        placeholder="終了日なし"
+                        placeholder="終了日時なし（常時公開）"
                         disabled={!target.checked}
-                      />
-                      <TimeSelect
-                        value={hourOf(target.endDate)}
-                        onChange={(hour) =>
-                          handleTargetHour(opt.roleCode, "endDate", hour)
-                        }
-                        disabled={!target.checked || !target.endDate}
-                        ariaLabel={`${opt.label} 終了時間を選択`}
-                        className="w-[80px]"
                       />
                     </div>
                   </>

@@ -74,7 +74,7 @@ export function formatJstDate(
  * JST 기준 `YYYY{sep}MM{sep}DD H時` 문자열 직렬화 — 게시기간 표시용.
  *
  * 게시기간은 시 단위까지만 지정하므로 분을 표기하지 않는다 (`13:00` 대신 `13時`).
- * 입력 UI 의 `TimeSelect.formatHour` 와 같은 표기라 화면 간 불일치가 없다.
+ * 입력 UI(DatePicker showTime, `timeFormat="H時"`)와 같은 표기라 화면 간 불일치가 없다.
  * 날짜 부분은 `formatJstDate` 와 동일 규칙(JST 오프셋 보정 후 UTC 컴포넌트 추출).
  */
 export function formatJstDateTime(
