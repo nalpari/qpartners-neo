@@ -25,9 +25,22 @@ export type InterfaceLogParams = {
    * SENSITIVE_KEYS / EMAIL_KEYS 의 키 단위 마스킹으로는 누락되는 케이스를 fail-closed 로 차단.
    */
   maskResponseBody?: boolean;
+  /**
+   * true 지정 시 응답 본문을 **읽지 않는다**. 바이너리 응답(파일 다운로드 프록시) 전용.
+   *
+   * `maskResponseBody` 는 본문을 읽은 뒤 저장값만 치환하므로, 바이너리에는 부족하다 —
+   * 파일 전체가 JS 문자열로 디코드되어(메모리 2배) `JSON.parse` 가 두 번 실패하고
+   * 매 호출마다 무의미한 WARN 이 쌓인다. 이 옵션은 읽기 자체를 건너뛴다.
+   *
+   * 호출 기록(status·durationMs·traceId·requestBody)은 그대로 남으므로 감사 추적은 유지된다.
+   * `resultCode` 는 본문에서 파생되므로 null 이 된다(바이너리에는 애초에 없다).
+   */
+  skipResponseBody?: boolean;
 };
 
 const MASKED_RESPONSE_PLACEHOLDER = "[masked:cipher-response]";
+// 본문을 읽지 않았음을 명시 — "응답이 비었던 것" 과 구분되어야 운영 진단이 헷갈리지 않는다.
+const SKIPPED_RESPONSE_PLACEHOLDER = "[skipped:binary-response]";
 
 /**
  * JSON 파싱에 실패한 본문의 치환값.
@@ -404,11 +417,14 @@ export async function fetchWithLog(
     // 외부 API 호출은 호출부에서 `cache: "no-store"` 을 명시하는 것을 원칙으로 함.
     response = await fetch(url, init);
 
-    const cloned = response.clone();
-    try {
-      responseBodyText = await cloned.text();
-    } catch (error: unknown) {
-      console.warn("[InterfaceLogger] 응답 body 읽기 실패:", error);
+    // 바이너리 응답은 읽지 않는다 — clone().text() 는 파일 전체를 문자열로 디코드한다.
+    if (!params.skipResponseBody) {
+      const cloned = response.clone();
+      try {
+        responseBodyText = await cloned.text();
+      } catch (error: unknown) {
+        console.warn("[InterfaceLogger] 응답 body 읽기 실패:", error);
+      }
     }
   } catch (error: unknown) {
     const durationMs = Math.round(performance.now() - startTime);
@@ -435,11 +451,13 @@ export async function fetchWithLog(
   // cipher 를 담는 케이스(QSP autoLoginEncryptData)를 잡지 못하므로 fail-closed.
   // 단, body 자체가 null(읽기 실패)일 때는 placeholder 대신 null 유지 — 운영 진단 시
   // "본문 비었던 건지 / 마스킹된 건지" 구분 가능.
-  const persistedResponseBody = params.maskResponseBody
-    ? responseBodyText !== null
-      ? MASKED_RESPONSE_PLACEHOLDER
-      : null
-    : maskSensitiveFields(responseBodyText, preserveCatalogNames);
+  const persistedResponseBody = params.skipResponseBody
+    ? SKIPPED_RESPONSE_PLACEHOLDER
+    : params.maskResponseBody
+      ? responseBodyText !== null
+        ? MASKED_RESPONSE_PLACEHOLDER
+        : null
+      : maskSensitiveFields(responseBodyText, preserveCatalogNames);
 
   writeLog({
     ...baseLog,

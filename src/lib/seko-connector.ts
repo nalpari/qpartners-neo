@@ -16,15 +16,16 @@
  * 접속정보(base URL)는 환경변수 주입 — 미설정 시 **호출 시점** ConfigError.
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
- * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change /
- * No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
- * 나머지 API(autologin/fileDownload/getUserList)는 각 I/F 브랜치에서 추가된다.
+ * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.5 File Download /
+ * No.6 Password Change / No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
+ * 나머지 API(autologin/getUserList)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
   sekoEmailCheckResponseSchema,
+  sekoFileDownloadResponseSchema,
   sekoLoginResponseSchema,
   sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
@@ -339,6 +340,161 @@ export async function sekoUpdateUserInfo(
   }
 
   return { ok: true };
+}
+
+/**
+ * No.5 Seko File Download API — 시공점 첨부파일 다운로드 (Bearer, **2단계**).
+ *
+ *  1) `/api/seko/fileDownload` 로 메타(`fileUrl`·`fileName`·`contentType`) 획득
+ *  2) `fileUrl` 을 Bearer 로 재fetch 하여 바이너리 확보 → 호출부(라우트)가 스트리밍 프록시
+ *
+ * `fileUrl` 은 Bearer 가 필요한 AS-IS 경로라 브라우저로 리다이렉트할 수 없다(토큰이 노출되고,
+ * 노출해도 쿠키 도메인이 달라 붙지 않는다). TO-BE 서버가 대신 받아 내려주는 구조인 이유다.
+ *
+ * `userId` 와 `loginId` 는 **둘 다 필수**다 (2026-08-19 preview 실측 — 하나만 보내면 거부).
+ */
+export async function sekoFileDownload(
+  params: { userId: string; loginId: string; sekoId?: string | null; fileType: string },
+  token: string,
+  logTag: string,
+): Promise<
+  | { ok: true; fileName: string; contentType: string; body: ArrayBuffer }
+  | { ok: false; error: SekoFetchError }
+> {
+  // ── 1단계: fileUrl 메타 획득 ──
+  const reqBody: Record<string, unknown> = {
+    userId: params.userId,
+    loginId: params.loginId,
+    fileType: params.fileType,
+  };
+  // sekoId 는 CERT 계열에서 특정 시공ID 증명서를 지정할 때만 쓰는 선택 파라미터.
+  if (params.sekoId) reqBody.sekoId = params.sekoId;
+
+  let metaResponse: Response;
+  try {
+    metaResponse = await fetchWithLog(
+      sekoEndpoint("/api/seko/fileDownload"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify(reqBody),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "fileDownload",
+        callerRoute: logTag,
+        userId: maskUserId(params.loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 파일 메타 조회 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let metaBody: unknown;
+  try {
+    metaBody = await metaResponse.json();
+  } catch (error: unknown) {
+    console.error(
+      `${logTag} SEKO 파일 메타 응답 파싱 실패 (status: ${metaResponse.status}):`,
+      error,
+    );
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoFileDownloadResponseSchema.safeParse(metaBody);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 파일 메타 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 파일 메타 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    // fileType 은 라우트에서 Zod 로 이미 검증되므로, 남는 비즈니스 거부는 사실상
+    // "해당 문서가 아직 발급되지 않음" 이다 → 400 이 아니라 404 로 내려 화면이
+    // "ファイルが見つかりません" 안내를 띄우게 한다. 인증 실패·외부 장애만 별도 매핑.
+    const status = isSekoAuthError(result.errorCode)
+      ? 401
+      : metaResponse.status >= 500
+        ? 502
+        : 404;
+    return {
+      ok: false,
+      error: {
+        error: status === 404 ? "ファイルが見つかりません" : "ファイルの取得に失敗しました",
+        status,
+        errorCode: result.errorCode ?? undefined,
+      },
+    };
+  }
+
+  // ── 2단계: fileUrl 바이너리 프록시 fetch (Bearer) ──
+  // 절대 URL 이면 그대로, 상대경로면 base URL 을 붙인다.
+  const fileUrl = /^https?:\/\//.test(data.fileUrl)
+    ? data.fileUrl
+    : `${sekoBaseUrl()}${data.fileUrl.startsWith("/") ? "" : "/"}${data.fileUrl}`;
+
+  let fileResponse: Response;
+  try {
+    fileResponse = await fetchWithLog(
+      fileUrl,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        // 1단계와 같은 apiName 을 쓰면 qp_interface_log 에서 두 호출을 구분할 수 없다.
+        apiName: "fileDownload:fetch",
+        callerRoute: logTag,
+        userId: maskUserId(params.loginId),
+        userType: "SEKO",
+        // 응답이 PDF/HTML 바이너리다. 본문을 로깅하면 파일 전체를 문자열로 디코드하고
+        // JSON 파싱 실패 WARN 이 다운로드마다 쌓인다 — 호출 기록만 남기고 본문은 건너뛴다.
+        skipResponseBody: true,
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 파일 바이너리 fetch 실패:`, error);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+  }
+
+  if (!fileResponse.ok) {
+    console.error(`${logTag} SEKO 파일 바이너리 비정상 응답:`, fileResponse.status);
+    const status = fileResponse.status === 401 ? 401 : 502;
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status } };
+  }
+
+  let fileBody: ArrayBuffer;
+  try {
+    fileBody = await fileResponse.arrayBuffer();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 파일 바이너리 읽기 실패:`, error);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+  }
+
+  return {
+    ok: true,
+    fileName: data.fileName,
+    // 메타의 contentType 우선, 없으면 실제 fetch 응답 헤더, 그래도 없으면 octet-stream.
+    contentType:
+      data.contentType ??
+      fileResponse.headers.get("content-type") ??
+      "application/octet-stream",
+    body: fileBody,
+  };
 }
 
 /**

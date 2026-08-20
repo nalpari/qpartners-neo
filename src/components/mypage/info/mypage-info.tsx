@@ -13,6 +13,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { MypageInfoCorporate } from "./mypage-info-corporate";
 import { MypageInfoMember } from "./mypage-info-member";
 import { MypageInfoConstruction } from "./mypage-info-construction";
+import type { SekoConstruction } from "./mypage-info-construction";
 
 // Design Ref: §2 — API 응답 타입
 export interface ProfileData {
@@ -38,6 +39,8 @@ export interface ProfileData {
   newsRcptYn: "Y" | "N";
   newsRcptDate: string | null;
   withdrawAvailable?: boolean;
+  /** 시공점(SEKO) 전용 — 시공ID 카드 데이터. 그 외 회원유형은 항상 null. */
+  sekoConstruction: SekoConstruction | null;
 }
 
 // Design Ref: §3 — 수정 폼 데이터 타입
@@ -343,7 +346,9 @@ export function MypageInfo() {
             />
           </div>
 
-          {profile.userType === "SEKO" && !isEditing && <MypageInfoConstruction />}
+          {profile.userType === "SEKO" && !isEditing && (
+            <MypageInfoConstruction data={profile.sekoConstruction} />
+          )}
 
           {isEditing && (
             <div className="flex gap-[6px] justify-center lg:justify-end w-full lg:max-w-[1440px] px-[24px] lg:px-0 pb-[28px] lg:pb-0">

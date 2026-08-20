@@ -2721,6 +2721,27 @@ export const openApiSpec: OpenAPIV3.Document = {
                             "뉴스알림 변경일시. QSP `newsRcptChgDt` (신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백.",
                         },
                         withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
+                        sekoConstruction: {
+                          type: "object",
+                          nullable: true,
+                          description:
+                            "시공점(SEKO) 전용 — 마이페이지 「施工ID情報」 카드 데이터. " +
+                            "그 외 회원유형은 항상 null (키 자체는 유지). " +
+                            "AS-IS getUserInfo 응답에서 파생하므로 별도 조회 호출이 없다.",
+                          properties: {
+                            sekoId: { type: "string", nullable: true },
+                            sekoIssueDate: { type: "string", nullable: true, description: "시공ID 취득일 (YYYY-MM-DD)" },
+                            sekoLimit: { type: "string", nullable: true, description: "시공ID 유효기간 (YYYY-MM-DD). 만료 판정은 TO-BE 에서 하지 않고 표시만 한다" },
+                            sekoStatus: { type: "integer", nullable: true, description: "AS-IS 상태 코드. 코드값 의미 미확정이라 화면에서 사용하지 않음" },
+                            supplierKind: { type: "integer", nullable: true, description: "4=시공점 / 5=델타 / 6=스미토모 / 7=델타 SAVeR-H2" },
+                            deltaStatus: { type: "integer", nullable: true },
+                            availableFileTypes: {
+                              type: "array",
+                              items: { type: "string", enum: ["RECEIPT", "CERT1"] },
+                              description: "다운로드 가능 문서 종류. CERT2 는 미사용(QA#12)",
+                            },
+                          },
+                        },
                       },
                     },
                   },
@@ -2921,41 +2942,38 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/mypage/seko-info": {
-      get: {
-        tags: ["MyPage"],
-        summary: "시공점 시공ID 정보 조회",
-        description: "AS-IS Seko User Info API 프록시. 시공점 전용.",
-        responses: {
-          "200": {
-            description: "시공점 정보",
-            content: { "application/json": { schema: { type: "object" } } },
-          },
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("시공점 회원 전용"),
-          "501": errorResponse("미구현"),
-        },
-      },
-    },
     "/mypage/seko-file": {
       get: {
         tags: ["MyPage"],
         summary: "시공점 첨부파일 다운로드",
-        description: "AS-IS Seko File Download API 프록시.",
+        description:
+          "AS-IS Seko File Download API(No.5) 프록시. 시공점 전용. " +
+          "AS-IS 는 Bearer 가 필요한 fileUrl 만 주므로 서버가 2단계(메타 → 바이너리)로 받아 스트리밍한다. " +
+          "응답은 attachment + nosniff 고정 — RECEIPT 는 text/html 로 내려와 인라인 렌더 시 XSS 경로가 된다. " +
+          "※ 시공ID 정보 자체는 GET /mypage/profile 의 sekoConstruction 으로 내려간다(별도 조회 API 없음).",
         parameters: [
           {
             name: "fileType",
             in: "query",
             required: true,
             schema: { type: "string", enum: ["RECEIPT", "CERT1", "CERT2"] },
+            description: "RECEIPT=수강료영수증 / CERT1=시공증명서1 (CERT2 는 미사용 — QA#12)",
+          },
+          {
+            name: "sekoId",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+            description: "CERT 계열에서 특정 시공ID 증명서를 지정할 때만 사용 (선택)",
           },
         ],
         responses: {
-          "200": { description: "파일 다운로드" },
+          "200": { description: "파일 바이너리 (Content-Disposition: attachment)" },
           "400": errorResponse("잘못된 fileType"),
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("시공점 회원 전용"),
-          "501": errorResponse("미구현"),
+          "401": errorResponse("인증 필요 / 세션 무효 (SEKO 토큰 만료 시 쿠키 만료)"),
+          "403": errorResponse("시공점 회원 전용 또는 2단계 인증 미완료"),
+          "404": errorResponse("해당 문서 미발급"),
+          "502": errorResponse("AS-IS Connector 장애"),
         },
       },
     },

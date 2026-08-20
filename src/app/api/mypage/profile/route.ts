@@ -117,6 +117,23 @@ export async function GET(request: NextRequest) {
         corporateNo: null,
         newsRcptYn: s.newsRcptYn ?? "N",
         newsRcptDate: null,
+        // 마이페이지 「施工ID情報」 카드용. getUserInfo 가 이미 실어 오는 값이라 추가 호출이 없다.
+        // (전용 엔드포인트를 두면 같은 화면에서 getUserInfo 를 두 번 치게 되고 qp_interface_log
+        //  행도 두 배가 된다.)
+        //
+        // sekoStatus/sekoLimit 은 **표시 전용**이다. 유효기간 만료 판정을 TO-BE 가 자체적으로 하면
+        // AS-IS 의 상태 판단과 어긋날 수 있어(코드값 의미 미확인) 화면은 받은 값을 그대로 보여준다.
+        // AS-IS 본가 화면의 만료 표기 방식은 ENDO 질의 중 — 회신 후 맞춘다.
+        sekoConstruction: {
+          sekoId: s.sekoId,
+          sekoIssueDate: s.sekoIssueDate,
+          sekoLimit: s.sekoLimit,
+          sekoStatus: s.sekoStatus,
+          supplierKind: s.supplierKind,
+          deltaStatus: s.deltaStatus,
+          // 다운로드 가능한 문서 종류. CERT2 는 미사용(QA#12).
+          availableFileTypes: ["RECEIPT", "CERT1"] as const,
+        },
       };
       // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
       return NextResponse.json(
@@ -247,6 +264,9 @@ export async function GET(request: NextRequest) {
       // ISO 8601 (+09:00) 로 정규화. null/포맷 불일치는 null 유지 (FE 에서 "許可"/"拒否" 단독 표시).
       // 신규 `newsRcptChgDt` 우선, 미지원 환경 대비 `newsRcptDate` 폴백 유지.
       newsRcptDate: parseQspDate(d.newsRcptChgDt ?? d.newsRcptDate),
+      // 시공점 전용 필드 — 같은 엔드포인트가 회원유형에 따라 키 자체를 잃지 않도록 null 을 명시한다
+      // (위 12필드를 "" 로 정규화하는 것과 동일한 계약 유지 정책).
+      sekoConstruction: null,
     };
 
     // 회원유형별 표시 필드 (SEKO는 위에서 early return 처리됨)
