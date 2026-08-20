@@ -27,6 +27,12 @@ export interface SekoConstruction {
   supplierKind: number | null;
   deltaStatus: number | null;
   availableFileTypes: readonly string[];
+  /**
+   * 자동로그인 후 이동할 AS-IS 화면 주소. 서버가 커넥터 호스트에서 파생해 내려준다 —
+   * 자동로그인 쿠키가 그 호스트에만 유효하므로 화면 URL 을 클라이언트에 하드코딩하면
+   * 환경이 갈리는 순간 비로그인 상태로 도착한다.
+   */
+  asIsLinks: { seminar: string; mypage: string };
 }
 
 interface ConstructionRow {
@@ -52,6 +58,15 @@ const FILE_TYPE_LABEL: Record<string, string> = {
 };
 
 const EMPTY_MESSAGE = "施工ID情報がありません";
+
+/**
+ * 자동로그인이 끝나기를 기다리는 시간(ms).
+ *
+ * 실측 왕복은 1초 내외다. 짧으면 세션이 심어지기 전에 이동해 **비로그인 상태로 도착**하고,
+ * 길면 사용자가 AS-IS 홈을 그만큼 오래 보게 된다. 2배 여유로 2초를 잡았다.
+ * 비로그인 도착 사례가 보고되면 이 값부터 올릴 것.
+ */
+const AUTOLOGIN_SETTLE_MS = 2000;
 
 /** AS-IS 는 `YYYY-MM-DD` 로 내려준다. 화면 표기는 도트 구분자로 통일. */
 function formatDate(value: string | null): string {
@@ -192,6 +207,59 @@ export function MypageInfoConstruction({
   // 모바일(MobileCardList)은 일반 React 트리라 state 만으로 정상 동작한다.
   const inFlightRef = useRef(false);
   const gridApiRef = useRef<GridApi<ConstructionRow> | null>(null);
+  const navigatingRef = useRef(false);
+
+  /**
+   * AS-IS Q.Partners 로 **자동로그인 후 지정 화면 이동** (No.1).
+   *
+   * 새 창을 열어 2단계로 처리한다:
+   *  1) `/api/auth/seko/autologin` → AS-IS 자동로그인 → AS-IS 가 세션 쿠키를 심고 **홈으로** 보냄
+   *  2) 잠시 뒤 그 창을 목적 화면으로 다시 이동
+   *
+   * 2단계가 필요한 이유: AS-IS 자동로그인은 착지 화면을 지정할 수 없다. 요청 본문 파라미터도
+   * URL 쿼리도 200 으로 받아주기만 하고 전부 루트로 보낸다(preview 실측). AS-IS 가 착지 경로를
+   * 지원하면 이 대기 로직은 통째로 사라진다.
+   *
+   * 대기 시간이 고정값인 이유: 다른 오리진 창이라 로드 완료를 감지할 수 없다. iframe `onload`
+   * 로 감지하는 방법은 서드파티 쿠키 차단에 걸려 **테스트 환경에서만 실패**하므로 검증이
+   * 불가능하다 — 어디서나 같게 동작하는 타이머를 택했다. 자동로그인 왕복은 실측 1초 내외다.
+   *
+   * `fetch` 가 아니라 창 이동인 이유, `<a href>` 를 쓰지 않는 이유는 같다: 발급 URL 이
+   * **1회·1분** 유효라 미리 받아두거나 프리페치되면 그대로 소진되어 사용자는
+   * 「このリンクは無効か、有効期限が切れています」를 보게 된다.
+   */
+  const handleAutoLogin = (target: string | undefined) => {
+    if (!target) {
+      // 서버가 링크를 못 내려준 경우(커넥터 base URL 미설정 등).
+      openAlert({
+        type: "alert",
+        message: "リンク情報を取得できませんでした。ページを再読み込みしてください。",
+      });
+      return;
+    }
+    // 창이 뜨기까지 수백 ms — 그 사이 재클릭하면 자동로그인 URL 이 한 번 더 발급되어
+    // 앞의 URL 이 버려진다.
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+
+    // `noopener` 를 주면 window.open 이 null 을 반환해 창 제어권이 사라진다 — 2단계 이동을
+    // 해야 하므로 핸들을 유지한다. 여는 대상이 우리 라우트(→ AS-IS)라 신뢰 범위 안이다.
+    const opened = window.open("/api/auth/seko/autologin", "_blank");
+    if (!opened) {
+      navigatingRef.current = false;
+      openAlert({
+        type: "alert",
+        message: "ポップアップがブロックされました。ブラウザの設定をご確認ください。",
+      });
+      return;
+    }
+
+    window.setTimeout(() => {
+      navigatingRef.current = false;
+      // 사용자가 이미 닫았으면 건드리지 않는다.
+      if (!opened.closed) opened.location.href = target;
+    }, AUTOLOGIN_SETTLE_MS);
+  };
 
   useEffect(() => {
     gridApiRef.current?.refreshCells({ force: true });
@@ -263,24 +331,14 @@ export function MypageInfoConstruction({
             <Button
               variant="primary"
               className="flex-1 lg:flex-none lg:w-[113px]"
-              onClick={() =>
-                openAlert({
-                  type: "alert",
-                  message: "WEB研修申請機能は準備中です",
-                })
-              }
+              onClick={() => handleAutoLogin(data?.asIsLinks?.seminar)}
             >
               WEB研修申請
             </Button>
             <Button
               variant="secondary"
               className="flex-1 lg:flex-none lg:w-[160px]"
-              onClick={() =>
-                openAlert({
-                  type: "alert",
-                  message: "施工ID情報詳細確認機能は準備中です",
-                })
-              }
+              onClick={() => handleAutoLogin(data?.asIsLinks?.mypage)}
             >
               施工ID情報詳細確認
             </Button>

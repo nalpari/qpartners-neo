@@ -2740,6 +2740,16 @@ export const openApiSpec: OpenAPIV3.Document = {
                               items: { type: "string", enum: ["RECEIPT", "CERT1"] },
                               description: "다운로드 가능 문서 종류. CERT2 는 미사용(QA#12)",
                             },
+                            asIsLinks: {
+                              type: "object",
+                              description:
+                                "자동로그인(No.1) 후 이동할 AS-IS 화면 주소. SEKO_CONNECTOR_BASE_URL 에서 파생한다 — " +
+                                "자동로그인 쿠키가 커넥터 호스트에만 유효하므로 화면 URL 을 별도로 두면 환경이 갈릴 때 비로그인 상태로 도착한다.",
+                              properties: {
+                                seminar: { type: "string", description: "「WEB研修申請」 이동 대상" },
+                                mypage: { type: "string", description: "「施工ID情報詳細確認」 이동 대상" },
+                              },
+                            },
                           },
                         },
                       },
@@ -2939,6 +2949,22 @@ export const openApiSpec: OpenAPIV3.Document = {
               "※ QSP 원본 status(404 등)는 User Enumeration 방어를 위해 502 로 고정되며 로그에만 보존. " +
               "※ 쿠키 삭제는 200·409 시에만 발생.",
           ),
+        },
+      },
+    },
+    "/auth/seko/autologin": {
+      get: {
+        tags: ["Auth"],
+        summary: "시공점 AS-IS 자동로그인 이동",
+        description:
+          "AS-IS Seko Auto Login API(No.1) 아웃바운드. 시공점 전용. " +
+          "커넥터에서 일회용 autologinUrl 을 받아 **302 리다이렉트**한다(JSON 응답 아님). " +
+          "발급 URL 은 1회·1분 유효라 프리페치 시 소진되므로, 화면은 클릭 시점에 window.location 으로 진입해야 한다. " +
+          "※ 착지는 현재 AS-IS 사이트 루트 고정 — 요청 파라미터·URL 쿼리로 화면 지정 불가(AS-IS 지원 확인 중).",
+        responses: {
+          "302": { description: "AS-IS autologinUrl 로 리다이렉트 (실패 시 /mypage?error=seko_autologin_failed)" },
+          "401": errorResponse("세션 무효 (SEKO 토큰 없음·만료 시 쿠키 만료)"),
+          "403": errorResponse("시공점 회원 전용 또는 2단계 인증 미완료"),
         },
       },
     },
