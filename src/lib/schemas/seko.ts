@@ -134,7 +134,12 @@ export const sekoNoDataResponseSchema = z.object({
 //  - `fileSize` 는 응답에 실리지 않는 경우가 있어 optional. 신뢰하지 않고 실제 바이트로 판단한다.
 const sekoFileDownloadDataSchema = z.object({
   fileName: z.string(),
-  fileUrl: z.string(),
+  // 빈 값·공백·"/" 는 커넥터 base URL 루트를 가리킨다 — 파일 대신 커넥터 홈 응답을 Bearer 로
+  // 받아 첨부파일로 내려주게 되므로 파싱 단계에서 거부한다(호출부는 502 로 종료).
+  fileUrl: z
+    .string()
+    .trim()
+    .refine((v) => v.length > 0 && v !== "/"),
   // 종류별로 상이(text/html · application/pdf). 누락 시 호출부가 실제 응답 헤더로 폴백.
   contentType: z.string().nullable(),
   fileSize: z.coerce.number().int().nullable().optional(),

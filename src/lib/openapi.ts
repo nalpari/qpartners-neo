@@ -2959,13 +2959,6 @@ export const openApiSpec: OpenAPIV3.Document = {
             schema: { type: "string", enum: ["RECEIPT", "CERT1", "CERT2"] },
             description: "RECEIPT=수강료영수증 / CERT1=시공증명서1 (CERT2 는 미사용 — QA#12)",
           },
-          {
-            name: "sekoId",
-            in: "query",
-            required: false,
-            schema: { type: "string" },
-            description: "CERT 계열에서 특정 시공ID 증명서를 지정할 때만 사용 (선택)",
-          },
         ],
         responses: {
           "200": { description: "파일 바이너리 (Content-Disposition: attachment)" },

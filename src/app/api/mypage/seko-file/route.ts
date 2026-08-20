@@ -55,11 +55,12 @@ export async function GET(request: NextRequest) {
       );
     }
     const { fileType } = queryResult.data;
-    // sekoId 는 CERT 계열에서 특정 시공ID 증명서를 지정할 때만 쓰는 선택 파라미터.
-    const sekoId = request.nextUrl.searchParams.get("sekoId") ?? undefined;
 
+    // 문서는 세션 주인(userId·loginId)의 것으로 고정한다. sekoId 를 쿼리로 받으면 세션 JWT 에
+    // 시공ID 가 없어 소유권 검증이 불가능한 채로 AS-IS 에 실려 나가고, 타 시공점 시공증명서를
+    // 받아갈 수 있다. 화면도 fileType 만 보내므로 제거해도 기능 손실이 없다.
     const result = await sekoFileDownload(
-      { userId: user.userId, loginId: user.email, sekoId, fileType },
+      { userId: user.userId, loginId: user.email, fileType },
       user.sekoToken,
       "[GET /api/mypage/seko-file]",
     );
