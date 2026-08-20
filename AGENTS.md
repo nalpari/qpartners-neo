@@ -36,7 +36,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 - **Editor/Grid**: Tiptap 리치 에디터 (`src/lib/rich-editor/`), ag-grid (콘텐츠 목록)
 - **Mail**: nodemailer (`src/lib/mailer.ts`, `src/lib/mail-templates/`, `src/lib/mass-mail/`)
 - **API Docs**: Scalar (`/api-docs`), 스펙은 `src/lib/openapi.ts`
-- **External**: QSP 회원 API 연동 (`src/lib/qsp-member.ts`)
+- **External**: QSP 회원 API 연동 (`src/lib/qsp-member.ts`), AS-IS Q.Partners 시공점(SEKO) 커넥터 (`src/lib/seko-connector.ts`) — 배선된 I/F 목록은 해당 파일 헤더 주석 참조
 
 ## Key Conventions
 

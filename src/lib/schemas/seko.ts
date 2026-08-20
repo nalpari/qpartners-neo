@@ -121,6 +121,37 @@ export const sekoNoDataResponseSchema = z.object({
   result: sekoResultSchema,
 });
 
+// ─── No.5 Seko File Download API (/api/seko/fileDownload) — Bearer ───
+// fileType: RECEIPT=수강료영수증 / CERT1=시공증명서1. CERT2 는 미사용(QA#12) — 스키마 enum 에는
+// 남겨두되 화면에서 노출하지 않는다.
+//
+// 응답은 파일 바이너리가 아니라 **메타데이터**다. `fileUrl` 을 Bearer 로 재fetch 해야 실제 파일을
+// 얻는다(2단계) — 커넥터 `sekoFileDownload` 참조.
+//
+// 실측(2026-08-19 preview):
+//  - RECEIPT → contentType=text/html,      200 / 3,971 bytes
+//  - CERT1   → contentType=application/pdf, 200 / 287,746 bytes (매직바이트 %PDF-1.7)
+//  - `fileSize` 는 응답에 실리지 않는 경우가 있어 optional. 신뢰하지 않고 실제 바이트로 판단한다.
+const sekoFileDownloadDataSchema = z.object({
+  fileName: z.string(),
+  // 빈 값·공백·"/" 는 커넥터 base URL 루트를 가리킨다 — 파일 대신 커넥터 홈 응답을 Bearer 로
+  // 받아 첨부파일로 내려주게 되므로 파싱 단계에서 거부한다(호출부는 502 로 종료).
+  fileUrl: z
+    .string()
+    .trim()
+    .refine((v) => v.length > 0 && v !== "/"),
+  // 종류별로 상이(text/html · application/pdf). 누락 시 호출부가 실제 응답 헤더로 폴백.
+  contentType: z.string().nullable(),
+  fileSize: z.coerce.number().int().nullable().optional(),
+});
+
+export type SekoFileDownloadData = z.infer<typeof sekoFileDownloadDataSchema>;
+
+export const sekoFileDownloadResponseSchema = z.object({
+  data: sekoFileDownloadDataSchema.nullable(),
+  result: sekoResultSchema,
+});
+
 // ─── No.8 Seko Email Check API (/api/seko/email/check) ───
 // ⚠️ 사양서(20260811)는 loginId+groupKind+sei+mei 4개 필수로 기재하나, 실제로 4개를 보내면
 //    400 INVALID_REQUEST 이고 **loginId 단독만** 200 이다 (2026-08-13 preview 실측).
