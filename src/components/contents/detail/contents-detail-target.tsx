@@ -24,9 +24,7 @@ function formatPeriod(startAt: string | null, endAt: string | null): string {
   // 표시 시점에 ISO 문자열 앞 10자만 자르면 UTC 기준 -1일이 표시되므로 JST 기준 변환 필수. (Redmine #2262)
   const start = startAt ? formatJstDateTime(startAt, ".") : "";
   const end = endAt ? formatJstDateTime(endAt, ".") : "";
-  // 시각 표기가 붙으면서 한 줄로는 PC 5열 그리드 셀 폭을 넘겨 잘린다 — `~` 앞에서 줄바꿈.
-  // 렌더 측 `whitespace-pre-line` 과 짝이므로 한쪽만 바꾸지 말 것.
-  return `${start}\n~${end}`;
+  return `${start}~${end}`;
 }
 
 export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
@@ -75,7 +73,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                   >
                     {opt.label}
                   </span>
-                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] whitespace-pre-line">
+                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
                     {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}
                   </p>
                 </div>
@@ -101,7 +99,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                 <span className="inline-flex items-center justify-center self-start px-2 py-[2px] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] bg-[#EFF7FF] text-[#1060B4] font-medium">
                   {resolveLabel(t.roleCode)}
                 </span>
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] whitespace-pre-line">
+                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
                   {formatPeriod(t.startAt, t.endAt)}
                 </p>
               </div>
