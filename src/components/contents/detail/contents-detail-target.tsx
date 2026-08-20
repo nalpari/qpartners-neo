@@ -1,7 +1,7 @@
 "use client";
 
 import { useTargetLabels } from "@/hooks/use-target-labels";
-import { formatJstDate } from "@/lib/jst-day";
+import { formatJstDateTime } from "@/lib/jst-day";
 
 // Design Ref: §4.3 — 게시대상 표시 (Target Dynamic from Role 후)
 // 라벨/활성 상태는 useTargetLabels 훅으로 권한관리(qp_roles) 와 동기화.
@@ -22,9 +22,11 @@ function formatPeriod(startAt: string | null, endAt: string | null): string {
   if (!startAt && !endAt) return "-";
   // 저장 시점: `Date.toISOString()` 으로 JST 로컬 자정을 UTC 로 직렬화(예: JST 2026-05-26 → `2026-05-25T15:00:00.000Z`).
   // 표시 시점에 ISO 문자열 앞 10자만 자르면 UTC 기준 -1일이 표시되므로 JST 기준 변환 필수. (Redmine #2262)
-  const start = startAt ? formatJstDate(startAt, ".") : "";
-  const end = endAt ? formatJstDate(endAt, ".") : "";
-  return `${start}~${end}`;
+  const start = startAt ? formatJstDateTime(startAt, ".") : "";
+  const end = endAt ? formatJstDateTime(endAt, ".") : "";
+  // 시각 표기가 붙으면서 한 줄로는 PC 5열 그리드 셀 폭을 넘겨 잘린다 — `~` 앞에서 줄바꿈.
+  // 렌더 측 `whitespace-pre-line` 과 짝이므로 한쪽만 바꾸지 말 것.
+  return `${start}\n~${end}`;
 }
 
 export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
@@ -52,8 +54,8 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
               投稿対象
             </span>
           </div>
-          {/* Td: 한 줄당 5칸, 옵션이 6개 이상이면 아래 줄로 자동 블록 배치 */}
-          <div className="flex-1 grid grid-cols-5 gap-1">
+          {/* Td: 한 줄당 4칸, 옵션이 5개 이상이면 아래 줄로 자동 블록 배치 */}
+          <div className="flex-1 grid grid-cols-4 gap-1">
             {allOptions.map((opt) => {
               const key = opt.roleCode ?? "__NON_MEMBER__";
               const matched = targetMap.get(key);
@@ -73,7 +75,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                   >
                     {opt.label}
                   </span>
-                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] truncate">
+                  <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] whitespace-pre-line">
                     {active ? formatPeriod(matched.startAt, matched.endAt) : "-"}
                   </p>
                 </div>
@@ -99,7 +101,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
                 <span className="inline-flex items-center justify-center self-start px-2 py-[2px] rounded-[4px] font-['Noto_Sans_JP'] text-[14px] leading-[1.5] bg-[#EFF7FF] text-[#1060B4] font-medium">
                   {resolveLabel(t.roleCode)}
                 </span>
-                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+                <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] whitespace-pre-line">
                   {formatPeriod(t.startAt, t.endAt)}
                 </p>
               </div>

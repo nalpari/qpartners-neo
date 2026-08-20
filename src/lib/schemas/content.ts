@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { jstDayStart } from "@/lib/jst-day";
+import { jstHourStart } from "@/lib/jst-day";
 
 export { idParamSchema } from "@/lib/schemas/common";
 
@@ -44,12 +44,13 @@ const contentTargetSchema = z
   .refine(
     (data) => {
       if (data.startAt && data.endAt) {
-        // JST day 단위 비교 — 같은 날짜 허용, 서버 컨테이너 TZ 비의존
-        return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
+        // 시(hour) 단위 비교 — 같은 시각 허용. 게시기간을 시 단위까지 지정할 수 있게 되면서
+        // 일 단위 비교로는 같은 날 안의 시각 역전(18시~9시)을 걸러내지 못하게 됐다.
+        return jstHourStart(data.startAt) <= jstHourStart(data.endAt);
       }
       return true;
     },
-    { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
+    { message: "開始日時は終了日時以前に設定してください", path: ["startAt"] },
   );
 
 /** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX는 nullable roleCode 중복을 허용하므로 앱 레이어에서 검증 */

@@ -1,7 +1,44 @@
 "use client";
 
-import { Checkbox, DatePicker } from "@/components/common";
+import { Checkbox, DatePicker, TimeSelect } from "@/components/common";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
+import { jstHourStart } from "@/lib/jst-day";
+
+/**
+ * 날짜와 시각을 각각 다른 입력이 담당하므로, 한쪽을 바꿀 때 다른 쪽 값을 보존해야 한다.
+ * 두 헬퍼가 그 이식을 전담한다 — 분·초는 항상 0 (시 단위 정책).
+ */
+
+/** 종료일을 처음 고를 때 채워지는 시각 — 그 날 끝까지 노출한다는 뜻. */
+const END_DEFAULT_HOUR = 23;
+
+/** `date` 의 날짜 부분에 `hour` 시를 얹은 새 Date. */
+function withHour(date: Date, hour: number): Date {
+  const next = new Date(date);
+  next.setHours(hour, 0, 0, 0);
+  return next;
+}
+
+/**
+ * 날짜 선택 결과에 기존 시각을 이식. 기존 값이 없으면 `defaultHour`.
+ *
+ * 종료일의 defaultHour 가 23 인 이유: 종전 일 단위 정책에서 종료일 지정은 "그 날 종일 노출"
+ * 이었다. 0시를 기본으로 두면 날짜를 고르는 순간 즉시 만료되어 의도와 정반대가 된다.
+ * (기존 데이터도 같은 이유로 마이그레이션에서 23시로 보정한다)
+ */
+function mergeDate(
+  picked: Date | null,
+  previous: Date | null,
+  defaultHour = 0,
+): Date | null {
+  if (!picked) return null;
+  return withHour(picked, previous ? previous.getHours() : defaultHour);
+}
+
+/** 시각 입력의 표시값 — 날짜가 비어 있으면(=입력 잠금) 0시로 표기. */
+function hourOf(date: Date | null): number {
+  return date ? date.getHours() : 0;
+}
 
 /**
  * 콘텐츠 등록 폼 게시대상 선택 (Target Dynamic from Role 후).
@@ -52,7 +89,9 @@ export function buildInitialPostTargetsState(
   }[],
   forcedRoleCode?: string | null,
 ): PostTargetState {
-  const today = new Date();
+  // 게시기간은 시 단위까지만 지정하므로 기본값도 정각으로 절삭한다 —
+  // 안 자르면 "14:32 에 등록 → 14:32 부터 노출" 이 되어 화면 표기(14:00)와 어긋난다.
+  const today = jstHourStart();
 
   const existingMap = new Map(
     (existingTargets ?? []).map((t) => [t.roleCode, t] as const),
@@ -160,8 +199,28 @@ export function ContentsFormPostTarget({
     onPostTargetsChange({
       ...postTargets,
       targets: postTargets.targets.map((t) =>
-        t.roleCode === roleCode ? { ...t, [field]: date } : t,
+        // 날짜만 갈아끼우고 시각은 TimeSelect 가 정한 값을 유지한다.
+        t.roleCode === roleCode
+          ? { ...t, [field]: mergeDate(date, t[field], field === "endDate" ? END_DEFAULT_HOUR : 0) }
+          : t,
       ),
+    });
+  };
+
+  const handleTargetHour = (
+    roleCode: string | null,
+    field: "startDate" | "endDate",
+    hour: number,
+  ) => {
+    onPostTargetsChange({
+      ...postTargets,
+      targets: postTargets.targets.map((t) => {
+        if (t.roleCode !== roleCode) return t;
+        const current = t[field];
+        // 날짜가 없으면 시각만 따로 보관할 곳이 없다 — UI 에서도 잠겨 있는 상태.
+        if (!current) return t;
+        return { ...t, [field]: withHour(current, hour) };
+      }),
     });
   };
 
@@ -209,9 +268,26 @@ export function ContentsFormPostTarget({
             <DatePicker
               value={postTargets.allStartDate}
               onChange={(date) =>
-                onPostTargetsChange({ ...postTargets, allStartDate: date })
+                onPostTargetsChange({
+                  ...postTargets,
+                  allStartDate: mergeDate(date, postTargets.allStartDate),
+                })
               }
-              className="w-[200px]"
+              className="w-[150px]"
+            />
+            <TimeSelect
+              value={hourOf(postTargets.allStartDate)}
+              onChange={(hour) =>
+                onPostTargetsChange({
+                  ...postTargets,
+                  allStartDate: postTargets.allStartDate
+                    ? withHour(postTargets.allStartDate, hour)
+                    : null,
+                })
+              }
+              disabled={!postTargets.allStartDate}
+              ariaLabel="開始時間を選択"
+              className="w-[80px]"
             />
             <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
               ~
@@ -219,10 +295,27 @@ export function ContentsFormPostTarget({
             <DatePicker
               value={postTargets.allEndDate}
               onChange={(date) =>
-                onPostTargetsChange({ ...postTargets, allEndDate: date })
+                onPostTargetsChange({
+                  ...postTargets,
+                  allEndDate: mergeDate(date, postTargets.allEndDate, END_DEFAULT_HOUR),
+                })
               }
-              placeholder="終了日なし（常時公開）"
-              className="w-[200px]"
+              placeholder="終了日なし"
+              className="w-[150px]"
+            />
+            <TimeSelect
+              value={hourOf(postTargets.allEndDate)}
+              onChange={(hour) =>
+                onPostTargetsChange({
+                  ...postTargets,
+                  allEndDate: postTargets.allEndDate
+                    ? withHour(postTargets.allEndDate, hour)
+                    : null,
+                })
+              }
+              disabled={!postTargets.allEndDate}
+              ariaLabel="終了時間を選択"
+              className="w-[80px]"
             />
           </div>
           <button
@@ -241,8 +334,9 @@ export function ContentsFormPostTarget({
         </p>
       </div>
 
-      {/* 대상 옵션 — 동적 grid (3열 자동 wrapping) */}
-      <div className="grid grid-cols-3 gap-1">
+      {/* 대상 옵션 — 동적 grid (2열 자동 wrapping).
+          한 행이 날짜+시각 4개 입력을 담게 되어 3열로는 폭이 부족해 2열로 낮췄다. */}
+      <div className="grid grid-cols-2 gap-1">
         {allOptions.map((opt) => {
           const target = getTarget(opt.roleCode);
           const available = opt.isActive;
@@ -285,6 +379,15 @@ export function ContentsFormPostTarget({
                         }
                         disabled={!target.checked}
                       />
+                      <TimeSelect
+                        value={hourOf(target.startDate)}
+                        onChange={(hour) =>
+                          handleTargetHour(opt.roleCode, "startDate", hour)
+                        }
+                        disabled={!target.checked || !target.startDate}
+                        ariaLabel={`${opt.label} 開始時間を選択`}
+                        className="w-[80px]"
+                      />
                       <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">
                         ~
                       </span>
@@ -293,8 +396,17 @@ export function ContentsFormPostTarget({
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "endDate", date)
                         }
-                        placeholder="終了日なし（常時公開）"
+                        placeholder="終了日なし"
                         disabled={!target.checked}
+                      />
+                      <TimeSelect
+                        value={hourOf(target.endDate)}
+                        onChange={(hour) =>
+                          handleTargetHour(opt.roleCode, "endDate", hour)
+                        }
+                        disabled={!target.checked || !target.endDate}
+                        ariaLabel={`${opt.label} 終了時間を選択`}
+                        className="w-[80px]"
                       />
                     </div>
                   </>

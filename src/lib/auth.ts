@@ -9,7 +9,6 @@
 import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
-import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
@@ -318,19 +317,19 @@ export function canAccessContent(
 
   const userRoleCode: string | null = user ? user.role : null;
 
-  // 게시기간 day 단위 비교 — 목록 API(contents/route, home-notices/active/route) 와 동일 기준.
-  // JST 기준 오늘/내일 자정을 명시 계산해 서버 컨테이너 TZ 의존성 제거 (Redmine #2131).
-  const todayStart = jstDayStart();
-  const tomorrowStart = jstNextDayStart();
+  // 게시기간 시각 비교 — 목록 API(contents/route) 와 동일 기준.
+  // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다. 예전 기준은
+  // "오늘 18시 시작" 을 오늘 00시부터 통과시켜 지정한 시각이 무시됐다 (Redmine #2131 후속).
+  const now = new Date();
 
   return targets.some((t) => {
     // 비로그인 사용자 → 비회원 게시대상(roleCode IS NULL)만 통과
     // 로그인 사용자 → roleCode 일치
     if (t.roleCode !== userRoleCode) return false;
-    // startAt 의 JST 날짜가 오늘 이하 = startAt < 내일 자정
-    if (t.startAt && t.startAt >= tomorrowStart) return false;
-    // endAt 의 JST 날짜가 오늘 이상 = endAt >= 오늘 자정
-    if (t.endAt && t.endAt < todayStart) return false;
+    // 시작 시각 도래 전이면 미노출
+    if (t.startAt && t.startAt > now) return false;
+    // 종료 시각 경과 후면 미노출 (종료 시각 정각까지 노출)
+    if (t.endAt && t.endAt < now) return false;
     return true;
   });
 }
