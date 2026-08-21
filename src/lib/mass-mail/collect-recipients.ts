@@ -134,6 +134,17 @@ interface RecipientStats {
   invalidEmail: number;
   newsRcptOptOut: number;
   superAdminOnlyExcluded: number;
+  /** SEKO 수신동의 판정 불가 건수 — 0 이 아니면 수집을 실패시킨다(fetchSekoRecipients). */
+  sekoNewsRcptUnknown: number;
+}
+
+/**
+ * SEKO 수신동의 값 판정. 공백·대소문자만 흡수하고, 그 밖의 값(필드 결손 포함)은
+ * **판정 불가**로 본다 — "동의로 간주"도 "거부로 간주"도 하지 않는다.
+ */
+function readNewsRcpt(raw: string | null | undefined): "Y" | "N" | "UNKNOWN" {
+  const value = raw?.trim().toUpperCase();
+  return value === "Y" || value === "N" ? value : "UNKNOWN";
 }
 
 /**
@@ -165,11 +176,17 @@ async function fetchSekoRecipients(
       stats.invalidEmail++;
       continue;
     }
-    // newsRcptYn 은 2026-08-17 상대측 추가분이다. 결손(구 배포본)을 수신거부로 읽으면 시공점
-    // 전원이 조용히 빠지므로, 명시적 "N" 만 제외한다.
-    if (!targets.optOut && item.newsRcptYn === "N") {
-      stats.newsRcptOptOut++;
-      continue;
+    // optOut=true 는 수신거부 포함 발송이라 동의값 판정 자체가 불필요하다.
+    if (!targets.optOut) {
+      const consent = readNewsRcpt(item.newsRcptYn);
+      if (consent === "N") {
+        stats.newsRcptOptOut++;
+        continue;
+      }
+      if (consent === "UNKNOWN") {
+        stats.sekoNewsRcptUnknown++;
+        continue;
+      }
     }
     const userName = `${item.sei ?? ""}${item.mei ?? ""}`.trim();
     recipients.push({
@@ -177,6 +194,15 @@ async function fetchSekoRecipients(
       userName: userName.length > 0 ? userName : null,
       authRoleCode: "SEKO",
     });
+  }
+
+  // 동의 여부를 확인할 수 없는 회원이 하나라도 있으면 수집 전체를 실패시킨다. 발송하면
+  // 수신거부 의사 위반이고, 조용히 빼면 「시공점 전원 누락」이 어디에도 남지 않는다.
+  // 둘 다 피하는 유일한 선택지가 운영자에게 보이는 실패(send_failed → 재시도 경로)다.
+  if (stats.sekoNewsRcptUnknown > 0) {
+    throw new Error(
+      `SEKO 수신동의(newsRcptYn) 판정 불가 ${stats.sekoNewsRcptUnknown}건 — 상대측 응답 확인 필요`,
+    );
   }
 
   console.log(
@@ -346,6 +372,7 @@ export async function collectRecipients(
     invalidEmail: 0,
     newsRcptOptOut: 0,
     superAdminOnlyExcluded: 0,
+    sekoNewsRcptUnknown: 0,
   };
 
   const fetchedByUserType = new Map<string, QspMemberItem[]>();

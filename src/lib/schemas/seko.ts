@@ -207,33 +207,33 @@ export const sekoEmailCheckResponseSchema = z.object({
 //  - **이메일 필드가 따로 없다** — 시공점은 로그인 ID 가 곧 이메일이라 `loginId` 가 주소다.
 //    사양서 필드표도 `loginId`(비고 Email) 이고 응답 예시의 `email` 쪽이 오기다.
 //  - `sei`/`mei` 는 사양서 비고에 「메일 본문 수신자명」 — 호출부가 이어붙여 userName 으로 쓴다.
-const sekoUserListItemSchema = z.object({
+export const sekoUserListItemSchema = z.object({
   // 현재 소비처 없음(수집은 loginId·sei·mei·newsRcptYn 만 쓴다). 실측은 문자열이지만
-  // 상대측이 int 로 바꾸면 아래 항목 단위 safeParse 가 전량 드롭되어 「0건 수집 성공」이
-  // 되므로, 미사용 필드는 판정에 참여시키지 않는다 — groupKind 와 같은 정책.
+  // 상대측이 int 로 바꾸면 항목 단위 safeParse 가 전량 실패하고, 커넥터의 결손 가드가 이를
+  // 502 로 접어 발송이 통째로 멈춘다. 미사용 필드는 판정에 참여시키지 않는다 — groupKind 와
+  // 같은 정책.
   userId: z.coerce.string().nullish(),
   // 수집의 유일한 주소원. 빈 값이면 수신자로 성립하지 않으므로 파싱 단계에서 거른다.
   loginId: z.string().trim().min(1),
   sei: z.string().nullish(),
   mei: z.string().nullish(),
-  // 2026-08-17 상대측 추가분(M_USER.news_rcpt_yn). 그 이전 배포본에는 없으므로 nullish 로
-  // 두고, 호출부가 "N" 만 제외한다 — 결손을 수신거부로 읽으면 전원이 조용히 누락된다.
+  // 2026-08-17 상대측 추가분(M_USER.news_rcpt_yn). 여기서 enum 으로 조이면 동의값 하나가
+  // 흔들려도 **행 전체가 드롭**되어 「구조적 응답 파손」과 구분이 되지 않는다. 문자열로 받고
+  // 값 판정(공백·대소문자 정규화 + 판정불가 처리)은 호출부(collect-recipients)가 한다.
   newsRcptYn: z.string().nullish(),
 });
 
 export type SekoUserListItem = z.infer<typeof sekoUserListItemSchema>;
 
-// 개별 항목 결손이 목록 전체를 502 로 접지 않도록 항목 단위로 걸러낸다 — 회원 한 명의
-// 데이터 이상으로 대량메일 발송 전체가 멈추면 장애 범위가 불필요하게 커진다.
-// 걸러진 건수는 호출부가 `totalCount` 와 비교해 로그로 남긴다.
+// 항목 파싱은 **커넥터가 한다**. transform 안에서 버리면 「몇 건이 버려졌는지」가 호출부에
+// 전달되지 않아 부분 결손을 성공으로 확정하게 되고, 누락된 회원은 수신자 스냅샷에 없으므로
+// 재시도로도 복구되지 않는다. 여기서는 원본 행을 그대로 넘기고 결손 판정을 커넥터에 맡긴다.
 const sekoUserListDataSchema = z.object({
-  totalCount: z.coerce.number().int().nullish(),
-  list: z.array(z.unknown()).transform((rows) =>
-    rows
-      .map((row) => sekoUserListItemSchema.safeParse(row))
-      .filter((r) => r.success)
-      .map((r) => r.data),
-  ),
+  // 결손 판정의 유일한 기준값. nullish 로 두면 이 값이 빠졌을 때 판정 자체가 불가능해져
+  // 전량 파싱 실패조차 「0건 수집 성공」이 된다. 누락 시 coerce → NaN → int() 실패 →
+  // 응답 스키마 불일치(502) 로 접히는 것이 의도된 동작이다.
+  totalCount: z.coerce.number().int().nonnegative(),
+  list: z.array(z.unknown()),
 });
 
 export type SekoUserListData = z.infer<typeof sekoUserListDataSchema>;

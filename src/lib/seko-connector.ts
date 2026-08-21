@@ -30,6 +30,7 @@ import {
   sekoLoginResponseSchema,
   sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
+  sekoUserListItemSchema,
   sekoUserListResponseSchema,
   type SekoEmailCheckData,
   type SekoLoginData,
@@ -1117,6 +1118,10 @@ const SEKO_USER_STATUS_ACTIVE = "1";
  *
  * 반환 목록의 `loginId` 가 곧 이메일이다(시공점은 로그인 ID = 이메일). 이메일 전용 필드는
  * 응답에 없다.
+ *
+ * **결손은 부분·전량 가리지 않고 실패로 접는다.** 항목 하나라도 스키마에 맞지 않거나
+ * `totalCount` 와 파싱 건수가 다르면 목록을 돌려주지 않는다 — 부분 목록으로 발송하면 누락된
+ * 회원이 수신자 스냅샷에 남지 않아 재시도로도 복구되지 않기 때문이다.
  */
 export async function sekoGetUserList(
   logTag: string,
@@ -1179,21 +1184,24 @@ export async function sekoGetUserList(
     };
   }
 
-  // 항목 스키마 불일치는 목록 전체를 접지 않고 건 단위로 버려진다(schemas/seko.ts).
-  // 조용히 줄어들면 「일부 회원에게만 메일이 안 갔다」로 나타나므로 반드시 남긴다.
-  const totalCount = data.totalCount ?? null;
-  if (totalCount !== null && totalCount !== data.list.length) {
-    console.warn(
-      `${logTag} SEKO 회원목록 항목 결손 — totalCount=${totalCount}, 파싱성공=${data.list.length}`,
-    );
+  const { totalCount, list } = data;
+  const items: SekoUserListItem[] = [];
+  let dropped = 0;
+  for (const row of list) {
+    const parsedItem = sekoUserListItemSchema.safeParse(row);
+    if (parsedItem.success) items.push(parsedItem.data);
+    else dropped++;
   }
-  // 전량 결손은 부분 결손과 성격이 다르다 — 응답 형식이 통째로 바뀐 것이다. 빈 목록을 성공으로
-  // 돌려주면 「0명 수집 성공」으로 발송이 sent 처리되어 아무에게도 안 갔다는 사실이 어디에도
-  // 남지 않으므로, 커넥터 장애와 동급으로 실패시킨다.
-  if (totalCount !== null && totalCount > 0 && data.list.length === 0) {
-    console.error(`${logTag} SEKO 회원목록 항목 전량 파싱 실패 — totalCount=${totalCount}`);
+
+  // 부분 결손도 전량 결손과 똑같이 접는다. 일부만 발송한 뒤 메일이 sent 로 확정되면 누락된
+  // 회원은 수신자 스냅샷에 없어 재시도로도 복구되지 않고, 「일부에게만 안 갔다」는 사실이
+  // 어디에도 남지 않는다. 커넥터 장애와 동급으로 올려 send_failed → 재시도 경로로 보낸다.
+  if (dropped > 0 || items.length !== totalCount) {
+    console.error(
+      `${logTag} SEKO 회원목록 결손 — totalCount=${totalCount}, 응답행=${list.length}, 파싱성공=${items.length}, 드롭=${dropped}`,
+    );
     return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
   }
 
-  return { ok: true, items: data.list };
+  return { ok: true, items };
 }
