@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { jstDayStart } from "@/lib/jst-day";
+import { jstHourStart } from "@/lib/jst-day";
 
 export { idParamSchema } from "@/lib/schemas/common";
 
@@ -38,18 +38,22 @@ const contentTargetSchema = z
   .object({
     /** 게시대상 권한코드 — null = 비회원 sentinel (qp_roles 외부, useTargetLabels.ts 코드 의도) */
     roleCode: roleCodeWithSentinel,
-    startAt: z.coerce.date().optional(),
-    endAt: z.coerce.date().optional(),
+    // 게시기간은 시 단위 정책 — 서버 경계에서 한 번 절삭해 분·초를 버린다.
+    // 절삭 지점이 여기 하나뿐이라 픽커 타이핑(react-datepicker 는 `10:37` 을 그대로 흘린다)·
+    // API 직접 호출·기본값이 모두 같은 값으로 수렴하고, 저장값과 화면 표기(`10時`)가 일치한다.
+    startAt: z.coerce.date().transform(jstHourStart).optional(),
+    endAt: z.coerce.date().transform(jstHourStart).optional(),
   })
   .refine(
     (data) => {
       if (data.startAt && data.endAt) {
-        // JST day 단위 비교 — 같은 날짜 허용, 서버 컨테이너 TZ 비의존
-        return jstDayStart(data.startAt) <= jstDayStart(data.endAt);
+        // 이미 정각으로 절삭된 값이라 그대로 비교한다. 같은 시각 허용 — 종료 시각은
+        // "그 시간대의 끝까지" 로 판정하므로(auth.ts canAccessContent) 10時~10時 는 1시간 노출.
+        return data.startAt <= data.endAt;
       }
       return true;
     },
-    { message: "開始日は終了日以前に設定してください", path: ["startAt"] },
+    { message: "開始日時は終了日時以前に設定してください", path: ["startAt"] },
   );
 
 /** targets 배열 내 roleCode 중복 방어 — DB UNIQUE INDEX는 nullable roleCode 중복을 허용하므로 앱 레이어에서 검증 */

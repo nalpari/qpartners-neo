@@ -6,11 +6,11 @@ import { Prisma } from "@/generated/prisma/client";
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
-import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
 import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
+import { jstHourStart } from "@/lib/jst-day";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -136,11 +136,6 @@ export async function GET(request: NextRequest) {
     // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
     const now = new Date();
 
-    // 게시기간 date-only 비교용 — JST 기준 오늘/내일 자정.
-    // startAt 이 오늘 중 어떤 시각이든 통과시키려면 `< tomorrowStart` 비교 (Redmine #2131).
-    const todayStart = jstDayStart(now);
-    const tomorrowStart = jstNextDayStart(now);
-
     if (internal) {
       // 사내 사용자 (관리 목적):
       // - internalOnly=true → 외부 게시대상(비-INTERNAL_ROLE_CODES 또는 null=비회원)이
@@ -179,10 +174,13 @@ export async function GET(request: NextRequest) {
           some: {
             roleCode: user ? user.role : null,
             AND: [
-              // 노출기간 day 단위 비교 — startAt 이 오늘 어떤 시각이든 통과 (< tomorrowStart).
-              // endAt 이 오늘 자정 이상이면 오늘 종일 노출 (Redmine #2131).
-              { OR: [{ startAt: null }, { startAt: { lt: tomorrowStart } }] },
-              { OR: [{ endAt: null }, { endAt: { gte: todayStart } }] },
+              // 노출기간 시각 비교 — canAccessContent(auth.ts) 와 동일 기준.
+              // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다.
+              // 예전 기준은 "오늘 18시 시작" 을 오늘 00시부터 노출시켜 지정 시각이 무시됐다.
+              // 종료는 "그 시간대의 끝까지" — 저장값이 정각이므로 현재 시각도 정각으로 내려
+              // 비교한다(`23時` 지정 = 24:00 까지, 종전 "종료일 당일 종일" 과 동일 결과).
+              { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+              { OR: [{ endAt: null }, { endAt: { gte: jstHourStart(now) } }] },
             ],
           },
         },
@@ -314,23 +312,23 @@ export async function GET(request: NextRequest) {
           }
         }
       } else {
-        // 비사내: 세션 역할 기반 게시대상 + 게시기간 필터 (Prisma WHERE와 동일)
+        // 비사내: 세션 역할 기반 게시대상 + 게시기간 필터 (Prisma WHERE와 동일 — 시각 비교)
         const userRole = user?.role ?? null;
         if (userRole === null) {
           sqlConds.push(Prisma.sql`EXISTS (
             SELECT 1 FROM qp_content_targets ct
             WHERE ct.content_id = c.id
               AND ct.role_code IS NULL
-              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+              AND (ct.start_at IS NULL OR ct.start_at <= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
           )`);
         } else {
           sqlConds.push(Prisma.sql`EXISTS (
             SELECT 1 FROM qp_content_targets ct
             WHERE ct.content_id = c.id
               AND ct.role_code = ${userRole}
-              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+              AND (ct.start_at IS NULL OR ct.start_at <= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
           )`);
         }
       }

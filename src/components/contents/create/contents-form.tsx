@@ -347,9 +347,16 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
           Array.isArray((resData as { issues: unknown }).issues)
         ) {
           const issues = (resData as { issues: { message?: string }[] }).issues;
-          const messages = issues
-            .map((i) => i.message)
-            .filter((m): m is string => typeof m === "string");
+          // 게시대상 검증(contentTargetSchema)은 targets 배열의 행마다 실행되므로,
+          // 여러 행이 같은 이유로 걸리면 동일 문장이 행 수만큼 쌓인다. 중복은 접어서
+          // 한 줄만 보여준다 — 같은 안내를 세 번 읽게 할 이유가 없다.
+          const messages = [
+            ...new Set(
+              issues
+                .map((i) => i.message)
+                .filter((m): m is string => typeof m === "string"),
+            ),
+          ];
           if (messages.length > 0) {
             message = messages.join("\n");
           }

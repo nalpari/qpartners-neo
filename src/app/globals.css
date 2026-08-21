@@ -117,6 +117,81 @@ button{cursor: pointer;}
 }
 
 /*
+ * 시각 선택 컬럼 (DateTimePicker 전용) — `qp-datepicker--with-time` 이 붙은 달력에만 적용.
+ *
+ * `__time-container` 와 그 자식 `__time-box` 에 똑같이 width: 85px 가 하드코딩돼 있어
+ * container 의 border-left 만큼 자식이 밖으로 밀린다. 달력 우측 보더를 덮고 그 위에 목록
+ * 스크롤바가 그려져 보더가 사라져 보이므로, 자식 폭을 컨테이너 기준(100%)으로 되돌린다.
+ *
+ * 두 컬럼을 가로로 놓는 것은 라이브러리 기본 flex 그대로다. 다만 기본 stretch 로 두면
+ * 날짜 컬럼이 시각 목록 높이만큼 늘어나고, 라이브러리는 그 늘어난 높이를 기준으로 목록
+ * 높이를 다시 잡아 카드가 렌더마다 세로로 커진다. `flex-start` 로 그 순환을 끊는다.
+ * (팝퍼 자체가 좁아지는 문제는 입력 래퍼에서 `position: relative` 를 빼서 해소 —
+ *  date-time-picker.tsx 주석 참조)
+ */
+.qp-datepicker--with-time {
+  align-items: flex-start !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-container {
+  border-left: 1px solid #EBEBEB !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-box,
+.qp-datepicker--with-time .react-datepicker__time-list {
+  width: 100% !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list {
+  scrollbar-width: thin;
+  scrollbar-color: #D1D1D1 transparent;
+}
+
+.qp-datepicker--with-time .react-datepicker-time__header {
+  font-family: 'Noto Sans JP', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: #101010 !important;
+  margin-bottom: 8px !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time,
+.qp-datepicker--with-time .react-datepicker__header--time {
+  background-color: #fff !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 32px !important;
+  padding: 0 !important;
+  font-family: 'Noto Sans JP', sans-serif !important;
+  font-size: 13px !important;
+  color: #101010 !important;
+  transition: background-color 150ms, color 150ms;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list-item:hover {
+  background-color: #F5F5F5 !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list-item--selected {
+  background-color: #E97923 !important;
+  color: #fff !important;
+  font-weight: 500 !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list-item--selected:hover {
+  background-color: #d06a1a !important;
+}
+
+.qp-datepicker--with-time .react-datepicker__time-list-item--disabled {
+  color: #D1D1D1 !important;
+  cursor: not-allowed !important;
+}
+
+/*
  * 콘텐츠 본문 표 렌더링 — BlockNote 에디터 외부(상세 페이지 등)에서도 보더 표시.
  * BlockNote 자체 CSS는 `.bn-editor [data-content-type="table"]` 스코프라 prose 영역에는 적용되지 않는다.
  * 저장된 본문은 `<div data-content-type="table"><table>…</table></div>` 구조이므로 같은 마커로 매칭한다.
