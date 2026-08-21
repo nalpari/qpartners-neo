@@ -41,11 +41,17 @@ const LOG_TAG = "[GET /api/auth/seko/autologin]";
  *
  * base 를 `SITE_URL` 로 고정한다 — `request.nextUrl.origin` 은 Host 헤더 파생이라
  * 헤더 조작이 그대로 Location 에 반영된다(auto-login/inbound 와 동일 관례).
+ *
+ * 성공 경로와 같은 `no-store` 를 건다. 실패 사유는 그 시점의 세션 상태이므로 중간 캐시가
+ * 들고 있으면 이후 재시도에 낡은 사유가 재생된다 — 두 경로의 캐시 정책이 갈릴 이유가 없다.
  */
 function failureRedirect(reason: SekoAutoLoginFailureReason): NextResponse {
   const url = new URL(SEKO_AUTOLOGIN_RESULT_PATH, SITE_URL);
   url.searchParams.set("reason", reason);
-  return NextResponse.redirect(url, { status: 302 });
+  return NextResponse.redirect(url, {
+    status: 302,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -53,7 +59,10 @@ export async function GET(request: NextRequest) {
     const user = await getUserFromRequest(request);
     if (!user) {
       // 쿠키 없음·만료·서명 불일치. 부모 탭도 로그인 화면으로 보내야 하므로 session 으로 알린다.
-      return failureRedirect("session");
+      // 쿠키도 함께 만료시킨다 — `session` 사유의 불변식이 "서버가 인증 쿠키를 이미 지웠다"
+      // 이기도 하고, `verifyToken` 이 **스키마 불일치**로 null 을 돌려주는 경우(서명·만료는
+      // 유효)에는 무효 쿠키가 그대로 남아 다음 요청이 같은 자리에서 반복 실패한다.
+      return clearSessionCookie(failureRedirect("session"));
     }
     // 시공점 회원 전용. 다른 유형에는 AS-IS 계정 자체가 없다.
     if (user.userTp !== "SEKO") {

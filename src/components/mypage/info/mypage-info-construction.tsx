@@ -302,28 +302,17 @@ export function MypageInfoConstruction({
     const hasLeftOurOrigin = () => {
       try {
         const href = opened.location.href;
-        return href !== "about:blank" && !href.startsWith(window.location.origin);
+        // 아직 문서가 커밋되지 않은 창은 `about:blank` 이거나 빈 문자열로 관측된다.
+        // 빈 값을 걸러내지 않으면 `!"".startsWith(origin)` 이 true 라 커넥터 응답 전에
+        // 이동으로 오판하고, 이 로직이 막으려던 비로그인 착지가 그대로 재현된다.
+        if (!href || href === "about:blank") return false;
+        return !href.startsWith(window.location.origin);
       } catch {
         return true;
       }
     };
 
     let settleTimer: number | undefined;
-    const pollTimer = window.setInterval(() => {
-      // 사용자가 직접 닫았으면 더 볼 것이 없다 — 안내 없이 정리만 한다.
-      if (opened.closed) {
-        autoLoginCleanupRef.current?.();
-        return;
-      }
-      if (!hasLeftOurOrigin()) return;
-      window.clearInterval(pollTimer);
-      // AS-IS 로 넘어갔다 — 세션 쿠키가 심어질 시간을 준 뒤 목적 화면으로 다시 보낸다.
-      settleTimer = window.setTimeout(() => {
-        autoLoginCleanupRef.current?.();
-        // 사용자가 이미 닫았으면 건드리지 않는다.
-        if (!opened.closed) opened.location.href = target;
-      }, AUTOLOGIN_SETTLE_MS);
-    }, AUTOLOGIN_POLL_MS);
 
     // 이동도 실패 통지도 없이 상한을 넘긴 경우 — 커넥터 무응답, 게이트웨이 지연 등.
     // 무음으로 두면 사용자는 빈 창만 남고 아무 안내도 받지 못한다.
@@ -335,6 +324,26 @@ export function MypageInfoConstruction({
         message: SEKO_AUTOLOGIN_FAILURE_MESSAGE.failed,
       });
     }, AUTOLOGIN_DEADLINE_MS);
+
+    const pollTimer = window.setInterval(() => {
+      // 사용자가 직접 닫았으면 더 볼 것이 없다 — 안내 없이 정리만 한다.
+      if (opened.closed) {
+        autoLoginCleanupRef.current?.();
+        return;
+      }
+      if (!hasLeftOurOrigin()) return;
+      window.clearInterval(pollTimer);
+      // 이동을 관측한 시점에 상한은 의미를 잃는다. 남겨두면 관측이 늦어졌을 때(느린 커넥터 +
+      // 라우트 왕복) 상한이 `settleTimer` 보다 먼저 발화해 **자동로그인에 성공한 창을 닫고**
+      // 실패로 안내한다 — 성공이 실패로 뒤집힌다.
+      window.clearTimeout(deadlineTimer);
+      // AS-IS 로 넘어갔다 — 세션 쿠키가 심어질 시간을 준 뒤 목적 화면으로 다시 보낸다.
+      settleTimer = window.setTimeout(() => {
+        autoLoginCleanupRef.current?.();
+        // 사용자가 이미 닫았으면 건드리지 않는다.
+        if (!opened.closed) opened.location.href = target;
+      }, AUTOLOGIN_SETTLE_MS);
+    }, AUTOLOGIN_POLL_MS);
 
     const handleMessage = (event: MessageEvent) => {
       // 오리진과 발신 창을 함께 본다 — 오리진만 보면 같은 사이트의 다른 탭·iframe 이 보낸
