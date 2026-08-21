@@ -11,6 +11,11 @@ import type { MobileCardField } from "@/components/common/mobile-card-list";
 import { Button } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
+import {
+  SEKO_AUTOLOGIN_FAILURE_MESSAGE,
+  SEKO_AUTOLOGIN_RELOGIN_REASON,
+  parseSekoAutoLoginFailure,
+} from "@/lib/seko-autologin-result";
 
 /**
  * 마이페이지 「施工ID情報」 카드 데이터 — `GET /api/mypage/profile` 의 `sekoConstruction`.
@@ -27,6 +32,12 @@ export interface SekoConstruction {
   supplierKind: number | null;
   deltaStatus: number | null;
   availableFileTypes: readonly string[];
+  /**
+   * 자동로그인 후 이동할 AS-IS 화면 주소. 서버가 커넥터 호스트에서 파생해 내려준다 —
+   * 자동로그인 쿠키가 그 호스트에만 유효하므로 화면 URL 을 클라이언트에 하드코딩하면
+   * 환경이 갈리는 순간 비로그인 상태로 도착한다.
+   */
+  asIsLinks: { seminar: string; mypage: string };
 }
 
 interface ConstructionRow {
@@ -52,6 +63,32 @@ const FILE_TYPE_LABEL: Record<string, string> = {
 };
 
 const EMPTY_MESSAGE = "施工ID情報がありません";
+
+/**
+ * 자동로그인 창이 **AS-IS 로 넘어간 것을 확인한 뒤** 목적 화면으로 다시 보내기까지 기다리는
+ * 시간(ms).
+ *
+ * 기점이 「클릭 시점」이 아니라 「이동 확인 시점」인 것이 중요하다. 클릭 기준 고정 대기는
+ * 커넥터가 느릴 때(타임아웃 10초) 진행 중인 라우트 요청을 네비게이션으로 취소시켜, 사용자를
+ * **비로그인 상태로 AS-IS 에 착지**시키고 실패 안내까지 삼킨다.
+ *
+ * AS-IS 가 쿠키를 심고 홈을 렌더하는 데 걸리는 시간만 덮으면 되므로 2초로 잡았다. 짧으면
+ * 세션이 심어지기 전에 이동해 비로그인 상태가 되고, 길면 사용자가 AS-IS 홈을 그만큼 오래
+ * 본다. 비로그인 도착 사례가 보고되면 이 값부터 올릴 것.
+ */
+const AUTOLOGIN_SETTLE_MS = 2000;
+
+/** 자동로그인 창이 AS-IS 로 넘어갔는지 확인하는 폴링 주기(ms). */
+const AUTOLOGIN_POLL_MS = 200;
+
+/**
+ * 자동로그인 전체 대기 상한(ms). 이동도 실패 통지도 없이 이 시간을 넘기면 일반 실패로 안내한다.
+ *
+ * 커넥터 타임아웃(`seko-connector.ts` 의 `SEKO_TIMEOUT_MS` = 10초)에 라우트 왕복·결과 페이지
+ * 로드 여유를 더한 값이다. 이보다 짧게 잡으면 커넥터가 제때 실패를 돌려주는 정상 경로까지
+ * 상한에 먼저 걸려, 사유별 안내가 일반 실패 문구로 뭉개진다.
+ */
+const AUTOLOGIN_DEADLINE_MS = 15_000;
 
 /** AS-IS 는 `YYYY-MM-DD` 로 내려준다. 화면 표기는 도트 구분자로 통일. */
 function formatDate(value: string | null): string {
@@ -192,6 +229,160 @@ export function MypageInfoConstruction({
   // 모바일(MobileCardList)은 일반 React 트리라 state 만으로 정상 동작한다.
   const inFlightRef = useRef(false);
   const gridApiRef = useRef<GridApi<ConstructionRow> | null>(null);
+  const navigatingRef = useRef(false);
+  // 진행 중인 자동로그인 1건의 정리 함수(타이머 해제 + 리스너 제거). 실패 통지가 오거나
+  // 언마운트될 때 호출한다.
+  const autoLoginCleanupRef = useRef<(() => void) | null>(null);
+
+  // 언마운트 시 남은 타이머·리스너 정리 — 마이페이지를 떠난 뒤 창이 이동하거나
+  // 사라진 컴포넌트가 alert 를 띄우는 것을 막는다.
+  useEffect(() => () => autoLoginCleanupRef.current?.(), []);
+
+  /**
+   * AS-IS Q.Partners 로 **자동로그인 후 지정 화면 이동** (No.1).
+   *
+   * 새 창을 열어 2단계로 처리한다:
+   *  1) `/api/auth/seko/autologin` → AS-IS 자동로그인 → AS-IS 가 세션 쿠키를 심고 **홈으로** 보냄
+   *  2) 잠시 뒤 그 창을 목적 화면으로 다시 이동
+   *
+   * 2단계가 필요한 이유: AS-IS 자동로그인은 착지 화면을 지정할 수 없다. 요청 본문 파라미터도
+   * URL 쿼리도 200 으로 받아주기만 하고 전부 루트로 보낸다(preview 실측). AS-IS 가 착지 경로를
+   * 지원하면 이 대기 로직은 통째로 사라진다.
+   *
+   * 2단계 대기의 **기점은 클릭이 아니라 「창이 AS-IS 로 넘어간 것을 확인한 시점」이다.**
+   * 다른 오리진 창은 로드 완료를 감지할 수 없지만, `location` 접근이 SecurityError 로 막히는
+   * 것 자체가 「발급된 자동로그인 URL 로 이동했다」는 관측 가능한 신호다. 이를 폴링해 기점을
+   * 잡는다. 클릭 기준 고정 대기로 두면 커넥터가 느릴 때 진행 중인 라우트 요청이 네비게이션에
+   * 취소되어, 이 로직이 막으려던 「비로그인 착지」가 지연 시 **항상** 재현된다.
+   * (iframe `onload` 감지는 서드파티 쿠키 차단에 걸려 테스트 환경에서만 실패하므로 배제했다.)
+   *
+   * **실패는 2단계 이동을 취소한다.** 실패 시 라우트가 창을 동일 오리진 결과 페이지로 보내고
+   * 그 페이지가 `postMessage` 로 사유를 넘긴다. 결과 페이지는 같은 오리진이라 위 폴링에도
+   * 걸리지 않아, 사유가 도착할 때까지 창을 그대로 둔다. 이 신호가 없으면 실패 화면 위로 이동이
+   * 겹쳐, 어떤 실패든 「AS-IS 에 비로그인 상태로 도착」이라는 같은 증상으로 뭉개진다.
+   * 성공에는 신호가 없다 — 그때 창은 이미 AS-IS(다른 오리진)로 넘어가 있다.
+   *
+   * 어느 신호도 오지 않는 경우(커넥터 무응답 등)를 위해 `AUTOLOGIN_DEADLINE_MS` 상한을 둔다.
+   *
+   * `fetch` 가 아니라 창 이동인 이유, `<a href>` 를 쓰지 않는 이유는 같다: 발급 URL 이
+   * **1회·1분** 유효라 미리 받아두거나 프리페치되면 그대로 소진되어 사용자는
+   * 「このリンクは無効か、有効期限が切れています」를 보게 된다.
+   */
+  const handleAutoLogin = (target: string | undefined) => {
+    if (!target) {
+      // `data` 가 아직 없는 경우 — 프로필 로딩 중이거나 조회에 실패했다.
+      // (커넥터 base URL 미설정이면 profile 응답 자체가 성립하지 않아 여기 오지 않는다.)
+      openAlert({
+        type: "alert",
+        message: "施工ID情報を読み込み中です。しばらくしてからお試しください。",
+      });
+      return;
+    }
+    // 창이 뜨기까지 수백 ms — 그 사이 재클릭하면 자동로그인 URL 이 한 번 더 발급되어
+    // 앞의 URL 이 버려진다.
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+
+    // `noopener` 를 주면 window.open 이 null 을 반환해 창 제어권이 사라진다 — 2단계 이동과
+    // 실패 통지(결과 페이지가 `window.opener` 로 보낸다) 모두 핸들·opener 가 있어야 한다.
+    // 여는 대상이 우리 라우트(→ AS-IS)라 신뢰 범위 안이다.
+    const opened = window.open("/api/auth/seko/autologin", "_blank");
+    if (!opened) {
+      navigatingRef.current = false;
+      openAlert({
+        type: "alert",
+        message: "ポップアップがブロックされました。ブラウザの設定をご確認ください。",
+      });
+      return;
+    }
+
+    // 창이 우리 오리진을 벗어났는가 = 발급된 자동로그인 URL 로 이동했는가.
+    // 다른 오리진 문서는 `location` 접근이 SecurityError 로 막힌다 — 그 차단이 신호다.
+    // 이동 대기 중에는 `about:blank` 이므로 접근은 되지만 아직 넘어간 것이 아니다.
+    const hasLeftOurOrigin = () => {
+      try {
+        const href = opened.location.href;
+        // 아직 문서가 커밋되지 않은 창은 `about:blank` 이거나 빈 문자열로 관측된다.
+        // 빈 값을 걸러내지 않으면 `!"".startsWith(origin)` 이 true 라 커넥터 응답 전에
+        // 이동으로 오판하고, 이 로직이 막으려던 비로그인 착지가 그대로 재현된다.
+        if (!href || href === "about:blank") return false;
+        return !href.startsWith(window.location.origin);
+      } catch {
+        return true;
+      }
+    };
+
+    let settleTimer: number | undefined;
+
+    // 이동도 실패 통지도 없이 상한을 넘긴 경우 — 커넥터 무응답, 게이트웨이 지연 등.
+    // 무음으로 두면 사용자는 빈 창만 남고 아무 안내도 받지 못한다.
+    const deadlineTimer = window.setTimeout(() => {
+      autoLoginCleanupRef.current?.();
+      if (!opened.closed) opened.close();
+      openAlert({
+        type: "alert",
+        message: SEKO_AUTOLOGIN_FAILURE_MESSAGE.failed,
+      });
+    }, AUTOLOGIN_DEADLINE_MS);
+
+    const pollTimer = window.setInterval(() => {
+      // 사용자가 직접 닫았으면 더 볼 것이 없다 — 안내 없이 정리만 한다.
+      if (opened.closed) {
+        autoLoginCleanupRef.current?.();
+        return;
+      }
+      if (!hasLeftOurOrigin()) return;
+      window.clearInterval(pollTimer);
+      // 이동을 관측한 시점에 상한은 의미를 잃는다. 남겨두면 관측이 늦어졌을 때(느린 커넥터 +
+      // 라우트 왕복) 상한이 `settleTimer` 보다 먼저 발화해 **자동로그인에 성공한 창을 닫고**
+      // 실패로 안내한다 — 성공이 실패로 뒤집힌다.
+      window.clearTimeout(deadlineTimer);
+      // AS-IS 로 넘어갔다 — 세션 쿠키가 심어질 시간을 준 뒤 목적 화면으로 다시 보낸다.
+      settleTimer = window.setTimeout(() => {
+        autoLoginCleanupRef.current?.();
+        // 사용자가 이미 닫았으면 건드리지 않는다.
+        if (!opened.closed) opened.location.href = target;
+      }, AUTOLOGIN_SETTLE_MS);
+    }, AUTOLOGIN_POLL_MS);
+
+    const handleMessage = (event: MessageEvent) => {
+      // 오리진과 발신 창을 함께 본다 — 오리진만 보면 같은 사이트의 다른 탭·iframe 이 보낸
+      // 메시지로도 이동을 취소시킬 수 있다.
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== opened) return;
+      const failure = parseSekoAutoLoginFailure(event.data);
+      if (!failure) return;
+
+      autoLoginCleanupRef.current?.();
+      if (!opened.closed) opened.close();
+
+      // 서버가 인증 쿠키를 이미 지운 상태 — 부모 탭도 로그인 화면으로 보내지 않으면
+      // 로그인된 UI 를 띄운 채 이후 모든 요청이 401 로 실패한다.
+      // 확인·바깥클릭(취소) 어느 쪽으로 닫아도 이동해야 한다 — 한쪽만 걸면 빠져나갈 구멍이 남는다.
+      const toLogin =
+        failure.reason === SEKO_AUTOLOGIN_RELOGIN_REASON
+          ? () => {
+              window.location.href = "/login";
+            }
+          : undefined;
+      openAlert({
+        type: "alert",
+        message: SEKO_AUTOLOGIN_FAILURE_MESSAGE[failure.reason],
+        onConfirm: toLogin,
+        onCancel: toLogin,
+      });
+    };
+
+    window.addEventListener("message", handleMessage);
+    autoLoginCleanupRef.current = () => {
+      window.clearInterval(pollTimer);
+      window.clearTimeout(settleTimer);
+      window.clearTimeout(deadlineTimer);
+      window.removeEventListener("message", handleMessage);
+      navigatingRef.current = false;
+      autoLoginCleanupRef.current = null;
+    };
+  };
 
   useEffect(() => {
     gridApiRef.current?.refreshCells({ force: true });
@@ -263,24 +454,14 @@ export function MypageInfoConstruction({
             <Button
               variant="primary"
               className="flex-1 lg:flex-none lg:w-[113px]"
-              onClick={() =>
-                openAlert({
-                  type: "alert",
-                  message: "WEB研修申請機能は準備中です",
-                })
-              }
+              onClick={() => handleAutoLogin(data?.asIsLinks?.seminar)}
             >
               WEB研修申請
             </Button>
             <Button
               variant="secondary"
               className="flex-1 lg:flex-none lg:w-[160px]"
-              onClick={() =>
-                openAlert({
-                  type: "alert",
-                  message: "施工ID情報詳細確認機能は準備中です",
-                })
-              }
+              onClick={() => handleAutoLogin(data?.asIsLinks?.mypage)}
             >
               施工ID情報詳細確認
             </Button>

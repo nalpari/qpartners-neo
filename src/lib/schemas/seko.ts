@@ -74,6 +74,32 @@ export const sekoLoginResponseSchema = z.object({
   result: sekoResultSchema,
 });
 
+// ─── No.1 Seko Auto Login API (/api/seko/autologin) — Bearer ───
+// **아웃바운드**: TO-BE 에 로그인한 시공점 회원을 AS-IS Q.Partners 로 로그인된 채 내보낸다.
+// (외부 3사 → TO-BE 인 inbound 자동로그인(`auth/auto-login/inbound`, AES-128-CBC)과는 별개다.)
+//
+// 응답 `autologinUrl` 은 AS-IS 도메인의 일회용 링크다. 실측(2026-08-20 preview):
+//  - 형태: `{AS-IS base}/api/autologin/{64자 토큰}`
+//  - 접속 시 302 + `Set-Cookie: SESS_PUBLISH` / `hqj_user` (path=/) → 사이트 전체 로그인 상태
+//  - **착지는 항상 사이트 루트(`/`)** — 요청 본문 파라미터(returnUrl/url/redirectUrl/page)도,
+//    URL 쿼리(?returnUrl=·?redirect=)도 200 으로 받아주기만 하고 무시된다.
+//    화면 지정은 AS-IS 지원이 필요해 ENDO 질의 중(Redmine #1750 note-23·25 관련).
+//  - **1회·1분 유효**. 재접속 시 「このリンクは無効か、有効期限が切れています」
+//    → 링크를 미리 열어보는 프리페치가 URL 을 소진시키므로 호출부는 클릭 시에만 요청해야 한다.
+const sekoAutoLoginDataSchema = z.object({
+  // 빈 값·공백·"/" 는 AS-IS 루트를 가리킨다 — 자동로그인 없이 홈으로 보내는 꼴이 되므로
+  // 파싱 단계에서 거부한다(호출부는 502 로 종료). fileUrl 과 동일 정책.
+  autologinUrl: z
+    .string()
+    .trim()
+    .refine((v) => v.length > 0 && v !== "/"),
+});
+
+export const sekoAutoLoginResponseSchema = z.object({
+  data: sekoAutoLoginDataSchema.nullable(),
+  result: sekoResultSchema,
+});
+
 // ─── No.3 Seko User Info API (/api/seko/getUserInfo) ───
 
 const sekoUserInfoDataSchema = z.object({

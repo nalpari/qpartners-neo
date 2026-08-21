@@ -16,14 +16,15 @@
  * 접속정보(base URL)는 환경변수 주입 — 미설정 시 **호출 시점** ConfigError.
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
- * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.5 File Download /
- * No.6 Password Change / No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
- * 나머지 API(autologin/getUserList)는 각 I/F 브랜치에서 추가된다.
+ * 현재 구현: No.1 Auto Login / No.2 Login / No.3 User Info / No.4 User Info Update /
+ * No.5 File Download / No.6 Password Change / No.8 Email Check / No.9 2FA Save /
+ * No.10 Password Reset. 나머지(getUserList)는 해당 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
+  sekoAutoLoginResponseSchema,
   sekoEmailCheckResponseSchema,
   sekoFileDownloadResponseSchema,
   sekoLoginResponseSchema,
@@ -126,6 +127,64 @@ function sekoEndpoint(path: string): string {
 }
 
 /**
+ * AS-IS **사이트 화면** 절대 URL. 커넥터 API 와 같은 호스트를 쓴다.
+ *
+ * 자동로그인(No.1) 이 심는 세션 쿠키는 그 호스트에만 유효하므로, 이동 대상도 반드시 같은
+ * 호스트여야 한다. 화면 URL 을 코드에 하드코딩하면 preview 에서 자동로그인은 preview 에
+ * 걸리고 이동만 운영으로 나가 **비로그인 상태로 도착**한다 — 환경별 값은 env 하나
+ * (`SEKO_CONNECTOR_BASE_URL`)에서 파생시킨다.
+ */
+export function sekoSiteUrl(path: string): string {
+  return `${sekoBaseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+/**
+ * AS-IS 가 돌려준 URL 을 **커넥터 origin 안쪽 절대 URL** 로 해석한다. 밖이면 `null`.
+ *
+ * 커넥터 응답에 실려 오는 URL 두 곳(`No.1 autologinUrl`, `No.5 fileUrl`)이 공유한다.
+ * 무검증으로 쓰면 성격은 다르지만 뿌리가 같은 사고가 난다:
+ *  - `fileUrl` — 서버가 임의 호스트로 Bearer 를 들고 나가 응답을 사용자에게 흘리는 SSRF 프록시
+ *  - `autologinUrl` — 사용자를 임의 사이트로 보내는 열린 리다이렉터
+ * 게다가 절대 URL 을 그냥 쓰면 `sekoBaseUrl()` 의 운영 HTTPS 강제 가드를 통째로 우회한다.
+ *
+ * 순수 함수로 둔 이유: origin 판정은 수동 재현이 사실상 불가능한데(커넥터가 악성 URL 을 돌려줘야
+ * 한다) 상대경로 처리 한 줄만 바뀌어도 조용히 뚫린다. 입출력만 보는 형태여야 검증할 수 있다.
+ *
+ * 차단 케이스: origin 불일치 / 스킴 다운그레이드(`http://`) / userinfo 위조(`https://host@evil.com`)
+ * / 프로토콜 상대(`//evil.com`) / 백슬래시(`\evil.com`) / URL 파싱 실패 / 빈 값.
+ */
+export function resolveSekoUrl(baseUrl: string, rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed === "/") return null;
+
+  let baseOrigin: string;
+  try {
+    baseOrigin = new URL(baseUrl).origin;
+  } catch {
+    // base URL 자체가 깨진 설정 — 호출부가 502 로 접는다(ConfigError 로 올리지 않는 이유는
+    // 이 함수가 순수 함수이기 때문. 설정 검증은 sekoBaseUrl() 의 몫).
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const candidate = new URL(trimmed);
+      // origin 비교는 scheme+host+port 를 함께 본다 — http 다운그레이드도 여기서 걸린다.
+      if (candidate.origin !== baseOrigin) return null;
+      return candidate.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  // 스킴 없는 호스트 지정 표기. 상대경로로 취급하면 base 뒤에 붙어 무해하지만,
+  // 정상 응답에는 나올 수 없는 형태라 명시적으로 거부해 의도를 드러낸다.
+  if (trimmed.startsWith("//") || trimmed.startsWith("\\")) return null;
+
+  return `${baseUrl}${trimmed.startsWith("/") ? "" : "/"}${trimmed}`;
+}
+
+/**
  * X-Api-Key 계열 API 용 서버 고정키 (env `SEKO_API_KEY`).
  * Bearer 계열과 달리 로그인 세션이 없는 상태(비밀번호 분실 등)에서 호출하므로 서버 키를 쓴다.
  */
@@ -137,6 +196,107 @@ function sekoApiKeyHeader(): { "X-Api-Key": string } {
     );
   }
   return { "X-Api-Key": key };
+}
+
+/**
+ * No.1 Seko Auto Login API — 시공점 자동로그인 URL 발급 (Bearer, **아웃바운드**).
+ *
+ * TO-BE 에 로그인한 시공점 회원을 AS-IS Q.Partners 로 **로그인된 채 내보내기** 위한 일회용 링크를
+ * 받는다. 반환된 URL 로 브라우저를 보내면 AS-IS 가 세션 쿠키를 심고 자기 사이트로 리다이렉트한다.
+ *
+ * 주의 2가지 (2026-08-20 preview 실측):
+ *  - **착지는 항상 AS-IS 루트**다. 화면 지정 수단이 현재 없다(ENDO 질의 중).
+ *  - **1회·1분 유효**다. 호출부는 링크를 미리 만들어 두거나 `<a href>` 로 노출하면 안 된다 —
+ *    브라우저·프레임워크 프리페치가 조용히 소진시켜 사용자가 만료 안내를 보게 된다.
+ */
+export async function sekoAutoLogin(
+  userId: string,
+  token: string,
+  logTag: string,
+): Promise<
+  | { ok: true; autologinUrl: string }
+  | { ok: false; error: SekoFetchError }
+> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/autologin"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "autologin",
+        callerRoute: logTag,
+        userId: maskUserId(userId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 자동로그인 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  // 상태 판정을 본문 파싱보다 **앞**에 둔다(sekoFileDownload·sekoSave2faVerified 와 동일 패턴).
+  // 401 인데 본문이 비었거나 HTML(프록시/게이트웨이 응답)이면 아래 파싱·스키마 단계에서 502 로
+  // 접혀, 라우트의 401 세션 종료 분기가 영영 발동하지 않는다 — 죽은 Bearer 세션이 그대로 남고
+  // 로컬 JWT 는 유효해 재로그인 유도 없이 모든 SEKO 호출이 반복 실패한다.
+  if (response.status === 401) {
+    console.warn(`${logTag} SEKO 자동로그인 인증 실패 (HTTP 401) — 세션 종료 대상`);
+    return { ok: false, error: { error: "自動ログインに失敗しました", status: 401 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(
+      `${logTag} SEKO 자동로그인 응답 파싱 실패 (status: ${response.status}):`,
+      error,
+    );
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoAutoLoginResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 자동로그인 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 자동로그인 발급 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    const status = mapSekoFailureStatus(response.status, result.errorCode);
+    return {
+      ok: false,
+      error: {
+        error: "自動ログインに失敗しました",
+        status,
+        errorCode: result.errorCode ?? undefined,
+      },
+    };
+  }
+
+  // 발급된 URL 은 그대로 브라우저에 넘길 값이다. 커넥터 origin 밖 주소가 오면
+  // 열린 리다이렉터가 되므로(사용자를 임의 사이트로 보냄) origin 을 검증한다.
+  // 상대경로는 커넥터 base 를 붙여 절대 URL 로 만든다 (No.5 fileUrl 처리와 같은 정책).
+  const resolved = resolveSekoUrl(sekoBaseUrl(), data.autologinUrl);
+  if (!resolved) {
+    console.error(
+      `${logTag} SEKO autologinUrl 이 커넥터 origin 밖 — 사용자 리다이렉트 중단`,
+    );
+    return { ok: false, error: { error: "自動ログインに失敗しました", status: 502 } };
+  }
+
+  return { ok: true, autologinUrl: resolved };
 }
 
 /**
@@ -448,30 +608,13 @@ export async function sekoFileDownload(
   }
 
   // ── 2단계: fileUrl 바이너리 프록시 fetch (Bearer) ──
-  // 절대 URL 은 커넥터 origin 과 일치할 때만 허용한다. 무검증으로 통과시키면
-  //  1) sekoBaseUrl() 을 거치지 않아 운영 HTTPS 강제 가드가 통째로 우회되고
-  //     (AS-IS 가 http:// 를 돌려주는 순간 24시간 유효한 Bearer 가 평문으로 나간다)
-  //  2) 임의 호스트를 받으면 서버가 그리로 아웃바운드를 보내고 응답을 사용자에게
-  //     그대로 흘리는 SSRF 프록시가 된다.
-  // 불일치면 토큰을 붙이지 않고 502 로 종료한다.
-  const baseUrl = sekoBaseUrl();
-  let fileUrl: string;
-  if (/^https?:\/\//i.test(data.fileUrl)) {
-    let candidate: URL | null = null;
-    try {
-      candidate = new URL(data.fileUrl);
-    } catch {
-      candidate = null;
-    }
-    if (!candidate || candidate.origin !== new URL(baseUrl).origin) {
-      console.error(
-        `${logTag} SEKO fileUrl origin 불일치 — Bearer 미부착 후 중단 (origin: ${candidate?.origin ?? "parse-failed"})`,
-      );
-      return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
-    }
-    fileUrl = candidate.toString();
-  } else {
-    fileUrl = `${baseUrl}${data.fileUrl.startsWith("/") ? "" : "/"}${data.fileUrl}`;
+  // origin 검증은 `resolveSekoUrl` 로 위임한다 — No.1 autologinUrl 과 판정 규칙이 같아야 하고,
+  // 보안 검사를 두 벌 두면 한쪽만 고쳐지는 순간 조용히 갈라진다.
+  // 밖이면 토큰을 붙이지 않고 502 로 종료한다.
+  const fileUrl = resolveSekoUrl(sekoBaseUrl(), data.fileUrl);
+  if (!fileUrl) {
+    console.error(`${logTag} SEKO fileUrl 이 커넥터 origin 밖 — Bearer 미부착 후 중단`);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
   }
 
   let fileResponse: Response;

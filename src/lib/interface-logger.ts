@@ -73,6 +73,10 @@ const SENSITIVE_KEYS = new Set([
   "token",
   "accessToken",
   "refreshToken",
+  // SEKO autologin(No.1) 응답 data.autologinUrl — AS-IS 세션을 발급받을 수 있는 일회용 링크다.
+  // 토큰이 쿼리가 아니라 **path segment**(`/api/autologin/{64자}`)라 maskSensitiveQueryInUrl 로는
+  // 안 가려지므로 키 단위로 막는다. 위 `token` 과 성격이 같다 — 자격증명 자체가 URL 인 형태.
+  "autologinUrl",
   // 사용자 자유기입 PII 가능 — 탈퇴 사유(유저 불만·개인정보 혼입 가능)
   "resignRsn",
   "resignRemark",

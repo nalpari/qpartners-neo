@@ -72,17 +72,32 @@ const COOKIE_CLEAR_OPTIONS = {
 };
 
 /**
+ * 응답에 인증 쿠키 만료를 얹는다.
+ *
+ * `sessionInvalidResponse` 는 axios 인터셉터가 받는 **JSON 응답** 전제라, 브라우저가 직접
+ * 진입하는 화면 라우트(리다이렉트 응답)에서는 쓸 수 없다. 쿠키 만료 조건만 필요한 그런
+ * 경로가 옵션을 각자 복제하면 `logout`/`withdraw` 와 조용히 갈라지므로 여기서 공유한다.
+ */
+export function clearSessionCookie<T extends NextResponse>(response: T): T {
+  response.cookies.set(COOKIE_NAME, "", COOKIE_CLEAR_OPTIONS);
+  return response;
+}
+
+/**
  * 세션 결손(재로그인 필요) 401 응답 — 인증 쿠키를 함께 삭제한다.
  *
  * 쿠키를 남긴 채 401 만 반환하면 미들웨어는 JWT 가 유효하므로 통과시키고 API 만 거부해,
  * 화면은 "로그인돼 있는데 아무것도 못 하는" 상태로 고착된다. 게다가 axios 인터셉터가
  * 401 에서 AUTH_FLAG 를 지워 GNB 만 비로그인으로 바뀌므로 사용자는 새로고침으로 벗어날 수 없다.
  * 쿠키를 지워 다음 요청이 정상 로그인 흐름을 타게 한다.
+ *
+ * **JSON 응답 전용이다.** 화면 진입 라우트는 `clearSessionCookie` 를 리다이렉트에 얹을 것 —
+ * 백그라운드 탭에 원문 JSON 을 띄우면 사용자는 원인도 복구 경로도 알 수 없다.
  */
 export function sessionInvalidResponse(message: string): NextResponse {
-  const response = NextResponse.json({ error: message }, { status: 401 });
-  response.cookies.set(COOKIE_NAME, "", COOKIE_CLEAR_OPTIONS);
-  return response;
+  return clearSessionCookie(
+    NextResponse.json({ error: message }, { status: 401 }),
+  );
 }
 
 export { COOKIE_NAME };

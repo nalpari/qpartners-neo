@@ -23,7 +23,7 @@ import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
-import { sekoGetUserInfo, sekoUpdateUserInfo } from "@/lib/seko-connector";
+import { sekoGetUserInfo, sekoSiteUrl, sekoUpdateUserInfo } from "@/lib/seko-connector";
 
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
@@ -133,6 +133,13 @@ export async function GET(request: NextRequest) {
           deltaStatus: s.deltaStatus,
           // 다운로드 가능한 문서 종류. CERT2 는 미사용(QA#12).
           availableFileTypes: ["RECEIPT", "CERT1"] as const,
+          // 카드 헤더 버튼이 자동로그인 후 이동할 AS-IS 화면. 자동로그인 쿠키가 커넥터 호스트에만
+          // 유효하므로 같은 호스트에서 파생한다(화면 URL 하드코딩 금지 — 환경이 갈리면 비로그인
+          // 상태로 도착한다).
+          asIsLinks: {
+            seminar: sekoSiteUrl("/seminar/"),
+            mypage: sekoSiteUrl("/mypage/"),
+          },
         },
       };
       // no-store — 저장 후 refetch 가 브라우저 캐시된 옛 응답을 받지 않도록 (me/permissions 와 동일 정책).
