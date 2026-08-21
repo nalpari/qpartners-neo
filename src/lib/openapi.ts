@@ -3237,7 +3237,11 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MassMail"],
         summary: "대량메일 등록",
-        description: "관리자 전용 — multipart/form-data (draft 또는 pending)",
+        description:
+          "관리자 전용 — multipart/form-data (draft 또는 pending). " +
+          "수신자 수집처는 발송대상 권한에 따라 갈린다: SUPER_ADMIN/ADMIN/1ST_STORE/2ND_STORE/GENERAL·커스텀 권한=QSP userListMng(페이징), " +
+          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, status=1 利用可만, 페이징 없음). " +
+          "SEKO 는 loginId=email 이므로 loginId 를 수신 주소로 사용하며, 수신자명은 sei+mei 를 이어붙인다.",
         requestBody: {
           required: true,
           content: {

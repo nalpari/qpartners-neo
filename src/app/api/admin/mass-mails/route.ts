@@ -127,14 +127,6 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보
-  if (data.targetRoleCodes.includes("SEKO")) {
-    return NextResponse.json(
-      { error: "施工店(SEKO)向け一括送信は現在対応していません" },
-      { status: 400 },
-    );
-  }
-
   // 첨부파일 검증
   const rawFiles = formData.getAll("files");
   const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);

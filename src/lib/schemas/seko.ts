@@ -195,3 +195,58 @@ export const sekoEmailCheckResponseSchema = z.object({
   data: sekoEmailCheckDataSchema.nullable(),
   result: sekoResultSchema,
 });
+
+// ─── No.7 Seko User List API (/api/seko/getUserList) ───
+// 대량메일 수신자 수집 전용. X-Api-Key 인증(Bearer 아님), 페이징 없이 전량 반환.
+//
+// 실측(2026-08-21 preview, 104건):
+//  - 요청 `status`: **스칼라 문자열/숫자만** 수용. `1`=利用可(96건) / `2`=利用不可(8건) /
+//    미지정=전체(104건). 배열 `[1,2]` 는 무시되고 `"1,2"`·0·3·4·5 는 `INVALID_STATUS_ERROR`
+//    (`statusの値が不正です`). 발송 대상은 이용가능 회원뿐이므로 호출부가 `1` 을 명시한다.
+//  - 응답 항목은 5개 전부 104건에 존재. `userId` 는 숫자문자열("1") 이었다.
+//  - **이메일 필드가 따로 없다** — 시공점은 로그인 ID 가 곧 이메일이라 `loginId` 가 주소다.
+//    사양서 필드표도 `loginId`(비고 Email) 이고 응답 예시의 `email` 쪽이 오기다.
+//  - `sei`/`mei` 는 사양서 비고에 「메일 본문 수신자명」 — 호출부가 이어붙여 userName 으로 쓴다.
+export const sekoUserListItemSchema = z.object({
+  // 현재 소비처 없음(수집은 loginId·sei·mei·newsRcptYn 만 쓴다). 실측은 문자열이지만
+  // 상대측이 int 로 바꾸면 항목 단위 safeParse 가 전량 실패하고, 커넥터의 결손 가드가 이를
+  // 502 로 접어 발송이 통째로 멈춘다. 미사용 필드는 판정에 참여시키지 않는다 — groupKind 와
+  // 같은 정책.
+  userId: z.coerce.string().nullish(),
+  // 수집의 유일한 주소원. 빈 값이면 수신자로 성립하지 않으므로 파싱 단계에서 거른다.
+  loginId: z.string().trim().min(1),
+  sei: z.string().nullish(),
+  mei: z.string().nullish(),
+  // 2026-08-17 상대측 추가분(M_USER.news_rcpt_yn). 여기서 enum 으로 조이면 동의값 하나가
+  // 흔들려도 **행 전체가 드롭**되어 「구조적 응답 파손」과 구분이 되지 않는다. 문자열로 받고
+  // 값 판정(공백·대소문자 정규화 + 판정불가 처리)은 호출부(collect-recipients)가 한다.
+  newsRcptYn: z.string().nullish(),
+});
+
+export type SekoUserListItem = z.infer<typeof sekoUserListItemSchema>;
+
+// 항목 파싱은 **커넥터가 한다**. transform 안에서 버리면 「몇 건이 버려졌는지」가 호출부에
+// 전달되지 않아 부분 결손을 성공으로 확정하게 되고, 누락된 회원은 수신자 스냅샷에 없으므로
+// 재시도로도 복구되지 않는다. 여기서는 원본 행을 그대로 넘기고 결손 판정을 커넥터에 맡긴다.
+const sekoUserListDataSchema = z.object({
+  // 결손 판정의 유일한 기준값. 결손을 허용하면 판정 자체가 불가능해져 전량 파싱 실패조차
+  // 「0건 수집 성공」이 된다. 결손 시 응답 스키마 불일치(502) 로 접히는 것이 의도된 동작이다.
+  //
+  // `z.coerce.number()` 단독으로는 이 의도가 성립하지 않는다 — `Number(null)===0` 이라
+  // `null`·`""`·`[]` 가 전부 **0 으로 통과**하고(키 누락만 NaN 으로 거부된다), 그러면
+  // 커넥터의 결손 가드가 `0===0` 으로 뚫린다. 이 커넥터는 `errorCode` 를 null 로 명시
+  // 전송하는 구현이라 null 유입이 가정이 아니다. 숫자 또는 숫자 문자열만 받는다
+  // (`groupKind` 와 달리 coerce 를 쓰지 않는 이유 = coerce 는 비숫자를 거부하지 못한다).
+  totalCount: z.union([
+    z.number().int().nonnegative(),
+    z.string().trim().regex(/^\d+$/).transform(Number),
+  ]),
+  list: z.array(z.unknown()),
+});
+
+export type SekoUserListData = z.infer<typeof sekoUserListDataSchema>;
+
+export const sekoUserListResponseSchema = z.object({
+  data: sekoUserListDataSchema.nullable(),
+  result: sekoResultSchema,
+});
