@@ -229,10 +229,18 @@ export type SekoUserListItem = z.infer<typeof sekoUserListItemSchema>;
 // 전달되지 않아 부분 결손을 성공으로 확정하게 되고, 누락된 회원은 수신자 스냅샷에 없으므로
 // 재시도로도 복구되지 않는다. 여기서는 원본 행을 그대로 넘기고 결손 판정을 커넥터에 맡긴다.
 const sekoUserListDataSchema = z.object({
-  // 결손 판정의 유일한 기준값. nullish 로 두면 이 값이 빠졌을 때 판정 자체가 불가능해져
-  // 전량 파싱 실패조차 「0건 수집 성공」이 된다. 누락 시 coerce → NaN → int() 실패 →
-  // 응답 스키마 불일치(502) 로 접히는 것이 의도된 동작이다.
-  totalCount: z.coerce.number().int().nonnegative(),
+  // 결손 판정의 유일한 기준값. 결손을 허용하면 판정 자체가 불가능해져 전량 파싱 실패조차
+  // 「0건 수집 성공」이 된다. 결손 시 응답 스키마 불일치(502) 로 접히는 것이 의도된 동작이다.
+  //
+  // `z.coerce.number()` 단독으로는 이 의도가 성립하지 않는다 — `Number(null)===0` 이라
+  // `null`·`""`·`[]` 가 전부 **0 으로 통과**하고(키 누락만 NaN 으로 거부된다), 그러면
+  // 커넥터의 결손 가드가 `0===0` 으로 뚫린다. 이 커넥터는 `errorCode` 를 null 로 명시
+  // 전송하는 구현이라 null 유입이 가정이 아니다. 숫자 또는 숫자 문자열만 받는다
+  // (`groupKind` 와 달리 coerce 를 쓰지 않는 이유 = coerce 는 비숫자를 거부하지 못한다).
+  totalCount: z.union([
+    z.number().int().nonnegative(),
+    z.string().trim().regex(/^\d+$/).transform(Number),
+  ]),
   list: z.array(z.unknown()),
 });
 

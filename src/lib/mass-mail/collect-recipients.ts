@@ -156,6 +156,8 @@ function readNewsRcpt(raw: string | null | undefined): "Y" | "N" | "UNKNOWN" {
  *
  * 실패는 throw 한다 — 조용히 빈 배열을 돌려주면 시공점 대상 발송이 「0명 수집 성공」으로
  * 완료 처리되어, 아무에게도 안 갔다는 사실이 어디에도 남지 않는다.
+ * **커넥터가 성공(`ok:true`)으로 돌려준 0건도 같이 막는다** — 이 함수가 throw 하지 않으면
+ * 다른 대상이 없는 한 발송이 sent 로 확정되므로, 실패 경로만 막아서는 구멍이 남는다.
  */
 async function fetchSekoRecipients(
   targets: CollectTargets,
@@ -167,6 +169,17 @@ async function fetchSekoRecipients(
     throw new Error(
       `SEKO getUserList 조회 실패: status=${result.error.status}, errorCode=${result.error.errorCode ?? "-"}`,
     );
+  }
+
+  // 「정상 응답 0건」도 실패로 접는다. 여기서 빈 배열을 돌려주면 SEKO 단독 대상 발송이
+  // collectAndQueueRecipients 의 0건 조기 반환을 타고 status="sent", sentTotal=0 으로
+  // 확정된다 — 시공점 전원 미발송이 화면에 「配信完了」로 표시된다. 도달 경로가 둘이다:
+  //  - 상대측이 실제로 `{"totalCount":0,"list":[]}` 를 돌려주는 경우(스코프·사양 변경 등)
+  //  - `totalCount` 결손을 스키마가 0 으로 흡수해 커넥터 결손 가드(0===0)를 통과하는 경우
+  // 이용 가능 시공점이 0명인 상태가 정상이더라도 보낼 대상이 없는 것은 같으므로,
+  // 조용한 성공보다 운영자에게 보이는 실패(send_failed → 재시도 경로)를 택한다.
+  if (result.items.length === 0) {
+    throw new Error("SEKO getUserList 응답 0건 — 시공점 발송 대상을 수집할 수 없다");
   }
 
   const recipients: CollectedRecipient[] = [];
