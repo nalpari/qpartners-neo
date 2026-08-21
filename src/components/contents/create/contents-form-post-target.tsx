@@ -4,30 +4,6 @@ import { Checkbox, DateTimePicker } from "@/components/common";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
 import { jstHourStart } from "@/lib/jst-day";
 
-/** 종료일을 처음 고를 때 채워지는 시각 — 그 날 끝까지 노출한다는 뜻. */
-const END_DEFAULT_HOUR = 23;
-
-/**
- * 종료일시가 **정각 0시** 로 들어온 경우에만 23시로 세운다.
- *
- * 빈 종료일(=상시 공개)에서 날짜 칸만 클릭하면 라이브러리가 00:00 을 붙인다. 그대로 두면
- * 그 날이 시작하자마자 만료되어 의도와 정반대가 되므로, 종전 일 단위 정책에서 종료일 지정이
- * "그 날 종일 노출" 이었던 것에 맞춰 보정한다(기존 데이터도 마이그레이션에서 23시로 보정).
- *
- * 시각을 직접 고른 값(10시 등)은 0시가 아니므로 건드리지 않는다 — 10시를 눌렀는데 23시가
- * 찍히면 오동작이다. 시각 변경 경로는 라이브러리가 `onChange` 에 event 를 넘기지 않아
- * 클릭 출처로는 구분할 수 없으므로, 이벤트가 아니라 값으로 판정한다.
- *
- * 트레이드오프: "그 날 0시 종료" 를 의도한 경우도 23시가 된다. 시작과 동시에 만료라 실사용
- * 의미가 없고, 필요하면 전날 23시를 고르면 된다.
- */
-function applyEndDefaultHour(picked: Date | null): Date | null {
-  if (!picked || picked.getHours() !== 0 || picked.getMinutes() !== 0) return picked;
-  const next = new Date(picked);
-  next.setHours(END_DEFAULT_HOUR, 0, 0, 0);
-  return next;
-}
-
 /**
  * 콘텐츠 등록 폼 게시대상 선택 (Target Dynamic from Role 후).
  *
@@ -184,15 +160,13 @@ export function ContentsFormPostTarget({
     field: "startDate" | "endDate",
     date: Date | null,
   ) => {
+    // 고른 값을 그대로 쓴다. 종료 시각은 "그 시간대의 끝까지" 로 판정하므로
+    // (auth.ts canAccessContent) `0時` 도 0~1시 노출이라는 의미가 있다 — 예전처럼
+    // 0시를 23시로 되돌리면 사용자가 고른 시각이 무시되는 회귀가 된다.
     onPostTargetsChange({
       ...postTargets,
       targets: postTargets.targets.map((t) =>
-        t.roleCode === roleCode
-          ? {
-              ...t,
-              [field]: field === "endDate" ? applyEndDefaultHour(date) : date,
-            }
-          : t,
+        t.roleCode === roleCode ? { ...t, [field]: date } : t,
       ),
     });
   };
@@ -251,10 +225,7 @@ export function ContentsFormPostTarget({
             <DateTimePicker
               value={postTargets.allEndDate}
               onChange={(date) =>
-                onPostTargetsChange({
-                  ...postTargets,
-                  allEndDate: applyEndDefaultHour(date),
-                })
+                onPostTargetsChange({ ...postTargets, allEndDate: date })
               }
               placeholder="終了日時なし（常時公開）"
               className="w-[190px]"

@@ -10,6 +10,7 @@ import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
+import { jstHourStart } from "@/lib/jst-day";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -176,8 +177,10 @@ export async function GET(request: NextRequest) {
               // 노출기간 시각 비교 — canAccessContent(auth.ts) 와 동일 기준.
               // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다.
               // 예전 기준은 "오늘 18시 시작" 을 오늘 00시부터 노출시켜 지정 시각이 무시됐다.
+              // 종료는 "그 시간대의 끝까지" — 저장값이 정각이므로 현재 시각도 정각으로 내려
+              // 비교한다(`23時` 지정 = 24:00 까지, 종전 "종료일 당일 종일" 과 동일 결과).
               { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-              { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+              { OR: [{ endAt: null }, { endAt: { gte: jstHourStart(now) } }] },
             ],
           },
         },

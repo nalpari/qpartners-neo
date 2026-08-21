@@ -75,6 +75,12 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
       console.error("[fetchAuthMe] 응답 스키마 불일치:", parsed.error.issues);
       return null;
     }
+    // 2차인증(또는 최초 비밀번호 설정) 미완료 세션은 "로그인 상태" 가 아니다 —
+    // login-user-info 라우트는 verifyToken 만 하므로 2FA 전에도 200 을 준다. 여기서 승격하면
+    // middleware(twoFactorVerified === false)가 다른 API 를 전부 403 으로 막는데 axios
+    // 인터셉터는 401 만 정리하므로 플래그가 남아 빠져나올 수 없는 락인이 된다.
+    // 로그인 라우트(login-contents.tsx)의 계약과 동일하게 비로그인으로 취급한다.
+    if (!parsed.data.twoFactorVerified) return null;
     // 쿠키 세션은 살아있는데 localStorage AUTH_FLAG 만 없는 상태(브라우저·프로필 간 스토리지
     // 불일치, 스토리지 정리, 임베디드 브라우저 파티션 등)를 여기서 복구한다. 복구 경로가 없으면
     // 화면은 비로그인인데 /login 은 서버가 쿠키를 보고 `/` 로 리다이렉트해 재로그인도 불가능한

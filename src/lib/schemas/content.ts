@@ -38,15 +38,18 @@ const contentTargetSchema = z
   .object({
     /** 게시대상 권한코드 — null = 비회원 sentinel (qp_roles 외부, useTargetLabels.ts 코드 의도) */
     roleCode: roleCodeWithSentinel,
-    startAt: z.coerce.date().optional(),
-    endAt: z.coerce.date().optional(),
+    // 게시기간은 시 단위 정책 — 서버 경계에서 한 번 절삭해 분·초를 버린다.
+    // 절삭 지점이 여기 하나뿐이라 픽커 타이핑(react-datepicker 는 `10:37` 을 그대로 흘린다)·
+    // API 직접 호출·기본값이 모두 같은 값으로 수렴하고, 저장값과 화면 표기(`10時`)가 일치한다.
+    startAt: z.coerce.date().transform(jstHourStart).optional(),
+    endAt: z.coerce.date().transform(jstHourStart).optional(),
   })
   .refine(
     (data) => {
       if (data.startAt && data.endAt) {
-        // 시(hour) 단위 비교 — 같은 시각 허용. 게시기간을 시 단위까지 지정할 수 있게 되면서
-        // 일 단위 비교로는 같은 날 안의 시각 역전(18시~9시)을 걸러내지 못하게 됐다.
-        return jstHourStart(data.startAt) <= jstHourStart(data.endAt);
+        // 이미 정각으로 절삭된 값이라 그대로 비교한다. 같은 시각 허용 — 종료 시각은
+        // "그 시간대의 끝까지" 로 판정하므로(auth.ts canAccessContent) 10時~10時 는 1시간 노출.
+        return data.startAt <= data.endAt;
       }
       return true;
     },

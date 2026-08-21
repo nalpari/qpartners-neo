@@ -3,6 +3,8 @@
 import { useRef } from "react";
 import ReactDatePicker from "react-datepicker";
 import Image from "next/image";
+
+import { jstHourStart } from "@/lib/jst-day";
 import "react-datepicker/dist/react-datepicker.css";
 
 /**
@@ -70,7 +72,10 @@ export function DateTimePicker({
           <ReactDatePicker
             ref={datePickerRef}
             selected={value}
-            onChange={(date: Date | null) => onChange?.(date)}
+            // 정각으로 스냅 — 목록 클릭은 원래 정각이지만 입력칸에 직접 타이핑하면
+            // react-datepicker 가 `10:37` 을 그대로 흘린다(strictParsing 미적용 + keepInput).
+            // 서버 스키마도 절삭하므로(schemas/content.ts) 여기서 맞춰야 화면 == 저장값.
+            onChange={(date: Date | null) => onChange?.(date ? jstHourStart(date) : null)}
             showTimeSelect
             // 정시만 노출 — 분 단위 선택은 제공하지 않는다.
             timeIntervals={60}

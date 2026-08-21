@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { getFallbackRole, isInternalUser } from "@/lib/auth";
-import { jstParseDateOnly, jstParseDateOnlyEnd } from "@/lib/jst-day";
+import { jstHourStart, jstParseDateOnly, jstParseDateOnlyEnd } from "@/lib/jst-day";
 import { getUserFromRequest } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { downloadLogsQuerySchema } from "@/lib/schemas/content";
@@ -100,7 +100,9 @@ export async function GET(request: NextRequest) {
         if (userRoleCode === undefined) return false;
         const myTarget = log.content.targets.find((t) => t.roleCode === userRoleCode);
         if (!myTarget) return true;
-        if (myTarget.endAt !== null && myTarget.endAt < now) return true;
+        // 종료 경계는 canAccessContent(auth.ts) 와 같은 "종료 시각이 속한 시간대의 끝까지".
+        // 정각 비교로 두면 상세 화면에서는 아직 열람되는 콘텐츠가 목록에서만 取消線이 된다.
+        if (myTarget.endAt !== null && myTarget.endAt < jstHourStart(now)) return true;
         return false;
       })();
 
