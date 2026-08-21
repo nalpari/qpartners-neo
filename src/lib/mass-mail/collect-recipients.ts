@@ -4,7 +4,7 @@
  * QSP 회원관리 목록 API(userListMng)를 페이징 호출하여 발송대상 이메일을 수집한다.
  * - storeLvl / newsRcptYn 을 목록에서 직접 받아 필터링
  * - email 기준 중복 제거
- * - 시공점(SEKO)은 AS-IS API 미확보로 1차 제외
+ * - 시공점(SEKO)은 AS-IS Connector No.7 getUserList 로 별도 수집 (QSP 목록에 없다)
  *
  * Target Dynamic from Role (2026-05-07):
  * - boolean 6개 → targetRoleCodes 배열 (qp_roles.roleCode)
@@ -25,6 +25,7 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { prisma } from "@/lib/prisma";
 import { SYSTEM_ROLE_CODES } from "@/lib/schemas/common";
 import { qspMemberListResponseSchema, lookupStatCd } from "@/lib/schemas/member";
+import { sekoGetUserList } from "@/lib/seko-connector";
 
 /** SUPER_ADMIN/ADMIN 격상 차단용 — resolveAuthRole(auth.ts) 와 동일 정책 */
 const ADMIN_ROLE_CODES: ReadonlySet<string> = new Set(["SUPER_ADMIN", "ADMIN"]);
@@ -78,30 +79,20 @@ async function fetchSuperAdminIds(adminUserIds: string[]): Promise<Set<string>> 
   return new Set(rows.map((r) => r.code));
 }
 
-/** SEKO 미지원 가드 — 라우트에서 사전 차단되지만 방어적으로 throw */
-export class SekoNotSupportedError extends Error {
-  constructor() {
-    super("SEKO_NOT_SUPPORTED");
-    this.name = "SekoNotSupportedError";
-  }
-}
-
 /**
- * roleCode 배열 → QSP userTp 조회 대상 + 커스텀 권한 추출.
+ * roleCode 배열 → QSP userTp 조회 대상 + 커스텀 권한 + SEKO 포함 여부.
  * 커스텀 권한은 항상 GENERAL userTp 회원에게만 부여되므로 (회원관리 정책)
  * 커스텀 권한이 targets 에 있으면 GENERAL 을 query 대상에 강제 포함.
+ *
+ * 시공점(SEKO)은 **QSP 회원목록에 존재하지 않는다** — AS-IS Connector No.7 로 따로 받아온다.
+ * 그래서 userTypes 가 아니라 별도 플래그로 돌려준다.
  */
 function resolveUserTypesToQuery(targets: CollectTargets): {
   userTypes: string[];
   customRoles: string[];
+  includeSeko: boolean;
 } {
-  // SEKO 미지원 — 사전 차단
-  if (targets.roleCodes.includes("SEKO")) {
-    console.error(
-      "[collect-recipients] 시공점(SEKO) 발송 대상 선택됨 — AS-IS API 미확보로 미지원 (라우트 단계 검증 누락 가능성)",
-    );
-    throw new SekoNotSupportedError();
-  }
+  const includeSeko = targets.roleCodes.includes("SEKO");
 
   const customRoles = targets.roleCodes.filter((c) => !SYSTEM_ROLE_CODES.has(c));
 
@@ -114,7 +105,7 @@ function resolveUserTypesToQuery(targets: CollectTargets): {
   // 커스텀 권한은 GENERAL userTp 위에 부여되므로 GENERAL 회원목록을 강제 조회
   if (customRoles.length > 0) userTypes.add("GENERAL");
 
-  return { userTypes: Array.from(userTypes), customRoles };
+  return { userTypes: Array.from(userTypes), customRoles, includeSeko };
 }
 
 /**
@@ -132,6 +123,55 @@ interface RecipientStats {
   invalidEmail: number;
   newsRcptOptOut: number;
   superAdminOnlyExcluded: number;
+}
+
+/**
+ * SEKO(No.7) 수집 — QSP 페이징 루프와 달리 **1회 호출로 전량**이 온다(커넥터가 페이징을 지원하지
+ * 않는다). 커넥터가 `status="1"`(利用可)만 요청하므로 여기서 상태 필터는 하지 않는다.
+ *
+ * 시공점은 **로그인 ID 가 곧 이메일**이라 `loginId` 를 주소로 쓴다(이메일 전용 필드가 없다).
+ * 수신자명은 사양서 비고대로 `sei`+`mei` 를 이어붙인다.
+ *
+ * 실패는 throw 한다 — 조용히 빈 배열을 돌려주면 시공점 대상 발송이 「0명 수집 성공」으로
+ * 완료 처리되어, 아무에게도 안 갔다는 사실이 어디에도 남지 않는다.
+ */
+async function fetchSekoRecipients(
+  targets: CollectTargets,
+  callerRoute: string,
+  stats: RecipientStats,
+): Promise<CollectedRecipient[]> {
+  const result = await sekoGetUserList(callerRoute);
+  if (!result.ok) {
+    throw new Error(
+      `SEKO getUserList 조회 실패: status=${result.error.status}, errorCode=${result.error.errorCode ?? "-"}`,
+    );
+  }
+
+  const recipients: CollectedRecipient[] = [];
+  for (const item of result.items) {
+    const email = item.loginId.trim();
+    if (!isSafeEmail(email)) {
+      stats.invalidEmail++;
+      continue;
+    }
+    // newsRcptYn 은 2026-08-17 상대측 추가분이다. 결손(구 배포본)을 수신거부로 읽으면 시공점
+    // 전원이 조용히 빠지므로, 명시적 "N" 만 제외한다.
+    if (!targets.optOut && item.newsRcptYn === "N") {
+      stats.newsRcptOptOut++;
+      continue;
+    }
+    const userName = `${item.sei ?? ""}${item.mei ?? ""}`.trim();
+    recipients.push({
+      email,
+      userName: userName.length > 0 ? userName : null,
+      authRoleCode: "SEKO",
+    });
+  }
+
+  console.log(
+    `[collect-recipients] SEKO 수집 — 응답 ${result.items.length}건 → 대상 ${recipients.length}건`,
+  );
+  return recipients;
 }
 
 /**
@@ -285,8 +325,8 @@ export async function collectRecipients(
   callerRoute: string,
   loginId: string,
 ): Promise<CollectedRecipient[]> {
-  const { userTypes, customRoles } = resolveUserTypesToQuery(targets);
-  if (userTypes.length === 0) return [];
+  const { userTypes, customRoles, includeSeko } = resolveUserTypesToQuery(targets);
+  if (userTypes.length === 0 && !includeSeko) return [];
 
   const context: CollectionContext = { targets, callerRoute, loginId };
   const dedupedByEmail = new Map<string, CollectedRecipient>();
@@ -335,9 +375,20 @@ export async function collectRecipients(
     }
   }
 
+  // SEKO 는 QSP 목록과 출처가 달라 마지막에 합친다. 같은 주소가 양쪽에 있으면 **먼저 담긴
+  // QSP 쪽 권한을 유지**한다 — QSP 매핑이 authCd·storeLvl 까지 본 결과라 더 구체적이다.
+  if (includeSeko) {
+    for (const recipient of await fetchSekoRecipients(targets, callerRoute, stats)) {
+      if (!dedupedByEmail.has(recipient.email)) {
+        dedupedByEmail.set(recipient.email, recipient);
+      }
+    }
+  }
+
   const recipients = Array.from(dedupedByEmail.values());
+  const sourceLabel = [...userTypes, ...(includeSeko ? ["SEKO"] : [])].join(",");
   console.log(
-    `[collect-recipients] 발송대상 수집 완료 — userTypes: ${userTypes.join(",")}, 수집: ${recipients.length}건`,
+    `[collect-recipients] 발송대상 수집 완료 — 대상: ${sourceLabel}, 수집: ${recipients.length}건`,
   );
 
   const statsParts: string[] = [];

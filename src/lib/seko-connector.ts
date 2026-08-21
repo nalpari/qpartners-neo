@@ -17,8 +17,8 @@
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
  * 현재 구현: No.1 Auto Login / No.2 Login / No.3 User Info / No.4 User Info Update /
- * No.5 File Download / No.6 Password Change / No.8 Email Check / No.9 2FA Save /
- * No.10 Password Reset. 나머지(getUserList)는 해당 I/F 브랜치에서 추가된다.
+ * No.5 File Download / No.6 Password Change / No.7 User List / No.8 Email Check /
+ * No.9 2FA Save / No.10 Password Reset — 사양서 10 API 전부.
  */
 
 import { ConfigError } from "@/lib/errors";
@@ -30,9 +30,11 @@ import {
   sekoLoginResponseSchema,
   sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
+  sekoUserListResponseSchema,
   type SekoEmailCheckData,
   type SekoLoginData,
   type SekoUserInfoData,
+  type SekoUserListItem,
 } from "@/lib/schemas/seko";
 
 export type SekoFetchError = {
@@ -1096,4 +1098,95 @@ export async function sekoResetPwd(
   }
 
   return { ok: true };
+}
+
+
+/** No.7 getUserList `status` — 利用可(발송 대상). 利用不可는 `"2"` 이며 수집하지 않는다. */
+const SEKO_USER_STATUS_ACTIVE = "1";
+
+/**
+ * No.7 Seko User List API — 시공점 회원 목록 조회 (X-Api-Key). **대량메일 수신자 수집 전용.**
+ *
+ * `status` 를 **반드시 `"1"`(利用可)로 명시**한다. 미지정은 「전체」이며 利用不可 회원까지
+ * 섞여 들어와 그대로 발송 대상이 된다(2026-08-21 preview: 전체 104 = 可 96 + 不可 8).
+ * 값은 스칼라만 수용 — 배열 `[1,2]` 는 조용히 무시되고 `"1,2"`·그 외 값은
+ * `INVALID_STATUS_ERROR`(`statusの値が不正です`) 다.
+ *
+ * **페이징이 없다.** QSP `userListMng` 와 달리 요청의 page/size 계열 파라미터가 전부 무시되고
+ * 전량이 한 번에 온다. 회원 수가 늘면 응답이 그만큼 커지므로 타임아웃만 공용값을 쓴다.
+ *
+ * 반환 목록의 `loginId` 가 곧 이메일이다(시공점은 로그인 ID = 이메일). 이메일 전용 필드는
+ * 응답에 없다.
+ */
+export async function sekoGetUserList(
+  logTag: string,
+): Promise<
+  | { ok: true; items: SekoUserListItem[] }
+  | { ok: false; error: SekoFetchError }
+> {
+  let response: Response;
+  try {
+    response = await fetchWithLog(
+      sekoEndpoint("/api/seko/getUserList"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, ...sekoApiKeyHeader() },
+        body: JSON.stringify({ status: SEKO_USER_STATUS_ACTIVE }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "getUserList",
+        callerRoute: logTag,
+        // 특정 회원에 대한 호출이 아니다 — userId 를 넣을 자리가 없다.
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 회원목록 조회 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 회원목록 조회 응답 파싱 실패 (status: ${response.status}):`, error);
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoUserListResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 회원목록 조회 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 회원목록 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    return {
+      ok: false,
+      error: {
+        error: "会員情報を確認できません",
+        status: mapSekoFailureStatus(response.status, result.errorCode),
+        errorCode: result.errorCode ?? undefined,
+      },
+    };
+  }
+
+  // 항목 스키마 불일치는 목록 전체를 접지 않고 건 단위로 버려진다(schemas/seko.ts).
+  // 조용히 줄어들면 「일부 회원에게만 메일이 안 갔다」로 나타나므로 반드시 남긴다.
+  const totalCount = data.totalCount ?? null;
+  if (totalCount !== null && totalCount !== data.list.length) {
+    console.warn(
+      `${logTag} SEKO 회원목록 항목 결손 — totalCount=${totalCount}, 파싱성공=${data.list.length}`,
+    );
+  }
+
+  return { ok: true, items: data.list };
 }

@@ -195,3 +195,47 @@ export const sekoEmailCheckResponseSchema = z.object({
   data: sekoEmailCheckDataSchema.nullable(),
   result: sekoResultSchema,
 });
+
+// ─── No.7 Seko User List API (/api/seko/getUserList) ───
+// 대량메일 수신자 수집 전용. X-Api-Key 인증(Bearer 아님), 페이징 없이 전량 반환.
+//
+// 실측(2026-08-21 preview, 104건):
+//  - 요청 `status`: **스칼라 문자열/숫자만** 수용. `1`=利用可(96건) / `2`=利用不可(8건) /
+//    미지정=전체(104건). 배열 `[1,2]` 는 무시되고 `"1,2"`·0·3·4·5 는 `INVALID_STATUS_ERROR`
+//    (`statusの値が不正です`). 발송 대상은 이용가능 회원뿐이므로 호출부가 `1` 을 명시한다.
+//  - 응답 항목은 5개 전부 104건에 존재. `userId` 는 숫자문자열("1")이라 string 이다.
+//  - **이메일 필드가 따로 없다** — 시공점은 로그인 ID 가 곧 이메일이라 `loginId` 가 주소다.
+//    사양서 필드표도 `loginId`(비고 Email) 이고 응답 예시의 `email` 쪽이 오기다.
+//  - `sei`/`mei` 는 사양서 비고에 「메일 본문 수신자명」 — 호출부가 이어붙여 userName 으로 쓴다.
+const sekoUserListItemSchema = z.object({
+  userId: z.string(),
+  // 수집의 유일한 주소원. 빈 값이면 수신자로 성립하지 않으므로 파싱 단계에서 거른다.
+  loginId: z.string().trim().min(1),
+  sei: z.string().nullish(),
+  mei: z.string().nullish(),
+  // 2026-08-17 상대측 추가분(M_USER.news_rcpt_yn). 그 이전 배포본에는 없으므로 nullish 로
+  // 두고, 호출부가 "N" 만 제외한다 — 결손을 수신거부로 읽으면 전원이 조용히 누락된다.
+  newsRcptYn: z.string().nullish(),
+});
+
+export type SekoUserListItem = z.infer<typeof sekoUserListItemSchema>;
+
+// 개별 항목 결손이 목록 전체를 502 로 접지 않도록 항목 단위로 걸러낸다 — 회원 한 명의
+// 데이터 이상으로 대량메일 발송 전체가 멈추면 장애 범위가 불필요하게 커진다.
+// 걸러진 건수는 호출부가 `totalCount` 와 비교해 로그로 남긴다.
+const sekoUserListDataSchema = z.object({
+  totalCount: z.coerce.number().int().nullish(),
+  list: z.array(z.unknown()).transform((rows) =>
+    rows
+      .map((row) => sekoUserListItemSchema.safeParse(row))
+      .filter((r) => r.success)
+      .map((r) => r.data),
+  ),
+});
+
+export type SekoUserListData = z.infer<typeof sekoUserListDataSchema>;
+
+export const sekoUserListResponseSchema = z.object({
+  data: sekoUserListDataSchema.nullable(),
+  result: sekoResultSchema,
+});
