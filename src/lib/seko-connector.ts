@@ -16,15 +16,16 @@
  * 접속정보(base URL)는 환경변수 주입 — 미설정 시 **호출 시점** ConfigError.
  * (부팅은 막지 않음 — SEKO 미사용 환경 고려. 환경별 값은 .env 로 주입, 코드 하드코딩 금지.)
  *
- * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.6 Password Change /
- * No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
- * 나머지 API(autologin/fileDownload/getUserList)는 각 I/F 브랜치에서 추가된다.
+ * 현재 구현: No.2 Login / No.3 User Info / No.4 User Info Update / No.5 File Download /
+ * No.6 Password Change / No.8 Email Check / No.9 2FA Save / No.10 Password Reset.
+ * 나머지 API(autologin/getUserList)는 각 I/F 브랜치에서 추가된다.
  */
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import {
   sekoEmailCheckResponseSchema,
+  sekoFileDownloadResponseSchema,
   sekoLoginResponseSchema,
   sekoNoDataResponseSchema,
   sekoUserInfoResponseSchema,
@@ -339,6 +340,205 @@ export async function sekoUpdateUserInfo(
   }
 
   return { ok: true };
+}
+
+/**
+ * No.5 Seko File Download API — 시공점 첨부파일 다운로드 (Bearer, **2단계**).
+ *
+ *  1) `/api/seko/fileDownload` 로 메타(`fileUrl`·`fileName`·`contentType`) 획득
+ *  2) `fileUrl` 을 Bearer 로 재fetch 하여 바이너리 확보 → 호출부(라우트)가 스트리밍 프록시
+ *
+ * `fileUrl` 은 Bearer 가 필요한 AS-IS 경로라 브라우저로 리다이렉트할 수 없다(토큰이 노출되고,
+ * 노출해도 쿠키 도메인이 달라 붙지 않는다). TO-BE 서버가 대신 받아 내려주는 구조인 이유다.
+ *
+ * `userId` 와 `loginId` 는 **둘 다 필수**다 (2026-08-19 preview 실측 — 하나만 보내면 거부).
+ */
+export async function sekoFileDownload(
+  params: { userId: string; loginId: string; fileType: string },
+  token: string,
+  logTag: string,
+): Promise<
+  | { ok: true; fileName: string; contentType: string; body: ArrayBuffer }
+  | { ok: false; error: SekoFetchError }
+> {
+  // ── 1단계: fileUrl 메타 획득 ──
+  // sekoId(특정 시공ID 증명서 지정)는 의도적으로 보내지 않는다. 세션 JWT 에 시공ID 가 없어
+  // TO-BE 에서 소유권을 검증할 수단이 없고, AS-IS 가 userId 와 교차검증한다는 실측 근거도 없다.
+  // 무검증 전달 시 타 시공점의 시공증명서를 받아갈 수 있으므로 userId·loginId 로만 특정한다.
+  const reqBody = {
+    userId: params.userId,
+    loginId: params.loginId,
+    fileType: params.fileType,
+  };
+
+  let metaResponse: Response;
+  try {
+    metaResponse = await fetchWithLog(
+      sekoEndpoint("/api/seko/fileDownload"),
+      {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify(reqBody),
+        cache: "no-store",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        apiName: "fileDownload",
+        callerRoute: logTag,
+        userId: maskUserId(params.loginId),
+        userType: "SEKO",
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 파일 메타 조회 호출 실패:`, error);
+    return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
+  }
+
+  // 상태 판정을 본문 파싱보다 **앞**에 둔다(sekoSave2faVerified 와 동일 패턴). 401 인데 본문이
+  // 비었거나 HTML(프록시/게이트웨이 응답)이면 아래 파싱·스키마 단계에서 502 로 접혀,
+  // 호출부의 401 세션 종료 분기가 영영 발동하지 않는다 — 죽은 Bearer 세션이 그대로 남는다.
+  if (metaResponse.status === 401) {
+    console.warn(`${logTag} SEKO 파일 메타 조회 인증 실패 (HTTP 401) — 세션 종료 대상`);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 401 } };
+  }
+
+  let metaBody: unknown;
+  try {
+    metaBody = await metaResponse.json();
+  } catch (error: unknown) {
+    console.error(
+      `${logTag} SEKO 파일 메타 응답 파싱 실패 (status: ${metaResponse.status}):`,
+      error,
+    );
+    return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
+  }
+
+  const parsed = sekoFileDownloadResponseSchema.safeParse(metaBody);
+  if (!parsed.success) {
+    console.error(`${logTag} SEKO 파일 메타 응답 스키마 불일치:`, parsed.error.issues);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const { data, result } = parsed.data;
+  if (result.resultCode !== "S" || !data) {
+    console.warn(
+      `${logTag} SEKO 파일 메타 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+    );
+    // 인증 실패·외부 장애 판정은 공용 헬퍼에 위임한다. HTTP 401 은 위 선판정이 이미 흡수했으므로
+    // 여기서 헬퍼가 잡는 건 (a) 비-401 응답에 인증 errorCode 가 실린 경우 → 401,
+    // (b) 5xx → 502 두 가지다. 자체 매핑으로 대체하면 이 두 분기가 조용히 유실되어,
+    // 죽은 Bearer 를 담은 세션이 404 안내만 반복하며 고착된다.
+    //
+    // 헬퍼가 남기는 400(비즈니스 거부)만 404 로 승격한다 — fileType 은 라우트에서 Zod 로
+    // 이미 검증되므로 남는 거부는 사실상 "해당 문서가 아직 발급되지 않음" 이고,
+    // 화면이 "ファイルが見つかりません" 안내를 띄우게 해야 한다.
+    const mappedStatus = mapSekoFailureStatus(metaResponse.status, result.errorCode);
+    const status = mappedStatus === 400 ? 404 : mappedStatus;
+    return {
+      ok: false,
+      error: {
+        error: status === 404 ? "ファイルが見つかりません" : "ファイルの取得に失敗しました",
+        status,
+        errorCode: result.errorCode ?? undefined,
+      },
+    };
+  }
+
+  // ── 2단계: fileUrl 바이너리 프록시 fetch (Bearer) ──
+  // 절대 URL 은 커넥터 origin 과 일치할 때만 허용한다. 무검증으로 통과시키면
+  //  1) sekoBaseUrl() 을 거치지 않아 운영 HTTPS 강제 가드가 통째로 우회되고
+  //     (AS-IS 가 http:// 를 돌려주는 순간 24시간 유효한 Bearer 가 평문으로 나간다)
+  //  2) 임의 호스트를 받으면 서버가 그리로 아웃바운드를 보내고 응답을 사용자에게
+  //     그대로 흘리는 SSRF 프록시가 된다.
+  // 불일치면 토큰을 붙이지 않고 502 로 종료한다.
+  const baseUrl = sekoBaseUrl();
+  let fileUrl: string;
+  if (/^https?:\/\//i.test(data.fileUrl)) {
+    let candidate: URL | null = null;
+    try {
+      candidate = new URL(data.fileUrl);
+    } catch {
+      candidate = null;
+    }
+    if (!candidate || candidate.origin !== new URL(baseUrl).origin) {
+      console.error(
+        `${logTag} SEKO fileUrl origin 불일치 — Bearer 미부착 후 중단 (origin: ${candidate?.origin ?? "parse-failed"})`,
+      );
+      return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+    }
+    fileUrl = candidate.toString();
+  } else {
+    fileUrl = `${baseUrl}${data.fileUrl.startsWith("/") ? "" : "/"}${data.fileUrl}`;
+  }
+
+  let fileResponse: Response;
+  try {
+    fileResponse = await fetchWithLog(
+      fileUrl,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        // origin 화이트리스트는 최초 1홉만 검사한다. follow 로 두면 커넥터가 302 로 임의 호스트를
+        // 가리키는 순간 서버가 그리로 아웃바운드를 보내고 응답을 사용자에게 그대로 흘리는
+        // SSRF 프록시가 되어 위 검증이 무력화된다. (cross-origin 리다이렉트에서 Authorization 이
+        // 지워지는 건 undici 구현에 기댄 것이지 우리 방어가 아니다.)
+        redirect: "manual",
+        signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
+      },
+      {
+        system: "SEKO",
+        direction: "OUTBOUND",
+        // 1단계와 같은 apiName 을 쓰면 qp_interface_log 에서 두 호출을 구분할 수 없다.
+        apiName: "fileDownload:fetch",
+        callerRoute: logTag,
+        userId: maskUserId(params.loginId),
+        userType: "SEKO",
+        // 응답이 PDF/HTML 바이너리다. 본문을 로깅하면 파일 전체를 문자열로 디코드하고
+        // JSON 파싱 실패 WARN 이 다운로드마다 쌓인다 — 호출 기록만 남기고 본문은 건너뛴다.
+        skipResponseBody: true,
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) throw error;
+    console.error(`${logTag} SEKO 파일 바이너리 fetch 실패:`, error);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+  }
+
+  if (fileResponse.status >= 300 && fileResponse.status < 400) {
+    console.error(
+      `${logTag} SEKO 파일 바이너리 리다이렉트 거부 (status: ${fileResponse.status}) — origin 검증 우회 방지`,
+    );
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+  }
+
+  if (!fileResponse.ok) {
+    console.error(`${logTag} SEKO 파일 바이너리 비정상 응답:`, fileResponse.status);
+    const status = fileResponse.status === 401 ? 401 : 502;
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status } };
+  }
+
+  let fileBody: ArrayBuffer;
+  try {
+    fileBody = await fileResponse.arrayBuffer();
+  } catch (error: unknown) {
+    console.error(`${logTag} SEKO 파일 바이너리 읽기 실패:`, error);
+    return { ok: false, error: { error: "ファイルの取得に失敗しました", status: 502 } };
+  }
+
+  return {
+    ok: true,
+    fileName: data.fileName,
+    // 메타의 contentType 우선, 없으면 실제 fetch 응답 헤더, 그래도 없으면 octet-stream.
+    contentType:
+      data.contentType ??
+      fileResponse.headers.get("content-type") ??
+      "application/octet-stream",
+    body: fileBody,
+  };
 }
 
 /**
