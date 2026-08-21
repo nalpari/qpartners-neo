@@ -243,6 +243,15 @@ export async function sekoAutoLogin(
     return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
   }
 
+  // 상태 판정을 본문 파싱보다 **앞**에 둔다(sekoFileDownload·sekoSave2faVerified 와 동일 패턴).
+  // 401 인데 본문이 비었거나 HTML(프록시/게이트웨이 응답)이면 아래 파싱·스키마 단계에서 502 로
+  // 접혀, 라우트의 401 세션 종료 분기가 영영 발동하지 않는다 — 죽은 Bearer 세션이 그대로 남고
+  // 로컬 JWT 는 유효해 재로그인 유도 없이 모든 SEKO 호출이 반복 실패한다.
+  if (response.status === 401) {
+    console.warn(`${logTag} SEKO 자동로그인 인증 실패 (HTTP 401) — 세션 종료 대상`);
+    return { ok: false, error: { error: "自動ログインに失敗しました", status: 401 } };
+  }
+
   let body: unknown;
   try {
     body = await response.json();

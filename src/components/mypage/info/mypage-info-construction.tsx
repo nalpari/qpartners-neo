@@ -65,17 +65,30 @@ const FILE_TYPE_LABEL: Record<string, string> = {
 const EMPTY_MESSAGE = "施工ID情報がありません";
 
 /**
- * 자동로그인이 끝나기를 기다리는 시간(ms).
+ * 자동로그인 창이 **AS-IS 로 넘어간 것을 확인한 뒤** 목적 화면으로 다시 보내기까지 기다리는
+ * 시간(ms).
  *
- * 실측 왕복은 1초 내외다. 짧으면 세션이 심어지기 전에 이동해 **비로그인 상태로 도착**하고,
- * 길면 사용자가 AS-IS 홈을 그만큼 오래 보게 된다. 2배 여유로 2초를 잡았다.
- * 비로그인 도착 사례가 보고되면 이 값부터 올릴 것.
+ * 기점이 「클릭 시점」이 아니라 「이동 확인 시점」인 것이 중요하다. 클릭 기준 고정 대기는
+ * 커넥터가 느릴 때(타임아웃 10초) 진행 중인 라우트 요청을 네비게이션으로 취소시켜, 사용자를
+ * **비로그인 상태로 AS-IS 에 착지**시키고 실패 안내까지 삼킨다.
  *
- * 이 대기는 **성공 경로 전용**이다. 실패는 결과 페이지가 postMessage 로 알려 주므로 타이머가
- * 취소된다 — 그러지 않으면 실패 화면 위로 이동이 겹쳐 모든 실패가 「AS-IS 에 비로그인 도착」
- * 이라는 같은 증상이 된다(`lib/seko-autologin-result.ts` 참조).
+ * AS-IS 가 쿠키를 심고 홈을 렌더하는 데 걸리는 시간만 덮으면 되므로 2초로 잡았다. 짧으면
+ * 세션이 심어지기 전에 이동해 비로그인 상태가 되고, 길면 사용자가 AS-IS 홈을 그만큼 오래
+ * 본다. 비로그인 도착 사례가 보고되면 이 값부터 올릴 것.
  */
 const AUTOLOGIN_SETTLE_MS = 2000;
+
+/** 자동로그인 창이 AS-IS 로 넘어갔는지 확인하는 폴링 주기(ms). */
+const AUTOLOGIN_POLL_MS = 200;
+
+/**
+ * 자동로그인 전체 대기 상한(ms). 이동도 실패 통지도 없이 이 시간을 넘기면 일반 실패로 안내한다.
+ *
+ * 커넥터 타임아웃(`seko-connector.ts` 의 `SEKO_TIMEOUT_MS` = 10초)에 라우트 왕복·결과 페이지
+ * 로드 여유를 더한 값이다. 이보다 짧게 잡으면 커넥터가 제때 실패를 돌려주는 정상 경로까지
+ * 상한에 먼저 걸려, 사유별 안내가 일반 실패 문구로 뭉개진다.
+ */
+const AUTOLOGIN_DEADLINE_MS = 15_000;
 
 /** AS-IS 는 `YYYY-MM-DD` 로 내려준다. 화면 표기는 도트 구분자로 통일. */
 function formatDate(value: string | null): string {
@@ -236,14 +249,20 @@ export function MypageInfoConstruction({
    * URL 쿼리도 200 으로 받아주기만 하고 전부 루트로 보낸다(preview 실측). AS-IS 가 착지 경로를
    * 지원하면 이 대기 로직은 통째로 사라진다.
    *
-   * 대기 시간이 고정값인 이유: 다른 오리진 창이라 로드 완료를 감지할 수 없다. iframe `onload`
-   * 로 감지하는 방법은 서드파티 쿠키 차단에 걸려 **테스트 환경에서만 실패**하므로 검증이
-   * 불가능하다 — 어디서나 같게 동작하는 타이머를 택했다. 자동로그인 왕복은 실측 1초 내외다.
+   * 2단계 대기의 **기점은 클릭이 아니라 「창이 AS-IS 로 넘어간 것을 확인한 시점」이다.**
+   * 다른 오리진 창은 로드 완료를 감지할 수 없지만, `location` 접근이 SecurityError 로 막히는
+   * 것 자체가 「발급된 자동로그인 URL 로 이동했다」는 관측 가능한 신호다. 이를 폴링해 기점을
+   * 잡는다. 클릭 기준 고정 대기로 두면 커넥터가 느릴 때 진행 중인 라우트 요청이 네비게이션에
+   * 취소되어, 이 로직이 막으려던 「비로그인 착지」가 지연 시 **항상** 재현된다.
+   * (iframe `onload` 감지는 서드파티 쿠키 차단에 걸려 테스트 환경에서만 실패하므로 배제했다.)
    *
-   * **실패는 타이머를 취소한다.** 실패 시 라우트가 창을 동일 오리진 결과 페이지로 보내고 그
-   * 페이지가 `postMessage` 로 사유를 넘긴다. 이 신호가 없으면 실패 화면 위로 2단계 이동이
+   * **실패는 2단계 이동을 취소한다.** 실패 시 라우트가 창을 동일 오리진 결과 페이지로 보내고
+   * 그 페이지가 `postMessage` 로 사유를 넘긴다. 결과 페이지는 같은 오리진이라 위 폴링에도
+   * 걸리지 않아, 사유가 도착할 때까지 창을 그대로 둔다. 이 신호가 없으면 실패 화면 위로 이동이
    * 겹쳐, 어떤 실패든 「AS-IS 에 비로그인 상태로 도착」이라는 같은 증상으로 뭉개진다.
    * 성공에는 신호가 없다 — 그때 창은 이미 AS-IS(다른 오리진)로 넘어가 있다.
+   *
+   * 어느 신호도 오지 않는 경우(커넥터 무응답 등)를 위해 `AUTOLOGIN_DEADLINE_MS` 상한을 둔다.
    *
    * `fetch` 가 아니라 창 이동인 이유, `<a href>` 를 쓰지 않는 이유는 같다: 발급 URL 이
    * **1회·1분** 유효라 미리 받아두거나 프리페치되면 그대로 소진되어 사용자는
@@ -277,11 +296,45 @@ export function MypageInfoConstruction({
       return;
     }
 
-    const settleTimer = window.setTimeout(() => {
+    // 창이 우리 오리진을 벗어났는가 = 발급된 자동로그인 URL 로 이동했는가.
+    // 다른 오리진 문서는 `location` 접근이 SecurityError 로 막힌다 — 그 차단이 신호다.
+    // 이동 대기 중에는 `about:blank` 이므로 접근은 되지만 아직 넘어간 것이 아니다.
+    const hasLeftOurOrigin = () => {
+      try {
+        const href = opened.location.href;
+        return href !== "about:blank" && !href.startsWith(window.location.origin);
+      } catch {
+        return true;
+      }
+    };
+
+    let settleTimer: number | undefined;
+    const pollTimer = window.setInterval(() => {
+      // 사용자가 직접 닫았으면 더 볼 것이 없다 — 안내 없이 정리만 한다.
+      if (opened.closed) {
+        autoLoginCleanupRef.current?.();
+        return;
+      }
+      if (!hasLeftOurOrigin()) return;
+      window.clearInterval(pollTimer);
+      // AS-IS 로 넘어갔다 — 세션 쿠키가 심어질 시간을 준 뒤 목적 화면으로 다시 보낸다.
+      settleTimer = window.setTimeout(() => {
+        autoLoginCleanupRef.current?.();
+        // 사용자가 이미 닫았으면 건드리지 않는다.
+        if (!opened.closed) opened.location.href = target;
+      }, AUTOLOGIN_SETTLE_MS);
+    }, AUTOLOGIN_POLL_MS);
+
+    // 이동도 실패 통지도 없이 상한을 넘긴 경우 — 커넥터 무응답, 게이트웨이 지연 등.
+    // 무음으로 두면 사용자는 빈 창만 남고 아무 안내도 받지 못한다.
+    const deadlineTimer = window.setTimeout(() => {
       autoLoginCleanupRef.current?.();
-      // 사용자가 이미 닫았으면 건드리지 않는다.
-      if (!opened.closed) opened.location.href = target;
-    }, AUTOLOGIN_SETTLE_MS);
+      if (!opened.closed) opened.close();
+      openAlert({
+        type: "alert",
+        message: SEKO_AUTOLOGIN_FAILURE_MESSAGE.failed,
+      });
+    }, AUTOLOGIN_DEADLINE_MS);
 
     const handleMessage = (event: MessageEvent) => {
       // 오리진과 발신 창을 함께 본다 — 오리진만 보면 같은 사이트의 다른 탭·iframe 이 보낸
@@ -313,7 +366,9 @@ export function MypageInfoConstruction({
 
     window.addEventListener("message", handleMessage);
     autoLoginCleanupRef.current = () => {
+      window.clearInterval(pollTimer);
       window.clearTimeout(settleTimer);
+      window.clearTimeout(deadlineTimer);
       window.removeEventListener("message", handleMessage);
       navigatingRef.current = false;
       autoLoginCleanupRef.current = null;
