@@ -10,6 +10,7 @@ import {
   useListStateCacheInvalidator,
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
+import { getFallbackRole } from "@/lib/auth-role";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsSearch } from "./contents-search";
@@ -197,6 +198,12 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   });
   const userScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "anon";
 
+  // 公開日 칸에서 "본인 계층의 게시대상" 을 고르기 위한 권한코드.
+  // 서버(route.ts 비사내 분기 / rbac-guard)와 동일 규칙 — authRole 미탑재 구 JWT 는 userTp 폴백,
+  // 비로그인·해석 불가는 null(=비회원 게시대상)로 떨어진다. auth-role.ts 는 prisma 비의존이라
+  // 클라이언트 번들에 안전하게 포함된다.
+  const viewerRoleCode = user ? (user.authRole ?? getFallbackRole(user.userTp)) : null;
+
   // 카테고리 트리 조회 — 실패 시 data=[] 로 떨어져 카테고리 컬럼/필터가 조용히 사라지므로
   // isError 를 노출해 사용자가 원인을 알 수 있게 한다.
   const { data: categories = [], isError: isCategoriesError } = useQuery({
@@ -304,6 +311,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       />
       <ContentsTable
         isInternal={isInternal}
+        viewerRoleCode={viewerRoleCode}
         categories={categories}
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}

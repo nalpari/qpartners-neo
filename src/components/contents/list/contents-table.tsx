@@ -81,6 +81,33 @@ function renderCategoryCell(
   );
 }
 
+/**
+ * 公開日 — 보는 사람에게 실제로 적용되는 게시 시작일시.
+ *
+ * - 비관리자: 본인 계층(roleCode)의 게시대상 startAt. 목록에 뜬 행이면 본인 대상이 반드시 1건 있다.
+ * - 관리자(SUPER_ADMIN/ADMIN): 여러 계층을 한 칸에 담을 수 없으므로 **최단(가장 빠른) 공개일** 1건만.
+ *
+ * startAt=null 은 "시작 제한 없음"(즉시 공개)이라 찍을 날짜가 없다 → null 반환("-" 표시).
+ * 관리자 뷰에서 한 계층이라도 null 이면 그게 최단이므로 마찬가지로 null — 남은 날짜 중
+ * 최솟값을 보여주면 실제보다 늦은 날짜를 최단으로 표기하게 된다.
+ */
+function resolvePublishStartAt(
+  item: ContentListItem,
+  isInternal: boolean,
+  viewerRoleCode: string | null,
+): string | null {
+  if (!isInternal) {
+    return item.targets.find((t) => t.roleCode === viewerRoleCode)?.startAt ?? null;
+  }
+  if (item.targets.length === 0) return null;
+  if (item.targets.some((t) => t.startAt === null)) return null;
+  // ISO 8601 문자열은 사전순 = 시간순 (登録日 comparator 와 동일 전제).
+  return item.targets.reduce<string | null>(
+    (min, t) => (min === null || (t.startAt !== null && t.startAt < min) ? t.startAt : min),
+    null,
+  );
+}
+
 /** 빈값 정규화 — null/undefined/공백문자열 → "-" */
 function orDash(v: unknown): string {
   if (v == null) return "-";
@@ -106,7 +133,8 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
           NEW
         </span>
       )}
-      {data.hasBeenUpdated && data.isUpdated && (
+      {/* NEW 노출 중에는 UPDATE 미노출 — 등록 직후 수정하면 두 뱃지가 겹친다 */}
+      {!data.isNew && data.hasBeenUpdated && data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
         </span>
@@ -219,14 +247,18 @@ function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) 
   );
 }
 
-/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
+/** 모바일 목록 카드 — 상단: 登録日/公開日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
  *  NEW/UPDATE 뱃지는 컴팩트 카드 디자인 방침에 따라 의도적으로 미표시. */
 
 function MobileContentCard({
   item,
+  isInternal,
+  viewerRoleCode,
   onClick,
 }: {
   item: ContentListItem;
+  isInternal: boolean;
+  viewerRoleCode: string | null;
   onClick: () => void;
 }) {
   const { openAlert } = useAlertStore();
@@ -251,9 +283,19 @@ function MobileContentCard({
         aria-label={item.title}
         onClick={onClick}
       />
-      {/* 상단 — 登録日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭. */}
+      {/* 상단 — 登録日 / 公開日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭.
+          登録日 는 PC 그리드와 같은 규칙으로 관리자에게만 노출한다. */}
       <div className="relative flex items-center gap-3">
-        <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
+        {isInternal && (
+          <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
+        )}
+        <MobileMetaBadge
+          label="公開日"
+          value={(() => {
+            const startAt = resolvePublishStartAt(item, isInternal, viewerRoleCode);
+            return startAt ? formatDate(startAt) : "-";
+          })()}
+        />
         <MobileMetaBadge label="VIEW" value={item.viewCount.toLocaleString()} />
         {item.attachmentCount > 0 && (
           <button
@@ -291,6 +333,8 @@ function MobileContentCard({
 
 interface ContentsTableProps {
   isInternal?: boolean;
+  /** 보는 사람의 계층 권한코드 (null = 비회원/비로그인) — 公開日 칸에서 본인 게시대상을 고를 때 사용. */
+  viewerRoleCode?: string | null;
   categories?: CategoryNode[];
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
@@ -312,6 +356,7 @@ interface ContentsTableProps {
 
 export function ContentsTable({
   isInternal = false,
+  viewerRoleCode = null,
   categories = [],
   data,
   meta,
@@ -409,21 +454,41 @@ export function ContentsTable({
     const hasCategoryColumns = visibleParents.length > 0;
 
     const baseCols: ColDef<ContentListItem>[] = [
+      // 登録日 는 운영 정보라 관리자(SUPER_ADMIN/ADMIN)에게만 노출한다. 일반 사용자에게 의미 있는
+      // 날짜는 "언제부터 볼 수 있게 됐는가"(公開日) 쪽이라, 그 자리를 公開日 이 대신한다.
+      ...(isInternal
+        ? [
+            {
+              headerName: "登録日",
+              field: "createdAt",
+              sortable: true,
+              // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
+              // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
+              // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
+              cellDataType: false,
+              // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
+              comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
+              flex: 1,
+              minWidth: 110,
+              headerClass: "ag-header-cell-center",
+              cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+              valueFormatter: (params) => (params.value ? formatDate(params.value) : "-"),
+            } satisfies ColDef<ContentListItem>,
+          ]
+        : []),
       {
-        headerName: "登録日",
-        field: "createdAt",
-        sortable: true,
-        // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
-        // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
-        // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
-        cellDataType: false,
-        // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
-        comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
+        // 公開日 — 게시대상(ContentTarget) 의 시작일시. 서버에 대응 정렬 필드가 없고 계층별로
+        // 값이 달라(관리자는 최단값 파생) 페이지 경계를 넘는 정렬이 불가능하므로 정렬 미제공.
+        headerName: "公開日",
+        colId: "publishStartAt",
+        sortable: false,
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueFormatter: (params) => params.value ? formatDate(params.value) : "-",
+        valueGetter: (params) =>
+          params.data ? resolvePublishStartAt(params.data, isInternal, viewerRoleCode) : null,
+        valueFormatter: (params) => (params.value ? formatDate(params.value) : "-"),
       },
       {
         headerName: "更新日",
@@ -616,7 +681,7 @@ export function ContentsTable({
         minWidth: Math.max(col.minWidth ?? 0, headerMinWidth(col.headerName ?? "")),
       };
     });
-  }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
+  }, [isInternal, viewerRoleCode, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
@@ -739,6 +804,8 @@ export function ContentsTable({
                 <MobileContentCard
                   key={item.id}
                   item={item}
+                  isInternal={isInternal}
+                  viewerRoleCode={viewerRoleCode}
                   onClick={() => handleMobileItemClick(item)}
                 />
               ))}

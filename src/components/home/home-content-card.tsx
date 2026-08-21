@@ -148,7 +148,8 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
                   NEW
                 </span>
               )}
-              {item.hasBeenUpdated && item.isUpdated && (
+              {/* NEW 노출 중에는 UPDATE 미노출 — 목록(contents-table.tsx)과 동일 규칙 */}
+              {!item.isNew && item.hasBeenUpdated && item.isUpdated && (
                 <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
                   UPDATE
                 </span>
