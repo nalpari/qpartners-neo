@@ -1187,6 +1187,13 @@ export async function sekoGetUserList(
       `${logTag} SEKO 회원목록 항목 결손 — totalCount=${totalCount}, 파싱성공=${data.list.length}`,
     );
   }
+  // 전량 결손은 부분 결손과 성격이 다르다 — 응답 형식이 통째로 바뀐 것이다. 빈 목록을 성공으로
+  // 돌려주면 「0명 수집 성공」으로 발송이 sent 처리되어 아무에게도 안 갔다는 사실이 어디에도
+  // 남지 않으므로, 커넥터 장애와 동급으로 실패시킨다.
+  if (totalCount !== null && totalCount > 0 && data.list.length === 0) {
+    console.error(`${logTag} SEKO 회원목록 항목 전량 파싱 실패 — totalCount=${totalCount}`);
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
 
   return { ok: true, items: data.list };
 }

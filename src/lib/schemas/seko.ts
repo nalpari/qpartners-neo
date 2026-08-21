@@ -203,12 +203,15 @@ export const sekoEmailCheckResponseSchema = z.object({
 //  - 요청 `status`: **스칼라 문자열/숫자만** 수용. `1`=利用可(96건) / `2`=利用不可(8건) /
 //    미지정=전체(104건). 배열 `[1,2]` 는 무시되고 `"1,2"`·0·3·4·5 는 `INVALID_STATUS_ERROR`
 //    (`statusの値が不正です`). 발송 대상은 이용가능 회원뿐이므로 호출부가 `1` 을 명시한다.
-//  - 응답 항목은 5개 전부 104건에 존재. `userId` 는 숫자문자열("1")이라 string 이다.
+//  - 응답 항목은 5개 전부 104건에 존재. `userId` 는 숫자문자열("1") 이었다.
 //  - **이메일 필드가 따로 없다** — 시공점은 로그인 ID 가 곧 이메일이라 `loginId` 가 주소다.
 //    사양서 필드표도 `loginId`(비고 Email) 이고 응답 예시의 `email` 쪽이 오기다.
 //  - `sei`/`mei` 는 사양서 비고에 「메일 본문 수신자명」 — 호출부가 이어붙여 userName 으로 쓴다.
 const sekoUserListItemSchema = z.object({
-  userId: z.string(),
+  // 현재 소비처 없음(수집은 loginId·sei·mei·newsRcptYn 만 쓴다). 실측은 문자열이지만
+  // 상대측이 int 로 바꾸면 아래 항목 단위 safeParse 가 전량 드롭되어 「0건 수집 성공」이
+  // 되므로, 미사용 필드는 판정에 참여시키지 않는다 — groupKind 와 같은 정책.
+  userId: z.coerce.string().nullish(),
   // 수집의 유일한 주소원. 빈 값이면 수신자로 성립하지 않으므로 파싱 단계에서 거른다.
   loginId: z.string().trim().min(1),
   sei: z.string().nullish(),

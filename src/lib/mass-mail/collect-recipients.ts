@@ -3,7 +3,7 @@
  *
  * QSP 회원관리 목록 API(userListMng)를 페이징 호출하여 발송대상 이메일을 수집한다.
  * - storeLvl / newsRcptYn 을 목록에서 직접 받아 필터링
- * - email 기준 중복 제거
+ * - email 기준 중복 제거(대소문자 무시)
  * - 시공점(SEKO)은 AS-IS Connector No.7 getUserList 로 별도 수집 (QSP 목록에 없다)
  *
  * Target Dynamic from Role (2026-05-07):
@@ -116,6 +116,17 @@ function isSafeEmail(email: string): boolean {
   if (email.length === 0 || email.length > 254) return false;
   if (/[\r\n]/.test(email)) return false;
   return EMAIL_BASIC_RE.test(email);
+}
+
+/**
+ * 중복 판정 전용 키. `qp_mass_mail_recipients` 의 `uq_mass_mail_email` 이
+ * utf8mb4_unicode_ci(대소문자 무시)라, 원문 그대로 판정하면 대소문자만 다른 두 주소가 함께
+ * 살아남아 INSERT 가 P2002 로 터지고 트랜잭션이 통째로 롤백된다 — 한 명 때문에 메일 전체가
+ * 실패한다. QSP `email` 과 SEKO `loginId` 는 출처가 달라 표기가 갈릴 여지도 크다.
+ * 발송에는 원문 주소를 그대로 쓰고 판정만 이 키로 한다.
+ */
+function normalizeEmailKey(email: string): string {
+  return email.toLowerCase();
 }
 
 interface RecipientStats {
@@ -369,8 +380,9 @@ export async function collectRecipients(
     for (const item of items) {
       const mapped = mapRecipient(item, targets, superAdminIds, activeRoleCodes, useAuthCd, stats);
       if (!mapped) continue;
-      if (!dedupedByEmail.has(mapped.email)) {
-        dedupedByEmail.set(mapped.email, mapped);
+      const key = normalizeEmailKey(mapped.email);
+      if (!dedupedByEmail.has(key)) {
+        dedupedByEmail.set(key, mapped);
       }
     }
   }
@@ -379,8 +391,9 @@ export async function collectRecipients(
   // QSP 쪽 권한을 유지**한다 — QSP 매핑이 authCd·storeLvl 까지 본 결과라 더 구체적이다.
   if (includeSeko) {
     for (const recipient of await fetchSekoRecipients(targets, callerRoute, stats)) {
-      if (!dedupedByEmail.has(recipient.email)) {
-        dedupedByEmail.set(recipient.email, recipient);
+      const key = normalizeEmailKey(recipient.email);
+      if (!dedupedByEmail.has(key)) {
+        dedupedByEmail.set(key, recipient);
       }
     }
   }
