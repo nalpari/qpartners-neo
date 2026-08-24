@@ -161,6 +161,14 @@ export async function POST(request: NextRequest) {
     // `email/check` 를 다시 호출하지 않는다 — 토큰이 그 확인의 증서다.
     const targetLoginId = tokenRow.loginId ?? tokenRow.userId;
 
+    // ⚠️ **AS-IS 제약 — No.10 `resetPwd` 는 시공ID 를 받지 않는다** (2026-08-24 preview 실측).
+    // 같은 시공ID 를 No.8 `email/check` 는 계정으로 해석하는데(`exists:true`), `resetPwd` 는
+    // 미존재 계정과 **완전히 동일한** `400 INVALID_LOGIN_ID_ERROR`(`loginIdが正しくありません`)
+    // 로 거부한다. 즉 이 경로는 현재 **이메일 입력만 완주**하고 시공ID 입력은 여기서 막힌다.
+    //
+    // 시공ID → 이메일을 해석할 I/F 가 없어 TO-BE 우회는 불가능하다(No.8 응답에 이메일 없음 /
+    // No.3 `getUserInfo` 는 Bearer 전용 / No.7 응답에 시공ID 없음). 상대측에 No.8 과 동일한
+    // 겸용 처리를 요청해 둔 상태이며(Redmine #1750), 지원되면 코드 변경 없이 풀린다.
     const resetResult = await sekoResetPwd(targetLoginId, newPassword, LOG);
     if (!resetResult.ok) {
       console.error(

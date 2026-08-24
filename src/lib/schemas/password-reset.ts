@@ -103,6 +103,11 @@ export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchem
 
 // ─── 시공점(SEKO) 비밀번호 초기화 — 화면설계서 v1.4 p12 ───
 //
+// 입력 식별자는 **시공ID** 다(p12 ②·④). 로그인 화면(p10)은 「이메일 또는 시공ID」 겸용이지만
+// 초기화는 시공ID 단독으로 규정돼 있다. 1단계(No.8 `email/check`)는 시공ID·이메일을 같은
+// 계정으로 해석하지만(2026-08-24 preview 실측), **2단계(No.10 `resetPwd`)가 시공ID 를 받지
+// 못해** 사양대로의 입력은 저장 단계에서 막힌다(상세·후속은 `seko/reset/route.ts` 주석).
+//
 // 판매점·일반과 달리 **메일 링크를 거치지 않는다.** 시공ID 존재 확인 후 곧바로 비밀번호를
 // 설정한다(p12: 「비밀번호 초기화」→ 비밀번호 설정 팝업 호출 → 저장).
 //
