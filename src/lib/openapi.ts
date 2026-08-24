@@ -74,6 +74,8 @@ export const openApiSpec: OpenAPIV3.Document = {
 
 - **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
 - **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
+  - loginId 는 **이메일 또는 시공ID** 둘 다 허용 (사양서 No.2 r6, preview 실측 확인).
+  - 로그인 직후 **No.3 getUserInfo 를 1회 더 호출해 시공ID 만료를 검사**한다 (화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」). 판정에 필요한 sekoStatus/sekoLimit 이 login 응답에 없어 불가피한 추가 호출이며, 조회 실패는 fail-closed(502) 다. 시공ID 미보유(두 값 모두 null)는 만료 대상이 아니므로 통과.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -135,8 +137,12 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
-          "403": errorResponse("2FA 대상이나 이메일 미등록, 또는 SEKO 권한(QpRole) 미존재·비활성 — 로그인 차단"),
-          "502": errorResponse("외부 인증 서버(QSP / SEKO Connector) 오류"),
+          "403": errorResponse(
+            "2FA 대상이나 이메일 미등록 / SEKO 권한(QpRole) 미존재·비활성 / **시공ID 만료**(sekoStatus=2 또는 sekoLimit 경과) — 로그인 차단",
+          ),
+          "502": errorResponse(
+            "외부 인증 서버(QSP / SEKO Connector) 오류. SEKO 는 시공ID 유효성 확인용 getUserInfo 실패도 포함(fail-closed)",
+          ),
           "500": errorResponse("JWT 생성 실패 또는 서버 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
         },
       },
@@ -3240,7 +3246,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         description:
           "관리자 전용 — multipart/form-data (draft 또는 pending). " +
           "수신자 수집처는 발송대상 권한에 따라 갈린다: SUPER_ADMIN/ADMIN/1ST_STORE/2ND_STORE/GENERAL·커스텀 권한=QSP userListMng(페이징), " +
-          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, status=1 利用可만, 페이징 없음). " +
+          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, 페이징 없음) — **전체 조회 후 status=2(利用不可) 목록을 userId 로 차집합**. " +
+          "利用可 는 status 1(利用可) 과 5(WEB研修) 둘 다인데(AS-IS 마이그레이션 기준) 목록 필터는 1/2 만 받아 `1 ∪ 5` 를 직접 고를 수 없기 때문이며, 두 호출 중 하나라도 실패하면 수집 전체를 실패시킨다. " +
           "SEKO 는 loginId=email 이므로 loginId 를 수신 주소로 사용하며, 수신자명은 sei+mei 를 이어붙인다.",
         requestBody: {
           required: true,

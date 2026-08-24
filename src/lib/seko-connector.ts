@@ -23,6 +23,7 @@
 
 import { ConfigError } from "@/lib/errors";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
+import { jstNextDayStart } from "@/lib/jst-day";
 import {
   sekoAutoLoginResponseSchema,
   sekoEmailCheckResponseSchema,
@@ -852,6 +853,71 @@ export function formatSekoDateTime(date: Date): string {
 }
 
 /**
+ * `sekoStatus` 期限切れ — 사양서 `Seko User Info API` r27 (1=有効, 2=期限切れ).
+ * `deltaStatus` 도 같은 코드계지만 델타ID 전용이라 로그인 게이트에서는 보지 않는다.
+ */
+const SEKO_ID_STATUS_EXPIRED = 2;
+
+/** 시공ID 유효성 판정 결과 — 차단 시 사유를 남겨 운영 로그에서 원인을 구분한다. */
+export type SekoIdValidity =
+  | { valid: true; reason: "ACTIVE" | "NO_SEKO_ID" }
+  | { valid: false; reason: "STATUS_EXPIRED" | "LIMIT_PASSED" | "UNPARSABLE_LIMIT" };
+
+/**
+ * 시공ID 유효성 판정 — 화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」의 판정부.
+ *
+ * 사양서(20260817) `Seko User Info API` 기준:
+ *  - `sekoStatus` r27 — 施工ID状態 (**1=有効, 2=期限切れ**)
+ *  - `sekoLimit`  r29 — 施工ID有効期限 (`YYYY-MM-DD`)
+ *
+ * 두 값은 **login 응답에 없고 getUserInfo 에만 있다**(login 응답 15필드 확인). 그래서 호출부는
+ * 로그인 직후 getUserInfo 를 한 번 더 친다 — 이 함수를 순수하게 뺀 이유는 만료 계정을 실측할
+ * 수단이 없어(preview 테스트 계정이 유효기간 미래 1건뿐) 입출력으로만 검증 가능해서다.
+ *
+ * **`sekoLimit` 은 유효기간의 마지막 날을 포함**한다(`2026-12-31` → 12/31 종일 유효).
+ * 따라서 만료 판정은 `now >= 만료일 다음날 00:00(JST)` 이다. 하루 차이로 유효한 시공ID 를
+ * 막으면 사용자가 우회할 방법이 없다.
+ *
+ * **시공ID 미보유(두 값 모두 null)는 통과시킨다.** 만료 판정의 대상 자체가 없기 때문이다.
+ * AS-IS 마이그레이션 쿼리가 `status IN ('1','5')` 를 모두 「利用可」로 다루고(`5`=WEB研修 =
+ * `M_SEMINAR_USER` 教育申請中), 교육 신청 단계 회원은 아직 시공ID 가 발급되기 전일 수 있다.
+ * 여기서 fail-closed 로 접으면 그 회원들이 로그인 자체를 못 하게 된다.
+ *
+ * 반대로 **값이 있는데 파싱이 안 되면 차단**한다(fail-closed). 형식이 깨진 유효기간을
+ * 「유효」로 접으면 만료 게이트가 조용히 무력화된다 — `parseSekoDate` 실패를 2FA 에서
+ * fail-closed 로 다루는 것과 같은 기준이다.
+ */
+export function evaluateSekoIdValidity(params: {
+  sekoStatus: number | null;
+  sekoLimit: string | null;
+  now?: Date;
+}): SekoIdValidity {
+  const { sekoStatus, sekoLimit, now = new Date() } = params;
+
+  if (sekoStatus === SEKO_ID_STATUS_EXPIRED) {
+    return { valid: false, reason: "STATUS_EXPIRED" };
+  }
+
+  if (sekoLimit === null || sekoLimit.trim() === "") {
+    // 상태값도 만료일도 없으면 시공ID 미보유로 본다. 상태값이 「有効」이면 그대로 유효.
+    return { valid: true, reason: sekoStatus === null ? "NO_SEKO_ID" : "ACTIVE" };
+  }
+
+  const limitIso = parseSekoDate(sekoLimit);
+  if (!limitIso) {
+    return { valid: false, reason: "UNPARSABLE_LIMIT" };
+  }
+
+  // 만료일 종일 유효 — 다음날 자정부터 만료.
+  const expiresAt = jstNextDayStart(new Date(limitIso));
+  if (now.getTime() >= expiresAt.getTime()) {
+    return { valid: false, reason: "LIMIT_PASSED" };
+  }
+
+  return { valid: true, reason: "ACTIVE" };
+}
+
+/**
  * No.9 Seko 2FA Save API — 2차인증 완료 일시 저장 (Bearer).
  *
  * TO-BE 에서 2FA 를 통과한 직후 호출해 AS-IS 의 `secAuthDt` 를 갱신한다. 이 값이 다음 로그인의
@@ -1102,26 +1168,54 @@ export async function sekoResetPwd(
 }
 
 
-/** No.7 getUserList `status` — 利用可(발송 대상). 利用不可는 `"2"` 이며 수집하지 않는다. */
-const SEKO_USER_STATUS_ACTIVE = "1";
+/** No.7 getUserList `status` — 利用不可. 발송 대상에서 빼기 위해 **제외 목록으로만** 쓴다. */
+const SEKO_USER_STATUS_UNAVAILABLE = "2";
 
 /**
  * No.7 Seko User List API — 시공점 회원 목록 조회 (X-Api-Key). **대량메일 수신자 수집 전용.**
  *
- * `status` 를 **반드시 `"1"`(利用可)로 명시**한다. 미지정은 「전체」이며 利用不可 회원까지
- * 섞여 들어와 그대로 발송 대상이 된다(2026-08-21 preview: 전체 104 = 可 96 + 不可 8).
- * 값은 스칼라만 수용 — 배열 `[1,2]` 는 조용히 무시되고 `"1,2"`·그 외 값은
- * `INVALID_STATUS_ERROR`(`statusの値が不正です`) 다.
+ * ## 왜 두 번 호출하는가
+ *
+ * 발송 대상은 「利用可」 회원이고, 사양서상 그건 `status` **1(利用可) 과 5(WEB研修) 둘 다**다.
+ * AS-IS 마이그레이션 쿼리(`qpartners_migration_query_ja_prod.sql`)가 근거다:
+ *
+ * ```sql
+ * -- 対象 status: '1' (利用可) / '5' (利用可)
+ * AND status IN ('1', '5')
+ * ```
+ *
+ * `5` 는 정지·탈퇴가 아니라 `M_SEMINAR_USER` 教育申請中(시공ID 교육 신청) 단계의 **활성 회원**이다.
+ *
+ * 그런데 이 API 의 `status` 필터는 **`"1"` / `"2"` / 미지정(전체)** 세 가지뿐이다(사양서
+ * `Seko User List API` r6 — 목록 필터에는 `5` 가 아예 없다. `getUserInfo` r31 의 `status` 는
+ * 1/2/5 인데 **같은 필드를 필터에서만 1/2 로 받는다**). `"1,2"` 나 `5` 는
+ * `INVALID_STATUS_ERROR`(`statusの値が不正です`), 배열 `[1,2]` 는 조용히 무시된다.
+ * 즉 **`1 ∪ 5` 를 직접 고르는 요청이 없다.** 그래서 `전체 − 2` 로 같은 집합을 만든다:
+ *
+ * ```
+ * 1) {}              → 전체 (1+2+5)   preview 실측 104건
+ * 2) {status:"2"}    → 利用不可        preview 실측   8건
+ *    userId 차집합                   = 96건 = 利用可(1) + WEB研修(5)
+ * ```
+ *
+ * **「利用不可」 판정은 여전히 AS-IS 가 내린다** — 우리는 상태값을 해석하지 않고 AS-IS 가 준
+ * 제외 목록을 뺄 뿐이다. 응답 5필드(`userId`/`loginId`/`sei`/`mei`/`newsRcptYn`)에 `status` 가
+ * 없어 어차피 우리 쪽 분류는 불가능하기도 하다.
+ *
+ * **호출 순서가 중요하다 — 전체 → 제외 순.** 두 호출 사이에 비활성화된 회원은 뒤의 제외 목록에
+ * 잡혀 빠진다. 순서를 뒤집으면 그 회원이 발송 대상에 남는다.
+ *
+ * 한쪽이라도 실패하면 **전체를 실패로 접는다.** 제외 목록만 실패했다고 전체를 그대로 돌려주면
+ * 利用不可 회원에게 발송된다.
+ *
+ * ⚠️ preview 에 `status=5` 회원이 0명이라(96+8=104=전체) **「5가 실제로 포함된다」는 결과는
+ * 미검증**이다. 차집합 산술이 성립한다는 것까지만 확인됐다.
  *
  * **페이징이 없다.** QSP `userListMng` 와 달리 요청의 page/size 계열 파라미터가 전부 무시되고
  * 전량이 한 번에 온다. 회원 수가 늘면 응답이 그만큼 커지므로 타임아웃만 공용값을 쓴다.
  *
  * 반환 목록의 `loginId` 가 곧 이메일이다(시공점은 로그인 ID = 이메일). 이메일 전용 필드는
  * 응답에 없다.
- *
- * **결손은 부분·전량 가리지 않고 실패로 접는다.** 항목 하나라도 스키마에 맞지 않거나
- * `totalCount` 와 파싱 건수가 다르면 목록을 돌려주지 않는다 — 부분 목록으로 발송하면 누락된
- * 회원이 수신자 스냅샷에 남지 않아 재시도로도 복구되지 않기 때문이다.
  */
 export async function sekoGetUserList(
   logTag: string,
@@ -1129,6 +1223,41 @@ export async function sekoGetUserList(
   | { ok: true; items: SekoUserListItem[] }
   | { ok: false; error: SekoFetchError }
 > {
+  // 전체 → 제외 순서 고정 (위 주석 참조).
+  const all = await fetchSekoUserListByStatus(null, logTag);
+  if (!all.ok) return all;
+
+  const unavailable = await fetchSekoUserListByStatus(SEKO_USER_STATUS_UNAVAILABLE, logTag);
+  if (!unavailable.ok) return unavailable;
+
+  const excluded = new Set(unavailable.items.map((item) => item.userId));
+  const items = all.items.filter((item) => !excluded.has(item.userId));
+
+  console.log(
+    `${logTag} SEKO 회원목록 차집합 — 전체=${all.items.length}, 利用不可=${unavailable.items.length}, 대상=${items.length}`,
+  );
+
+  return { ok: true, items };
+}
+
+/**
+ * `getUserList` 1회 호출 — `status` 미지정(`null`)이면 전체.
+ *
+ * **결손은 부분·전량 가리지 않고 실패로 접는다.** 항목 하나라도 스키마에 맞지 않거나
+ * `totalCount` 와 파싱 건수가 다르면 목록을 돌려주지 않는다 — 부분 목록으로 발송하면 누락된
+ * 회원이 수신자 스냅샷에 남지 않아 재시도로도 복구되지 않기 때문이다. 제외 목록 쪽이 결손되면
+ * 利用不可 회원이 대상에 남으므로, 같은 기준이 양쪽 호출 모두에 필요하다.
+ */
+async function fetchSekoUserListByStatus(
+  status: string | null,
+  logTag: string,
+): Promise<
+  | { ok: true; items: SekoUserListItem[] }
+  | { ok: false; error: SekoFetchError }
+> {
+  // 같은 apiName 으로 2회 호출되므로 로그에서 어느 쪽이 실패했는지 구분할 표식이 필요하다.
+  const scope = status === null ? "전체" : `status=${status}`;
+
   let response: Response;
   try {
     response = await fetchWithLog(
@@ -1136,7 +1265,8 @@ export async function sekoGetUserList(
       {
         method: "POST",
         headers: { ...JSON_HEADERS, ...sekoApiKeyHeader() },
-        body: JSON.stringify({ status: SEKO_USER_STATUS_ACTIVE }),
+        // 미지정({})이 「전체」다 — 필터 없이 보내야 1(利用可)+5(WEB研修)+2(利用不可) 가 온다.
+        body: JSON.stringify(status === null ? {} : { status }),
         cache: "no-store",
         signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
       },
@@ -1151,7 +1281,7 @@ export async function sekoGetUserList(
     );
   } catch (error: unknown) {
     if (error instanceof ConfigError) throw error;
-    console.error(`${logTag} SEKO 회원목록 조회 호출 실패:`, error);
+    console.error(`${logTag} SEKO 회원목록 조회 호출 실패 (${scope}):`, error);
     return { ok: false, error: { error: "外部サーバーに接続できません", status: 502 } };
   }
 
@@ -1159,20 +1289,20 @@ export async function sekoGetUserList(
   try {
     body = await response.json();
   } catch (error: unknown) {
-    console.error(`${logTag} SEKO 회원목록 조회 응답 파싱 실패 (status: ${response.status}):`, error);
+    console.error(`${logTag} SEKO 회원목록 조회 응답 파싱 실패 (${scope}, status: ${response.status}):`, error);
     return { ok: false, error: { error: "外部サーバーの応答を処理できません", status: 502 } };
   }
 
   const parsed = sekoUserListResponseSchema.safeParse(body);
   if (!parsed.success) {
-    console.error(`${logTag} SEKO 회원목록 조회 응답 스키마 불일치:`, parsed.error.issues);
+    console.error(`${logTag} SEKO 회원목록 조회 응답 스키마 불일치 (${scope}):`, parsed.error.issues);
     return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
   }
 
   const { data, result } = parsed.data;
   if (result.resultCode !== "S" || !data) {
     console.warn(
-      `${logTag} SEKO 회원목록 조회 실패 (resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
+      `${logTag} SEKO 회원목록 조회 실패 (${scope}, resultCode: ${result.resultCode}, errorCode: ${result.errorCode ?? "-"})`,
     );
     return {
       ok: false,
@@ -1198,7 +1328,7 @@ export async function sekoGetUserList(
   // 어디에도 남지 않는다. 커넥터 장애와 동급으로 올려 send_failed → 재시도 경로로 보낸다.
   if (dropped > 0 || items.length !== totalCount) {
     console.error(
-      `${logTag} SEKO 회원목록 결손 — totalCount=${totalCount}, 응답행=${list.length}, 파싱성공=${items.length}, 드롭=${dropped}`,
+      `${logTag} SEKO 회원목록 결손 (${scope}) — totalCount=${totalCount}, 응답행=${list.length}, 파싱성공=${items.length}, 드롭=${dropped}`,
     );
     return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
   }

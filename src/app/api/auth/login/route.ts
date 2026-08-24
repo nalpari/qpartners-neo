@@ -16,7 +16,12 @@ import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
 import { extractClientIp } from "@/lib/notification-mail/utils";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
-import { sekoLogin, parseSekoDate } from "@/lib/seko-connector";
+import {
+  sekoLogin,
+  sekoGetUserInfo,
+  parseSekoDate,
+  evaluateSekoIdValidity,
+} from "@/lib/seko-connector";
 import { evaluateTwoFactorRequirement } from "@/lib/sec-auth-policy";
 import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 
@@ -74,6 +79,50 @@ export async function POST(request: NextRequest) {
     const sekoGate = await checkRoleActive("SEKO", "[POST /api/auth/login][SEKO]");
     if (!sekoGate.active) {
       return NextResponse.json({ error: sekoGate.message }, { status: 403 });
+    }
+
+    // 시공ID 만료 차단 — 화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」.
+    //
+    // 판정에 필요한 `sekoStatus`/`sekoLimit` 이 **login 응답에 없어** getUserInfo 를 한 번 더 친다
+    // (login 응답 15필드에 유효기간 항목 자체가 없다 — 사양서 20260817 Login 시트 r10~r24).
+    // 로그인당 SEKO 호출 2회 · `qp_interface_log` 2행이 되는 비용은 이 게이트의 대가다.
+    //
+    // AS-IS `sekoLogin` 이 만료 계정을 이미 거부하는지는 확인되지 않았다(만료된 테스트 계정이
+    // 없어 실측 불가). 거부하고 있더라도 이 게이트는 이중 방어로만 남으므로 손해가 없고,
+    // 거부하지 않는다면 이게 유일한 차단 지점이다.
+    const sekoInfoResult = await sekoGetUserInfo(
+      s.loginId,
+      s.token,
+      "[POST /api/auth/login][SEKO]",
+    );
+    if (!sekoInfoResult.ok) {
+      // fail-closed — 유효기간을 확인하지 못한 채 통과시키면 게이트가 조용히 무력화된다.
+      // 방금 sekoLogin 이 성공한 직후라 여기서의 실패는 자격증명 문제가 아니므로 502 로 낸다.
+      console.error(
+        "[POST /api/auth/login][SEKO] 시공ID 유효성 확인 실패 — 로그인 차단",
+        { userId: maskEmail(s.loginId), status: sekoInfoResult.error.status },
+      );
+      return NextResponse.json(
+        { error: "外部認証サーバーエラーが発生しました" },
+        { status: 502 },
+      );
+    }
+
+    const sekoIdValidity = evaluateSekoIdValidity({
+      sekoStatus: sekoInfoResult.data.sekoStatus,
+      sekoLimit: sekoInfoResult.data.sekoLimit,
+    });
+    if (!sekoIdValidity.valid) {
+      console.warn("[POST /api/auth/login][SEKO] 시공ID 만료 — 로그인 차단", {
+        userId: maskEmail(s.loginId),
+        reason: sekoIdValidity.reason,
+      });
+      // 자격증명 오류와 구분되는 안내가 필요하다 — ID/PW 를 아무리 다시 입력해도 풀리지 않는
+      // 상태이므로, 같은 문구로 뭉개면 사용자가 재시도만 반복하게 된다.
+      return NextResponse.json(
+        { error: "施工IDの有効期限が切れています。詳しくは管理者にお問い合わせください。" },
+        { status: 403 },
+      );
     }
 
     // 2차 인증 필요 여부 — QSP 와 동일 정책(`sec-auth-policy`)을 그대로 쓴다.
