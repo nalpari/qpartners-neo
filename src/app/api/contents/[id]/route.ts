@@ -12,6 +12,7 @@ import {
   resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { isNewSince, resolvePublishedSince } from "@/lib/content-new-badge";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
@@ -127,7 +128,14 @@ export async function GET(request: NextRequest, { params }: Params) {
         createdByName,
         updatedByName,
         hasBeenUpdated,
-        isNew: now - content.createdAt.getTime() < FIVE_DAYS_MS,
+        // 목록/메인과 동일 정책 — 등록일이 아니라 공개일 기준 5일
+        isNew: isNewSince(
+          resolvePublishedSince(content, content.targets, {
+            internal,
+            roleCode: user ? user.role : null,
+          }),
+          now,
+        ),
         isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: buildCategoryTree(content.categories, { includeInternal: internal }),
         attachments: content.attachments.map((a) => ({
