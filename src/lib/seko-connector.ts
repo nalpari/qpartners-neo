@@ -1195,7 +1195,7 @@ const SEKO_USER_STATUS_UNAVAILABLE = "2";
  * ```
  * 1) {}              → 전체 (1+2+5)   preview 실측 104건
  * 2) {status:"2"}    → 利用不可        preview 실측   8건
- *    userId 차집합                   = 96건 = 利用可(1) + WEB研修(5)
+ *    loginId 차집합                  = 96건 = 利用可(1) + WEB研修(5)
  * ```
  *
  * **「利用不可」 판정은 여전히 AS-IS 가 내린다** — 우리는 상태값을 해석하지 않고 AS-IS 가 준
@@ -1207,6 +1207,17 @@ const SEKO_USER_STATUS_UNAVAILABLE = "2";
  *
  * 한쪽이라도 실패하면 **전체를 실패로 접는다.** 제외 목록만 실패했다고 전체를 그대로 돌려주면
  * 利用不可 회원에게 발송된다.
+ *
+ * **차집합의 조인 키는 `loginId` 다 — `userId` 가 아니다.** `userId` 는 스키마상
+ * `nullish` 라(상대측 타입 변경에 발송이 통째로 멈추지 않게 판정에서 뺀 필드다) 제외 목록에
+ * 한 건이라도 null 이 섞이면 `null` 이 키로 들어가고, 전체 목록에서 `userId` 가 null 인
+ * **모든 항목**(利用可 포함)이 조용히 빠진다. 각 호출의 결손 가드는 호출 내부만 보므로 이
+ * 결합 단계의 유실은 아무도 잡지 못한다. `loginId` 는 `min(1)` 로 비어 있지 않음이 보장되고
+ * 실제 발송 주소이기도 하다.
+ *
+ * 키 정규화(trim+소문자)는 수신자 중복 판정(`normalizeEmailKey`)과 같은 기준이다. 표기만 다른
+ * 利用不可 회원이 제외를 빠져나가면 수신거부자에게 발송되므로, 어긋날 때는 더 많이 빼는 쪽으로
+ * 접는다(대소문자만 다른 두 주소는 어차피 수집 단계에서 하나로 합쳐진다).
  *
  * ⚠️ preview 에 `status=5` 회원이 0명이라(96+8=104=전체) **「5가 실제로 포함된다」는 결과는
  * 미검증**이다. 차집합 산술이 성립한다는 것까지만 확인됐다.
@@ -1230,14 +1241,22 @@ export async function sekoGetUserList(
   const unavailable = await fetchSekoUserListByStatus(SEKO_USER_STATUS_UNAVAILABLE, logTag);
   if (!unavailable.ok) return unavailable;
 
-  const excluded = new Set(unavailable.items.map((item) => item.userId));
-  const items = all.items.filter((item) => !excluded.has(item.userId));
+  const excluded = new Set(unavailable.items.map(sekoUserKey));
+  const items = all.items.filter((item) => !excluded.has(sekoUserKey(item)));
 
   console.log(
     `${logTag} SEKO 회원목록 차집합 — 전체=${all.items.length}, 利用不可=${unavailable.items.length}, 대상=${items.length}`,
   );
 
   return { ok: true, items };
+}
+
+/**
+ * 「전체 − 利用不可」 차집합의 조인 키. 위 주석 참조 — `userId` 는 nullish 라 키로 쓸 수 없다.
+ * `normalizeEmailKey`(수신자 중복 판정)와 같은 기준으로 맞춘다.
+ */
+function sekoUserKey(item: SekoUserListItem): string {
+  return item.loginId.trim().toLowerCase();
 }
 
 /**
