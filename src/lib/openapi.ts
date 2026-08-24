@@ -729,8 +729,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "비밀번호 변경 확정 + 자동 로그인",
         description:
           "토큰 검증 후 회원유형별 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인. " +
-          "회원유형별 변경처: STORE/GENERAL/ADMIN=QSP chgPwd, 시공점(SEKO)=AS-IS Connector resetPwd(X-Api-Key). " +
-          "SEKO 는 재설정 후 새 비밀번호로 Connector 재로그인해 Bearer(sekoToken)를 세션에 담는다.",
+          "변경처는 QSP chgPwd 이며 대상은 STORE/GENERAL/ADMIN 이다. " +
+          "**시공점(SEKO)은 이 경로에서 처리하지 않는다** — 화면설계서 v1.4 p12 로 프로세스가 교체되어 `/auth/password-reset/seko/{check,reset}` 로 이관됐고, 여기로 들어온 SEKO 토큰은 410 으로 접힌다(자동 로그인 없음).",
         requestBody: {
           required: true,
           content: {
@@ -768,9 +768,6 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "401": errorResponse(
-            "SEKO Connector 인증 오류(X-Api-Key 무효/누락) — 비밀번호 미변경, 토큰 롤백되어 링크 재사용 가능",
-          ),
           "403": errorResponse(
             "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
           ),
@@ -779,7 +776,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           ),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse(
-            "외부 서버 오류. SEKO 는 재설정 결과 불명(타임아웃·응답 파싱 실패·스키마 불일치)과 시공ID 유효성 확인용 getUserInfo 실패(fail-closed) 포함 — 토큰은 소비 상태 유지",
+            "QSP 연결 실패·비정상 응답·응답 파싱 실패 — 토큰은 롤백되어 링크 재사용 가능",
           ),
         },
       },
@@ -3376,8 +3373,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         description:
           "관리자 전용 — multipart/form-data (draft 또는 pending). " +
           "수신자 수집처는 발송대상 권한에 따라 갈린다: SUPER_ADMIN/ADMIN/1ST_STORE/2ND_STORE/GENERAL·커스텀 권한=QSP userListMng(페이징), " +
-          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, 페이징 없음) — **전체 조회 후 status=2(利用不可) 목록을 userId 로 차집합**. " +
-          "利用可 는 status 1(利用可) 과 5(WEB研修) 둘 다인데(AS-IS 마이그레이션 기준) 목록 필터는 1/2 만 받아 `1 ∪ 5` 를 직접 고를 수 없기 때문이며, 두 호출 중 하나라도 실패하면 수집 전체를 실패시킨다. " +
+          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, 페이징 없음) — **전체 조회 후 status=2(利用不可) 목록을 loginId 로 차집합**(userId 는 스키마상 nullish 라 조인 키로 쓰지 않는다). " +
+          "利用可 는 status 1(利用可) 과 5(WEB研修) 둘 다인데(AS-IS 마이그레이션 기준) 목록 필터는 1/2 만 받아 `1 ∪ 5` 를 직접 고를 수 없기 때문이다. " +
+          "두 호출 중 하나라도 실패하면 수집 전체를 실패시키고, 제외 목록이 정상 응답 0건이거나 전체의 부분집합이 아닌 경우도 같이 막는다(제외가 무효화된 채 차집합만 성립하는 것을 방지). " +
           "SEKO 는 loginId=email 이므로 loginId 를 수신 주소로 사용하며, 수신자명은 sei+mei 를 이어붙인다.",
         requestBody: {
           required: true,

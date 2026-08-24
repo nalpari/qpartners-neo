@@ -15,7 +15,11 @@
  * - `POST /api/auth/login` (SEKO) — 단 `pwdInitYn="Y"` 는 생략(아래 참조)
  * - `POST /api/auth/password-init` (SEKO) — 위 생략분의 회수 지점
  * - `POST /api/auth/two-factor/verify` (SEKO) — 위 생략분의 또 다른 승격 지점
- * - `POST /api/auth/password-reset/confirm` (SEKO 자동 로그인)
+ *
+ * **대상에서 빠진 지점 — `POST /api/auth/password-reset/confirm`.**
+ * 미적용이 아니라 **더 이상 SEKO 세션을 발급하지 않는다.** 화면설계서 v1.4 p12 로 시공점
+ * 초기화가 교체되면서 이 경로는 SEKO 토큰을 410 으로 접는다(자동 로그인 없음). 신규 경로인
+ * `password-reset/seko/{check,reset}` 역시 세션을 발급하지 않아 게이트 대상이 아니다.
  *
  * **미적용 경로 — `POST /api/auth/auto-login/inbound`.**
  * 이 라우트도 `userTp="SEKO"` 를 정식 허용하고 8시간 쿠키를 발급하므로 원칙상 대상이지만,

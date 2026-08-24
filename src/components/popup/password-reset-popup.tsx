@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
+import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { Button } from "@/components/common";
 import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
 
@@ -64,14 +65,41 @@ function maskSekoId(value: string): string {
   return `${v.slice(0, 1)}***`;
 }
 
+/**
+ * Zod 실패 응답(`{ error: "Validation failed", fields: [{ field, message }] }`)에서
+ * 사용자에게 보일 첫 메시지를 꺼낸다. 형태가 다르면 `null` 을 돌려 호출부가 fallback 을 쓴다.
+ */
+function extractFieldMessage(data: Record<string, unknown> | undefined): string | null {
+  if (!data || !Array.isArray(data.fields)) return null;
+  for (const item of data.fields) {
+    if (typeof item !== "object" || item === null) continue;
+    const message = (item as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return null;
+}
+
+/**
+ * 시공점 2단계 입력 검증 — `sekoPasswordResetSchema` 와 같은 기준을 클라이언트에서 먼저 적용한다.
+ *
+ * 공란 여부만 보면 정책 위반·재입력 불일치가 서버 Zod 까지 흘러가 `"Validation failed"` 로
+ * 돌아온다(라우트가 영어 상수를 `error` 에 싣는다). 가장 흔한 두 입력 오류를 영어로 알리지
+ * 않도록 여기서 막는다 — 검증 자체는 서버가 정본이고 이건 UX 용 1차 거름망이다.
+ */
+function isSekoPasswordValid(data: ResetFormData): boolean {
+  return (
+    validatePasswordPolicy(data.newPassword) &&
+    data.confirmPassword !== "" &&
+    data.newPassword === data.confirmPassword
+  );
+}
+
 function isFormValid(tab: TabType, data: ResetFormData, step: SekoStep): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
     case "installer":
-      return step === "identify"
-        ? data.sekoId.trim() !== ""
-        : data.newPassword.trim() !== "" && data.confirmPassword.trim() !== "";
+      return step === "identify" ? data.sekoId.trim() !== "" : isSekoPasswordValid(data);
     case "general":
       return data.idEmail.trim() !== "";
   }
@@ -134,12 +162,19 @@ export function PasswordResetPopup() {
     setSekoStep("identify");
   };
 
-  /** 서버 에러 응답 → Alert 공통 처리. */
+  /**
+   * 서버 에러 응답 → Alert 공통 처리.
+   *
+   * Zod 실패 응답의 `error` 는 `"Validation failed"` 라는 영어 상수라 그대로 띄우면 일본어
+   * 화면에 영어가 노출된다. 사용자가 읽을 문구는 `fields[].message` 쪽에 있으므로 그것을
+   * 우선 쓰고, 없을 때만 `error` → `fallback` 순으로 내려간다.
+   */
   const alertError = (err: unknown, fallback: string) => {
     console.error("[PasswordResetPopup] パスワード初期化リクエスト失敗:", err);
     if (isAxiosError(err) && err.response) {
       const data = err.response.data as Record<string, unknown> | undefined;
-      const errMsg = typeof data?.error === "string" ? data.error : fallback;
+      const errMsg =
+        extractFieldMessage(data) ?? (typeof data?.error === "string" ? data.error : fallback);
       openAlert({ type: "alert", message: errMsg });
       return;
     }
@@ -417,6 +452,17 @@ export function PasswordResetPopup() {
                     onChange={(e) => handleChange("confirmPassword", e.target.value)}
                     className={inputClass}
                   />
+                  {/*
+                    불일치는 저장 버튼 비활성 사유이므로 이유를 화면에 남긴다 —
+                    문구 없이 비활성만 하면 사용자가 원인을 알 수 없다.
+                    정책 위반은 위 입력의 안내(※ 英大文字…)가 같은 역할을 한다.
+                  */}
+                  {formData.confirmPassword !== "" &&
+                    formData.newPassword !== formData.confirmPassword && (
+                      <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#FF1A1A]">
+                        パスワードが一致しません
+                      </p>
+                    )}
                 </div>
               </>
             )}
