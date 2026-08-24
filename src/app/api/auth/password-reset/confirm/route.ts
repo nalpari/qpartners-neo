@@ -14,6 +14,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
 import { sekoLogin, sekoResetPwd } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
 import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -275,6 +276,28 @@ export async function POST(request: NextRequest) {
     }
 
     const s = loginResult.data;
+
+    // 시공ID 유효기간 검사 — 로그인 라우트(SEKO 분기)와 동일 게이트.
+    // 이 분기는 인증 쿠키를 발급하므로 로그인과 동일하게 통과해야 한다. 빠뜨리면 만료된 시공ID
+    // 계정이 「비밀번호 재설정 → 자동 로그인」 경로로 8시간 풀세션을 받는다
+    // (middleware 는 요청마다 유효기간을 재검사하지 않는다 — 바로 위 QpRole 게이트와 같은 이유).
+    // 만료 계정도 재설정 메일 자체는 받을 수 있으므로 실제 도달 가능한 경로다.
+    //
+    // 위치·정책은 위 QpRole 게이트와 동일하다 — 재설정 자체는 본인이 발급받은 토큰으로 수행한
+    // 정당한 요청이므로 되돌리지 않는다(토큰 롤백 없음). 차단 대상은 세션 발급뿐이고, 문구는
+    // 비밀번호가 이미 바뀐 사실을 부정하지 않게 한다.
+    const sekoIdGate = await checkSekoIdValid(
+      s.loginId,
+      s.token,
+      SEKO_LOG,
+    );
+    if (!sekoIdGate.valid) {
+      return NextResponse.json(
+        { error: `パスワードは変更されました。${sekoIdGate.message}` },
+        { status: sekoIdGate.status },
+      );
+    }
+
     const sekoUser: LoginUser = {
       userId: s.userId,
       userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,

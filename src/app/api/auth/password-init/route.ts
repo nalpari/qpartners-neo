@@ -14,6 +14,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sekoChangePwd } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
 
 // ─── 요청 스키마 ───
 
@@ -140,6 +141,30 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: changeResult.error.error },
           { status: changeResult.error.status },
+        );
+      }
+
+      // 시공ID 유효기간 검사 — 로그인(SEKO 분기)이 `pwdInitYn="Y"` 계정에 대해 **유예**한 게이트를
+      // 여기서 회수한다. 아래 JWT 재발급이 `twoFactorVerified:true` 로 세션을 완전한 상태로
+      // 승격시키므로, 이 지점을 통과시키면 만료 계정이 마이페이지·다운로드·AS-IS 자동로그인까지
+      // 전부 열린 8시간 세션을 갖게 된다(화면설계서 p10 요구가 이 경로에서 무효가 된다).
+      //
+      // 로그인이 유예를 정당화한 이유(「초기화 화면에 도달하기 전에 502 로 막히면 영구 락아웃」)는
+      // 여기서는 성립하지 않는다 — 이미 초기화 화면에 도달했고 비밀번호 설정도 끝났다.
+      //
+      // 위치는 changePwd **성공 후** — 비밀번호 설정 자체는 본인이 수행한 정당한 요청이므로
+      // 되돌리지 않는다(password-reset/confirm 의 QpRole 게이트와 같은 정책). 차단 대상은
+      // 세션 승격뿐이고, 문구도 비밀번호가 바뀐 사실을 부정하지 않게 한다 — 부정하면 사용자가
+      // 옛 비밀번호로 재시도하게 된다.
+      const sekoIdGate = await checkSekoIdValid(
+        user.email,
+        user.sekoToken,
+        "[POST /api/auth/password-init][SEKO]",
+      );
+      if (!sekoIdGate.valid) {
+        return NextResponse.json(
+          { error: `パスワードは設定されました。${sekoIdGate.message}` },
+          { status: sekoIdGate.status },
         );
       }
 

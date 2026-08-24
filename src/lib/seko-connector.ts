@@ -1208,6 +1208,10 @@ const SEKO_USER_STATUS_UNAVAILABLE = "2";
  * 한쪽이라도 실패하면 **전체를 실패로 접는다.** 제외 목록만 실패했다고 전체를 그대로 돌려주면
  * 利用不可 회원에게 발송된다.
  *
+ * 실패는 `ok:false` 만이 아니다. 제외 목록이 **정상 응답 0건**이거나 **전체의 부분집합이
+ * 아니면** 그것도 접는다 — 두 경우 모두 제외가 무효화된 채 차집합이 조용히 성립하고, 결과
+ * 건수가 0 이 아니라 호출부의 0건 가드에도 걸리지 않는다. 아래 구현부 주석 참조.
+ *
  * **차집합의 조인 키는 `loginId` 다 — `userId` 가 아니다.** `userId` 는 스키마상
  * `nullish` 라(상대측 타입 변경에 발송이 통째로 멈추지 않게 판정에서 뺀 필드다) 제외 목록에
  * 한 건이라도 null 이 섞이면 `null` 이 키로 들어가고, 전체 목록에서 `userId` 가 null 인
@@ -1240,6 +1244,39 @@ export async function sekoGetUserList(
 
   const unavailable = await fetchSekoUserListByStatus(SEKO_USER_STATUS_UNAVAILABLE, logTag);
   if (!unavailable.ok) return unavailable;
+
+  // 「利用不可 0명」과 「제외 조회가 조용히 빈 결과를 준 것」을 구분할 수단이 없다.
+  // 후자면 제외가 통째로 무효화되어 전체 목록이 그대로 대상이 되는데, 그 결과는 건수가 0이
+  // 아니므로 호출부(`collect-recipients` 의 0건 가드)도 잡지 못한다. 利用不可 회원에게 메일이
+  // 나가고, 그 발송이 `sent` 로 확정되며, 수신자 스냅샷에도 정상 대상으로 남아 사후 추적도
+  // 재시도도 불가능하다 — 대량메일은 회수가 안 된다.
+  // `6b64283`(0건 응답이 발송 성공으로 확정되던 문제)과 같은 기준을 제외 목록 쪽에도 적용한다:
+  // 구분 불가한 0건은 성공으로 확정하지 않는다.
+  if (unavailable.items.length === 0) {
+    console.error(
+      `${logTag} SEKO 제외 목록(status=2) 0건 — 필터 무효화 가능성 (전체=${all.items.length})`,
+    );
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
+
+  const allKeys = new Set(all.items.map(sekoUserKey));
+  const unmatched = unavailable.items.filter((item) => !allKeys.has(sekoUserKey(item)));
+
+  // 제외 목록은 전체 목록의 **부분집합**이어야 한다. 아니라면 두 응답의 모집단이 다르다는 뜻이고
+  // (스코프·표기 불일치, 필터가 다른 컬럼에 걸림 등), 그때 차집합은 「빼야 할 사람을 못 뺀」
+  // 상태로 조용히 성립한다. 각 호출의 결손 가드는 호출 내부만 보므로 이 결합 단계는 아무도
+  // 잡지 못한다 — 조인 키를 `loginId` 로 바꾼 이유(위 주석)와 같은 종류의 유실이다.
+  //
+  // ⚠️ 전체 조회와 제외 조회 **사이에 신규 가입 후 곧바로 利用不可가 된 회원**이 있으면 여기에
+  // 걸려 수집 전체가 실패한다. 두 호출은 연속 실행이라 실현 가능성이 극히 낮고, 실패해도
+  // send_failed → 재시도로 복구되는 방향이다(반대로 조용한 미제외는 복구되지 않는다).
+  if (unmatched.length > 0) {
+    console.error(
+      `${logTag} SEKO 차집합 정합 실패 — 제외 목록이 전체의 부분집합이 아니다. ` +
+        `전체=${all.items.length}, 利用不可=${unavailable.items.length}, 미매칭=${unmatched.length}`,
+    );
+    return { ok: false, error: { error: "外部サーバーの応答形式が正しくありません", status: 502 } };
+  }
 
   const excluded = new Set(unavailable.items.map(sekoUserKey));
   const items = all.items.filter((item) => !excluded.has(sekoUserKey(item)));

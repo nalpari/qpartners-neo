@@ -76,7 +76,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 - **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
   - loginId 는 **이메일 또는 시공ID** 둘 다 허용 (사양서 No.2 r6, preview 실측 확인).
   - 로그인 직후 **No.3 getUserInfo 를 1회 더 호출해 시공ID 만료를 검사**한다 (화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」). 판정에 필요한 sekoStatus/sekoLimit 이 login 응답에 없어 불가피한 추가 호출이며, 조회 실패는 fail-closed(502) 다. 시공ID 미보유(두 값 모두 null)는 만료 대상이 아니므로 통과.
-  - 단 **비밀번호 초기화 대상(SEKO pwdInitYn="Y")은 이 검사를 생략**한다 — 초기화 화면 도달 전에 막히는 락아웃을 피하기 위함이며, 초기화 후 재로그인 시 검사된다.
+  - 단 **비밀번호 초기화 대상(SEKO pwdInitYn="Y")은 이 라우트에서만 검사를 유예**한다 — 초기화 화면 도달 전에 막히는 락아웃을 피하기 위함이다. 유예이지 면제가 아니며, 세션을 완전한 상태로 승격시키는 두 지점(**password-init**, **two-factor/verify**)에서 같은 게이트(checkSekoIdValid)를 통과해야 한다. 유예된 세션은 그때까지 twoFactorVerified=false 로 남아 middleware 가 2FA 경로와 공개 GET 만 허용한다.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -658,11 +658,11 @@ export const openApiSpec: OpenAPIV3.Document = {
             "SEKO Connector 인증 오류(X-Api-Key 무효/누락) — 비밀번호 미변경, 토큰 롤백되어 링크 재사용 가능",
           ),
           "403": errorResponse(
-            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
+            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함. SEKO 는 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과)도 같은 정책으로 차단",
           ),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse(
-            "외부 서버 오류. SEKO 는 재설정 결과 불명(타임아웃·응답 파싱 실패·스키마 불일치) 포함 — 토큰은 소비 상태 유지",
+            "외부 서버 오류. SEKO 는 재설정 결과 불명(타임아웃·응답 파싱 실패·스키마 불일치)과 시공ID 유효성 확인용 getUserInfo 실패(fail-closed) 포함 — 토큰은 소비 상태 유지",
           ),
         },
       },
@@ -721,10 +721,14 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("初回ログイン時のみ有効 (pwdInitYn !== \"N\" 시 거부)"),
+          "403": errorResponse(
+            "初回ログイン時のみ有効 (pwdInitYn !== \"N\" 시 거부). SEKO 는 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과) 포함 — 비밀번호는 설정되었으나 세션 승격 차단",
+          ),
           "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("비밀번호 변경 실패"),
-          "502": errorResponse("외부 서버 오류"),
+          "502": errorResponse(
+            "외부 서버 오류. SEKO 는 시공ID 유효성 확인용 getUserInfo 실패도 포함(fail-closed) — 로그인이 유예한 만료 검사를 여기서 회수한다",
+          ),
         },
       },
     },
@@ -851,8 +855,16 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "401": errorResponse("인증번호가 일치하지 않습니다 / 입력시간 초과"),
-          "500": errorResponse("서버 오류"),
+          "401": errorResponse(
+            "인증번호가 일치하지 않습니다 / 입력시간 초과. SEKO 는 세션에 sekoToken/loginId 결손 시 시공ID 검사 불가로 쿠키 만료 + 재로그인 유도 포함",
+          ),
+          "403": errorResponse(
+            "SEKO 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과) — 2FA 검증은 성공했으나 세션 승격 차단",
+          ),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 등 설정 오류 포함)"),
+          "502": errorResponse(
+            "SEKO 시공ID 유효성 확인용 getUserInfo 실패 — fail-closed 로 세션 승격 차단",
+          ),
         },
       },
     },
