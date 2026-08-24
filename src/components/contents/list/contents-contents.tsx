@@ -16,8 +16,13 @@ import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/conten
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
+/** 키워드 결합 조건 — 서버 listContentsQuerySchema.keywordOp 와 동일 값. */
+type KeywordOp = "AND" | "OR";
+
 interface SearchFilters {
   keyword: string;
+  /** 공백으로 구분된 키워드들을 묶는 방식. 기본 AND. */
+  keywordOp: KeywordOp;
   categoryIds: number[];
   /** 게시대상 권한코드 — `__NON_MEMBER__` sentinel = 비회원 검색 (서버에서 null 로 변환) */
   roleCode: string;
@@ -53,11 +58,12 @@ interface CategoryNode {
   children: CategoryNode[];
 }
 
-export type { CategoryNode, SearchFilters };
+export type { CategoryNode, KeywordOp, SearchFilters };
 
 const EMPTY_SEARCH_PARAMS: SearchParams = {
   page: 1,
   keyword: "",
+  keywordOp: "AND",
   categoryIds: [],
   roleCode: "",
   departments: [],
@@ -73,6 +79,8 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
     return {
       page: typeof parsed.page === "number" && parsed.page > 0 ? parsed.page : 1,
       keyword: typeof parsed.keyword === "string" ? parsed.keyword : "",
+      // 알 수 없는 값은 기본값 AND 로 수렴 — 서버 zod enum 거부 사전 차단.
+      keywordOp: parsed.keywordOp === "OR" ? "OR" : "AND",
       categoryIds: Array.isArray(parsed.categoryIds)
         // DB id 는 양의 정수만 유효 — NaN/±Infinity/음수/0/소수는 모두 제외 (서버 zod 거부 사전 차단).
         ? parsed.categoryIds.filter((n): n is number => Number.isInteger(n) && n > 0)
@@ -91,6 +99,7 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
 
 /** searchParams 가 사실상 비어있는지 (모든 검색 필드가 기본값) 판정 — page 는 제외. */
 function isEmptySearchParams(params: SearchParams): boolean {
+  // keywordOp 은 판정에서 제외 — 키워드가 없으면 결합 조건은 결과에 영향을 주지 않는다.
   return (
     params.keyword === "" &&
     params.categoryIds.length === 0 &&
@@ -229,7 +238,11 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         page: searchParams.page,
         pageSize,
       };
-      if (searchParams.keyword) params.keyword = searchParams.keyword;
+      // keywordOp 은 키워드가 있을 때만 전송 — 서버 기본값(AND)과 동일하면 생략해 URL/쿼리키를 단순화.
+      if (searchParams.keyword) {
+        params.keyword = searchParams.keyword;
+        if (searchParams.keywordOp === "OR") params.keywordOp = "OR";
+      }
       if (searchParams.categoryIds.length > 0) params.categoryIds = searchParams.categoryIds.join(",");
       if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
       if (searchParams.departments.length > 0) params.department = searchParams.departments.join(",");
