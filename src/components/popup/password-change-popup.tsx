@@ -250,7 +250,8 @@ export function PasswordChangePopup() {
   );
 }
 
-function PasswordInput({
+/** 눈 아이콘 마스킹 토글이 붙은 비밀번호 입력. 시공점 비밀번호 초기화 팝업도 그대로 재사용한다. */
+export function PasswordInput({
   value,
   onChange,
   show,

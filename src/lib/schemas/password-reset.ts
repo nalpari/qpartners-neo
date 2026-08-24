@@ -95,3 +95,61 @@ export const passwordResetConfirmSchema = z
   });
 
 export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchema>;
+
+// ─── 시공점(SEKO) 전용 비밀번호 초기화 ───
+//
+// 시공점만 흐름이 다르다 — **시공ID 단독 조회 → 즉시 비밀번호 설정** (2단계).
+// 위 3개 스키마(request/verify/confirm)는 판매점·일반이 공유하므로 **건드리지 않고** 별도 정의한다.
+// (시공점 분기를 위 스키마에 넣으면 전 유형 공유 경로에 회귀 위험이 그대로 전이된다.)
+//
+// 이메일 토큰 단계가 없는 이유는 AS-IS 제약이다 — 시공점은 커넥터 응답 어디에도 이메일 필드가
+// 없어(No.8 email/check = {exists,userId}, No.7 getUserList 실측) 시공ID 로부터 수신 주소를
+// 얻을 수 없다. 따라서 링크 발송 방식 자체가 성립하지 않는다.
+
+/**
+ * 시공ID. 형식이 AS-IS 측에서 확정되지 않아 `loginId` 와 동일한 보수적 제한만 건다
+ * (log injection / 외부 API 부하 1차 방어선). 공백 허용 — 더미 데이터가 `ID SampleNum1` 형태다.
+ */
+const sekoIdSchema = z
+  .string()
+  .trim()
+  .min(1, "施工IDは必須です")
+  .max(100, "施工IDは100文字以内で入力してください")
+  .regex(/^[\w@.+\- ]+$/i, "施工IDの形式が正しくありません");
+
+/** 1단계 — 시공ID 존재 확인 */
+export const sekoPasswordResetCheckSchema = z.object({
+  sekoId: sekoIdSchema,
+});
+
+export type SekoPasswordResetCheckInput = z.infer<typeof sekoPasswordResetCheckSchema>;
+
+/**
+ * 2단계 — 신규 비밀번호 저장.
+ *
+ * 1단계 통과를 증명하는 토큰이 없다(즉시 팝업 방식). 따라서 이 스키마를 통과한 요청은
+ * **그 자체로 비밀번호를 바꿀 수 있는 요청**이므로, 라우트가 반드시 rate limit 을 건다.
+ * 비밀번호 정책은 위 `passwordResetConfirmSchema` 와 동일 기준을 재사용한다
+ * (signup ↔ password-reset 의 min/max 불일치 금지 규칙).
+ */
+export const sekoPasswordResetConfirmSchema = z
+  .object({
+    sekoId: sekoIdSchema,
+    // 길이·조합 위반을 전부 같은 문구로 접는다 — 조건 나열은 입력란 아래 안내문(※…)이 담당하고,
+    // 에러는 형식 불일치만 알린다(화면 문구와 일치시켜 서버 우회 시에도 안내가 갈리지 않게 한다).
+    newPassword: z
+      .string()
+      .min(8, "パスワードの形式が正しくありません")
+      .max(100, "パスワードの形式が正しくありません"),
+    confirmPassword: z.string().min(1, "パスワード確認は必須です"),
+  })
+  .refine((data) => validatePasswordPolicy(data.newPassword), {
+    message: "パスワードの形式が正しくありません",
+    path: ["newPassword"],
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "パスワードが一致しません",
+    path: ["confirmPassword"],
+  });
+
+export type SekoPasswordResetConfirmInput = z.infer<typeof sekoPasswordResetConfirmSchema>;

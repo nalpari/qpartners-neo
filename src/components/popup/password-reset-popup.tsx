@@ -6,6 +6,7 @@ import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button } from "@/components/common";
 import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
+import { SekoPasswordResetPopup } from "@/components/popup/seko-password-reset-popup";
 
 /**
  * 비밀번호 재설정 popup 가상 page_view 경로 — Redmine #2216 note-2 후속.
@@ -41,8 +42,9 @@ function isFormValid(tab: TabType, data: ResetFormData): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
+    // installer(시공점)는 SekoPasswordResetPopup 으로 위임되어 이 컴포넌트에 도달하지 않는다.
     case "installer":
-      return data.email.trim() !== "";
+      return false;
     case "general":
       return data.idEmail.trim() !== "";
   }
@@ -72,6 +74,12 @@ export function PasswordResetPopup() {
     });
   }, []);
 
+  // 시공점(SEKO)은 흐름 자체가 다르다 — 시공ID 조회 → 즉시 비밀번호 설정(2단계)이라
+  // 이메일 토큰 단계가 없다. 탭 3개가 한 컴포넌트인 구조에서 이 분기를 키우면 판매점·일반
+  // 탭 회귀 위험이 커지므로 전용 컴포넌트로 통째로 위임한다.
+  // (모든 hook 선언 이후에 분기 — hook 호출 순서를 바꾸지 않는다.)
+  if (activeTab === "installer") return <SekoPasswordResetPopup />;
+
   const handleChange = (key: keyof ResetFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
@@ -92,16 +100,13 @@ export function PasswordResetPopup() {
     const userTp = TAB_TO_USERTP[activeTab];
     // Redmine #2156 — userTp 별 입력 정책:
     //   dealer (STORE)    : loginId + email 둘 다 전송 (서버에서 사후 매칭)
-    //   installer (SEKO)  : email 만 (sekoId 입력란 제거)
     //   general (GENERAL) : 단일 입력값을 loginId 필드로 전송 (서버가 dual-key 로 OR 매칭)
+    // installer (SEKO) 는 위에서 SekoPasswordResetPopup 으로 위임되어 여기 도달하지 않는다.
     const payload: Record<string, string> = { userTp };
 
     switch (activeTab) {
       case "dealer":
         payload.loginId = formData.id;
-        payload.email = formData.email;
-        break;
-      case "installer":
         payload.email = formData.email;
         break;
       case "general":
@@ -223,20 +228,6 @@ export function PasswordResetPopup() {
                   />
                 </div>
               </>
-            )}
-
-            {activeTab === "installer" && (
-              <div className="flex flex-col gap-2 w-full">
-                <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
             )}
 
             {activeTab === "general" && (

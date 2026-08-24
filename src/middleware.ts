@@ -22,6 +22,11 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
+  // 시공점(SEKO) 전용 비밀번호 초기화 — 시공ID 조회 → 즉시 비밀번호 설정 (2단계).
+  // 비밀번호를 잊어 로그인 자체가 불가한 사용자가 호출하므로 위 3종과 동일하게 인증 불요.
+  // 열거·무차별 대입 방어는 각 라우트의 rate limit (IP + 시공ID 2차원) 이 담당한다.
+  "/api/auth/seko/password-reset/check",
+  "/api/auth/seko/password-reset/confirm",
   // 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
   // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
   // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)

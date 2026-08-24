@@ -2974,6 +2974,112 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    "/auth/seko/password-reset/check": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 1단계 (시공ID 존재 확인)",
+        description:
+          "시공점 전용. AS-IS Connector email/check(No.8, X-Api-Key) 로 시공ID 존재만 확인한다. " +
+          "판매점·일반이 쓰는 /auth/password-reset/* 3종(이메일 토큰 방식)과 흐름이 달라 별도 라우트로 분리했다. " +
+          "**이메일 토큰 단계가 없다** — 시공점은 커넥터 응답 어디에도 이메일 필드가 없어 " +
+          "(No.8 = {exists,userId}, No.7 getUserList 실측) 시공ID 로부터 수신 주소를 얻을 수 없기 때문이다. " +
+          "이 단계는 화면 전환용이며 인증이 아니다 — 2단계(confirm)는 이 응답에 의존하지 않고 스스로 검증한다. " +
+          "**형식 오류(400)와 미존재(404)에 동일 문구**를 반환한다(유효한 시공ID 형식 노출 방지). " +
+          "문구는 요구사항 원문 지정 — 존재 여부를 단정하므로 열거 방어는 " +
+          "rate limit(IP + 시공ID 2차원, IP 있으면 시간당 10건 / 없으면 5건)이 담당한다.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "ID SampleNum1", description: "시공ID" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "시공ID 확인됨 — 비밀번호 설정 단계로 진행",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { verified: { type: "boolean", example: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("입력값 검증 실패 — 미존재와 동일 문구(一致する会員情報がありません。\\n入力情報を再度ご確認ください。)"),
+          "404": errorResponse("일치하는 시공ID 없음 — 검증 실패와 동일 문구(一致する会員情報がありません。\\n入力情報を再度ご確認ください。)"),
+          "429": errorResponse("요청 횟수 초과 (IP 기준 시간당 10건 / IP 미확인 시 5건)"),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 포함)"),
+          "502": errorResponse("AS-IS Connector 연결 실패"),
+        },
+      },
+    },
+    "/auth/seko/password-reset/confirm": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 2단계 (신규 비밀번호 저장)",
+        description:
+          "시공점 전용. AS-IS Connector resetPwd(No.10, X-Api-Key) 로 비밀번호를 저장한다. Bearer·현재 비밀번호 불요. " +
+          "일회용 토큰이 없으므로 **1단계 통과 여부와 무관하게 단독 호출로 비밀번호가 변경된다** — " +
+          "「즉시 팝업」요구사항에서 불가피한 잔존 위험(이메일 소유 증명 없음)이며, rate limit 이 유일한 방어선이라 " +
+          "1단계보다 좁게(IP 기준 시간당 5건 / IP 미확인 시 3건) 적용한다. " +
+          "비밀번호 정책은 /auth/password-reset/confirm 과 동일(영대문자+영소문자+숫자 조합 8자 이상 100자 이하). " +
+          "타임아웃·응답 파싱 실패는 **처리 여부 불명**이라 실패로 단정하지 않고 502 + 확인 유도 문구로 응답한다.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId", "newPassword", "confirmPassword"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "ID SampleNum1", description: "시공ID" },
+                  newPassword: { type: "string", minLength: 8, maxLength: 100 },
+                  confirmPassword: { type: "string", description: "newPassword 와 일치해야 함" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { updated: { type: "boolean", example: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse(
+            "Zod 검증 실패(Validation failed + issues) 또는 커넥터 명시 거부 — 후자는 시공ID 열거 방지를 위해 " +
+            "사유를 특정하지 않고 一致する会員情報がありません。\\n入力情報を再度ご確認ください。로 응답",
+          ),
+          "429": errorResponse("요청 횟수 초과 (IP 기준 시간당 5건 / IP 미확인 시 3건)"),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 포함)"),
+          "502": errorResponse("AS-IS Connector 연결 실패 또는 처리 결과 불명(비밀번호가 이미 변경됐을 수 있음)"),
+        },
+      },
+    },
     "/mypage/seko-file": {
       get: {
         tags: ["MyPage"],
