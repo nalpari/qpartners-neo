@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { isNewSince, resolvePublishedSince } from "@/lib/content-new-badge";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
@@ -238,6 +239,8 @@ export async function GET(request: NextRequest) {
 
     // isNew/isUpdated 계산용 — where 절의 now 와 동일 스냅샷 사용 (정책 일관성)
     const nowMs = now.getTime();
+    // New 뱃지 기준은 등록일이 아니라 공개일 — 사내는 가장 빠른 공개일, 그 외는 자기 권한의 공개일.
+    const viewer = { internal, roleCode: user ? user.role : null };
     const mapRow = (c: Prisma.ContentGetPayload<{ include: typeof includeOptions }>) => ({
       id: c.id,
       title: c.title,
@@ -251,7 +254,7 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       // 갱신 이력 판별 서버 단일 출처 — 클라이언트 Date 비교 제거용
       hasBeenUpdated: c.updatedAt.getTime() !== c.createdAt.getTime(),
-      isNew: nowMs - c.createdAt.getTime() < FIVE_DAYS_MS,
+      isNew: isNewSince(resolvePublishedSince(c, c.targets, viewer), nowMs),
       isUpdated: nowMs - c.updatedAt.getTime() < FIVE_DAYS_MS,
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
