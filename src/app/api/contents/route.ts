@@ -33,6 +33,22 @@ import {
  */
 const INTERNAL_ROLE_CODES = ["SUPER_ADMIN", "ADMIN"] as const;
 
+/**
+ * 키워드 토큰 상한.
+ * 선행 와일드카드 LIKE(`%kw%`)는 인덱스를 못 타므로 토큰 수가 그대로 full scan 비용이 된다.
+ * keyword 는 100자 제한이라 이론상 50토큰까지 들어올 수 있어 상한을 둔다.
+ */
+const KEYWORD_TOKEN_LIMIT = 10;
+
+/**
+ * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
+ * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
+ */
+function tokenizeKeyword(keyword: string | undefined): string[] {
+  if (!keyword) return [];
+  return keyword.split(/\s+/).filter(Boolean).slice(0, KEYWORD_TOKEN_LIMIT);
+}
+
 // GET /api/contents — 콘텐츠 목록 조회
 export async function GET(request: NextRequest) {
   try {
@@ -51,6 +67,7 @@ export async function GET(request: NextRequest) {
       page,
       pageSize,
       keyword,
+      keywordOp,
       categoryIds,
       status,
       roleCode,
@@ -188,16 +205,42 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Prisma where 절과 raw SQL 분기가 같은 토큰 배열을 공유해야 결과가 일치한다.
+    const keywordTokens = tokenizeKeyword(keyword);
+
     const where: Prisma.ContentWhereInput = {
       status: effectiveStatus as "draft" | "published" | "deleted",
-      ...(keyword && {
-        OR: [
-          { title: { contains: keyword } },
-          { body: { contains: keyword } },
-          // 첨부파일명 부분일치 — sortCategoryCode 분기의 raw SQL EXISTS 와 동일 조건.
-          // 한쪽만 수정하면 카테고리 정렬 상태에서 검색 결과가 달라지므로 함께 유지할 것.
-          { attachments: { some: { fileName: { contains: keyword } } } },
-        ],
+      // 키워드 검색 — 타이틀·본문·첨부파일명 부분일치.
+      //
+      // 토큰 결합은 **필드 단위**다. AND 는 "한 필드 안에 모든 토큰" 이지 필드를 넘나들지 않는다.
+      //   예) `사과 귤` AND → 타이틀에 둘 다 / 본문에 둘 다 / 한 첨부파일명에 둘 다 중 하나
+      //       (타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않음)
+      // 첨부파일은 `some` 안에서 결합하므로 AND 는 **파일 한 개**가 모든 토큰을 가져야 한다
+      //   (`사과.pdf` + `귤.pdf` 조합은 미매칭 — 기획 확정 사항).
+      //
+      // sortCategoryCode 분기의 raw SQL 과 동일 조건이다.
+      // 한쪽만 수정하면 카테고리 정렬 상태에서 검색 결과가 달라지므로 함께 유지할 것.
+      ...(keywordTokens.length > 0 && {
+        OR:
+          keywordOp === "AND"
+            ? [
+                { AND: keywordTokens.map((t) => ({ title: { contains: t } })) },
+                { AND: keywordTokens.map((t) => ({ body: { contains: t } })) },
+                {
+                  attachments: {
+                    some: { AND: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
+                  },
+                },
+              ]
+            : [
+                ...keywordTokens.map((t) => ({ title: { contains: t } })),
+                ...keywordTokens.map((t) => ({ body: { contains: t } })),
+                {
+                  attachments: {
+                    some: { OR: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
+                  },
+                },
+              ],
       }),
       ...(department && department.length > 0 && { authorDepartment: { in: department } }),
       ...(andConditions.length > 0 && { AND: andConditions }),
@@ -274,12 +317,16 @@ export async function GET(request: NextRequest) {
         Prisma.sql`c.status = ${effectiveStatus}`,
       ];
 
-      if (keyword) {
-        const kw = `%${keyword}%`;
-        // Prisma where 절의 keyword OR 조건과 동일 — 첨부파일명 포함 (한쪽만 수정 금지).
-        sqlConds.push(Prisma.sql`(c.title LIKE ${kw} OR c.body LIKE ${kw} OR EXISTS (
+      if (keywordTokens.length > 0) {
+        // Prisma where 절의 keyword 조건과 동일 — 필드 단위 AND/OR 결합 (한쪽만 수정 금지).
+        const kws = keywordTokens.map((t) => `%${t}%`);
+        const glue = keywordOp === "AND" ? " AND " : " OR ";
+        const titleCond = Prisma.join(kws.map((k) => Prisma.sql`c.title LIKE ${k}`), glue);
+        const bodyCond = Prisma.join(kws.map((k) => Prisma.sql`c.body LIKE ${k}`), glue);
+        const fileCond = Prisma.join(kws.map((k) => Prisma.sql`a.file_name LIKE ${k}`), glue);
+        sqlConds.push(Prisma.sql`((${titleCond}) OR (${bodyCond}) OR EXISTS (
           SELECT 1 FROM qp_content_attachments a
-          WHERE a.content_id = c.id AND a.file_name LIKE ${kw}
+          WHERE a.content_id = c.id AND (${fileCond})
         ))`);
       }
 

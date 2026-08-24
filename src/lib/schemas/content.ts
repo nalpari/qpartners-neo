@@ -109,6 +109,11 @@ export const listContentsQuerySchema = z.object({
   // downloadLogsQuerySchema 와 동일하게 양의 정수 + 상한(100) 만 둔다 — 상한은 단일 요청 폭주 방지.
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   keyword: z.string().max(100).optional(),
+  /**
+   * 키워드 결합 조건 — 입력값을 공백으로 분리한 토큰들을 어떻게 묶을지.
+   * AND = 한 필드 안에 모든 토큰 포함 / OR = 어느 한 토큰이라도 포함. 미지정 시 AND.
+   */
+  keywordOp: z.enum(["AND", "OR"]).default("AND"),
   categoryIds: z.string().optional(),
   status: z.enum(["draft", "published", "deleted"]).default("published"),
   /** 검색 필터: 게시대상 권한코드 (null = 비회원, 신규 권한 D 도 검색 가능). 비회원은 sentinel `__NON_MEMBER__` 로 전달. */

@@ -1850,7 +1850,17 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "타이틀·본문·첨부파일명 부분일치 검색", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "타이틀·본문·첨부파일명 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).", schema: { type: "string" } },
+          {
+            name: "keywordOp",
+            in: "query",
+            description:
+              "다중 키워드 결합 조건. 결합은 **필드 단위**로 필드를 넘나들지 않는다.\n\n" +
+              "- `AND`(기본): 타이틀에 모든 키워드 / 본문에 모든 키워드 / **첨부파일 한 건의 파일명**에 모든 키워드 — 셋 중 하나라도 만족하면 매칭. 타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않으며, `사과.pdf`+`귤.pdf` 조합도 매칭되지 않는다.\n" +
+              "- `OR`: 타이틀·본문·첨부파일명 중 어느 하나에 키워드 하나라도 포함되면 매칭.\n\n" +
+              "`keyword` 가 없으면 무시된다.",
+            schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
+          },
           { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
