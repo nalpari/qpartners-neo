@@ -1297,6 +1297,55 @@ function sekoUserKey(item: SekoUserListItem): string {
 }
 
 /**
+ * 시공ID → 로그인ID(이메일) 해석 — **비밀번호 초기화 전용**.
+ *
+ * No.10 `resetPwd` 는 `loginId` 에 시공ID 를 받지 못한다(미존재 계정과 동일한
+ * `INVALID_LOGIN_ID_ERROR` — 2026-08-24 preview 실측). 반면 화면설계서 v1.4 p12 는 초기화
+ * 입력을 시공ID 로 규정한다. 그 간극을 이미 배선된 두 API 로 잇는다:
+ *
+ * ```
+ * No.8 email/check(시공ID) → data.userId   (내부 PK)
+ * No.7 getUserList(전체)   → userId 매칭 → loginId (= 이메일)
+ * ```
+ *
+ * 둘 다 X-Api-Key 라 **로그인 불가 상태에서 호출할 수 있다** — 초기화 경로의 전제를 깨지 않는다.
+ *
+ * **전체(status 미지정)로 조회한다.** `sekoGetUserList` 는 대량메일용이라 「전체 − 利用不可」
+ * 차집합을 돌려주는데, 그걸 쓰면 利用不可 회원이 해석 대상에서 빠져 초기화가 막힌다.
+ * 초기화 가부는 AS-IS(No.10)가 판단할 몫이므로 여기서 상태로 거르지 않는다.
+ *
+ * **못 찾으면 실패로 접는다.** 스키마상 `userId` 는 nullish 이고 중복 가능성도 배제할 수 없다
+ * (preview 104건은 전부 존재·고유). 애매한 상태로 임의의 행을 고르면 **다른 회원의 비밀번호를
+ * 바꾸게 된다** — 후보가 1건이 아니면 무조건 실패다. 목록 자체의 결손은
+ * `fetchSekoUserListByStatus` 가 `totalCount` 대조로 이미 걸러낸다.
+ */
+export async function sekoResolveLoginIdByUserId(
+  userId: string,
+  logTag: string,
+): Promise<
+  | { ok: true; loginId: string }
+  | { ok: false; error: SekoFetchError }
+> {
+  const all = await fetchSekoUserListByStatus(null, logTag);
+  if (!all.ok) return all;
+
+  const key = userId.trim();
+  const matches = all.items.filter(
+    (item) => item.userId != null && String(item.userId).trim() === key,
+  );
+
+  if (matches.length !== 1) {
+    // userId 는 로그에 남기지 않는다(내부 PK). 건수만으로 원인을 구분할 수 있다.
+    console.error(
+      `${logTag} SEKO 회원목록에서 userId 해석 실패 — 후보 ${matches.length}건 / 전체 ${all.items.length}건`,
+    );
+    return { ok: false, error: { error: "会員情報を確認できません", status: 502 } };
+  }
+
+  return { ok: true, loginId: matches[0].loginId };
+}
+
+/**
  * `getUserList` 1회 호출 — `status` 미지정(`null`)이면 전체.
  *
  * **결손은 부분·전량 가리지 않고 실패로 접는다.** 항목 하나라도 스키마에 맞지 않거나
