@@ -104,12 +104,19 @@ export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchem
 // ─── 시공점(SEKO) 비밀번호 초기화 — 화면설계서 v1.4 p12 ───
 //
 // 판매점·일반과 달리 **메일 링크를 거치지 않는다.** 시공ID 존재 확인 후 곧바로 비밀번호를
-// 설정한다(p12: 「비밀번호 초기화」→ 비밀번호 설정 팝업 호출 → 저장). 따라서 토큰이 없고,
-// 두 단계 모두 시공ID 를 그대로 식별자로 쓴다.
+// 설정한다(p12: 「비밀번호 초기화」→ 비밀번호 설정 팝업 호출 → 저장).
 //
 // ⚠️ 이 흐름에는 **소유 증명 단계가 없다** — 시공ID 를 아는 사람은 누구나 해당 계정의
-// 비밀번호를 바꿀 수 있다. AS-IS 사양(화면설계서 v1.4 p12)이 그러하므로 그대로 구현하되,
-// 라우트에서 rate limit 을 반드시 건다.
+// 비밀번호를 바꿀 수 있다. AS-IS 사양(화면설계서 v1.4 p12)이 그러하므로 그대로 구현한다.
+// 소유 증명(메일 링크·OTP)은 넣을 수단도 없다: 시공ID → 이메일을 해석할 I/F 가 없다
+// (No.8 `email/check` 응답에 이메일 없음 / No.3 `getUserInfo` 는 Bearer 전용 /
+//  No.7 `getUserList` 응답 5필드에 시공ID 없음).
+//
+// 대신 두 단계를 **서버 상태로 잇는다.** 1단계가 시공ID 에 바인딩된 단명 일회용 토큰을
+// 발급하고 2단계는 그 토큰을 원자적으로 소비한 요청만 처리한다. 소유 증명은 아니지만,
+// 2단계만 단독 호출해 비밀번호를 바꾸는 것(= 1단계를 건너뛰는 표적 단발 요청)은 막힌다.
+// 계정 단위 한도(1시간 3회)도 여기서 성립한다 — IP 단위 한도만으로는 단일 계정을 겨눈
+// 시도를 제한할 수 없다.
 
 /**
  * 시공ID 문자셋 — 이메일 겸용(No.8 `email/check` 의 loginId 는 「メールまたは施工ID」)이라
@@ -130,10 +137,17 @@ export const sekoPasswordResetCheckSchema = z.object({
 
 export type SekoPasswordResetCheckInput = z.infer<typeof sekoPasswordResetCheckSchema>;
 
-/** 2단계 — 신규 비밀번호 설정 (p12 ⑧ 저장). 검증 규칙은 confirm 경로와 동일. */
+/**
+ * 2단계 — 신규 비밀번호 설정 (p12 ⑧ 저장). 검증 규칙은 confirm 경로와 동일.
+ *
+ * `resetToken` 은 1단계 응답으로 받은 원본 토큰이다. 서버는 이 토큰이 지목하는 시공ID 를
+ * 재설정 대상으로 삼으므로, `sekoId` 는 **대조용**이지 대상 지정용이 아니다
+ * (body 만 고쳐 다른 계정을 겨누는 경로를 만들지 않기 위함).
+ */
 export const sekoPasswordResetSchema = z
   .object({
     sekoId: sekoIdSchema,
+    resetToken: z.string().min(1, "トークンは必須です"),
     newPassword: z.string().min(8, "パスワードは8文字以上で入力してください").max(100),
     confirmPassword: z.string().min(1, "パスワード確認は必須です"),
   })

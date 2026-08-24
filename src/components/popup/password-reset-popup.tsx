@@ -44,6 +44,10 @@ const INITIAL_FORM: ResetFormData = {
 
 const CLOSE_ANIMATION_MS = 200;
 
+/** 재설정 토큰 만료·소비 시 안내 — 서버 문구와 같은 취지(1단계부터 다시). */
+const SEKO_RESTART_MESSAGE =
+  "初期化の有効期限が切れました。施工IDの確認からもう一度お試しください。";
+
 /**
  * 시공점 초기화 단계 — 화면설계서 v1.4 p12.
  *  `identify`     : 시공ID 입력 → 존재 확인 (p12 좌측 팝업)
@@ -81,6 +85,12 @@ export function PasswordResetPopup() {
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
   const [sekoStep, setSekoStep] = useState<SekoStep>("identify");
+  /**
+   * 시공점 1단계 응답으로 받은 재설정 토큰 — 2단계 저장 요청에 그대로 실어 보낸다.
+   * 서버는 이 토큰이 지목하는 계정을 재설정 대상으로 삼는다(`seko/reset` 라우트 주석 참조).
+   * URL·메일을 타지 않고 이 state 에만 머무르므로 브라우저 이력·수신함에 남지 않는다.
+   */
+  const [sekoResetToken, setSekoResetToken] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -108,9 +118,20 @@ export function PasswordResetPopup() {
       closePopup();
       setFormData({ ...INITIAL_FORM });
       setSekoStep("identify");
+      setSekoResetToken(null);
       setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
+  };
+
+  /**
+   * 시공점 1단계로 되돌리기 — 재설정 토큰이 만료·소비된 경우.
+   * 토큰과 함께 입력한 비밀번호도 버린다(죽은 토큰에 묶인 입력이 남아 재시도 시 혼동된다).
+   */
+  const backToSekoIdentify = () => {
+    setSekoResetToken(null);
+    setFormData((prev) => ({ ...prev, newPassword: "", confirmPassword: "" }));
+    setSekoStep("identify");
   };
 
   /** 서버 에러 응답 → Alert 공통 처리. */
@@ -135,7 +156,22 @@ export function PasswordResetPopup() {
   const handleSekoIdentify = async () => {
     setIsSubmitting(true);
     try {
-      await api.post("/auth/password-reset/seko/check", { sekoId: formData.sekoId });
+      const res = await api.post<{ data: { exists: boolean; resetToken: string } }>(
+        "/auth/password-reset/seko/check",
+        { sekoId: formData.sekoId },
+      );
+      const issued = res.data?.data?.resetToken;
+      if (!issued) {
+        // 토큰 없이 2단계로 넘기면 저장 시점에 반드시 410 이 되어 입력이 버려진다.
+        // 여기서 멈추고 재시도를 안내한다.
+        console.error("[PasswordResetPopup] 재설정 토큰 미수신 — 2단계 진입 중단");
+        openAlert({
+          type: "alert",
+          message: "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。",
+        });
+        return;
+      }
+      setSekoResetToken(issued);
       setSekoStep("set-password");
     } catch (err) {
       alertError(err, "サーバーエラーが発生しました。");
@@ -149,10 +185,17 @@ export function PasswordResetPopup() {
    * 저장 후 **자동 로그인하지 않는다** — p12 의 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」다.
    */
   const handleSekoReset = async () => {
+    if (!sekoResetToken) {
+      // 1단계를 거치지 않았거나 토큰을 잃은 상태 — 서버도 410 으로 거부한다.
+      openAlert({ type: "alert", message: SEKO_RESTART_MESSAGE });
+      backToSekoIdentify();
+      return;
+    }
     setIsSubmitting(true);
     try {
       await api.post("/auth/password-reset/seko/reset", {
         sekoId: formData.sekoId,
+        resetToken: sekoResetToken,
         newPassword: formData.newPassword,
         confirmPassword: formData.confirmPassword,
       });
@@ -163,6 +206,12 @@ export function PasswordResetPopup() {
           "パスワードが変更されました。変更されたパスワードでログインしてください。",
       });
     } catch (err) {
+      // 410 = 토큰 만료·소비. 같은 화면에서 재시도해도 계속 실패하므로 1단계로 되돌린다.
+      if (isAxiosError(err) && err.response?.status === 410) {
+        alertError(err, SEKO_RESTART_MESSAGE);
+        backToSekoIdentify();
+        return;
+      }
       alertError(err, "サーバーエラーが発生しました。");
     } finally {
       setIsSubmitting(false);

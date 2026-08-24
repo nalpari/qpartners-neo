@@ -577,7 +577,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           "AS-IS Connector **No.8 email/check**(X-Api-Key)로 존재만 확인하며 토큰·메일을 만들지 않는다. " +
           "사양서 No.8 r6 의 loginId 가 「メールまたは施工ID」라 시공ID 를 그대로 전달한다. " +
           "⚠️ p12 가 미존재 시 전용 안내를 노출하도록 규정하므로 **사용자 열거 방지를 적용하지 않는다**(404 로 구분됨) — 방어는 rate limit(IP 10회/시간, IP 부재 시 식별자 5회/시간)이 담당한다. " +
-          "성공해도 서버에 상태를 남기지 않으며, 2단계가 존재 확인을 다시 수행한다.",
+          "존재 확인을 통과하면 입력 식별자에 바인딩된 **단명 일회용 재설정 토큰(TTL 10분)** 을 발급해 응답한다. 2단계는 이 토큰을 원자적으로 소비한 요청만 처리하므로, 1단계를 건너뛴 단독 호출로는 비밀번호를 바꿀 수 없다. " +
+          "발급 한도는 **동일 식별자 1시간 3건**이다 — 시공점은 시공ID 와 이메일 둘 다로 로그인하고 둘을 매핑할 I/F 가 없어 계정 단위가 아닌 식별자 단위 한도다. 활성 토큰은 식별자당 1건으로 유지된다(신규 발급 시 기존 미사용분 무효화).",
         requestBody: {
           required: true,
           content: {
@@ -602,7 +603,14 @@ export const openApiSpec: OpenAPIV3.Document = {
                   properties: {
                     data: {
                       type: "object",
-                      properties: { exists: { type: "boolean", example: true } },
+                      properties: {
+                        exists: { type: "boolean", example: true },
+                        resetToken: {
+                          type: "string",
+                          format: "uuid",
+                          description: "2단계(`/auth/password-reset/seko/reset`)에 그대로 전달하는 일회용 토큰. TTL 10분. 메일·URL 을 타지 않는다.",
+                        },
+                      },
                     },
                   },
                 },
@@ -626,17 +634,19 @@ export const openApiSpec: OpenAPIV3.Document = {
           "화면설계서 v1.4 p12 — 비밀번호 설정 팝업의 저장. AS-IS Connector **No.10 resetPwd**(X-Api-Key, loginId+chgPwd)를 호출한다. " +
           "**자동 로그인을 하지 않는다** — p12 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」이므로 세션(JWT·쿠키)을 발급하지 않는다. " +
           "따라서 이 경로는 세션 발급 지점이 아니며 시공ID 만료 게이트(checkSekoIdValid) 대상도 아니다. " +
-          "1단계 결과를 신뢰하지 않고 **존재 확인을 다시 수행**한 뒤 재설정한다(단독 호출 대비). " +
-          "재설정 결과 불명(타임아웃·응답 파싱 실패)은 502 로 내되, 변경되지 않았다고 단정하지 않는 문구를 쓴다.",
+          "**1단계가 발급한 일회용 토큰(resetToken)이 필수다.** 토큰을 원자적으로 소비(TOCTOU 방지)한 요청만 처리하며, 무효·만료·소비된 토큰이나 식별자 불일치는 410 으로 거부한다 — 상태를 구분시키지 않기 위해 사유별 문구는 동일하다. " +
+          "**재설정 대상은 요청 body 가 아니라 토큰 행이 정한다**(body 의 sekoId 는 대조용). 토큰이 1단계의 존재 확인 증서 역할을 하므로 No.8 email/check 를 다시 호출하지 않는다. " +
+          "재설정 결과 불명(타임아웃·응답 파싱 실패)은 502 로 내되, 변경되지 않았다고 단정하지 않는 문구를 쓰고 **토큰도 되살리지 않는다**(일회용 불변식 유지). 커넥터가 명시적으로 거부한 경우에만 토큰을 롤백해 재시도를 허용한다.",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["sekoId", "newPassword", "confirmPassword"],
+                required: ["sekoId", "resetToken", "newPassword", "confirmPassword"],
                 properties: {
-                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999" },
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "1단계에서 입력한 식별자. 토큰과의 대조용이며 재설정 대상 지정용이 아니다." },
+                  resetToken: { type: "string", format: "uuid", description: "1단계 응답의 resetToken. 일회용·TTL 10분." },
                   newPassword: { type: "string", minLength: 8, maxLength: 100, description: "영대문자+영소문자+숫자 조합 8자 이상" },
                   confirmPassword: { type: "string", minLength: 1 },
                 },
@@ -661,8 +671,8 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("Validation failed (비밀번호 정책 위반·불일치 포함)"),
-          "404": errorResponse("일치하는 회원 정보 없음"),
+          "400": errorResponse("Validation failed (토큰 누락·비밀번호 정책 위반·불일치 포함)"),
+          "410": errorResponse("재설정 토큰 무효 — 미존재·만료·이미 사용·식별자 불일치 (1단계부터 재시도 안내)"),
           "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("서버 오류 (설정 오류 포함)"),
           "502": errorResponse("AS-IS Connector 오류 또는 재설정 결과 불명"),

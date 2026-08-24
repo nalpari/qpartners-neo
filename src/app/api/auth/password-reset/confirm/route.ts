@@ -168,16 +168,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4-1. 시공점(SEKO) — **이 경로는 더 이상 시공점을 처리하지 않는다.**
+  // 4-1. 시공점(SEKO) — **이 경로는 시공점을 처리하지 않는다.**
   //      화면설계서 v1.4 p12 에서 시공점 비밀번호 초기화가 「이메일 링크 발송 → 링크에서 재설정」
   //      에서 「시공ID 입력 → 즉시 비밀번호 설정」으로 교체됐다(p11 의 시공점 패널이 "프로세스
   //      변경" 으로 폐기 표기). 신규 경로는 `/api/auth/password-reset/seko/{check,reset}` 이고,
-  //      `passwordResetRequestSchema` 가 SEKO 를 거부하므로 **새 SEKO 토큰은 발급되지 않는다.**
+  //      `passwordResetRequestSchema` 가 SEKO 를 거부하므로 **이 경로로 SEKO 토큰이 발급되는
+  //      일은 없다.**
   //
-  //      그럼에도 분기를 남기는 이유 — 교체 배포 직전에 발급된 토큰이 TTL(1시간) 동안 살아 있다.
-  //      이 분기를 지우면 그 토큰이 아래 QSP 경로로 흘러가는데, 시공점은 QSP 에 계정이 없어
-  //      "회원 정보를 찾을 수 없습니다" 류로 끝난다 — 사용자는 원인을 알 수 없다.
-  //      명시적으로 거부하고 새 초기화 흐름으로 안내한다. TTL 경과 후에는 제거 가능.
+  //      다만 `qp_password_reset_tokens` 에 `userType="SEKO"` 행 자체는 존재한다 —
+  //      `seko/check` 가 2단계를 잇는 단명 일회용 토큰을 같은 테이블에 발급하기 때문이다.
+  //      그 토큰은 `seko/reset` 만 소비해야 하므로 여기서 반드시 막는다. 막지 않으면 아래 QSP
+  //      경로로 흘러가는데, 시공점은 QSP 에 계정이 없어 "회원 정보를 찾을 수 없습니다" 류로
+  //      끝나고 사용자는 원인을 알 수 없다(교체 배포 직전 발급된 구 메일 링크 토큰도 동일).
+  //      명시적으로 거부하고 새 초기화 흐름으로 안내한다.
   if (resetToken.userType === "SEKO") {
     console.warn(
       "[POST /api/auth/password-reset/confirm][SEKO] 폐기된 경로로 진입 — 신규 초기화 흐름으로 안내",
