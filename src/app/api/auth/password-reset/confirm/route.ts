@@ -13,8 +13,6 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
-import { sekoLogin, sekoResetPwd } from "@/lib/seko-connector";
-import { checkSekoIdValid } from "@/lib/seko-id-gate";
 import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -170,187 +168,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4-1. 시공점(SEKO) — AS-IS Connector No.10 resetPwd 로 재설정하고 여기서 자체 종결한다.
-  //      인증 소스가 Connector 이므로 아래 QSP 경로(userDetail + userPwdChg)를 타면 안 된다.
-  //      `resetToken.userType`(DB 원본 문자열)으로 검사 — `validUserTp` 로 좁히면 아래 authRole
-  //      폴백의 SEKO 분기가 dead code 로 판정되어 삭제 압력을 받고, 그 경우 SEKO 가 GENERAL 로
-  //      강등된다(.claude/rules/api.md "본체와 폴백 매핑 일치").
+  // 4-1. 시공점(SEKO) — **이 경로는 더 이상 시공점을 처리하지 않는다.**
+  //      화면설계서 v1.4 p12 에서 시공점 비밀번호 초기화가 「이메일 링크 발송 → 링크에서 재설정」
+  //      에서 「시공ID 입력 → 즉시 비밀번호 설정」으로 교체됐다(p11 의 시공점 패널이 "프로세스
+  //      변경" 으로 폐기 표기). 신규 경로는 `/api/auth/password-reset/seko/{check,reset}` 이고,
+  //      `passwordResetRequestSchema` 가 SEKO 를 거부하므로 **새 SEKO 토큰은 발급되지 않는다.**
+  //
+  //      그럼에도 분기를 남기는 이유 — 교체 배포 직전에 발급된 토큰이 TTL(1시간) 동안 살아 있다.
+  //      이 분기를 지우면 그 토큰이 아래 QSP 경로로 흘러가는데, 시공점은 QSP 에 계정이 없어
+  //      "회원 정보를 찾을 수 없습니다" 류로 끝난다 — 사용자는 원인을 알 수 없다.
+  //      명시적으로 거부하고 새 초기화 흐름으로 안내한다. TTL 경과 후에는 제거 가능.
   if (resetToken.userType === "SEKO") {
-    const SEKO_LOG = "[POST /api/auth/password-reset/confirm][SEKO]";
-    // 시공점 loginId = email. 단 request 라우트가 `userId` 는 소문자 정규화해 저장하고 `loginId` 는
-    // 입력 원본을 유지하므로 대소문자가 다를 수 있다 — Connector 호출에는 원본인 `loginId` 를 쓴다.
-    const sekoLoginId = resetToken.loginId ?? resetToken.userId;
-
-    // `sekoResetPwd` 는 실패를 Result 로 돌려주지만 `ConfigError`(SEKO_API_KEY /
-    // SEKO_CONNECTOR_BASE_URL 미설정·운영 https 위반)만은 rethrow 한다. 이 예외는 fetch **이전**
-    // 에 발생하므로 Connector 에 요청이 도달하지 않았음이 확정 — 비밀번호는 그대로다.
-    // 잡지 않으면 라우트 최상위 catch 로 빠져 토큰만 소모한 채 500 이 되는데, 설정 오류는
-    // 결정적이라 링크를 재발급해도 같은 결과가 나온다(= 사용자 탈출구 없음). 롤백하고 종결한다.
-    let resetResult: Awaited<ReturnType<typeof sekoResetPwd>>;
-    try {
-      resetResult = await sekoResetPwd(sekoLoginId, newPassword, SEKO_LOG);
-    } catch (error) {
-      console.error(`${SEKO_LOG} 설정 오류로 재설정 호출 불가:`, error);
-      return rollbackAndRespond(
-        token,
-        "パスワードの再設定に失敗しました。しばらくしてから再度お試しください。",
-        "パスワードの再設定に失敗しました。お手数ですが再度リンクの発行をお願いします。",
-        500,
-      );
-    }
-    if (!resetResult.ok) {
-      if (resetResult.indeterminate) {
-        // 타임아웃·응답 파싱 실패·스키마 불일치 — Connector 가 비밀번호를 이미 바꾼 뒤 응답만
-        // 유실됐을 수 있다. 여기서 토큰을 되살리면 "재설정은 성공했는데 링크는 만료 전까지 다시
-        // 쓸 수 있는" 상태가 되어 일회용 토큰 불변식이 깨진다 → 토큰은 소비 상태로 유지한다.
-        // 사용자 탈출구는 (1) 새 비밀번호로 로그인, (2) 링크 재발급 두 가지이며 둘 다 안내한다.
-        console.error(
-          `${SEKO_LOG} 재설정 결과 불명 — 토큰 소비 유지 (status=${resetResult.error.status})`,
-        );
-        return NextResponse.json(
-          {
-            error:
-              "パスワードが変更された可能性があります。新しいパスワードでログインをお試しください。ログインできない場合は、お手数ですが再度リンクの発行をお願いします。",
-          },
-          { status: resetResult.error.status },
-        );
-      }
-      // Connector 가 명시적으로 거부(resultCode !== "S") — 비밀번호가 바뀌지 않았음이 확정이므로
-      // 토큰을 되돌려 같은 링크로 재시도할 수 있게 한다.
-      return rollbackAndRespond(
-        token,
-        "パスワードの再設定に失敗しました。しばらくしてから再度お試しください。",
-        "パスワードの再設定に失敗しました。お手数ですが再度リンクの発行をお願いします。",
-        resetResult.error.status,
-      );
-    }
-
-    // 권한 사용가능여부(QpRole.isActive) 검증 — 로그인 라우트(SEKO 분기)와 동일 게이트.
-    // 이 분기는 인증 쿠키를 발급하므로 로그인과 동일하게 통과해야 한다. 빠뜨리면 관리자가
-    // SEKO 역할을 비활성화해도 "비밀번호 재설정 → 자동 로그인" 경로로 세션을 받을 수 있다
-    // (middleware/rbac-guard 는 요청마다 isActive 를 재검사하지 않는 일회성 게이트).
-    //
-    // 위치는 resetPwd **성공 후** — 재설정 자체는 회원 본인이 발급받은 토큰으로 수행한 정당한
-    // 요청이므로 되돌리지 않는다. 차단 대상은 세션 발급뿐이다. 따라서 토큰 롤백도 하지 않는다
-    // (비밀번호는 이미 바뀐 상태 — 옛 비밀번호 기준 링크를 되살리면 혼선만 커진다).
-    const sekoGate = await checkRoleActive("SEKO", SEKO_LOG);
-    if (!sekoGate.active) {
-      return NextResponse.json(
-        { error: `パスワードは変更されました。${sekoGate.message}。管理者にお問い合わせください。` },
-        { status: 403 },
-      );
-    }
-
-    // 자동 로그인용 Bearer 확보 — 새 비밀번호로 재로그인한다.
-    // 이 토큰이 없으면 세션에 sekoToken 이 없는 채로 홈에 진입해 마이페이지에서 401 이 나므로,
-    // 실패 시 자동 로그인을 포기하고 로그인 화면으로 유도한다.
-    // 비밀번호는 이미 변경된 상태이므로 토큰 롤백은 하지 않는다 — 되돌리면 옛 비밀번호 기준의
-    // 재설정 링크가 되살아나 혼선만 커진다.
-    // 여기서도 rethrow 되는 예외는 ConfigError 뿐이다. 앞선 resetPwd 가 성공했으므로 base URL 은
-    // 이미 유효해 실질적으로 도달 불가하지만, 잡지 않으면 최상위 catch 의
-    // "パスワード変更処理中にサーバーエラーが発生しました" 가 나간다 — 비밀번호가 이미 바뀐 사실을
-    // **부정하는** 안내라 사용자가 옛 비밀번호로 재시도하게 된다.
-    // 비밀번호는 이미 바뀐 상태이므로 아래 `!ok` 경로와 동일하게 토큰 롤백은 하지 않는다.
-    let loginResult: Awaited<ReturnType<typeof sekoLogin>>;
-    try {
-      loginResult = await sekoLogin(sekoLoginId, newPassword, SEKO_LOG);
-    } catch (error) {
-      console.error(`${SEKO_LOG} 설정 오류로 자동 로그인 호출 불가:`, error);
-      return NextResponse.json(
-        {
-          error:
-            "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。",
-        },
-        { status: 500 },
-      );
-    }
-    if (!loginResult.ok) {
-      console.error(`${SEKO_LOG} 재설정 후 자동 로그인 실패 — status=${loginResult.error.status}`);
-      return NextResponse.json(
-        {
-          error:
-            "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。",
-        },
-        { status: 500 },
-      );
-    }
-
-    const s = loginResult.data;
-
-    // 시공ID 유효기간 검사 — 로그인 라우트(SEKO 분기)와 동일 게이트.
-    // 이 분기는 인증 쿠키를 발급하므로 로그인과 동일하게 통과해야 한다. 빠뜨리면 만료된 시공ID
-    // 계정이 「비밀번호 재설정 → 자동 로그인」 경로로 8시간 풀세션을 받는다
-    // (middleware 는 요청마다 유효기간을 재검사하지 않는다 — 바로 위 QpRole 게이트와 같은 이유).
-    // 만료 계정도 재설정 메일 자체는 받을 수 있으므로 실제 도달 가능한 경로다.
-    //
-    // 위치·정책은 위 QpRole 게이트와 동일하다 — 재설정 자체는 본인이 발급받은 토큰으로 수행한
-    // 정당한 요청이므로 되돌리지 않는다(토큰 롤백 없음). 차단 대상은 세션 발급뿐이고, 문구는
-    // 비밀번호가 이미 바뀐 사실을 부정하지 않게 한다.
-    const sekoIdGate = await checkSekoIdValid(
-      s.loginId,
-      s.token,
-      SEKO_LOG,
+    console.warn(
+      "[POST /api/auth/password-reset/confirm][SEKO] 폐기된 경로로 진입 — 신규 초기화 흐름으로 안내",
     );
-    if (!sekoIdGate.valid) {
-      return NextResponse.json(
-        { error: `パスワードは変更されました。${sekoIdGate.message}` },
-        { status: sekoIdGate.status },
-      );
-    }
-
-    const sekoUser: LoginUser = {
-      userId: s.userId,
-      userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,
-      userTp: "SEKO",
-      compCd: null,
-      compNm: null,
-      // login 라우트와 동일 — 응답 email 이 없어도 loginId 로 보장(후속 Connector 호출 식별자).
-      email: s.email ?? s.loginId,
-      deptNm: null,
-      authCd: null,
-      storeLvl: null,
-      statCd: null,
-      authRole: "SEKO",
-      // SEKO pwdInitYn 의미가 QSP 와 반대. 재설정 후에도 Connector 는 "N"(초기화 불요)을 주므로
-      // TO-BE 는 "Y" 가 되어 personal-info popup 을 건너뛴다 (2026-08-14 preview 실측).
-      pwdInitYn: s.pwdInitYn === "Y" ? "N" : "Y",
-      twoFactorVerified: true, // 비밀번호 재설정 후 자동 로그인은 2차 인증 Skip (p.14 스펙)
-      telNo: s.telNo,
-      loginNotiYn: null,
-      // Connector Bearer — 이 값이 없으면 마이페이지 전 라우트가 401 이 된다.
-      sekoToken: s.token,
-    };
-
-    let sekoJwt: string;
-    try {
-      sekoJwt = await signToken(sekoUser);
-    } catch (error) {
-      console.error(`${SEKO_LOG} JWT 생성 실패:`, error);
-      return NextResponse.json(
-        {
-          error:
-            "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。",
-        },
-        { status: 500 },
-      );
-    }
-
-    // sekoToken 은 클라이언트 응답에 노출하지 않는다 — httpOnly JWT 에만 보관.
-    const sekoResponse = NextResponse.json({
-      data: {
-        message: "保存されました。",
-        user: { ...sekoUser, sekoToken: undefined },
-        requireTwoFactor: false,
+    return NextResponse.json(
+      {
+        error:
+          "施工店会員のパスワード初期化方法が変更されました。ログイン画面から施工IDで再度初期化を行ってください。",
       },
-    });
-    sekoResponse.cookies.set(COOKIE_NAME, sekoJwt, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 8,
-    });
-    return sekoResponse;
+      { status: 410 },
+    );
   }
 
   // 4. QSP 유저정보 조회 (이메일 → loginId + 사용자 정보 획득)

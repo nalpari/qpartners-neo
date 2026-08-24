@@ -529,8 +529,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "비밀번호 초기화 요청 (메일 발송)",
         description:
           "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156). " +
-          "회원유형별 조회처: STORE/GENERAL/ADMIN=QSP userDetail, 시공점(SEKO)=AS-IS Connector email/check(X-Api-Key). " +
-          "SEKO 는 loginId=email 이므로 입력 이메일을 그대로 수신자로 사용.",
+          "회원유형별 조회처: STORE/GENERAL/ADMIN=QSP userDetail. " +
+          "⚠️ **시공점(SEKO)은 이 경로를 쓰지 않는다** — 화면설계서 v1.4 p12 에서 시공점 초기화가 「시공ID 입력 → 즉시 비밀번호 설정」으로 교체되어 " +
+          "`/auth/password-reset/seko/check` → `/auth/password-reset/seko/reset` 를 탄다. userTp=SEKO 요청은 400(Validation failed) 이다.",
         requestBody: {
           required: true,
           content: {
@@ -566,6 +567,109 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    // 시공점(SEKO) 전용 초기화 — 화면설계서 v1.4 p12. 메일 링크를 거치지 않는 2단계 흐름이다.
+    "/auth/password-reset/seko/check": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 1단계 — 시공ID 존재 확인",
+        description:
+          "화면설계서 v1.4 p12 — 시공점 초기화는 **이메일 링크가 아니라 시공ID 즉시 초기화**다(p11 의 시공점 패널은 프로세스 변경으로 폐기). " +
+          "AS-IS Connector **No.8 email/check**(X-Api-Key)로 존재만 확인하며 토큰·메일을 만들지 않는다. " +
+          "사양서 No.8 r6 의 loginId 가 「メールまたは施工ID」라 시공ID 를 그대로 전달한다. " +
+          "⚠️ p12 가 미존재 시 전용 안내를 노출하도록 규정하므로 **사용자 열거 방지를 적용하지 않는다**(404 로 구분됨) — 방어는 rate limit(IP 10회/시간, IP 부재 시 식별자 5회/시간)이 담당한다. " +
+          "성공해도 서버에 상태를 남기지 않으며, 2단계가 존재 확인을 다시 수행한다.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "시공ID (이메일도 허용 — No.8 loginId 겸용)" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "시공ID 존재 확인 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { exists: { type: "boolean", example: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Validation failed (시공ID 미입력·형식 오류)"),
+          "404": errorResponse("일치하는 회원 정보 없음 — p12 규정 문구 노출"),
+          "429": errorResponse("요청 횟수 초과"),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 등 설정 오류 포함)"),
+          "502": errorResponse("AS-IS Connector 오류 — 회원 미존재와 구분해 반환"),
+        },
+      },
+    },
+
+    "/auth/password-reset/seko/reset": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 2단계 — 신규 비밀번호 설정",
+        description:
+          "화면설계서 v1.4 p12 — 비밀번호 설정 팝업의 저장. AS-IS Connector **No.10 resetPwd**(X-Api-Key, loginId+chgPwd)를 호출한다. " +
+          "**자동 로그인을 하지 않는다** — p12 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」이므로 세션(JWT·쿠키)을 발급하지 않는다. " +
+          "따라서 이 경로는 세션 발급 지점이 아니며 시공ID 만료 게이트(checkSekoIdValid) 대상도 아니다. " +
+          "1단계 결과를 신뢰하지 않고 **존재 확인을 다시 수행**한 뒤 재설정한다(단독 호출 대비). " +
+          "재설정 결과 불명(타임아웃·응답 파싱 실패)은 502 로 내되, 변경되지 않았다고 단정하지 않는 문구를 쓴다.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId", "newPassword", "confirmPassword"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999" },
+                  newPassword: { type: "string", minLength: 8, maxLength: 100, description: "영대문자+영소문자+숫자 조합 8자 이상" },
+                  confirmPassword: { type: "string", minLength: 1 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 완료 (세션 미발급 — 로그인 화면으로 유도)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Validation failed (비밀번호 정책 위반·불일치 포함)"),
+          "404": errorResponse("일치하는 회원 정보 없음"),
+          "429": errorResponse("요청 횟수 초과"),
+          "500": errorResponse("서버 오류 (설정 오류 포함)"),
+          "502": errorResponse("AS-IS Connector 오류 또는 재설정 결과 불명"),
+        },
+      },
+    },
+
     "/auth/password-reset/verify": {
       post: {
         tags: ["Auth"],
@@ -658,7 +762,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             "SEKO Connector 인증 오류(X-Api-Key 무효/누락) — 비밀번호 미변경, 토큰 롤백되어 링크 재사용 가능",
           ),
           "403": errorResponse(
-            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함. SEKO 는 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과)도 같은 정책으로 차단",
+            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
+          ),
+          "410": errorResponse(
+            "시공점(SEKO) 토큰 — 이 경로는 더 이상 시공점을 처리하지 않는다(화면설계서 v1.4 p12 로 프로세스 교체). 교체 배포 직전 발급된 잔존 토큰(TTL 1시간)에만 도달하며, 신규 초기화 흐름으로 안내한다",
           ),
           "500": errorResponse("비밀번호 변경 실패"),
           "502": errorResponse(

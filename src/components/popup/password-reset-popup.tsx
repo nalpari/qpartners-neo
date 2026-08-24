@@ -27,22 +27,47 @@ interface ResetFormData {
   id: string;
   email: string;
   idEmail: string;
+  /** 시공점 전용 — 화면설계서 v1.4 p12 는 이메일이 아니라 시공ID 를 받는다. */
+  sekoId: string;
+  newPassword: string;
+  confirmPassword: string;
 }
 
 const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
   idEmail: "",
+  sekoId: "",
+  newPassword: "",
+  confirmPassword: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: ResetFormData): boolean {
+/**
+ * 시공점 초기화 단계 — 화면설계서 v1.4 p12.
+ *  `identify`     : 시공ID 입력 → 존재 확인 (p12 좌측 팝업)
+ *  `set-password` : 신규 비밀번호 설정 → 저장 (p12 우측 「비밀번호 설정」 팝업)
+ *
+ * 판매점·일반은 기존대로 메일 링크 방식이라 단계 개념이 없다(`identify` 고정).
+ */
+type SekoStep = "identify" | "set-password";
+
+/** p12 의 「시공ID: 2***」 표기 — 앞 1자만 남긴다. */
+function maskSekoId(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  return `${v.slice(0, 1)}***`;
+}
+
+function isFormValid(tab: TabType, data: ResetFormData, step: SekoStep): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
     case "installer":
-      return data.email.trim() !== "";
+      return step === "identify"
+        ? data.sekoId.trim() !== ""
+        : data.newPassword.trim() !== "" && data.confirmPassword.trim() !== "";
     case "general":
       return data.idEmail.trim() !== "";
   }
@@ -55,6 +80,7 @@ export function PasswordResetPopup() {
   const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
+  const [sekoStep, setSekoStep] = useState<SekoStep>("identify");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -81,27 +107,87 @@ export function PasswordResetPopup() {
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
+      setSekoStep("identify");
       setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
   };
 
+  /** 서버 에러 응답 → Alert 공통 처리. */
+  const alertError = (err: unknown, fallback: string) => {
+    console.error("[PasswordResetPopup] パスワード初期化リクエスト失敗:", err);
+    if (isAxiosError(err) && err.response) {
+      const data = err.response.data as Record<string, unknown> | undefined;
+      const errMsg = typeof data?.error === "string" ? data.error : fallback;
+      openAlert({ type: "alert", message: errMsg });
+      return;
+    }
+    openAlert({
+      type: "alert",
+      message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
+    });
+  };
+
+  /**
+   * 시공점 1단계 — 시공ID 존재 확인 (p12 ④).
+   * 성공하면 팝업을 닫지 않고 「비밀번호 설정」 단계로 전환한다.
+   */
+  const handleSekoIdentify = async () => {
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/password-reset/seko/check", { sekoId: formData.sekoId });
+      setSekoStep("set-password");
+    } catch (err) {
+      alertError(err, "サーバーエラーが発生しました。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * 시공점 2단계 — 신규 비밀번호 저장 (p12 ⑧).
+   * 저장 후 **자동 로그인하지 않는다** — p12 의 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」다.
+   */
+  const handleSekoReset = async () => {
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/password-reset/seko/reset", {
+        sekoId: formData.sekoId,
+        newPassword: formData.newPassword,
+        confirmPassword: formData.confirmPassword,
+      });
+      handleClose();
+      openAlert({
+        type: "alert",
+        message:
+          "パスワードが変更されました。変更されたパスワードでログインしてください。",
+      });
+    } catch (err) {
+      alertError(err, "サーバーエラーが発生しました。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!isFormValid(activeTab, formData) || isSubmitting) return;
+    if (!isFormValid(activeTab, formData, sekoStep) || isSubmitting) return;
+
+    // 시공점은 메일 링크를 거치지 않는 별도 흐름이다(화면설계서 v1.4 p12) — 아래 request 경로는
+    // 판매점·일반 전용이며, 서버 스키마도 SEKO 를 거부한다.
+    if (activeTab === "installer") {
+      await (sekoStep === "identify" ? handleSekoIdentify() : handleSekoReset());
+      return;
+    }
 
     const userTp = TAB_TO_USERTP[activeTab];
     // Redmine #2156 — userTp 별 입력 정책:
     //   dealer (STORE)    : loginId + email 둘 다 전송 (서버에서 사후 매칭)
-    //   installer (SEKO)  : email 만 (sekoId 입력란 제거)
     //   general (GENERAL) : 단일 입력값을 loginId 필드로 전송 (서버가 dual-key 로 OR 매칭)
     const payload: Record<string, string> = { userTp };
 
     switch (activeTab) {
       case "dealer":
         payload.loginId = formData.id;
-        payload.email = formData.email;
-        break;
-      case "installer":
         payload.email = formData.email;
         break;
       case "general":
@@ -181,7 +267,11 @@ export function PasswordResetPopup() {
         <div className="flex flex-col gap-6 lg:gap-[30px] w-full">
           {/* 안내 문구 */}
           <p className="font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-medium leading-[1.5] text-[#101010] w-full">
-            パスワードを初期化するIDとEメールアドレスを入力してください
+            {activeTab === "installer"
+              ? sekoStep === "identify"
+                ? "パスワードを初期化する施工IDを入力してください"
+                : "新しいパスワードを入力してください"
+              : "パスワードを初期化するIDとEメールアドレスを入力してください"}
           </p>
 
           {/* 폼 필드 */}
@@ -225,18 +315,61 @@ export function PasswordResetPopup() {
               </>
             )}
 
-            {activeTab === "installer" && (
+            {/* 시공점 1단계 — 시공ID 입력 (p12 ②). 이메일이 아니다. */}
+            {activeTab === "installer" && sekoStep === "identify" && (
               <div className="flex flex-col gap-2 w-full">
                 <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
+                  施工ID<span className="text-[#FF1A1A]">*</span>
                 </label>
                 <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
+                  type="text"
+                  autoComplete="username"
+                  value={formData.sekoId}
+                  onChange={(e) => handleChange("sekoId", e.target.value)}
                   className={inputClass}
                 />
               </div>
+            )}
+
+            {/* 시공점 2단계 — 비밀번호 설정 (p12 우측 팝업 ⑤·⑥). 시공ID 는 마스킹 표시만. */}
+            {activeTab === "installer" && sekoStep === "set-password" && (
+              <>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>施工ID</label>
+                  <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
+                    <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
+                      {maskSekoId(formData.sekoId)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    新しいパスワード<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={formData.newPassword}
+                    onChange={(e) => handleChange("newPassword", e.target.value)}
+                    className={inputClass}
+                  />
+                  <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#0068B7]">
+                    ※ 英大文字・英小文字・数字を組み合わせて8文字以上で設定
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    新しいパスワード再入力<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleChange("confirmPassword", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </>
             )}
 
             {activeTab === "general" && (
@@ -260,8 +393,16 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={() => { void handleSubmit(); }} disabled={isSubmitting}>
-              {isSubmitting ? "送信中…" : "パスワードの初期化"}
+            <Button
+              variant="primary"
+              onClick={() => { void handleSubmit(); }}
+              disabled={isSubmitting || !isFormValid(activeTab, formData, sekoStep)}
+            >
+              {isSubmitting
+                ? "送信中…"
+                : activeTab === "installer" && sekoStep === "set-password"
+                  ? "保存"
+                  : "パスワードの初期化"}
             </Button>
           </div>
         </div>

@@ -16,7 +16,6 @@ import {
 import { SITE_DEFAULTS, SITE_URL, QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { sekoEmailCheck } from "@/lib/seko-connector";
 import {
   generateRawResetToken,
   hashResetToken,
@@ -199,13 +198,9 @@ export async function POST(request: NextRequest) {
     // 3. QSP /user/detail 회원 존재 확인 — Redmine #2156 userTp 분기 적용
     //
     //    STORE   : loginId 단독 조회 → 응답 email 평문이 입력 email 과 일치할 때만 통과 (AND)
-    //    SEKO    : email 단독 조회 → hit 시 통과
     //    GENERAL : 입력값 X 를 loginId 단독 / email 단독으로 dual-key 병렬 조회 후 cross check.
     //              한쪽만 hit → 통과. 양쪽 hit + 동일 회원 → 통과. 양쪽 hit + 다른 회원 → fail-closed (ambiguous).
     let resolvedDetail: QspUserDetail | null = null;
-    // 시공점 전용 — QSP userDetail 을 거치지 않으므로(Connector 소관) 결과를 별도로 담는다.
-    // 아래 공통 로직(rate limit·토큰·메일)은 email/loginId 두 값만 쓰므로 여기서 합류시킨다.
-    let sekoResolved: { email: string; loginId: string } | null = null;
     let lookupBlocker:
       | "mismatch"
       | "no-email"
@@ -238,36 +233,6 @@ export async function POST(request: NextRequest) {
         lookupBlocker = "transport";
       } else if (r.kind === "schema-error") {
         lookupBlocker = "schema";
-      }
-    } else if (userTp === "SEKO") {
-      // 시공점 — AS-IS Connector No.8 email/check 로 회원 존재만 확인한다 (QSP 미경유).
-      // 인증 소스가 Connector 이므로 QSP lookup 으로 되돌리면 재설정이 반영되지 않는다.
-      //
-      // 요청은 loginId 단독 — 사양서의 groupKind/sei/mei 를 함께 보내면 400 INVALID_REQUEST 다
-      // (2026-08-13 실측). 응답에 email 이 없으나 시공점은 loginId = email 이라 입력값을 그대로 쓴다.
-      const checkResult = await sekoEmailCheck(email!, `${LOG} (SEKO)`);
-      if (!checkResult.ok) {
-        // 커넥터 장애·설정 오류는 회원 미존재와 구분해 transport 로 분류 —
-        // 미존재(404)로 뭉개지 않고 QSP 장애 경로와 동일하게 502 로 응답한다.
-        // (열거 방지는 404 문구를 QSP 와 통일해 달성하고, 외부 장애는 재시도 가능하도록 분리)
-        console.error(`${LOG} SEKO 회원 존재확인 실패 — status=${checkResult.error.status}`);
-        lookupBlocker = "transport";
-      } else if (checkResult.data.exists) {
-        // email 은 `.trim().toLowerCase()` 로 정규화한다. 이 값이 rate limit 카운트 키이자
-        // 토큰의 `userId` 이므로, 정규화하지 않으면 `User@example.com` 과 `user@example.com`
-        // 이 별개 버킷이 되어 시간당 한도를 우회한다.
-        //
-        // 이 정규화가 SEKO 에만 있는 이유 — STORE/GENERAL 은 QSP 응답 email(회원별 고정값)이
-        // 그대로 키가 되므로 입력 표기가 달라도 같은 버킷이다. 위 STORE 분기의
-        // `.toLowerCase()` 는 입력↔응답 **비교용 로컬 변수**일 뿐 저장 값을 바꾸지 않는다.
-        // SEKO 는 No.8 email/check 응답에 email 이 없어 입력값이 곧 키가 되므로 여기서
-        // 직접 정규화해야 한다.
-        //
-        // loginId 는 **입력 원본을 유지**한다 — Connector 호출 식별자(No.10 resetPwd·login)로
-        // 그대로 재사용되므로, email/check 가 200 을 준 바로 그 표기를 보내는 편이 안전하다.
-        sekoResolved = { email: email!.trim().toLowerCase(), loginId: email! };
-      } else {
-        console.warn(`${LOG} SEKO 회원 미존재`);
       }
     } else if (userTp === "GENERAL") {
       // 입력값 X — loginId 우선, 없으면 email (Zod 가 둘 중 하나는 보장)
@@ -336,7 +301,7 @@ export async function POST(request: NextRequest) {
     }
 
     // not-found / mismatch / ambiguous → 404 (사용자 열거 방어 위해 동일 메시지)
-    if (!sekoResolved && (!resolvedDetail || !resolvedDetail.email)) {
+    if (!resolvedDetail || !resolvedDetail.email) {
       console.info(
         `${LOG} 회원 미존재/매칭실패 — userTp=${userTp}, blocker=${lookupBlocker ?? "not-found"}`,
       );
@@ -354,9 +319,9 @@ export async function POST(request: NextRequest) {
     //    케이스에서도 카운트 키와 토큰 저장 키가 모두 resolvedEmail 로 통일되어
     //    rate limit 이 정상 적용됨. userType 조건 포함 — 동일 email 이 다른 userType 에
     //    존재하는 경우 토큰 카운트 합산 차단 + idx_user(userType, userId) 복합 인덱스 활용.
-    // 위 가드를 통과했으므로 SEKO(sekoResolved) 또는 QSP(resolvedDetail.email) 한쪽은 채워져 있다.
-    const resolvedEmail = sekoResolved?.email ?? resolvedDetail?.email;
-    const resolvedLoginId = sekoResolved?.loginId ?? resolvedDetail?.userId;
+    // 위 가드를 통과했으므로 resolvedDetail.email 은 채워져 있다.
+    const resolvedEmail = resolvedDetail.email;
+    const resolvedLoginId = resolvedDetail.userId;
     if (!resolvedEmail || !resolvedLoginId) {
       // 도달 불가 — 가드 변경 시 조용히 빈 값으로 토큰이 생성되지 않도록 fail-closed.
       console.error(`${LOG} 식별자 결손 — userTp=${userTp}`);
