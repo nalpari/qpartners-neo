@@ -90,38 +90,53 @@ export async function POST(request: NextRequest) {
     // AS-IS `sekoLogin` 이 만료 계정을 이미 거부하는지는 확인되지 않았다(만료된 테스트 계정이
     // 없어 실측 불가). 거부하고 있더라도 이 게이트는 이중 방어로만 남으므로 손해가 없고,
     // 거부하지 않는다면 이게 유일한 차단 지점이다.
-    const sekoInfoResult = await sekoGetUserInfo(
-      s.loginId,
-      s.token,
-      "[POST /api/auth/login][SEKO]",
-    );
-    if (!sekoInfoResult.ok) {
-      // fail-closed — 유효기간을 확인하지 못한 채 통과시키면 게이트가 조용히 무력화된다.
-      // 방금 sekoLogin 이 성공한 직후라 여기서의 실패는 자격증명 문제가 아니므로 502 로 낸다.
-      console.error(
-        "[POST /api/auth/login][SEKO] 시공ID 유효성 확인 실패 — 로그인 차단",
-        { userId: maskEmail(s.loginId), status: sekoInfoResult.error.status },
+    //
+    // **비밀번호 초기화가 필요한 계정(SEKO `pwdInitYn="Y"`)은 검사를 건너뛴다.**
+    // 그 상태의 계정으로 getUserInfo 가 되는지 확인할 수단이 없는데(해당 상태 테스트 계정
+    // 부재), AS-IS 가 거부한다면 위 fail-closed 때문에 **비밀번호 초기화 화면에 도달하기 전에
+    // 502 로 막혀 영구 락아웃**이 된다. 건너뛰어도 이 사용자가 갈 수 있는 곳은 초기화 흐름뿐이고
+    // (아래 `twoFactorVerified: … && s.pwdInitYn !== "Y"`), 초기화 후 재로그인 시에는
+    // `pwdInitYn="N"` 이 되어 이 게이트를 정상적으로 탄다. 만료 계정을 잠시 통과시키는 위험보다
+    // 정상 사용자가 진입 자체를 못 하는 위험이 크다.
+    if (s.pwdInitYn !== "Y") {
+      const sekoInfoResult = await sekoGetUserInfo(
+        s.loginId,
+        s.token,
+        "[POST /api/auth/login][SEKO]",
       );
-      return NextResponse.json(
-        { error: "外部認証サーバーエラーが発生しました" },
-        { status: 502 },
-      );
-    }
+      if (!sekoInfoResult.ok) {
+        // fail-closed — 유효기간을 확인하지 못한 채 통과시키면 게이트가 조용히 무력화된다.
+        // 방금 sekoLogin 이 성공한 직후라 여기서의 실패는 자격증명 문제가 아니므로 502 로 낸다.
+        console.error(
+          "[POST /api/auth/login][SEKO] 시공ID 유효성 확인 실패 — 로그인 차단",
+          { userId: maskEmail(s.loginId), status: sekoInfoResult.error.status },
+        );
+        return NextResponse.json(
+          { error: "外部認証サーバーエラーが発生しました" },
+          { status: 502 },
+        );
+      }
 
-    const sekoIdValidity = evaluateSekoIdValidity({
-      sekoStatus: sekoInfoResult.data.sekoStatus,
-      sekoLimit: sekoInfoResult.data.sekoLimit,
-    });
-    if (!sekoIdValidity.valid) {
-      console.warn("[POST /api/auth/login][SEKO] 시공ID 만료 — 로그인 차단", {
-        userId: maskEmail(s.loginId),
-        reason: sekoIdValidity.reason,
+      const sekoIdValidity = evaluateSekoIdValidity({
+        sekoStatus: sekoInfoResult.data.sekoStatus,
+        sekoLimit: sekoInfoResult.data.sekoLimit,
       });
-      // 자격증명 오류와 구분되는 안내가 필요하다 — ID/PW 를 아무리 다시 입력해도 풀리지 않는
-      // 상태이므로, 같은 문구로 뭉개면 사용자가 재시도만 반복하게 된다.
-      return NextResponse.json(
-        { error: "施工IDの有効期限が切れています。詳しくは管理者にお問い合わせください。" },
-        { status: 403 },
+      if (!sekoIdValidity.valid) {
+        console.warn("[POST /api/auth/login][SEKO] 시공ID 만료 — 로그인 차단", {
+          userId: maskEmail(s.loginId),
+          reason: sekoIdValidity.reason,
+        });
+        // 자격증명 오류와 구분되는 안내가 필요하다 — ID/PW 를 아무리 다시 입력해도 풀리지 않는
+        // 상태이므로, 같은 문구로 뭉개면 사용자가 재시도만 반복하게 된다.
+        return NextResponse.json(
+          { error: "施工IDの有効期限が切れています。詳しくは管理者にお問い合わせください。" },
+          { status: 403 },
+        );
+      }
+    } else {
+      console.log(
+        "[POST /api/auth/login][SEKO] 비밀번호 초기화 대상 — 시공ID 만료 검사 생략(초기화 후 재로그인 시 검사)",
+        { userId: maskEmail(s.loginId) },
       );
     }
 

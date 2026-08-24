@@ -76,6 +76,7 @@ export const openApiSpec: OpenAPIV3.Document = {
 - **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
   - loginId 는 **이메일 또는 시공ID** 둘 다 허용 (사양서 No.2 r6, preview 실측 확인).
   - 로그인 직후 **No.3 getUserInfo 를 1회 더 호출해 시공ID 만료를 검사**한다 (화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」). 판정에 필요한 sekoStatus/sekoLimit 이 login 응답에 없어 불가피한 추가 호출이며, 조회 실패는 fail-closed(502) 다. 시공ID 미보유(두 값 모두 null)는 만료 대상이 아니므로 통과.
+  - 단 **비밀번호 초기화 대상(SEKO pwdInitYn="Y")은 이 검사를 생략**한다 — 초기화 화면 도달 전에 막히는 락아웃을 피하기 위함이며, 초기화 후 재로그인 시 검사된다.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
