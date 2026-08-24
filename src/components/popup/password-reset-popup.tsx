@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
+import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { Button } from "@/components/common";
 import { type TabType, VALID_TABS, TAB_TO_USERTP } from "@/components/login/types";
 
@@ -27,22 +28,78 @@ interface ResetFormData {
   id: string;
   email: string;
   idEmail: string;
+  /** 시공점 전용 — 화면설계서 v1.4 p12 는 이메일이 아니라 시공ID 를 받는다. */
+  sekoId: string;
+  newPassword: string;
+  confirmPassword: string;
 }
 
 const INITIAL_FORM: ResetFormData = {
   id: "",
   email: "",
   idEmail: "",
+  sekoId: "",
+  newPassword: "",
+  confirmPassword: "",
 };
 
 const CLOSE_ANIMATION_MS = 200;
 
-function isFormValid(tab: TabType, data: ResetFormData): boolean {
+/** 재설정 토큰 만료·소비 시 안내 — 서버 문구와 같은 취지(1단계부터 다시). */
+const SEKO_RESTART_MESSAGE =
+  "初期化の有効期限が切れました。施工IDの確認からもう一度お試しください。";
+
+/**
+ * 시공점 초기화 단계 — 화면설계서 v1.4 p12.
+ *  `identify`     : 시공ID 입력 → 존재 확인 (p12 좌측 팝업)
+ *  `set-password` : 신규 비밀번호 설정 → 저장 (p12 우측 「비밀번호 설정」 팝업)
+ *
+ * 판매점·일반은 기존대로 메일 링크 방식이라 단계 개념이 없다(`identify` 고정).
+ */
+type SekoStep = "identify" | "set-password";
+
+/** p12 의 「시공ID: 2***」 표기 — 앞 1자만 남긴다. */
+function maskSekoId(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  return `${v.slice(0, 1)}***`;
+}
+
+/**
+ * Zod 실패 응답(`{ error: "Validation failed", fields: [{ field, message }] }`)에서
+ * 사용자에게 보일 첫 메시지를 꺼낸다. 형태가 다르면 `null` 을 돌려 호출부가 fallback 을 쓴다.
+ */
+function extractFieldMessage(data: Record<string, unknown> | undefined): string | null {
+  if (!data || !Array.isArray(data.fields)) return null;
+  for (const item of data.fields) {
+    if (typeof item !== "object" || item === null) continue;
+    const message = (item as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return null;
+}
+
+/**
+ * 시공점 2단계 입력 검증 — `sekoPasswordResetSchema` 와 같은 기준을 클라이언트에서 먼저 적용한다.
+ *
+ * 공란 여부만 보면 정책 위반·재입력 불일치가 서버 Zod 까지 흘러가 `"Validation failed"` 로
+ * 돌아온다(라우트가 영어 상수를 `error` 에 싣는다). 가장 흔한 두 입력 오류를 영어로 알리지
+ * 않도록 여기서 막는다 — 검증 자체는 서버가 정본이고 이건 UX 용 1차 거름망이다.
+ */
+function isSekoPasswordValid(data: ResetFormData): boolean {
+  return (
+    validatePasswordPolicy(data.newPassword) &&
+    data.confirmPassword !== "" &&
+    data.newPassword === data.confirmPassword
+  );
+}
+
+function isFormValid(tab: TabType, data: ResetFormData, step: SekoStep): boolean {
   switch (tab) {
     case "dealer":
       return data.id.trim() !== "" && data.email.trim() !== "";
     case "installer":
-      return data.email.trim() !== "";
+      return step === "identify" ? data.sekoId.trim() !== "" : isSekoPasswordValid(data);
     case "general":
       return data.idEmail.trim() !== "";
   }
@@ -55,6 +112,13 @@ export function PasswordResetPopup() {
   const activeTab: TabType = VALID_TABS.includes(rawTab as TabType) ? (rawTab as TabType) : "dealer";
   const [isClosing, setIsClosing] = useState(false);
   const [formData, setFormData] = useState<ResetFormData>({ ...INITIAL_FORM });
+  const [sekoStep, setSekoStep] = useState<SekoStep>("identify");
+  /**
+   * 시공점 1단계 응답으로 받은 재설정 토큰 — 2단계 저장 요청에 그대로 실어 보낸다.
+   * 서버는 이 토큰이 지목하는 계정을 재설정 대상으로 삼는다(`seko/reset` 라우트 주석 참조).
+   * URL·메일을 타지 않고 이 state 에만 머무르므로 브라우저 이력·수신함에 남지 않는다.
+   */
+  const [sekoResetToken, setSekoResetToken] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -81,27 +145,133 @@ export function PasswordResetPopup() {
     setTimeout(() => {
       closePopup();
       setFormData({ ...INITIAL_FORM });
+      setSekoStep("identify");
+      setSekoResetToken(null);
       setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
   };
 
+  /**
+   * 시공점 1단계로 되돌리기 — 재설정 토큰이 만료·소비된 경우.
+   * 토큰과 함께 입력한 비밀번호도 버린다(죽은 토큰에 묶인 입력이 남아 재시도 시 혼동된다).
+   */
+  const backToSekoIdentify = () => {
+    setSekoResetToken(null);
+    setFormData((prev) => ({ ...prev, newPassword: "", confirmPassword: "" }));
+    setSekoStep("identify");
+  };
+
+  /**
+   * 서버 에러 응답 → Alert 공통 처리.
+   *
+   * Zod 실패 응답의 `error` 는 `"Validation failed"` 라는 영어 상수라 그대로 띄우면 일본어
+   * 화면에 영어가 노출된다. 사용자가 읽을 문구는 `fields[].message` 쪽에 있으므로 그것을
+   * 우선 쓰고, 없을 때만 `error` → `fallback` 순으로 내려간다.
+   */
+  const alertError = (err: unknown, fallback: string) => {
+    console.error("[PasswordResetPopup] パスワード初期化リクエスト失敗:", err);
+    if (isAxiosError(err) && err.response) {
+      const data = err.response.data as Record<string, unknown> | undefined;
+      const errMsg =
+        extractFieldMessage(data) ?? (typeof data?.error === "string" ? data.error : fallback);
+      openAlert({ type: "alert", message: errMsg });
+      return;
+    }
+    openAlert({
+      type: "alert",
+      message: "サーバーに接続できません。しばらくしてからもう一度お試しください。",
+    });
+  };
+
+  /**
+   * 시공점 1단계 — 시공ID 존재 확인 (p12 ④).
+   * 성공하면 팝업을 닫지 않고 「비밀번호 설정」 단계로 전환한다.
+   */
+  const handleSekoIdentify = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await api.post<{ data: { exists: boolean; resetToken: string } }>(
+        "/auth/password-reset/seko/check",
+        { sekoId: formData.sekoId },
+      );
+      const issued = res.data?.data?.resetToken;
+      if (!issued) {
+        // 토큰 없이 2단계로 넘기면 저장 시점에 반드시 410 이 되어 입력이 버려진다.
+        // 여기서 멈추고 재시도를 안내한다.
+        console.error("[PasswordResetPopup] 재설정 토큰 미수신 — 2단계 진입 중단");
+        openAlert({
+          type: "alert",
+          message: "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。",
+        });
+        return;
+      }
+      setSekoResetToken(issued);
+      setSekoStep("set-password");
+    } catch (err) {
+      alertError(err, "サーバーエラーが発生しました。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * 시공점 2단계 — 신규 비밀번호 저장 (p12 ⑧).
+   * 저장 후 **자동 로그인하지 않는다** — p12 의 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」다.
+   */
+  const handleSekoReset = async () => {
+    if (!sekoResetToken) {
+      // 1단계를 거치지 않았거나 토큰을 잃은 상태 — 서버도 410 으로 거부한다.
+      openAlert({ type: "alert", message: SEKO_RESTART_MESSAGE });
+      backToSekoIdentify();
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await api.post("/auth/password-reset/seko/reset", {
+        sekoId: formData.sekoId,
+        resetToken: sekoResetToken,
+        newPassword: formData.newPassword,
+        confirmPassword: formData.confirmPassword,
+      });
+      handleClose();
+      openAlert({
+        type: "alert",
+        message:
+          "パスワードが変更されました。変更されたパスワードでログインしてください。",
+      });
+    } catch (err) {
+      // 410 = 토큰 만료·소비. 같은 화면에서 재시도해도 계속 실패하므로 1단계로 되돌린다.
+      if (isAxiosError(err) && err.response?.status === 410) {
+        alertError(err, SEKO_RESTART_MESSAGE);
+        backToSekoIdentify();
+        return;
+      }
+      alertError(err, "サーバーエラーが発生しました。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!isFormValid(activeTab, formData) || isSubmitting) return;
+    if (!isFormValid(activeTab, formData, sekoStep) || isSubmitting) return;
+
+    // 시공점은 메일 링크를 거치지 않는 별도 흐름이다(화면설계서 v1.4 p12) — 아래 request 경로는
+    // 판매점·일반 전용이며, 서버 스키마도 SEKO 를 거부한다.
+    if (activeTab === "installer") {
+      await (sekoStep === "identify" ? handleSekoIdentify() : handleSekoReset());
+      return;
+    }
 
     const userTp = TAB_TO_USERTP[activeTab];
     // Redmine #2156 — userTp 별 입력 정책:
     //   dealer (STORE)    : loginId + email 둘 다 전송 (서버에서 사후 매칭)
-    //   installer (SEKO)  : email 만 (sekoId 입력란 제거)
     //   general (GENERAL) : 단일 입력값을 loginId 필드로 전송 (서버가 dual-key 로 OR 매칭)
     const payload: Record<string, string> = { userTp };
 
     switch (activeTab) {
       case "dealer":
         payload.loginId = formData.id;
-        payload.email = formData.email;
-        break;
-      case "installer":
         payload.email = formData.email;
         break;
       case "general":
@@ -181,7 +351,11 @@ export function PasswordResetPopup() {
         <div className="flex flex-col gap-6 lg:gap-[30px] w-full">
           {/* 안내 문구 */}
           <p className="font-['Noto_Sans_JP'] text-[14px] lg:text-[15px] font-medium leading-[1.5] text-[#101010] w-full">
-            パスワードを初期化するIDとEメールアドレスを入力してください
+            {activeTab === "installer"
+              ? sekoStep === "identify"
+                ? "パスワードを初期化する施工IDを入力してください"
+                : "新しいパスワードを入力してください"
+              : "パスワードを初期化するIDとEメールアドレスを入力してください"}
           </p>
 
           {/* 폼 필드 */}
@@ -225,18 +399,72 @@ export function PasswordResetPopup() {
               </>
             )}
 
-            {activeTab === "installer" && (
+            {/* 시공점 1단계 — 시공ID 입력 (p12 ②). 이메일이 아니다. */}
+            {activeTab === "installer" && sekoStep === "identify" && (
               <div className="flex flex-col gap-2 w-full">
                 <label className={labelClass}>
-                  E-Mail<span className="text-[#FF1A1A]">*</span>
+                  施工ID<span className="text-[#FF1A1A]">*</span>
                 </label>
                 <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
+                  type="text"
+                  autoComplete="username"
+                  value={formData.sekoId}
+                  onChange={(e) => handleChange("sekoId", e.target.value)}
                   className={inputClass}
                 />
               </div>
+            )}
+
+            {/* 시공점 2단계 — 비밀번호 설정 (p12 우측 팝업 ⑤·⑥). 시공ID 는 마스킹 표시만. */}
+            {activeTab === "installer" && sekoStep === "set-password" && (
+              <>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>施工ID</label>
+                  <div className="flex items-center w-full h-[42px] px-4 bg-[#f5f5f5] border border-[#ebebeb] rounded-[4px]">
+                    <span className="font-['Noto_Sans_JP'] font-normal text-[14px] leading-[1.5] text-[#999] overflow-hidden text-ellipsis whitespace-nowrap">
+                      {maskSekoId(formData.sekoId)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    新しいパスワード<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={formData.newPassword}
+                    onChange={(e) => handleChange("newPassword", e.target.value)}
+                    className={inputClass}
+                  />
+                  <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#0068B7]">
+                    ※ 英大文字・英小文字・数字を組み合わせて8文字以上で設定
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <label className={labelClass}>
+                    新しいパスワード再入力<span className="text-[#FF1A1A]">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleChange("confirmPassword", e.target.value)}
+                    className={inputClass}
+                  />
+                  {/*
+                    불일치는 저장 버튼 비활성 사유이므로 이유를 화면에 남긴다 —
+                    문구 없이 비활성만 하면 사용자가 원인을 알 수 없다.
+                    정책 위반은 위 입력의 안내(※ 英大文字…)가 같은 역할을 한다.
+                  */}
+                  {formData.confirmPassword !== "" &&
+                    formData.newPassword !== formData.confirmPassword && (
+                      <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#FF1A1A]">
+                        パスワードが一致しません
+                      </p>
+                    )}
+                </div>
+              </>
             )}
 
             {activeTab === "general" && (
@@ -260,8 +488,16 @@ export function PasswordResetPopup() {
             <Button variant="secondary" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button variant="primary" onClick={() => { void handleSubmit(); }} disabled={isSubmitting}>
-              {isSubmitting ? "送信中…" : "パスワードの初期化"}
+            <Button
+              variant="primary"
+              onClick={() => { void handleSubmit(); }}
+              disabled={isSubmitting || !isFormValid(activeTab, formData, sekoStep)}
+            >
+              {isSubmitting
+                ? "送信中…"
+                : activeTab === "installer" && sekoStep === "set-password"
+                  ? "保存"
+                  : "パスワードの初期化"}
             </Button>
           </div>
         </div>

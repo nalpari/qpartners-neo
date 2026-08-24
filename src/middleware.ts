@@ -22,6 +22,13 @@ const PUBLIC_PATHS = [
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
+  // 시공점 전용 초기화(화면설계서 v1.4 p12) — 로그인 전 비인증 호출이라 위 3개와 동일하게 공개.
+  // 메일 링크가 없는 흐름이지만 무상태는 아니다: `seko/check` 가 입력 식별자에 바인딩된 단명
+  // 일회용 토큰을 발급하고 `seko/reset` 이 이를 원자적으로 소비하므로, 1단계를 건너뛴 단발
+  // 요청으로는 비밀번호를 바꿀 수 없다. 발급 한도(식별자당 시간당 3건)와 IP rate limit 이
+  // 그 위에 얹힌다. 소유 증명은 없다 — 사양·I/F 제약은 `schemas/password-reset.ts` SEKO 절 참조.
+  "/api/auth/password-reset/seko/check",
+  "/api/auth/password-reset/seko/reset",
   // 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
   // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
   // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)

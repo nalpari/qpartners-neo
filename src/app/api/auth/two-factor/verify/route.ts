@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { twoFactorVerifySchema } from "@/lib/schemas/two-factor";
 import { verifyToken, signToken, COOKIE_NAME, sessionInvalidResponse } from "@/lib/jwt";
@@ -10,6 +11,7 @@ import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { hashOtp } from "@/lib/auth-utils";
 import { sekoSave2faVerified, formatSekoDateTime } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
 import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
 import { extractClientIp } from "@/lib/notification-mail/utils";
 
@@ -259,6 +261,40 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 7-2. 시공ID 유효기간 검사 — 로그인(SEKO 분기)이 `pwdInitYn="Y"` 계정에 대해 **유예**한
+  //      게이트의 두 번째 회수 지점이다. 아래 JWT 재발행이 `twoFactorVerified:true` 로 세션을
+  //      완전한 상태로 승격시키므로, 초기화 흐름을 거치지 않고 2FA 만 통과해 풀세션을 받는
+  //      경로가 여기다 — `password-init` 만 막으면 이쪽이 그대로 열려 있다.
+  //
+  //      기존 세션의 JWT 재발급이라는 점에서 `mypage/profile` 과 같은 부류로 보이지만, 이 라우트는
+  //      middleware 의 2FA 제한(`twoFactorVerified === false`)을 해제하는 유일한 지점이라 성격이
+  //      다르다. 승격 = 세션 신규 발급과 동급으로 다룬다.
+  if (userTp === "SEKO") {
+    const sekoGateLoginId = user.email;
+    if (!user.sekoToken || !sekoGateLoginId) {
+      // 검사 자체가 불가능한 세션이다. 유효기간을 확인하지 못한 채 승격시키면 게이트가 조용히
+      // 무력화되므로 fail-closed 로 재로그인을 유도한다 — 이 상태는 후속 SEKO API 도 전부 401 이라
+      // 세션을 살려둘 이유가 없다(위 save2faVerified 401 분기와 같은 처리).
+      console.error(
+        "[POST /api/auth/two-factor/verify][SEKO] 세션에 sekoToken/loginId 없음 — 시공ID 검사 불가, 승격 차단",
+        { userId: maskEmail(userId), hasToken: !!user.sekoToken, hasLoginId: !!sekoGateLoginId },
+      );
+      return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+    }
+
+    const sekoIdGate = await checkSekoIdValid(
+      sekoGateLoginId,
+      user.sekoToken,
+      "[POST /api/auth/two-factor/verify][SEKO]",
+    );
+    if (!sekoIdGate.valid) {
+      return NextResponse.json(
+        { error: sekoIdGate.message },
+        { status: sekoIdGate.status },
+      );
+    }
+  }
+
   // 8. JWT 재발행 (twoFactorVerified: true)
   let newToken: string;
   try {
@@ -303,6 +339,22 @@ export async function POST(request: NextRequest) {
 
   return response;
  } catch (error) {
+    // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다. 위 시공ID 게이트가
+    // 이를 흡수하지 않고 전파하므로(fail-closed) 여기서 구분해야 한다 — 일반 500 에 섞이면
+    // 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    // login·password-init 라우트와 동일한 처리다.
+    if (error instanceof ConfigError) {
+      console.error(
+        "[POST /api/auth/two-factor/verify] 설정 에러:",
+        error.name,
+        "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요",
+      );
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
     console.error("[POST /api/auth/two-factor/verify]", error);
     return NextResponse.json(
       { error: "認証処理中にサーバーエラーが発生しました" },

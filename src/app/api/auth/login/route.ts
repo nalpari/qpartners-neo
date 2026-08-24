@@ -17,6 +17,7 @@ import { extractClientIp } from "@/lib/notification-mail/utils";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
 import { sekoLogin, parseSekoDate } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
 import { evaluateTwoFactorRequirement } from "@/lib/sec-auth-policy";
 import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 
@@ -74,6 +75,47 @@ export async function POST(request: NextRequest) {
     const sekoGate = await checkRoleActive("SEKO", "[POST /api/auth/login][SEKO]");
     if (!sekoGate.active) {
       return NextResponse.json({ error: sekoGate.message }, { status: 403 });
+    }
+
+    // 시공ID 만료 차단 — 화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」.
+    //
+    // 판정에 필요한 `sekoStatus`/`sekoLimit` 이 **login 응답에 없어** getUserInfo 를 한 번 더 친다
+    // (login 응답 15필드에 유효기간 항목 자체가 없다 — 사양서 20260817 Login 시트 r10~r24).
+    // 로그인당 SEKO 호출 2회 · `qp_interface_log` 2행이 되는 비용은 이 게이트의 대가다
+    // (단 아래 초기화 대상 분기는 검사를 유예하므로 1회).
+    //
+    // AS-IS `sekoLogin` 이 만료 계정을 이미 거부하는지는 확인되지 않았다(만료된 테스트 계정이
+    // 없어 실측 불가). 거부하고 있더라도 이 게이트는 이중 방어로만 남으므로 손해가 없고,
+    // 거부하지 않는다면 이게 유일한 차단 지점이다.
+    //
+    // **비밀번호 초기화가 필요한 계정(SEKO `pwdInitYn="Y"`)은 여기서만 검사를 건너뛴다.**
+    // 그 상태의 계정으로 getUserInfo 가 되는지 확인할 수단이 없는데(해당 상태 테스트 계정
+    // 부재), AS-IS 가 거부한다면 위 fail-closed 때문에 **비밀번호 초기화 화면에 도달하기 전에
+    // 502 로 막혀 영구 락아웃**이 된다. 만료 계정을 잠시 통과시키는 위험보다 정상 사용자가
+    // 진입 자체를 못 하는 위험이 크다.
+    //
+    // ⚠️ 생략은 **유예이지 면제가 아니다.** 이 세션은 `twoFactorVerified:false`(아래) 로 나가
+    // middleware 가 2FA 경로와 공개 GET 만 허용하지만, 그 허용 경로 안에 세션을 완전한 상태로
+    // **승격**시키는 지점이 둘 있다 — `password-init`(초기화 완료)과 `two-factor/verify`(2FA 완료).
+    // 두 곳 모두 같은 게이트(`checkSekoIdValid`)를 통과해야 하며, 그래서 이 생략이 안전하다.
+    // 승격 지점 중 하나라도 게이트가 빠지면 만료 계정이 그 경로로 8시간 풀세션을 받는다.
+    if (s.pwdInitYn !== "Y") {
+      const sekoIdGate = await checkSekoIdValid(
+        s.loginId,
+        s.token,
+        "[POST /api/auth/login][SEKO]",
+      );
+      if (!sekoIdGate.valid) {
+        return NextResponse.json(
+          { error: sekoIdGate.message },
+          { status: sekoIdGate.status },
+        );
+      }
+    } else {
+      console.log(
+        "[POST /api/auth/login][SEKO] 비밀번호 초기화 대상 — 시공ID 만료 검사 유예(password-init / two-factor/verify 에서 검사)",
+        { userId: maskEmail(s.loginId) },
+      );
     }
 
     // 2차 인증 필요 여부 — QSP 와 동일 정책(`sec-auth-policy`)을 그대로 쓴다.
