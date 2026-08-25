@@ -51,7 +51,18 @@ const SEKO_ID_EXPIRED_MESSAGE =
   "施工IDの有効期限が切れています。詳しくは管理者にお問い合わせください。";
 
 export type SekoIdGateResult =
-  | { valid: true }
+  | {
+      valid: true;
+      /**
+       * 시공점 회사명(`getUserInfo` 의 `storeName`).
+       *
+       * 게이트가 이미 `getUserInfo` 를 호출하므로 그 응답을 그대로 흘려보낸다 — 호출부가
+       * 회사명을 얻자고 같은 API 를 한 번 더 치면 로그인 경로의 SEKO 왕복이 2배가 된다.
+       * SEKO login 응답에는 회사명이 없어(실측 15필드) 이 경로 말고는 출처가 없다.
+       * (Redmine #2473 — 헤더 우측 상단 회사명 미표시)
+       */
+      storeName: string | null;
+    }
   | { valid: false; status: 403 | 502; message: string };
 
 /**
@@ -101,5 +112,5 @@ export async function checkSekoIdValid(
     userId: maskUserId(loginId),
     reason: validity.reason,
   });
-  return { valid: true };
+  return { valid: true, storeName: infoResult.data.storeName };
 }

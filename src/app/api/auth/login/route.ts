@@ -99,6 +99,10 @@ export async function POST(request: NextRequest) {
     // **승격**시키는 지점이 둘 있다 — `password-init`(초기화 완료)과 `two-factor/verify`(2FA 완료).
     // 두 곳 모두 같은 게이트(`checkSekoIdValid`)를 통과해야 하며, 그래서 이 생략이 안전하다.
     // 승격 지점 중 하나라도 게이트가 빠지면 만료 계정이 그 경로로 8시간 풀세션을 받는다.
+    // 회사명(`storeName`)은 게이트가 부수적으로 실어 오는 값이다 — SEKO login 응답에는 없고
+    // `getUserInfo` 에만 있다. 게이트를 건너뛰는 초기화 대상(pwdInitYn="Y")은 여기서 null 로
+    // 두고, 세션을 승격시키는 `password-init` 에서 같은 게이트를 통과할 때 채운다.
+    let sekoStoreName: string | null = null;
     if (s.pwdInitYn !== "Y") {
       const sekoIdGate = await checkSekoIdValid(
         s.loginId,
@@ -111,6 +115,7 @@ export async function POST(request: NextRequest) {
           { status: sekoIdGate.status },
         );
       }
+      sekoStoreName = sekoIdGate.storeName;
     } else {
       console.log(
         "[POST /api/auth/login][SEKO] 비밀번호 초기화 대상 — 시공ID 만료 검사 유예(password-init / two-factor/verify 에서 검사)",
@@ -166,7 +171,9 @@ export async function POST(request: NextRequest) {
       userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,
       userTp: "SEKO",
       compCd: null,
-      compNm: null,
+      // 헤더 우측 상단 회사명 표시용 (Redmine #2473). 게이트가 회신한 getUserInfo 의
+      // storeName 을 그대로 쓴다 — 추가 SEKO 호출은 없다.
+      compNm: sekoStoreName,
       // 시공점 loginId=email(사양). 응답 email 이 null 이어도 loginId 로 보장 —
       // mypage 등 후속 SEKO 호출의 식별자(loginId) 결손/오전송 방지.
       email: sekoOtpRecipient,
