@@ -48,18 +48,24 @@ interface ConstructionRow {
   fileTypes: readonly string[];
 }
 
-// supplierKind(4~7) → 備考 라벨 (사양서: 4=시공점 / 5=델타 / 6=스미토모 / 7=델타 SAVeR-H2)
+/**
+ * supplierKind → 備考 라벨.
+ *
+ * 화면설계서 기준: **5·6·7 만 시공점명을 표시하고 그 외(4=일반 시공점)는 빈값**이다
+ * (Redmine #2472). 4 도 "施工店" 으로 채우면 설계서와 어긋나므로 매핑에 두지 않는다 —
+ * 여기 없는 값은 아래 `toRows` 에서 빈 문자열이 된다.
+ */
 const SUPPLIER_KIND_LABEL: Record<number, string> = {
-  4: "施工店",
-  5: "施工店 (デルタ)",
-  6: "施工店 (スミトモ)",
-  7: "施工店 (デルタ SAVeR-H2)",
+  5: "施工店(デルタ)",
+  6: "施工店(住友)",
+  7: "施工店(デルタ SAVeR-H2)",
 };
 
-// 다운로드 가능한 문서 종류 → 표시명. CERT2 는 미사용(QA#12)이라 매핑을 두지 않는다.
+// 다운로드 가능한 문서 종류 → 표시명 (Redmine #2482).
+// CERT2 는 미사용(QA#12)이라 매핑을 두지 않는다.
 const FILE_TYPE_LABEL: Record<string, string> = {
-  RECEIPT: "受講料領収書",
-  CERT1: "施工証明書1",
+  RECEIPT: "領収証",
+  CERT1: "施工証明書 (A4サイズ)",
 };
 
 const EMPTY_MESSAGE = "施工ID情報がありません";
@@ -104,10 +110,12 @@ function toRows(data: SekoConstruction | null): ConstructionRow[] {
       id: data.sekoId,
       acquiredDate: formatDate(data.sekoIssueDate),
       expiryDate: formatDate(data.sekoLimit),
+      // 매핑에 없는 종류(4=일반 시공점, null 등)는 빈값 — 설계서 요건(#2472).
+      // "-" 를 쓰지 않는 것은 「값이 없음」이 아니라 「표시 대상이 아님」이기 때문이다.
       note:
         data.supplierKind != null
-          ? (SUPPLIER_KIND_LABEL[data.supplierKind] ?? "施工店")
-          : "-",
+          ? (SUPPLIER_KIND_LABEL[data.supplierKind] ?? "")
+          : "",
       // 라벨이 정의된 종류만 노출 — AS-IS 가 CERT2 를 실어 보내도 화면에는 나오지 않는다.
       fileTypes: data.availableFileTypes.filter((t) => t in FILE_TYPE_LABEL),
     },
@@ -126,15 +134,20 @@ function DownloadLinks({
   if (fileTypes.length === 0) {
     return <span className="text-[#999]">-</span>;
   }
+  // 첨부파일은 줄바꿈하여 세로로 표시한다 (Redmine #2473 / 화면설계서).
+  // 가로 배치는 파일 종류가 늘면 컬럼 폭을 넘겨 잘린다.
+  // `autoHeight` 컬럼이라 이 셀 높이가 곧 행 높이다 — 여백을 최소로 잡는다.
+  // 각 줄의 높이는 아이콘(18px)이 결정하므로(`leading-none` 으로 텍스트 행간 제거),
+  // 2줄 36px + 줄간격 2px ≒ 38px 이 실질 하한이다. 더 줄이려면 아이콘 크기를 손대야 한다.
   return (
-    <div className="flex items-center gap-[16px]">
+    <div className="flex flex-col items-start gap-[2px]">
       {fileTypes.map((fileType) => (
         <button
           key={fileType}
           type="button"
           disabled={downloading != null}
           onClick={() => onDownload(fileType)}
-          className="flex items-center gap-[8px] cursor-pointer hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-[8px] leading-none whitespace-nowrap cursor-pointer hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Image
             src="/asset/images/layout/download_icon.svg"
@@ -183,7 +196,13 @@ function DocumentCell(params: ICellRendererParams<ConstructionRow>) {
 }
 
 const columnDefs: ColDef<ConstructionRow>[] = [
-  { headerName: "施工ID", field: "id", flex: 1 },
+  // 施工ID 는 가운데정렬 — 다른 컬럼과 정렬을 맞춘다 (Redmine #2473).
+  {
+    headerName: "施工ID",
+    field: "id",
+    flex: 1,
+    cellStyle: { justifyContent: "center" },
+  },
   {
     headerName: "施工ID取得日",
     field: "acquiredDate",
@@ -202,7 +221,16 @@ const columnDefs: ColDef<ConstructionRow>[] = [
     // 이 컬럼은 셀 렌더러가 행 전체를 읽어 버튼을 그리므로 필드 바인딩 자체가 불필요하다.
     colId: "documents",
     sortable: false,
-    flex: 1,
+    // 다른 컬럼보다 넓게 — 「施工証明書 (A4サイズ)」 + 아이콘이 한 줄에 들어가야 한다.
+    // 폭이 모자라 라벨이 줄바꿈되면 셀이 한 줄 더 늘어난다.
+    flex: 1.4,
+    /**
+     * 첨부파일을 세로로 쌓으므로(#2473) 셀 높이가 공통 행 높이(57px)를 넘는다.
+     * `autoHeight` 를 주면 AG Grid 가 **이 셀의 실제 높이에 맞춰 행을 늘린다** —
+     * 행 높이를 숫자로 지정하는 방식은 테마가 셀에 거는 CSS 높이를 이기지 못해
+     * 내용이 행 경계를 넘쳐 잘렸다.
+     */
+    autoHeight: true,
     cellRendererSelector: () => ({ component: DocumentCell }),
   },
   {
