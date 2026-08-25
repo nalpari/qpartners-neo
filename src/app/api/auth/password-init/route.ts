@@ -172,6 +172,10 @@ export async function POST(request: NextRequest) {
       // Bearer 토큰(sekoToken)도 그대로 승계해 후속 마이페이지 호출이 끊기지 않도록 한다.
       const sekoUpdatedUser: LoginUser = {
         ...user,
+        // 헤더 우측 상단 회사명 (Redmine #2473). 로그인 라우트는 초기화 대상(pwdInitYn="Y")에
+        // 대해 게이트를 유예하므로 그 세션의 compNm 은 비어 있다 — 세션을 승격시키는 이 지점에서
+        // 게이트가 회신한 storeName 으로 채운다. 회신이 없으면 기존 값을 지우지 않는다.
+        compNm: sekoIdGate.storeName ?? user.compNm,
         // 비번 설정 직후 → "Y"(초기화 불요). 다음 로그인부터 personal-info popup 미진입.
         pwdInitYn: "Y",
         // 초기화 직후 2FA skip — QSP 경로(같은 파일 아래 `twoFactorVerified: true`)와 동일 정책.

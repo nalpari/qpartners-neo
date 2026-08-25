@@ -3125,6 +3125,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           "AS-IS Seko File Download API(No.5) 프록시. 시공점 전용. " +
           "AS-IS 는 Bearer 가 필요한 fileUrl 만 주므로 서버가 2단계(메타 → 바이너리)로 받아 스트리밍한다. " +
           "응답은 attachment + nosniff 고정 — RECEIPT 는 text/html 로 내려와 인라인 렌더 시 XSS 경로가 된다. " +
+          "RECEIPT 는 AS-IS 자산(CSS·로고·도장)을 참조하는 HTML 조각이라 그대로 저장하면 스타일 없이 열린다. " +
+          "서버가 커넥터 origin 내부 자산만 받아 data URI 로 인라인한 자기완결 HTML 로 재작성하고 " +
+          "(script 제거, Content-Type 에 charset=utf-8 부여), 인라인 실패 시에는 원본 바이트를 그대로 내려보낸다. " +
+          "CERT1(application/pdf)은 재작성 대상이 아니다. " +
+          "확장자 없는 AS-IS fileName 은 Content-Type 기준으로 보정해 내려간다. " +
           "※ 시공ID 정보 자체는 GET /mypage/profile 의 sekoConstruction 으로 내려간다(별도 조회 API 없음).",
         parameters: [
           {
@@ -3136,7 +3141,11 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         ],
         responses: {
-          "200": { description: "파일 바이너리 (Content-Disposition: attachment)" },
+          "200": {
+            description:
+              "파일 바이너리 (Content-Disposition: attachment, 확장자 보정된 filename*). " +
+              "RECEIPT=자산 인라인된 text/html; charset=utf-8 (인라인 실패 시 AS-IS 원본 그대로) / CERT1=application/pdf",
+          },
           "400": errorResponse("잘못된 fileType"),
           "401": errorResponse("인증 필요 / 세션 무효 (SEKO 토큰 만료 시 쿠키 만료)"),
           "403": errorResponse("시공점 회원 전용 또는 2단계 인증 미완료"),

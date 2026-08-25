@@ -269,6 +269,10 @@ export async function POST(request: NextRequest) {
   //      기존 세션의 JWT 재발급이라는 점에서 `mypage/profile` 과 같은 부류로 보이지만, 이 라우트는
   //      middleware 의 2FA 제한(`twoFactorVerified === false`)을 해제하는 유일한 지점이라 성격이
   //      다르다. 승격 = 세션 신규 발급과 동급으로 다룬다.
+  // 회사명(`storeName`)은 게이트가 부수적으로 실어 오는 값이다 — SEKO login 응답에 없어
+  // 로그인 시점 JWT 의 compNm 이 비어 있을 수 있다(Redmine #2473). 승격 시점에 채운다.
+  // SEKO 가 아니면 null 로 남아 아래에서 기존 값을 유지한다.
+  let sekoStoreName: string | null = null;
   if (userTp === "SEKO") {
     const sekoGateLoginId = user.email;
     if (!user.sekoToken || !sekoGateLoginId) {
@@ -293,12 +297,18 @@ export async function POST(request: NextRequest) {
         { status: sekoIdGate.status },
       );
     }
+    sekoStoreName = sekoIdGate.storeName;
   }
 
   // 8. JWT 재발행 (twoFactorVerified: true)
   let newToken: string;
   try {
-    newToken = await signToken({ ...user, twoFactorVerified: true });
+    newToken = await signToken({
+      ...user,
+      twoFactorVerified: true,
+      // 게이트 회신이 없으면(비 SEKO, 또는 응답에 회사명 없음) 기존 값을 지우지 않는다.
+      compNm: sekoStoreName ?? user.compNm,
+    });
   } catch (error) {
     console.error("[POST /api/auth/two-factor/verify] JWT 생성 실패:", error);
     return NextResponse.json(
