@@ -399,7 +399,7 @@ export function PasswordResetPopup() {
               </>
             )}
 
-            {/* 시공점 1단계 — 시공ID 입력 (p12 ②). 이메일이 아니다. */}
+            {/* 시공점 1단계 — 시공ID 입력 (p12 ②). 로그인은 메일·시공ID 겸용이지만 초기화는 시공ID 단독이다. */}
             {activeTab === "installer" && sekoStep === "identify" && (
               <div className="flex flex-col gap-2 w-full">
                 <label className={labelClass}>
@@ -408,6 +408,7 @@ export function PasswordResetPopup() {
                 <input
                   type="text"
                   autoComplete="username"
+                  placeholder="施工IDを入力してください"
                   value={formData.sekoId}
                   onChange={(e) => handleChange("sekoId", e.target.value)}
                   className={inputClass}
@@ -415,7 +416,7 @@ export function PasswordResetPopup() {
               </div>
             )}
 
-            {/* 시공점 2단계 — 비밀번호 설정 (p12 우측 팝업 ⑤·⑥). 시공ID 는 마스킹 표시만. */}
+            {/* 시공점 2단계 — 비밀번호 설정 (p12 우측 팝업 ⑤·⑥). 1단계 식별자는 마스킹 표시만. */}
             {activeTab === "installer" && sekoStep === "set-password" && (
               <>
                 <div className="flex flex-col gap-2 w-full">

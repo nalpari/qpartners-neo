@@ -103,14 +103,22 @@ export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchem
 
 // ─── 시공점(SEKO) 비밀번호 초기화 — 화면설계서 v1.4 p12 ───
 //
+// 입력 식별자는 **시공ID** 다(p12 ②·④). 로그인 화면(p10)은 「이메일 또는 시공ID」 겸용이지만
+// 초기화는 시공ID 단독으로 규정돼 있다. 2단계가 호출할 No.10 `resetPwd` 는 시공ID 를 받지
+// 못하므로(2026-08-24 preview 실측), **1단계가 시공ID → 로그인ID(이메일) 해석까지 끝낸다**
+// (`sekoResolveLoginIdByUserId`). 화면은 시공ID, 커넥터에 나가는 값은 이메일이다.
+//
 // 판매점·일반과 달리 **메일 링크를 거치지 않는다.** 시공ID 존재 확인 후 곧바로 비밀번호를
 // 설정한다(p12: 「비밀번호 초기화」→ 비밀번호 설정 팝업 호출 → 저장).
 //
 // ⚠️ 이 흐름에는 **소유 증명 단계가 없다** — 시공ID 를 아는 사람은 누구나 해당 계정의
-// 비밀번호를 바꿀 수 있다. AS-IS 사양(화면설계서 v1.4 p12)이 그러하므로 그대로 구현한다.
-// 소유 증명(메일 링크·OTP)은 넣을 수단도 없다: 시공ID → 이메일을 해석할 I/F 가 없다
-// (No.8 `email/check` 응답에 이메일 없음 / No.3 `getUserInfo` 는 Bearer 전용 /
-//  No.7 `getUserList` 응답 5필드에 시공ID 없음).
+// 비밀번호를 바꿀 수 있다. 화면설계서 v1.4 p12 가 「시공ID 확인 → 즉시 설정」으로 규정하고
+// 고객이 그 위험을 확인·수용했으므로(2026-08-24) 사양대로 구현한다.
+//
+// **소유 증명을 넣을 수단 자체가 없다.** 시공점 회원에 등록된 이메일은 실제 사용하는 주소가
+// 아니라 임의로 등록해 놓은 값인 경우가 있다(2026-08-25 설계 담당 확인). 1단계 해석으로
+// 주소를 얻을 수는 있지만 본인 주소라는 보장이 없으므로, 메일 링크·OTP 를 보내도 소유 증명이
+// 되지 않는다. p12 가 초기화를 시공ID 단독으로 규정한 이유도 이것이다.
 //
 // 대신 두 단계를 **서버 상태로 잇는다.** 1단계가 시공ID 에 바인딩된 단명 일회용 토큰을
 // 발급하고 2단계는 그 토큰을 원자적으로 소비한 요청만 처리한다. 소유 증명은 아니지만,
@@ -119,16 +127,39 @@ export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchem
 // 시도를 제한할 수 없다.
 
 /**
- * 시공ID 문자셋 — 이메일 겸용(No.8 `email/check` 의 loginId 는 「メールまたは施工ID」)이라
- * `passwordResetRequestSchema.loginId` 와 같은 보수적 charset 을 쓴다.
- * log injection·외부 API 부하 1차 방어선.
+ * 시공ID 문자셋 — charset 은 `passwordResetRequestSchema.loginId` 와 같은 보수적 기준을 쓴다
+ * (log injection·외부 API 부하 1차 방어선). 다만 **`@` 는 허용하지 않는다.**
+ *
+ * ⚠️ **이메일 입력을 거부한다.** No.8 `email/check` 는 이메일도 시공ID 와 같은 계정으로
+ * 해석하므로, 막지 않으면 1·2단계가 모두 통과한다 — 화면은 「施工ID」를 요구하는데 이메일이
+ * 통과하는, 표기와 동작이 어긋난 상태가 된다. 화면설계서 v1.4 p12 ②·④ 가 이 경로의 입력을
+ * 시공ID 로 규정하므로 스키마에서 잘라낸다.
+ *
+ * `@` 포함 여부만으로 판정한다 — 시공ID 에 `@` 가 들어갈 여지가 없고, 이메일 형식 전체를
+ * 정규식으로 판정하려 들면 경계 사례에서 정상 시공ID 를 막을 위험이 있다.
  */
 const sekoIdSchema = z
   .string()
   .trim()
   .min(1, "施工IDは必須です")
   .max(100, "施工IDは100文字以内で入力してください")
-  .regex(/^[\w@.+\- ]+$/i, "施工IDの形式が正しくありません");
+  .superRefine((value, ctx) => {
+    // `@` 를 먼저 본다 — charset 위반으로 먼저 걸리면 「형식이 올바르지 않다」 로만 안내돼
+    // 무엇을 고쳐야 하는지 전달되지 않는다.
+    if (value.includes("@")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "メールアドレスではなく施工IDを入力してください",
+      });
+      return;
+    }
+    if (!/^[\w.+\- ]+$/i.test(value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "施工IDの形式が正しくありません",
+      });
+    }
+  });
 
 /** 1단계 — 입력한 시공ID 가 AS-IS DB 에 존재하는지 확인 (p12 ④). */
 export const sekoPasswordResetCheckSchema = z.object({

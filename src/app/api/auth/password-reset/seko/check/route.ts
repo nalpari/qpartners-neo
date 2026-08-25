@@ -11,7 +11,7 @@ import {
 } from "@/lib/password-reset-token";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { extractClientIp } from "@/lib/notification-mail/utils";
-import { sekoEmailCheck } from "@/lib/seko-connector";
+import { sekoEmailCheck, sekoResolveLoginIdByUserId } from "@/lib/seko-connector";
 import {
   SEKO_RESET_TOKEN_TTL_MS,
   SEKO_RESET_TOKENS_PER_HOUR,
@@ -22,6 +22,15 @@ const LOG = "[POST /api/auth/password-reset/seko/check]";
 
 /**
  * 시공점 비밀번호 초기화 **1단계** — 시공ID 존재 확인 + 재설정 토큰 발급 (화면설계서 v1.4 p12 ④).
+ *
+ * 입력은 **시공ID** 다. p12 ② 가 「시공 ID 입력박스」, ④ 가 「입력정보가 DB 에 있는 시공ID 인지
+ * 체크」로 규정한다 — 로그인 화면(p10)은 「이메일 또는 시공ID」 겸용이지만 **초기화는 시공ID
+ * 단독**이다.
+ *
+ * 그래서 이 단계가 **시공ID → 로그인ID(이메일) 해석까지 끝낸다.** 2단계가 호출할 No.10
+ * `resetPwd` 는 시공ID 를 받지 못하기 때문이다(2026-08-24 preview 실측). 해석은 No.8 응답의
+ * `userId` 를 No.7 `getUserList` 에서 되짚는 방식이고, 결과는 토큰 행에만 담긴다
+ * (`sekoResolveLoginIdByUserId` 주석 참조).
  *
  * p12 에서 시공점 초기화는 「이메일 링크 발송」이 아니라 **시공ID 입력 → DB 대조 → 비밀번호
  * 설정 팝업 즉시 호출** 로 바뀌었다(p11 의 시공점 패널은 "프로세스 변경" 으로 폐기 표기).
@@ -91,8 +100,8 @@ export async function POST(request: NextRequest) {
     // IP 단위 한도는 **단일 계정을 겨눈 시도**를 제한하지 못한다(공격자가 IP 를 바꾸면 무제한).
     // 발급 이력이 곧 카운터다.
     //
-    // ⚠️ 계정 단위가 아니다 — 시공점은 시공ID 와 이메일 둘 다로 로그인하고 둘을 서로 매핑할
-    // I/F 가 없어, 한 계정을 겨눈 시도는 최대 이 한도의 2배까지 가능하다(상수 주석 참조).
+    // 입력이 시공ID 로 고정되고(스키마가 이메일을 거부한다) 시공ID 는 계정과 1:1 이므로,
+    // 이 한도는 사실상 계정 단위로 성립한다(상수 주석 참조).
     //
     // 외부 호출보다 **앞**에 둔다 — 한도 초과 요청으로 SEKO 를 두드리지 않는다.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -144,13 +153,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 시공ID → 로그인ID(이메일) 해석 (No.8 `userId` → No.7 목록 매칭).
+    //
+    // 2단계가 호출할 No.10 `resetPwd` 는 `loginId` 에 시공ID 를 받지 못하므로, 넘길 값을
+    // 여기서 확정한다. 토큰 발급 **전**에 해석한다 — 해석 불가한 계정에 토큰을 쥐여주면
+    // 사용자는 비밀번호를 입력하고 저장을 누른 뒤에야 실패를 보게 된다.
+    const sekoUserId = checkResult.data.userId?.trim();
+    if (!sekoUserId) {
+      // `exists=true` 인데 `userId` 가 비면 해석 경로가 성립하지 않는다. 「회원 미존재」로
+      // 접으면 사용자가 시공ID 를 의심하며 재입력만 반복하므로 외부 오류로 분리한다.
+      console.error(`${LOG} 존재확인 응답에 userId 없음 — 로그인ID 해석 불가`, {
+        sekoId: maskUserId(sekoId),
+      });
+      return NextResponse.json(
+        { error: "外部サーバーエラーが発生しました。しばらく経ってから再度お試しください。" },
+        { status: 502 },
+      );
+    }
+
+    const resolved = await sekoResolveLoginIdByUserId(sekoUserId, LOG);
+    if (!resolved.ok) {
+      console.error(
+        `${LOG} 시공ID → 로그인ID 해석 실패 — status=${resolved.error.status}`,
+      );
+      return NextResponse.json(
+        { error: "外部サーバーエラーが発生しました。しばらく経ってから再度お試しください。" },
+        { status: 502 },
+      );
+    }
+
     // 재설정 토큰 발급.
-    //  - `userId` 컬럼: 정규화한 **입력 식별자**(시공ID 또는 이메일 — 시공점은 둘 다 로그인
-    //    식별자다). 판매점·일반은 이 컬럼에 평문 email 을 담지만 시공점은 이메일을 알 수 없다
-    //    (No.8 응답에 없음). SEKO 응답 필드 `userId`(내부 PK 숫자문자열)와는 무관하다 —
-    //    컬럼명만 같다.
-    //  - `loginId` 컬럼: 입력 표기 그대로. 2단계가 No.10 `resetPwd` 에 넘길 값이며,
-    //    **재설정 대상은 요청 body 가 아니라 이 값으로 확정한다.**
+    //  - `userId` 컬럼: 정규화한 **시공ID**. 판매점·일반은 이 컬럼에 평문 email 을 담지만
+    //    시공점은 이메일을 알 수 없다(No.8 응답에 없음). SEKO 응답 필드 `userId`(내부 PK
+    //    숫자문자열)와는 무관하다 — 컬럼명만 같다.
+    //  - `loginId` 컬럼: 위에서 해석한 **로그인ID(이메일)**. 2단계가 No.10 `resetPwd` 에
+    //    넘길 값이며, **재설정 대상은 요청 body 가 아니라 이 값으로 확정한다.** 화면에는
+    //    나가지 않는다 — 응답에 담지 않고 토큰 행에만 둔다.
     //  - TTL 은 판매점·일반의 메일 링크(1시간)보다 짧게 잡는다. 팝업 안에서 곧바로 이어지는
     //    단계라 긴 유효기간이 필요 없고, 짧을수록 유출된 토큰의 창이 좁아진다.
     const rawToken = generateRawResetToken();
@@ -160,7 +198,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: "SEKO",
           userId: sekoIdKey,
-          loginId: sekoId,
+          loginId: resolved.loginId,
           token: tokenHash,
           expiresAt: new Date(Date.now() + SEKO_RESET_TOKEN_TTL_MS),
         },
