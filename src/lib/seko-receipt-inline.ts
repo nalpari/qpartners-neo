@@ -196,10 +196,28 @@ async function inlineCssUrls(
 /**
  * 영수증 HTML 을 자기완결 문서로 변환한다. 변환 불가·실패 시 `null`(원본 유지).
  *
+ * 예상한 실패(디코드·fetch·상한)는 본체가 `null` 로 접지만, 그 밖의 예외까지 여기서 받아
+ * `null` 로 만든다. 감싸지 않으면 `sekoBaseUrl()` 의 `ConfigError` 같은 예외가 라우트
+ * 최상위 catch 로 올라가 **다운로드 자체가 500 으로 실패한다** — 인라인은 미화 단계이므로
+ * 어떤 이유로든 다운로드를 막아서는 안 된다.
+ *
  * @param body   AS-IS 가 내려준 HTML 원본 바이트
  * @param token  커넥터 Bearer (자산 fetch 에 동일 토큰 사용)
  */
 export async function inlineSekoReceiptHtml(
+  body: ArrayBuffer,
+  token: string,
+  logTag: string,
+): Promise<string | null> {
+  try {
+    return await buildInlinedReceiptHtml(body, token, logTag);
+  } catch (error: unknown) {
+    console.warn(`${logTag} 영수증 인라인 중 예기치 못한 오류 — 원본 유지:`, error);
+    return null;
+  }
+}
+
+async function buildInlinedReceiptHtml(
   body: ArrayBuffer,
   token: string,
   logTag: string,
@@ -236,12 +254,17 @@ export async function inlineSekoReceiptHtml(
     if (!cssBody) continue;
     let css: string;
     try {
-      css = new TextDecoder("utf-8").decode(cssBody);
-    } catch {
+      // `fatal: true` — 없으면 UTF-8 이 아닌 스타일시트(Shift_JIS 등)가 예외 없이 U+FFFD 로
+      // 치환되어 깨진 CSS 가 조용히 인라인된다. 위 HTML 디코드와 기준을 맞춘다.
+      css = new TextDecoder("utf-8", { fatal: true }).decode(cssBody);
+    } catch (error: unknown) {
+      console.warn(`${logTag} 영수증 스타일시트 디코드 실패 — 건너뜀 (${cssUrl}):`, error);
       continue;
     }
     css = await inlineCssUrls(css, cssUrl, token, budget, logTag);
-    html = html.replace(tag, `<style>\n${css}\n</style>`);
+    // 치환값을 문자열로 넘기면 AS-IS CSS 안의 `$&` / `$'` 가 치환 특수패턴으로 해석되어
+    // 문서가 통째로 중복 삽입된다 — 외부 통제 문자열이므로 함수 치환으로 차단한다.
+    html = html.replace(tag, () => `<style>\n${css}\n</style>`);
   }
 
   // ── 2) 본문 <img> → data: URI ──
