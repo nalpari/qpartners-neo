@@ -34,9 +34,16 @@ const INITIAL_LOCAL: LocalFields = {
 
 export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
   const [local, setLocal] = useState<LocalFields>(INITIAL_LOCAL);
-  // USER_TYPE 공통코드에서 동적으로 옵션 수급 (코드관리 변경 즉시 반영). fallback 내장.
-  // relCode1="Y" — 회원관리 검색 노출 대상만 수급. 시공점(SEKO)은 "N" 이라 제외된다.
-  // (목록 API의 memberListQuerySchema 가 SEKO 를 허용하지 않아, 선택 가능하면 400 이 난다)
+  // USER_TYPE 공통코드에서 동적으로 옵션 수급 (코드관리 변경 즉시 반영).
+  // relCode1="Y" — 회원관리 검색 노출 대상만 수급. 시공점(SEKO)은 rel_code1 을 "N" 으로 두어
+  // 제외하는 것이 코드관리상의 설정이다.
+  //
+  // 다만 SEKO 제외는 **표시 정책이 아니라 기능 제약**이다 — 목록 API 의 memberListQuerySchema
+  // 가 SEKO 를 허용하지 않아 선택 가능해지는 순간 검색이 400 으로 깨진다. rel_code1 은 운영자가
+  // 코드관리 화면에서 바꿀 수 있고 실제로 "Y" 로 되돌아간 적이 있어(Redmine #2422 → #2475),
+  // 데이터에만 기대면 같은 방식으로 재발한다. 아래에서 SEKO 를 명시 제외해 데이터 값과 무관하게
+  // 검색조건에서 빠지도록 한다. 목록 API 가 SEKO 를 지원하게 되면 이 가드를 함께 걷을 것.
+  // (다른 화면의 시공점 노출은 이 가드와 무관하다 — 여기서만 제외한다)
   const { searchOptions: rawUserTypeOptions } = useUserType({ relCode1: "Y" });
   // 권한관리 isActive=N인 roleCode를 회원유형 옵션에서 제외
   const { allOptions } = useTargetLabels();
@@ -44,7 +51,9 @@ export function MembersSearch({ onSearch, onReset }: MembersSearchProps) {
     const inactiveRoleCodes = new Set(
       allOptions.filter((o) => !o.isActive && o.roleCode).map((o) => o.roleCode!),
     );
-    return rawUserTypeOptions.filter((o) => !inactiveRoleCodes.has(o.value));
+    return rawUserTypeOptions.filter(
+      (o) => o.value !== "SEKO" && !inactiveRoleCodes.has(o.value),
+    );
   }, [rawUserTypeOptions, allOptions]);
 
   const updateLocal = (key: keyof LocalFields) => (value: string) => {
