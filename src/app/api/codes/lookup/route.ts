@@ -35,6 +35,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 선택적 필터 — 화면별 노출 대상을 코드관리(rel_code1)로 제어하기 위한 파라미터.
+    // 미전달 시 조건 미적용(전체 조회)이라 기존 호출부 동작은 그대로다.
+    // 예) USER_TYPE&relCode1=Y — 회원관리 검색 SelectBox 노출 대상만 (시공점은 "N" 이라 제외)
+    // 값 자체는 로그에 남기지 않는다 (민감값이 들어올 수 있는 파라미터).
+    const relCode1 = request.nextUrl.searchParams.get("relCode1");
+
     const header = await prisma.codeHeader.findFirst({
       where: { headerCode, isActive: true },
       select: { id: true, headerCode: true, headerName: true },
@@ -54,7 +60,7 @@ export async function GET(request: NextRequest) {
     // 보조 정렬: id asc — 동일 sortOrder 가 둘 이상일 때 결정적 순서 보장
     // (신규 추가 시 기존 항목과 sortOrder 충돌하더라도 등록 순서대로 안정 정렬).
     const details = await prisma.codeDetail.findMany({
-      where: { headerId: header.id, isActive: true },
+      where: { headerId: header.id, isActive: true, ...(relCode1 ? { relCode1 } : {}) },
       select: { code: true, codeName: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
     });
