@@ -5,6 +5,7 @@ import { ConfigError } from "@/lib/errors";
 import { getUserFromRequest, sessionInvalidResponse } from "@/lib/jwt";
 import { sekoFileQuerySchema } from "@/lib/schemas/mypage";
 import { sekoFileDownload } from "@/lib/seko-connector";
+import { ensureFileExtension, inlineSekoReceiptHtml } from "@/lib/seko-receipt-inline";
 
 // GET /api/mypage/seko-file — 시공점 첨부파일 다운로드 (No.5 fileDownload 프록시)
 //
@@ -76,15 +77,38 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // RECEIPT(text/html)만 자산을 인라인해 자기완결 문서로 만든다. AS-IS 가 주는 원본은 4KB
+    // HTML 조각이고 CSS·로고·도장이 AS-IS 서버에 남아 있어, 그대로 저장하면 사용자 PC 에서
+    // 스타일 없이 열린다(Redmine #2481). CERT1(application/pdf)은 손대지 않는다.
+    //
+    // 실패 시 원본 바이트를 그대로 내려보낸다 — 보기 좋아지는 것보다 다운로드가 되는 것이 우선.
+    let responseBody: ArrayBuffer | string = result.body;
+    let contentType = result.contentType;
+    if (contentType.split(";")[0].trim().toLowerCase() === "text/html") {
+      const inlined = await inlineSekoReceiptHtml(
+        result.body,
+        user.sekoToken,
+        "[GET /api/mypage/seko-file]",
+      );
+      if (inlined) {
+        responseBody = inlined;
+        // 원본 contentType 에는 charset 이 없다. 일본어 본문이므로 명시하지 않으면 브라우저가
+        // 로컬 파일을 열 때 인코딩을 잘못 추정해 글자가 깨진다.
+        contentType = "text/html; charset=utf-8";
+      }
+    }
+
     // 바이너리 프록시 스트리밍.
     // RECEIPT 는 text/html 로 내려오므로 attachment + nosniff 가 필수다 — 없으면 AS-IS 가 만든
     // HTML 이 우리 오리진에서 렌더되어 XSS 경로가 된다.
     // 파일명은 콘텐츠 다운로드 라우트와 동일 패턴(ASCII fallback + RFC5987 filename*).
-    const contentDisposition = `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`;
-    return new NextResponse(result.body, {
+    // AS-IS 의 RECEIPT fileName 에는 확장자가 없어 저장 후 열리지 않으므로 여기서 보정한다.
+    const fileName = ensureFileExtension(result.fileName, contentType);
+    const contentDisposition = `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    return new NextResponse(responseBody, {
       status: 200,
       headers: {
-        "Content-Type": result.contentType,
+        "Content-Type": contentType,
         "Content-Disposition": contentDisposition,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",

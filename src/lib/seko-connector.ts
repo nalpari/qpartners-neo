@@ -108,8 +108,13 @@ function mapSekoFailureStatus(
   return 400;
 }
 
-/** SEKO Connector base URL (env `SEKO_CONNECTOR_BASE_URL`). 끝 슬래시 제거. */
-function sekoBaseUrl(): string {
+/**
+ * SEKO Connector base URL (env `SEKO_CONNECTOR_BASE_URL`). 끝 슬래시 제거.
+ *
+ * `seko-receipt-inline.ts` 가 자산 origin 판정에 쓰므로 export 한다 — env 를 직접 읽으면
+ * 운영 HTTPS 강제 가드가 그 경로에서만 빠진다.
+ */
+export function sekoBaseUrl(): string {
   const url = process.env.SEKO_CONNECTOR_BASE_URL?.trim();
   if (!url) {
     throw new ConfigError(
