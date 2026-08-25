@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
+import { joinAddressWithPrefecture } from "@/lib/jp-prefecture";
 import { COOKIE_NAME, getUserFromRequest, signToken, sessionInvalidResponse } from "@/lib/jwt";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { requireMenuPermission } from "@/lib/auth";
@@ -108,7 +109,10 @@ export async function GET(request: NextRequest) {
         compNm: s.storeName ?? "",
         compNmKana: s.storeNameKana ?? "",
         zipcode: s.zipcode ?? "",
-        address1: s.address1 ?? "",
+        // AS-IS 는 주소를 「도도부현 코드(숫자) + 시구읍면 이하」로 나누어 준다
+        // (실측: pref=13, address1="港区"). 코드를 명칭으로 풀어 앞에 붙이지 않으면
+        // 화면 주소에서 도도부현이 통째로 빠진다(Redmine #2480).
+        address1: joinAddressWithPrefecture(s.pref, s.address1),
         address2: s.address2 ?? "",
         telNo: s.telNo ?? "",
         fax: s.fax ?? "",
