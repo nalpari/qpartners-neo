@@ -70,6 +70,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     // viewCount 증가: published 상태이고 사내 사용자가 아닌 경우만 (봇/프리패치 방어)
     const shouldIncrement = existing.status === "published" && !internal;
 
+    // 증가를 "시도했는지"(shouldIncrement)와 "실제로 반영됐는지"는 다르다 — 응답 표시값은 후자를 따른다.
+    let incremented = false;
+
     if (shouldIncrement) {
       // 조회수 증가는 "수정"이 아니므로 `updated_at` 은 손대지 않는다 (#2476). 손대면 상세 조회만
       // 해도 updatedAt !== createdAt 이 되어 갱신일/UPDATE 뱃지·갱신일 정렬이 오염된다.
@@ -78,11 +81,25 @@ export async function GET(request: NextRequest, { params }: Params) {
       // 있는데, 그 값은 위 findUnique 시점의 스냅샷이다. 두 쿼리 사이에 PUT 이 커밋되면 갱신일을
       // 편집 이전 값으로 되돌린다 (TOCTOU). @updatedAt 은 Prisma 앱 레벨 동작이라 raw UPDATE 는
       // updated_at 을 건드리지 않으므로, 아예 쓰지 않는 쪽으로 그 창을 제거한다.
-      await prisma.$executeRaw`UPDATE qp_contents SET view_count = view_count + 1 WHERE id = ${parsed.data}`;
+      //
+      // 조회수는 표시 전용 부가 작업이다 — 락 대기·커넥션 끊김으로 실패해도 상세 조회를 막아서는
+      // 안 된다. 응답 데이터는 위 findUnique 로 이미 확보된 상태라 500 을 낼 이유가 없다.
+      try {
+        const affected = await prisma.$executeRaw`UPDATE qp_contents SET view_count = view_count + 1 WHERE id = ${parsed.data}`;
+        incremented = affected > 0;
+        if (affected === 0) {
+          // 앱에 Content 하드 삭제 경로가 없으므로(삭제는 status='deleted' 소프트 삭제) 정상 흐름에서는
+          // 도달하지 않는다. 찍힌다면 앱 밖에서 행이 사라졌다는 신호.
+          console.warn("[GET /api/contents/:id] 조회수 증가 대상 행 없음:", { id: parsed.data });
+        }
+      } catch (incrementError: unknown) {
+        logError("GET /api/contents/:id viewCount 증가", incrementError, { id: parsed.data });
+      }
     }
 
-    // 응답 조회수만 증가분 반영 (재조회 없이 계산 — 표시 전용)
-    const content = shouldIncrement
+    // 응답 조회수는 스냅샷 +1 (표시 전용 근사치, 재조회 없음). 동시 조회분은 반영되지 않아 DB 실값과
+    // 다를 수 있으나 증가 자체는 DB 원자 연산이라 유실은 없고, 다음 조회에서 정정된다.
+    const content = incremented
       ? { ...existing, viewCount: existing.viewCount + 1 }
       : existing;
 
@@ -126,8 +143,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 갱신 이력 판별을 서버에서 단일 출처로 계산 (클라이언트 Date 비교 중복 제거).
-    // DB precision 한계로 updatedAt===createdAt 가 초 단위에서 동일할 수 있으나
-    // 비교 로직을 클라이언트 여러 곳에서 반복하면 드리프트 위험 → 서버 한 군데로 집중.
+    // updatedAt === createdAt 은 "등록 후 미수정"을 뜻한다 — 등록이 두 컬럼을 같은 시각으로 명시
+    // INSERT 하기 때문(contents/route.ts POST, #2476). 컬럼이 DATETIME(3) 이라 우연히 같아지는
+    // 경우는 없다. 비교 로직을 클라이언트 여러 곳에서 반복하면 드리프트 위험 → 서버 한 군데로 집중.
     const hasBeenUpdated = content.updatedAt.getTime() !== content.createdAt.getTime();
 
     return NextResponse.json({
