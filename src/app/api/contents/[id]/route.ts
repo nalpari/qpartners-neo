@@ -37,10 +37,19 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 접근제어를 위해 먼저 조회
+    // 접근제어 + 응답 데이터를 한 번에 조회 (조회수 증가와 분리 — 아래 주석 참조)
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
-      include: { targets: { select: { roleCode: true, startAt: true, endAt: true } } },
+      include: {
+        targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
+        categories: {
+          include: { category: CATEGORY_TREE_INCLUDE },
+        },
+        attachments: {
+          select: { id: true, fileName: true, fileSize: true, mimeType: true, sortOrder: true },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
     });
 
     if (!existing) {
@@ -59,29 +68,23 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // viewCount 증가: published 상태이고 사내 사용자가 아닌 경우만 (봇/프리패치 방어)
-    const shouldIncrement =
-      existing.status === "published" && !internal;
+    const shouldIncrement = existing.status === "published" && !internal;
 
-    const content = await prisma.content.update({
-      where: { id: parsed.data },
-      // 조회수 증가는 "수정"이 아니다. `updatedAt` 을 기존 값으로 명시 전달해 @updatedAt 자동
-      // 갱신을 막는다 (Prisma 는 값을 직접 주면 자동 설정하지 않는다). 명시하지 않으면 상세 조회만
-      // 해도 updatedAt !== createdAt 이 되어 갱신일/UPDATE 뱃지·갱신일 정렬이 오염된다 (#2476).
-      // 사내 사용자는 data 가 비어 자동 갱신 대상이 아니다 (빈 update clause 는 @updatedAt 미갱신).
-      data: shouldIncrement
-        ? { viewCount: { increment: 1 }, updatedAt: existing.updatedAt }
-        : {},
-      include: {
-        targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
-        categories: {
-          include: { category: CATEGORY_TREE_INCLUDE },
-        },
-        attachments: {
-          select: { id: true, fileName: true, fileSize: true, mimeType: true, sortOrder: true },
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-    });
+    if (shouldIncrement) {
+      // 조회수 증가는 "수정"이 아니므로 `updated_at` 은 손대지 않는다 (#2476). 손대면 상세 조회만
+      // 해도 updatedAt !== createdAt 이 되어 갱신일/UPDATE 뱃지·갱신일 정렬이 오염된다.
+      //
+      // prisma.content.update 로는 `updatedAt` 을 명시 전달해야 @updatedAt 자동 갱신을 막을 수
+      // 있는데, 그 값은 위 findUnique 시점의 스냅샷이다. 두 쿼리 사이에 PUT 이 커밋되면 갱신일을
+      // 편집 이전 값으로 되돌린다 (TOCTOU). @updatedAt 은 Prisma 앱 레벨 동작이라 raw UPDATE 는
+      // updated_at 을 건드리지 않으므로, 아예 쓰지 않는 쪽으로 그 창을 제거한다.
+      await prisma.$executeRaw`UPDATE qp_contents SET view_count = view_count + 1 WHERE id = ${parsed.data}`;
+    }
+
+    // 응답 조회수만 증가분 반영 (재조회 없이 계산 — 표시 전용)
+    const content = shouldIncrement
+      ? { ...existing, viewCount: existing.viewCount + 1 }
+      : existing;
 
     const now = Date.now();
 
