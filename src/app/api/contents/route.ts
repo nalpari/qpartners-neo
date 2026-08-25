@@ -734,6 +734,12 @@ export async function POST(request: NextRequest) {
         ? (contentData.publishedAt ?? new Date())
         : undefined;
 
+    // createdAt 은 DB default(UTC_TIMESTAMP(3)), updatedAt 은 Prisma(앱 서버)가 채우므로 값을
+    // 주지 않으면 INSERT 왕복 시간만큼(실측 1~3ms) 두 값이 어긋난다. 갱신 이력 판정이
+    // `updatedAt !== createdAt` 이라 등록하는 순간 "수정된 콘텐츠"가 되어 갱신일·UPDATE 뱃지가
+    // 노출된다(#2476). 두 컬럼을 같은 시각으로 명시해 출처를 하나로 통일한다.
+    const createdNow = new Date();
+
     // 본문 임베드 이미지 cleanup 을 같은 트랜잭션 안에서 수행 — 콘텐츠 INSERT 가 롤백되면
     // stamp/delete 도 자동 원복. 디스크 unlink 는 commit 후 별도 처리(실패해도 정합성 영향 없음).
     const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
@@ -741,6 +747,8 @@ export async function POST(request: NextRequest) {
         data: {
           ...contentData,
           publishedAt,
+          createdAt: createdNow,
+          updatedAt: createdNow,
           userType: user.userType,
           userId: user.userId,
           createdBy: user.userId,

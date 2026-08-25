@@ -64,7 +64,13 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const content = await prisma.content.update({
       where: { id: parsed.data },
-      data: shouldIncrement ? { viewCount: { increment: 1 } } : {},
+      // 조회수 증가는 "수정"이 아니다. `updatedAt` 을 기존 값으로 명시 전달해 @updatedAt 자동
+      // 갱신을 막는다 (Prisma 는 값을 직접 주면 자동 설정하지 않는다). 명시하지 않으면 상세 조회만
+      // 해도 updatedAt !== createdAt 이 되어 갱신일/UPDATE 뱃지·갱신일 정렬이 오염된다 (#2476).
+      // 사내 사용자는 data 가 비어 자동 갱신 대상이 아니다 (빈 update clause 는 @updatedAt 미갱신).
+      data: shouldIncrement
+        ? { viewCount: { increment: 1 }, updatedAt: existing.updatedAt }
+        : {},
       include: {
         targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
         categories: {
