@@ -133,8 +133,8 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
           NEW
         </span>
       )}
-      {/* NEW 노출 중에는 UPDATE 미노출 — 등록 직후 수정하면 두 뱃지가 겹친다 */}
-      {!data.isNew && data.hasBeenUpdated && data.isUpdated && (
+      {/* NEW 우선순위(동시 충족 시 UPDATE 숨김)는 서버 resolveBadgeFlags 가 이미 반영해 내려준다 */}
+      {data.hasBeenUpdated && data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
         </span>

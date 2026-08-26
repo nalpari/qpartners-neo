@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
-import { isNewSince, resolvePublishedSince } from "@/lib/content-new-badge";
+import { resolveBadgeFlags } from "@/lib/content-new-badge";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
@@ -15,7 +15,6 @@ import { jstHourStart } from "@/lib/jst-day";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
   createContentSchema,
   listContentsQuerySchema,
@@ -297,8 +296,8 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       // 갱신 이력 판별 서버 단일 출처 — 클라이언트 Date 비교 제거용
       hasBeenUpdated: c.updatedAt.getTime() !== c.createdAt.getTime(),
-      isNew: isNewSince(resolvePublishedSince(c, c.targets, viewer), nowMs),
-      isUpdated: nowMs - c.updatedAt.getTime() < FIVE_DAYS_MS,
+      // NEW/UPDATE 는 함께 판정한다 — 공개일 도래 전에는 둘 다 false (사내 전용 노출 구간).
+      ...resolveBadgeFlags(c, c.targets, viewer, nowMs),
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
