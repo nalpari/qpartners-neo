@@ -259,6 +259,8 @@ export function markListHistoryEntry(scope: ListScope): void {
  *   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀.
  *       복원 소스는 **그 entry 의 스냅샷** 이므로, 전역 슬롯에 먼저 되돌려 놓은 뒤 true 를 반환한다.
  *       (이후 호출부는 기존과 동일하게 sessionStorage 만 읽으면 된다.)
+ *       두 경로가 동시에 성립하면 (2) 가 우선한다 — 전역 슬롯은 scope 당 1개뿐이라 entry 단위
+ *       스냅샷이 항상 더 정확하다.
  *
  * 마커는 1회 소비한다 — 같은 entry 로 다시 뒤로/앞으로 오면 popstate 가 다시 발생해 재설정되고,
  * 그 외 사유의 재마운트(예: page key 변경)에서는 복원되지 않는다.
@@ -268,9 +270,27 @@ export function consumeListRestore(scope: ListScope): boolean {
   const cached = _scopeDecisionCache.get(scope);
   if (cached !== undefined) return cached;
 
+  // 마커는 "그 popstate 로 도착한 entry 전용 1회 티켓" 이다. 지금 렌더 중인 entry 의
+  // history.state 와 대조해 동일 entry 일 때만 유효 처리한다 — 목록이 끝내 마운트되지 못해
+  // (권한 가드 redirect, 전환 도중 다른 메뉴로 이탈) 소비되지 않은 티켓이 무기한 남아 이후의
+  // push 진입(메뉴 클릭)에 재사용되면 "메뉴 클릭 = 초기화" 정책이 깨진다. push 로 만들어진
+  // 새 entry 의 state 에는 마커가 없으므로 이 대조에서 자동으로 걸러진다.
+  const popped = poppedMarker;
+  const currentMarker = parseHistoryMarker(window.history.state);
+  const arrivalMarker =
+    popped !== null &&
+    popped.scope === scope &&
+    popped.docId === documentId &&
+    currentMarker !== null &&
+    currentMarker.scope === scope &&
+    currentMarker.docId === documentId
+      ? popped
+      : null;
+
   let result = consumeListRestoreFlag(scope);
-  if (!result && poppedMarker?.scope === scope && poppedMarker.docId === documentId) {
-    applySnapshot(scope, poppedMarker.snapshot);
+  if (arrivalMarker) {
+    // 플래그가 먼저 성립해도 마커는 반드시 소비한다 — 남겨두면 위의 잔존 티켓이 된다.
+    applySnapshot(scope, arrivalMarker.snapshot);
     poppedMarker = null;
     result = true;
   }
@@ -279,12 +299,20 @@ export function consumeListRestore(scope: ListScope): boolean {
 }
 
 /**
- * 로그아웃 등 계정 전환 시점에 호출 — 목록 복원 상태를 전부 폐기한다.
+ * 계정 전환 시점에 호출 — 목록 복원 상태를 전부 폐기한다.
  *
  * 로그아웃은 SPA 전환이라 문서가 유지되므로, 정리하지 않으면 같은 탭에서 다음 사용자가
  * 뒤로가기했을 때 이전 사용자의 검색조건(대량메일은 작성자 ID·이메일 포함)이 복원된다.
  *   - sessionStorage 의 모든 scope 키 삭제
  *   - documentId 재발급 → 이미 심어진 history 마커/스냅샷은 전부 불일치로 무시됨
+ *
+ * 호출 지점은 로그아웃(`performLogout`) + **로그인 확정 시점 전부**다. 세션 만료(401)는
+ * 로그아웃을 거치지 않고 사용자가 바뀔 수 있어 로그아웃 배선만으로는 누수가 남는다.
+ *   - 일반 로그인(`login-contents`) / 2FA 통과(`two-factor-auth-popup`)
+ *   - 최초 로그인 회원정보 설정 완료(`personal-info-popup`)
+ *   - 자동로그인 inbound sync(`home-main`) — 새 문서지만 sessionStorage 는 탭 단위로 잔존
+ *
+ * 세션이 이어지는 중의 플래그 복구(`header.tsx`)는 계정 전환이 아니므로 호출 대상이 아니다.
  */
 export function resetListRestoreState(): void {
   if (typeof window === "undefined") return;

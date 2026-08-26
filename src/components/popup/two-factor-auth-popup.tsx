@@ -9,6 +9,7 @@ import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { Button } from "@/components/common";
 
@@ -222,6 +223,9 @@ export function TwoFactorAuthPopup() {
         return;
       }
       dispatchAuthChange();
+      // 계정 전환 경계 — 2FA 통과가 이 사용자의 로그인 확정 시점이므로 이전 사용자의
+      // 목록 복원 상태를 폐기한다 (Redmine #2490).
+      resetListRestoreState();
       closePopup();
       router.replace("/");
     } catch (err) {

@@ -10,6 +10,7 @@ import api from "@/lib/axios";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import { performLogout } from "@/lib/auth-client";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, InputBox } from "@/components/common";
@@ -125,6 +126,9 @@ export function PersonalInfoPopup() {
         console.error("[PersonalInfo] localStorage 쓰기 失敗:", storageErr);
       }
       dispatchAuthChange();
+      // 계정 전환 경계 — 최초 로그인 회원정보 설정 완료가 로그인 확정 시점이므로 이전
+      // 사용자의 목록 복원 상태를 폐기한다 (Redmine #2490).
+      resetListRestoreState();
       closePopup();
       openAlert({ type: "alert", message: "保存されました。" });
       router.replace("/");
