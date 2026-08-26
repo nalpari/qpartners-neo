@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { usePopupStore, useAlertStore } from "@/lib/store";
@@ -119,6 +120,12 @@ export function PasswordResetPopup() {
    * URL·메일을 타지 않고 이 state 에만 머무르므로 브라우저 이력·수신함에 남지 않는다.
    */
   const [sekoResetToken, setSekoResetToken] = useState<string | null>(null);
+  /**
+   * 비밀번호 입력값 마스킹 해제 여부 — 화면설계서 v1.4 p12 항목 5-1.
+   * 두 입력을 각각 토글한다(로그인·회원가입·비밀번호 변경 팝업과 같은 동작).
+   */
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -147,6 +154,8 @@ export function PasswordResetPopup() {
       setFormData({ ...INITIAL_FORM });
       setSekoStep("identify");
       setSekoResetToken(null);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       setIsSubmitting(false);
       setIsClosing(false);
     }, CLOSE_ANIMATION_MS);
@@ -159,6 +168,8 @@ export function PasswordResetPopup() {
   const backToSekoIdentify = () => {
     setSekoResetToken(null);
     setFormData((prev) => ({ ...prev, newPassword: "", confirmPassword: "" }));
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
     setSekoStep("identify");
   };
 
@@ -431,12 +442,11 @@ export function PasswordResetPopup() {
                   <label className={labelClass}>
                     新しいパスワード<span className="text-[#FF1A1A]">*</span>
                   </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
+                  <PasswordInput
                     value={formData.newPassword}
-                    onChange={(e) => handleChange("newPassword", e.target.value)}
-                    className={inputClass}
+                    onChange={(v) => handleChange("newPassword", v)}
+                    show={showNewPassword}
+                    onToggle={() => setShowNewPassword((prev) => !prev)}
                   />
                   <p className="font-['Noto_Sans_JP'] text-[12px] leading-[1.5] text-[#0068B7]">
                     ※ 英大文字・英小文字・数字を組み合わせて8文字以上で設定
@@ -446,12 +456,11 @@ export function PasswordResetPopup() {
                   <label className={labelClass}>
                     新しいパスワード再入力<span className="text-[#FF1A1A]">*</span>
                   </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
+                  <PasswordInput
                     value={formData.confirmPassword}
-                    onChange={(e) => handleChange("confirmPassword", e.target.value)}
-                    className={inputClass}
+                    onChange={(v) => handleChange("confirmPassword", v)}
+                    show={showConfirmPassword}
+                    onToggle={() => setShowConfirmPassword((prev) => !prev)}
                   />
                   {/*
                     불일치는 저장 버튼 비활성 사유이므로 이유를 화면에 남긴다 —
@@ -504,6 +513,53 @@ export function PasswordResetPopup() {
         </div>
         </div>
       </div>
+    </div>
+  );
+}
+/**
+ * 비밀번호 입력 + 마스킹 해제 토글 — 화면설계서 v1.4 p12 항목 5-1(감은 눈 아이콘).
+ *
+ * 테두리를 wrapper 로 옮기고 `focus-within` 으로 포커스 강조를 유지한다 —
+ * input 단독에 테두리를 두면 아이콘이 입력칸 밖으로 밀린다.
+ * 아이콘·라벨은 비밀번호 변경 팝업(`password-change-popup.tsx`)과 동일하게 맞췄다.
+ */
+function PasswordInput({
+  value,
+  onChange,
+  show,
+  onToggle,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 w-full h-[42px] px-4 bg-white border border-[#EBEBEB] rounded-[4px] overflow-hidden transition-colors duration-150 hover:border-[#D1D1D1] focus-within:border-[#101010]">
+      <input
+        type={show ? "text" : "password"}
+        autoComplete="new-password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1 min-w-0 h-full bg-transparent font-['Noto_Sans_JP'] text-sm leading-[1.5] text-[#101010] outline-none"
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        className="shrink-0 cursor-pointer"
+        aria-label={show ? "パスワードを隠す" : "パスワードを表示"}
+      >
+        <Image
+          src={
+            show
+              ? "/asset/images/contents/default_eye_show.svg"
+              : "/asset/images/contents/default_eye_hide.svg"
+          }
+          alt=""
+          width={20}
+          height={14}
+        />
+      </button>
     </div>
   );
 }
