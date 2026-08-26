@@ -7,8 +7,11 @@ import { useIsInternal } from "@/hooks/use-is-internal";
 import {
   consumeListRestore,
   LIST_RESTORE_KEYS,
-  markListHistoryEntry,
+  readListStorage,
+  removeListStorage,
+  useListHistoryMarker,
   useListStateCacheInvalidator,
+  writeListStorage,
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import { getFallbackRole } from "@/lib/auth-role";
@@ -196,9 +199,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     if (typeof window === "undefined") return EMPTY_SORT;
     const SORT_KEY = LIST_RESTORE_KEYS.contents.sort;
     if (shouldRestoreList) {
-      return parseStoredSort(window.sessionStorage.getItem(SORT_KEY));
+      return parseStoredSort(readListStorage(SORT_KEY));
     }
-    window.sessionStorage.removeItem(SORT_KEY);
+    removeListStorage(SORT_KEY);
     return EMPTY_SORT;
   });
   // 마운트 시점의 정렬만 그리드 헤더에 1회 반영 — 이후 헤더 클릭은 ag-grid 자체 상태로 관리된다.
@@ -218,9 +221,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
     const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
     if (shouldRestoreList) {
-      return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
+      return parseStoredSearchParams(readListStorage(FILTERS_KEY));
     }
-    window.sessionStorage.removeItem(FILTERS_KEY);
+    removeListStorage(FILTERS_KEY);
     if (initialKeyword) {
       return { ...EMPTY_SEARCH_PARAMS, keyword: initialKeyword };
     }
@@ -246,9 +249,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     if (typeof window === "undefined") return;
     const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
     if (isEmptySearchParams(searchParams)) {
-      window.sessionStorage.removeItem(FILTERS_KEY);
+      removeListStorage(FILTERS_KEY);
     } else {
-      window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(searchParams));
+      writeListStorage(FILTERS_KEY, JSON.stringify(searchParams));
     }
   }, [searchParams]);
 
@@ -257,22 +260,18 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     if (typeof window === "undefined") return;
     const SORT_KEY = LIST_RESTORE_KEYS.contents.sort;
     if (sort.dir) {
-      window.sessionStorage.setItem(SORT_KEY, JSON.stringify(sort));
+      writeListStorage(SORT_KEY, JSON.stringify(sort));
     } else {
-      window.sessionStorage.removeItem(SORT_KEY);
+      removeListStorage(SORT_KEY);
     }
   }, [sort]);
 
   // 브라우저 뒤로/앞으로 복원용 마커 + 이 entry 의 상태 스냅샷을 history entry 에 기록 (Redmine #2490).
   //   - 상세 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
   //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 스냅샷을 떠서 구분한다.
-  //   - deps 를 두지 않고 매 커밋마다 호출 — 위 URL 정리 replaceState 처럼 state 를 통째로
-  //     덮어쓰는 호출로 마커가 지워져도 곧바로 다시 심는다. 스냅샷이 같으면 내부에서 no-op.
   //   - **반드시 위 sessionStorage 동기화 effect 들보다 뒤에 선언** — 같은 커밋에서 먼저 돌면
   //     한 커밋 이전의 검색조건이 스냅샷에 담긴다.
-  useEffect(() => {
-    markListHistoryEntry("contents");
-  });
+  useListHistoryMarker("contents");
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();

@@ -6,8 +6,11 @@ import { useEffect, useState } from "react";
 import {
   consumeListRestore,
   LIST_RESTORE_KEYS,
-  markListHistoryEntry,
+  readListStorage,
+  removeListStorage,
+  useListHistoryMarker,
   useListStateCacheInvalidator,
+  writeListStorage,
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import { BulkMailSearch } from "./bulk-mail-search";
@@ -74,9 +77,9 @@ export function BulkMailContents() {
     if (typeof window === "undefined") return {};
     const FILTERS_KEY = LIST_RESTORE_KEYS.bulkMail.filters;
     if (shouldRestoreList) {
-      return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
+      return parseStoredSearchParams(readListStorage(FILTERS_KEY));
     }
-    window.sessionStorage.removeItem(FILTERS_KEY);
+    removeListStorage(FILTERS_KEY);
     return {};
   });
 
@@ -89,21 +92,18 @@ export function BulkMailContents() {
     if (typeof window === "undefined") return;
     const FILTERS_KEY = LIST_RESTORE_KEYS.bulkMail.filters;
     if (isEmptySearchParams(searchParams)) {
-      window.sessionStorage.removeItem(FILTERS_KEY);
+      removeListStorage(FILTERS_KEY);
     } else {
-      window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(searchParams));
+      writeListStorage(FILTERS_KEY, JSON.stringify(searchParams));
     }
   }, [searchParams]);
 
   // 브라우저 뒤로/앞으로 복원용 마커 + 이 entry 의 상태 스냅샷을 history entry 에 기록 (Redmine #2490).
   //   - 상세/생성 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
   //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 스냅샷을 떠서 구분한다.
-  //   - deps 를 두지 않고 매 커밋마다 호출 — 스냅샷이 같으면 내부에서 no-op.
   //   - **반드시 위 sessionStorage 동기화 effect 보다 뒤에 선언** — 같은 커밋에서 먼저 돌면
   //     한 커밋 이전의 검색조건이 스냅샷에 담긴다.
-  useEffect(() => {
-    markListHistoryEntry("bulkMail");
-  });
+  useListHistoryMarker("bulkMail");
 
   const handleSearch = (params: MassMailSearchParams) => {
     setSearchParams(params);
