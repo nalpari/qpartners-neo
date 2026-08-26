@@ -18,8 +18,10 @@ const STRICT_MODE_REMOUNT_GRACE_MS = 100;
  *               목록 진입 시 플래그가 없으니 자동 초기화된다.
  *   - filters : 검색조건 직렬화 저장소 (URL 쿼리 문자열 또는 JSON).
  *   - pageSize: 페이지 표시 개수 저장소.
+ *   - sort    : ag-grid 헤더 클릭 정렬 저장소 (contents 전용).
  *
- * 정책: "상세/생성/편집 → 목록" 왕복에서만 직전 검색조건/페이지 표시 개수가 복원되고,
+ * 정책: "상세/생성/편집 → 목록" 왕복(flag)과 브라우저 뒤로/앞으로 복귀(history 마커,
+ *       markListHistoryEntry 참조)에서만 직전 검색조건/페이지 표시 개수가 복원되고,
  *       그 외 진입(다른 메뉴, 새로고침, 초기화 후 재진입)에서는 모두 초기화된다.
  */
 export const LIST_RESTORE_KEYS = {
@@ -27,6 +29,7 @@ export const LIST_RESTORE_KEYS = {
     flag: "qp:list:contents:restore",
     filters: "qp:list:contents:filters",
     pageSize: "qp:list:contents:pageSize",
+    sort: "qp:list:contents:sort",
   },
   bulkMail: {
     flag: "qp:list:bulk-mail:restore",
@@ -110,3 +113,72 @@ export function useListStateCacheInvalidator(scope: ListScope): void {
   }, [scope]);
 }
 
+/**
+ * 브라우저 뒤로/앞으로 복원용 history entry 마커 키.
+ * Next.js App Router 는 자체 내부 키(`__NA`, `__PRIVATE_NEXTJS_INTERNALS_TREE`)를 history.state
+ * 에 보관하므로, 기존 state 를 spread 해 내부 키를 보존한 채 본 키만 덧붙인다.
+ */
+const HISTORY_MARKER_KEY = "__qpListRestore";
+
+/**
+ * 문서(document) 단위 식별자 — 모듈 평가 시 1회 생성.
+ * 새로고침하면 모듈이 재평가되어 새 값이 되므로, 이전 문서에서 심어둔 마커는 불일치로 무시된다.
+ * ("새로고침 = 검색조건 초기화" 정책 유지. 뒤로가기는 같은 문서 내 SPA 이동이라 값이 유지된다.)
+ */
+const DOCUMENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+interface HistoryMarker {
+  scope: ListScope;
+  docId: string;
+}
+
+/** 현재 history entry 의 마커를 안전하게 읽는다. 형식이 다르면 null. */
+function readHistoryMarker(): HistoryMarker | null {
+  if (typeof window === "undefined") return null;
+  const state: unknown = window.history.state;
+  if (!state || typeof state !== "object") return null;
+  const raw: unknown = (state as Record<string, unknown>)[HISTORY_MARKER_KEY];
+  if (!raw || typeof raw !== "object") return null;
+  const { scope, docId } = raw as Record<string, unknown>;
+  if (typeof scope !== "string" || !(scope in LIST_RESTORE_KEYS)) return null;
+  if (typeof docId !== "string") return null;
+  return { scope: scope as ListScope, docId };
+}
+
+/**
+ * 목록 화면의 현재 history entry 에 복원 마커를 심는다 (Redmine #2490).
+ *
+ * 상세 화면 진입은 `router.push` = 새 history entry 이므로 마커가 없고, 브라우저 뒤로가기는
+ * 마커가 남아있는 목록 entry 로 복귀한다. 따라서 "뒤로가기 복귀" 와 "메뉴 클릭/새 진입" 을
+ * 구분할 수 있다 — sessionStorage 플래그만으로는 불가능했던 판정이다.
+ *
+ * 이미 같은 scope/문서의 마커가 있으면 no-op 이므로 매 커밋마다 호출해도 안전하다.
+ * (URL 정리용 replaceState 등으로 마커가 지워진 경우 다시 심기 위한 호출 패턴)
+ */
+export function markListHistoryEntry(scope: ListScope): void {
+  if (typeof window === "undefined") return;
+  const marker = readHistoryMarker();
+  if (marker?.scope === scope && marker.docId === DOCUMENT_ID) return;
+  const state: unknown = window.history.state;
+  const base = state && typeof state === "object" ? (state as Record<string, unknown>) : {};
+  try {
+    // url 인자는 생략 — 현재 URL 을 그대로 유지한다.
+    window.history.replaceState(
+      { ...base, [HISTORY_MARKER_KEY]: { scope, docId: DOCUMENT_ID } },
+      "",
+    );
+  } catch (error: unknown) {
+    // Safari 등의 replaceState 호출 빈도 제한에 걸려도 복원이 안 될 뿐이므로 조용히 넘어간다.
+    console.warn("[useListStatePersist] history 복원 마커 기록 실패:", error);
+  }
+}
+
+/**
+ * 현재 history entry 가 같은 문서에서 심어둔 해당 scope 의 목록 entry 인지 — 즉,
+ * 브라우저 뒤로/앞으로로 목록에 복귀했는지 판정한다. 목록 마운트 시 1회 호출.
+ * consumeListRestoreFlag 와 달리 소비(삭제)하지 않는다 — 같은 entry 로 여러 번 되돌아와도 복원.
+ */
+export function hasListHistoryMarker(scope: ListScope): boolean {
+  const marker = readHistoryMarker();
+  return marker !== null && marker.scope === scope && marker.docId === DOCUMENT_ID;
+}
