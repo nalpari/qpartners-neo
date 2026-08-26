@@ -1,10 +1,10 @@
 import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 
-/** New 뱃지 판정에 필요한 게시대상 최소 형태 (endAt 은 판정에 쓰지 않음) */
+/** 뱃지 판정에 필요한 게시대상 최소 형태 (endAt 은 판정에 쓰지 않음) */
 type TargetLike = { roleCode: string | null; startAt: Date | null };
 
 /**
- * New 뱃지 기준일(= 공개일) 산출 — 등록일(createdAt) 이 아니다.
+ * 뱃지 기준일(= 공개일) 산출 — 등록일(createdAt) 이 아니다.
  *
  * 운영 정책:
  * - 사내(SUPER_ADMIN/ADMIN): 게시대상 중 **가장 빠른 공개일**
@@ -38,11 +38,38 @@ export function resolvePublishedSince(
 }
 
 /**
- * 공개일 기준 New 판정 — 공개일 이후 5일간.
- * 공개 예정(공개일 > now)은 아직 New 가 아니다. 사내 목록은 publication window 를
- * 적용하지 않아 예정 건도 함께 조회되므로 하한 검사가 필요하다.
+ * NEW / UPDATE 뱃지 판정 — 두 뱃지를 한 곳에서 함께 낸다.
+ *
+ * **공개일 도래 전에는 어떤 뱃지도 붙지 않는다.**
+ * 사내 목록은 게시기간(publication window)을 의도적으로 미적용해 공개 예정 건도 함께
+ * 조회되는데, 이 구간의 콘텐츠는 아직 아무에게도 공개된 적이 없다. 여기서
+ * `updatedAt` 만 보고 UPDATE 를 붙이면 "공개도 안 된 글이 갱신됨" 으로 보인다
+ * (예: 오늘 25일 / 가장 빠른 공개일 27일 → 25·26일엔 NEW 도 UPDATE 도 없어야 함).
+ * 그래서 두 뱃지 모두 공개일 도래를 전제로 둔다.
+ *
+ * 공개 이후에는 NEW 는 공개일 기준 5일, UPDATE 는 수정일 기준 5일이다.
+ *
+ * **NEW 가 붙으면 UPDATE 는 붙지 않는다.** 등록 직후 수정하면 두 조건이 동시에 참이 되는데,
+ * 우선순위는 항상 NEW 다. 이 규칙을 화면마다 `!isNew && …` 로 반복하면 새 화면에서
+ * 빠뜨리기 쉬우므로 서버에서 한 번에 정리해 내려보낸다 — 즉 `isUpdated` 는
+ * "수정된 지 5일 이내" 가 아니라 **"UPDATE 뱃지를 붙여야 하는가"** 를 뜻한다.
  */
-export function isNewSince(publishedSince: Date, nowMs: number): boolean {
-  const elapsed = nowMs - publishedSince.getTime();
-  return elapsed >= 0 && elapsed < FIVE_DAYS_MS;
+export function resolveBadgeFlags(
+  content: { publishedAt: Date | null; createdAt: Date; updatedAt: Date },
+  targets: readonly TargetLike[],
+  viewer: { internal: boolean; roleCode: string | null },
+  nowMs: number,
+): { isNew: boolean; isUpdated: boolean } {
+  const sinceMs = resolvePublishedSince(content, targets, viewer).getTime();
+
+  // 공개 전 — 관리자에게만 보이는 구간. 뱃지 없음.
+  if (nowMs < sinceMs) return { isNew: false, isUpdated: false };
+
+  const isNew = nowMs - sinceMs < FIVE_DAYS_MS;
+
+  return {
+    isNew,
+    // NEW 우선 — 동시에 참이면 UPDATE 를 내리지 않는다.
+    isUpdated: !isNew && nowMs - content.updatedAt.getTime() < FIVE_DAYS_MS,
+  };
 }

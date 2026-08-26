@@ -12,7 +12,7 @@ import {
   resolveAuthorSuperAdmin,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
-import { isNewSince, resolvePublishedSince } from "@/lib/content-new-badge";
+import { resolveBadgeFlags } from "@/lib/content-new-badge";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
@@ -21,7 +21,6 @@ import {
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { resolveUserName } from "@/lib/admin-name";
-import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
 
 type Params = { params: Promise<{ id: string }> };
@@ -155,15 +154,13 @@ export async function GET(request: NextRequest, { params }: Params) {
         createdByName,
         updatedByName,
         hasBeenUpdated,
-        // 목록/메인과 동일 정책 — 등록일이 아니라 공개일 기준 5일
-        isNew: isNewSince(
-          resolvePublishedSince(content, content.targets, {
-            internal,
-            roleCode: user ? user.role : null,
-          }),
+        // 목록/메인과 동일 정책 — 등록일이 아니라 공개일 기준이며, 공개 전에는 뱃지 없음
+        ...resolveBadgeFlags(
+          content,
+          content.targets,
+          { internal, roleCode: user ? user.role : null },
           now,
         ),
-        isUpdated: now - content.updatedAt.getTime() < FIVE_DAYS_MS,
         categories: buildCategoryTree(content.categories, { includeInternal: internal }),
         attachments: content.attachments.map((a) => ({
           ...a,

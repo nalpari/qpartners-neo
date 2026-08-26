@@ -4144,8 +4144,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "boolean",
             description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
           },
-          isNew: { type: "boolean", description: "생성 후 5일 이내" },
-          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          isNew: { type: "boolean", description: "NEW 뱃지 표시 여부 — **공개일**(등록일 아님) 기준 5일 이내. 공개일은 사내 사용자는 게시대상 중 가장 빠른 startAt, 그 외는 자기 권한 게시대상의 startAt (startAt 없으면 publishedAt→createdAt 폴백). 공개일 도래 전에는 false." },
+          isUpdated: { type: "boolean", description: "UPDATE 뱃지 표시 여부 — 수정 후 5일 이내. 단 공개일 도래 전에는 false 이며, **isNew=true 이면 항상 false**(NEW 우선순위를 서버에서 반영). 즉 '수정된 지 5일 이내' 가 아니라 'UPDATE 뱃지를 붙여야 하는가' 를 뜻한다." },
           categories: {
             type: "array",
             description: "부모-자식 트리 구조. 콘텐츠에 연결된 자식 카테고리들을 부모 기준으로 그룹화",
@@ -4205,8 +4205,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "boolean",
             description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
           },
-          isNew: { type: "boolean", description: "생성 후 5일 이내" },
-          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          isNew: { type: "boolean", description: "NEW 뱃지 표시 여부 — **공개일**(등록일 아님) 기준 5일 이내. 공개일은 사내 사용자는 게시대상 중 가장 빠른 startAt, 그 외는 자기 권한 게시대상의 startAt (startAt 없으면 publishedAt→createdAt 폴백). 공개일 도래 전에는 false." },
+          isUpdated: { type: "boolean", description: "UPDATE 뱃지 표시 여부 — 수정 후 5일 이내. 단 공개일 도래 전에는 false 이며, **isNew=true 이면 항상 false**(NEW 우선순위를 서버에서 반영). 즉 '수정된 지 5일 이내' 가 아니라 'UPDATE 뱃지를 붙여야 하는가' 를 뜻한다." },
           categories: {
             type: "array",
             description: "부모-자식 트리 구조 (NEW-2 적용)",
