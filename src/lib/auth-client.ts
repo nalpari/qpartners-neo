@@ -1,5 +1,6 @@
 import api from "@/lib/axios";
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 import type { QueryClient } from "@tanstack/react-query";
 import type { LoginUser } from "@/lib/schemas/auth";
 
@@ -31,6 +32,9 @@ export function canModifyClient(
  * - /api/auth/logout 호출 (실패해도 로컬 상태 정리)
  * - AUTH_FLAG_KEY 제거 + 이벤트 발행
  * - TanStack Query 캐시 전체 클리어
+ * - 목록 복원 상태(sessionStorage + history 마커) 폐기 — 로그아웃은 SPA 전환이라 문서가
+ *   유지되므로, 정리하지 않으면 같은 탭의 다음 사용자가 뒤로가기했을 때 이전 사용자의
+ *   검색조건이 복원된다.
  */
 export async function performLogout(queryClient: QueryClient): Promise<void> {
   try {
@@ -41,5 +45,6 @@ export async function performLogout(queryClient: QueryClient): Promise<void> {
     localStorage.removeItem(AUTH_FLAG_KEY);
     dispatchAuthChange();
     queryClient.clear();
+    resetListRestoreState();
   }
 }

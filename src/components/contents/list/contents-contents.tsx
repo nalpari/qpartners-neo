@@ -5,8 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import {
-  consumeListRestoreFlag,
-  hasListHistoryMarker,
+  consumeListRestore,
   LIST_RESTORE_KEYS,
   markListHistoryEntry,
   useListStateCacheInvalidator,
@@ -176,11 +175,10 @@ interface ContentsContentsProps {
 export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps) {
   // 마운트 시 1회 — 복원 여부 판정 (둘 중 하나라도 참이면 복원).
   //   (1) sessionStorage 플래그: 상세/생성/편집 화면의 "一覧" 버튼 등 명시적 목록 복귀
-  //   (2) history entry 마커: 브라우저 뒤로/앞으로로 이 목록 entry 자체에 복귀 (Redmine #2490)
+  //   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀 (Redmine #2490)
+  //       — 이 경우 해당 entry 의 스냅샷이 sessionStorage 로 먼저 복구되므로 아래 복원 경로는 동일하다.
   //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
-  const [shouldRestoreList] = useState(
-    () => consumeListRestoreFlag("contents") || hasListHistoryMarker("contents"),
-  );
+  const [shouldRestoreList] = useState(() => consumeListRestore("contents"));
   // 컴포넌트 unmount 시 cache 무효화 — stale 복원 회귀 차단.
   useListStateCacheInvalidator("contents");
 
@@ -241,15 +239,6 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
   }, []);
 
-  // 브라우저 뒤로/앞으로 복원용 마커를 현재 history entry 에 기록 (Redmine #2490).
-  //   - 상세 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
-  //     마커가 남아있는 목록 entry 로 복귀 → 마운트 시 hasListHistoryMarker 로 구분된다.
-  //   - deps 를 두지 않고 매 커밋마다 호출 — 위 URL 정리 replaceState 처럼 state 를 통째로
-  //     덮어쓰는 호출로 마커가 지워져도 곧바로 다시 심는다. 이미 있으면 내부에서 no-op.
-  useEffect(() => {
-    markListHistoryEntry("contents");
-  });
-
   // searchParams 변경 시 sessionStorage 동기화.
   //   - 비어있으면 삭제 — 초기화 버튼 후 이전 검색조건이 부활하는 회귀 방지.
   //   - page 까지 함께 직렬화하여 복귀 시 페이지 번호도 복원.
@@ -273,6 +262,17 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       window.sessionStorage.removeItem(SORT_KEY);
     }
   }, [sort]);
+
+  // 브라우저 뒤로/앞으로 복원용 마커 + 이 entry 의 상태 스냅샷을 history entry 에 기록 (Redmine #2490).
+  //   - 상세 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
+  //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 스냅샷을 떠서 구분한다.
+  //   - deps 를 두지 않고 매 커밋마다 호출 — 위 URL 정리 replaceState 처럼 state 를 통째로
+  //     덮어쓰는 호출로 마커가 지워져도 곧바로 다시 심는다. 스냅샷이 같으면 내부에서 no-op.
+  //   - **반드시 위 sessionStorage 동기화 effect 들보다 뒤에 선언** — 같은 커밋에서 먼저 돌면
+  //     한 커밋 이전의 검색조건이 스냅샷에 담긴다.
+  useEffect(() => {
+    markListHistoryEntry("contents");
+  });
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();

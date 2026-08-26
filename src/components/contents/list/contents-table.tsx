@@ -695,17 +695,22 @@ export function ContentsTable({
 
   const gridApiRef = useRef<GridApi<ContentListItem> | null>(null);
 
-  // api 는 ref 로 보관하되, 준비 완료 시점을 effect 에 알리기 위해 state 도 함께 갱신한다.
-  const [isGridReady, setIsGridReady] = useState(false);
+  // api 는 ref 로 보관하되, 준비 완료 시점을 effect 에 알리기 위해 카운터도 함께 증가시킨다.
+  // boolean 이 아니라 카운터인 이유: 반응형 전환(useIsMobile)으로 DataGrid 가 unmount 후
+  // 재mount 되면 새 grid 인스턴스가 만들어지는데, boolean 은 true→true 라 상태 변화가 없어
+  // 아래 재적용 effect 가 다시 돌지 못한다.
+  const [gridReadyCount, setGridReadyCount] = useState(0);
 
   const handleGridReady = (event: GridReadyEvent<ContentListItem>) => {
     gridApiRef.current = event.api;
-    setIsGridReady(true);
+    setGridReadyCount((c) => c + 1);
   };
 
   // sortResetKey 가 변경되면 ag-grid 컬럼 정렬 UI 초기화 (검색/필터 변경 시 부모가 증가).
   useEffect(() => {
-    gridApiRef.current?.applyColumnState({ state: [], defaultState: { sort: null } });
+    const api = gridApiRef.current;
+    if (!api || api.isDestroyed()) return;
+    api.applyColumnState({ state: [], defaultState: { sort: null } });
   }, [sortResetKey]);
 
   // 복원 진입 시 초기 정렬을 헤더에 1회 반영 (Redmine #2490).
@@ -714,16 +719,20 @@ export function ContentsTable({
   // handleSortChanged 가 이를 무시하므로 부모 상태를 되돌리지 않는다.
   const isInitialSortAppliedRef = useRef(false);
   useEffect(() => {
-    if (isInitialSortAppliedRef.current || !initialSort || !isGridReady) return;
+    if (isInitialSortAppliedRef.current || !initialSort) return;
     const api = gridApiRef.current;
-    if (!api) return;
-    if (!api.getColumnState().some((c) => c.colId === initialSort.colId)) return;
+    // ag-grid 는 destroy 후에도 GridApi 객체 자체는 살아있지만 내부 fns/beans 가 비워져
+    // getColumnState() 가 undefined 를 반환한다 — 그대로 역참조하면 TypeError 로 목록이
+    // 크래시하므로, 파기 여부를 먼저 확인하고 반환값도 방어적으로 다룬다.
+    if (!api || api.isDestroyed()) return;
+    const columnState = api.getColumnState();
+    if (!columnState?.some((c) => c.colId === initialSort.colId)) return;
     api.applyColumnState({
       state: [{ colId: initialSort.colId, sort: initialSort.dir }],
       defaultState: { sort: null },
     });
     isInitialSortAppliedRef.current = true;
-  }, [initialSort, isGridReady, columnDefs]);
+  }, [initialSort, gridReadyCount, columnDefs]);
 
   // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
