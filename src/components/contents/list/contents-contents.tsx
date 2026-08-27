@@ -179,8 +179,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   // 마운트 시 1회 — 복원 여부 판정 (둘 중 하나라도 참이면 복원).
   //   (1) sessionStorage 플래그: 상세/생성/편집 화면의 "一覧" 버튼 등 명시적 목록 복귀
   //   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀 (Redmine #2490)
-  //       — 이 경우 해당 entry 의 스냅샷이 sessionStorage 로 먼저 복구되므로 아래 복원 경로는 동일하다.
   //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
+  // 두 경로 모두 복원 소스는 sessionStorage 전역 슬롯(scope 당 1개) 이다.
   const [shouldRestoreList] = useState(() => consumeListRestore("contents"));
   // 컴포넌트 unmount 시 cache 무효화 — stale 복원 회귀 차단.
   useListStateCacheInvalidator("contents");
@@ -235,10 +235,14 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   //     새로고침 시 URL 의 stale keyword 가 다시 흡수되어 추가 조건이 사라지는 혼란 방지.
   //   - history.replaceState 로 직접 URL 만 갱신 (Next.js useRouter 사용 시 라우터 트리
   //     리렌더 유발 — 본 화면은 useSearchParams 미사용이라 직접 갱신이 더 가볍다).
+  //   - **기존 state 를 그대로 넘긴다** — `{}` 로 덮으면 Next 내부 키(`__NA`)가 사라져,
+  //     그 entry 로 뒤로가기할 때 App Router 가 SPA 복원 대신 full reload 로 폴백한다
+  //     (app-router.js: `if (!event.state.__NA) window.location.reload()`). 문서가 새로
+  //     뜨면 documentId 가 재발급되어 복원 마커가 불일치하므로 #2490 자체가 무력화된다.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.search) {
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState(window.history.state, "", window.location.pathname);
     }
   }, []);
 
@@ -266,11 +270,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
   }, [sort]);
 
-  // 브라우저 뒤로/앞으로 복원용 마커 + 이 entry 의 상태 스냅샷을 history entry 에 기록 (Redmine #2490).
+  // 브라우저 뒤로/앞으로 복원용 마커를 history entry 에 기록 (Redmine #2490).
   //   - 상세 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
-  //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 스냅샷을 떠서 구분한다.
-  //   - **반드시 위 sessionStorage 동기화 effect 들보다 뒤에 선언** — 같은 커밋에서 먼저 돌면
-  //     한 커밋 이전의 검색조건이 스냅샷에 담긴다.
+  //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 이를 대조해 구분한다.
   useListHistoryMarker("contents");
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
