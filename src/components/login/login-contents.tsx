@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 import { usePopupStore } from "@/lib/store";
 import { Spinner } from "@/components/common/spinner";
 import { LoginTabs } from "@/components/login/login-tabs";
@@ -137,6 +138,9 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           console.error("[LoginContents] AUTH_FLAG 쓰기 실패:", storageErr);
         }
         dispatchAuthChange();
+        // 계정 전환 경계 — 세션 만료로 로그아웃을 거치지 않고 사용자가 바뀌는 경로가 있으므로
+        // 로그인 성공 시점에도 이전 사용자의 목록 복원 상태를 폐기한다 (Redmine #2490).
+        resetListRestoreState();
         router.replace("/");
       }
     },

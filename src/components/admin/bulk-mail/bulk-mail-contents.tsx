@@ -4,9 +4,13 @@
 
 import { useEffect, useState } from "react";
 import {
-  consumeListRestoreFlag,
+  consumeListRestore,
   LIST_RESTORE_KEYS,
+  readListStorage,
+  removeListStorage,
+  useListHistoryMarker,
   useListStateCacheInvalidator,
+  writeListStorage,
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
 import { BulkMailSearch } from "./bulk-mail-search";
@@ -45,11 +49,13 @@ function isEmptySearchParams(params: MassMailSearchParams): boolean {
 }
 
 export function BulkMailContents() {
-  // 마운트 시 1회 — sessionStorage 복원 플래그 소비.
-  //   - 상세/생성 → 목록 복귀: 플래그 "1" → true (직전 검색조건/페이지 표시 개수 복원)
+  // 마운트 시 1회 — 복원 여부 판정 (둘 중 하나라도 참이면 복원).
+  //   (1) sessionStorage 플래그: 상세/생성 화면에서 목록으로 복귀하는 명시적 경로
+  //   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀 (Redmine #2490)
   //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
+  // 두 경로 모두 복원 소스는 sessionStorage 전역 슬롯(scope 당 1개) 이다.
   // useState lazy init 으로 컴포넌트 첫 렌더 시 정확히 1회 평가 → 하위 props 로 전달.
-  const [shouldRestoreList] = useState(() => consumeListRestoreFlag("bulkMail"));
+  const [shouldRestoreList] = useState(() => consumeListRestore("bulkMail"));
   // 컴포넌트 unmount 시 cache 무효화 — 다른 페이지 다녀온 후 다시 진입할 때 stale 한
   // true 값이 그대로 남아 잘못 복원되던 회귀 차단.
   useListStateCacheInvalidator("bulkMail");
@@ -71,9 +77,9 @@ export function BulkMailContents() {
     if (typeof window === "undefined") return {};
     const FILTERS_KEY = LIST_RESTORE_KEYS.bulkMail.filters;
     if (shouldRestoreList) {
-      return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
+      return parseStoredSearchParams(readListStorage(FILTERS_KEY));
     }
-    window.sessionStorage.removeItem(FILTERS_KEY);
+    removeListStorage(FILTERS_KEY);
     return {};
   });
 
@@ -86,11 +92,16 @@ export function BulkMailContents() {
     if (typeof window === "undefined") return;
     const FILTERS_KEY = LIST_RESTORE_KEYS.bulkMail.filters;
     if (isEmptySearchParams(searchParams)) {
-      window.sessionStorage.removeItem(FILTERS_KEY);
+      removeListStorage(FILTERS_KEY);
     } else {
-      window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(searchParams));
+      writeListStorage(FILTERS_KEY, JSON.stringify(searchParams));
     }
   }, [searchParams]);
+
+  // 브라우저 뒤로/앞으로 복원용 마커를 history entry 에 기록 (Redmine #2490).
+  //   - 상세/생성 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
+  //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 이를 대조해 구분한다.
+  useListHistoryMarker("bulkMail");
 
   const handleSearch = (params: MassMailSearchParams) => {
     setSearchParams(params);
