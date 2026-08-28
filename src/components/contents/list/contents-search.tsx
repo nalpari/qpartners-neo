@@ -176,7 +176,7 @@ export function ContentsSearch({
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="検索語を入力してください。浮き書きで区分"
+              placeholder="キーワードを入力してEnterで検索"
               className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none bg-transparent"
             />
           </div>
@@ -256,7 +256,8 @@ export function ContentsSearch({
             {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+                  {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] whitespace-nowrap overflow-hidden text-ellipsis">
                     掲示対象
                   </span>
                 </div>
@@ -283,7 +284,8 @@ export function ContentsSearch({
             {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+                  {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] whitespace-nowrap overflow-hidden text-ellipsis">
                     担当部門
                   </span>
                 </div>
@@ -358,7 +360,8 @@ export function ContentsSearch({
 
             {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+                {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] truncate">
                   掲示対象
                 </p>
                 <div className="flex flex-col gap-[18px]">
@@ -379,7 +382,8 @@ export function ContentsSearch({
 
             {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+                {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] truncate">
                   担当部門
                 </p>
                 {isDeptEmpty ? (
