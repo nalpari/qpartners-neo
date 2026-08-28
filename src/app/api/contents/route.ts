@@ -100,38 +100,54 @@ export async function GET(request: NextRequest) {
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
     const andConditions: Prisma.ContentWhereInput[] = [];
 
-    // 카테고리 필터 — 멀티 선택 시 한 콘텐츠가 여러 categoryId 와 매핑되어 있으면
-    // `categories: { some: { categoryId: { in: [...] } } }` 가 SQL JOIN 으로 컴파일되며
-    // count/findMany 모두 매핑 행 수만큼 콘텐츠가 중복 카운트되는 현상이 관측됨
+    // 카테고리 필터 — AND(교집합) 조건. 선택한 카테고리를 **전부** 가진 콘텐츠만 반환한다.
+    // (예: 太陽電池モジュール + パワーコンディショナ 선택 시 둘 다 매핑된 콘텐츠만)
+    //
+    // `categories: { some: { categoryId: { in: [...] } } }` 는 OR 이며, SQL JOIN 으로
+    // 컴파일되어 count/findMany 가 매핑 행 수만큼 콘텐츠를 중복 카운트하는 문제도 있었다
     // (예: 営業 단일 0건, 技術 단일 1건인데 멀티 선택 시 2건).
     //
-    // 따라서 `ContentCategory` 에서 `distinct contentId` 를 먼저 조회해 `id IN [...]` 로
-    // 변환한다. 이렇게 하면 count/findMany 모두 콘텐츠 단위로 정확히 집계된다.
-    // 추가 쿼리 1회 비용은 contentId 만 select 하므로 가볍다.
+    // 따라서 `ContentCategory` 에서 선택 카테고리 매핑 행만 조회한 뒤 contentId 별로 세어,
+    // 매칭 수가 선택 수와 같은 콘텐츠만 골라 `id IN [...]` 로 변환한다. 콘텐츠 단위로
+    // 정확히 집계되며, `@@id([contentId, categoryId])` 복합 PK 라 중복 행이 없어
+    // 카운트가 곧 매칭 개수다. 추가 쿼리 1회 비용은 contentId 만 select 하므로 가볍다.
     //
     // Number("")==0, !isNaN(0)==true 로 0 이 통과되는 것을 막기 위해 양의 정수만 허용.
     // Number.isInteger 는 NaN/Infinity 도 제외하므로 isFinite 중복 불필요.
+    // 중복 id 가 들어오면 선택 수가 부풀려져 교집합이 항상 0 이 되므로 Set 으로 제거.
     // sortCategoryCode 단일 SQL 분기에서 재사용하므로 스코프 밖으로 호이스트
     let filteredContentIds: number[] | null = null;
     let categoryEmpty = false;
     if (categoryIds) {
-      const parsedIds = categoryIds
-        .split(",")
-        .map(Number)
-        .filter((n) => Number.isInteger(n) && n > 0);
+      const parsedIds = [
+        ...new Set(
+          categoryIds
+            .split(",")
+            .map(Number)
+            .filter((n) => Number.isInteger(n) && n > 0),
+        ),
+      ];
       if (parsedIds.length > 0) {
         let ccRows: { contentId: number }[];
         try {
           ccRows = await prisma.contentCategory.findMany({
             where: { categoryId: { in: parsedIds } },
             select: { contentId: true },
-            distinct: ["contentId"],
           });
         } catch (dbError: unknown) {
           logError("GET /api/contents categoryIds 필터조회", dbError, { parsedIds });
           return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
         }
-        const ids = ccRows.map((r) => r.contentId);
+        // contentId 별 매칭 카테고리 수를 세어 선택 수와 일치하는 것만 = 교집합(AND).
+        // distinct 를 걷어낸 이유는 행 수 자체가 집계 근거이기 때문 —
+        // 복합 PK 라 (contentId, categoryId) 중복 행이 없으므로 카운트가 곧 매칭 개수다.
+        const matchCounts = new Map<number, number>();
+        for (const r of ccRows) {
+          matchCounts.set(r.contentId, (matchCounts.get(r.contentId) ?? 0) + 1);
+        }
+        const ids = [...matchCounts]
+          .filter(([, count]) => count === parsedIds.length)
+          .map(([contentId]) => contentId);
         if (ids.length === 0) {
           // 매핑된 콘텐츠가 없음 → fast-path 0 응답
           categoryEmpty = true;
