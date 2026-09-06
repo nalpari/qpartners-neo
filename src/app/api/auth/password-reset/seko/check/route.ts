@@ -11,7 +11,7 @@ import {
 } from "@/lib/password-reset-token";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { extractClientIp } from "@/lib/notification-mail/utils";
-import { sekoEmailCheck, sekoResolveLoginIdByUserId } from "@/lib/seko-connector";
+import { sekoEmailCheck } from "@/lib/seko-connector";
 import {
   SEKO_RESET_TOKEN_TTL_MS,
   SEKO_RESET_TOKENS_PER_HOUR,
@@ -27,10 +27,10 @@ const LOG = "[POST /api/auth/password-reset/seko/check]";
  * 체크」로 규정한다 — 로그인 화면(p10)은 「이메일 또는 시공ID」 겸용이지만 **초기화는 시공ID
  * 단독**이다.
  *
- * 그래서 이 단계가 **시공ID → 로그인ID(이메일) 해석까지 끝낸다.** 2단계가 호출할 No.10
- * `resetPwd` 는 시공ID 를 받지 못하기 때문이다(2026-08-24 preview 실측). 해석은 No.8 응답의
- * `userId` 를 No.7 `getUserList` 에서 되짚는 방식이고, 결과는 토큰 행에만 담긴다
- * (`sekoResolveLoginIdByUserId` 주석 참조).
+ * 확인한 시공ID 는 그대로 토큰 행에 담기고, 2단계가 그 값을 No.10 `resetPwd` 에 넘긴다.
+ * 한때는 이 단계가 시공ID → 이메일 해석까지 했다 — No.10 이 시공ID 를 거부했기 때문인데
+ * (2026-08-24 preview 실측), ENDO 회신(2026-09-04)으로 「이메일 또는 시공ID」 를 모두 받도록
+ * 바뀌어 해석 단계를 제거했다. No.7 `getUserList` 전체 조회 의존도 함께 사라졌다.
  *
  * p12 에서 시공점 초기화는 「이메일 링크 발송」이 아니라 **시공ID 입력 → DB 대조 → 비밀번호
  * 설정 팝업 즉시 호출** 로 바뀌었다(p11 의 시공점 패널은 "프로세스 변경" 으로 폐기 표기).
@@ -153,42 +153,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 시공ID → 로그인ID(이메일) 해석 (No.8 `userId` → No.7 목록 매칭).
-    //
-    // 2단계가 호출할 No.10 `resetPwd` 는 `loginId` 에 시공ID 를 받지 못하므로, 넘길 값을
-    // 여기서 확정한다. 토큰 발급 **전**에 해석한다 — 해석 불가한 계정에 토큰을 쥐여주면
-    // 사용자는 비밀번호를 입력하고 저장을 누른 뒤에야 실패를 보게 된다.
-    const sekoUserId = checkResult.data.userId?.trim();
-    if (!sekoUserId) {
-      // `exists=true` 인데 `userId` 가 비면 해석 경로가 성립하지 않는다. 「회원 미존재」로
-      // 접으면 사용자가 시공ID 를 의심하며 재입력만 반복하므로 외부 오류로 분리한다.
-      console.error(`${LOG} 존재확인 응답에 userId 없음 — 로그인ID 해석 불가`, {
-        sekoId: maskUserId(sekoId),
-      });
-      return NextResponse.json(
-        { error: "外部サーバーエラーが発生しました。しばらく経ってから再度お試しください。" },
-        { status: 502 },
-      );
-    }
-
-    const resolved = await sekoResolveLoginIdByUserId(sekoUserId, LOG);
-    if (!resolved.ok) {
-      console.error(
-        `${LOG} 시공ID → 로그인ID 해석 실패 — status=${resolved.error.status}`,
-      );
-      return NextResponse.json(
-        { error: "外部サーバーエラーが発生しました。しばらく経ってから再度お試しください。" },
-        { status: 502 },
-      );
-    }
-
     // 재설정 토큰 발급.
     //  - `userId` 컬럼: 정규화한 **시공ID**. 판매점·일반은 이 컬럼에 평문 email 을 담지만
     //    시공점은 이메일을 알 수 없다(No.8 응답에 없음). SEKO 응답 필드 `userId`(내부 PK
     //    숫자문자열)와는 무관하다 — 컬럼명만 같다.
-    //  - `loginId` 컬럼: 위에서 해석한 **로그인ID(이메일)**. 2단계가 No.10 `resetPwd` 에
-    //    넘길 값이며, **재설정 대상은 요청 body 가 아니라 이 값으로 확정한다.** 화면에는
-    //    나가지 않는다 — 응답에 담지 않고 토큰 행에만 둔다.
+    //  - `loginId` 컬럼: 2단계가 No.10 `resetPwd` 에 넘길 값이며, **재설정 대상은 2단계의
+    //    요청 body 가 아니라 이 값으로 확정한다.** 화면에는 나가지 않는다 — 응답에 담지 않고
+    //    토큰 행에만 둔다.
+    //
+    //    담는 값은 사용자가 입력한 **시공ID** 다(`sekoIdSchema` 가 이미 trim 한 값). 예전에는 이메일을 담았다 —
+    //    No.10 이 시공ID 를 거부해(2026-08-24 preview 실측) 1단계가 No.8 `userId` → No.7
+    //    `getUserList` 전체 조회로 이메일을 되짚어야 했다. ENDO 회신(2026-09-04)으로 No.10 의
+    //    `loginId` 가 「이메일 또는 시공ID」를 모두 받도록 바뀌었고 preview 에서 200 을
+    //    확인해(대소문자 무관) 그 해석 단계를 걷어냈다. 외부 호출이 요청당 1회 줄고,
+    //    목록 전체를 훑어야만 초기화가 성립하던 의존도 사라진다.
+    //
+    //    정규화 값(`sekoIdKey`, 소문자)이 아니라 입력 원본을 담는 이유는 외부로 나가는 값과
+    //    로그에 남는 값을 사용자 입력 그대로 유지하기 위해서다. 정규화 값은 rate limit 집계
+    //    키(`userId` 컬럼)로만 쓴다 — 표기만 바꿔 한도를 우회하는 것을 막는 자리다.
     //  - TTL 은 판매점·일반의 메일 링크(1시간)보다 짧게 잡는다. 팝업 안에서 곧바로 이어지는
     //    단계라 긴 유효기간이 필요 없고, 짧을수록 유출된 토큰의 창이 좁아진다.
     const rawToken = generateRawResetToken();
@@ -198,7 +180,7 @@ export async function POST(request: NextRequest) {
         data: {
           userType: "SEKO",
           userId: sekoIdKey,
-          loginId: resolved.loginId,
+          loginId: sekoId,
           token: tokenHash,
           expiresAt: new Date(Date.now() + SEKO_RESET_TOKEN_TTL_MS),
         },

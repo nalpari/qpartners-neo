@@ -574,7 +574,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "시공점 비밀번호 초기화 1단계 — 시공ID 존재 확인",
         description:
           "화면설계서 v1.4 p12 — 시공점 초기화는 **이메일 링크가 아니라 시공ID 즉시 초기화**다(p11 의 시공점 패널은 프로세스 변경으로 폐기). " +
-          "AS-IS Connector **No.8 email/check**(X-Api-Key)로 존재만 확인하며 토큰·메일을 만들지 않는다. " +
+          "AS-IS Connector **No.8 email/check**(X-Api-Key)로 존재를 확인하며 메일은 보내지 않는다(토큰은 아래 참조). " +
           "사양서 No.8 r6 의 loginId 가 「メールまたは施工ID」라 시공ID 를 그대로 전달한다. " +
           "⚠️ p12 가 미존재 시 전용 안내를 노출하도록 규정하므로 **사용자 열거 방지를 적용하지 않는다**(404 로 구분됨) — 방어는 rate limit(IP 10회/시간, IP 부재 시 식별자 5회/시간)이 담당한다. " +
           "존재 확인을 통과하면 입력 식별자에 바인딩된 **단명 일회용 재설정 토큰(TTL 10분)** 을 발급해 응답한다. 2단계는 이 토큰을 원자적으로 소비한 요청만 처리하므로, 1단계를 건너뛴 단독 호출로는 비밀번호를 바꿀 수 없다. " +
@@ -587,7 +587,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                 type: "object",
                 required: ["sekoId"],
                 properties: {
-                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "시공ID (이메일도 허용 — No.8 loginId 겸용)" },
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "시공ID. **이메일은 거부한다**(`@` 포함 시 400) — p12 가 초기화 입력을 시공ID 단독으로 규정한다. 로그인(p10)의 「이메일 또는 시공ID」 겸용과 다르다." },
                 },
               },
             },

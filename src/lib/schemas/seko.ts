@@ -186,6 +186,9 @@ const sekoEmailCheckDataSchema = z.object({
   exists: z.boolean(),
   // 존재할 때만 채워진다. 이메일은 응답에 없으므로 호출부가 입력 loginId 를 그대로 쓴다
   // (시공점은 loginId = email).
+  //
+  // **현재 소비처 없음.** 유일한 소비처였던 시공ID → 이메일 해석이 제거됐다(No.10 이 시공ID 를
+  // 직접 받게 되어 해석 자체가 불필요해짐 — 2026-09-04). 응답 형태 문서화 목적으로 남긴다.
   userId: z.string().nullish(),
 });
 
