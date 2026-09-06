@@ -24,7 +24,12 @@ import {
   profileUpdateSchema,
   qspUserDetailResponseSchema,
 } from "@/lib/schemas/mypage";
-import { sekoGetUserInfo, sekoSiteUrl, sekoUpdateUserInfo } from "@/lib/seko-connector";
+import {
+  parseSekoDate,
+  sekoGetUserInfo,
+  sekoSiteUrl,
+  sekoUpdateUserInfo,
+} from "@/lib/seko-connector";
 
 // QSP 에러 message 로그 길이 제한 (내부 SQL 에러 / PII 간접 노출 방어)
 const QSP_LOG_MSG_MAX_LEN = 200;
@@ -120,7 +125,11 @@ export async function GET(request: NextRequest) {
         jobTitle: null,
         corporateNo: null,
         newsRcptYn: s.newsRcptYn ?? "N",
-        newsRcptDate: null,
+        // 시공점만 허가일·거부일이 비어 있던 원인이 여기였다(Redmine #2477) — No.3 응답에
+        // 변경 일시 필드가 없어 null 로 고정해 두었다. ENDO 회신(2026-09-04)으로 `newsRcptChgDt`
+        // 가 추가돼 QSP 경로(아래 `parseQspDate(d.newsRcptChgDt ?? …)`)와 같은 값을 낼 수 있다.
+        // 화면(`mypage-info-member.tsx`)은 회원 유형을 가리지 않으므로 여기만 채우면 표시된다.
+        newsRcptDate: parseSekoDate(s.newsRcptChgDt),
         // 마이페이지 「施工ID情報」 카드용. getUserInfo 가 이미 실어 오는 값이라 추가 호출이 없다.
         // (전용 엔드포인트를 두면 같은 화면에서 getUserInfo 를 두 번 치게 되고 qp_interface_log
         //  행도 두 배가 된다.)

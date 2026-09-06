@@ -130,6 +130,20 @@ const sekoUserInfoDataSchema = z.object({
   status: z.string().nullable(),
   // note-46 에서 getUserInfo/updateUserInfo 에 추가(초기값 Y). 구계정 대비 nullable.
   newsRcptYn: z.enum(["Y", "N"]).nullable(),
+  // 뉴스 수신 변경 일시 — ENDO 회신(2026-09-04)으로 추가. `YYYY-MM-DD HH:mm:ss`(JST).
+  //
+  // `nullable` 이 아니라 `nullish` 다. 값이 없는 계정(한 번도 변경한 적 없음)은 null 로 오지만,
+  // **필드 자체가 없는 환경**이 남아 있을 수 있다 — preview 에는 반영됐고 운영 반영 시점은
+  // 별건이다. 미반영 환경에서 필드 누락을 스키마 실패로 접으면 마이페이지 조회 전체가 502 가
+  // 된다(표시 항목 하나 때문에 화면이 죽는다). newsRcptYn 과 같은 완화 기준이다.
+  //
+  // coerce 는 secAuthDt·groupKind 와 같은 이유 — 커넥터가 타입을 바꿔 보내도(epoch 숫자 등)
+  // 파싱이 깨져 마이페이지 전체가 502 로 막히는 일을 막는다. 위 완화와 같은 취지이며, 형식이
+  // 어긋나면 parseSekoDate 가 null 을 반환해 「표시 안 함」으로 안전하게 열화한다.
+  //
+  // ⚠️ 초 단위 해상도라 1초 내 연속 변경은 같은 값으로 찍힌다(2026-09-04 preview 실측).
+  // 동일 값으로 updateUserInfo 를 호출하면 갱신되지 않는 것도 AS-IS 사양이다.
+  newsRcptChgDt: z.coerce.string().nullish(),
 });
 
 export type SekoUserInfoData = z.infer<typeof sekoUserInfoDataSchema>;
