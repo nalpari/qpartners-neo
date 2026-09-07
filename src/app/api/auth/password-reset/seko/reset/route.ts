@@ -159,16 +159,27 @@ export async function POST(request: NextRequest) {
 
     // 재설정 대상은 토큰이 정한다. 1단계가 존재 확인을 이미 통과했으므로 여기서 No.8
     // `email/check` 를 다시 호출하지 않는다 — 토큰이 그 확인의 증서다.
+    // `?? tokenRow.userId` 는 `loginId` 결손 행(스키마상 nullable) 대비 폴백이다. 현행 1단계는
+    // 항상 채우므로 레거시 방어로만 남지만, 두 값 모두 같은 시공ID 이고(정규화 여부만 다르다)
+    // `resetPwd` 가 대소문자를 가리지 않으므로 어느 쪽이 쓰여도 같은 계정을 가리킨다 —
+    // 해석 제거 이전에는 폴백이 시공ID 를 내보내 100% 400 이었으니, 이번 변경으로 비로소
+    // 실효를 갖게 된 방어다.
     const targetLoginId = tokenRow.loginId ?? tokenRow.userId;
 
-    // ⚠️ **여기 넘기는 값은 시공ID 가 아니라 로그인ID(이메일)다.** No.10 `resetPwd` 는
-    // `loginId` 에 시공ID 를 받지 못한다 — 같은 값을 No.8 `email/check` 는 계정으로 해석하는데
-    // (`exists:true`) `resetPwd` 는 미존재 계정과 **완전히 동일한** `400 INVALID_LOGIN_ID_ERROR`
-    // (`loginIdが正しくありません`)로 거부한다(2026-08-24 preview 실측).
+    // 넘기는 값은 1단계가 토큰 행에 담아 둔 **시공ID** 다. No.10 `resetPwd` 의 `loginId` 는
+    // 「이메일 또는 시공ID」를 모두 받는다(ENDO 회신 2026-09-04, preview 실측 200 / 대소문자 무관).
     //
-    // 그래서 1단계가 해석을 끝내고 토큰 행의 `loginId` 에 이메일을 담아 둔다. 이 라우트는 그
-    // 값을 그대로 쓴다 — 여기서 다시 해석하지 않는 이유는 재설정 대상이 토큰 발급 시점에
-    // 확정돼야 하기 때문이다(그 사이 목록이 바뀌어도 대상이 흔들리지 않는다).
+    // ⚠️ **운영 AS-IS 에 이 사양 변경이 반영된 뒤에만 배포할 수 있다.** 해석 경로를 제거했으므로
+    // 구 사양 커넥터를 만나면 시공ID 가 `400 INVALID_LOGIN_ID_ERROR` 로 거부되어 시공점
+    // 비밀번호 초기화가 전면 불능이 된다 — 게다가 1단계가 토큰을 이미 발급한 뒤라 사용자는
+    // 비밀번호를 다 입력하고 저장을 누른 시점에야 실패를 본다. `newsRcptChgDt`(schemas/seko.ts)는
+    // 필드 누락을 스키마에서 완화해 두었지만 이쪽은 폴백을 둘 수 없다(폴백 = 제거한 우회의 부활).
+    //
+    // 그 전까지는 `resetPwd` 가 시공ID 를 미존재 계정과 **완전히 동일한**
+    // `400 INVALID_LOGIN_ID_ERROR`(`loginIdが正しくありません`)로 거부해(2026-08-24 실측),
+    // 1단계가 No.7 `getUserList` 전체 조회로 이메일을 되짚어 담아야 했다. 사양 변경으로 그
+    // 해석 단계는 사라졌지만 **토큰이 대상을 정한다는 구조는 그대로다** — 여기서 요청 body 의
+    // 시공ID 를 쓰지 않는 이유는 재설정 대상이 토큰 발급 시점에 확정돼야 하기 때문이다.
     const resetResult = await sekoResetPwd(targetLoginId, newPassword, LOG);
     if (!resetResult.ok) {
       console.error(
