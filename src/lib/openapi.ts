@@ -2861,7 +2861,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "string",
                           nullable: true,
                           description:
-                            "뉴스알림 변경일시. QSP `newsRcptChgDt` (신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백.",
+                            "뉴스알림 변경일시. QSP 는 `newsRcptChgDt`(신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백. 시공점(SEKO)은 Connector No.3 `getUserInfo` 의 `newsRcptChgDt`. 변경 이력이 없는 계정은 null.",
                         },
                         withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
                         sekoConstruction: {
