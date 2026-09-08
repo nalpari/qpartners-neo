@@ -1,9 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
 import { z } from "zod";
 
-import { getUserFromRequest, signToken, COOKIE_NAME } from "@/lib/jwt";
+import { getUserFromRequest, signToken, COOKIE_NAME, sessionInvalidResponse } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskUserId } from "@/lib/interface-logger";
 import { qspResponseSchema } from "@/lib/schemas/signup";
@@ -11,6 +13,8 @@ import { validatePasswordPolicy } from "@/lib/schemas/signup";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sekoChangePwd } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
 
 // ─── 요청 스키마 ───
 
@@ -55,11 +59,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. 접근 제어 가드 — 최초 로그인 상태에서만 호출 허용.
-    //    twoFactorVerified === false 또는 pwdInitYn === "N" (login route 가 GENERAL/SEKO 의
-    //    twoFactorVerified=true 를 false 강제하므로 사실상 첫 조건만으로 충분하나, defense-in-depth
-    //    차원에서 pwdInitYn=N 도 명시적으로 통과 처리해 회귀 방어)
-    if (user.twoFactorVerified && user.pwdInitYn !== "N") {
+    // 2. 접근 제어 가드 — **초기화 필요 상태에서만** 호출 허용.
+    //    이 라우트는 현재 비밀번호 검증 없이 새 비밀번호를 설정하므로(최초 로그인 전제),
+    //    2FA 미완료 상태에서 열려 있으면 비밀번호가 유출된 계정에서 2FA 를 통째로 우회하는
+    //    경로가 된다 — 로그인 → 2FA 팝업 무시 → 여기서 비밀번호 교체 → 재발급 JWT 는
+    //    twoFactorVerified=true. 그래서 twoFactorVerified 는 판단에 쓰지 않는다.
+    //
+    //    ⚠️ 종전 조건은 `twoFactorVerified && pwdInitYn !== "N"` 이었다. "login route 가
+    //    GENERAL/SEKO 의 twoFactorVerified 를 false 로 강제하므로 첫 조건만으로 충분" 이라는
+    //    전제였는데, SEKO 2FA 배선(No.9) 이후 "2FA 필요 + 초기화 불요" 조합이 생기면서
+    //    twoFactorVerified=false + pwdInitYn="Y" 가 가드를 통과하게 됐다.
+    if (user.pwdInitYn !== "N") {
       return NextResponse.json(
         { error: "この操作は初回ログイン時のみ有効です" },
         { status: 403 },
@@ -100,6 +110,107 @@ export async function POST(request: NextRequest) {
     }
 
     const { newPassword } = result.data;
+
+    // 4-1. 시공점(SEKO) — AS-IS Q.Partners Connector changePwd(chgType=I) 로 초기 설정 (QSP 미경유).
+    //      SEKO 는 userDetail 상당 API 가 없고 회원정보는 로그인 응답으로 이미 JWT 에 반영되어 있으므로
+    //      여기서 자체 종결한다(아래 QSP 경로 무손상).
+    if (user.userTp === "SEKO") {
+      if (!user.sekoToken) {
+        console.error("[POST /api/auth/password-init] SEKO 세션 토큰 없음 — 재로그인 필요");
+        return sessionInvalidResponse("セッションが無効です。再度ログインしてください");
+      }
+      // 시공점 loginId = email (사양). 로그인 시 email ?? loginId 로 JWT 에 보장 저장.
+      // 누락은 세션 결손 — 다른 식별자로 대체 전송하지 않고 재로그인 유도(mypage 라우트와 동일 정책).
+      if (!user.email) {
+        console.error("[POST /api/auth/password-init] SEKO email(=loginId) 누락 — 재로그인 필요");
+        return sessionInvalidResponse("セッション情報が不完全です。再度ログインしてください");
+      }
+
+      const changeResult = await sekoChangePwd(
+        { chgType: "I", loginId: user.email, newPwd: newPassword },
+        user.sekoToken,
+        "[POST /api/auth/password-init][SEKO]",
+      );
+      if (!changeResult.ok) {
+        // Connector 인증 실패(토큰 만료 = AUTHENTICATION_ERROR)는 401 로 매핑된다.
+        // 이때 인증 쿠키를 남기면 로컬 JWT 는 유효해 middleware 가 통과시키고 SEKO API 만
+        // 반복 401 이 되어 세션이 고착된다 — 결손 케이스와 동일하게 쿠키를 만료시킨다.
+        if (changeResult.error.status === 401) {
+          return sessionInvalidResponse(changeResult.error.error);
+        }
+        return NextResponse.json(
+          { error: changeResult.error.error },
+          { status: changeResult.error.status },
+        );
+      }
+
+      // 시공ID 유효기간 검사 — 로그인(SEKO 분기)이 `pwdInitYn="Y"` 계정에 대해 **유예**한 게이트를
+      // 여기서 회수한다. 아래 JWT 재발급이 `twoFactorVerified:true` 로 세션을 완전한 상태로
+      // 승격시키므로, 이 지점을 통과시키면 만료 계정이 마이페이지·다운로드·AS-IS 자동로그인까지
+      // 전부 열린 8시간 세션을 갖게 된다(화면설계서 p10 요구가 이 경로에서 무효가 된다).
+      //
+      // 로그인이 유예를 정당화한 이유(「초기화 화면에 도달하기 전에 502 로 막히면 영구 락아웃」)는
+      // 여기서는 성립하지 않는다 — 이미 초기화 화면에 도달했고 비밀번호 설정도 끝났다.
+      //
+      // 위치는 changePwd **성공 후** — 비밀번호 설정 자체는 본인이 수행한 정당한 요청이므로
+      // 되돌리지 않는다(password-reset/confirm 의 QpRole 게이트와 같은 정책). 차단 대상은
+      // 세션 승격뿐이고, 문구도 비밀번호가 바뀐 사실을 부정하지 않게 한다 — 부정하면 사용자가
+      // 옛 비밀번호로 재시도하게 된다.
+      const sekoIdGate = await checkSekoIdValid(
+        user.email,
+        user.sekoToken,
+        "[POST /api/auth/password-init][SEKO]",
+      );
+      if (!sekoIdGate.valid) {
+        return NextResponse.json(
+          { error: `パスワードは設定されました。${sekoIdGate.message}` },
+          { status: sekoIdGate.status },
+        );
+      }
+
+      // JWT 재발급 — 초기화 완료 반영. 회원정보는 로그인 시점 값 유지(SEKO 재조회 API 불요),
+      // Bearer 토큰(sekoToken)도 그대로 승계해 후속 마이페이지 호출이 끊기지 않도록 한다.
+      const sekoUpdatedUser: LoginUser = {
+        ...user,
+        // 헤더 우측 상단 회사명 (Redmine #2473). 로그인 라우트는 초기화 대상(pwdInitYn="Y")에
+        // 대해 게이트를 유예하므로 그 세션의 compNm 은 비어 있다 — 세션을 승격시키는 이 지점에서
+        // 게이트가 회신한 storeName 으로 채운다. 회신이 없으면 기존 값을 지우지 않는다.
+        compNm: sekoIdGate.storeName ?? user.compNm,
+        // 비번 설정 직후 → "Y"(초기화 불요). 다음 로그인부터 personal-info popup 미진입.
+        pwdInitYn: "Y",
+        // 초기화 직후 2FA skip — QSP 경로(같은 파일 아래 `twoFactorVerified: true`)와 동일 정책.
+        // 최초 비밀번호 설정을 막 마친 세션이므로 본인 확인이 방금 이뤄진 것으로 본다.
+        twoFactorVerified: true,
+      };
+
+      let sekoJwt: string;
+      try {
+        sekoJwt = await signToken(sekoUpdatedUser);
+      } catch (error) {
+        console.error("[POST /api/auth/password-init][SEKO] JWT 생성 실패:", error);
+        return NextResponse.json(
+          { error: "パスワードは変更されました。自動ログインに失敗しました。新しいパスワードでログインしてください。" },
+          { status: 500 },
+        );
+      }
+
+      // 클라이언트 응답에는 sekoToken(Connector Bearer) 을 노출하지 않는다 — httpOnly JWT 에만 보관.
+      const sekoResponse = NextResponse.json({
+        data: {
+          message: "保存されました。",
+          user: { ...sekoUpdatedUser, sekoToken: undefined },
+          requireTwoFactor: false,
+        },
+      });
+      sekoResponse.cookies.set(COOKIE_NAME, sekoJwt, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
+      return sekoResponse;
+    }
 
     // 5. QSP userDetail 조회 — 최신 사용자 정보 획득 + loginId 확인
     // QSP userDetail 은 모든 userTp(GENERAL/STORE/ADMIN)에서 loginId(User ID)를 필수로 요구한다.
@@ -244,9 +355,14 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       console.error("[POST /api/auth/password-init] authRole 판별 실패, 기본값 사용:", error);
-      authRole = user.userTp === "ADMIN" ? "ADMIN"
-        : user.userTp === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
-        : user.userTp === "SEKO" ? "SEKO"
+      // 폴백 매핑은 resolveAuthRole 본체와 일치해야 한다(.claude/rules/api.md "최소 권한 원칙").
+      // SEKO 는 위(4-1)에서 자체 종결하므로 현재는 도달하지 않지만, 그 분기가 이동·삭제될 때
+      // 조용히 GENERAL 로 강등되지 않도록 전 유형을 명시적으로 열거한다.
+      // (narrowing 된 user.userTp 를 그대로 쓰면 SEKO 비교가 dead code 로 판정되므로 string 으로 받는다)
+      const userTpRaw: string = user.userTp;
+      authRole = userTpRaw === "ADMIN" ? "ADMIN"
+        : userTpRaw === "STORE" ? "2ND_STORE" // 최소 권한 — resolveAuthRole 실패 시 승격 방지
+        : userTpRaw === "SEKO" ? "SEKO"
         : "GENERAL";
     }
 
@@ -300,7 +416,17 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[POST /api/auth/password-init]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[POST /api/auth/password-init] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[POST /api/auth/password-init]", error);
     return NextResponse.json(
       { error: "パスワード変更処理中にサーバーエラーが発生しました" },
       { status: 500 },

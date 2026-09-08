@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 
 import type { Prisma } from "@/generated/prisma/client";
-import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
+import { jstHourStart } from "@/lib/jst-day";
 import type { MenuAction, MenuCode } from "@/lib/schemas/common";
 import { userTpValues } from "@/lib/schemas/common";
 import { prisma } from "@/lib/prisma";
@@ -94,6 +94,21 @@ export function getUserFromHeaders(headers: Headers): UserInfo | null {
  *
  * 종전 `isAdmin` / `requireAdmin` 은 admin 라우트 가드의 role 하드코딩 분기였으나
  * 매트릭스 단일 의존 정책으로 전체 폐지됨. `isInternalUser` 만 비즈니스 판정용으로 잔존.
+ *
+ * ─── 예외: 사용자 유형 자체로 통제하는 관문 ───
+ * 위 금지는 "메뉴별 CRUD 역량을 매트릭스로 통제해야 하는 admin/* 라우트" 를 대상으로 한다.
+ * 반면 **메뉴 권한이 아니라 사용자 유형(사내 관리자냐 아니냐) 자체가 판정 기준인 관문** 은
+ * 매트릭스로 표현할 대상이 아니므로 본 함수를 가드로 사용해도 된다.
+ *
+ * 현행 해당 사례 — 일반회원 대리 등록 (셀프 회원가입 폐지, 2026-08-07):
+ *   · `src/app/api/auth/signup/route.ts`
+ *   · `src/app/(auth)/signup/page.tsx`
+ * 이 경로들은 `admin/*` 이 아니며, "ADM_MEMBER.canCreate 를 가진 자" 가 아니라
+ * "사내 관리자" 를 통과 조건으로 삼는 것이 설계 의도다. 따라서 `requireMenuPermission`
+ * (`ADM_MEMBER`, `create`) 로 치환하면 오히려 의도와 어긋난다.
+ *
+ * 판별 기준: 운영자가 권한관리 화면에서 켜고 끌 수 있어야 하는 역량이면 매트릭스 가드,
+ * 사용자 유형에 본질적으로 종속되어 토글 대상이 아니면 본 함수 가드.
  */
 export function isInternalUser(role: string): boolean {
   return role === "SUPER_ADMIN" || role === "ADMIN";
@@ -303,19 +318,24 @@ export function canAccessContent(
 
   const userRoleCode: string | null = user ? user.role : null;
 
-  // 게시기간 day 단위 비교 — 목록 API(contents/route, home-notices/active/route) 와 동일 기준.
-  // JST 기준 오늘/내일 자정을 명시 계산해 서버 컨테이너 TZ 의존성 제거 (Redmine #2131).
-  const todayStart = jstDayStart();
-  const tomorrowStart = jstNextDayStart();
+  // 게시기간 시각 비교 — 목록 API(contents/route) 와 동일 기준.
+  // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다. 예전 기준은
+  // "오늘 18시 시작" 을 오늘 00시부터 통과시켜 지정한 시각이 무시됐다 (Redmine #2131 후속).
+  const now = new Date();
+  // 종료 경계는 "종료 시각이 속한 시간대의 끝까지" — `23時` 지정이면 24:00 까지 노출된다.
+  // 정각 비교(`endAt >= now`)로 두면 23:00~24:00 한 시간이 사라져 종전 일 단위 정책
+  // ("종료일 당일 종일")보다 짧아지고, `10時~10時` 는 노출 창이 0초가 된다.
+  // startAt/endAt 은 스키마에서 정각 절삭되므로 현재 시각도 정각으로 내려 비교한다.
+  const nowHour = jstHourStart(now);
 
   return targets.some((t) => {
     // 비로그인 사용자 → 비회원 게시대상(roleCode IS NULL)만 통과
     // 로그인 사용자 → roleCode 일치
     if (t.roleCode !== userRoleCode) return false;
-    // startAt 의 JST 날짜가 오늘 이하 = startAt < 내일 자정
-    if (t.startAt && t.startAt >= tomorrowStart) return false;
-    // endAt 의 JST 날짜가 오늘 이상 = endAt >= 오늘 자정
-    if (t.endAt && t.endAt < todayStart) return false;
+    // 시작 시각 도래 전이면 미노출
+    if (t.startAt && t.startAt > now) return false;
+    // 종료 시각이 속한 시간대가 지났으면 미노출
+    if (t.endAt && t.endAt < nowHour) return false;
     return true;
   });
 }

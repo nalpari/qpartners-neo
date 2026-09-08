@@ -6,6 +6,8 @@ import { useAlertStore } from "@/lib/store";
 import { useApprover } from "@/hooks/use-approver";
 
 interface ContentsDetailInfoProps {
+  /** 콘텐츠 번호 — URLコピー 옆에 표시. showManagement 와 동일하게 사내직원에게만 노출 */
+  contentId: number;
   authorDepartment: string | null;
   createdBy: string;
   /** QSP 조회된 게재담당자 이름 — null/미제공 시 createdBy(userId) 폴백 */
@@ -21,6 +23,7 @@ interface ContentsDetailInfoProps {
 }
 
 export function ContentsDetailInfo({
+  contentId,
   authorDepartment,
   createdBy,
   createdByName,
@@ -71,6 +74,12 @@ export function ContentsDetailInfo({
       <div className="pt-6 lg:pt-0 pb-2 lg:pb-0 px-6 lg:px-0 w-full lg:w-[1440px]">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 pl-1">
+            {/* 콘텐츠 번호 — 사내직원 전용. 관리정보 테이블과 동일 조건(showManagement)으로 묶는다. */}
+            {showManagement && (
+              <span className="font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#45576F] whitespace-nowrap">
+                コンテンツ番号: {contentId}
+              </span>
+            )}
             <button
               type="button"
               onClick={handleCopyUrl}

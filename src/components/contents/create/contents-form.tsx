@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
-import { isHtmlEmpty } from "@/lib/rich-editor/is-html-empty";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
@@ -240,10 +239,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       openAlert({ type: "alert", message: "タイトルは必須入力項目です。" });
       return;
     }
-    if (isHtmlEmpty(content)) {
-      openAlert({ type: "alert", message: "内容は必須入力項目です。" });
-      return;
-    }
+    // 内容(본문)은 필수 아님 — 서버 스키마의 body 도 optional.
     // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 함.
     if (selectedCategoryIds.length === 0) {
       openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
@@ -351,9 +347,16 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
           Array.isArray((resData as { issues: unknown }).issues)
         ) {
           const issues = (resData as { issues: { message?: string }[] }).issues;
-          const messages = issues
-            .map((i) => i.message)
-            .filter((m): m is string => typeof m === "string");
+          // 게시대상 검증(contentTargetSchema)은 targets 배열의 행마다 실행되므로,
+          // 여러 행이 같은 이유로 걸리면 동일 문장이 행 수만큼 쌓인다. 중복은 접어서
+          // 한 줄만 보여준다 — 같은 안내를 세 번 읽게 할 이유가 없다.
+          const messages = [
+            ...new Set(
+              issues
+                .map((i) => i.message)
+                .filter((m): m is string => typeof m === "string"),
+            ),
+          ];
           if (messages.length > 0) {
             message = messages.join("\n");
           }

@@ -1,7 +1,8 @@
 "use client";
 
-import { Checkbox, DatePicker } from "@/components/common";
+import { Checkbox, DateTimePicker } from "@/components/common";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
+import { jstHourStart } from "@/lib/jst-day";
 
 /**
  * 콘텐츠 등록 폼 게시대상 선택 (Target Dynamic from Role 후).
@@ -52,7 +53,9 @@ export function buildInitialPostTargetsState(
   }[],
   forcedRoleCode?: string | null,
 ): PostTargetState {
-  const today = new Date();
+  // 게시기간은 시 단위까지만 지정하므로 기본값도 정각으로 절삭한다 —
+  // 안 자르면 "14:32 에 등록 → 14:32 부터 노출" 이 되어 화면 표기(14:00)와 어긋난다.
+  const today = jstHourStart();
 
   const existingMap = new Map(
     (existingTargets ?? []).map((t) => [t.roleCode, t] as const),
@@ -157,6 +160,9 @@ export function ContentsFormPostTarget({
     field: "startDate" | "endDate",
     date: Date | null,
   ) => {
+    // 고른 값을 그대로 쓴다. 종료 시각은 "그 시간대의 끝까지" 로 판정하므로
+    // (auth.ts canAccessContent) `0時` 도 0~1시 노출이라는 의미가 있다 — 예전처럼
+    // 0시를 23시로 되돌리면 사용자가 고른 시각이 무시되는 회귀가 된다.
     onPostTargetsChange({
       ...postTargets,
       targets: postTargets.targets.map((t) =>
@@ -206,23 +212,23 @@ export function ContentsFormPostTarget({
         />
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
-            <DatePicker
+            <DateTimePicker
               value={postTargets.allStartDate}
               onChange={(date) =>
                 onPostTargetsChange({ ...postTargets, allStartDate: date })
               }
-              className="w-[200px]"
+              className="w-[190px]"
             />
             <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
               ~
             </span>
-            <DatePicker
+            <DateTimePicker
               value={postTargets.allEndDate}
               onChange={(date) =>
                 onPostTargetsChange({ ...postTargets, allEndDate: date })
               }
-              placeholder="終了日なし（常時公開）"
-              className="w-[200px]"
+              placeholder="終了日時なし（常時公開）"
+              className="w-[190px]"
             />
           </div>
           <button
@@ -241,8 +247,9 @@ export function ContentsFormPostTarget({
         </p>
       </div>
 
-      {/* 대상 옵션 — 동적 grid (3열 자동 wrapping) */}
-      <div className="grid grid-cols-3 gap-1">
+      {/* 대상 옵션 — 동적 grid (2열 자동 wrapping).
+          한 행이 날짜+시각 4개 입력을 담게 되어 3열로는 폭이 부족해 2열로 낮췄다. */}
+      <div className="grid grid-cols-2 gap-1">
         {allOptions.map((opt) => {
           const target = getTarget(opt.roleCode);
           const available = opt.isActive;
@@ -278,7 +285,7 @@ export function ContentsFormPostTarget({
                       disabled={(!available && !target.checked) || isForcedRow(opt.roleCode)}
                     />
                     <div className="flex flex-1 items-center gap-1">
-                      <DatePicker
+                      <DateTimePicker
                         value={target.startDate}
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "startDate", date)
@@ -288,12 +295,12 @@ export function ContentsFormPostTarget({
                       <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010] shrink-0">
                         ~
                       </span>
-                      <DatePicker
+                      <DateTimePicker
                         value={target.endDate}
                         onChange={(date) =>
                           handleTargetDate(opt.roleCode, "endDate", date)
                         }
-                        placeholder="終了日なし（常時公開）"
+                        placeholder="終了日時なし（常時公開）"
                         disabled={!target.checked}
                       />
                     </div>

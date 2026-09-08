@@ -198,7 +198,6 @@ export async function POST(request: NextRequest) {
     // 3. QSP /user/detail 회원 존재 확인 — Redmine #2156 userTp 분기 적용
     //
     //    STORE   : loginId 단독 조회 → 응답 email 평문이 입력 email 과 일치할 때만 통과 (AND)
-    //    SEKO    : email 단독 조회 → hit 시 통과
     //    GENERAL : 입력값 X 를 loginId 단독 / email 단독으로 dual-key 병렬 조회 후 cross check.
     //              한쪽만 hit → 통과. 양쪽 hit + 동일 회원 → 통과. 양쪽 hit + 다른 회원 → fail-closed (ambiguous).
     let resolvedDetail: QspUserDetail | null = null;
@@ -228,28 +227,6 @@ export async function POST(request: NextRequest) {
           console.warn(`${LOG} STORE email mismatch — userTp=STORE`);
           lookupBlocker = "mismatch";
         }
-      } else if (r.kind === "ambiguous") {
-        lookupBlocker = "ambiguous";
-      } else if (r.kind === "transport-error") {
-        lookupBlocker = "transport";
-      } else if (r.kind === "schema-error") {
-        lookupBlocker = "schema";
-      }
-    } else if (userTp === "SEKO") {
-      const r = await lookupQspUserForReset(
-        { email: email!, userTp: "SEKO" },
-        " (lookup SEKO)",
-      );
-      if (r.kind === "found" && r.detail.email) {
-        resolvedDetail = r.detail;
-      } else if (r.kind === "found" && !r.detail.email) {
-        // 정상 회원이지만 응답 email 평문 부재 → 메일 발송 불가, fail-closed.
-        // STORE email 불일치(mismatch) 와 구분되도록 별도 blocker 로 분류
-        // (운영 로그 진단 시 원인 식별 — Boston Review MEDIUM #3, 2026-05-06).
-        console.error(
-          `${LOG} SEKO 응답 data.email 부재 — 메일 발송 불가, fail-closed`,
-        );
-        lookupBlocker = "no-email";
       } else if (r.kind === "ambiguous") {
         lookupBlocker = "ambiguous";
       } else if (r.kind === "transport-error") {
@@ -342,8 +319,17 @@ export async function POST(request: NextRequest) {
     //    케이스에서도 카운트 키와 토큰 저장 키가 모두 resolvedEmail 로 통일되어
     //    rate limit 이 정상 적용됨. userType 조건 포함 — 동일 email 이 다른 userType 에
     //    존재하는 경우 토큰 카운트 합산 차단 + idx_user(userType, userId) 복합 인덱스 활용.
+    // 위 가드를 통과했으므로 resolvedDetail.email 은 채워져 있다.
     const resolvedEmail = resolvedDetail.email;
     const resolvedLoginId = resolvedDetail.userId;
+    if (!resolvedEmail || !resolvedLoginId) {
+      // 도달 불가 — 가드 변경 시 조용히 빈 값으로 토큰이 생성되지 않도록 fail-closed.
+      console.error(`${LOG} 식별자 결손 — userTp=${userTp}`);
+      return NextResponse.json(
+        { error: "サーバーエラーが発生しました。" },
+        { status: 500 },
+      );
+    }
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     let recentCount: number;
     try {

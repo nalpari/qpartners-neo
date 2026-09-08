@@ -25,8 +25,11 @@ export function ContentsDetailCategory({
   categoryTree,
   isInternal,
 }: ContentsDetailCategoryProps) {
-  // 부모 그룹(parentId=null) 추출
-  const parentGroups = categoryTree.filter((c) => c.parentId === null);
+  // 부모 그룹(parentId=null) 추출.
+  // 사내전용 1depth 는 비사내 사용자에게 그룹 자체를 노출하지 않는다 — 부모 카테고리명도 사내 정보.
+  const parentGroups = categoryTree.filter(
+    (c) => c.parentId === null && (isInternal || !c.isInternalOnly),
+  );
 
   // 각 그룹별 매칭된 자식 카테고리 구성
   const groupedCategories = parentGroups.map((parent) => {
@@ -39,6 +42,9 @@ export function ContentsDetailCategory({
 
     return {
       label: parent.name,
+      // 그룹 라벨(1depth) 적색 판정 — 자식과 독립적으로 부모 자신의 값으로만 결정한다.
+      // 적색은 사내 사용자 전용 표식 — 비사내에는 숨기지 않고 기본색으로 유지한다.
+      labelInternalOnly: isInternal && parent.isInternalOnly,
       normalValues: normalItems.map((c) => c.name),
       internalValues: isInternal ? internalItems.map((c) => c.name) : [],
     };
@@ -57,7 +63,11 @@ export function ContentsDetailCategory({
         className="border border-[#EAF0F6] rounded-[6px] flex flex-col"
       >
         <div className="bg-[#F7F9FB] border-b border-[#EFF4F8] px-4 py-[10px] rounded-t-[6px]">
-          <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+          <p
+            className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] truncate ${
+              group.labelInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+            }`}
+          >
             {group.label}
           </p>
         </div>

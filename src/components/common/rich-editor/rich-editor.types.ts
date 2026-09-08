@@ -22,4 +22,14 @@ export interface RichEditorProps {
    * 호출자에서 사용자 노출 alert(일본어)을 띄워 데이터 손실 가능성을 안내해야 한다.
    */
   onUploadError?: (error: unknown) => void;
+  /**
+   * YouTube 임베드 허용 여부 (기본 false).
+   *
+   * true 이면 Youtube extension 이 등록되어 URL 붙여넣기로 임베드가 생성되고,
+   * HTML 소스 모드의 sanitize 도 iframe 을 통과시킨다.
+   *
+   * 대량메일 폼에서는 켜지 말 것 — 저장 시 서버 sanitize(allowYoutubeEmbed 미적용)가
+   * iframe 을 제거하므로, 작성자가 넣은 동영상이 조용히 사라진다.
+   */
+  allowYoutubeEmbed?: boolean;
 }

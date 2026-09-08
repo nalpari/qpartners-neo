@@ -13,6 +13,7 @@ import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { resolveAuthRole } from "@/lib/auth";
 import { userTpValues } from "@/lib/schemas/common";
+import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 /** QSP userDetail 응답에서 사용하는 필드만 검증 */
@@ -164,6 +165,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "すでに使用されたリンクです。" },
       { status: 400 },
+    );
+  }
+
+  // 4-1. 시공점(SEKO) — **이 경로는 시공점을 처리하지 않는다.**
+  //      화면설계서 v1.4 p12 에서 시공점 비밀번호 초기화가 「이메일 링크 발송 → 링크에서 재설정」
+  //      에서 「시공ID 입력 → 즉시 비밀번호 설정」으로 교체됐다(p11 의 시공점 패널이 "프로세스
+  //      변경" 으로 폐기 표기). 신규 경로는 `/api/auth/password-reset/seko/{check,reset}` 이고,
+  //      `passwordResetRequestSchema` 가 SEKO 를 거부하므로 **이 경로로 SEKO 토큰이 발급되는
+  //      일은 없다.**
+  //
+  //      다만 `qp_password_reset_tokens` 에 `userType="SEKO"` 행 자체는 존재한다 —
+  //      `seko/check` 가 2단계를 잇는 단명 일회용 토큰을 같은 테이블에 발급하기 때문이다.
+  //      그 토큰은 `seko/reset` 만 소비해야 하므로 여기서 반드시 막는다. 막지 않으면 아래 QSP
+  //      경로로 흘러가는데, 시공점은 QSP 에 계정이 없어 "회원 정보를 찾을 수 없습니다" 류로
+  //      끝나고 사용자는 원인을 알 수 없다(교체 배포 직전 발급된 구 메일 링크 토큰도 동일).
+  //      명시적으로 거부하고 새 초기화 흐름으로 안내한다.
+  if (resetToken.userType === "SEKO") {
+    console.warn(
+      "[POST /api/auth/password-reset/confirm][SEKO] 폐기된 경로로 진입 — 신규 초기화 흐름으로 안내",
+    );
+    return NextResponse.json(
+      {
+        error:
+          "施工店会員のパスワード初期化方法が変更されました。ログイン画面から施工IDで再度初期化を行ってください。",
+      },
+      { status: 410 },
     );
   }
 
@@ -348,6 +375,26 @@ export async function POST(request: NextRequest) {
       : validUserTp === "STORE" ? "2ND_STORE"
       : validUserTp === "SEKO" ? "SEKO"
       : "GENERAL";
+  }
+
+  // 권한 사용가능여부(QpRole.isActive) 검증 — 로그인 라우트 6-1 과 동일 게이트.
+  // 위 SEKO 분기와 같은 이유로 QSP 경로(STORE/GENERAL/동적 권한)도 통과해야 한다. 여기가 빠지면
+  // 로그인은 403 인데 "비밀번호 재설정 → 자동 로그인" 으로는 세션이 나가는 정책 불일치가 생긴다.
+  // authRole 확정 후에 검사한다 — 검증 대상 roleCode 가 authRole 에서 도출되기 때문.
+  const roleCodeToCheck = resolveGateRoleCode(authRole);
+  if (roleCodeToCheck) {
+    const gate = await checkRoleActive(
+      roleCodeToCheck,
+      "[POST /api/auth/password-reset/confirm]",
+      { userTp: validUserTp, authRole },
+    );
+    if (!gate.active) {
+      // 비밀번호는 이미 변경 완료 — SEKO 분기와 동일하게 토큰 롤백 없이 세션 발급만 차단한다.
+      return NextResponse.json(
+        { error: `パスワードは変更されました。${gate.message}。管理者にお問い合わせください。` },
+        { status: 403 },
+      );
+    }
   }
 
   const user: LoginUser = {

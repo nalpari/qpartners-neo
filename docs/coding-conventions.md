@@ -112,7 +112,7 @@ import { prisma } from "../../lib/prisma";
 
 ## 7. Prisma
 
-- 스키마 변경 후 반드시 `npx prisma generate` 실행
+- 스키마 변경 후 반드시 `pnpm prisma generate` 실행
 - PrismaClient import는 `@/generated/prisma/client`에서
 - 앱 전체에서 `@/lib/prisma`의 싱글톤 인스턴스(`prisma`)를 사용
 - 모델명: PascalCase 단수형 (e.g. `User`, `Post`, `Company`)

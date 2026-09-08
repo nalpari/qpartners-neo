@@ -5,18 +5,28 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/axios";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import {
-  consumeListRestoreFlag,
+  consumeListRestore,
   LIST_RESTORE_KEYS,
+  readListStorage,
+  removeListStorage,
+  useListHistoryMarker,
   useListStateCacheInvalidator,
+  writeListStorage,
 } from "@/hooks/use-list-state-persist";
 import { usePageSize } from "@/hooks/use-page-size";
+import { getFallbackRole } from "@/lib/auth-role";
 import type { LoginUser } from "@/lib/schemas/auth";
 import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
+/** 키워드 결합 조건 — 서버 listContentsQuerySchema.keywordOp 와 동일 값. */
+type KeywordOp = "AND" | "OR";
+
 interface SearchFilters {
   keyword: string;
+  /** 공백으로 구분된 키워드들을 묶는 방식. 기본 AND. */
+  keywordOp: KeywordOp;
   categoryIds: number[];
   /** 게시대상 권한코드 — `__NON_MEMBER__` sentinel = 비회원 검색 (서버에서 null 로 변환) */
   roleCode: string;
@@ -52,11 +62,66 @@ interface CategoryNode {
   children: CategoryNode[];
 }
 
-export type { CategoryNode, SearchFilters };
+export type { CategoryNode, KeywordOp, SearchFilters };
+
+/**
+ * ag-grid 헤더 클릭 정렬 상태.
+ * field(고정 필드) / categoryCode(동적 카테고리 컬럼) / targets(掲示対象) 는 상호 배타적
+ * — 항상 하나만 채워진다.
+ */
+interface SortState {
+  field: ContentSortField | undefined;
+  categoryCode: string | undefined;
+  targets: boolean;
+  dir: "asc" | "desc" | undefined;
+}
+
+const EMPTY_SORT: SortState = {
+  field: undefined,
+  categoryCode: undefined,
+  targets: false,
+  dir: undefined,
+};
+
+/** sessionStorage 의 직렬화된 정렬 상태를 안전하게 역직렬화. 손상/스키마변동 시 정렬 없음. */
+function parseStoredSort(raw: string | null): SortState {
+  if (!raw) return EMPTY_SORT;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SortState> | null;
+    if (!parsed || typeof parsed !== "object") return EMPTY_SORT;
+    const dir = parsed.dir === "asc" || parsed.dir === "desc" ? parsed.dir : undefined;
+    // 방향이 없으면 정렬 자체가 없는 것 — 나머지 값은 볼 필요 없다.
+    if (!dir) return EMPTY_SORT;
+    if (parsed.targets === true) return { ...EMPTY_SORT, targets: true, dir };
+    if (
+      typeof parsed.field === "string" &&
+      (CONTENT_SORT_FIELDS as readonly string[]).includes(parsed.field)
+    ) {
+      return { ...EMPTY_SORT, field: parsed.field as ContentSortField, dir };
+    }
+    if (typeof parsed.categoryCode === "string" && parsed.categoryCode !== "") {
+      return { ...EMPTY_SORT, categoryCode: parsed.categoryCode, dir };
+    }
+    return EMPTY_SORT;
+  } catch (error: unknown) {
+    console.warn("[ContentsContents] 정렬 상태 JSON 파싱 실패:", error);
+    return EMPTY_SORT;
+  }
+}
+
+/** 복원된 정렬 상태를 ag-grid 헤더에 표시하기 위한 colId 로 변환. 정렬 없으면 null. */
+function toSortColId(sort: SortState): { colId: string; dir: "asc" | "desc" } | null {
+  if (!sort.dir) return null;
+  if (sort.targets) return { colId: TARGETS_SORT_COL_ID, dir: sort.dir };
+  if (sort.field) return { colId: sort.field, dir: sort.dir };
+  if (sort.categoryCode) return { colId: sort.categoryCode, dir: sort.dir };
+  return null;
+}
 
 const EMPTY_SEARCH_PARAMS: SearchParams = {
   page: 1,
   keyword: "",
+  keywordOp: "AND",
   categoryIds: [],
   roleCode: "",
   departments: [],
@@ -72,6 +137,8 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
     return {
       page: typeof parsed.page === "number" && parsed.page > 0 ? parsed.page : 1,
       keyword: typeof parsed.keyword === "string" ? parsed.keyword : "",
+      // 알 수 없는 값은 기본값 AND 로 수렴 — 서버 zod enum 거부 사전 차단.
+      keywordOp: parsed.keywordOp === "OR" ? "OR" : "AND",
       categoryIds: Array.isArray(parsed.categoryIds)
         // DB id 는 양의 정수만 유효 — NaN/±Infinity/음수/0/소수는 모두 제외 (서버 zod 거부 사전 차단).
         ? parsed.categoryIds.filter((n): n is number => Number.isInteger(n) && n > 0)
@@ -90,6 +157,7 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
 
 /** searchParams 가 사실상 비어있는지 (모든 검색 필드가 기본값) 판정 — page 는 제외. */
 function isEmptySearchParams(params: SearchParams): boolean {
+  // keywordOp 은 판정에서 제외 — 키워드가 없으면 결합 조건은 결과에 영향을 주지 않는다.
   return (
     params.keyword === "" &&
     params.categoryIds.length === 0 &&
@@ -108,10 +176,12 @@ interface ContentsContentsProps {
 }
 
 export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps) {
-  // 마운트 시 1회 — sessionStorage 복원 플래그 소비.
-  //   - 상세/생성/편집 → 목록 복귀: 플래그 "1" → true (직전 검색조건/페이지/페이지 표시 개수 복원)
+  // 마운트 시 1회 — 복원 여부 판정 (둘 중 하나라도 참이면 복원).
+  //   (1) sessionStorage 플래그: 상세/생성/편집 화면의 "一覧" 버튼 등 명시적 목록 복귀
+  //   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀 (Redmine #2490)
   //   - 그 외 진입(메뉴 클릭, 새로고침, 다른 페이지 경유): false (sessionStorage 삭제, 초기화)
-  const [shouldRestoreList] = useState(() => consumeListRestoreFlag("contents"));
+  // 두 경로 모두 복원 소스는 sessionStorage 전역 슬롯(scope 당 1개) 이다.
+  const [shouldRestoreList] = useState(() => consumeListRestore("contents"));
   // 컴포넌트 unmount 시 cache 무효화 — stale 복원 회귀 차단.
   useListStateCacheInvalidator("contents");
 
@@ -121,17 +191,21 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     shouldRestore: shouldRestoreList,
   });
 
-  // ag-grid 헤더 클릭 정렬 — searchParams(sessionStorage 복원 대상)와 달리 세션 간 비영속.
-  // 새로고침/메뉴 재진입 시 서버 기본 정렬(newest)로 초기화되는 편이 자연스럽다.
-  // field(고정 6개 필드) / categoryCode(동적 카테고리 컬럼) / targets(掲示対象) 는 상호 배타적
-  // — 항상 하나만 채워진다.
+  // ag-grid 헤더 클릭 정렬 — 검색조건(searchParams)과 동일한 복원 정책을 따른다.
+  //   - 상세 복귀/뒤로가기(shouldRestoreList): 직전 정렬 그대로 복원 → 목록 순서까지 동일하게 유지
+  //   - 그 외 진입(메뉴 클릭, 새로고침): sessionStorage 삭제 후 서버 기본 정렬(newest)로 초기화
   const [sortResetKey, setSortResetKey] = useState(0);
-  const [sort, setSort] = useState<{
-    field: ContentSortField | undefined;
-    categoryCode: string | undefined;
-    targets: boolean;
-    dir: "asc" | "desc" | undefined;
-  }>({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+  const [sort, setSort] = useState<SortState>(() => {
+    if (typeof window === "undefined") return EMPTY_SORT;
+    const SORT_KEY = LIST_RESTORE_KEYS.contents.sort;
+    if (shouldRestoreList) {
+      return parseStoredSort(readListStorage(SORT_KEY));
+    }
+    removeListStorage(SORT_KEY);
+    return EMPTY_SORT;
+  });
+  // 마운트 시점의 정렬만 그리드 헤더에 1회 반영 — 이후 헤더 클릭은 ag-grid 자체 상태로 관리된다.
+  const [initialGridSort] = useState(() => toSortColId(sort));
 
   // searchParams 초기값:
   //   - shouldRestoreList === true → sessionStorage 의 직렬화된 값 복원
@@ -147,9 +221,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
     const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
     if (shouldRestoreList) {
-      return parseStoredSearchParams(window.sessionStorage.getItem(FILTERS_KEY));
+      return parseStoredSearchParams(readListStorage(FILTERS_KEY));
     }
-    window.sessionStorage.removeItem(FILTERS_KEY);
+    removeListStorage(FILTERS_KEY);
     if (initialKeyword) {
       return { ...EMPTY_SEARCH_PARAMS, keyword: initialKeyword };
     }
@@ -161,10 +235,14 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   //     새로고침 시 URL 의 stale keyword 가 다시 흡수되어 추가 조건이 사라지는 혼란 방지.
   //   - history.replaceState 로 직접 URL 만 갱신 (Next.js useRouter 사용 시 라우터 트리
   //     리렌더 유발 — 본 화면은 useSearchParams 미사용이라 직접 갱신이 더 가볍다).
+  //   - **기존 state 를 그대로 넘긴다** — `{}` 로 덮으면 Next 내부 키(`__NA`)가 사라져,
+  //     그 entry 로 뒤로가기할 때 App Router 가 SPA 복원 대신 full reload 로 폴백한다
+  //     (app-router.js: `if (!event.state.__NA) window.location.reload()`). 문서가 새로
+  //     뜨면 documentId 가 재발급되어 복원 마커가 불일치하므로 #2490 자체가 무력화된다.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.search) {
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState(window.history.state, "", window.location.pathname);
     }
   }, []);
 
@@ -175,11 +253,27 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     if (typeof window === "undefined") return;
     const FILTERS_KEY = LIST_RESTORE_KEYS.contents.filters;
     if (isEmptySearchParams(searchParams)) {
-      window.sessionStorage.removeItem(FILTERS_KEY);
+      removeListStorage(FILTERS_KEY);
     } else {
-      window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(searchParams));
+      writeListStorage(FILTERS_KEY, JSON.stringify(searchParams));
     }
   }, [searchParams]);
+
+  // 정렬 변경 시 sessionStorage 동기화 — 정렬이 해제되면 삭제.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SORT_KEY = LIST_RESTORE_KEYS.contents.sort;
+    if (sort.dir) {
+      writeListStorage(SORT_KEY, JSON.stringify(sort));
+    } else {
+      removeListStorage(SORT_KEY);
+    }
+  }, [sort]);
+
+  // 브라우저 뒤로/앞으로 복원용 마커를 history entry 에 기록 (Redmine #2490).
+  //   - 상세 화면 진입은 router.push = 새 history entry 이므로 마커가 없고, 뒤로가기는
+  //     마커가 남아있는 목록 entry 로 복귀 → popstate 시점에 이를 대조해 구분한다.
+  useListHistoryMarker("contents");
 
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
@@ -196,6 +290,12 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     enabled: false,
   });
   const userScope = user ? `${user.userTp}:${user.authRole ?? "-"}` : "anon";
+
+  // 公開日 칸에서 "본인 계층의 게시대상" 을 고르기 위한 권한코드.
+  // 서버(route.ts 비사내 분기 / rbac-guard)와 동일 규칙 — authRole 미탑재 구 JWT 는 userTp 폴백,
+  // 비로그인·해석 불가는 null(=비회원 게시대상)로 떨어진다. auth-role.ts 는 prisma 비의존이라
+  // 클라이언트 번들에 안전하게 포함된다.
+  const viewerRoleCode = user ? (user.authRole ?? getFallbackRole(user.userTp)) : null;
 
   // 카테고리 트리 조회 — 실패 시 data=[] 로 떨어져 카테고리 컬럼/필터가 조용히 사라지므로
   // isError 를 노출해 사용자가 원인을 알 수 있게 한다.
@@ -222,7 +322,11 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         page: searchParams.page,
         pageSize,
       };
-      if (searchParams.keyword) params.keyword = searchParams.keyword;
+      // keywordOp 은 키워드가 있을 때만 전송 — 서버 기본값(AND)과 동일하면 생략해 URL/쿼리키를 단순화.
+      if (searchParams.keyword) {
+        params.keyword = searchParams.keyword;
+        if (searchParams.keywordOp === "OR") params.keywordOp = "OR";
+      }
       if (searchParams.categoryIds.length > 0) params.categoryIds = searchParams.categoryIds.join(",");
       if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
       if (searchParams.departments.length > 0) params.department = searchParams.departments.join(",");
@@ -247,7 +351,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   });
 
   const handleSearch = (filters: SearchFilters) => {
-    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSort(EMPTY_SORT);
     setSortResetKey((k) => k + 1);
     setSearchParams({ ...filters, page: 1 });
   };
@@ -258,7 +362,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
 
   const handlePageSizeChange = (newPageSize: number) => {
     setPageSize(newPageSize);
-    setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+    setSort(EMPTY_SORT);
     setSortResetKey((k) => k + 1);
     // 페이지 사이즈 변경 시 page 만 1 로 리셋.
     setSearchParams((prev) => ({ ...prev, page: 1 }));
@@ -270,16 +374,16 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   // 로 흘려보내지 않고 경고 로그만 남기고 정렬을 무시한다.
   const handleSortChange = (colId: string | undefined, dir: "asc" | "desc" | undefined) => {
     if (!colId) {
-      setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+      setSort(EMPTY_SORT);
     } else if (colId === TARGETS_SORT_COL_ID) {
-      setSort({ field: undefined, categoryCode: undefined, targets: true, dir });
+      setSort({ ...EMPTY_SORT, targets: true, dir });
     } else if ((CONTENT_SORT_FIELDS as readonly string[]).includes(colId)) {
-      setSort({ field: colId as ContentSortField, categoryCode: undefined, targets: false, dir });
+      setSort({ ...EMPTY_SORT, field: colId as ContentSortField, dir });
     } else if (categories.some((c) => c.categoryCode === colId)) {
-      setSort({ field: undefined, categoryCode: colId, targets: false, dir });
+      setSort({ ...EMPTY_SORT, categoryCode: colId, dir });
     } else {
       console.warn("[ContentsContents] 알 수 없는 정렬 colId — 무시:", colId);
-      setSort({ field: undefined, categoryCode: undefined, targets: false, dir: undefined });
+      setSort(EMPTY_SORT);
     }
     // 정렬 기준이 바뀌면 이전 페이지 번호가 무의미해지므로 1페이지로 리셋.
     setSearchParams((prev) => ({ ...prev, page: 1 }));
@@ -304,6 +408,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       />
       <ContentsTable
         isInternal={isInternal}
+        viewerRoleCode={viewerRoleCode}
         categories={categories}
         data={contentsResponse?.data ?? []}
         meta={contentsResponse?.meta}
@@ -316,6 +421,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         onPageSizeChange={handlePageSizeChange}
         onSortChange={handleSortChange}
         sortResetKey={sortResetKey}
+        initialSort={initialGridSort}
       />
     </main>
   );

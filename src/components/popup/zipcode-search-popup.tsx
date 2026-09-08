@@ -51,7 +51,7 @@ export function ZipcodeSearchPopup() {
 
     if (!/^\d{7}$/.test(zipcode)) {
       setError(
-        "登録された郵便番号に住所が見つかりません. もう一度入力してください."
+        "登録された郵便番号に住所が見つかりません。もう一度入力してください。"
       );
       return;
     }
@@ -89,7 +89,7 @@ export function ZipcodeSearchPopup() {
 
       if (!data.results || data.results.length === 0) {
         setError(
-          "登録された郵便番号に住所が見つかりません. もう一度入力してください."
+          "登録された郵便番号に住所が見つかりません。もう一度入力してください。"
         );
         return;
       }

@@ -1,5 +1,6 @@
 import axios from "axios";
 import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 
 const api = axios.create({
   baseURL: "/api",
@@ -22,6 +23,10 @@ const api = axios.create({
  *   → 로그인 실패 401 / 2FA 미스매치 401 등 AUTH_FLAG 가 set 되지 않은 상태에서는
  *     불필요한 dispatch 가 발생하지 않아 다탭 비로그인 오인식을 차단한다.
  * - useSyncExternalStore 구독 컴포넌트(Gnb 등)가 즉시 리렌더 → enabled false → 후속 호출 차단
+ * - 목록 복원 상태(sessionStorage + history 마커)도 함께 폐기 — 세션 만료는 로그아웃을 거치지
+ *   않고 사용자가 바뀔 수 있는 경로다. 정리하지 않으면 사내 전용 정렬(掲示対象)이 복원 대상으로
+ *   남아 뒤로가기마다 `sortTargets=true` 가 전송되어 403 으로 목록이 조회 불가 상태로 굳고,
+ *   같은 탭에서 다음 사용자가 이전 사용자의 검색조건을 그대로 보게 된다.
  * - 원본 에러는 그대로 reject — 호출측 onError / 401 분기 흐름 유지
  *
  * 안전성:
@@ -46,6 +51,9 @@ api.interceptors.response.use(
         try {
           if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
             localStorage.removeItem(AUTH_FLAG_KEY);
+            // 목록 복원 상태 폐기는 AUTH_FLAG 가 실제로 서 있던 경우(=세션이 끊긴 경우)에만
+            // 수행한다. 비로그인 상태의 401(로그인 실패 등)까지 정리하면 불필요한 부수효과가 된다.
+            resetListRestoreState();
             window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
           }
         } catch (e) {

@@ -1,5 +1,5 @@
 ---
-globs:
+paths:
   - "src/app/**/*.tsx"
   - "src/components/**/*.tsx"
 ---
@@ -20,9 +20,4 @@ globs:
 **기타 Compiler 규칙**: `purity`, `immutability`, `refs`, `globals`, `use-memo`, `static-components` 등
 - `pnpm lint`로 검출되며, `eslint-disable` 처리 대신 규칙에 맞게 코드를 수정할 것
 
-### 컴포넌트 작성
-- 기본적으로 모든 컴포넌트는 Server Component
-- `"use client"` 경계를 최대한 아래(leaf)로 내려서 서버 컴포넌트 영역 유지
-- 페이지/레이아웃: `export default function` 사용
-- 재사용 컴포넌트: named export 사용
-- docs/ref/frontend-guide.md 문서가 존재하면 항상 참조한다.
+> 컴포넌트 작성 규칙(Server/Client 구분, export 형태)은 `docs/coding-conventions.md` 3절 참조.

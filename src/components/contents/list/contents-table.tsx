@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -81,6 +81,33 @@ function renderCategoryCell(
   );
 }
 
+/**
+ * 公開日 — 보는 사람에게 실제로 적용되는 게시 시작일시.
+ *
+ * - 비관리자: 본인 계층(roleCode)의 게시대상 startAt. 목록에 뜬 행이면 본인 대상이 반드시 1건 있다.
+ * - 관리자(SUPER_ADMIN/ADMIN): 여러 계층을 한 칸에 담을 수 없으므로 **최단(가장 빠른) 공개일** 1건만.
+ *
+ * startAt=null 은 "시작 제한 없음"(즉시 공개)이라 찍을 날짜가 없다 → null 반환("-" 표시).
+ * 관리자 뷰에서 한 계층이라도 null 이면 그게 최단이므로 마찬가지로 null — 남은 날짜 중
+ * 최솟값을 보여주면 실제보다 늦은 날짜를 최단으로 표기하게 된다.
+ */
+function resolvePublishStartAt(
+  item: ContentListItem,
+  isInternal: boolean,
+  viewerRoleCode: string | null,
+): string | null {
+  if (!isInternal) {
+    return item.targets.find((t) => t.roleCode === viewerRoleCode)?.startAt ?? null;
+  }
+  if (item.targets.length === 0) return null;
+  if (item.targets.some((t) => t.startAt === null)) return null;
+  // ISO 8601 문자열은 사전순 = 시간순 (登録日 comparator 와 동일 전제).
+  return item.targets.reduce<string | null>(
+    (min, t) => (min === null || (t.startAt !== null && t.startAt < min) ? t.startAt : min),
+    null,
+  );
+}
+
 /** 빈값 정규화 — null/undefined/공백문자열 → "-" */
 function orDash(v: unknown): string {
   if (v == null) return "-";
@@ -106,6 +133,7 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
           NEW
         </span>
       )}
+      {/* NEW 우선순위(동시 충족 시 UPDATE 숨김)는 서버 resolveBadgeFlags 가 이미 반영해 내려준다 */}
       {data.hasBeenUpdated && data.isUpdated && (
         <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
           UPDATE
@@ -219,14 +247,18 @@ function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) 
   );
 }
 
-/** 모바일 목록 카드 — 상단: 登録日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
+/** 모바일 목록 카드 — 상단: 登録日/公開日/VIEW/添付 뱃지(흰 박스+라벨+값) 한 줄, 하단: 굵은 제목.
  *  NEW/UPDATE 뱃지는 컴팩트 카드 디자인 방침에 따라 의도적으로 미표시. */
 
 function MobileContentCard({
   item,
+  isInternal,
+  viewerRoleCode,
   onClick,
 }: {
   item: ContentListItem;
+  isInternal: boolean;
+  viewerRoleCode: string | null;
   onClick: () => void;
 }) {
   const { openAlert } = useAlertStore();
@@ -251,9 +283,19 @@ function MobileContentCard({
         aria-label={item.title}
         onClick={onClick}
       />
-      {/* 상단 — 登録日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭. */}
+      {/* 상단 — 登録日 / 公開日 / VIEW / 添付. 라벨은 상세 화면(ContentsDetailBody MetaBadge)과 동일 명칭.
+          登録日 는 PC 그리드와 같은 규칙으로 관리자에게만 노출한다. */}
       <div className="relative flex items-center gap-3">
-        <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
+        {isInternal && (
+          <MobileMetaBadge label="登録日" value={item.createdAt ? formatDate(item.createdAt) : "-"} />
+        )}
+        <MobileMetaBadge
+          label="公開日"
+          value={(() => {
+            const startAt = resolvePublishStartAt(item, isInternal, viewerRoleCode);
+            return startAt ? formatDate(startAt) : "-";
+          })()}
+        />
         <MobileMetaBadge label="VIEW" value={item.viewCount.toLocaleString()} />
         {item.attachmentCount > 0 && (
           <button
@@ -291,6 +333,8 @@ function MobileContentCard({
 
 interface ContentsTableProps {
   isInternal?: boolean;
+  /** 보는 사람의 계층 권한코드 (null = 비회원/비로그인) — 公開日 칸에서 본인 게시대상을 고를 때 사용. */
+  viewerRoleCode?: string | null;
   categories?: CategoryNode[];
   data: ContentListItem[];
   meta?: { total: number; page: number; pageSize: number; totalPages: number };
@@ -308,10 +352,16 @@ interface ContentsTableProps {
   onSortChange: (colId: string | undefined, dir: "asc" | "desc" | undefined) => void;
   /** 검색/필터 변경 시 부모가 증가시키는 카운터 — 변경 시 ag-grid 정렬 UI 초기화. */
   sortResetKey?: number;
+  /**
+   * 복원 진입(상세 복귀/브라우저 뒤로가기) 시 헤더에 표시할 초기 정렬. 마운트 후 1회만 반영한다.
+   * 데이터 정렬 자체는 부모가 이미 sort 파라미터로 조회하므로, 여기서는 헤더 UI 동기화 용도.
+   */
+  initialSort?: { colId: string; dir: "asc" | "desc" } | null;
 }
 
 export function ContentsTable({
   isInternal = false,
+  viewerRoleCode = null,
   categories = [],
   data,
   meta,
@@ -322,6 +372,7 @@ export function ContentsTable({
   onPageSizeChange,
   onSortChange,
   sortResetKey,
+  initialSort = null,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -390,7 +441,12 @@ export function ContentsTable({
     // 우선 노출 카테고리(PRIORITY_CATEGORY_ORDER)는 지정 순서로 更新日과 タイトル 사이에,
     // 그 외 카테고리는 기존 sortOrder 순서 그대로 VIEW 뒤에 배치.
     // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
-    const visibleParents = categories.filter((parent) => parent.isVisible !== false);
+    // 사내전용 1depth 는 비사내 사용자에게 컬럼 자체를 노출하지 않는다 — headerName 이
+    // 부모 카테고리명이라, 컬럼을 남기면 셀이 비어도 사내 전용 분류명이 그대로 드러난다.
+    const visibleParents = categories.filter(
+      (parent) =>
+        parent.isVisible !== false && (isInternal || !parent.isInternalOnly),
+    );
     const priorityCategoryColumns = visibleParents
       .filter((parent) => Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
       .sort(
@@ -404,21 +460,41 @@ export function ContentsTable({
     const hasCategoryColumns = visibleParents.length > 0;
 
     const baseCols: ColDef<ContentListItem>[] = [
+      // 登録日 는 운영 정보라 관리자(SUPER_ADMIN/ADMIN)에게만 노출한다. 일반 사용자에게 의미 있는
+      // 날짜는 "언제부터 볼 수 있게 됐는가"(公開日) 쪽이라, 그 자리를 公開日 이 대신한다.
+      ...(isInternal
+        ? [
+            {
+              headerName: "登録日",
+              field: "createdAt",
+              sortable: true,
+              // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
+              // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
+              // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
+              cellDataType: false,
+              // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
+              comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
+              flex: 1,
+              minWidth: 110,
+              headerClass: "ag-header-cell-center",
+              cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+              valueFormatter: (params) => (params.value ? formatDate(params.value) : "-"),
+            } satisfies ColDef<ContentListItem>,
+          ]
+        : []),
       {
-        headerName: "登録日",
-        field: "createdAt",
-        sortable: true,
-        // ag-grid 의 cellDataType 자동추론이 valueFormatter 만 있는(cellRenderer 없는) 컬럼에서
-        // 정렬 클릭 자체를 먹통으로 만드는 경우가 있어, 추론을 끄고 comparator 를 직접 지정한다.
-        // 실제 정렬은 서버(sortField/sortDir)가 수행 — 여기 comparator 는 클릭 활성화 목적.
-        cellDataType: false,
-        // ISO 8601 문자열은 사전순 = 시간순이 성립 — localeCompare 보다 명시적으로 정확한 비교.
-        comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
+        // 公開日 — 게시대상(ContentTarget) 의 시작일시. 서버에 대응 정렬 필드가 없고 계층별로
+        // 값이 달라(관리자는 최단값 파생) 페이지 경계를 넘는 정렬이 불가능하므로 정렬 미제공.
+        headerName: "公開日",
+        colId: "publishStartAt",
+        sortable: false,
         flex: 1,
         minWidth: 110,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueFormatter: (params) => params.value ? formatDate(params.value) : "-",
+        valueGetter: (params) =>
+          params.data ? resolvePublishStartAt(params.data, isInternal, viewerRoleCode) : null,
+        valueFormatter: (params) => (params.value ? formatDate(params.value) : "-"),
       },
       {
         headerName: "更新日",
@@ -611,7 +687,7 @@ export function ContentsTable({
         minWidth: Math.max(col.minWidth ?? 0, headerMinWidth(col.headerName ?? "")),
       };
     });
-  }, [isInternal, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
+  }, [isInternal, viewerRoleCode, categories, approverLabelMap, isLoadingApprover, resolveTargetLabel]);
 
   const handleMobileItemClick = (item: ContentListItem) => {
     router.push(`/contents/${item.id}`, { transitionTypes: ["fade"] });
@@ -619,19 +695,52 @@ export function ContentsTable({
 
   const gridApiRef = useRef<GridApi<ContentListItem> | null>(null);
 
+  // api 는 ref 로 보관하되, 준비 완료 시점을 effect 에 알리기 위해 카운터도 함께 증가시킨다.
+  // boolean 이 아니라 카운터인 이유: 반응형 전환(useIsMobile)으로 DataGrid 가 unmount 후
+  // 재mount 되면 새 grid 인스턴스가 만들어지는데, boolean 은 true→true 라 상태 변화가 없어
+  // 아래 재적용 effect 가 다시 돌지 못한다.
+  const [gridReadyCount, setGridReadyCount] = useState(0);
+
   const handleGridReady = (event: GridReadyEvent<ContentListItem>) => {
     gridApiRef.current = event.api;
+    setGridReadyCount((c) => c + 1);
   };
 
   // sortResetKey 가 변경되면 ag-grid 컬럼 정렬 UI 초기화 (검색/필터 변경 시 부모가 증가).
   useEffect(() => {
-    gridApiRef.current?.applyColumnState({ state: [], defaultState: { sort: null } });
+    const api = gridApiRef.current;
+    if (!api || api.isDestroyed()) return;
+    api.applyColumnState({ state: [], defaultState: { sort: null } });
   }, [sortResetKey]);
+
+  // 복원 진입 시 초기 정렬을 헤더에 1회 반영 (Redmine #2490).
+  // 카테고리 컬럼은 categories 응답 이후 생성되므로, 해당 colId 가 생길 때까지 columnDefs
+  // 변경마다 재시도한다. applyColumnState 는 source="api" 로 sortChanged 를 발생시키지만
+  // handleSortChanged 가 이를 무시하므로 부모 상태를 되돌리지 않는다.
+  const isInitialSortAppliedRef = useRef(false);
+  useEffect(() => {
+    if (isInitialSortAppliedRef.current || !initialSort) return;
+    const api = gridApiRef.current;
+    // ag-grid 는 destroy 후에도 GridApi 객체 자체는 살아있지만 내부 fns/beans 가 비워져
+    // getColumnState() 가 undefined 를 반환한다 — 그대로 역참조하면 TypeError 로 목록이
+    // 크래시하므로, 파기 여부를 먼저 확인하고 반환값도 방어적으로 다룬다.
+    if (!api || api.isDestroyed()) return;
+    const columnState = api.getColumnState();
+    if (!columnState?.some((c) => c.colId === initialSort.colId)) return;
+    api.applyColumnState({
+      state: [{ colId: initialSort.colId, sort: initialSort.dir }],
+      defaultState: { sort: null },
+    });
+    isInitialSortAppliedRef.current = true;
+  }, [initialSort, gridReadyCount, columnDefs]);
 
   // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
   // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
   const handleSortChanged = (event: SortChangedEvent<ContentListItem>) => {
+    // applyColumnState(source="api") 로 우리가 직접 넣은 정렬 초기화/복원은 무시한다 —
+    // 부모의 정렬·페이지 상태를 되돌려(page=1) 복원 결과를 깨뜨리는 되먹임 차단.
+    if (event.source === "api") return;
     const active = event.api.getColumnState().find((c) => c.sort);
     onSortChange(active?.colId, active?.sort ?? undefined);
   };
@@ -734,6 +843,8 @@ export function ContentsTable({
                 <MobileContentCard
                   key={item.id}
                   item={item}
+                  isInternal={isInternal}
+                  viewerRoleCode={viewerRoleCode}
                   onClick={() => handleMobileItemClick(item)}
                 />
               ))}

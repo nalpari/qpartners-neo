@@ -1,5 +1,5 @@
 ---
-globs:
+paths:
   - "src/app/api/**/*.ts"
   - "src/lib/schemas/**"
   - "src/lib/mailer.ts"

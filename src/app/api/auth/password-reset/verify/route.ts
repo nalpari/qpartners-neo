@@ -95,6 +95,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 4-1. 시공점(SEKO) 토큰은 이 경로의 대상이 아니다.
+    //      `/api/auth/password-reset/seko/{check,reset}` 가 같은 테이블에 발급하는 행이며,
+    //      메일 링크가 아니라 팝업 2단계를 잇는 용도다. 여기서 valid 로 응답하면 프론트가
+    //      메일 링크 흐름(会員情報の設定 팝업)으로 오인해 열고, `userId` 에 담긴 시공ID 가
+    //      email 자리로 마스킹돼 나간다. 미존재와 동일 메시지로 접는다.
+    if (resetToken.userType === "SEKO") {
+      console.warn(
+        "[POST /api/auth/password-reset/verify] 시공점 토큰 진입 — 메일 링크 경로 대상 아님",
+      );
+      return NextResponse.json(
+        { error: "無効または期限切れのリンクです。" },
+        { status: 400 },
+      );
+    }
+
     // 5. 유효한 토큰 — popup 의 read-only 표시용으로 마스킹된 email 함께 반환.
     //    토큰 1건 유출 시 verify 무한 호출로 email 평문 enumerate 되는 것을 방지하기 위해
     //    `c***@interplug.co.kr` 형태로 부분 마스킹. 사용자 본인은 메일을 받은 시점에 자기 주소를

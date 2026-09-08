@@ -78,7 +78,11 @@ export function ContentsDetailBody({
         <div
           className="font-['Noto_Sans_JP'] text-[14px] leading-[1.7] text-[#505050] prose prose-sm max-w-none overflow-x-auto [&_table]:table-fixed [&_table]:w-full"
           dangerouslySetInnerHTML={{
-            __html: sanitizeContentHtml(prepareBodyForRender(body)),
+            // allowYoutubeEmbed — 콘텐츠 본문 렌더 경로에서만 iframe 을 통과시킨다.
+            // 대량메일 경로(bulk-mail-form-content / mass-mails route)는 옵션 없이 호출해 계속 차단.
+            __html: sanitizeContentHtml(prepareBodyForRender(body), {
+              allowYoutubeEmbed: true,
+            }),
           }}
         />
       )}

@@ -13,6 +13,7 @@ import type { LoginUser } from "@/lib/schemas/auth";
 import { MypageInfoCorporate } from "./mypage-info-corporate";
 import { MypageInfoMember } from "./mypage-info-member";
 import { MypageInfoConstruction } from "./mypage-info-construction";
+import type { SekoConstruction } from "./mypage-info-construction";
 
 // Design Ref: §2 — API 응답 타입
 export interface ProfileData {
@@ -38,6 +39,8 @@ export interface ProfileData {
   newsRcptYn: "Y" | "N";
   newsRcptDate: string | null;
   withdrawAvailable?: boolean;
+  /** 시공점(SEKO) 전용 — 시공ID 카드 데이터. 그 외 회원유형은 항상 null. */
+  sekoConstruction: SekoConstruction | null;
 }
 
 // Design Ref: §3 — 수정 폼 데이터 타입
@@ -212,6 +215,12 @@ export function MypageInfo() {
           setEditData(null);
           queryClient.invalidateQueries({ queryKey: ["mypage", "profile"] });
 
+          // 저장 직후 화면 즉시 반영 — 뉴스레터 수신여부(전 유형 공통 수정 가능)를 낙관적으로 갱신.
+          // no-store 로 refetch 최신화도 하지만, 네트워크 지연 중에도 화면이 바로 새 값으로 바뀌도록 보강.
+          queryClient.setQueryData<ProfileData>(["mypage", "profile"], (prev) =>
+            prev ? { ...prev, newsRcptYn: snapshot.newsRcptYn } : prev,
+          );
+
           // GNB 회사명/성명 즉시 반영 — 재로그인 없이 헤더·홈·콘텐츠 작성 폼 등
           // ["auth", "login-user-info"] 캐시 구독자 전체에 새 값 전파.
           //
@@ -337,7 +346,9 @@ export function MypageInfo() {
             />
           </div>
 
-          {profile.userType === "SEKO" && !isEditing && <MypageInfoConstruction />}
+          {profile.userType === "SEKO" && !isEditing && (
+            <MypageInfoConstruction data={profile.sekoConstruction} />
+          )}
 
           {isEditing && (
             <div className="flex gap-[6px] justify-center lg:justify-end w-full lg:max-w-[1440px] px-[24px] lg:px-0 pb-[28px] lg:pb-0">

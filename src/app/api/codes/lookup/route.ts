@@ -12,6 +12,10 @@ const ALLOWED_PUBLIC_HEADER_CODES = new Set<string>([
   "USER_TYPE", // 회원유형 검색 SelectBox + reverseMap 소스 (회원관리)
 ]);
 
+// relCode1 필터 값의 최대 길이 — qp_code_details.rel_code1 컬럼 정의(VARCHAR(100))와 동일.
+// openapi.ts 의 relCode1 파라미터 maxLength 와 반드시 같은 값을 유지할 것.
+const REL_CODE1_MAX_LENGTH = 100;
+
 // GET /api/codes/lookup?headerCode=INQUIRY_TYPE — 공통코드 공개 조회 (headerCode 기반)
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +44,19 @@ export async function GET(request: NextRequest) {
     // 예) USER_TYPE&relCode1=Y — 회원관리 검색 SelectBox 노출 대상만 (시공점은 "N" 이라 제외)
     // 값 자체는 로그에 남기지 않는다 (민감값이 들어올 수 있는 파라미터).
     const relCode1 = request.nextUrl.searchParams.get("relCode1");
+
+    // OpenAPI 스펙이 선언한 maxLength 를 서버에서도 강제한다 (스펙-구현 일치).
+    // 상한은 qp_code_details.rel_code1 컬럼 정의(VARCHAR(100))와 동일하게 맞춘다.
+    if (relCode1 !== null && relCode1.length > REL_CODE1_MAX_LENGTH) {
+      console.warn(
+        "[GET /api/codes/lookup] relCode1 파라미터 길이 초과:",
+        relCode1.length,
+      );
+      return NextResponse.json(
+        { error: "relCode1パラメータが不正です" },
+        { status: 400 },
+      );
+    }
 
     const header = await prisma.codeHeader.findFirst({
       where: { headerCode, isActive: true },

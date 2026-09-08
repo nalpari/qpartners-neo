@@ -363,12 +363,30 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "一般会員以外はニュースレター・二次認証・属性変更通知・ログイン通知のみ変更可能です",
+              "既存Q.PARTNERS会員以外はニュースレター・二次認証・属性変更通知・ログイン通知のみ変更可能です",
             details: disallowedFields.map((field) => ({ field, message: "変更不可" })),
           },
           { status: 400 },
         );
       }
+    }
+
+    // 4-0-a. SEKO 는 twoFactorEnabled 변경 대상에서 제외한다.
+    //   시공점 로그인은 AS-IS Connector 경유(QSP 미경유)라 QSP 의 secAuthYn 을 읽지 않는다.
+    //   저장만 성공하고 로그인은 계속 OTP 를 요구하므로, 관리자는 "2FA 를 껐다" 고 오인한 채
+    //   문의를 받게 된다. AS-IS 에 대응 필드가 생기기 전까지는 조용히 무시하지 말고 거부한다.
+    if (userTp === "SEKO" && result.data.twoFactorEnabled !== undefined) {
+      console.warn(
+        "[PUT /api/admin/members/:id] SEKO twoFactorEnabled 변경 시도 차단:",
+        { targetRawId: maskEmail(rawId) },
+      );
+      return NextResponse.json(
+        {
+          error: "施工店会員の二段階認証設定は変更できません",
+          details: [{ field: "twoFactorEnabled", message: "変更不可" }],
+        },
+        { status: 400 },
+      );
     }
 
     // 4-0-b. STORE + preDetail null 명시 거부
@@ -465,7 +483,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }
         if (result.data.userRole === "GENERAL") {
           return NextResponse.json(
-            { error: "自分自身のアカウントを一般会員に降格することはできません" },
+            { error: "自分自身のアカウントを既存Q.PARTNERS会員に降格することはできません" },
             { status: 400 },
           );
         }
@@ -490,7 +508,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (result.data.userRole !== undefined) {
       if (preDetail && preDetail.userTp !== "GENERAL") {
         return NextResponse.json(
-          { error: "ユーザー権限の変更は一般会員のみ可能です" },
+          { error: "ユーザー権限の変更は既存Q.PARTNERS会員のみ可能です" },
           { status: 400 },
         );
       }

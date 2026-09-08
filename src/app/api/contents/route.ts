@@ -5,16 +5,16 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
+import { resolveBadgeFlags } from "@/lib/content-new-badge";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
-import { jstDayStart, jstNextDayStart } from "@/lib/jst-day";
 import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
+import { jstHourStart } from "@/lib/jst-day";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { FIVE_DAYS_MS } from "@/lib/schemas/common";
 import {
   createContentSchema,
   listContentsQuerySchema,
@@ -31,6 +31,22 @@ import {
  * 업데이트해야 한다. DB 동적 조회 도입은 Phase 5 에서 평가.
  */
 const INTERNAL_ROLE_CODES = ["SUPER_ADMIN", "ADMIN"] as const;
+
+/**
+ * 키워드 토큰 상한.
+ * 선행 와일드카드 LIKE(`%kw%`)는 인덱스를 못 타므로 토큰 수가 그대로 full scan 비용이 된다.
+ * keyword 는 100자 제한이라 이론상 50토큰까지 들어올 수 있어 상한을 둔다.
+ */
+const KEYWORD_TOKEN_LIMIT = 10;
+
+/**
+ * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
+ * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
+ */
+function tokenizeKeyword(keyword: string | undefined): string[] {
+  if (!keyword) return [];
+  return keyword.split(/\s+/).filter(Boolean).slice(0, KEYWORD_TOKEN_LIMIT);
+}
 
 // GET /api/contents — 콘텐츠 목록 조회
 export async function GET(request: NextRequest) {
@@ -50,6 +66,7 @@ export async function GET(request: NextRequest) {
       page,
       pageSize,
       keyword,
+      keywordOp,
       categoryIds,
       status,
       roleCode,
@@ -83,38 +100,54 @@ export async function GET(request: NextRequest) {
     // plain object 에 같은 key 를 두 번 쓰면 뒤의 값이 앞을 덮어쓰므로 AND 배열이 필요.
     const andConditions: Prisma.ContentWhereInput[] = [];
 
-    // 카테고리 필터 — 멀티 선택 시 한 콘텐츠가 여러 categoryId 와 매핑되어 있으면
-    // `categories: { some: { categoryId: { in: [...] } } }` 가 SQL JOIN 으로 컴파일되며
-    // count/findMany 모두 매핑 행 수만큼 콘텐츠가 중복 카운트되는 현상이 관측됨
+    // 카테고리 필터 — AND(교집합) 조건. 선택한 카테고리를 **전부** 가진 콘텐츠만 반환한다.
+    // (예: 太陽電池モジュール + パワーコンディショナ 선택 시 둘 다 매핑된 콘텐츠만)
+    //
+    // `categories: { some: { categoryId: { in: [...] } } }` 는 OR 이며, SQL JOIN 으로
+    // 컴파일되어 count/findMany 가 매핑 행 수만큼 콘텐츠를 중복 카운트하는 문제도 있었다
     // (예: 営業 단일 0건, 技術 단일 1건인데 멀티 선택 시 2건).
     //
-    // 따라서 `ContentCategory` 에서 `distinct contentId` 를 먼저 조회해 `id IN [...]` 로
-    // 변환한다. 이렇게 하면 count/findMany 모두 콘텐츠 단위로 정확히 집계된다.
-    // 추가 쿼리 1회 비용은 contentId 만 select 하므로 가볍다.
+    // 따라서 `ContentCategory` 에서 선택 카테고리 매핑 행만 조회한 뒤 contentId 별로 세어,
+    // 매칭 수가 선택 수와 같은 콘텐츠만 골라 `id IN [...]` 로 변환한다. 콘텐츠 단위로
+    // 정확히 집계되며, `@@id([contentId, categoryId])` 복합 PK 라 중복 행이 없어
+    // 카운트가 곧 매칭 개수다. 추가 쿼리 1회 비용은 contentId 만 select 하므로 가볍다.
     //
     // Number("")==0, !isNaN(0)==true 로 0 이 통과되는 것을 막기 위해 양의 정수만 허용.
     // Number.isInteger 는 NaN/Infinity 도 제외하므로 isFinite 중복 불필요.
+    // 중복 id 가 들어오면 선택 수가 부풀려져 교집합이 항상 0 이 되므로 Set 으로 제거.
     // sortCategoryCode 단일 SQL 분기에서 재사용하므로 스코프 밖으로 호이스트
     let filteredContentIds: number[] | null = null;
     let categoryEmpty = false;
     if (categoryIds) {
-      const parsedIds = categoryIds
-        .split(",")
-        .map(Number)
-        .filter((n) => Number.isInteger(n) && n > 0);
+      const parsedIds = [
+        ...new Set(
+          categoryIds
+            .split(",")
+            .map(Number)
+            .filter((n) => Number.isInteger(n) && n > 0),
+        ),
+      ];
       if (parsedIds.length > 0) {
         let ccRows: { contentId: number }[];
         try {
           ccRows = await prisma.contentCategory.findMany({
             where: { categoryId: { in: parsedIds } },
             select: { contentId: true },
-            distinct: ["contentId"],
           });
         } catch (dbError: unknown) {
           logError("GET /api/contents categoryIds 필터조회", dbError, { parsedIds });
           return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
         }
-        const ids = ccRows.map((r) => r.contentId);
+        // contentId 별 매칭 카테고리 수를 세어 선택 수와 일치하는 것만 = 교집합(AND).
+        // distinct 를 걷어낸 이유는 행 수 자체가 집계 근거이기 때문 —
+        // 복합 PK 라 (contentId, categoryId) 중복 행이 없으므로 카운트가 곧 매칭 개수다.
+        const matchCounts = new Map<number, number>();
+        for (const r of ccRows) {
+          matchCounts.set(r.contentId, (matchCounts.get(r.contentId) ?? 0) + 1);
+        }
+        const ids = [...matchCounts]
+          .filter(([, count]) => count === parsedIds.length)
+          .map(([contentId]) => contentId);
         if (ids.length === 0) {
           // 매핑된 콘텐츠가 없음 → fast-path 0 응답
           categoryEmpty = true;
@@ -135,11 +168,6 @@ export async function GET(request: NextRequest) {
     // publication window 경계값 일관성 — 동일 where 절 안의 now 를 상수화.
     // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
     const now = new Date();
-
-    // 게시기간 date-only 비교용 — JST 기준 오늘/내일 자정.
-    // startAt 이 오늘 중 어떤 시각이든 통과시키려면 `< tomorrowStart` 비교 (Redmine #2131).
-    const todayStart = jstDayStart(now);
-    const tomorrowStart = jstNextDayStart(now);
 
     if (internal) {
       // 사내 사용자 (관리 목적):
@@ -179,27 +207,85 @@ export async function GET(request: NextRequest) {
           some: {
             roleCode: user ? user.role : null,
             AND: [
-              // 노출기간 day 단위 비교 — startAt 이 오늘 어떤 시각이든 통과 (< tomorrowStart).
-              // endAt 이 오늘 자정 이상이면 오늘 종일 노출 (Redmine #2131).
-              { OR: [{ startAt: null }, { startAt: { lt: tomorrowStart } }] },
-              { OR: [{ endAt: null }, { endAt: { gte: todayStart } }] },
+              // 노출기간 시각 비교 — canAccessContent(auth.ts) 와 동일 기준.
+              // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다.
+              // 예전 기준은 "오늘 18시 시작" 을 오늘 00시부터 노출시켜 지정 시각이 무시됐다.
+              // 종료는 "그 시간대의 끝까지" — 저장값이 정각이므로 현재 시각도 정각으로 내려
+              // 비교한다(`23時` 지정 = 24:00 까지, 종전 "종료일 당일 종일" 과 동일 결과).
+              { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+              { OR: [{ endAt: null }, { endAt: { gte: jstHourStart(now) } }] },
             ],
           },
         },
       });
     }
 
+    // Prisma where 절과 raw SQL 분기가 같은 토큰 배열을 공유해야 결과가 일치한다.
+    const keywordTokens = tokenizeKeyword(keyword);
+
     const where: Prisma.ContentWhereInput = {
       status: effectiveStatus as "draft" | "published" | "deleted",
-      ...(keyword && {
-        OR: [
-          { title: { contains: keyword } },
-          { body: { contains: keyword } },
-        ],
+      // 키워드 검색 — 타이틀·본문·첨부파일명 부분일치.
+      //
+      // 토큰 결합은 **필드 단위**다. AND 는 "한 필드 안에 모든 토큰" 이지 필드를 넘나들지 않는다.
+      //   예) `사과 귤` AND → 타이틀에 둘 다 / 본문에 둘 다 / 한 첨부파일명에 둘 다 중 하나
+      //       (타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않음)
+      // 첨부파일은 `some` 안에서 결합하므로 AND 는 **파일 한 개**가 모든 토큰을 가져야 한다
+      //   (`사과.pdf` + `귤.pdf` 조합은 미매칭 — 기획 확정 사항).
+      //
+      // sortCategoryCode 분기의 raw SQL 과 동일 조건이다.
+      // 한쪽만 수정하면 카테고리 정렬 상태에서 검색 결과가 달라지므로 함께 유지할 것.
+      ...(keywordTokens.length > 0 && {
+        OR:
+          keywordOp === "AND"
+            ? [
+                { AND: keywordTokens.map((t) => ({ title: { contains: t } })) },
+                { AND: keywordTokens.map((t) => ({ body: { contains: t } })) },
+                {
+                  attachments: {
+                    some: { AND: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
+                  },
+                },
+              ]
+            : [
+                ...keywordTokens.map((t) => ({ title: { contains: t } })),
+                ...keywordTokens.map((t) => ({ body: { contains: t } })),
+                {
+                  attachments: {
+                    some: { OR: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
+                  },
+                },
+              ],
       }),
       ...(department && department.length > 0 && { authorDepartment: { in: department } }),
       ...(andConditions.length > 0 && { AND: andConditions }),
     };
+
+    // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분).
+    //
+    // 대상은 인덱스로 값싸게 처리되지 않는 두 경로:
+    //   - keyword 검색 — title/body 선행 와일드카드 LIKE + attachments 상관 EXISTS(fileName LIKE).
+    //     findMany 와 count 가 각각 평가하므로 불일치 검색어를 반복해도 매번 full 비용이 든다.
+    //   - sortCategoryCode — 카테고리 자식명 기준 정렬 raw SQL.
+    // 단순 페이징(keyword·정렬 없음)은 제외한다 — NAT 뒤 공유 IP 에서 일반 열람이 막히지 않도록.
+    //
+    // 쿼리 실행 전에 둔다 — 차단 대상 요청이 DB 를 한 번도 건드리지 않아야 의미가 있다.
+    if (!internal && (keyword || sortCategoryCode)) {
+      const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+        request.headers.get("x-real-ip") ??
+        null;
+      const rlKey = ip
+        ? `contents-search:${ip}`
+        : `contents-search:user:${user?.userId ?? "anon"}`;
+      const rlLimit = ip ? 60 : 20;
+      if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
+        return NextResponse.json(
+          { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
+          { status: 429 },
+        );
+      }
+    }
 
     const includeOptions = {
       categories: {
@@ -211,6 +297,8 @@ export async function GET(request: NextRequest) {
 
     // isNew/isUpdated 계산용 — where 절의 now 와 동일 스냅샷 사용 (정책 일관성)
     const nowMs = now.getTime();
+    // New 뱃지 기준은 등록일이 아니라 공개일 — 사내는 가장 빠른 공개일, 그 외는 자기 권한의 공개일.
+    const viewer = { internal, roleCode: user ? user.role : null };
     const mapRow = (c: Prisma.ContentGetPayload<{ include: typeof includeOptions }>) => ({
       id: c.id,
       title: c.title,
@@ -224,8 +312,8 @@ export async function GET(request: NextRequest) {
       updatedAt: c.updatedAt,
       // 갱신 이력 판별 서버 단일 출처 — 클라이언트 Date 비교 제거용
       hasBeenUpdated: c.updatedAt.getTime() !== c.createdAt.getTime(),
-      isNew: nowMs - c.createdAt.getTime() < FIVE_DAYS_MS,
-      isUpdated: nowMs - c.updatedAt.getTime() < FIVE_DAYS_MS,
+      // NEW/UPDATE 는 함께 판정한다 — 공개일 도래 전에는 둘 다 false (사내 전용 노출 구간).
+      ...resolveBadgeFlags(c, c.targets, viewer, nowMs),
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
@@ -239,32 +327,22 @@ export async function GET(request: NextRequest) {
       // 전체 ID materialization 없이 WHERE + 정렬 + 페이지네이션 + COUNT를 단일 SQL로 처리.
       // children[0] 은 sortOrder ASC → id ASC 기준 (buildCategoryTree 및 클라이언트 getFirstCategoryChildName 과 동일).
 
-      // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분)
-      if (!internal) {
-        const ip =
-          request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-          request.headers.get("x-real-ip") ??
-          null;
-        const rlKey = ip
-          ? `contents-sort:${ip}`
-          : `contents-sort:user:${user?.userId ?? "anon"}`;
-        const rlLimit = ip ? 60 : 20;
-        if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
-          return NextResponse.json(
-            { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
-            { status: 429 },
-          );
-        }
-      }
-
       // WHERE 조건을 SQL fragment로 직접 구성 — Prisma WHERE와 동일한 필터 로직
       const sqlConds: Prisma.Sql[] = [
         Prisma.sql`c.status = ${effectiveStatus}`,
       ];
 
-      if (keyword) {
-        const kw = `%${keyword}%`;
-        sqlConds.push(Prisma.sql`(c.title LIKE ${kw} OR c.body LIKE ${kw})`);
+      if (keywordTokens.length > 0) {
+        // Prisma where 절의 keyword 조건과 동일 — 필드 단위 AND/OR 결합 (한쪽만 수정 금지).
+        const kws = keywordTokens.map((t) => `%${t}%`);
+        const glue = keywordOp === "AND" ? " AND " : " OR ";
+        const titleCond = Prisma.join(kws.map((k) => Prisma.sql`c.title LIKE ${k}`), glue);
+        const bodyCond = Prisma.join(kws.map((k) => Prisma.sql`c.body LIKE ${k}`), glue);
+        const fileCond = Prisma.join(kws.map((k) => Prisma.sql`a.file_name LIKE ${k}`), glue);
+        sqlConds.push(Prisma.sql`((${titleCond}) OR (${bodyCond}) OR EXISTS (
+          SELECT 1 FROM qp_content_attachments a
+          WHERE a.content_id = c.id AND (${fileCond})
+        ))`);
       }
 
       if (department && department.length > 0) {
@@ -299,23 +377,23 @@ export async function GET(request: NextRequest) {
           }
         }
       } else {
-        // 비사내: 세션 역할 기반 게시대상 + 게시기간 필터 (Prisma WHERE와 동일)
+        // 비사내: 세션 역할 기반 게시대상 + 게시기간 필터 (Prisma WHERE와 동일 — 시각 비교)
         const userRole = user?.role ?? null;
         if (userRole === null) {
           sqlConds.push(Prisma.sql`EXISTS (
             SELECT 1 FROM qp_content_targets ct
             WHERE ct.content_id = c.id
               AND ct.role_code IS NULL
-              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+              AND (ct.start_at IS NULL OR ct.start_at <= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
           )`);
         } else {
           sqlConds.push(Prisma.sql`EXISTS (
             SELECT 1 FROM qp_content_targets ct
             WHERE ct.content_id = c.id
               AND ct.role_code = ${userRole}
-              AND (ct.start_at IS NULL OR ct.start_at < ${tomorrowStart})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${todayStart})
+              AND (ct.start_at IS NULL OR ct.start_at <= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
           )`);
         }
       }
@@ -671,6 +749,12 @@ export async function POST(request: NextRequest) {
         ? (contentData.publishedAt ?? new Date())
         : undefined;
 
+    // createdAt 은 DB default(UTC_TIMESTAMP(3)), updatedAt 은 Prisma(앱 서버)가 채우므로 값을
+    // 주지 않으면 INSERT 왕복 시간만큼(실측 1~3ms) 두 값이 어긋난다. 갱신 이력 판정이
+    // `updatedAt !== createdAt` 이라 등록하는 순간 "수정된 콘텐츠"가 되어 갱신일·UPDATE 뱃지가
+    // 노출된다(#2476). 두 컬럼을 같은 시각으로 명시해 출처를 하나로 통일한다.
+    const createdNow = new Date();
+
     // 본문 임베드 이미지 cleanup 을 같은 트랜잭션 안에서 수행 — 콘텐츠 INSERT 가 롤백되면
     // stamp/delete 도 자동 원복. 디스크 unlink 는 commit 후 별도 처리(실패해도 정합성 영향 없음).
     const { content, unlinkPaths } = await prisma.$transaction(async (tx) => {
@@ -678,6 +762,8 @@ export async function POST(request: NextRequest) {
         data: {
           ...contentData,
           publishedAt,
+          createdAt: createdNow,
+          updatedAt: createdNow,
           userType: user.userType,
           userId: user.userId,
           createdBy: user.userId,

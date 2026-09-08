@@ -10,15 +10,39 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/login-user-info", // 프론트엔드 로그인 상태 확인용 — 인증 실패 시 401은 핸들러에서 직접 처리
-  "/api/auth/signup",
+  // NOTE: /api/auth/signup 은 일반회원 셀프 가입 폐지에 따라 PUBLIC 에서 제외됨 —
+  //       SUPER_ADMIN·ADMIN 만 호출 가능(핸들러 isInternalUser 가드).
+  //
+  // /api/auth/email/check 는 PUBLIC 유지 — 관리자 대리 등록(/signup) 외에
+  //   `PersonalInfoPopup`(会員情報の設定) 의 최초 로그인(pwdInitYn=N) + email 미등록 경로가
+  //   2FA 미완료 상태에서 호출한다. PUBLIC 에서 빼면 이 경로가 403 「2段階認証が必要です」로
+  //   막혀 최초 로그인 사용자가 비밀번호 설정을 끝낼 수 없다.
+  //   회원 존재 여부 노출은 라우트 자체의 IP + Email 2차원 rate limit 으로 방어한다.
   "/api/auth/email/check",
   "/api/auth/password-reset/request",
   "/api/auth/password-reset/verify",
   "/api/auth/password-reset/confirm",
+  // 시공점 전용 초기화(화면설계서 v1.4 p12) — 로그인 전 비인증 호출이라 위 3개와 동일하게 공개.
+  // 메일 링크가 없는 흐름이지만 무상태는 아니다: `seko/check` 가 입력 식별자에 바인딩된 단명
+  // 일회용 토큰을 발급하고 `seko/reset` 이 이를 원자적으로 소비하므로, 1단계를 건너뛴 단발
+  // 요청으로는 비밀번호를 바꿀 수 없다. 발급 한도(식별자당 시간당 3건)와 IP rate limit 이
+  // 그 위에 얹힌다. 소유 증명은 없다 — 사양·I/F 제약은 `schemas/password-reset.ts` SEKO 절 참조.
+  "/api/auth/password-reset/seko/check",
+  "/api/auth/password-reset/seko/reset",
   // 외부 3사(HANASYS/Q.Order/Q.Musubi) → Q.Partners-neo 자동로그인 진입 라우트.
   // cipher 복호화 + QSP userDetail 조회 후 Q.Partners-neo 자체 JWT 서명·발급 → 홈 리다이렉트.
   // (QSP v1.0 은 loginKey 미지원 — cipher 소유 자체를 인증 증명으로 간주. 상세는 route.ts 파일 상단 주석 참조)
   "/api/auth/auto-login/inbound",
+  // 시공점(SEKO) → AS-IS 자동로그인 **화면 진입** 라우트. 인증이 불요한 게 아니라,
+  // 인증 실패를 라우트가 직접 다뤄야 해서 PUBLIC 에 둔다.
+  //
+  // 사용자가 새 창으로 진입하는 경로라 미들웨어의 401/403 **JSON 이 빈 탭에 그대로 뜬다**.
+  // 그러면 라우트가 실패를 결과 페이지로 돌려보내 부모 탭에 알리는 흐름(seko-autologin-result)이
+  // 통째로 건너뛰어져, 세션 만료(가장 흔한 실패)만 안내 없이 AS-IS 로 넘어간다.
+  //
+  // 인가는 약해지지 않는다 — 라우트가 헤더가 아니라 **쿠키를 직접 재검증**하고
+  // (`getUserFromRequest`) userTp/2FA/sekoToken 4단 가드를 자체 수행한다.
+  "/api/auth/seko/autologin",
   // 인증은 불요(public)하되, 운영 환경 노출은 route handler 에서 차단(production → 404, isApiDocsEnabled 가드).
   "/api/openapi",
   // 문의 등록 POST 단일 핸들러 전제 — route handler 내부 rate limit 적용
@@ -28,6 +52,9 @@ const PUBLIC_PATHS = [
   // 응답은 ok: boolean 만 노출(민감정보 없음) → 인증 불요.
   "/api/health",
   "/api/health/db",
+  // 외부 스케줄러가 호출하는 배치 트리거 — 쿠키 세션을 가질 수 없으므로 JWT 대상 외.
+  // 인증은 route handler 가 Authorization: Bearer <BATCH_API_TOKEN> 으로 직접 검증한다.
+  "/api/batch/mass-mail",
 ];
 
 /** GET 요청에 한해 비회원도 접근 가능한 경로 패턴 (조회 전용) */
@@ -90,7 +117,7 @@ export async function middleware(request: NextRequest) {
   if (isPublicPath(pathname) || isPublicGet) {
     // GET 조회 경로에 한해 JWT가 있으면 사용자 정보 헤더 주입 (최소 권한 원칙)
     // categories?activeOnly=false 등 route handler 내부에서 관리자 권한 체크하는 케이스 대응
-    // POST 경로(/api/inquiry, /api/auth/signup 등)에는 헤더 주입하지 않음
+    // POST 경로(/api/inquiry 등)에는 헤더 주입하지 않음
     if (isPublicGet) {
       const publicToken = request.cookies.get(COOKIE_NAME)?.value;
       if (publicToken) {

@@ -11,16 +11,30 @@ import { performLogout } from "@/lib/auth-client";
 import { formatUserDisplayName } from "@/lib/format";
 import { loginUserSchema } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT } from "@/components/login/types";
+import { AUTH_FLAG_KEY, AUTH_CHANGE_EVENT, dispatchAuthChange } from "@/components/login/types";
 import { useMenuTree } from "@/hooks/use-menu-tree";
 import { useMenuPermissionMap } from "@/hooks/use-menu-permission";
 import { useAlertStore } from "@/lib/store";
 import { ADMIN_MENU, MENU } from "@/lib/menu-codes";
 import type { MenuApiItem, MenuTreeItem } from "@/components/admin/menus/menus-types";
 
-/** Gnb 상단 네비 fallback — API 실패 / 비로그인 상태 대응 */
-const GNB_FALLBACK_MENUS: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+/**
+ * Gnb 상단 네비 fallback — 비로그인(게스트) 전용. お問い合わせ 미노출 (게스트 한정 요구사항).
+ * 게스트에게 문의를 다시 노출하게 되면 이 배열에 항목을 추가하지 말고 두 배열을 하나로 합칠 것 —
+ * AUTH 가 이 배열을 spread 하므로, 여기에 문의를 추가하면 AUTH 에서 중복 항목이 된다.
+ */
+const GNB_FALLBACK_MENUS_GUEST: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
   { menuCode: MENU.CONTENT, menuName: "コンテンツ", pageUrl: "/contents" },
+];
+
+/**
+ * Gnb 상단 네비 fallback — 인증 사용자 전용.
+ * menuTree 초기 로딩 중 / `/api/menus` 실패 시 사용되므로, 장애 상황에서도 문의 경로를 유지한다.
+ * 단 hasAuthFlag 가 아직 false 인 SSR/hydration 이전 렌더에서는 GUEST 쪽이 선택된다 —
+ * 상세는 아래 fallback 선택 로직 주석 참조.
+ */
+const GNB_FALLBACK_MENUS_AUTH: readonly { menuCode: string; menuName: string; pageUrl: string }[] = [
+  ...GNB_FALLBACK_MENUS_GUEST,
   { menuCode: MENU.INQUIRY, menuName: "お問い合わせ", pageUrl: "/inquiry" },
 ];
 
@@ -60,6 +74,24 @@ async function fetchAuthMe(): Promise<LoginUser | null> {
     if (!parsed.success) {
       console.error("[fetchAuthMe] 응답 스키마 불일치:", parsed.error.issues);
       return null;
+    }
+    // 2차인증(또는 최초 비밀번호 설정) 미완료 세션은 "로그인 상태" 가 아니다 —
+    // login-user-info 라우트는 verifyToken 만 하므로 2FA 전에도 200 을 준다. 여기서 승격하면
+    // middleware(twoFactorVerified === false)가 다른 API 를 전부 403 으로 막는데 axios
+    // 인터셉터는 401 만 정리하므로 플래그가 남아 빠져나올 수 없는 락인이 된다.
+    // 로그인 라우트(login-contents.tsx)의 계약과 동일하게 비로그인으로 취급한다.
+    if (!parsed.data.twoFactorVerified) return null;
+    // 쿠키 세션은 살아있는데 localStorage AUTH_FLAG 만 없는 상태(브라우저·프로필 간 스토리지
+    // 불일치, 스토리지 정리, 임베디드 브라우저 파티션 등)를 여기서 복구한다. 복구 경로가 없으면
+    // 화면은 비로그인인데 /login 은 서버가 쿠키를 보고 `/` 로 리다이렉트해 재로그인도 불가능한
+    // 데드락이 된다. (Orca 임베디드 브라우저에서 실제 재현)
+    try {
+      if (localStorage.getItem(AUTH_FLAG_KEY) !== "1") {
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+        dispatchAuthChange();
+      }
+    } catch (e) {
+      console.warn("[fetchAuthMe] AUTH_FLAG_KEY 복구 실패:", e);
     }
     return parsed.data;
   } catch (err) {
@@ -211,7 +243,10 @@ export function Gnb() {
     staleTime: 5 * 60 * 1000,
     retry: false,
     placeholderData: null,
-    enabled: hasAuthFlag,
+    // 게이트 없이 항상 1회 프로브 — hasAuthFlag 는 첫 페인트 hint 일 뿐 인증의 truth 가 아니다.
+    // 여기에 `enabled: hasAuthFlag` 를 걸면 플래그가 유실된 쿠키 세션을 영영 복구할 수 없다.
+    // 비로그인 사용자는 401 1회(staleTime 5분, retry false) — 인터셉터는 플래그가 "1" 일 때만
+    // 동작하므로 부수효과 없음.
   });
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -233,14 +268,21 @@ export function Gnb() {
 
   // 메뉴 트리 — 로그인 시점에만 fetch, 비로그인은 fallback. API 실패 시도 fallback 으로 수렴.
   const { data: menuTree } = useMenuTree({ enabled: hasAuthFlag });
+  // fallback 선택 — hasAuthFlag=false 일 때만 문의를 제외한다.
+  // 주의: false 는 "비로그인 확정" 이 아니라 "비로그인 또는 미확정" 이다 — SSR/hydration 이전
+  // (getServerSnapshot=false) 과 localStorage 읽기 실패(catch→false) 에서도 false 가 된다.
+  // 따라서 인증 사용자도 첫 페인트에는 GUEST 를 지나가고 hydration 후 AUTH 로 수렴한다
+  // (로그인 버튼·톱니바퀴 등 기존 헤더 요소와 동일한 전환 패턴).
+  // 게스트 한정 처리를 이 분기에 추가할 때는 위 미확정 케이스를 반드시 고려할 것.
+  const fallbackMenus = hasAuthFlag ? GNB_FALLBACK_MENUS_AUTH : GNB_FALLBACK_MENUS_GUEST;
   const pcMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "pc");
-    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
-  }, [menuTree]);
+    return filtered.length > 0 ? filtered : fallbackMenus;
+  }, [menuTree, fallbackMenus]);
   const mobileMenus = useMemo(() => {
     const filtered = filterGnbMenus(menuTree, "mobile");
-    return filtered.length > 0 ? filtered : GNB_FALLBACK_MENUS;
-  }, [menuTree]);
+    return filtered.length > 0 ? filtered : fallbackMenus;
+  }, [menuTree, fallbackMenus]);
 
   // RBAC — GNB 메뉴 클릭 시 매트릭스 canRead 가 false 면 이동 차단 + alert.
   // 비로그인 상태는 기존 Link 동작(서버 가드가 /login 유도)을 그대로 사용.
@@ -610,6 +652,8 @@ export function Gnb() {
                 </div>
               </>
             ) : (
+              // 既存Q.PARTNERS会員 셀프 회원가입 폐지 — 비로그인 헤더에 会員登録 진입점을 두지 않는다
+              // (/signup 은 SUPER_ADMIN·ADMIN 전용 페이지로 전환됨).
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
@@ -617,14 +661,6 @@ export function Gnb() {
                 >
                   <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap ">
                     ログイン
-                  </span>
-                </Link>
-                <Link
-                  href="/signup"
-                  className="flex items-center justify-center h-[36px] bg-[#252525] border border-[#313131] rounded-[4px] overflow-hidden px-[10px] transition-colors duration-200 hover:bg-[#392211] hover:border-[#532f14]"
-                >
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.4] text-[#d1d1d1] whitespace-nowrap flex-1 text-center">
-                    会員登録
                   </span>
                 </Link>
               </div>
@@ -803,6 +839,7 @@ export function Gnb() {
                 </button>
               </div>
             ) : (
+              // 既存Q.PARTNERS会員 셀프 회원가입 폐지 — PC 헤더와 동일하게 会員登録 진입점 제거.
               <div className="flex items-center justify-center gap-4 px-7">
                 <Link
                   href="/login"
@@ -810,14 +847,6 @@ export function Gnb() {
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   ログイン
-                </Link>
-                <span className="w-px h-[10px] bg-[#5b5b5b]" />
-                <Link
-                  href="/signup"
-                  className="font-['Noto_Sans_JP'] font-medium text-[13px] text-white whitespace-nowrap flex-1 text-center"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  会員登録
                 </Link>
               </div>
             )}

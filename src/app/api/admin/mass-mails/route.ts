@@ -7,7 +7,13 @@ import { randomUUID } from "crypto";
 import { requireMenuPermission, resolveActiveRoleCodes } from "@/lib/auth";
 import type { UserInfo } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, isLegacyOfficeOLE2, validateFiles } from "@/lib/file-validation";
+import {
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_MB,
+  containsOOXMLMacro,
+  isLegacyOfficeOLE2,
+  validateFiles,
+} from "@/lib/file-validation";
 import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
@@ -121,14 +127,6 @@ async function parseAndValidateRequest(request: NextRequest): Promise<ParsedRequ
     );
   }
 
-  // 시공점(SEKO) 발송 미지원 — AS-IS API 미확보
-  if (data.targetRoleCodes.includes("SEKO")) {
-    return NextResponse.json(
-      { error: "施工店(SEKO)向け一括送信は現在対応していません" },
-      { status: 400 },
-    );
-  }
-
   // 첨부파일 검증
   const rawFiles = formData.getAll("files");
   const files = rawFiles.filter((f): f is File => f instanceof File && f.size > 0);
@@ -220,6 +218,14 @@ async function persistAttachments(files: File[]): Promise<PersistResult | NextRe
       const head = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(8, buffer.byteLength));
       if (isLegacyOfficeOLE2(head)) {
         console.warn("[POST /api/admin/mass-mails] Legacy Office OLE2 감지 — 매크로 가능성 추적:", {
+          fileName: file.name,
+          size: file.size,
+        });
+      }
+      // OOXML VBA 매크로 감지 — 감사 로깅만 수행 (차단 X, 운영 요청으로 xlsm 허용 중).
+      // 대량메일은 외부 수신자에게 첨부를 그대로 전달하므로 사고 시 회수 대상 식별용.
+      if (containsOOXMLMacro(buffer)) {
+        console.warn("[POST /api/admin/mass-mails] OOXML VBA 매크로 감지 — 외부 발송 첨부 추적:", {
           fileName: file.name,
           size: file.size,
         });

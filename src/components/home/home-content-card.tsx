@@ -148,6 +148,7 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
                   NEW
                 </span>
               )}
+              {/* NEW 우선순위(동시 충족 시 UPDATE 숨김)는 서버 resolveBadgeFlags 가 이미 반영해 내려준다 */}
               {item.hasBeenUpdated && item.isUpdated && (
                 <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
                   UPDATE

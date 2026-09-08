@@ -87,12 +87,25 @@ export function PasswordChangePopup() {
 
         if (status === 429) {
           openAlert({ type: "alert", message: "パスワード変更の試行回数を超えました。しばらくしてからお試しください。" });
+        } else if (status === 401) {
+          // 세션 만료 — SEKO 는 Connector Bearer(24h) 만료도 여기로 온다.
+          // 서버가 인증 쿠키를 삭제하므로 재로그인이 필요하다. "サーバーエラー" 로 뭉치면
+          // 사용자가 장애로 오인해 기다리게 된다.
+          openAlert({ type: "alert", message: "セッションの有効期限が切れました。再度ログインしてください。" });
         } else if (status === 400 && errorField === "Validation failed" && firstMessage) {
           // 서버 Zod 검증 실패 — 필드별 에러 메시지 표시
           openAlert({ type: "alert", message: firstMessage });
         } else if (status === 400) {
-          // QSP 비밀번호 불일치
-          openAlert({ type: "alert", message: "現在のパスワードが一致しません。" });
+          // 서버가 구체적 사유를 내려주면 그대로 표시한다. SEKO 경로는 현재 비밀번호 불일치 외의
+          // 거부(비밀번호 정책 위반·계정 상태 이상 등)도 400 으로 접히므로, 단정하면 사용자가
+          // 맞는 비밀번호를 반복 입력하다 429 에 걸린다.
+          openAlert({
+            type: "alert",
+            message:
+              typeof errorField === "string" && errorField
+                ? errorField
+                : "現在のパスワードが一致しません。",
+          });
         } else {
           openAlert({ type: "alert", message: "サーバーエラーが発生しました。しばらくしてからお試しください。" });
         }

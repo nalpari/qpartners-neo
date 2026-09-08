@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { AUTH_FLAG_KEY, dispatchAuthChange } from "@/components/login/types";
 import { useAuthFlag } from "@/hooks/use-auth-flag";
+import { resetListRestoreState } from "@/hooks/use-list-state-persist";
 import { HomeVisual } from "./home-visual";
 import { HomeSearchMobile } from "./home-search-mobile";
 import { HomeNotices } from "./home-notices";
@@ -31,6 +32,10 @@ export function HomeMain() {
       console.error("[HomeMain] AUTH_FLAG 쓰기 실패:", storageErr);
     }
     dispatchAuthChange();
+    // 계정 전환 경계 — 자동로그인 inbound 는 서버 redirect 라 문서는 새로 뜨지만
+    // sessionStorage 는 탭 단위로 살아남으므로, 이전 사용자의 목록 복원 상태를 폐기한다
+    // (Redmine #2490).
+    resetListRestoreState();
     window.history.replaceState({}, "", "/");
   }, []);
 

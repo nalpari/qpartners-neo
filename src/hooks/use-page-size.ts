@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
+import { readListStorage, removeListStorage, writeListStorage } from "@/hooks/use-list-state-persist";
 
 interface CodeDetailApi {
   code: string;
@@ -95,11 +96,12 @@ export function usePageSize(hookOptions?: { storageKey?: string; shouldRestore?:
     if (typeof window === "undefined") return null;
     if (shouldRestore === false) {
       // 명시적 초기화 — 이전 선택값을 sessionStorage 에서 삭제하여 다음 진입 시 복원되지 않도록.
-      window.sessionStorage.removeItem(storageKey);
+      // 스토리지 접근이 차단된 브라우저에서도 throw 하지 않도록 안전 래퍼를 경유한다
+      // (렌더 단계에서 throw 하면 목록 화면 자체가 크래시한다).
+      removeListStorage(storageKey);
       return null;
     }
-    const stored = window.sessionStorage.getItem(storageKey);
-    return toPositiveInt(stored);
+    return toPositiveInt(readListStorage(storageKey));
   });
 
   // userSelected 변경 시 sessionStorage 동기화 (storageKey 지정 시에만).
@@ -107,7 +109,7 @@ export function usePageSize(hookOptions?: { storageKey?: string; shouldRestore?:
     if (!storageKey) return;
     if (typeof window === "undefined") return;
     if (userSelected !== null) {
-      window.sessionStorage.setItem(storageKey, String(userSelected));
+      writeListStorage(storageKey, String(userSelected));
     }
   }, [storageKey, userSelected]);
 

@@ -10,7 +10,7 @@
 
 이 프로젝트의 루트에는 이미 `graphify` 의 always-on 훅이 적용되어 있다.
 
-- [CLAUDE.md](../CLAUDE.md) 에 `graphify` 섹션이 등록되어 있어, Claude Code 가 아키텍처/코드베이스 질문에 답하기 전에 `graphify-out/GRAPH_REPORT.md` 를 먼저 읽는다.
+- [AGENTS.md](../AGENTS.md) 에 `graphify` 섹션이 등록되어 있어, Claude Code 가 아키텍처/코드베이스 질문에 답하기 전에 `graphify-out/GRAPH_REPORT.md` 를 먼저 읽는다. (`CLAUDE.md` 는 `@AGENTS.md` 한 줄로 이 파일을 임포트한다.)
 - [.claude/settings.json](../.claude/settings.json) 의 `PreToolUse` 훅이 `Bash` 도구 호출(grep/find/rg/fd/ack/ag) 직전에 그래프 존재 여부를 확인하고, 존재하면 그래프 우선 탐색을 안내하는 컨텍스트를 주입한다.
 
 따라서 새로 합류한 개발자는 **로컬에서 graphify CLI 만 설치**하면 즉시 동일한 워크플로우를 사용할 수 있다. 그래프 산출물(`graphify-out/`)은 git 에 커밋되어 있을 수도 있고(팀 정책에 따라), 없다면 본인이 한 번 생성하면 된다.
@@ -117,7 +117,7 @@ graphify claude install
 ```
 
 위 명령은 두 가지를 수행한다.
-1. 프로젝트 `CLAUDE.md` 에 `## graphify` 섹션을 추가한다 — Claude 에게 답변 전 `GRAPH_REPORT.md` 를 먼저 읽도록 지시.
+1. 프로젝트 `CLAUDE.md` 에 `## graphify` 섹션을 추가한다 — Claude 에게 답변 전 `GRAPH_REPORT.md` 를 먼저 읽도록 지시. (본 프로젝트는 이 섹션을 `AGENTS.md` 로 옮겼다.)
 2. 프로젝트 `.claude/settings.json` 에 `PreToolUse` 훅을 등록한다 — `grep`/`rg`/`find`/`fd`/`ack`/`ag` 호출 직전에 그래프 존재 시 컨텍스트 주입.
 
 해제는 `graphify claude uninstall`.
@@ -251,7 +251,7 @@ graphify-out/cost.json      # 토큰 사용량 로컬 추적
 
 ## 10. 추가 참고
 
-- 본 프로젝트 [CLAUDE.md](../CLAUDE.md) 의 `## graphify` 섹션 — Claude 에게 적용된 행동 규칙
+- 본 프로젝트 [AGENTS.md](../AGENTS.md) 의 `## graphify` 섹션 — Claude 에게 적용된 행동 규칙
 - 본 프로젝트 [.claude/settings.json](../.claude/settings.json) — PreToolUse 훅 정의
 - 글로벌 SKILL: `~/.claude/skills/graphify/SKILL.md`
 - 공식 README: https://github.com/safishamsi/graphify

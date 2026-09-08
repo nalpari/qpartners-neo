@@ -238,7 +238,7 @@ IMAGE_TAG=41 APP_ENV=production \
 └────────────────────────────────────────────────────────────────┘
 ```
 
-> `DATABASE_URL`은 Prisma CLI(migration, generate)에서만 사용되고, 런타임에서는 개별 `DB_*` 변수가 `@prisma/adapter-mariadb`에 주입된다. 자세한 내용은 `.claude/rules/prisma.md` 참조.
+> `DATABASE_URL`은 Prisma CLI(migration, generate)에서만 사용되고, 런타임에서는 개별 `DB_*` 변수가 `@prisma/adapter-mariadb`에 주입된다. 자세한 내용은 `docs/system-architecture.md` 참조.
 
 ---
 

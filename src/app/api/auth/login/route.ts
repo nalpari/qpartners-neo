@@ -1,27 +1,25 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { ConfigError } from "@/lib/errors";
+
 import {
   loginRequestSchema,
   qspLoginResponseSchema,
 } from "@/lib/schemas/auth";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { emailSchema } from "@/lib/schemas/signup";
 import { signToken, COOKIE_NAME } from "@/lib/jwt";
 import { QSP_API } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { sendLoginNotification } from "@/lib/notification-mail/login-mail";
 import { extractClientIp } from "@/lib/notification-mail/utils";
-import { prisma } from "@/lib/prisma";
 import { resolveAuthRole } from "@/lib/auth";
 import { parseQspDate } from "@/lib/qsp-member";
-
-/** QpRole 검증 대상 authRole → roleCode 매핑 (SUPER_ADMIN/ADMIN은 QpRole 관리 대상 아님) */
-const AUTH_ROLE_TO_ROLE_CODE: Record<string, string> = {
-  "1ST_STORE": "1ST_STORE",
-  "2ND_STORE": "2ND_STORE",
-  "SEKO": "SEKO",
-  "GENERAL": "GENERAL",
-};
+import { sekoLogin, parseSekoDate } from "@/lib/seko-connector";
+import { checkSekoIdValid } from "@/lib/seko-id-gate";
+import { evaluateTwoFactorRequirement } from "@/lib/sec-auth-policy";
+import { checkRoleActive, resolveGateRoleCode } from "@/lib/role-active-gate";
 
 // POST /api/auth/login — QSP 로그인 프록시
 export async function POST(request: NextRequest) {
@@ -50,9 +48,186 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2. QSP API 호출
   const { loginId, pwd, userTp } = result.data;
 
+  // ─── 시공점(SEKO) 분기 — AS-IS Q.Partners Connector 경유 (QSP 미경유) ───
+  //    아래 QSP 경로는 무손상 — SEKO 는 여기서 자체 종결한다.
+  if (userTp === "SEKO") {
+    const sekoResult = await sekoLogin(loginId, pwd, "[POST /api/auth/login][SEKO]");
+    if (!sekoResult.ok) {
+      // 자격증명 거부(401)는 사용자 열거 방지를 위해 일반 메시지로, 인프라 장애(502류)는 구분해 응답 — QSP 경로와 동일.
+      // (모든 실패를 401 로 뭉개면 커넥터 다운/스키마 불일치 등 장애가 "ID/PW 오류"로 오인됨)
+      if (sekoResult.error.status === 401) {
+        return NextResponse.json(
+          { error: "IDまたはパスワードが正しくありません" },
+          { status: 401 },
+        );
+      }
+      return NextResponse.json(
+        { error: "外部認証サーバーエラーが発生しました" },
+        { status: 502 },
+      );
+    }
+    const s = sekoResult.data;
+
+    // 권한 사용가능여부(QpRole.isActive) 검증 — QSP 경로(6-1)·password-reset/confirm 과 동일 정책.
+    // 관리자가 SEKO 역할을 비활성화(isActive=false)하면 로그인 차단.
+    const sekoGate = await checkRoleActive("SEKO", "[POST /api/auth/login][SEKO]");
+    if (!sekoGate.active) {
+      return NextResponse.json({ error: sekoGate.message }, { status: 403 });
+    }
+
+    // 시공ID 만료 차단 — 화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」.
+    //
+    // 판정에 필요한 `sekoStatus`/`sekoLimit` 이 **login 응답에 없어** getUserInfo 를 한 번 더 친다
+    // (login 응답 15필드에 유효기간 항목 자체가 없다 — 사양서 20260817 Login 시트 r10~r24).
+    // 로그인당 SEKO 호출 2회 · `qp_interface_log` 2행이 되는 비용은 이 게이트의 대가다
+    // (단 아래 초기화 대상 분기는 검사를 유예하므로 1회).
+    //
+    // AS-IS `sekoLogin` 이 만료 계정을 이미 거부하는지는 확인되지 않았다(만료된 테스트 계정이
+    // 없어 실측 불가). 거부하고 있더라도 이 게이트는 이중 방어로만 남으므로 손해가 없고,
+    // 거부하지 않는다면 이게 유일한 차단 지점이다.
+    //
+    // **비밀번호 초기화가 필요한 계정(SEKO `pwdInitYn="Y"`)은 여기서만 검사를 건너뛴다.**
+    // 그 상태의 계정으로 getUserInfo 가 되는지 확인할 수단이 없는데(해당 상태 테스트 계정
+    // 부재), AS-IS 가 거부한다면 위 fail-closed 때문에 **비밀번호 초기화 화면에 도달하기 전에
+    // 502 로 막혀 영구 락아웃**이 된다. 만료 계정을 잠시 통과시키는 위험보다 정상 사용자가
+    // 진입 자체를 못 하는 위험이 크다.
+    //
+    // ⚠️ 생략은 **유예이지 면제가 아니다.** 이 세션은 `twoFactorVerified:false`(아래) 로 나가
+    // middleware 가 2FA 경로와 공개 GET 만 허용하지만, 그 허용 경로 안에 세션을 완전한 상태로
+    // **승격**시키는 지점이 둘 있다 — `password-init`(초기화 완료)과 `two-factor/verify`(2FA 완료).
+    // 두 곳 모두 같은 게이트(`checkSekoIdValid`)를 통과해야 하며, 그래서 이 생략이 안전하다.
+    // 승격 지점 중 하나라도 게이트가 빠지면 만료 계정이 그 경로로 8시간 풀세션을 받는다.
+    // 회사명(`storeName`)은 게이트가 부수적으로 실어 오는 값이다 — SEKO login 응답에는 없고
+    // `getUserInfo` 에만 있다. 게이트를 건너뛰는 초기화 대상(pwdInitYn="Y")은 여기서 null 로
+    // 두고, 세션을 승격시키는 `password-init` 에서 같은 게이트를 통과할 때 채운다.
+    let sekoStoreName: string | null = null;
+    if (s.pwdInitYn !== "Y") {
+      const sekoIdGate = await checkSekoIdValid(
+        s.loginId,
+        s.token,
+        "[POST /api/auth/login][SEKO]",
+      );
+      if (!sekoIdGate.valid) {
+        return NextResponse.json(
+          { error: sekoIdGate.message },
+          { status: sekoIdGate.status },
+        );
+      }
+      sekoStoreName = sekoIdGate.storeName;
+    } else {
+      console.log(
+        "[POST /api/auth/login][SEKO] 비밀번호 초기화 대상 — 시공ID 만료 검사 유예(password-init / two-factor/verify 에서 검사)",
+        { userId: maskEmail(s.loginId) },
+      );
+    }
+
+    // 2차 인증 필요 여부 — QSP 와 동일 정책(`sec-auth-policy`)을 그대로 쓴다.
+    // SEKO 는 관리자 해제(secAuthYn) 대응 필드가 없어 adminDisabled=false 고정이고,
+    // secAuthDt 는 login 응답값(note-51 로 추가됨, `YYYY-MM-DD HH:mm:ss`)을 쓴다.
+    const { requireTwoFactor: sekoRequireTwoFactor, reason: sekoTwoFactorReason } =
+      await evaluateTwoFactorRequirement({
+        adminDisabled: false,
+        secAuthDt: s.secAuthDt,
+        parseDate: parseSekoDate,
+        logTag: "[POST /api/auth/login][SEKO]",
+      });
+
+    // 운영 추적용 진단 로그 — QSP 경로와 동일 항목. PII 제외, 판정 근거만.
+    console.log("[POST /api/auth/login][SEKO] 2FA 판정", {
+      userTp: "SEKO",
+      userId: maskEmail(s.loginId),
+      hasSecAuthDt: !!s.secAuthDt,
+      // 응답 email 자체의 유무만 본다 — `s.email ?? s.loginId` 로 두면 loginId 가 스키마상
+      // 필수라 항상 true 가 되어, "메일 미등록 때문에 막혔는지" 를 로그로 구분할 수 없다.
+      hasEmail: !!s.email,
+      requireTwoFactor: sekoRequireTwoFactor,
+      twoFactorReason: sekoTwoFactorReason,
+    });
+
+    // OTP 수신처는 `s.email ?? s.loginId` 폴백을 쓴다(시공점 사양: loginId = email).
+    // 따라서 `!s.email` 자체는 차단 사유가 아니다 — 사양대로면 loginId 로 인증번호가 닿는다.
+    //
+    // 차단해야 하는 것은 **수신 불가**, 즉 폴백까지 포함한 최종 수신처가 메일주소 형태가
+    // 아닌 경우다(사양을 어긴 레거시 계정). 그대로 통과시키면 2FA 팝업 → send 500 →
+    // 진입 불가인데, SEKO 는 관리자 해제(QSP `secAuthYn`) 대응 필드가 없어 운영자가
+    // 풀어줄 수단이 0건이라 영구 락아웃이 된다. QSP 경로(6-1)와 같은 문구로 차단해
+    // 최소한 "관리자에게 문의" 안내가 화면에 뜨게 한다.
+    const sekoOtpRecipient = s.email ?? s.loginId;
+    if (sekoRequireTwoFactor && !emailSchema.safeParse(sekoOtpRecipient).success) {
+      console.warn(
+        "[POST /api/auth/login][SEKO] 2FA 대상이나 수신 가능한 메일주소 없음 — 로그인 차단",
+        { userId: maskEmail(s.loginId), hasEmail: !!s.email },
+      );
+      return NextResponse.json(
+        { error: "2段階認証に必要なメール情報が登録されていません。管理者にお問い合わせください。" },
+        { status: 403 },
+      );
+    }
+
+    const sekoUser: LoginUser = {
+      userId: s.userId,
+      userNm: `${s.sei ?? ""} ${s.mei ?? ""}`.trim() || null,
+      userTp: "SEKO",
+      compCd: null,
+      // 헤더 우측 상단 회사명 표시용 (Redmine #2473). 게이트가 회신한 getUserInfo 의
+      // storeName 을 그대로 쓴다 — 추가 SEKO 호출은 없다.
+      compNm: sekoStoreName,
+      // 시공점 loginId=email(사양). 응답 email 이 null 이어도 loginId 로 보장 —
+      // mypage 등 후속 SEKO 호출의 식별자(loginId) 결손/오전송 방지.
+      email: sekoOtpRecipient,
+      deptNm: null,
+      authCd: null,
+      storeLvl: null,
+      statCd: null,
+      authRole: "SEKO",
+      // SEKO pwdInitYn 의미가 QSP 와 반대 — SEKO "Y"=초기화 필요 → TO-BE "N"(최초 로그인) 로 매핑.
+      pwdInitYn: s.pwdInitYn === "Y" ? "N" : "Y",
+      // QSP 경로의 `!requireTwoFactor && pwdInitYn !== "N"` 과 같은 식 — 단 SEKO 는 pwdInitYn
+      // 의미가 반대라 TO-BE 매핑 기준으로 쓰면 `s.pwdInitYn !== "Y"` 가 된다.
+      // 초기화 필요("Y")면 2FA 판정과 무관하게 false 로 두어 personal-info popup
+      // (초기화 흐름 → password-init SEKO 분기 → changePwd chgType=I) 로 먼저 보낸다.
+      twoFactorVerified: !sekoRequireTwoFactor && s.pwdInitYn !== "Y",
+      // SEKO telNo 는 개인 휴대전화(회사 전화 아님) — 문의하기 자동입력 목적상 의도적으로 JWT 에 포함.
+      // JWT 는 httpOnly + 운영 HTTPS 로만 전송되어 유출 표면 제한. 장기적으로 on-demand fetch 검토 대상(PR #27 리뷰).
+      telNo: s.telNo,
+      loginNotiYn: null,
+      // AS-IS Connector Bearer 토큰(24h) — 후속 Bearer API(getUserInfo 등) 호출용. JWT 에만 보관.
+      sekoToken: s.token,
+    };
+
+    let sekoJwt: string;
+    try {
+      sekoJwt = await signToken(sekoUser);
+    } catch (error) {
+      console.error("[POST /api/auth/login][SEKO] JWT 생성 실패:", error);
+      return NextResponse.json(
+        { error: "認証処理中にサーバーエラーが発生しました" },
+        { status: 500 },
+      );
+    }
+
+    // 클라이언트 응답에는 sekoToken(Bearer) 를 노출하지 않는다 — httpOnly JWT 에만 보관.
+    // (undefined 필드는 JSON 직렬화에서 제외됨)
+    // dev 환경에 한해 _twoFactorReason 진단 메타 노출 — QSP 경로와 동일(production 미노출).
+    const sekoDebugMeta = process.env.APP_ENV === "development"
+      ? { _twoFactorReason: sekoTwoFactorReason }
+      : {};
+    const sekoResponse = NextResponse.json({
+      data: { ...sekoUser, sekoToken: undefined, ...sekoDebugMeta },
+    });
+    sekoResponse.cookies.set(COOKIE_NAME, sekoJwt, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 8, // 8시간
+    });
+    return sekoResponse;
+  }
+
+  // 2. QSP API 호출 (STORE / GENERAL / ADMIN)
   const qspRequestBody = {
     loginId,
     pwd,
@@ -178,99 +353,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // 5. 2차 인증 필요 여부 판별
-  //    정책 (관리자 명시 해제 최우선):
-  //      - 최우선 면제: secAuthYn === "N" (관리자 명시 해제) — secAuthDt 유무 무관 면제
-  //      - 신규(secAuthDt=null) + secAuthYn !== "N" → 최초 1회 2FA 필수
-  //      - 만료 판정: secAuthDt + SEC_AUTH_VALIDITY ≤ now → 필요
-  //                   secAuthDt + SEC_AUTH_VALIDITY > now → 불필요 (최근 인증됨)
-  //
-  //    [공용 코드 정책]
-  //      `SEC_AUTH_VALIDITY` 는 secAuthDt 재인증 주기 단일 용도로 사용한다.
-  //      관리자 "코드관리" 화면에서 여러 개 활성(isActive=Y)이면 sortOrder 오름차순
-  //      최상위 1건을 채택. 등록/수정 단계에서 1~90 정수 상한 가드
-  //      (validateSecAuthValidityCode)가 적용되므로 이 시점에 도달하는 값은 정상 범위.
-  //      그래도 런타임 fail-closed 는 유지한다.
-  let requireTwoFactor = false;
-  // 진단 메타 — dev 환경 응답 노출 + 운영 로그 두 곳에서 동일 사유 표기.
-  type TwoFactorReason =
-    | "DISABLED_BY_ADMIN"
-    | "FIRST_TIME_REQUIRED"
-    | "EXPIRED_REQUIRED"
-    | "WITHIN_VALIDITY"
-    | "FAIL_CLOSED";
-  let twoFactorReason: TwoFactorReason = "DISABLED_BY_ADMIN";
-
-  // 0) 최우선 면제 — secAuthYn === "N" (관리자가 2FA 해제) 이면 secAuthDt 유무와 무관하게 면제.
-  //    "신규(secAuthDt=null) 무조건 강제" 보다 우선 — 운영자가 명시적으로 끈 회원은 첫 로그인도 통과.
-  if (qsp.data.secAuthYn === "N") {
-    requireTwoFactor = false;
-    twoFactorReason = "DISABLED_BY_ADMIN";
-  } else if (!qsp.data.secAuthDt) {
-    // 한 번도 2FA 안 함 + 관리자 해제 아님 → 최초 1회 강제 (이메일 미등록 시 설정 유도).
-    requireTwoFactor = true;
-    twoFactorReason = "FIRST_TIME_REQUIRED";
-  } else {
-    // 공통코드(SEC_AUTH_VALIDITY) 에서 유효기간(일수) 조회 — 실패 시 fail-closed (2FA 필요).
-    let validityDays: number | null = null;
-    try {
-      const activeCode = await prisma.codeDetail.findFirst({
-        where: {
-          header: { headerCode: "SEC_AUTH_VALIDITY" },
-          isActive: true,
-        },
-        orderBy: { sortOrder: "asc" },
-        select: { code: true },
-      });
-      if (activeCode) {
-        const days = Number(activeCode.code);
-        if (Number.isSafeInteger(days) && days > 0) {
-          validityDays = days;
-        } else {
-          console.error("[POST /api/auth/login] SEC_AUTH_VALIDITY 값 이상:", activeCode.code);
-        }
-      } else {
-        console.warn("[POST /api/auth/login] SEC_AUTH_VALIDITY 공통코드 미등록 — 2FA 필수 처리");
-      }
-    } catch (error) {
-      console.error("[POST /api/auth/login] 2FA 유효기간 조회 실패 — 2FA 필요로 처리:", error);
-    }
-
-    if (validityDays === null) {
-      // 유효기간 조회 실패 또는 값 이상 → fail-closed
-      requireTwoFactor = true;
-      twoFactorReason = "FAIL_CLOSED";
-    } else {
-      const now = Date.now();
-      const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-      // 위 두 분기에서 secAuthYn !== "N" + secAuthDt truthy 임을 보장. 만료 판정만 수행.
-      const secAuthDt = qsp.data.secAuthDt;
-      const authIso = parseQspDate(secAuthDt);
-      if (!authIso) {
-        // PII 노출 방지: 원본 문자열 대신 길이만 로깅 (parseQspDate 내부 패턴과 일치).
-        console.error(
-          "[POST /api/auth/login] secAuthDt 파싱 실패 — length:",
-          secAuthDt.length,
-        );
-        requireTwoFactor = true;
-        twoFactorReason = "FAIL_CLOSED";
-      } else {
-        const authMs = new Date(authIso).getTime();
-        if (Number.isNaN(authMs)) {
-          console.error(
-            "[POST /api/auth/login] secAuthDt 만료 계산 실패 — length:",
-            secAuthDt.length,
-          );
-          requireTwoFactor = true;
-          twoFactorReason = "FAIL_CLOSED";
-        } else {
-          requireTwoFactor = now >= authMs + validityDays * MS_PER_DAY;
-          twoFactorReason = requireTwoFactor ? "EXPIRED_REQUIRED" : "WITHIN_VALIDITY";
-        }
-      }
-    }
-  }
+  // 5. 2차 인증 필요 여부 판별 — 정책·판정은 `sec-auth-policy` 로 일원화(QSP·SEKO 공용).
+  //    회원유형별로 판정을 따로 두면 재인증 주기가 조용히 갈라지므로 인자만 다르게 넘긴다.
+  //    QSP 는 관리자 명시 해제(secAuthYn === "N")를 최우선 면제로 반영한다.
+  const { requireTwoFactor, reason: twoFactorReason } = await evaluateTwoFactorRequirement({
+    adminDisabled: qsp.data.secAuthYn === "N",
+    secAuthDt: qsp.data.secAuthDt,
+    parseDate: parseQspDate,
+    logTag: "[POST /api/auth/login]",
+  });
 
   // 운영 추적용 진단 로그 — 모든 회원 케이스(분기 진입 여부 무관)에서 출력해
   // "왜 면제됐는지" / "왜 요구됐는지" 항상 추적 가능하게 한다. PII 제외, 판정 근거만.
@@ -318,39 +409,14 @@ export async function POST(request: NextRequest) {
   // 6-1. 권한 사용가능여부(QpRole.isActive) 검증
   // SUPER_ADMIN/ADMIN 은 시스템 권한이라 isActive 검증 대상이 아님 (항상 활성).
   // 나머지 시스템 역할 + 동적 권한(authCd 기반) 모두 검증 대상.
-  const roleCodeToCheck = AUTH_ROLE_TO_ROLE_CODE[authRole] ?? (
-    authRole !== "SUPER_ADMIN" && authRole !== "ADMIN" ? authRole : undefined
-  );
+  const roleCodeToCheck = resolveGateRoleCode(authRole);
   if (roleCodeToCheck) {
-    try {
-      const role = await prisma.qpRole.findUnique({
-        where: { roleCode: roleCodeToCheck },
-        select: { isActive: true },
-      });
-      if (role === null) {
-        // QpRole 레코드 미존재 — DB 데이터 정합성 문제. fail-closed 차단.
-        console.error("[POST /api/auth/login] QpRole 레코드 미존재 — 로그인 차단 (fail-closed)", {
-          roleCode: roleCodeToCheck,
-          authRole,
-        });
-        return NextResponse.json(
-          { error: "権限情報が存在しないためログインできません" },
-          { status: 403 },
-        );
-      } else if (!role.isActive) {
-        console.warn("[POST /api/auth/login] 비활성 권한 로그인 차단", {
-          userTp: qsp.data.userTp,
-          authRole,
-        });
-        return NextResponse.json(
-          { error: "権限が無効のためログインできません" },
-          { status: 403 },
-        );
-      }
-    } catch (error) {
-      // QpRole 조회 실패 시 fail-open — 로그인 차단보다 서비스 가용성 우선
-      // (권한 테이블 장애로 전체 사용자 로그인 불가 방지)
-      console.error("[POST /api/auth/login] QpRole.isActive 조회 실패 — 통과 처리:", error);
+    const gate = await checkRoleActive(roleCodeToCheck, "[POST /api/auth/login]", {
+      userTp: qsp.data.userTp,
+      authRole,
+    });
+    if (!gate.active) {
+      return NextResponse.json({ error: gate.message }, { status: 403 });
     }
   }
 
@@ -432,7 +498,17 @@ export async function POST(request: NextRequest) {
 
   return response;
  } catch (error) {
-    console.error("[POST /api/auth/login]", error);
+        // SEKO 커넥터는 SEKO_CONNECTOR_BASE_URL 미설정 시 ConfigError 를 던진다.
+    // 일반 500 에 흡수되면 운영자가 env 누락을 코드 버그·DB 장애와 구분할 수 없다
+    // (.claude/rules/api.md "어떤 환경변수가 누락됐는지 에러 메시지에 명시").
+    if (error instanceof ConfigError) {
+      console.error("[POST /api/auth/login] 설정 에러:", error.name, "— SEKO_CONNECTOR_BASE_URL 설정 확인 필요");
+      return NextResponse.json(
+        { error: "サーバー設定エラーが発生しました" },
+        { status: 500 },
+      );
+    }
+console.error("[POST /api/auth/login]", error);
     return NextResponse.json(
       { error: "ログイン処理中にサーバーエラーが発生しました" },
       { status: 500 },

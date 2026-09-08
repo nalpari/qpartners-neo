@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     // 일반회원만 탈퇴 가능
     if (user.userTp !== "GENERAL") {
       return NextResponse.json(
-        { error: "一般会員のみ退会が可能です" },
+        { error: "既存Q.PARTNERS会員のみ退会が可能です" },
         { status: 403 },
       );
     }

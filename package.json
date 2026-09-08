@@ -28,6 +28,7 @@
     "@tiptap/extension-table-header": "^2.27.2",
     "@tiptap/extension-table-row": "^2.27.2",
     "@tiptap/extension-text-style": "^2.27.2",
+    "@tiptap/extension-youtube": "^2.27.2",
     "@tiptap/pm": "^2.27.2",
     "@tiptap/react": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",

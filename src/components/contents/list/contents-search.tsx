@@ -6,10 +6,19 @@ import { useQuery } from "@tanstack/react-query";
 import { Checkbox, SelectBox, MultiSelectCombobox, Button } from "@/components/common";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import api from "@/lib/axios";
-import type { CategoryNode, SearchFilters } from "./contents-contents";
+import type { CategoryNode, KeywordOp, SearchFilters } from "./contents-contents";
 
 // 게시대상 placeholder 옵션 — 권한관리 라벨은 useTargetLabels 훅으로 동적 주입
 const POST_TARGET_PLACEHOLDER = { value: "", label: "掲示対象" };
+
+/**
+ * 키워드 결합 조건 옵션 — 공백으로 구분된 검색어를 묶는 방식.
+ * AND(기본): 한 필드 안에 모든 검색어 포함 / OR: 어느 하나라도 포함.
+ */
+const KEYWORD_OP_OPTIONS = [
+  { value: "AND", label: "AND" },
+  { value: "OR", label: "OR" },
+];
 
 interface DeptItem {
   deptCd: string;
@@ -32,6 +41,7 @@ export function ContentsSearch({
   // 詳細条件 패널은 디폴트 닫힘 — 사용자가 詳細条件 버튼을 누르면 토글된다 (PC/모바일 동일).
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
+  const [keywordOp, setKeywordOp] = useState<KeywordOp>(initialFilters?.keywordOp ?? "AND");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialFilters?.categoryIds ?? []);
   const [postTarget, setPostTarget] = useState(initialFilters?.roleCode ?? "");
   const [departments, setDepartments] = useState<string[]>(initialFilters?.departments ?? []);
@@ -90,6 +100,13 @@ export function ContentsSearch({
   const isDeptEmpty =
     isInternal && !isDeptLoading && !isDeptLoadError && deptItems.length === 0;
 
+  // 사내전용 1depth 는 비사내 사용자에게 행 자체를 노출하지 않는다 — 부모 카테고리명도
+  // 사내 정보이므로 기본색으로 보여주는 것이 아니라 숨긴다.
+  // (자식은 아래 map 안에서 개별 판정 — 1depth 가 N 이어도 사내전용 자식은 숨긴다)
+  const visibleCategories = categories.filter(
+    (parent) => isInternal || !parent.isInternalOnly,
+  );
+
   const handleCheckboxChange = (categoryId: number, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
       checked ? [...prev, categoryId] : prev.filter((id) => id !== categoryId)
@@ -98,6 +115,7 @@ export function ContentsSearch({
 
   const handleReset = () => {
     setKeyword("");
+    setKeywordOp("AND");
     setSelectedCategoryIds([]);
     setPostTarget("");
     setDepartments([]);
@@ -107,6 +125,7 @@ export function ContentsSearch({
   const handleSearch = () => {
     onSearch({
       keyword,
+      keywordOp,
       categoryIds: selectedCategoryIds,
       roleCode: postTarget,
       departments,
@@ -129,17 +148,36 @@ export function ContentsSearch({
   return (
     <div className="flex flex-col gap-2 w-full lg:w-[1440px]">
       {/* 검색바 래퍼 */}
-      <div className="pt-[18px] pb-2 px-6 lg:p-0">
-        <div className="flex items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">
-          <div className="flex flex-1 items-center h-[60px] pl-5">
+      <div className="flex items-center gap-2 pt-[18px] pb-2 px-6 lg:p-0">
+        {/* 키워드 결합 조건 — 검색창 좌측. 검색어를 공백으로 나눈 뒤 AND/OR 로 묶는다.
+            공용 SelectBox 는 다른 화면 13곳이 쓰므로 건드리지 않고, 이 화면 한정으로 트리거 버튼만
+            옆 검색창 스타일(h-60 / rounded-8 / 보더 없음 / 동일 shadow / pl-5)에 맞춘다.
+            (자식 선택자 오버라이드는 아래 카테고리 라벨에서도 쓰는 이 파일의 기존 패턴)
+
+            선택자 주의: SelectBox 는 `div.relative` 래퍼 안에 트리거 button 을 둔다.
+            `[&>button]` 은 래퍼에 막혀 아무것도 못 잡으므로 `[&>div>button]` 이어야 한다.
+            드롭다운 옵션 button 은 한 단계 더 깊어(`>div>div>button`) 영향을 받지 않는다.
+
+            보더는 기본/hover/focus 3상태 모두 투명으로 덮는다 — 한 상태만 빠뜨리면
+            마우스오버·클릭 때만 회색 테두리가 튀어나온다. 대신 보더 색 변화로 하던 포커스 표시는
+            outline 으로 옮겨 유지한다 (보더 유틸리티와 특이도 경쟁이 없어 확정적으로 적용됨). */}
+        <div className="w-[110px] shrink-0 [&>div>button]:h-[60px] [&>div>button]:rounded-[8px] [&>div>button]:pl-5 [&>div>button]:pr-4 [&>div>button]:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] [&>div>button]:border-transparent [&>div>button:hover]:border-transparent [&>div>button:focus]:border-transparent [&>div>button:focus-visible]:[outline:2px_solid_#246097]">
+          <SelectBox
+            options={KEYWORD_OP_OPTIONS}
+            value={keywordOp}
+            onChange={(v) => setKeywordOp(v === "OR" ? "OR" : "AND")}
+          />
+        </div>
+        <div className="flex flex-1 min-w-0 items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">
+          <div className="flex flex-1 min-w-0 items-center h-[60px] pl-5">
             <input
               ref={keywordInputRef}
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="検索語を入力してください"
-              className="flex-1 font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none bg-transparent"
+              placeholder="キーワードを入力してEnterで検索"
+              className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] placeholder:text-[#999] outline-none bg-transparent"
             />
           </div>
           <button
@@ -187,10 +225,14 @@ export function ContentsSearch({
         {/* 데스크톱: 테이블 형식 */}
         <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[34px]">
           <div className="flex flex-col gap-1">
-            {categories.map((parent) => (
+            {visibleCategories.map((parent) => (
               <div key={parent.id} className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+                  <span
+                    className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] whitespace-nowrap overflow-hidden text-ellipsis ${
+                      isInternal && parent.isInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+                    }`}
+                  >
                     {parent.name}
                   </span>
                 </div>
@@ -214,7 +256,8 @@ export function ContentsSearch({
             {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+                  {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] whitespace-nowrap overflow-hidden text-ellipsis">
                     掲示対象
                   </span>
                 </div>
@@ -241,7 +284,8 @@ export function ContentsSearch({
             {isInternal && (
               <div className="flex gap-1 items-stretch min-h-[58px]">
                 <div className="w-[160px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-2">
-                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] whitespace-nowrap overflow-hidden text-ellipsis">
+                  {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                  <span className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] whitespace-nowrap overflow-hidden text-ellipsis">
                     担当部門
                   </span>
                 </div>
@@ -285,12 +329,16 @@ export function ContentsSearch({
         {/* 모바일: 세로 나열 형식 */}
         <div className="block lg:hidden bg-white px-6 py-[34px]">
           <div className="flex flex-col gap-[18px]">
-            {categories.map((parent, idx) => (
+            {visibleCategories.map((parent, idx) => (
               <div
                 key={parent.id}
                 className={`flex flex-col gap-3 ${idx > 0 ? "border-t border-[#EFF4F8] pt-[18px]" : ""}`}
               >
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+                <p
+                  className={`font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] truncate ${
+                    isInternal && parent.isInternalOnly ? "text-[#FF1A1A]" : "text-[#45576F]"
+                  }`}
+                >
                   {parent.name}
                 </p>
                 <div className="flex flex-col gap-4">
@@ -312,7 +360,8 @@ export function ContentsSearch({
 
             {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+                {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] truncate">
                   掲示対象
                 </p>
                 <div className="flex flex-col gap-[18px]">
@@ -333,7 +382,8 @@ export function ContentsSearch({
 
             {isInternal && (
               <div className="flex flex-col gap-3 border-t border-[#EFF4F8] pt-[18px]">
-                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#45576F] truncate">
+                {/* 사내 전용 항목 — 사내전용 카테고리 라벨과 동일하게 빨강으로 구분 */}
+                <p className="font-['Noto_Sans_JP'] font-medium text-[14px] leading-[1.5] text-[#FF1A1A] truncate">
                   担当部門
                 </p>
                 {isDeptEmpty ? (

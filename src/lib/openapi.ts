@@ -61,6 +61,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "Member", description: "회원관리 (관리자 전용)" },
     { name: "MassMail", description: "대량메일 발송 (관리자 전용)" },
     { name: "Master", description: "QSP 마스터 데이터 (부서 등)" },
+    { name: "Batch", description: "배치 트리거 (외부 스케줄러 전용)" },
   ],
 
   paths: {
@@ -68,8 +69,14 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "로그인 (QSP 프록시)",
-        description: `QSP 외부 로그인 API를 프록시하여 인증 처리. 성공 시 JWT httpOnly 쿠키 설정.
+        summary: "로그인 (QSP 프록시 / SEKO 커넥터)",
+        description: `userTp 에 따라 인증 경로가 갈린다. 성공 시 JWT httpOnly 쿠키 설정.
+
+- **ADMIN / STORE / GENERAL**: QSP 외부 로그인 API 프록시 (2FA 판정 포함)
+- **SEKO(시공점)**: AS-IS Q.Partners Connector 경유 — QSP 미경유. 2FA 는 QSP 와 동일 정책(sec-auth-policy 의 secAuthDt 재인증 주기 판정) 적용 — 검증 완료 시 No.9 save2faVerified 로 AS-IS 에 일시를 기록한다. Bearer 토큰은 JWT 에만 보관하고 응답 body 에는 미노출.
+  - loginId 는 **이메일 또는 시공ID** 둘 다 허용 (사양서 No.2 r6, preview 실측 확인).
+  - 로그인 직후 **No.3 getUserInfo 를 1회 더 호출해 시공ID 만료를 검사**한다 (화면설계서 p10「만료된 시공ID로 로그인 시 로그인 불가」). 판정에 필요한 sekoStatus/sekoLimit 이 login 응답에 없어 불가피한 추가 호출이며, 조회 실패는 fail-closed(502) 다. 시공ID 미보유(두 값 모두 null)는 만료 대상이 아니므로 통과.
+  - 단 **비밀번호 초기화 대상(SEKO pwdInitYn="Y")은 이 라우트에서만 검사를 유예**한다 — 초기화 화면 도달 전에 막히는 락아웃을 피하기 위함이다. 유예이지 면제가 아니며, 세션을 완전한 상태로 승격시키는 두 지점(**password-init**, **two-factor/verify**)에서 같은 게이트(checkSekoIdValid)를 통과해야 한다. 유예된 세션은 그때까지 twoFactorVerified=false 로 남아 middleware 가 2FA 경로와 공개 GET 만 허용한다.
 
 **테스트 계정:**
 | 유형 | ID | PW | userTp |
@@ -104,14 +111,14 @@ export const openApiSpec: OpenAPIV3.Document = {
                               type: "string",
                               enum: [
                                 "DISABLED_BY_ADMIN",
-                                "PWD_INIT_PRIORITY",
                                 "FIRST_TIME_REQUIRED",
                                 "EXPIRED_REQUIRED",
                                 "WITHIN_VALIDITY",
+                                "FUTURE_SKEW",
                                 "FAIL_CLOSED",
                               ],
                               description:
-                                "2FA 판정 사유 — NODE_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
+                                "2FA 판정 사유 — APP_ENV === 'development' 일 때만 노출되는 진단 메타. production 미노출.",
                             },
                           },
                         },
@@ -131,8 +138,13 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("아이디 또는 비밀번호가 올바르지 않습니다"),
-          "403": errorResponse("2FA 대상이나 이메일 미등록 — 로그인 차단"),
-          "502": errorResponse("외부 인증 서버 오류"),
+          "403": errorResponse(
+            "2FA 대상이나 이메일 미등록 / SEKO 권한(QpRole) 미존재·비활성 / **시공ID 만료**(sekoStatus=2 또는 sekoLimit 경과) — 로그인 차단",
+          ),
+          "502": errorResponse(
+            "외부 인증 서버(QSP / SEKO Connector) 오류. SEKO 는 시공ID 유효성 확인용 getUserInfo 실패도 포함(fail-closed)",
+          ),
+          "500": errorResponse("JWT 생성 실패 또는 서버 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
         },
       },
     },
@@ -316,7 +328,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
           "400": {
             description:
-              "リクエスト形式または target パラメータが不適格. route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
+              "リクエスト形式または target パラメータが不適格。route handler 는 케이스별로 메시지를 분리해 반환 (examples 참조).",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -336,7 +348,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           "401": errorResponse("認証が必要です"),
           "500": {
             description:
-              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類.",
+              "サーバーエラー — 暗号化設定不備 / リダイレクトURL組立失敗 / 予期しない例外を含む統合分類。",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -444,8 +456,8 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/auth/signup": {
       post: {
         tags: ["Auth"],
-        summary: "일반 회원가입 (QSP 프록시)",
-        description: "QSP newUserReq I/F를 프록시하여 일반회원 가입 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 가입 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.",
+        summary: "일반회원 등록 (QSP 프록시, SUPER_ADMIN·ADMIN 전용)",
+        description: "QSP newUserReq I/F를 프록시하여 일반회원 등록 처리. 성공 시 승인완료 메일 발송 — 메일 발송 실패 시에도 등록 자체는 성공이므로 200 유지하되 응답 `data.mailDelivery=\"failed\"` 로 UI 안내.\n\n**셀프 회원가입 폐지** — JWT 쿠키 필요. 사내 사용자(SUPER_ADMIN | ADMIN) 만 호출 가능하며, 그 외 로그인 사용자는 403.",
         requestBody: {
           required: true,
           content: {
@@ -481,13 +493,30 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": {
-            description: "Validation failed",
+            description:
+              "두 가지 형태로 응답한다 — 클라이언트는 `fields` 배열의 유무로 원인을 구분한다.\n\n" +
+              "- **Zod 검증 실패**: `{ error: \"Validation failed\", fields: [...] }` — 입력 오류. 사용자에게 입력 확인을 안내.\n" +
+              "- **QSP 등록 실패 / JSON 파싱 실패**: `{ error }` (fields 없음) — 입력과 무관한 실패. 원인은 서버 로그에만 기록되며 클라이언트 메시지는 일반화된다.",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                schema: {
+                  // anyOf 사용 — oneOf 는 "정확히 하나만 매칭" 을 요구하는데,
+                  // ErrorResponse 에 additionalProperties: false 가 없어 Zod 실패 본문
+                  // `{ error, fields }` 가 두 브랜치 모두에 매칭된다. oneOf 로 두면
+                  // 스펙이 문서화하려던 바로 그 응답을 엄격한 검증기가 거부하게 된다.
+                  anyOf: [
+                    { $ref: "#/components/schemas/AuthValidationErrorResponse" },
+                    { $ref: "#/components/schemas/ErrorResponse" },
+                  ],
+                },
               },
             },
           },
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse(
+            "발생원 2가지 — `2段階認証が必要です` (middleware, 2FA 미완료) / `権限がありません` (handler, 사내 사용자 아님). " +
+            "응답 형태가 동일해 기계적 구분은 불가하며, 클라이언트는 양쪽 조치를 모두 담은 단일 문구로 안내한다.",
+          ),
           "409": errorResponse("이미 사용중인 이메일입니다"),
           "500": errorResponse("서버 오류 (예상치 못한 예외)"),
           "502": errorResponse("외부 서버 오류"),
@@ -498,7 +527,11 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 초기화 요청 (메일 발송)",
-        description: "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156).",
+        description:
+          "이메일로 비밀번호 변경 링크를 발송. 시간당 3건 초과 시 429 반환. 회원 미존재 시 404 반환 (Issue #2156). " +
+          "회원유형별 조회처: STORE/GENERAL/ADMIN=QSP userDetail. " +
+          "⚠️ **시공점(SEKO)은 이 경로를 쓰지 않는다** — 화면설계서 v1.4 p12 에서 시공점 초기화가 「시공ID 입력 → 즉시 비밀번호 설정」으로 교체되어 " +
+          "`/auth/password-reset/seko/check` → `/auth/password-reset/seko/reset` 를 탄다. userTp=SEKO 요청은 400(Validation failed) 이다.",
         requestBody: {
           required: true,
           content: {
@@ -534,6 +567,119 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
+    // 시공점(SEKO) 전용 초기화 — 화면설계서 v1.4 p12. 메일 링크를 거치지 않는 2단계 흐름이다.
+    "/auth/password-reset/seko/check": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 1단계 — 시공ID 존재 확인",
+        description:
+          "화면설계서 v1.4 p12 — 시공점 초기화는 **이메일 링크가 아니라 시공ID 즉시 초기화**다(p11 의 시공점 패널은 프로세스 변경으로 폐기). " +
+          "AS-IS Connector **No.8 email/check**(X-Api-Key)로 존재를 확인하며 메일은 보내지 않는다(토큰은 아래 참조). " +
+          "사양서 No.8 r6 의 loginId 가 「メールまたは施工ID」라 시공ID 를 그대로 전달한다. " +
+          "⚠️ p12 가 미존재 시 전용 안내를 노출하도록 규정하므로 **사용자 열거 방지를 적용하지 않는다**(404 로 구분됨) — 방어는 rate limit(IP 10회/시간, IP 부재 시 식별자 5회/시간)이 담당한다. " +
+          "존재 확인을 통과하면 입력 식별자에 바인딩된 **단명 일회용 재설정 토큰(TTL 10분)** 을 발급해 응답한다. 2단계는 이 토큰을 원자적으로 소비한 요청만 처리하므로, 1단계를 건너뛴 단독 호출로는 비밀번호를 바꿀 수 없다. " +
+          "발급 한도는 **동일 식별자 1시간 3건**이다 — 시공점은 시공ID 와 이메일 둘 다로 로그인하고 둘을 매핑할 I/F 가 없어 계정 단위가 아닌 식별자 단위 한도다. 활성 토큰은 식별자당 1건으로 유지된다(신규 발급 시 기존 미사용분 무효화).",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "시공ID. **이메일은 거부한다**(`@` 포함 시 400) — p12 가 초기화 입력을 시공ID 단독으로 규정한다. 로그인(p10)의 「이메일 또는 시공ID」 겸용과 다르다." },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "시공ID 존재 확인 완료",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        exists: { type: "boolean", example: true },
+                        resetToken: {
+                          type: "string",
+                          format: "uuid",
+                          description: "2단계(`/auth/password-reset/seko/reset`)에 그대로 전달하는 일회용 토큰. TTL 10분. 메일·URL 을 타지 않는다.",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Validation failed (시공ID 미입력·형식 오류)"),
+          "404": errorResponse("일치하는 회원 정보 없음 — p12 규정 문구 노출"),
+          "429": errorResponse("요청 횟수 초과"),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 등 설정 오류 포함)"),
+          "502": errorResponse("AS-IS Connector 오류 — 회원 미존재와 구분해 반환"),
+        },
+      },
+    },
+
+    "/auth/password-reset/seko/reset": {
+      post: {
+        tags: ["Auth"],
+        summary: "시공점 비밀번호 초기화 2단계 — 신규 비밀번호 설정",
+        description:
+          "화면설계서 v1.4 p12 — 비밀번호 설정 팝업의 저장. AS-IS Connector **No.10 resetPwd**(X-Api-Key, loginId+chgPwd)를 호출한다. " +
+          "**자동 로그인을 하지 않는다** — p12 완료 Alert 가 「변경된 비밀번호로 로그인해주세요」이므로 세션(JWT·쿠키)을 발급하지 않는다. " +
+          "따라서 이 경로는 세션 발급 지점이 아니며 시공ID 만료 게이트(checkSekoIdValid) 대상도 아니다. " +
+          "**1단계가 발급한 일회용 토큰(resetToken)이 필수다.** 토큰을 원자적으로 소비(TOCTOU 방지)한 요청만 처리하며, 무효·만료·소비된 토큰이나 식별자 불일치는 410 으로 거부한다 — 상태를 구분시키지 않기 위해 사유별 문구는 동일하다. " +
+          "**재설정 대상은 요청 body 가 아니라 토큰 행이 정한다**(body 의 sekoId 는 대조용). 토큰이 1단계의 존재 확인 증서 역할을 하므로 No.8 email/check 를 다시 호출하지 않는다. " +
+          "재설정 결과 불명(타임아웃·응답 파싱 실패)은 502 로 내되, 변경되지 않았다고 단정하지 않는 문구를 쓰고 **토큰도 되살리지 않는다**(일회용 불변식 유지). 커넥터가 명시적으로 거부한 경우에만 토큰을 롤백해 재시도를 허용한다.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["sekoId", "resetToken", "newPassword", "confirmPassword"],
+                properties: {
+                  sekoId: { type: "string", maxLength: 100, example: "HWQ99A9999", description: "1단계에서 입력한 식별자. 토큰과의 대조용이며 재설정 대상 지정용이 아니다." },
+                  resetToken: { type: "string", format: "uuid", description: "1단계 응답의 resetToken. 일회용·TTL 10분." },
+                  newPassword: { type: "string", minLength: 8, maxLength: 100, description: "영대문자+영소문자+숫자 조합 8자 이상" },
+                  confirmPassword: { type: "string", minLength: 1 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "비밀번호 변경 완료 (세션 미발급 — 로그인 화면으로 유도)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: { message: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Validation failed (토큰 누락·비밀번호 정책 위반·불일치 포함)"),
+          "410": errorResponse("재설정 토큰 무효 — 미존재·만료·이미 사용·식별자 불일치 (1단계부터 재시도 안내)"),
+          "429": errorResponse("요청 횟수 초과"),
+          "500": errorResponse("서버 오류 (설정 오류 포함)"),
+          "502": errorResponse("AS-IS Connector 오류 또는 재설정 결과 불명"),
+        },
+      },
+    },
+
     "/auth/password-reset/verify": {
       post: {
         tags: ["Auth"],
@@ -581,7 +727,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "비밀번호 변경 확정 + 자동 로그인",
-        description: "토큰 검증 후 QSP 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인.",
+        description:
+          "토큰 검증 후 회원유형별 비밀번호 변경 API 호출. 성공 시 JWT 쿠키 설정하여 자동 로그인. " +
+          "변경처는 QSP chgPwd 이며 대상은 STORE/GENERAL/ADMIN 이다. " +
+          "**시공점(SEKO)은 이 경로에서 처리하지 않는다** — 화면설계서 v1.4 p12 로 프로세스가 교체되어 `/auth/password-reset/seko/{check,reset}` 로 이관됐고, 여기로 들어온 SEKO 토큰은 410 으로 접힌다(자동 로그인 없음).",
         requestBody: {
           required: true,
           content: {
@@ -619,8 +768,16 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          "403": errorResponse(
+            "권한 비활성(QpRole.isActive=false) 또는 권한 레코드 미존재 — 비밀번호는 변경되었으나 자동 로그인 차단. 회원 상태 비활성(statCd!=A) 포함",
+          ),
+          "410": errorResponse(
+            "시공점(SEKO) 토큰 — 이 경로는 더 이상 시공점을 처리하지 않는다(화면설계서 v1.4 p12 로 프로세스 교체). 교체 배포 직전 발급된 잔존 토큰(TTL 1시간)에만 도달하며, 신규 초기화 흐름으로 안내한다",
+          ),
           "500": errorResponse("비밀번호 변경 실패"),
-          "502": errorResponse("외부 서버 오류"),
+          "502": errorResponse(
+            "QSP 연결 실패·비정상 응답·응답 파싱 실패 — 토큰은 롤백되어 링크 재사용 가능",
+          ),
         },
       },
     },
@@ -629,7 +786,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"],
         summary: "세션 기반 비밀번호 변경 (판매점 최초 로그인용)",
-        description: "JWT 인증 상태에서 비밀번호 변경. 최초 로그인(twoFactorVerified=false) 상태에서만 호출 가능. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true).",
+        description:
+          "JWT 인증 상태에서 비밀번호 변경. **초기화 필요 상태(pwdInitYn=\"N\")에서만** 호출 가능 — 현재 비밀번호를 검증하지 않는 경로라 2차인증 완료 여부(twoFactorVerified)는 판단에 쓰지 않는다. 회원정보 설정 팝업(p.12)에서 호출. 성공 시 JWT 재발급 (twoFactorVerified=true). " +
+          "회원유형별 연동처: STORE/GENERAL/ADMIN=QSP userPwdChg(chgType=I), SEKO=AS-IS Connector changePwd(chgType=I, Bearer). " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {
@@ -675,10 +835,14 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "401": errorResponse("인증 필요"),
-          "403": errorResponse("初回ログイン時のみ有効 (twoFactorVerified=true 시 거부)"),
+          "403": errorResponse(
+            "初回ログイン時のみ有効 (pwdInitYn !== \"N\" 시 거부). SEKO 는 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과) 포함 — 비밀번호는 설정되었으나 세션 승격 차단",
+          ),
           "429": errorResponse("요청 횟수 초과"),
           "500": errorResponse("비밀번호 변경 실패"),
-          "502": errorResponse("외부 서버 오류"),
+          "502": errorResponse(
+            "외부 서버 오류. SEKO 는 시공ID 유효성 확인용 getUserInfo 실패도 포함(fail-closed) — 로그인이 유예한 만료 검사를 여기서 회수한다",
+          ),
         },
       },
     },
@@ -689,7 +853,8 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "이메일 중복 체크",
         description:
           "QSP /user/detail 을 loginId / email 두 키로 병렬 조회하여 BC_QP_USER 의 user_id, e_mail 컬럼 양쪽 매칭. " +
-          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.",
+          "한쪽이라도 hit 또는 다건(TooManyResults) 신호면 409. 양쪽 모두 미존재여야 사용 가능. PII 보호를 위해 POST 사용.\n\n" +
+          "인증 불요(PUBLIC) — 관리자 대리 등록(/signup) 과 会員情報の設定(최초 로그인, 2FA 미완료 상태) 양쪽에서 호출된다.",
         requestBody: {
           required: true,
           content: {
@@ -776,7 +941,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["TwoFactor"],
         summary: "2차 인증번호 검증",
-        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + QSP 2차인증 일시 갱신.",
+        description: "발송된 6자리 인증번호 검증. 성공 시 JWT 재발행 (twoFactorVerified: true) + 2차인증 일시 갱신 (QSP: updateSecAuthDt / 시공점: AS-IS Connector No.9 save2faVerified). 갱신 실패는 fail-open — 로그인 흐름은 통과하고 다음 세션에 재인증. 단 시공점 Connector 가 401(Bearer 만료)을 반환하면 예외로 인증 쿠키를 만료시키고 401 을 반환한다 — 죽은 Bearer 를 담은 세션이 유지되면 이후 시공점 API 가 전부 실패하기 때문.",
         requestBody: {
           required: true,
           content: {
@@ -804,8 +969,16 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "401": errorResponse("인증번호가 일치하지 않습니다 / 입력시간 초과"),
-          "500": errorResponse("서버 오류"),
+          "401": errorResponse(
+            "인증번호가 일치하지 않습니다 / 입력시간 초과. SEKO 는 세션에 sekoToken/loginId 결손 시 시공ID 검사 불가로 쿠키 만료 + 재로그인 유도 포함",
+          ),
+          "403": errorResponse(
+            "SEKO 시공ID 만료(sekoStatus=2 또는 sekoLimit 경과) — 2FA 검증은 성공했으나 세션 승격 차단",
+          ),
+          "500": errorResponse("서버 오류 (SEKO_CONNECTOR_BASE_URL 미설정 등 설정 오류 포함)"),
+          "502": errorResponse(
+            "SEKO 시공ID 유효성 확인용 getUserInfo 실패 — fail-closed 로 세션 승격 차단",
+          ),
         },
       },
     },
@@ -1672,11 +1845,23 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Content"],
         summary: "콘텐츠 목록 조회",
+        description:
+          "비사내 사용자의 `keyword` 검색 또는 `sortCategoryCode` 정렬 요청에는 rate limit 이 적용된다 — IP당 60회/분, IP 헤더 불명 시 계정(비로그인은 anon) 기준 20회/분. 초과 시 429. 두 경로 모두 선행 와일드카드 LIKE·상관 서브쿼리라 인덱스 활용이 어려워 DB 부하 가드가 필요하다. 단순 페이징은 제한 대상이 아니며, 사내 사용자는 전 경로 제한 없음.\n\n게시기간(`targets.startAt`/`endAt`) 판정은 **시각 단위**다 — `startAt <= now <= endAt`. 종전 일 단위 판정(시작일 당일 0시부터 / 종료일 당일 종일)에서 전환되어, 「당일 18시 시작」이 실제로 18시부터 노출된다. 사내 사용자 분기는 예정·만료 게시글 점검을 위해 게시기간을 의도적으로 미적용.",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", schema: { type: "string" } },
-          { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "타이틀·본문·첨부파일명 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).", schema: { type: "string" } },
+          {
+            name: "keywordOp",
+            in: "query",
+            description:
+              "다중 키워드 결합 조건. 결합은 **필드 단위**로 필드를 넘나들지 않는다.\n\n" +
+              "- `AND`(기본): 타이틀에 모든 키워드 / 본문에 모든 키워드 / **첨부파일 한 건의 파일명**에 모든 키워드 — 셋 중 하나라도 만족하면 매칭. 타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않으며, `사과.pdf`+`귤.pdf` 조합도 매칭되지 않는다.\n" +
+              "- `OR`: 타이틀·본문·첨부파일명 중 어느 하나에 키워드 하나라도 포함되면 매칭.\n\n" +
+              "`keyword` 가 없으면 무시된다.",
+            schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
+          },
+          { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID — AND(교집합) 조건. 지정한 카테고리를 모두 가진 콘텐츠만 반환", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
           { name: "department", in: "query", description: "担当部門フィルター（複数選択時はカンマ区切り）", schema: { type: "string" } },
@@ -1740,6 +1925,9 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": validationErrorResponse,
+          "429": errorResponse(
+            "요청 횟수 초과 — 비사내 사용자의 keyword 검색 / sortCategoryCode 정렬에 한해 적용 (IP당 60회/분, IP 불명 시 20회/분)",
+          ),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -2249,7 +2437,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치"),
+          "400": errorResponse("headerCode 파라미터 누락 또는 형식 불일치 / relCode1 길이 초과(100자)"),
           "404": errorResponse("해당 코드 없음"),
           "500": errorResponse("서버 에러"),
         },
@@ -2345,11 +2533,14 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["Category"],
         summary: "카테고리 트리 목록 조회",
+        description:
+          "비로그인 GET 이 허용된 공개 경로입니다. 사내 사용자(SUPER_ADMIN/ADMIN)가 아니면 `isInternalOnly=true` 인 카테고리는 1Depth·2Depth 모두 응답에서 제외됩니다 — 화면단 필터와 무관하게 서버에서 강제합니다. 판정 기준은 요청자의 역할 하나뿐이며 `activeOnly` 는 활성 상태 필터일 뿐 권한 신호가 아닙니다 (`activeOnly=false` 는 별개로 ADM_CATEGORY.read 권한을 요구합니다).",
         parameters: [
           {
             name: "internalOnly",
             in: "query",
-            description: "사내전용만 조회 (기본 false)",
+            description:
+              "사내전용만 조회 (기본 false). 관리자 화면의 「社内専用のみ表示」 필터용이며 권한 필터가 아닙니다. 사내전용을 볼 수 없는 요청자가 true 로 호출하면 결과는 0건입니다.",
             schema: { type: "string", default: "false" },
           },
           {
@@ -2382,7 +2573,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다.",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다. 상위 카테고리가 사내전용(`isInternalOnly: true`)이면 요청값과 무관하게 자식도 사내전용으로 강제 저장됩니다 (400 거절이 아닌 승격).",
         requestBody: {
           required: true,
           content: {
@@ -2418,7 +2609,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
         description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다.",
+          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다. `isInternalOnly: true` 를 전송하면 같은 트랜잭션에서 하위 카테고리도 모두 사내전용(Y)으로 승격됩니다 — 반대로 `false` 는 하위에 전파되지 않으며, 기존 자식의 Y 설정은 유지된 채 개별 편집이 가능해집니다. 단, 부모가 사내전용인 자식에 `isInternalOnly: false` 를 전송하면 \"자식 ≥ 부모\" 불변식 위반으로 400 거절됩니다.",
         parameters: [
           {
             name: "id",
@@ -2635,7 +2826,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["MyPage"],
         summary: "프로필 조회",
-        description: "JWT에서 사용자 정보 추출 후 회원유형별 QSP API 조회",
+        description: "JWT에서 사용자 정보 추출 후 회원유형별 조회 (STORE/GENERAL/ADMIN = QSP, SEKO = Connector getUserInfo)",
         responses: {
           "200": {
             description: "프로필 정보",
@@ -2650,10 +2841,10 @@ export const openApiSpec: OpenAPIV3.Document = {
                         userType: { type: "string", enum: [...userTpValues] },
                         userName: { type: "string", nullable: true, description: "원본 성명 (QSP userNm). Q.Order 매핑: 성명 단일 필드" },
                         userNameKana: { type: "string", nullable: true, description: "원본 성명 히라가나 (QSP userNmKana). Q.Order 매핑: 담당자명 후리가나 단일 필드" },
-                        sei: { type: "string", nullable: true },
-                        mei: { type: "string", nullable: true },
-                        seiKana: { type: "string", nullable: true },
-                        meiKana: { type: "string", nullable: true },
+                        sei: { type: "string", description: "값 없음은 빈 문자열 (전 회원유형 공통)" },
+                        mei: { type: "string" },
+                        seiKana: { type: "string" },
+                        meiKana: { type: "string" },
                         email: { type: "string" },
                         compNm: { type: "string" },
                         compNmKana: { type: "string" },
@@ -2670,9 +2861,40 @@ export const openApiSpec: OpenAPIV3.Document = {
                           type: "string",
                           nullable: true,
                           description:
-                            "뉴스알림 변경일시. QSP `newsRcptChgDt` (신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백.",
+                            "뉴스알림 변경일시. QSP 는 `newsRcptChgDt`(신규) 우선, 미존재 시 기존 `newsRcptDate` 폴백. 시공점(SEKO)은 Connector No.3 `getUserInfo` 의 `newsRcptChgDt`. 변경 이력이 없는 계정은 null.",
                         },
                         withdrawAvailable: { type: "boolean", nullable: true, description: "GENERAL 사용자에게만 포함 (그 외 회원유형은 미포함)" },
+                        sekoConstruction: {
+                          type: "object",
+                          nullable: true,
+                          description:
+                            "시공점(SEKO) 전용 — 마이페이지 「施工ID情報」 카드 데이터. " +
+                            "그 외 회원유형은 항상 null (키 자체는 유지). " +
+                            "AS-IS getUserInfo 응답에서 파생하므로 별도 조회 호출이 없다.",
+                          properties: {
+                            sekoId: { type: "string", nullable: true },
+                            sekoIssueDate: { type: "string", nullable: true, description: "시공ID 취득일 (YYYY-MM-DD)" },
+                            sekoLimit: { type: "string", nullable: true, description: "시공ID 유효기간 (YYYY-MM-DD). 만료 판정은 TO-BE 에서 하지 않고 표시만 한다" },
+                            sekoStatus: { type: "integer", nullable: true, description: "AS-IS 상태 코드. 코드값 의미 미확정이라 화면에서 사용하지 않음" },
+                            supplierKind: { type: "integer", nullable: true, description: "4=시공점 / 5=델타 / 6=스미토모 / 7=델타 SAVeR-H2" },
+                            deltaStatus: { type: "integer", nullable: true },
+                            availableFileTypes: {
+                              type: "array",
+                              items: { type: "string", enum: ["RECEIPT", "CERT1"] },
+                              description: "다운로드 가능 문서 종류. CERT2 는 미사용(QA#12)",
+                            },
+                            asIsLinks: {
+                              type: "object",
+                              description:
+                                "자동로그인(No.1) 후 이동할 AS-IS 화면 주소. SEKO_CONNECTOR_BASE_URL 에서 파생한다 — " +
+                                "자동로그인 쿠키가 커넥터 호스트에만 유효하므로 화면 URL 을 별도로 두면 환경이 갈릴 때 비로그인 상태로 도착한다.",
+                              properties: {
+                                seminar: { type: "string", description: "「WEB研修申請」 이동 대상" },
+                                mypage: { type: "string", description: "「施工ID情報詳細確認」 이동 대상" },
+                              },
+                            },
+                          },
+                        },
                       },
                     },
                   },
@@ -2680,7 +2902,6 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("施工店会員は別途API使用"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "404": errorResponse("ユーザー情報なし"),
@@ -2692,7 +2913,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["MyPage"],
         summary: "프로필 수정",
         description:
-          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE: 뉴스레터만 수정 가능. " +
+          "회원유형별 수정 가능 항목 차별화. GENERAL: 전체 수정, ADMIN/STORE/SEKO: 뉴스레터(newsRcptYn)만 수정 가능 (SEKO=Connector updateUserInfo). " +
           "QSP 수정 성공 후 변경 직전 `attrChgYn === \"Y\"` 인 회원에게 속성 변경 알림 메일 발송 (fire-and-forget). " +
           "메일 발송 결과는 응답에 영향 없음 (실패 시 warn 로깅만).",
         requestBody: {
@@ -2740,7 +2961,7 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
-          "400": errorResponse("Validation 실패 / 施工店会員は別途API使用"),
+          "400": errorResponse("Validation 실패"),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("2단계 인증 필요"),
           "500": errorResponse("내부 에러 / JWT email 누락 등 사용자 정보 불완전 (재로그인 유도)"),
@@ -2752,7 +2973,10 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MyPage"],
         summary: "비밀번호 변경",
-        description: "QSP userPwdChg API 호출 (chgType=C)",
+        description:
+          "QSP userPwdChg API 호출 (chgType=C). " +
+          "시공점(SEKO)은 AS-IS Q.Partners Connector changePwd(chgType=C, Bearer) 호출 — 현재 비밀번호 필수. " +
+          "SEKO 는 세션의 Connector 토큰·loginId(email) 결손 시 401(재로그인 유도).",
         requestBody: {
           required: true,
           content: {
@@ -2787,8 +3011,10 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse("현재 비밀번호 불일치 또는 정책 위반"),
-          "401": errorResponse("인증 필요"),
+          "401": errorResponse("인증 필요 / 세션 결손·SEKO Connector 토큰 만료 (인증 쿠키 삭제됨)"),
+          "403": errorResponse("2단계 인증 미완료"),
           "429": errorResponse("요청 횟수 초과 (5분간 5회 제한)"),
+          "500": errorResponse("서버 오류 / 설정 오류(SEKO_CONNECTOR_BASE_URL 미설정 등)"),
           "502": errorResponse("외부 서버 오류"),
         },
       },
@@ -2869,19 +3095,25 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    "/mypage/seko-info": {
+    "/auth/seko/autologin": {
       get: {
-        tags: ["MyPage"],
-        summary: "시공점 시공ID 정보 조회",
-        description: "AS-IS Seko User Info API 프록시. 시공점 전용.",
+        tags: ["Auth"],
+        summary: "시공점 AS-IS 자동로그인 이동",
+        description:
+          "AS-IS Seko Auto Login API(No.1) 아웃바운드. 시공점 전용. " +
+          "커넥터에서 일회용 autologinUrl 을 받아 **302 리다이렉트**한다. " +
+          "**성공·실패 모두 리다이렉트이며 JSON 을 반환하지 않는다** — 사용자가 새 창으로 진입하는 " +
+          "화면 라우트라 JSON 을 던지면 빈 탭에 원문이 뜨고 부모 탭이 실패를 알 수 없다. " +
+          "실패는 /seko-autologin-result?reason=... 로 보내고, 그 페이지가 postMessage 로 부모 탭에 사유를 전달한다. " +
+          "발급 URL 은 1회·1분 유효라 프리페치 시 소진되므로, 화면은 클릭 시점에 window.open 으로 진입해야 한다. " +
+          "※ 착지는 현재 AS-IS 사이트 루트 고정 — 요청 파라미터·URL 쿼리로 화면 지정 불가(AS-IS 지원 확인 중).",
         responses: {
-          "200": {
-            description: "시공점 정보",
-            content: { "application/json": { schema: { type: "object" } } },
+          "302": {
+            description:
+              "성공: AS-IS autologinUrl 로 리다이렉트. " +
+              "실패: /seko-autologin-result?reason=not_seko|two_factor|session|failed 로 리다이렉트 " +
+              "(reason=session 은 인증 쿠키를 함께 만료시킨다)",
           },
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("시공점 회원 전용"),
-          "501": errorResponse("미구현"),
         },
       },
     },
@@ -2889,21 +3121,36 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["MyPage"],
         summary: "시공점 첨부파일 다운로드",
-        description: "AS-IS Seko File Download API 프록시.",
+        description:
+          "AS-IS Seko File Download API(No.5) 프록시. 시공점 전용. " +
+          "AS-IS 는 Bearer 가 필요한 fileUrl 만 주므로 서버가 2단계(메타 → 바이너리)로 받아 스트리밍한다. " +
+          "응답은 attachment + nosniff 고정 — RECEIPT 는 text/html 로 내려와 인라인 렌더 시 XSS 경로가 된다. " +
+          "RECEIPT 는 AS-IS 자산(CSS·로고·도장)을 참조하는 HTML 조각이라 그대로 저장하면 스타일 없이 열린다. " +
+          "서버가 커넥터 origin 내부 자산만 받아 data URI 로 인라인한 자기완결 HTML 로 재작성하고 " +
+          "(script 제거, Content-Type 에 charset=utf-8 부여), 인라인 실패 시에는 원본 바이트를 그대로 내려보낸다. " +
+          "CERT1(application/pdf)은 재작성 대상이 아니다. " +
+          "확장자 없는 AS-IS fileName 은 Content-Type 기준으로 보정해 내려간다. " +
+          "※ 시공ID 정보 자체는 GET /mypage/profile 의 sekoConstruction 으로 내려간다(별도 조회 API 없음).",
         parameters: [
           {
             name: "fileType",
             in: "query",
             required: true,
             schema: { type: "string", enum: ["RECEIPT", "CERT1", "CERT2"] },
+            description: "RECEIPT=수강료영수증 / CERT1=시공증명서1 (CERT2 는 미사용 — QA#12)",
           },
         ],
         responses: {
-          "200": { description: "파일 다운로드" },
+          "200": {
+            description:
+              "파일 바이너리 (Content-Disposition: attachment, 확장자 보정된 filename*). " +
+              "RECEIPT=자산 인라인된 text/html; charset=utf-8 (인라인 실패 시 AS-IS 원본 그대로) / CERT1=application/pdf",
+          },
           "400": errorResponse("잘못된 fileType"),
-          "401": errorResponse("인증 필요"),
-          "403": errorResponse("시공점 회원 전용"),
-          "501": errorResponse("미구현"),
+          "401": errorResponse("인증 필요 / 세션 무효 (SEKO 토큰 만료 시 쿠키 만료)"),
+          "403": errorResponse("시공점 회원 전용 또는 2단계 인증 미완료"),
+          "404": errorResponse("해당 문서 미발급"),
+          "502": errorResponse("AS-IS Connector 장애"),
         },
       },
     },
@@ -3045,7 +3292,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             },
           },
           "400": errorResponse(
-            "검증 실패 / 권한별 수정 제한 위반 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
+            "검증 실패 / 권한별 수정 제한 위반 / SEKO 회원 twoFactorEnabled 변경 차단 / 탈퇴·삭제 STORE 회원 차단 / 본인 계정 critical 변경 차단 / preDetail null 비복구 경로 + userRole·twoFactorEnabled 변경 차단 / preDetail null + status='active' 복구 시 userRole·twoFactorEnabled 미명시 차단",
           ),
           "401": errorResponse("인증 필요"),
           "403": errorResponse("メニュー権限がありません (RBAC: ADM_MEMBER.update)"),
@@ -3142,7 +3389,13 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["MassMail"],
         summary: "대량메일 등록",
-        description: "관리자 전용 — multipart/form-data (draft 또는 pending)",
+        description:
+          "관리자 전용 — multipart/form-data (draft 또는 pending). " +
+          "수신자 수집처는 발송대상 권한에 따라 갈린다: SUPER_ADMIN/ADMIN/1ST_STORE/2ND_STORE/GENERAL·커스텀 권한=QSP userListMng(페이징), " +
+          "시공점(SEKO)=AS-IS Connector No.7 getUserList(X-Api-Key, 페이징 없음) — **전체 조회 후 status=2(利用不可) 목록을 loginId 로 차집합**(userId 는 스키마상 nullish 라 조인 키로 쓰지 않는다). " +
+          "利用可 는 status 1(利用可) 과 5(WEB研修) 둘 다인데(AS-IS 마이그레이션 기준) 목록 필터는 1/2 만 받아 `1 ∪ 5` 를 직접 고를 수 없기 때문이다. " +
+          "두 호출 중 하나라도 실패하면 수집 전체를 실패시키고, 제외 목록이 정상 응답 0건이거나 전체의 부분집합이 아닌 경우도 같이 막는다(제외가 무효화된 채 차집합만 성립하는 것을 방지). " +
+          "SEKO 는 loginId=email 이므로 loginId 를 수신 주소로 사용하며, 수신자명은 sei+mei 를 이어붙인다.",
         requestBody: {
           required: true,
           content: {
@@ -3432,6 +3685,68 @@ export const openApiSpec: OpenAPIV3.Document = {
           "403": errorResponse("権限がありません"),
           "500": errorResponse("서버 에러"),
           "502": errorResponse("외부 서버 오류 (QSP 응답 비정상/스키마 불일치/resultCode≠S)"),
+        },
+      },
+    },
+    // ─── Batch ───
+    "/batch/mass-mail": {
+      post: {
+        tags: ["Batch"],
+        summary: "대량메일 자동 재시도 배치 1 cycle 트리거",
+        description:
+          "외부 스케줄러(cron 등)가 주기적으로 호출하는 배치 트리거. 프로세스 내 setInterval 을 대체한 라우트로, " +
+          "cycle 주기는 스케줄러가 소유한다.\n\n" +
+          "**cycle 내용**: 좀비 감지(sending 장기 정체 → send_failed) / 예약 도래(scheduled → pending) / " +
+          "수신자 수집 복구 / pending 수신자 발송 / 전건 종결 시 sent 승격.\n\n" +
+          "**인증**: `Authorization: Bearer <BATCH_API_TOKEN>` (쿠키 세션 아님). 토큰 미설정 환경에서는 500 으로 fail-closed.\n\n" +
+          "**중복 방어**: `qp_batch_locks` 리스 락으로 인스턴스 간 상호배제. 다른 인스턴스가 실행 중이면 " +
+          "실행하지 않고 200 `{ skipped: true }` 를 반환하므로, 스케줄러는 200/202 를 모두 정상으로 취급하면 된다.\n\n" +
+          "**결과 확인**: cycle 은 백그라운드에서 진행되어 응답에 처리 결과가 담기지 않는다. 처리 내역은 서버 로그, " +
+          "반복 실패는 `GET /api/health` 503 으로 확인한다.",
+        security: [],
+        parameters: [
+          {
+            name: "Authorization",
+            in: "header",
+            required: true,
+            schema: { type: "string" },
+            description: "`Bearer <BATCH_API_TOKEN>`",
+          },
+        ],
+        responses: {
+          "202": {
+            description: "cycle 실행 시작 (백그라운드)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    started: { type: "boolean", example: true },
+                    skipped: { type: "boolean", example: false },
+                  },
+                  required: ["started", "skipped"],
+                },
+              },
+            },
+          },
+          "200": {
+            description: "다른 인스턴스가 실행 중이어서 skip (정상)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    started: { type: "boolean", example: false },
+                    skipped: { type: "boolean", example: true },
+                    reason: { type: "string", example: "locked" },
+                  },
+                  required: ["started", "skipped"],
+                },
+              },
+            },
+          },
+          "401": errorResponse("토큰 누락 또는 불일치"),
+          "500": errorResponse("BATCH_API_TOKEN 미설정 등 설정 에러 / 락 획득 실패"),
         },
       },
     },
@@ -3829,8 +4144,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "boolean",
             description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
           },
-          isNew: { type: "boolean", description: "생성 후 5일 이내" },
-          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          isNew: { type: "boolean", description: "NEW 뱃지 표시 여부 — **공개일**(등록일 아님) 기준 5일 이내. 공개일은 사내 사용자는 게시대상 중 가장 빠른 startAt, 그 외는 자기 권한 게시대상의 startAt (startAt 없으면 publishedAt→createdAt 폴백). 공개일 도래 전에는 false." },
+          isUpdated: { type: "boolean", description: "UPDATE 뱃지 표시 여부 — 수정 후 5일 이내. 단 공개일 도래 전에는 false 이며, **isNew=true 이면 항상 false**(NEW 우선순위를 서버에서 반영). 즉 '수정된 지 5일 이내' 가 아니라 'UPDATE 뱃지를 붙여야 하는가' 를 뜻한다." },
           categories: {
             type: "array",
             description: "부모-자식 트리 구조. 콘텐츠에 연결된 자식 카테고리들을 부모 기준으로 그룹화",
@@ -3846,8 +4161,18 @@ export const openApiSpec: OpenAPIV3.Document = {
                   nullable: true,
                   description: "권한코드 (qp_roles 동적). null = 비회원 sentinel",
                 },
-                startAt: { type: "string", format: "date-time", nullable: true },
-                endAt: { type: "string", format: "date-time", nullable: true },
+                startAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "게시 시작 일시. null = 시작 제한 없음. 시(hour) 단위까지만 지정하며 분·초는 00 으로 저장된다.",
+                },
+                endAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "게시 종료 일시. null = 상시 공개. 시(hour) 단위까지만 지정하며 분·초는 00 으로 저장된다. 지정 시각이 **속한 시간대의 끝까지** 노출된다 (`23時` 지정 = 그 날 24:00 까지).",
+                },
               },
             },
           },
@@ -3880,8 +4205,8 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "boolean",
             description: "갱신 이력 — updatedAt !== createdAt 시 true. UPDATE 뱃지/갱신일 표시 결정 단일 기준",
           },
-          isNew: { type: "boolean", description: "생성 후 5일 이내" },
-          isUpdated: { type: "boolean", description: "수정 후 5일 이내" },
+          isNew: { type: "boolean", description: "NEW 뱃지 표시 여부 — **공개일**(등록일 아님) 기준 5일 이내. 공개일은 사내 사용자는 게시대상 중 가장 빠른 startAt, 그 외는 자기 권한 게시대상의 startAt (startAt 없으면 publishedAt→createdAt 폴백). 공개일 도래 전에는 false." },
+          isUpdated: { type: "boolean", description: "UPDATE 뱃지 표시 여부 — 수정 후 5일 이내. 단 공개일 도래 전에는 false 이며, **isNew=true 이면 항상 false**(NEW 우선순위를 서버에서 반영). 즉 '수정된 지 5일 이내' 가 아니라 'UPDATE 뱃지를 붙여야 하는가' 를 뜻한다." },
           categories: {
             type: "array",
             description: "부모-자식 트리 구조 (NEW-2 적용)",
@@ -3898,8 +4223,18 @@ export const openApiSpec: OpenAPIV3.Document = {
                   nullable: true,
                   description: "권한코드 (qp_roles 동적). null = 비회원 sentinel",
                 },
-                startAt: { type: "string", format: "date-time", nullable: true },
-                endAt: { type: "string", format: "date-time", nullable: true },
+                startAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "게시 시작 일시. null = 시작 제한 없음. 시(hour) 단위까지만 지정하며 분·초는 00 으로 저장된다.",
+                },
+                endAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                  description: "게시 종료 일시. null = 상시 공개. 시(hour) 단위까지만 지정하며 분·초는 00 으로 저장된다. 지정 시각이 **속한 시간대의 끝까지** 노출된다 (`23時` 지정 = 그 날 24:00 까지).",
+                },
               },
             },
           },

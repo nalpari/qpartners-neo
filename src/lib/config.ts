@@ -7,6 +7,8 @@
 
 import { join, resolve } from "path";
 
+import { ConfigError } from "@/lib/errors";
+
 // ─── QSP External API ───
 // NOTE: Node.js runtime 전용 — Edge Runtime에서는 함수 내부에서 env를 읽어야 함
 
@@ -335,8 +337,12 @@ export const MASS_MAIL_DEFAULTS = {
   pageSize: parseIntEnv("MASS_MAIL_PAGE_SIZE", 100, { min: 1, max: 1000 }),
   /** 페이징 안전장치 (1만건 상한) */
   maxPages: parseIntEnv("MASS_MAIL_MAX_PAGES", 100, { min: 1, max: 10_000 }),
-  /** 자동 배치 cycle 간격 (ms) — 기본 3분. 0 = 배치 비활성 (테스트용). */
-  batchIntervalMs: parseIntEnv("MASS_MAIL_BATCH_INTERVAL_MS", 3 * 60 * 1000, { min: 0, max: 60 * 60 * 1000 }),
+  /**
+   * 배치 분산 락 리스 기간 (ms) — 기본 5분.
+   * 실행 중에는 leaseMs/3 주기로 자동 갱신되므로 cycle 이 이보다 길어도 안전하며,
+   * 홀더 프로세스가 죽었을 때 다른 인스턴스가 락을 이어받기까지의 최대 대기 시간이 된다.
+   */
+  batchLeaseMs: parseIntEnv("MASS_MAIL_BATCH_LEASE_MS", 5 * 60 * 1000, { min: 60 * 1000, max: 60 * 60 * 1000 }),
   /** 좀비 감지 임계 (ms) — sending 상태가 이 시간 넘게 지속되면 send_failed 로 자동 승격 */
   zombieThresholdMs: parseIntEnv("MASS_MAIL_ZOMBIE_THRESHOLD_MS", 10 * 60 * 1000, { min: 60 * 1000, max: 24 * 60 * 60 * 1000 }),
   /** recipient 단위 30초 룰 상한 — retry_count 가 이 값에 도달하면 status='failed' */
@@ -344,3 +350,24 @@ export const MASS_MAIL_DEFAULTS = {
   /** recipient 30초 룰 in-batch 간격 (ms) — SMTP 일시 거부 시 같은 recipient 재시도 전 대기 */
   recipientRetryDelayMs: parseIntEnv("MASS_MAIL_RECIPIENT_RETRY_DELAY_MS", 30_000, { min: 1000, max: 600_000 }),
 } as const;
+
+/**
+ * 배치 엔드포인트(`POST /api/batch/*`) 공유 시크릿.
+ *
+ * 외부 스케줄러의 유일한 인증 수단이므로 전 환경 필수 — 미설정 시 라우트가 500 으로
+ * fail-closed (배치가 무인증으로 열리는 상황을 만들지 않는다).
+ * 최소 32자 요구 — 짧은 토큰은 brute force 표면이 된다.
+ *
+ * 모듈 로드 시점이 아닌 호출 시점에 검증 — next build 는 운영 env 없이 route 를 로드하므로
+ * 모듈 최상위 throw 는 빌드를 깨뜨린다 (auth-utils.ts#getOtpSecret 과 동일 패턴).
+ */
+export function getBatchApiToken(): string {
+  const token = process.env.BATCH_API_TOKEN?.trim();
+  if (!token) {
+    throw new ConfigError("BATCH_API_TOKEN 환경변수가 필수입니다 (배치 엔드포인트 인증)");
+  }
+  if (token.length < 32) {
+    throw new ConfigError("BATCH_API_TOKEN 이 너무 짧습니다 (최소 32자 필요)");
+  }
+  return token;
+}

@@ -22,9 +22,17 @@ export class MaxDescendantsExceededError extends Error {
  * - `NOT_FOUND`: PUT/DELETE 시 대상 카테고리 미존재
  * - `PARENT_NOT_FOUND`: POST 시 지정한 부모 카테고리 미존재
  * - `DEPTH_EXCEEDED`: POST 시 3Depth 이상 시도
+ * - `INTERNAL_PARENT_LOCKED`: PUT 시 사내전용 부모를 둔 자식의 isInternalOnly 해제 시도
+ *   ("자식 ≥ 부모" 불변식 위반 — POST 의 상속 강제와 짝을 이루는 PUT 측 방어)
  */
 export class CategoryError extends Error {
-  constructor(public readonly kind: "NOT_FOUND" | "PARENT_NOT_FOUND" | "DEPTH_EXCEEDED") {
+  constructor(
+    public readonly kind:
+      | "NOT_FOUND"
+      | "PARENT_NOT_FOUND"
+      | "DEPTH_EXCEEDED"
+      | "INTERNAL_PARENT_LOCKED",
+  ) {
     super(kind);
     this.name = "CategoryError";
   }

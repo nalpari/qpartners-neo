@@ -311,32 +311,37 @@ await sendMail({
 
 API Fire-and-Forget(1단계)과 3분 배치 cycle(2단계)이 같은 mass_mail 을 동시 처리할 수 있어 **3단 방어** 로 막는다.
 
-#### L1: `inFlightMassMails` 인-메모리 마커 (v0.4 신규)
+#### L1: mass_mail 단위 분산 락 (v0.4 인-메모리 Set → v0.5 DB 락)
 
 ```typescript
-// HMR 재-import 시에도 동일 Set 유지 — globalThis 에 보관
-type SendProcessorGlobals = { __inFlightMassMails?: Set<number> };
-const gp = globalThis as unknown as SendProcessorGlobals;
-export const inFlightMassMails: Set<number> =
-  gp.__inFlightMassMails ?? (gp.__inFlightMassMails = new Set<number>());
-
-/** 발송 파이프라인 중복 진입 차단 guard. */
-export async function runWithInFlightGuard(
+/** 발송 파이프라인 중복 진입 차단 guard — qp_batch_locks 의 `mass-mail:{id}` 행. */
+export async function runWithMassMailLock(
   massMailId: number,
   work: () => Promise<void>,
 ): Promise<void> {
-  if (inFlightMassMails.has(massMailId)) {
+  const lockName = massMailLockName(massMailId);
+  const leaseMs = MASS_MAIL_DEFAULTS.batchLeaseMs;
+
+  const holder = await acquireBatchLock(lockName, leaseMs);
+  if (!holder) {
     console.warn(`[mass-mail/send-processor] massMailId ${massMailId} 이미 진행 중 — skip`);
     return;
   }
-  inFlightMassMails.add(massMailId);
+
+  const stopRenewal = startLeaseRenewal(lockName, holder, leaseMs);
   try {
     await work();
   } finally {
-    inFlightMassMails.delete(massMailId);
+    stopRenewal();
+    await releaseBatchLock(lockName, holder).catch(...);
   }
 }
 ```
+
+v0.4 는 `globalThis` 의 `Set<number>` 였으나, 운영 2 인스턴스에서는 프로세스 로컬 상태가
+인스턴스 간 경합을 막지 못한다. 특히 관리자 [発送]/[再送信] 은 배치 cycle 락 대상이 아니고
+발송 중(`status='sending'`) 메일도 배치 처리 대상이라, "A 의 수동 발송" ↔ "B 의 배치" 가
+같은 pending 수신자에게 이중 발송하는 경로가 남아 있었다 → v0.5 에서 DB 락으로 교체.
 
 모든 "수집+sendLoop+promote" 파이프라인 진입부를 이 guard 로 감싼다:
 - `processMassMailSend(options)` 최상단
@@ -345,7 +350,7 @@ export async function runWithInFlightGuard(
 
 `sendLoop` 자체는 guard 없음 — 호출자 책임(JSDoc 경고로 명시). 외부 직접 호출 시 가드 우회 가능하나 실 콜사이트는 위 3경로뿐이며 모두 guard 래핑됨.
 
-**좀비 감지도 in-flight 제외** — `auto-retry-batch` 의 좀비 감지 단계에서 `inFlightMassMails.has(id)` 인 후보는 `send_failed` 자동 승격에서 제외 (소규모 발송이 좀비 threshold 초과해 오판정되는 이슈 방지).
+**좀비 감지도 in-flight 제외** — `auto-retry-batch` 의 좀비 감지 단계에서 `mass-mail:{id}` 락을 보유(미만료) 중인 후보는 `send_failed` 자동 승격에서 제외. DB 기반이므로 다른 인스턴스에서 발송 중인 건도 정확히 식별된다 (소규모 발송이 좀비 threshold 초과해 오판정되는 이슈 방지).
 
 #### L2: `collectAndQueueRecipients` $transaction 낙관적 락 (기존)
 
@@ -370,8 +375,8 @@ Prisma schema 레벨에서 이중 INSERT 최종 방어. L1/L2 우회 가정 시 
 
 #### 전제
 
-- **PM2 single instance**. 다중 인스턴스 시 L1(인-메모리 마커)이 각 프로세스에만 적용되므로 분산 락(pg_advisory_lock / Redis SETNX 등) 필요.
-- `instrumentation.ts` 는 Node runtime 에서만 등록(`NEXT_RUNTIME === "nodejs"` 가드). Edge runtime 번들 컴파일 이슈는 `next.config.ts` `webpack.IgnorePlugin` 으로 배제.
+- L1 이 DB 락이므로 다중 인스턴스에서도 성립한다 (v0.4 의 PM2 single instance 전제는 해소).
+- 락 획득은 Node runtime 전용(Prisma adapter + `setInterval` 갱신). 발송 경로는 모두 Node runtime.
 
 ---
 
@@ -528,35 +533,74 @@ if (mail.status !== "draft") {
 
 ---
 
-## 4.6 자동 배치 모듈 (v0.3 신규)
+## 4.6 자동 배치 모듈 (v0.3 신규 / v0.5 구동 방식 전환)
 
-### 4.6.1 `src/instrumentation.ts` (Next.js 기동 훅) — v0.4 갱신 (fail-closed)
+### 4.6.1 `POST /api/batch/mass-mail` (외부 스케줄러 트리거) — v0.5 전환
 
-Next.js 16 의 `instrumentation.ts` 컨벤션을 활용하여 서버 기동 시 1회만 실행되는 setInterval 등록.
-v0.4 부터 register catch 가 throw 하여 fail-closed (배치 미가동 상태로 서버가 기동되지 않음).
-이중 안전망으로 `/api/health` readiness probe 가 `__massMailBatchTimer` 존재를 검사하여 503 노출.
+**v0.4 까지**: `src/instrumentation.ts` 가 서버 기동 시 `setInterval(runBatchOnce, 3분)` 을 등록.
+
+**v0.5 부터**: 운영이 2 인스턴스로 기동되면서 각 인스턴스가 독립적으로 타이머를 돌려
+같은 mass_mail 을 이중 발송하는 문제가 발생 → **프로세스 내 타이머를 제거하고
+외부 스케줄러가 `POST /api/batch/mass-mail` 을 주기적으로 호출하는 방식으로 전환**.
+`src/instrumentation.ts` 는 삭제되었고 `startAutoRetryBatch` / `stopAutoRetryBatch` 도 제거되었다.
+
+| 관심사 | 소유 |
+|--------|------|
+| cycle 주기 | 외부 스케줄러 (앱 밖) |
+| 인스턴스 간 상호배제 | `qp_batch_locks` 리스 락 (`src/lib/mass-mail/batch-lock.ts`) |
+| 프로세스 내 중첩 방지 | `__massMailBatchRunning` 플래그 (기존 유지, 보완층) |
+| 반복 실패 노출 | `GET /api/health` — 연속 실패 5회 도달 시 503 |
+
+**인증**: `Authorization: Bearer <BATCH_API_TOKEN>`. 외부 스케줄러는 쿠키 세션을 가질 수 없으므로
+공유 시크릿 방식이며, middleware `PUBLIC_PATHS` 에 등록하고 검증은 route handler 가 직접 수행한다.
+SHA-256 다이제스트 경유 `timingSafeEqual` 비교 (길이 노출 방지 + 타이밍 공격 방어).
+토큰 미설정 시 500 fail-closed — 무인증으로 열리지 않는다.
+
+**응답**: 락을 획득해 실행을 시작하면 `202 { started: true }`, 다른 인스턴스가 보유 중이면
+`200 { skipped: true, reason: "locked" }`. cycle 은 백그라운드에서 진행되므로 처리 결과는
+응답에 담기지 않는다 — 스케줄러는 200/202 를 모두 정상으로 취급하면 된다.
 
 ```typescript
-// src/instrumentation.ts
-export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+// src/app/api/batch/mass-mail/route.ts (요지)
+const holder = await acquireBatchLock(MASS_MAIL_LOCK_NAME, leaseMs);
+if (!holder) return NextResponse.json({ started: false, skipped: true, reason: "locked" });
 
-  try {
-    const { startAutoRetryBatch } = await import("@/lib/mass-mail/auto-retry-batch");
-    startAutoRetryBatch();
-  } catch (error: unknown) {
-    console.error(
-      "[instrumentation] CRITICAL — auto-retry-batch 등록 실패. 대량메일 자동 재시도 미가동.",
-      error,
-    );
-    throw error;  // (v0.4) fail-closed
-  }
-}
+void (async () => {
+  const stopRenewal = startLeaseRenewal(MASS_MAIL_LOCK_NAME, holder, leaseMs);
+  try { await runBatchOnce(); }
+  finally { stopRenewal(); await releaseBatchLock(MASS_MAIL_LOCK_NAME, holder); }
+})();
+return NextResponse.json({ started: true, skipped: false }, { status: 202 });
 ```
 
-Next.js 16 에서는 `instrumentation.ts` 가 stable 이라 `next.config.ts` 의 `experimental.instrumentationHook` 플래그가 불필요.
+### 4.6.1a `src/lib/mass-mail/batch-lock.ts` (v0.5 신규) — 분산 리스 락
+
+`qp_batch_locks` 행에 대한 원자적 UPDATE 로 인스턴스 간 상호배제를 보장한다.
+프로세스 로컬 플래그(`__massMailBatchRunning`)나 인-메모리 Set 은
+인스턴스 경계를 넘지 못하므로 DB 를 유일한 조정 지점으로 삼는다.
+
+락은 2종이며, 획득 순서가 항상 cycle → mail 이라 교착이 없다.
+
+| 락 | 이름 | 획득 주체 | 막는 경합 |
+|----|------|-----------|-----------|
+| cycle 락 | `mass-mail` | `POST /api/batch/mass-mail` | 배치 cycle 끼리 |
+| mail 락 | `mass-mail:{id}` | `runWithMassMailLock` (배치·수동 공통, §3.5 L1) | 배치 ↔ 관리자 [発送]/[再送信] |
+
+| 동작 | 쿼리 | 비고 |
+|------|------|------|
+| 획득 | `UPDATE ... WHERE name=? AND expires_at <= NOW` | 단일 원자적 UPDATE — 동시 시도 시 affected=1 은 한쪽뿐. 행 부재 시 `create`, PK 충돌(P2002)은 "보유 중"으로 간주 |
+| 갱신 | `UPDATE ... WHERE name=? AND holder=?` | `leaseMs/3` 주기 — 긴 cycle 이 리스보다 오래 걸려도 안전 |
+| 해제 | `UPDATE expires_at=NOW WHERE name=? AND holder=?` | `holder` 조건 → 리스를 잃은 뒤엔 새 홀더의 락을 건드리지 않음 |
+
+- 홀더 식별자는 **실행 1회당 유일** (`hostname:pid:uuid8`) — 리스를 잃은 직전 실행의 갱신 타이머가
+  새 홀더의 락을 되살리지 못하게 한다.
+- 홀더 프로세스가 죽으면 해제가 실행되지 않지만 리스 만료로 자동 회수된다(영구 데드락 없음).
+  이 회수 지연이 `MASS_MAIL_BATCH_LEASE_MS`(기본 5분)의 의미.
 
 ### 4.6.2 `src/lib/mass-mail/auto-retry-batch.ts`
+
+> v0.5: 아래 `startAutoRetryBatch` / `setInterval` 코드는 제거되었고 `runBatchOnce` 만 export 된다.
+> cycle 본문(좀비 감지 / 예약 도래 / 수집 복구 / sendLoop / sent 승격)은 변경 없음.
 
 ```typescript
 const BATCH_INTERVAL_MS = Number(process.env.MASS_MAIL_BATCH_INTERVAL_MS ?? 3 * 60 * 1000);
@@ -749,34 +793,44 @@ if (Date.now() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
 ### 4.6.4 동작 흐름 정리
 
 ```
-서버 기동 (Next.js 시작)
+외부 스케줄러 (cron 등) — 주기 소유
    ↓
-instrumentation.ts:register() 자동 실행  (try/catch + CRITICAL 로그 — v0.4)
+POST /api/batch/mass-mail  (Authorization: Bearer <BATCH_API_TOKEN>)
    ↓
-startAutoRetryBatch() 호출
+토큰 검증 (SHA-256 + timingSafeEqual) — 실패 401 / 미설정 500
    ↓
-setInterval 등록 (3분 주기, globalThis 보관으로 HMR 안전 — v0.4)
+acquireBatchLock('mass-mail')  — 실패 시 200 skipped 로 즉시 종료
    ↓
-[3분마다 반복] runBatchOnce()
+202 응답 반환 + 백그라운드 실행 (리스 갱신 타이머 동시 시작)
+   ↓
+runBatchOnce()
    ├─ 좀비 감지 (sending + 10분 경과):
-   │    • 후보 findMany → inFlightMassMails.has 제외 → send_failed 승격 (v0.4)
+   │    • 후보 findMany → mail 락 보유분 제외 → send_failed 승격 (v0.5)
    ├─ pending/sending mass_mail SELECT (take:200 상한 — v0.4)
-   ├─ 각 mail — runWithInFlightGuard 로 감쌈 (v0.4):
+   ├─ 각 mail — runWithMassMailLock 으로 감쌈 (v0.5):
    │    ├─ recipients 0건 → collectAndQueueRecipients (L2 낙관적 락)
    │    ├─ pending recipient 있음 → sendLoop (30초 룰 + heartbeat)
    │    └─ 모두 종결 → maybePromoteToSent (2-step updateMany)
-   └─ 다음 cycle 대기 (__massMailBatchRunning 플래그로 중첩 방지)
+   └─ 종료 시 리스 갱신 중단 + releaseBatchLock (다음 호출이 즉시 획득 가능)
 ```
 
 ```typescript
-// 좀비 감지에 in-flight 제외 (v0.4 신규)
+// 좀비 감지에 in-flight 제외 (v0.5 — mail 락 기준으로 인스턴스 간 정확)
 const zombieCandidates = await prisma.massMail.findMany({
   where: { status: "sending", updatedAt: { lt: zombieCutoff } },
   select: { id: true, updatedAt: true },
 });
+const heldLocks = await prisma.batchLock.findMany({
+  where: {
+    name: { in: zombieCandidates.map((z) => massMailLockName(z.id)) },
+    expiresAt: { gt: new Date() },
+  },
+  select: { name: true },
+});
+const heldLockNames = new Set(heldLocks.map((lock) => lock.name));
 const realZombieIds = zombieCandidates
   .map((z) => z.id)
-  .filter((id) => !inFlightMassMails.has(id));
+  .filter((id) => !heldLockNames.has(massMailLockName(id)));
 if (realZombieIds.length > 0) {
   await prisma.massMail.updateMany({
     where: { id: { in: realZombieIds }, status: "sending" },
@@ -785,12 +839,18 @@ if (realZombieIds.length > 0) {
 }
 ```
 
-### 4.6.5 인스턴스 다중화 시 주의 (현재는 single instance 가정)
+### 4.6.5 인스턴스 다중화 — v0.5 해결
 
-- PM2 `qpartners-neo-dev` 가 single instance 인 한 `isRunning` flag 로 중복 실행 방지 충분
-- 향후 cluster mode 또는 K8s 다중 replica 도입 시:
-  - `pg_advisory_lock` / Redis SETNX / DB UPDATE WHERE 조건절 같은 분산 락 도입 필요
-  - 또는 cron-job 을 별도 워커 프로세스로 분리
+- **v0.4 까지**: PM2 single instance 가정. `isRunning` flag 만으로 중복 실행 방지 → 운영이
+  2 인스턴스가 되면서 각 인스턴스가 독립 타이머를 돌려 같은 mass_mail 이중 발송 발생.
+- **v0.5**: 프로세스 내 타이머 제거 + 외부 스케줄러 트리거 + `qp_batch_locks` DB 리스 락 (§4.6.1a).
+  어느 인스턴스가 요청을 받아도 한 시점에 하나만 cycle 을 실행한다.
+- **v0.5 (배치 외 경로)**: in-flight 가드도 인-메모리 Set → mass_mail 단위 DB 락(`mass-mail:{id}`)
+  으로 교체 (§3.5 L1). "인스턴스 A 의 배치"와 "인스턴스 B 가 받은 관리자 즉시발송/재발송"이
+  같은 mass_mail 에 동시 진입하던 경합까지 차단된다.
+- **남은 범위**: recipient 단위 선점(claim)은 없다. 상호배제는 mass_mail 단위 락이 담당하며,
+  락을 잃은 상태(리스 만료 후 인계)에서는 같은 pending 수신자를 두 실행이 집을 수 있다.
+  리스 갱신이 정상 동작하는 한 발생하지 않으며, 발생 시 `startLeaseRenewal` 이 CRITICAL 로그를 남긴다.
 
 ---
 
@@ -814,11 +874,17 @@ MASS_MAIL_RETRY_DELAY_MS=30000      # in-process 재시도 간격
 MASS_MAIL_PAGE_SIZE=100             # QSP 목록 페이지당 건수
 MASS_MAIL_MAX_PAGES=100             # 페이징 안전장치 (1만건 상한)
 
-# v0.3 신규 (3분 배치)
-MASS_MAIL_BATCH_INTERVAL_MS=180000        # 3분 = 180000 ms
+# v0.3 신규 (배치)
 MASS_MAIL_ZOMBIE_THRESHOLD_MS=600000      # 좀비 감지 임계 — 10분
 MASS_MAIL_RECIPIENT_MAX_RETRY=3           # recipient 단위 30초 룰 상한
 MASS_MAIL_RECIPIENT_RETRY_DELAY_MS=30000  # 30초 룰 간격
+
+# v0.5 신규 (외부 스케줄러 트리거 전환)
+BATCH_API_TOKEN=...                       # 배치 엔드포인트 공유 시크릿 (최소 32자, 전 환경 필수)
+MASS_MAIL_BATCH_LEASE_MS=300000           # 분산 락 리스 기간 — 5분 (leaseMs/3 주기 자동 갱신)
+
+# v0.5 제거
+# MASS_MAIL_BATCH_INTERVAL_MS — cycle 주기는 외부 스케줄러가 소유하므로 앱 설정에서 제거
 ```
 
 ### 5.2 src/lib/config.ts 추가
@@ -830,8 +896,8 @@ export const MASS_MAIL_DEFAULTS = {
   retryDelayMs: Number(process.env.MASS_MAIL_RETRY_DELAY_MS ?? 30_000),
   pageSize: Number(process.env.MASS_MAIL_PAGE_SIZE ?? 100),
   maxPages: Number(process.env.MASS_MAIL_MAX_PAGES ?? 100),
-  // v0.3 — 자동 배치 관련
-  batchIntervalMs: Number(process.env.MASS_MAIL_BATCH_INTERVAL_MS ?? 3 * 60 * 1000),
+  // v0.3 — 자동 배치 관련 (v0.5: batchIntervalMs → batchLeaseMs 로 대체)
+  batchLeaseMs: Number(process.env.MASS_MAIL_BATCH_LEASE_MS ?? 5 * 60 * 1000),
   zombieThresholdMs: Number(process.env.MASS_MAIL_ZOMBIE_THRESHOLD_MS ?? 10 * 60 * 1000),
   recipientMaxRetry: Number(process.env.MASS_MAIL_RECIPIENT_MAX_RETRY ?? 3),
   recipientRetryDelayMs: Number(process.env.MASS_MAIL_RECIPIENT_RETRY_DELAY_MS ?? 30_000),
@@ -840,11 +906,14 @@ export const MASS_MAIL_DEFAULTS = {
 
 ---
 
-## 6. File Structure (최종, v0.3)
+## 6. File Structure (최종, v0.5)
 
 ```
 src/
-├── instrumentation.ts                  # (v0.3 신규) Next.js 기동 훅
+├── app/api/batch/mass-mail/
+│   └── route.ts                        # (v0.5 신규) 외부 스케줄러 트리거 — 토큰 검증 + 분산 락 + 202
+├── app/api/health/
+│   └── route.ts                        # (v0.5 갱신) 타이머 존재 검사 → cycle 연속 실패 검사로 전환
 ├── app/api/admin/mass-mails/
 │   ├── route.ts                        # 기존 — POST 트리거
 │   └── [id]/
@@ -853,18 +922,23 @@ src/
 │           └── route.ts                # 기존
 ├── lib/
 │   ├── mailer.ts                       # 기존
-│   ├── config.ts                       # 기존 — MASS_MAIL_DEFAULTS 확장 (batch 항목 추가)
+│   ├── config.ts                       # 기존 — MASS_MAIL_DEFAULTS(batchLeaseMs) + getBatchApiToken()
 │   ├── mass-mail/
 │   │   ├── collect-recipients.ts       # 기존
 │   │   ├── send-processor.ts           # 기존 — sendLoop 에 30초 룰 + retry_count 추가
-│   │   └── auto-retry-batch.ts         # (v0.3 신규) 3분 배치 본체
-│   ├── openapi.ts                      # 기존 — 스펙 동기화 (failedRecipients 필드 추가)
+│   │   ├── batch-lock.ts               # (v0.5 신규) qp_batch_locks 분산 리스 락
+│   │   ├── batch-state.ts              # (v0.5 신규) 배치 런타임 상태 — auto-retry-batch ↔ health 공유
+│   │   └── auto-retry-batch.ts         # (v0.3 신규 / v0.5 setInterval 제거) 배치 cycle 본체
+│   ├── middleware.ts                   # (v0.5 갱신) PUBLIC_PATHS 에 /api/batch/mass-mail 추가
+│   ├── openapi.ts                      # 기존 — 스펙 동기화 (Batch 태그 + /batch/mass-mail 추가)
 │   └── schemas/
 │       ├── mass-mail.ts                # 기존
 │       └── member.ts                   # 기존
 └── generated/prisma/                   # 자동 생성
 prisma/
-└── schema.prisma                       # 기존 — MassMailRecipient.retry_count 컬럼 1개 추가 (v0.3)
+└── schema.prisma                       # MassMailRecipient.retry_count (v0.3) + BatchLock 모델 (v0.5)
+
+(v0.5 삭제) src/instrumentation.ts     # setInterval 등록 훅 — 외부 스케줄러 전환으로 불필요
 ```
 
 ---
@@ -1025,3 +1099,4 @@ prisma/
 | 0.2 | 2026-04-17 | Gap 분석 반영 — §2.1 collectRecipients 시그니처에 loginId 파라미터 추가, §3.2 bulk INSERT + status 전이를 $transaction 원자화로 명시 | CK |
 | 0.3 | 2026-04-19 | **Plan v0.4 반영 — 3분 배치 자동 복구 + retry_count 컬럼 + 失敗確認 UI**. §1.2 retry_count 컬럼 추가. §3.2 sendLoop 에 30초 룰 + retry_count 증분 명세. §4.4 GET 응답에 failedRecipients 배열 추가 (신규 API 라우트 없음). §4.6 자동 배치 모듈 신규 섹션 추가 (instrumentation.ts + auto-retry-batch.ts). §5 환경변수 4개 추가 (BATCH_INTERVAL_MS, ZOMBIE_THRESHOLD_MS 등). §6 file structure 갱신. §7 Phase 1/2 구분. §8.6~8.8 테스트 시나리오 3개 추가. §9 미결사항 #4 해결 표시 + #5~#8 신규. | CK |
 | 0.4 | 2026-04-19 | **PR #62 리뷰 대응 + 동시성 보호 강화 (Plan v0.5 연동)**. §3.5 동시성 3단 방어 구조 확장 (inFlightMassMails + runWithInFlightGuard + globalThis HMR 안전). §4.6.2 maybePromoteToSent 2-step updateMany (sentAt TOCTOU 제거). §4.6.3 sendLoop SMTP/DB 분리 try/catch + orphan_send 마킹 + heartbeat 시간 기반 60초. §4.6.4 좀비 감지에 in-flight 가드 + take:200 상한. next.config.ts Edge runtime webpack IgnorePlugin 추가 (instrumentation.ts → auto-retry-batch → prisma/mariadb 체인 Edge 번들 resolve 실패 해결). | CK |
+| 0.5 | 2026-08-04 | **배치 구동 방식 전환 — setInterval → 외부 스케줄러 엔드포인트**. 운영 2 인스턴스가 각자 타이머를 돌려 같은 mass_mail 을 이중 발송하던 문제 해소. §4.6.1 `POST /api/batch/mass-mail` 신규 (Bearer BATCH_API_TOKEN 인증, 202/200-skipped). §4.6.1a `batch-lock.ts` 분산 리스 락 신규 (`qp_batch_locks` 원자적 UPDATE + leaseMs/3 자동 갱신). §4.6.2 `startAutoRetryBatch`/`stopAutoRetryBatch`/setInterval 제거, `src/instrumentation.ts` 삭제. §4.6.4 동작 흐름 갱신. §4.6.5 인스턴스 다중화 해결 표시. `/api/health` 검사 항목을 타이머 존재 → cycle 연속 실패로 전환. §5 `MASS_MAIL_BATCH_INTERVAL_MS` 제거, `BATCH_API_TOKEN`/`MASS_MAIL_BATCH_LEASE_MS` 추가. §6 file structure 갱신. | CK |
