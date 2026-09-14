@@ -222,6 +222,12 @@ export function TwoFactorAuthPopup() {
         setError("ブラウザのストレージに問題があります。シークレットモードでは正常に動作しない場合があります。");
         return;
       }
+      // 헤더(Gnb) 로그인 표시는 이 캐시의 user 로 결정된다. /login 진입 시점의 프로브가
+      // 비로그인(null)을 staleTime 5분으로 캐시해 두므로, 플래그·이벤트만으로는 재조회가
+      // 일어나지 않아 홈 이동 후에도 비로그인 표시가 남는다. verify 응답에는 user 가 없어
+      // setQueryData 대신 무효화로 fetchAuthMe 재조회(twoFactorVerified=true)를 유도한다.
+      // (2FA 미요구 경로는 login-contents.tsx 가 setQueryData 로 직접 채운다.)
+      void queryClient.invalidateQueries({ queryKey: ["auth", "login-user-info"] });
       dispatchAuthChange();
       // 계정 전환 경계 — 2FA 통과가 이 사용자의 로그인 확정 시점이므로 이전 사용자의
       // 목록 복원 상태를 폐기한다 (Redmine #2490).
