@@ -339,7 +339,10 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const response = NextResponse.json({ data: { verified: true, user: verifiedUser } });
+  // 클라이언트 응답에는 sekoToken(Connector Bearer) 을 노출하지 않는다 — httpOnly JWT 에만 보관.
+  const response = NextResponse.json({
+    data: { verified: true, user: { ...verifiedUser, sekoToken: undefined } },
+  });
 
   response.cookies.set(COOKIE_NAME, newToken, {
     httpOnly: true,
