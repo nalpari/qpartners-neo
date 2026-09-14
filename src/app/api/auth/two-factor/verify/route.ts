@@ -301,14 +301,16 @@ export async function POST(request: NextRequest) {
   }
 
   // 8. JWT 재발행 (twoFactorVerified: true)
+  // 이 payload 를 아래 응답에도 그대로 실어 클라이언트가 setQueryData 로 헤더 캐시를 직접
+  // 채우게 한다. 게이트 회신이 없으면(비 SEKO, 또는 응답에 회사명 없음) 기존 값을 지우지 않는다.
+  const verifiedUser = {
+    ...user,
+    twoFactorVerified: true,
+    compNm: sekoStoreName ?? user.compNm,
+  };
   let newToken: string;
   try {
-    newToken = await signToken({
-      ...user,
-      twoFactorVerified: true,
-      // 게이트 회신이 없으면(비 SEKO, 또는 응답에 회사명 없음) 기존 값을 지우지 않는다.
-      compNm: sekoStoreName ?? user.compNm,
-    });
+    newToken = await signToken(verifiedUser);
   } catch (error) {
     console.error("[POST /api/auth/two-factor/verify] JWT 생성 실패:", error);
     return NextResponse.json(
@@ -337,7 +339,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const response = NextResponse.json({ data: { verified: true } });
+  const response = NextResponse.json({ data: { verified: true, user: verifiedUser } });
 
   response.cookies.set(COOKIE_NAME, newToken, {
     httpOnly: true,
