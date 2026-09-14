@@ -962,6 +962,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                       type: "object",
                       properties: {
                         verified: { type: "boolean", example: true },
+                        user: { $ref: "#/components/schemas/LoginUser" },
                       },
                     },
                   },

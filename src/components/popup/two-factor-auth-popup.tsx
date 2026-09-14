@@ -7,6 +7,7 @@ import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
 import { extractApiError } from "@/lib/api-error";
+import { loginUserSchema } from "@/lib/schemas/auth";
 import { usePopupStore, useAlertStore } from "@/lib/store";
 import { performLogout } from "@/lib/auth-client";
 import { resetListRestoreState } from "@/hooks/use-list-state-persist";
@@ -212,7 +213,7 @@ export function TwoFactorAuthPopup() {
     setError(null);
 
     try {
-      await api.post("/auth/two-factor/verify", { userTp, userId, code });
+      const res = await api.post("/auth/two-factor/verify", { userTp, userId, code });
 
       // 성공: 홈화면 블러 해제 (성공 메시지 없음)
       try {
@@ -222,12 +223,19 @@ export function TwoFactorAuthPopup() {
         setError("ブラウザのストレージに問題があります。シークレットモードでは正常に動作しない場合があります。");
         return;
       }
-      // 헤더(Gnb) 로그인 표시는 이 캐시의 user 로 결정된다. /login 진입 시점의 프로브가
-      // 비로그인(null)을 staleTime 5분으로 캐시해 두므로, 플래그·이벤트만으로는 재조회가
-      // 일어나지 않아 홈 이동 후에도 비로그인 표시가 남는다. verify 응답에는 user 가 없어
-      // setQueryData 대신 무효화로 fetchAuthMe 재조회(twoFactorVerified=true)를 유도한다.
-      // (2FA 미요구 경로는 login-contents.tsx 가 setQueryData 로 직접 채운다.)
-      void queryClient.invalidateQueries({ queryKey: ["auth", "login-user-info"] });
+      // 헤더(Gnb) 로그인 표시는 이 캐시의 user 로 결정된다. verify 응답에 실린 재발행 payload 를
+      // 그대로 캐시에 써서(2FA 미요구 경로 login-contents.tsx 와 동일) 홈 이동 즉시 로그인 표시로
+      // 전환한다. invalidateQueries 재조회 방식은 router.replace("/") 직후 마운트되는 홈 구독자
+      // (home-contents/home-notices, queryFn: () => null)가 공유 queryFn 을 덮어써 재조회 결과가
+      // null 로 수렴하는 경합이 있어 헤더가 갱신되지 않았다.
+      const parsed = loginUserSchema.safeParse(res.data?.data?.user);
+      if (parsed.success) {
+        queryClient.setQueryData(["auth", "login-user-info"], parsed.data);
+      } else {
+        // 방어적 폴백 — 응답에 user 가 없거나 스키마 불일치면 재조회로라도 갱신을 시도한다.
+        console.warn("[2FA] verify 응답 user 파싱 실패 — 재조회 폴백:", parsed.error?.issues);
+        void queryClient.invalidateQueries({ queryKey: ["auth", "login-user-info"] });
+      }
       dispatchAuthChange();
       // 계정 전환 경계 — 2FA 통과가 이 사용자의 로그인 확정 시점이므로 이전 사용자의
       // 목록 복원 상태를 폐기한다 (Redmine #2490).
