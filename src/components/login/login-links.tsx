@@ -11,7 +11,7 @@ import type { TabType } from "@/components/login/types";
  */
 const REGISTRATION_URLS: Record<TabType, string | null> = {
   dealer: "https://www.hanasys.jp/join",
-  installer: "https://q-partners.q-cells.jp/seminar/",
+  installer: "https://prod.q-partners.q-cells.jp/seminar/",
   general: null,
 };
 

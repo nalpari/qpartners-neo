@@ -705,7 +705,7 @@ function HeaderCard() {
           <ExternalLinkButton href="https://www.hanasys.jp/join">
             販売店会員登録
           </ExternalLinkButton>
-          <ExternalLinkButton href="https://q-partners.q-cells.jp/seminar/">
+          <ExternalLinkButton href="https://prod.q-partners.q-cells.jp/seminar/">
             施工店会員登録
           </ExternalLinkButton>
         </div>
@@ -726,7 +726,7 @@ function HeaderCard() {
             販売店会員登録
           </ExternalLinkButton>
           <ExternalLinkButton
-            href="https://q-partners.q-cells.jp/seminar/"
+            href="https://prod.q-partners.q-cells.jp/seminar/"
             className="flex-1"
           >
             施工店会員登録
