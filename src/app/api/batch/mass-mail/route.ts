@@ -28,6 +28,8 @@ import {
   releaseBatchLock,
   startLeaseRenewal,
 } from "@/lib/mass-mail/batch-lock";
+import { logBatchCycle } from "@/lib/pocketbase-log";
+import type { BatchLogEntry } from "@/lib/pocketbase-log";
 
 // setInterval(리스 갱신) / nodemailer / prisma adapter 모두 Node.js runtime 전용.
 export const runtime = "nodejs";
@@ -112,15 +114,22 @@ export async function POST(request: NextRequest) {
     // (standalone Node 서버이므로 응답 후에도 프로세스가 promise 를 계속 실행한다)
     void (async () => {
       const stopRenewal = startLeaseRenewal(MASS_MAIL_LOCK_NAME, holder, leaseMs);
+      let entry: BatchLogEntry;
       try {
         const result = await runBatchOnce();
         // cycle 결과 한 줄 요약 — 응답에는 결과가 담기지 않으므로 이 로그가 유일한 결과 채널.
         // `grep "cycle 결과"` 한 번으로 성공/실패를 판별할 수 있도록 고정 포맷으로 남긴다.
         console.log(`${LOG_TAG} cycle 결과 — ${formatCycleResult(result)}`);
+        entry = { ...result, holder };
       } catch (error: unknown) {
         // runBatchOnce 는 내부에서 자체 try/catch 하지만, 예기치 못한 throw 로도
         // 락 해제가 누락되지 않도록 최상위에서 한 번 더 잡는다.
         console.error(`${LOG_TAG} cycle 결과 — status=ERROR | cycle 실행 중 예외:`, error);
+        entry = {
+          holder,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       } finally {
         stopRenewal();
         await releaseBatchLock(MASS_MAIL_LOCK_NAME, holder).catch((error: unknown) => {
@@ -128,6 +137,11 @@ export async function POST(request: NextRequest) {
           console.error(`${LOG_TAG} 락 해제 실패 — 리스 만료로 자동 회수됨:`, error);
         });
       }
+
+      // 원격 기록은 락을 놓은 **뒤에** 수행한다 — PocketBase 가 느리거나 무응답이어도
+      // 다음 cron tick 이 락에 막히지 않고, 도중에 프로세스가 죽어도 잃는 것은 로그 1건뿐이다.
+      // logBatchCycle 은 no-throw 계약이므로 이 await 이 rejection 으로 끝나지 않는다.
+      await logBatchCycle(entry);
     })();
 
     return NextResponse.json(
