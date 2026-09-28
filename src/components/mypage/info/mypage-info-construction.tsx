@@ -16,6 +16,12 @@ import {
   SEKO_AUTOLOGIN_RELOGIN_REASON,
   parseSekoAutoLoginFailure,
 } from "@/lib/seko-autologin-result";
+/**
+ * 착지 화면 식별자는 커넥터 타입을 그대로 쓴다 — 여기서 다시 선언하면 허용값이 라우트·
+ * 커넥터와 조용히 갈라진다. 화면 URL 이 아니라 식별자를 넘기고, 경로 매핑은 서버가 쥔다.
+ * (타입 전용 import 라 서버 전용 모듈이 클라이언트 번들에 들어가지 않는다.)
+ */
+import type { SekoRedirectPath } from "@/lib/seko-connector";
 
 /**
  * 마이페이지 「施工ID情報」 카드 데이터 — `GET /api/mypage/profile` 의 `sekoConstruction`.
@@ -63,12 +69,6 @@ const FILE_TYPE_LABEL: Record<string, string> = {
 };
 
 const EMPTY_MESSAGE = "施工ID情報がありません";
-
-/**
- * 자동로그인 착지 화면 식별자. `GET /api/auth/seko/autologin` 의 `?target=` 허용값과 같다.
- * 화면 URL 이 아니라 식별자를 넘긴다 — 실제 경로 매핑은 서버(화이트리스트)가 쥔다.
- */
-type SekoAutoLoginTarget = "mypage" | "seminar";
 
 /** 자동로그인 창이 AS-IS 로 넘어갔는지(=성공) 확인하는 폴링 주기(ms). */
 const AUTOLOGIN_POLL_MS = 200;
@@ -257,8 +257,12 @@ export function MypageInfoConstruction({
    *
    * 새 창으로 `/api/auth/seko/autologin?target=…` 에 진입하면, 라우트가 커넥터에
    * `redirectPath` 를 실어 보내고 AS-IS 가 **목적 화면으로 직접** 착지시킨다
-   * (Redmine #1750, 2026-09-21 사양 확정). 종전에는 착지 화면을 지정할 수 없어
-   * TOP 착지 후 창을 다시 이동시켰는데, 그 우회는 제거했다.
+   * (Redmine #1750 note-80, 2026-09-24 사양 확정). 종전에는 착지 화면을 지정할 수 없어
+   * TOP 착지 후 창을 다시 이동시켰는데, 그 우회는 제거했다 — 두 버튼 모두 preview 에서
+   * 직접 착지를 확인했다(2026-09-27, `qp_interface_log` 84041~84049).
+   *
+   * 폴백이 없으므로 **AS-IS 가 착지 지정을 지원하지 않는 환경에서는 조용히 TOP 에 떨어진다.**
+   * 운영 AS-IS 반영 확인이 배포 전제인 이유다(`sekoAutoLogin` JSDoc 참조).
    *
    * **실패는 결과 페이지가 알린다.** 라우트가 창을 동일 오리진 결과 페이지로 보내고
    * 그 페이지가 `postMessage` 로 사유를 넘긴다. 성공에는 신호가 없다 — 그때 창은 이미
@@ -273,7 +277,7 @@ export function MypageInfoConstruction({
    * **1회·1분** 유효라 미리 받아두거나 프리페치되면 그대로 소진되어 사용자는
    * 「このリンクは無効か、有効期限が切れています」를 보게 된다.
    */
-  const handleAutoLogin = (target: SekoAutoLoginTarget) => {
+  const handleAutoLogin = (target: SekoRedirectPath) => {
     // 창이 뜨기까지 수백 ms — 그 사이 재클릭하면 자동로그인 URL 이 한 번 더 발급되어
     // 앞의 URL 이 버려진다.
     if (navigatingRef.current) return;
