@@ -136,18 +136,6 @@ function sekoEndpoint(path: string): string {
 }
 
 /**
- * AS-IS **사이트 화면** 절대 URL. 커넥터 API 와 같은 호스트를 쓴다.
- *
- * 자동로그인(No.1) 이 심는 세션 쿠키는 그 호스트에만 유효하므로, 이동 대상도 반드시 같은
- * 호스트여야 한다. 화면 URL 을 코드에 하드코딩하면 preview 에서 자동로그인은 preview 에
- * 걸리고 이동만 운영으로 나가 **비로그인 상태로 도착**한다 — 환경별 값은 env 하나
- * (`SEKO_CONNECTOR_BASE_URL`)에서 파생시킨다.
- */
-export function sekoSiteUrl(path: string): string {
-  return `${sekoBaseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
-}
-
-/**
  * AS-IS 가 돌려준 URL 을 **커넥터 origin 안쪽 절대 URL** 로 해석한다. 밖이면 `null`.
  *
  * 커넥터 응답에 실려 오는 URL 두 곳(`No.1 autologinUrl`, `No.5 fileUrl`)이 공유한다.
@@ -213,15 +201,22 @@ function sekoApiKeyHeader(): { "X-Api-Key": string } {
  * TO-BE 에 로그인한 시공점 회원을 AS-IS Q.Partners 로 **로그인된 채 내보내기** 위한 일회용 링크를
  * 받는다. 반환된 URL 로 브라우저를 보내면 AS-IS 가 세션 쿠키를 심고 자기 사이트로 리다이렉트한다.
  *
- * 주의 2가지 (2026-08-20 preview 실측):
- *  - **착지는 항상 AS-IS 루트**다. 화면 지정 수단이 현재 없다(ENDO 질의 중).
+ * `redirectPath` 로 착지 화면을 지정한다. 허용값은 AS-IS 측이 `mypage` / `seminar` 두 개만
+ * 받기로 확정했고(Redmine #1750, 2026-09-21), **슬래시를 붙이지 않은 형태로 보내기로 회신**했다.
+ * 정규화를 상대에게 의존하지 않기 위한 합의이므로 여기서도 그 형태 그대로 보낸다.
+ * 미지정·허용외 값이면 AS-IS 는 기존대로 TOP 으로 보낸다.
+ *
+ * 주의 (2026-08-20 preview 실측):
  *  - **1회·1분 유효**다. 호출부는 링크를 미리 만들어 두거나 `<a href>` 로 노출하면 안 된다 —
  *    브라우저·프레임워크 프리페치가 조용히 소진시켜 사용자가 만료 안내를 보게 된다.
  */
+export type SekoRedirectPath = "mypage" | "seminar";
+
 export async function sekoAutoLogin(
   userId: string,
   token: string,
   logTag: string,
+  redirectPath: SekoRedirectPath,
 ): Promise<
   | { ok: true; autologinUrl: string }
   | { ok: false; error: SekoFetchError }
@@ -233,7 +228,7 @@ export async function sekoAutoLogin(
       {
         method: "POST",
         headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, redirectPath }),
         cache: "no-store",
         signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
       },
