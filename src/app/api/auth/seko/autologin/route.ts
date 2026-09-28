@@ -30,8 +30,9 @@ import {
  * 선점하면 그 JSON 이 곧 위 상황이 되기 때문이며, 인가는 아래 4단 가드가 쿠키를 직접
  * 재검증해 수행한다(헤더 주입값에 의존하지 않는다).
  *
- * 착지 화면은 `?target=` 로 받아 커넥터 `redirectPath` 로 넘긴다(Redmine #1750, 2026-09-21 확정).
- * **쿼리값을 그대로 넘기지 않고 화이트리스트로 매핑**한다 — 임의 경로가 통과하면 이 라우트가
+ * 착지 화면은 `?target=` 로 받아 커넥터 `redirectPath` 로 넘긴다
+ * (Redmine #1750 note-80, 2026-09-24 사양 확정 — preview 실연동 확인 2026-09-27).
+ * **쿼리값을 그대로 넘기지 않고 허용값과 대조**한다 — 임의 경로가 통과하면 이 라우트가
  * 그대로 열린 리다이렉터가 된다. AS-IS 측도 허용외 값을 TOP 으로 접지만, 우리 쪽 검증을
  * 상대 구현에 의존시키지 않는다.
  *
@@ -42,12 +43,17 @@ import {
 
 const LOG_TAG = "[GET /api/auth/seko/autologin]";
 
-/** `?target=` 허용값 → 커넥터 `redirectPath`. 여기 없는 값은 기본값으로 접는다. */
-const REDIRECT_TARGETS: Record<string, SekoRedirectPath> = {
-  mypage: "mypage",
-  seminar: "seminar",
-};
-const DEFAULT_REDIRECT_TARGET: SekoRedirectPath = "mypage";
+/**
+ * `?target=` → 커넥터 `redirectPath`. 허용값이 아니면 `mypage` 로 접는다.
+ *
+ * 객체 리터럴 인덱스 조회(`TARGETS[target] ?? 기본값`)로 쓰지 않는다 — 상속 키가 걸려
+ * `?target=__proto__`(→ `Object.prototype`), `?target=toString`(→ 함수)이 `??` 를 통과해
+ * 허용값 아닌 값이 그대로 본문에 실린다. 여기 단언한 「허용외는 mypage 로 접는다」가
+ * 런타임에서 깨지는 지점이라, 상속을 타지 않는 동등 비교로 둔다.
+ */
+function toRedirectPath(target: string): SekoRedirectPath {
+  return target === "seminar" ? "seminar" : "mypage";
+}
 
 /**
  * 실패 결과 페이지로 리다이렉트.
@@ -89,9 +95,9 @@ export async function GET(request: NextRequest) {
       return clearSessionCookie(failureRedirect("session"));
     }
 
-    const target = request.nextUrl.searchParams.get("target") ?? "";
-    const redirectPath: SekoRedirectPath =
-      REDIRECT_TARGETS[target] ?? DEFAULT_REDIRECT_TARGET;
+    const redirectPath = toRedirectPath(
+      request.nextUrl.searchParams.get("target") ?? "",
+    );
 
     const result = await sekoAutoLogin(
       user.userId,
