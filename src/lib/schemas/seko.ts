@@ -81,9 +81,10 @@ export const sekoLoginResponseSchema = z.object({
 // 응답 `autologinUrl` 은 AS-IS 도메인의 일회용 링크다. 실측(2026-08-20 preview):
 //  - 형태: `{AS-IS base}/api/autologin/{64자 토큰}`
 //  - 접속 시 302 + `Set-Cookie: SESS_PUBLISH` / `hqj_user` (path=/) → 사이트 전체 로그인 상태
-//  - **착지는 항상 사이트 루트(`/`)** — 요청 본문 파라미터(returnUrl/url/redirectUrl/page)도,
-//    URL 쿼리(?returnUrl=·?redirect=)도 200 으로 받아주기만 하고 무시된다.
-//    화면 지정은 AS-IS 지원이 필요해 ENDO 질의 중(Redmine #1750 note-23·25 관련).
+//  - 착지 화면은 요청 본문 `redirectPath`(`mypage`|`seminar`)로 지정한다
+//    (Redmine #1750 note-80, 2026-09-24 — preview 실연동 확인 2026-09-27).
+//    미지정·허용외 값이면 사이트 루트(`/`)로 떨어진다. 임의 경로·쿼리스트링은 지원되지 않는다
+//    (2026-08-20 실측 당시 returnUrl/url/redirectUrl/page 등은 전부 무시됐다).
 //  - **1회·1분 유효**. 재접속 시 「このリンクは無効か、有効期限が切れています」
 //    → 링크를 미리 열어보는 프리페치가 URL 을 소진시키므로 호출부는 클릭 시에만 요청해야 한다.
 const sekoAutoLoginDataSchema = z.object({

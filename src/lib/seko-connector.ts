@@ -136,18 +136,6 @@ function sekoEndpoint(path: string): string {
 }
 
 /**
- * AS-IS **사이트 화면** 절대 URL. 커넥터 API 와 같은 호스트를 쓴다.
- *
- * 자동로그인(No.1) 이 심는 세션 쿠키는 그 호스트에만 유효하므로, 이동 대상도 반드시 같은
- * 호스트여야 한다. 화면 URL 을 코드에 하드코딩하면 preview 에서 자동로그인은 preview 에
- * 걸리고 이동만 운영으로 나가 **비로그인 상태로 도착**한다 — 환경별 값은 env 하나
- * (`SEKO_CONNECTOR_BASE_URL`)에서 파생시킨다.
- */
-export function sekoSiteUrl(path: string): string {
-  return `${sekoBaseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
-}
-
-/**
  * AS-IS 가 돌려준 URL 을 **커넥터 origin 안쪽 절대 URL** 로 해석한다. 밖이면 `null`.
  *
  * 커넥터 응답에 실려 오는 URL 두 곳(`No.1 autologinUrl`, `No.5 fileUrl`)이 공유한다.
@@ -207,21 +195,40 @@ function sekoApiKeyHeader(): { "X-Api-Key": string } {
   return { "X-Api-Key": key };
 }
 
+/** 자동로그인 착지 화면 식별자 — AS-IS 가 허용하는 `redirectPath` 값 전체. */
+export type SekoRedirectPath = "mypage" | "seminar";
+
 /**
  * No.1 Seko Auto Login API — 시공점 자동로그인 URL 발급 (Bearer, **아웃바운드**).
  *
  * TO-BE 에 로그인한 시공점 회원을 AS-IS Q.Partners 로 **로그인된 채 내보내기** 위한 일회용 링크를
  * 받는다. 반환된 URL 로 브라우저를 보내면 AS-IS 가 세션 쿠키를 심고 자기 사이트로 리다이렉트한다.
  *
- * 주의 2가지 (2026-08-20 preview 실측):
- *  - **착지는 항상 AS-IS 루트**다. 화면 지정 수단이 현재 없다(ENDO 질의 중).
+ * `redirectPath` 로 착지 화면을 지정한다. 허용값은 `mypage` / `seminar` 두 개뿐이고,
+ * **슬래시 없는 형태**로 보낸다. 미지정·허용외 값이면 AS-IS 는 기존대로 TOP 으로 보낸다.
+ *
+ * 필드명이 사양서의 `redirect_path` 가 아니라 camelCase 인 것은 오타가 아니다 — AS-IS 측이
+ * 기존 `userId` 표기에 맞춰 **`redirectPath` 로 구현**했다(Redmine #1750 note-80, 2026-09-24).
+ * 사양서 2026/09/19 판에는 `seminar/detail.php`·쿼리스트링도 실려 있으나 우리는 쓰지 않는다.
+ *
+ * 주의 (2026-08-20 preview 실측):
  *  - **1회·1분 유효**다. 호출부는 링크를 미리 만들어 두거나 `<a href>` 로 노출하면 안 된다 —
  *    브라우저·프레임워크 프리페치가 조용히 소진시켜 사용자가 만료 안내를 보게 된다.
+ *
+ * `redirectPath` 실연동 확인 (preview, 2026-09-27 — `qp_interface_log` 84041~84049):
+ *  - `mypage` / `seminar` 전건 `200` + `resultCode "S"` — 필드 추가로 거부되지 않는다.
+ *  - 두 값 모두 AS-IS 의 해당 화면에 **직접 착지**(TOP 경유 없음)를 화면으로 확인.
+ *
+ * **운영 AS-IS 는 아직 미반영이다.** note-80 기준 순서가 「우리 코드 수정 → preview 실연동
+ * 테스트 → 결과 공유 → Santec 이 최종 사양 확정·운영 반영」이므로, 운영 배포 전에 운영
+ * 커넥터의 `redirectPath` 수용을 반드시 확인할 것 — 미반영 상태로 나가면 TOP 에 착지하고
+ * (허용외 값 취급) 재이동 폴백이 없어 사용자는 조용히 다른 화면을 보게 된다.
  */
 export async function sekoAutoLogin(
   userId: string,
   token: string,
   logTag: string,
+  redirectPath: SekoRedirectPath,
 ): Promise<
   | { ok: true; autologinUrl: string }
   | { ok: false; error: SekoFetchError }
@@ -233,7 +240,7 @@ export async function sekoAutoLogin(
       {
         method: "POST",
         headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, redirectPath }),
         cache: "no-store",
         signal: AbortSignal.timeout(SEKO_TIMEOUT_MS),
       },

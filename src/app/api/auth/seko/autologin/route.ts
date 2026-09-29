@@ -5,6 +5,7 @@ import { SITE_URL } from "@/lib/config";
 import { ConfigError } from "@/lib/errors";
 import { clearSessionCookie, getUserFromRequest } from "@/lib/jwt";
 import { sekoAutoLogin } from "@/lib/seko-connector";
+import type { SekoRedirectPath } from "@/lib/seko-connector";
 import {
   SEKO_AUTOLOGIN_RESULT_PATH,
   type SekoAutoLoginFailureReason,
@@ -29,12 +30,30 @@ import {
  * 선점하면 그 JSON 이 곧 위 상황이 되기 때문이며, 인가는 아래 4단 가드가 쿠키를 직접
  * 재검증해 수행한다(헤더 주입값에 의존하지 않는다).
  *
- * 착지는 현재 **AS-IS 사이트 루트로 고정**이다. 요청 파라미터·URL 쿼리 어느 쪽으로도 화면을
- * 지정할 수 없음을 preview 에서 확인했다(ENDO 질의 중 — Redmine #1750 note-23·25 관련).
- * 지정 수단이 생기면 커넥터에 착지 경로 인자를 더하는 것으로 끝난다.
+ * 착지 화면은 `?target=` 로 받아 커넥터 `redirectPath` 로 넘긴다
+ * (Redmine #1750 note-80, 2026-09-24 사양 확정 — preview 실연동 확인 2026-09-27).
+ * **쿼리값을 그대로 넘기지 않고 허용값과 대조**한다 — 임의 경로가 통과하면 이 라우트가
+ * 그대로 열린 리다이렉터가 된다. AS-IS 측도 허용외 값을 TOP 으로 접지만, 우리 쪽 검증을
+ * 상대 구현에 의존시키지 않는다.
+ *
+ * target 누락·오타는 실패가 아니라 `mypage` 로 접는다. 이 라우트의 진입점은 마이페이지
+ * 버튼 두 개뿐이라 잘못된 값이 올 경로가 없고, 만에 하나 와도 사용자를 실패 화면으로
+ * 보내는 것보다 시공ID 정보 화면으로 보내는 편이 낫다.
  */
 
 const LOG_TAG = "[GET /api/auth/seko/autologin]";
+
+/**
+ * `?target=` → 커넥터 `redirectPath`. 허용값이 아니면 `mypage` 로 접는다.
+ *
+ * 객체 리터럴 인덱스 조회(`TARGETS[target] ?? 기본값`)로 쓰지 않는다 — 상속 키가 걸려
+ * `?target=__proto__`(→ `Object.prototype`), `?target=toString`(→ 함수)이 `??` 를 통과해
+ * 허용값 아닌 값이 그대로 본문에 실린다. 여기 단언한 「허용외는 mypage 로 접는다」가
+ * 런타임에서 깨지는 지점이라, 상속을 타지 않는 동등 비교로 둔다.
+ */
+function toRedirectPath(target: string): SekoRedirectPath {
+  return target === "seminar" ? "seminar" : "mypage";
+}
 
 /**
  * 실패 결과 페이지로 리다이렉트.
@@ -76,7 +95,16 @@ export async function GET(request: NextRequest) {
       return clearSessionCookie(failureRedirect("session"));
     }
 
-    const result = await sekoAutoLogin(user.userId, user.sekoToken, LOG_TAG);
+    const redirectPath = toRedirectPath(
+      request.nextUrl.searchParams.get("target") ?? "",
+    );
+
+    const result = await sekoAutoLogin(
+      user.userId,
+      user.sekoToken,
+      LOG_TAG,
+      redirectPath,
+    );
     if (!result.ok) {
       // Bearer 만료(401)는 쿠키를 만료시켜 재로그인으로 유도한다. 쿠키를 남기면 로컬 JWT 는
       // 유효해 middleware 가 통과시키고 SEKO 호출만 반복 401 이 되어 세션이 고착된다.
