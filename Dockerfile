@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:24.22.1-alpine AS base
 RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
 
 # --- Dependencies ---
@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/app/.next/cache \
     npx prisma generate && npx next build
 
 # --- Runner ---
-FROM node:22-alpine AS runner
+FROM node:24.22.1-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
