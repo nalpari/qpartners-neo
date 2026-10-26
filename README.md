@@ -16,7 +16,7 @@
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 24.22.1+ (24 LTS)
 - pnpm
 - Docker & Docker Compose
 
