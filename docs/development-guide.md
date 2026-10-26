@@ -6,7 +6,7 @@ QPartners Neo 프로젝트의 개발 워크플로우와 패턴을 안내합니�
 
 ### 필수 요구사항
 
-- Node.js 22+
+- Node.js 24.22.1+ (24 LTS)
 - pnpm
 - Docker & Docker Compose
 

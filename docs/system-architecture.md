@@ -217,7 +217,7 @@ Client Request
 ### 9.1 Docker 멀티스테이지 빌드
 
 ```
-[base]  Node 22 Alpine + pnpm
+[base]  Node 24.22.1 Alpine + pnpm
    ↓
 [deps]  pnpm install --frozen-lockfile
    ↓

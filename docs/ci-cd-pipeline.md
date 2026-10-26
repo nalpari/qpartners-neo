@@ -126,7 +126,7 @@ QPartners Neo의 CI/CD는 **Jenkins**를 오케스트레이터로 사용하며, 
 ## 4. Dockerfile (멀티스테이지)
 
 ```
-base    : node:22-alpine + corepack(pnpm) 활성화
+base    : node:24.22.1-alpine + corepack(pnpm) 활성화
   ↓
 deps    : pnpm install --frozen-lockfile (package.json, pnpm-lock.yaml, prisma/)
   ↓
@@ -134,7 +134,7 @@ builder : NODE_OPTIONS=--max-old-space-size=4096
           BuildKit cache mount(/app/.next/cache) → 증분 빌드
           npx prisma generate && npx next build (Turbopack)
   ↓
-runner  : node:22-alpine
+runner  : node:24.22.1-alpine
           NODE_ENV=production
           비특권 사용자 nextjs(1001) / nodejs(1001) 생성 후 USER 전환
           /app/public, /app/.next/standalone, /app/.next/static만 복사
