@@ -10,6 +10,7 @@ import {
   isInternalUser,
   requireMenuPermission,
   resolveAuthorSuperAdmin,
+  resolveMenuPermission,
 } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { resolveBadgeFlags } from "@/lib/content-new-badge";
@@ -18,8 +19,17 @@ import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
+import {
+  findMissingRequiredAxes,
+  missingAxesMessage,
+} from "@/lib/content-required-axes";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
+import {
+  assertProductModelIds,
+  PRODUCT_MODEL_CATEGORY_SELECT,
+  productModelVisibilityFilter,
+} from "@/lib/product-model";
 import { resolveUserName } from "@/lib/admin-name";
 import { idParamSchema, updateContentSchema } from "@/lib/schemas/content";
 
@@ -36,6 +46,28 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
+    // 사내 여부는 조회 조건(紐づく型番 노출 범위)에 들어가므로 쿼리 이전에 확정한다.
+    const internal = user ? isInternalUser(user.role) : false;
+
+    /**
+     * 수정 폼 전용 — 비표시 형번 연결까지 받는다.
+     *
+     * 기본 응답은 이용자 화면 기준으로 걸러진다(비표시 / 제품일람 OFF / 사용중지·사내전용
+     * 카테고리 제외). 그런데 수정 폼은 `productModelIds` 를 **전량 교체**로 저장하므로,
+     * 걸러진 상태로 폼을 채우면 **저장하는 순간 보이지 않던 연결이 조용히 끊긴다.**
+     *
+     * 그래서 이 파라미터는 `CONTENT.update` 를 가진 호출자에게만 효력이 있다. 기본
+     * 상세 조회(공개 경로, 비로그인 포함)는 권한 조회를 전혀 하지 않으므로 뜨거운 경로에
+     * 비용이 붙지 않는다 — 플래그가 올 때만 1회 조회한다.
+     */
+    const wantsHiddenProductModels =
+      request.nextUrl.searchParams.get("includeHiddenProductModels") === "true";
+    let allowAllProductModels = internal;
+    if (wantsHiddenProductModels && !internal && user) {
+      const perm = await resolveMenuPermission(user, "CONTENT");
+      allowAllProductModels = perm.canUpdate;
+    }
+
     // 접근제어 + 응답 데이터를 한 번에 조회 (조회수 증가와 분리 — 아래 주석 참조)
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
@@ -48,6 +80,18 @@ export async function GET(request: NextRequest, { params }: Params) {
           select: { id: true, fileName: true, fileSize: true, mimeType: true, sortOrder: true },
           orderBy: { sortOrder: "asc" },
         },
+        // 紐づく型番 패널 (REQ-009). 비사내 사용자에게는 노출 불가 형번을 숨긴다 —
+        // 수정 화면은 `/api/product-models` 로 전량을 따로 받으므로 영향이 없다.
+        productModels: {
+          where: allowAllProductModels
+            ? {}
+            : { productModel: productModelVisibilityFilter(false) },
+          include: { productModel: { include: { category: PRODUCT_MODEL_CATEGORY_SELECT } } },
+          orderBy: [
+            { productModel: { sortOrder: "asc" } },
+            { productModel: { modelCode: "asc" } },
+          ],
+        },
       },
     });
 
@@ -56,7 +100,6 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     // 삭제된 콘텐츠는 사내 사용자만 조회 가능
-    const internal = user ? isInternalUser(user.role) : false;
     if (existing.status === "deleted" && !internal) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -166,6 +209,8 @@ export async function GET(request: NextRequest, { params }: Params) {
           ...a,
           fileSize: a.fileSize !== null ? Number(a.fileSize) : null,
         })),
+        // 링크 테이블 껍데기를 벗겨 형번 배열로 평탄화 (화면이 쓰는 형태)
+        productModels: content.productModels.map((link) => link.productModel),
       },
     });
   } catch (error) {
@@ -233,7 +278,22 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    const { targets, categoryIds, ...contentData } = result.data;
+    const { targets, categoryIds, productModelIds, ...contentData } = result.data;
+
+    // 축별 필수 분류. **`categoryIds` 를 보낸 경우에만** 판정한다 —
+    // 수정 API 는 미지정(undefined)이 "변경 의도 없음"이라, 분류를 건드리지 않은 수정까지
+    // 막으면 기존 자료를 고칠 수 없게 된다.
+    if (categoryIds !== undefined) {
+      const missingAxes = await findMissingRequiredAxes(categoryIds);
+      if (missingAxes.length > 0) {
+        return NextResponse.json({ error: missingAxesMessage(missingAxes) }, { status: 400 });
+      }
+    }
+
+    if (productModelIds && productModelIds.length > 0) {
+      const modelError = await assertProductModelIds(productModelIds);
+      if (modelError) return modelError;
+    }
 
     // 비사내 작성자의 본인 권한 강제 포함 — FE 우회 방어 (정책: lib/contents-author-target.ts).
     // targets 미명시(undefined) 시 변경 의도 없음으로 기존 보존, 명시된 경우만 보강.
@@ -252,6 +312,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
         });
       }
 
+      // 형번 연결은 전량 교체 — 미전달(undefined)은 "변경 의도 없음" 이라 기존 연결을 보존한다
+      // (targets·categoryIds 와 같은 규약).
+      if (productModelIds) {
+        await tx.contentProductModel.deleteMany({
+          where: { contentId: parsed.data },
+        });
+      }
+
       const updated = await tx.content.update({
         where: { id: parsed.data },
         data: {
@@ -266,10 +334,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
                 })),
               }
             : undefined,
+          productModels: productModelIds
+            ? {
+                create: [...new Set(productModelIds)].map((productModelId) => ({
+                  productModelId,
+                  createdBy: user.userId,
+                })),
+              }
+            : undefined,
         },
         include: {
           targets: { select: { id: true, roleCode: true, startAt: true, endAt: true } },
           categories: { include: { category: CATEGORY_TREE_INCLUDE } },
+          productModels: {
+            include: { productModel: { include: { category: PRODUCT_MODEL_CATEGORY_SELECT } } },
+            orderBy: [
+              { productModel: { sortOrder: "asc" } },
+              { productModel: { modelCode: "asc" } },
+            ],
+          },
         },
       });
 
@@ -303,6 +386,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       data: {
         ...content,
         categories: buildCategoryTree(content.categories, { includeInternal: isInternalUser(user.role) }),
+        productModels: content.productModels.map((link) => link.productModel),
       },
     });
   } catch (error) {

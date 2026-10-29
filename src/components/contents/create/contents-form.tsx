@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
+import { REQUIRED_AXIS_CODES } from "@/lib/schemas/common";
 import { formatDate } from "@/lib/format";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -20,6 +21,9 @@ import {
 } from "./contents-form-post-target";
 import type { PostTargetState } from "./contents-form-post-target";
 import { ContentsFormCategory } from "./contents-form-category";
+import type { InactiveSelectedCategory } from "./contents-form-category";
+import { ContentsFormProductModels } from "./contents-form-product-models";
+import type { ProductModelOption } from "./contents-form-product-models";
 import { ContentsFormEditor } from "./contents-form-editor";
 import {
   ContentsFormAttachment,
@@ -54,6 +58,8 @@ interface ContentDetailResponse {
     children: { id: number; categoryCode: string; name: string; isInternalOnly: boolean }[];
   }[];
   attachments: { id: number; fileName: string; fileSize: number }[];
+  /** 紐づく型番 (REQ-009) — 수정 모드 초기 선택분 */
+  productModels?: ProductModelOption[];
 }
 
 interface ContentsFormProps {
@@ -64,9 +70,16 @@ interface ContentsFormProps {
 export function ContentsForm({ mode, contentId }: ContentsFormProps) {
   // 수정 모드: 기존 데이터 로딩 → 로딩 완료 후 key로 내부 폼 리마운트
   const { data: existingData, isLoading: isLoadingContent } = useQuery<ContentDetailResponse>({
-    queryKey: ["contents", contentId],
+    // 상세 화면과 **키를 분리**한다 — 수정 폼은 비표시 형번 연결까지 받으므로 응답이 다르다.
+    // `invalidateQueries(["contents", contentId])` 는 접두사 매칭이라 이 키도 함께 무효화된다.
+    queryKey: ["contents", contentId, "edit"],
     queryFn: async () => {
-      const res = await api.get<{ data: ContentDetailResponse }>(`/contents/${contentId}`);
+      // includeHiddenProductModels — 저장이 형번 연결을 전량 교체하므로, 화면에 안 보이는
+      // 연결이 남아 있으면 저장하는 순간 끊긴다. `CONTENT.update` 보유자에게만 효력이 있다.
+      const res = await api.get<{ data: ContentDetailResponse }>(
+        `/contents/${contentId}`,
+        { params: { includeHiddenProductModels: "true" } },
+      );
       return res.data.data;
     },
     enabled: mode === "edit" && !!contentId,
@@ -156,6 +169,33 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     staleTime: 5 * 60 * 1000,
   });
 
+  /**
+   * 선택돼 있는데 선택지에 없는 분류 — 운영자가 그 카테고리를 「사용 = N」 으로 돌린 경우.
+   *
+   * 선택지는 `activeOnly=true` 라 사용중지 카테고리가 빠지지만, 저장 payload 에는 id 가 그대로
+   * 남아 값은 보존된다. 보여주지 않으면 **운영자가 모르는 분류가 콘텐츠에 계속 붙어 있는**
+   * 상태가 되므로 변경 불가 상태로 노출한다.
+   *
+   * 카테고리 조회가 끝나기 전(빈 배열)에는 전부 비활성으로 보이므로 그동안은 계산하지 않는다.
+   */
+  const activeChildIds = useMemo(
+    () => new Set(categories.flatMap((parent) => parent.children.map((child) => child.id))),
+    [categories],
+  );
+  const inactiveSelectedCategories = useMemo<InactiveSelectedCategory[]>(() => {
+    if (categories.length === 0 || !existingData?.categories) return [];
+    return existingData.categories.flatMap((parent) =>
+      parent.children
+        .filter((child) => !activeChildIds.has(child.id))
+        .map((child) => ({
+          id: child.id,
+          name: child.name,
+          parentName: parent.name,
+          isInternalOnly: child.isInternalOnly,
+        })),
+    );
+  }, [categories.length, existingData, activeChildIds]);
+
   // 관리정보
   const distributor = mode === "edit" && existingData
     ? (existingData.createdBy ?? existingData.userId ?? "")
@@ -198,6 +238,11 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
   const [postTargets, setPostTargets] = useState<PostTargetState>(initialPostTargets);
   const initialCategoryIds = existingData?.categories?.flatMap((parent) => parent.children.map((child) => child.id)) ?? [];
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>(initialCategoryIds);
+  // 紐づく型番 — id 가 아니라 객체로 들고 있는다(칩 표시에 형번명·카테고리가 필요하고,
+  // 화면 안에 캐시를 두면 set-state-in-effect 규칙에 걸린다). 저장 시 id 만 뽑는다.
+  const [selectedProductModels, setSelectedProductModels] = useState<ProductModelOption[]>(
+    existingData?.productModels ?? [],
+  );
   const [title, setTitle] = useState(existingData?.title ?? "");
   const [content, setContent] = useState(existingData?.body ?? "");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
@@ -240,9 +285,24 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       return;
     }
     // 内容(본문)은 필수 아님 — 서버 스키마의 body 도 optional.
-    // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 함.
-    if (selectedCategoryIds.length === 0) {
-      openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
+    //
+    // 카테고리는 **축별로** 1개 이상이다 (2026-10-14). 종전처럼 「전체에서 1개 이상」이면
+    // `製品分類` 만 고르고 저장돼 `情報種別`·`製品ステータス` 가 빈 자료가 쌓이고,
+    // 그 자료는 좌측영역에서 해당 축을 쓰는 순간 결과에서 사라진다 (계획서 §24·§26).
+    // 판정 대상은 **현재 표시 중인 축**뿐이라, 축이 폐지되면 요구가 자동으로 빠진다.
+    const selectedSet = new Set(selectedCategoryIds);
+    const missingAxes = categories
+      .filter(
+        (axis) =>
+          axis.isVisible !== false &&
+          REQUIRED_AXIS_CODES.includes(axis.categoryCode as (typeof REQUIRED_AXIS_CODES)[number]),
+      )
+      .filter((axis) => !(axis.children ?? []).some((child) => selectedSet.has(child.id)));
+    if (missingAxes.length > 0) {
+      openAlert({
+        type: "alert",
+        message: `${missingAxes.map((a) => `「${a.name}」`).join("・")}を1つ以上選択してください。`,
+      });
       return;
     }
 
@@ -273,6 +333,8 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
       authorDepartment: department,
       targets,
       categoryIds: selectedCategoryIds,
+      // 전량 교체 — 빈 배열도 보낸다(연결 전부 해제가 유효한 조작이다).
+      productModelIds: selectedProductModels.map((m) => m.id),
       ...(deleteAttachmentIds.length > 0 && { deleteAttachmentIds }),
     };
 
@@ -394,6 +456,13 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
           categories={categories}
           selectedIds={selectedCategoryIds}
           onSelectedIdsChange={setSelectedCategoryIds}
+          inactiveSelected={inactiveSelectedCategories}
+        />
+
+        {/* 紐づく型番 — 목업 02 순서대로 カテゴリ 바로 다음 */}
+        <ContentsFormProductModels
+          selected={selectedProductModels}
+          onSelectedChange={setSelectedProductModels}
         />
 
         <ContentsFormEditor
@@ -414,7 +483,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
         />
 
         {/* 하단 버튼 */}
-        <div className="flex items-center justify-end gap-[6px] w-[1440px]">
+        <div className="flex items-center justify-end gap-[6px] w-[var(--page-max)]">
           <Button variant="secondary" onClick={handleList}>
             リスト
           </Button>
