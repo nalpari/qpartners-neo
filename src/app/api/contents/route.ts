@@ -6,47 +6,40 @@ import { Prisma } from "@/generated/prisma/client";
 import { getUserFromHeaders, isInternalUser, requireMenuPermission } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
 import { resolveBadgeFlags } from "@/lib/content-new-badge";
+import {
+  buildKeywordCondition,
+  checkSearchRateLimit,
+  escapeLikePattern,
+  hasTitleMatch,
+  SEARCH_BODY,
+  tokenizeKeyword,
+} from "@/lib/content-search";
+import {
+  publishedTargetFilter,
+  resolveFacetConditions,
+} from "@/lib/content-visibility";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
 import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
 import { jstHourStart } from "@/lib/jst-day";
+import {
+  findMissingRequiredAxes,
+  missingAxesMessage,
+} from "@/lib/content-required-axes";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
-import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  PRODUCT_MODEL_CATEGORY_SELECT,
+  assertProductModelIds,
+  deriveProductStatus,
+} from "@/lib/product-model";
 import {
   createContentSchema,
   listContentsQuerySchema,
 } from "@/lib/schemas/content";
-
-/**
- * 사내 권한 코드 — internalOnly 필터의 의미론적 기반.
- * isInternalUser(auth.ts) 와 동일한 판정 기준(SUPER_ADMIN/ADMIN)을 하드코딩.
- * 사내 사용자는 canAccessContent fail-open 으로 모든 콘텐츠 접근 가능하므로
- * ContentTarget 에 사내 행이 등록될 일은 거의 없지만, 명시적 화이트리스트로
- * "외부 게시대상이 0건" 인 콘텐츠 = 사내 전용 의미를 강제한다.
- *
- * 주의: 신규 사내 권한(예: IT_ADMIN)을 추가할 경우 isInternalUser 와 함께 이 배열도
- * 업데이트해야 한다. DB 동적 조회 도입은 Phase 5 에서 평가.
- */
-const INTERNAL_ROLE_CODES = ["SUPER_ADMIN", "ADMIN"] as const;
-
-/**
- * 키워드 토큰 상한.
- * 선행 와일드카드 LIKE(`%kw%`)는 인덱스를 못 타므로 토큰 수가 그대로 full scan 비용이 된다.
- * keyword 는 100자 제한이라 이론상 50토큰까지 들어올 수 있어 상한을 둔다.
- */
-const KEYWORD_TOKEN_LIMIT = 10;
-
-/**
- * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
- * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
- */
-function tokenizeKeyword(keyword: string | undefined): string[] {
-  if (!keyword) return [];
-  return keyword.split(/\s+/).filter(Boolean).slice(0, KEYWORD_TOKEN_LIMIT);
-}
+import { INTERNAL_ROLE_CODES } from "@/lib/content-internal-only";
 
 // GET /api/contents — 콘텐츠 목록 조회
 export async function GET(request: NextRequest) {
@@ -68,10 +61,13 @@ export async function GET(request: NextRequest) {
       keyword,
       keywordOp,
       categoryIds,
+      facetCategoryIds,
+      productModelIds,
       status,
       roleCode,
       department,
       internalOnly,
+      facets,
       sort,
       sortField,
       sortCategoryCode,
@@ -158,6 +154,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 분류축(facet) 필터 — 검색 고도화 REQ-002/004. 축 안에서는 OR, 축 사이는 AND.
+    // 위 categoryIds(교집합) 와 의미가 다른 별개 파라미터다 — 현행 목록 화면이 categoryIds 를
+    // 쓰고 있어 그대로 두고, 신규 사이드바만 이 축 방식을 쓴다.
+    // 체크된 축만 조건이 된다 — 체크가 없으면 빈 조건이다 (거르지 않는다).
+    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? []);
+    // ⚠️ 축 조건은 `andConditions`(그 외 전부)와 **따로 모은다**. REQ-004 의 「키워드 연동
+    // 카테고리 체크」 집계가 **축 조건을 뺀 집합**을 세야 하기 때문이다 — 체크 결과로 다시
+    // 세면 「해제 → 결과 변함 → 또 해제」가 연쇄해 상태가 수렴하지 않는다
+    // (목업 `01-search.html:2247` 주석).
+    const axisConditions: Prisma.ContentWhereInput[] = [];
+    axisConditions.push(...facetConditions.conditions);
+
+    // 型番 축 — 선택한 형번에 紐づく 자료만. 목업은 제품일람 탭에서만 이 축을 적용하지만,
+    // 서버는 파라미터가 오면 그대로 거른다 (제품상세의 자료 목록도 같은 조건을 쓴다).
+    if (productModelIds && productModelIds.length > 0) {
+      axisConditions.push({
+        productModels: { some: { productModelId: { in: productModelIds } } },
+      });
+    }
+
     if (categoryEmpty) {
       return NextResponse.json({
         data: [],
@@ -168,6 +184,11 @@ export async function GET(request: NextRequest) {
     // publication window 경계값 일관성 — 동일 where 절 안의 now 를 상수화.
     // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
     const now = new Date();
+    // 게시 **종료** 경계는 "종료 시각이 속한 시간대의 끝까지" 다 — `canAccessContent`(auth.ts)
+    // 와 `publishedTargetFilter`(content-visibility.ts) 가 쓰는 기준과 같아야 한다.
+    // 아래 raw SQL 분기(sortCategoryCode 정렬)가 `now` 로 비교하고 있어, 14:00 종료 자료가
+    // 목록에는 보이는데 카테고리 정렬을 누르면 사라지는 최대 59분의 틈이 있었다.
+    const nowHour = jstHourStart(now);
 
     if (internal) {
       // 사내 사용자 (관리 목적):
@@ -202,63 +223,32 @@ export async function GET(request: NextRequest) {
       // - 역할 기반으로 roleCode 서버 강제 (쿼리 파라미터 무시).
       //   비로그인(user=null) → roleCode IS NULL (비회원 게시대상) 매칭.
       // - publication window 엄격 적용
-      andConditions.push({
-        targets: {
-          some: {
-            roleCode: user ? user.role : null,
-            AND: [
-              // 노출기간 시각 비교 — canAccessContent(auth.ts) 와 동일 기준.
-              // 게시기간을 시 단위까지 지정할 수 있게 되면서 day 단위 비교를 걷어냈다.
-              // 예전 기준은 "오늘 18시 시작" 을 오늘 00시부터 노출시켜 지정 시각이 무시됐다.
-              // 종료는 "그 시간대의 끝까지" — 저장값이 정각이므로 현재 시각도 정각으로 내려
-              // 비교한다(`23時` 지정 = 24:00 까지, 종전 "종료일 당일 종일" 과 동일 결과).
-              { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-              { OR: [{ endAt: null }, { endAt: { gte: jstHourStart(now) } }] },
-            ],
-          },
-        },
-      });
+      // 노출기간 시각 비교 기준은 canAccessContent(auth.ts) 와 동일하다.
+      // 제품일람·제품상세·자동완성도 같은 판정을 써야 하므로 헬퍼로 뽑혀 있다.
+      andConditions.push(publishedTargetFilter(user ? user.role : null, now));
     }
 
     // Prisma where 절과 raw SQL 분기가 같은 토큰 배열을 공유해야 결과가 일치한다.
     const keywordTokens = tokenizeKeyword(keyword);
 
-    const where: Prisma.ContentWhereInput = {
+    // 키워드 검색 조건 — 제목 / 첨부파일명 / 형번. 본문은 제외(lib/content-search.ts SEARCH_BODY).
+    // 결합 규칙과 형번 매칭 범위는 buildKeywordCondition 주석 참조.
+    // ⚠️ sortCategoryCode 분기가 같은 조건을 raw SQL 로 다시 쓴다 — 함께 유지할 것.
+    const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
+
+    /** 축(분류·형번) 조건을 **뺀** where — REQ-004 집계 전용. */
+    const axisFreeWhere: Prisma.ContentWhereInput = {
       status: effectiveStatus as "draft" | "published" | "deleted",
-      // 키워드 검색 — 타이틀·본문·첨부파일명 부분일치.
-      //
-      // 토큰 결합은 **필드 단위**다. AND 는 "한 필드 안에 모든 토큰" 이지 필드를 넘나들지 않는다.
-      //   예) `사과 귤` AND → 타이틀에 둘 다 / 본문에 둘 다 / 한 첨부파일명에 둘 다 중 하나
-      //       (타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않음)
-      // 첨부파일은 `some` 안에서 결합하므로 AND 는 **파일 한 개**가 모든 토큰을 가져야 한다
-      //   (`사과.pdf` + `귤.pdf` 조합은 미매칭 — 기획 확정 사항).
-      //
-      // sortCategoryCode 분기의 raw SQL 과 동일 조건이다.
-      // 한쪽만 수정하면 카테고리 정렬 상태에서 검색 결과가 달라지므로 함께 유지할 것.
-      ...(keywordTokens.length > 0 && {
-        OR:
-          keywordOp === "AND"
-            ? [
-                { AND: keywordTokens.map((t) => ({ title: { contains: t } })) },
-                { AND: keywordTokens.map((t) => ({ body: { contains: t } })) },
-                {
-                  attachments: {
-                    some: { AND: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
-                  },
-                },
-              ]
-            : [
-                ...keywordTokens.map((t) => ({ title: { contains: t } })),
-                ...keywordTokens.map((t) => ({ body: { contains: t } })),
-                {
-                  attachments: {
-                    some: { OR: keywordTokens.map((t) => ({ fileName: { contains: t } })) },
-                  },
-                },
-              ],
-      }),
+      ...(keywordCondition ?? {}),
       ...(department && department.length > 0 && { authorDepartment: { in: department } }),
       ...(andConditions.length > 0 && { AND: andConditions }),
+    };
+
+    const where: Prisma.ContentWhereInput = {
+      ...axisFreeWhere,
+      ...(andConditions.length + axisConditions.length > 0 && {
+        AND: [...andConditions, ...axisConditions],
+      }),
     };
 
     // 비사내 공개 경로 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분).
@@ -271,20 +261,8 @@ export async function GET(request: NextRequest) {
     //
     // 쿼리 실행 전에 둔다 — 차단 대상 요청이 DB 를 한 번도 건드리지 않아야 의미가 있다.
     if (!internal && (keyword || sortCategoryCode)) {
-      const ip =
-        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-        request.headers.get("x-real-ip") ??
-        null;
-      const rlKey = ip
-        ? `contents-search:${ip}`
-        : `contents-search:user:${user?.userId ?? "anon"}`;
-      const rlLimit = ip ? 60 : 20;
-      if (!checkRateLimit(rlKey, rlLimit, 60_000)) {
-        return NextResponse.json(
-          { error: "リクエストが多すぎます。しばらくしてから再試行してください。" },
-          { status: 429 },
-        );
-      }
+      const limited = checkSearchRateLimit(request, "contents-search", user?.userId ?? null);
+      if (limited) return limited;
     }
 
     const includeOptions = {
@@ -293,6 +271,14 @@ export async function GET(request: NextRequest) {
       },
       targets: { select: { roleCode: true, startAt: true, endAt: true } },
       _count: { select: { attachments: true } },
+      // 자료일람 `製品ステータス` 컬럼용 — REQ-005 는 이 값을 **연결된 형번에서 파생**하라고
+      // 규정한다(자료는 제품상태를 직접 갖지 않는다). 상태만 있으면 되므로 형번 전체를
+      // 싣지 않고 `status` 한 컬럼만 가져온다.
+      //
+      // ⚠️ 노출 필터(`productModelVisibilityFilter`)를 걸지 않는다 — 비표시 형번을 빼면
+      // 그것이 유일한 現行品 일 때 판정이 販売終了品 으로 뒤집힌다. 파생은 연결된 형번
+      // **전부**를 본다(`deriveProductStatus` 주석 참조).
+      productModels: { select: { productModel: { select: { status: true } } } },
     } as const;
 
     // isNew/isUpdated 계산용 — where 절의 now 와 동일 스냅샷 사용 (정책 일관성)
@@ -317,6 +303,8 @@ export async function GET(request: NextRequest) {
       categories: buildCategoryTree(c.categories, { includeInternal: internal }),
       targets: c.targets,
       attachmentCount: c._count.attachments,
+      // 하나라도 現行品 → current / 전부 販売終了品 → eol / 연결 없음 → null(화면에서 「-」)
+      productStatus: deriveProductStatus(c.productModels.map((l) => l.productModel)),
     });
 
     let data: ReturnType<typeof mapRow>[] = [];
@@ -333,20 +321,56 @@ export async function GET(request: NextRequest) {
       ];
 
       if (keywordTokens.length > 0) {
-        // Prisma where 절의 keyword 조건과 동일 — 필드 단위 AND/OR 결합 (한쪽만 수정 금지).
-        const kws = keywordTokens.map((t) => `%${t}%`);
+        // buildKeywordCondition(lib/content-search.ts) 과 **동일 조건**의 raw SQL 판본이다.
+        // 한쪽만 고치면 카테고리 정렬 상태에서만 검색 결과가 달라진다 — 함께 유지할 것.
+        // 사용자가 입력한 `%`·`_` 는 와일드카드가 아니라 글자로 다룬다(escapeLikePattern).
+        // `ESCAPE '\\'` 를 명시해 `NO_BACKSLASH_ESCAPES` sql_mode 에서도 같게 동작시킨다.
+        const kws = keywordTokens.map((t) => `%${escapeLikePattern(t)}%`);
         const glue = keywordOp === "AND" ? " AND " : " OR ";
-        const titleCond = Prisma.join(kws.map((k) => Prisma.sql`c.title LIKE ${k}`), glue);
-        const bodyCond = Prisma.join(kws.map((k) => Prisma.sql`c.body LIKE ${k}`), glue);
-        const fileCond = Prisma.join(kws.map((k) => Prisma.sql`a.file_name LIKE ${k}`), glue);
-        sqlConds.push(Prisma.sql`((${titleCond}) OR (${bodyCond}) OR EXISTS (
-          SELECT 1 FROM qp_content_attachments a
-          WHERE a.content_id = c.id AND (${fileCond})
+        const titleCond = Prisma.join(
+          kws.map((k) => Prisma.sql`c.title LIKE ${k} ESCAPE '\\'`),
+          glue,
+        );
+        const modelCond = Prisma.join(
+          kws.map((k) => Prisma.sql`pm.model_code LIKE ${k} ESCAPE '\\'`),
+          glue,
+        );
+        // 본문(c.body)은 검색 대상에서 빠졌다 — SEARCH_BODY 플래그로 되살릴 때 이 분기도 함께.
+        const bodyGroup = SEARCH_BODY
+          ? Prisma.sql` OR (${Prisma.join(
+              kws.map((k) => Prisma.sql`c.body LIKE ${k} ESCAPE '\\'`),
+              glue,
+            )})`
+          : Prisma.empty;
+        // 첨부파일명(qp_content_attachments.file_name)은 검색 대상이 아니다 — REQ-001.
+        sqlConds.push(Prisma.sql`((${titleCond})${bodyGroup} OR EXISTS (
+          SELECT 1 FROM qp_content_product_models cpm
+          JOIN qp_product_models pm ON cpm.product_model_id = pm.id
+          WHERE cpm.content_id = c.id AND pm.is_visible = 1 AND (${modelCond})
         ))`);
       }
 
       if (department && department.length > 0) {
         sqlConds.push(Prisma.sql`c.author_department IN (${Prisma.join(department)})`);
+      }
+
+      // 분류축(facet) — resolveFacetConditions 의 Prisma 조건과 **동일해야 한다**.
+      // 축 안 OR / 축 사이 AND, 그리고 연결이 없는 콘텐츠도 탈락(엄격, 규칙 2).
+      // 여기가 갈라지면 "정렬을 걸면 건수가 달라지는" 증상이 난다.
+      for (const group of facetConditions.groups) {
+        sqlConds.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM qp_content_categories fcc
+          WHERE fcc.content_id = c.id AND fcc.category_id IN (${Prisma.join(group.categoryIds)})
+        )`);
+      }
+
+      // 型番 축
+      if (productModelIds && productModelIds.length > 0) {
+        sqlConds.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM qp_content_product_models mcpm
+          WHERE mcpm.content_id = c.id
+            AND mcpm.product_model_id IN (${Prisma.join(productModelIds)})
+        )`);
       }
 
       if (filteredContentIds !== null) {
@@ -385,7 +409,7 @@ export async function GET(request: NextRequest) {
             WHERE ct.content_id = c.id
               AND ct.role_code IS NULL
               AND (ct.start_at IS NULL OR ct.start_at <= ${now})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${nowHour})
           )`);
         } else {
           sqlConds.push(Prisma.sql`EXISTS (
@@ -393,7 +417,7 @@ export async function GET(request: NextRequest) {
             WHERE ct.content_id = c.id
               AND ct.role_code = ${userRole}
               AND (ct.start_at IS NULL OR ct.start_at <= ${now})
-              AND (ct.end_at IS NULL OR ct.end_at >= ${now})
+              AND (ct.end_at IS NULL OR ct.end_at >= ${nowHour})
           )`);
         }
       }
@@ -625,6 +649,69 @@ export async function GET(request: NextRequest) {
         logError("GET /api/contents sortField=updatedAt DB조회", dbError, { sortField });
         return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
       }
+    } else if (!sortField && sort === "relevance" && keywordTokens.length > 0) {
+      // 관련도 정렬 — 검색 고도화 기본 정렬(목업 `currentResults()`: 검색어가 있으면 관련도순).
+      //
+      // 점수는 "제목에 맞았는가" 단일 축이다. 본문이 검색 대상에서 빠진 뒤로는 제목 매칭이
+      // 사실상 유일한 변별 요소이며(hasTitleMatch 주석), 제목은 1단계 select 로 이미 들어오므로
+      // 추가 쿼리가 없다. 동점은 갱신일 내림차순.
+      //
+      // DB ORDER BY 로 표현할 수 없어 sortField=updatedAt 과 같은 3단계 구조를 쓴다:
+      // 1단계 경량 select → 2단계 인메모리 정렬 → 3단계 페이지 full fetch.
+      // Repeatable Read 로 1·3단계를 같은 스냅샷에서 실행한다.
+      try {
+        const txResult = await prisma.$transaction(async (tx) => {
+          const idRows = await tx.content.findMany({
+            where,
+            select: { id: true, title: true, updatedAt: true },
+            orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+          });
+          const txTotal = idRows.length;
+
+          if (txTotal === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          const scored = idRows.map((r) => ({
+            id: r.id,
+            score: hasTitleMatch(r.title, keywordTokens, keywordOp) ? 1 : 0,
+            updatedMs: r.updatedAt.getTime(),
+          }));
+          // 관련도는 항상 내림차순 — sortDir 는 헤더 클릭 정렬 전용이라 여기서는 받지 않는다
+          // (listContentsQuerySchema 가 sortDir 단독 지정을 거부한다).
+          scored.sort((a, b) => b.score - a.score || b.updatedMs - a.updatedMs);
+          const pageIds = scored
+            .slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+            .map((r) => r.id);
+
+          if (pageIds.length === 0) {
+            return { txTotal, txData: [] as ReturnType<typeof mapRow>[] };
+          }
+
+          const pageRows = await tx.content.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: includeOptions,
+          });
+
+          const rowById = new Map(pageRows.map((r) => [r.id, r]));
+          const txData = pageIds.flatMap((id) => {
+            const row = rowById.get(id);
+            if (!row) {
+              console.warn("[GET /api/contents sort=relevance] 트랜잭션 내 ID 탈락", { id });
+              return [];
+            }
+            return [mapRow(row)];
+          });
+
+          return { txTotal, txData };
+        }, { isolationLevel: "RepeatableRead" });
+
+        total = txResult.txTotal;
+        data = txResult.txData;
+      } catch (dbError: unknown) {
+        logError("GET /api/contents sort=relevance DB조회", dbError, { sort });
+        return NextResponse.json({ error: "コンテンツの取得に失敗しました" }, { status: 500 });
+      }
     } else {
       // ag-grid 헤더 클릭 정렬 — sortField 지정 시 프리셋(sort)보다 우선.
       // sortField==="updatedAt" 는 위의 else if 분기에서 처리되므로 이 분기에 도달하지 않는다.
@@ -663,6 +750,10 @@ export async function GET(request: NextRequest) {
             return { viewCount: "desc" as const };
           case "updated":
             return { updatedAt: "desc" as const };
+          case "relevance":
+            // 키워드가 없으면 관련도를 매길 수 없다 — 기본(newest)과 같게 동작한다.
+            // (키워드가 있는 경우는 위 relevance 분기에서 처리되어 여기 도달하지 않는다)
+            return { createdAt: "desc" as const };
           default:
             return { createdAt: "desc" as const };
         }
@@ -693,6 +784,22 @@ export async function GET(request: NextRequest) {
       total = contentsTotal;
     }
 
+    // REQ-004 「키워드 검색과 카테고리 필터 연동」 — 검색 결과에 **실제로 나타나는** 분류값.
+    //
+    // 화면은 이 목록으로 좌측 체크 상태를 갱신한다(결과에 있는 값만 체크). 집계는 축 조건을
+    // 뺀 `axisFreeWhere` 로 한다 — 체크 결과로 다시 세면 연쇄해 수렴하지 않는다.
+    //
+    // `facets=1` 로 **명시한 요청에서만** 집계한다. 종전에는 모든 GET 이 링크 테이블
+    // `distinct` 를 돌려, 집계를 쓰지 않는 관리자 목록·페이지 이동·탭 전환까지 쿼리를 더
+    // 썼다. 형번축 집계도 함께 돌렸지만 쓰는 화면이 없어 걷어냈다 — 필요해지면 되살린다.
+    const facetCatRows = facets
+      ? await prisma.contentCategory.findMany({
+          where: { content: axisFreeWhere },
+          select: { categoryId: true },
+          distinct: ["categoryId"],
+        })
+      : null;
+
     return NextResponse.json({
       data,
       meta: {
@@ -701,6 +808,10 @@ export async function GET(request: NextRequest) {
         pageSize,
         totalPages: Math.ceil(total / pageSize),
       },
+      /** 검색 결과에 나타나는 분류값 — 좌측 체크 상태 동기화용(REQ-004). `facets=1` 일 때만 */
+      ...(facetCatRows && {
+        availableFacets: { categoryIds: facetCatRows.map((r) => r.categoryId) },
+      }),
     });
   } catch (error) {
     logError("GET /api/contents", error);
@@ -738,7 +849,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { targets, categoryIds, ...contentData } = result.data;
+    const { targets, categoryIds, productModelIds, ...contentData } = result.data;
+
+    // 축별 필수 분류 — 화면에서도 막지만 API 직접 호출까지 대비해 서버에서 판정한다.
+    const missingAxes = await findMissingRequiredAxes(categoryIds);
+    if (missingAxes.length > 0) {
+      return NextResponse.json({ error: missingAxesMessage(missingAxes) }, { status: 400 });
+    }
+
+    if (productModelIds && productModelIds.length > 0) {
+      const modelError = await assertProductModelIds(productModelIds);
+      if (modelError) return modelError;
+    }
 
     // 비사내 작성자의 본인 권한 강제 포함 — FE 우회 방어 (정책: lib/contents-author-target.ts).
     const effectiveTargets = ensureAuthorTarget(targets, user.role);
@@ -778,10 +900,26 @@ export async function POST(request: NextRequest) {
                 })),
               }
             : undefined,
+          // 紐づく型番 (REQ-009). 형번 쪽 유일성은 마스터가 보장하므로 중복 id 만 걷어낸다.
+          productModels: productModelIds
+            ? {
+                create: [...new Set(productModelIds)].map((productModelId) => ({
+                  productModelId,
+                  createdBy: user.userId,
+                })),
+              }
+            : undefined,
         },
         include: {
           targets: true,
           categories: { include: { category: CATEGORY_TREE_INCLUDE } },
+          productModels: {
+            include: { productModel: { include: { category: PRODUCT_MODEL_CATEGORY_SELECT } } },
+            orderBy: [
+              { productModel: { sortOrder: "asc" } },
+              { productModel: { modelCode: "asc" } },
+            ],
+          },
         },
       });
 
@@ -805,6 +943,8 @@ export async function POST(request: NextRequest) {
       data: {
         ...content,
         categories: buildCategoryTree(content.categories, { includeInternal: isInternalUser(user.role) }),
+        // 링크 테이블 껍데기를 벗겨 형번 배열로 평탄화 (상세·수정 응답과 동일 형태)
+        productModels: content.productModels.map((link) => link.productModel),
       },
     }, { status: 201 });
   } catch (error) {

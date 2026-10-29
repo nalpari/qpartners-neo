@@ -95,6 +95,15 @@
   background-color: #FFF9C4 !important;
 }
 
+/* 사내전용 자료 행 — 목업 `table.list tbody tr.is-internal`.
+   `.ag-row:hover` 보다 뒤에 둬야 hover 색에 덮이지 않는다(동일 특이도). */
+.ag-row-internal {
+  background-color: #FDF2F2 !important;
+}
+.ag-row-internal:hover {
+  background-color: #FBE4E4 !important;
+}
+
 /* Sort input: number spinner 제거 */
 .sort-input-no-spinner::-webkit-outer-spin-button,
 .sort-input-no-spinner::-webkit-inner-spin-button {
@@ -116,4 +125,16 @@
 }
 .ag-row:hover .ag-cell-selected-menu {
   background-color: #DBEAF7 !important;
+}
+
+/* 편집 중 행 하이라이트 — 행 클릭이 편집 진입인 그리드(형번관리)용.
+ *
+ * 위 `.ag-cell-selected-menu` 와 같은 이유로 cell 단위다 — row 단위 getRowClass +
+ * redrawRows() 는 AG Grid 35 + React 19 에서 cellRenderer commit phase 와 충돌한다.
+ * 색은 메뉴관리 선택색과 구분해 편집 중임을 드러내는 쪽(주 포인트색 계열 연한 톤)으로 둔다. */
+.ag-cell-row-editing {
+  background-color: #FDF1E6 !important;
+}
+.ag-row:hover .ag-cell-row-editing {
+  background-color: #FAE4CF !important;
 }
