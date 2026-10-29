@@ -3,8 +3,9 @@
 // Design Ref: §5.2 — 좌측 카테고리 트리 목록 패널
 
 import Image from "next/image";
-import { Checkbox } from "@/components/common";
+import { Checkbox, INTERNAL_CATEGORY_TEXT_CLASS } from "@/components/common";
 import type { CategoryNode } from "./categories-types";
+import { resolveInternalOnlyValue, resolveProductListValue } from "./categories-types";
 
 interface CategoriesTreeProps {
   treeData: CategoryNode[];
@@ -13,10 +14,13 @@ interface CategoriesTreeProps {
   totalCount: number;
   filterInternalOnly: boolean;
   filterActiveOnly: boolean;
+  /** 「製品一覧表示のみ」 필터 (REQ-008) */
+  filterProductListOnly: boolean;
   onSelect: (id: number) => void;
   onToggle: (id: number) => void;
   onFilterChange: (checked: boolean) => void;
   onActiveOnlyChange: (checked: boolean) => void;
+  onProductListOnlyChange: (checked: boolean) => void;
 }
 
 export function CategoriesTree({
@@ -26,13 +30,15 @@ export function CategoriesTree({
   totalCount,
   filterInternalOnly,
   filterActiveOnly,
+  filterProductListOnly,
   onSelect,
   onToggle,
   onFilterChange,
   onActiveOnlyChange,
+  onProductListOnlyChange,
 }: CategoriesTreeProps) {
   return (
-    <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_0px_rgba(0,0,0,0.05)] pt-[34px] px-[42px] pb-[42px]">
+    <section className="flex min-w-0 flex-[6] flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_0px_rgba(0,0,0,0.05)] pt-[34px] px-[42px] pb-[42px]">
       {/* Header */}
       <div className="flex flex-col gap-[24px]">
         <h2 className="text-[16px] font-medium text-[#45576f] font-['Noto_Sans_JP']">
@@ -43,6 +49,11 @@ export function CategoriesTree({
             Total{" "}
             <span className="font-semibold text-[#e97923]">{totalCount}</span>
           </p>
+          <Checkbox
+            checked={filterProductListOnly}
+            onChange={onProductListOnlyChange}
+            label="製品一覧表示のみ"
+          />
           <Checkbox
             checked={filterActiveOnly}
             onChange={onActiveOnlyChange}
@@ -56,26 +67,31 @@ export function CategoriesTree({
         </div>
       </div>
 
-      {/* Thead — body 1Depth/2Depth row 의 우측 영역과 동일한 폭/gap/padding 으로 정렬 일치.
-          (좌측 flex-1 + 우측 w-[350px] gap-[16px] pr-[16px] / 각 셀 너비는 body 와 1:1 매핑) */}
+      {/* Thead — 셀 너비·gap 은 body 1Depth/2Depth row 와 1:1 매핑 (80/80/50/68/68, gap 16).
+          제품일람 컬럼(REQ-008)이 맨 앞에 추가되면서 우측 블록이 350 → 470 으로 늘었다.
+          ※ 헤더는 pr-[30px], 행은 pr-[16px] 로 우측 여백이 14px 어긋나 있다 — 제품일람 추가
+             이전부터 그런 상태이며, 이번 변경으로 달라지지 않았다. */}
       <div className="flex h-[58px] items-center rounded-[6px] overflow-hidden">
         <div className="flex-1 flex items-center justify-center h-full bg-[#506273] pl-[16px] pr-[8px] rounded-l-[6px]">
           <span className="text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             カテゴリ名
           </span>
         </div>
-        <div className="flex items-center justify-end h-full bg-[#506273] w-[350px] gap-[16px] pr-[30px] rounded-r-[6px]">
+        <div className="flex items-center justify-end h-full bg-[#506273] w-[470px] gap-[16px] pr-[30px] rounded-r-[6px]">
+          <span className="w-[80px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+            製品一覧
+          </span>
           <span className="w-[80px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             社内専用
           </span>
           <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
             使用
           </span>
-          <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
-            表示
+          <span className="w-[68px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+            一覧表示
           </span>
-          <span className="w-[50px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
-            配列
+          <span className="w-[68px] text-center text-[14px] font-semibold text-white font-['Noto_Sans_JP']">
+            表示順序
           </span>
         </div>
       </div>
@@ -125,22 +141,28 @@ export function CategoriesTree({
                     width={24}
                     height={24}
                   />
-                  <span className="text-[14px] font-semibold text-[#101010] font-['Noto_Sans_JP']">
+                  {/* 1Depth 는 사내전용이어도 기본색 — 적색은 2Depth 전용 (2026-10-23 결정) */}
+                  <span className="text-[14px] font-semibold font-['Noto_Sans_JP'] text-[#101010]">
                     {parent.name}
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-end w-[350px] gap-[16px]">
+              <div className="flex items-center justify-end w-[470px] gap-[16px]">
+                {/* 製品一覧 — 1Depth 는 자식 전원 Y 일 때만 Y (하위 전체 토글의 표시값) */}
                 <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
-                  {parent.isInternalOnly ? "Y" : "N"}
+                  {resolveProductListValue(parent) ? "Y" : "N"}
+                </span>
+                {/* 社内専用 — 1Depth 는 자식 전원 Y 일 때만 Y (製品一覧 과 같은 규칙) */}
+                <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                  {resolveInternalOnlyValue(parent) ? "Y" : "N"}
                 </span>
                 <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.isActive ? "Y" : "N"}
                 </span>
-                <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                <span className="w-[68px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.isVisible ? "Y" : "N"}
                 </span>
-                <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                <span className="w-[68px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                   {parent.sortOrder}
                 </span>
               </div>
@@ -173,24 +195,32 @@ export function CategoriesTree({
                           width={24}
                           height={24}
                         />
-                        <span className="text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                        <span
+                          className={`text-[14px] font-['Noto_Sans_JP'] ${
+                            child.isInternalOnly ? INTERNAL_CATEGORY_TEXT_CLASS : "text-[#101010]"
+                          }`}
+                        >
                           {child.name}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-end w-[300px] gap-[16px]">
+                    <div className="flex items-center justify-end w-[420px] gap-[16px]">
+                      {/* 製品一覧 — 형번이 실제로 붙는 계층이라 자식 행이 본값이다 */}
+                      <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                        {child.isProductList ? "Y" : "N"}
+                      </span>
                       <span className="w-[80px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.isInternalOnly ? "Y" : "N"}
                       </span>
                       <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.isActive ? "Y" : "N"}
                       </span>
-                      {/* 表示 컬럼은 1Depth(부모) 카테고리에만 적용 — 콘텐츠 목록 ag-grid 의
+                      {/* 一覧表示 컬럼은 1Depth(부모) 카테고리에만 적용 — 콘텐츠 목록 ag-grid 의
                           parent 컬럼 노출 토글이므로 자식 행은 "-" 로 표시. */}
-                      <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                      <span className="w-[68px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         -
                       </span>
-                      <span className="w-[50px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+                      <span className="w-[68px] text-center text-[14px] text-[#101010] font-['Noto_Sans_JP']">
                         {child.sortOrder}
                       </span>
                     </div>

@@ -4,10 +4,14 @@
 // AutoCompleteSelect + 자동채번 + isSaving
 
 import { useState } from "react";
-import { Button, InputBox, Radio } from "@/components/common";
+import { Button, Checkbox, InputBox, Radio } from "@/components/common";
 import { AutoCompleteSelect } from "./auto-complete-select";
 import type { CategoryNode, CategoryFormState } from "./categories-types";
-import { generateChildCode } from "./categories-types";
+import {
+  generateChildCode,
+  resolveInternalOnlyValue,
+  resolveProductListValue,
+} from "./categories-types";
 
 interface CategoriesDetailProps {
   selectedCategory: CategoryNode | null;
@@ -37,18 +41,22 @@ const INITIAL_FORM: CategoryFormState = {
   sortOrder: 1,
   isActive: true,
   isVisible: true,
+  isProductList: false,
 };
 
 function getInitialForm(category: CategoryNode | null): CategoryFormState {
   if (!category) return INITIAL_FORM;
   return {
-    isInternalOnly: category.isInternalOnly,
+    // 1Depth 는 자식 전원 Y 일 때만 Y — 트리 컬럼 표시값과 라디오 상태를 일치시킨다
+    isInternalOnly: resolveInternalOnlyValue(category),
     parentId: category.parentId,
     categoryCode: category.categoryCode,
     name: category.name,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
     isVisible: category.isVisible,
+    // 1Depth 는 자식 전원 Y 일 때만 Y — 트리 컬럼 표시값과 체크 상태를 일치시킨다
+    isProductList: resolveProductListValue(category),
   };
 }
 
@@ -86,15 +94,13 @@ export function CategoriesDetail({
   // Design Ref: §4.3 — categoryCode 비활성화 조건
   const isCodeDisabled = isEditMode || form.parentId !== null || isFormDisabled;
 
-  // 1Depth 가 사내전용이면 그 하위 2Depth 는 사내전용으로 고정 (변경 불가).
-  // 반대로 1Depth 가 일반이면 2Depth 는 사내전용/일반 모두 선택 가능하다 — 즉 1Depth 가
-  // Y→N 으로 바뀐 뒤에는 기존 Y 자식이 값을 유지한 채 다시 편집 가능해진다.
-  // effectiveInternalOnly 를 저장 payload 에도 그대로 써서, 부모가 Y 인데 자식이 N 으로
-  // 남아 있는 과거 데이터가 수정 저장 시 자동 교정되게 한다.
-  const parentNode =
-    form.parentId !== null ? treeData.find((p) => p.id === form.parentId) : undefined;
-  const isInternalLockedByParent = parentNode?.isInternalOnly === true;
-  const effectiveInternalOnly = form.isInternalOnly || isInternalLockedByParent;
+  // 1Depth 의 `社内会員専用`·`製品一覧表示` 는 **하위 전체 선택 토글**이다 — 저장 시 서버가 하위 2Depth
+  // 전체에 같은 값을 전파한다(PUT /api/categories/:id). 형번은 2Depth 에만 붙으므로
+  // 1Depth 자체 값은 기능에 쓰이지 않고, 이 토글이 유일한 용도다.
+  // 자식이 0건이면 전파할 대상이 없어 안내 문구가 사실과 어긋난다 — 그때는 띄우지 않는다.
+  // `社内会員専用` 도 같은 조건으로 안내 문구를 띄운다 (2026-10-23 규칙 통일).
+  const isParentToggle = depth === 1 && (selectedCategory?.children.length ?? 0) > 0;
+  const isProductListParentToggle = isParentToggle;
 
   const updateField = <K extends keyof CategoryFormState>(
     key: K,
@@ -104,7 +110,10 @@ export function CategoriesDetail({
   };
 
   // Design Ref: §4.3 — parentId 변경 시 자동채번
-  // (이전 버전: 부모의 isInternalOnly 를 자동 전파했으나, 운영 요구에 따라 사용자 선택 유지)
+  //
+  // `社内会員専用`·`製品一覧表示` 는 **부모 값을 초기값으로 상속**한다 (목업 04: 「2Depth は親の
+  // 『製品一覧表示』を初期値として引き継ぐ（変更可）」). 상속하는 값은 트리에 보이는
+  // 파생값 — 운영자가 화면에서 본 값과 상속되는 값이 어긋나지 않게 한다.
   const handleParentChange = (parentId: number | null) => {
     if (parentId === null) {
       setForm((prev) => ({ ...prev, parentId, categoryCode: "" }));
@@ -116,6 +125,8 @@ export function CategoriesDetail({
           ...prev,
           parentId,
           categoryCode: autoCode,
+          isInternalOnly: resolveInternalOnlyValue(parent),
+          isProductList: resolveProductListValue(parent),
         }));
       } else {
         setForm((prev) => ({ ...prev, parentId }));
@@ -124,7 +135,7 @@ export function CategoriesDetail({
   };
 
   return (
-    <section className="flex-1 flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[24px] pb-[24px] overflow-hidden self-stretch">
+    <section className="flex min-w-0 flex-[4] flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] px-[24px] pb-[24px] overflow-hidden self-stretch">
       {/* Header + Buttons */}
       <div className="flex items-center justify-between">
         <h2 className="text-[16px] font-medium text-[#45576f] font-['Noto_Sans_JP']">
@@ -159,7 +170,7 @@ export function CategoriesDetail({
             <Button
               variant="primary"
               disabled={!hasSelection || isSaving}
-              onClick={() => onSave({ ...form, isInternalOnly: effectiveInternalOnly })}
+              onClick={() => onSave(form)}
             >
               保存
             </Button>
@@ -169,33 +180,68 @@ export function CategoriesDetail({
 
       {/* Form Rows */}
       <div className="flex flex-col gap-[4px]">
-        {/* Row 1: 社内会員専用 — 부모(1Depth)가 사내전용이면 Y 고정·변경 불가.
-            그 외에는 자유 편집 (RBAC readonly 시 비활성). */}
-        <FormRow label="社内会員専用" required>
+        {/* Row 1: 製品一覧表示 — REQ-008. 켜면 검색화면 제품일람 탭의 `型番` 축과
+            형번관리의 카테고리 선택지에 나타난다. 형번은 2Depth 에만 붙으므로,
+            1Depth 의 체크는 하위 전체에 적용되는 토글이다. */}
+        <FormRow
+          label="製品一覧表示"
+          note={
+            isProductListParentToggle
+              ? "下位カテゴリ全体に適用 · 下位項目に N がある場合、上位項目も N と表示"
+              : isNewMode
+                ? "親カテゴリ設定を初期値として適用 · 個別変更可能"
+                : undefined
+          }
+          // 사용중지 카테고리의 형번은 제품일람 검색조건에서 제외된다 — 설정 자체는
+          // 독립이므로 입력을 막지 않고 결과만 안내한다 (목업 `#inactiveNote`).
+          warning={
+            !form.isActive
+              ? "※「使用」が N のため、製品一覧では選択できない状態（チェック解除・無効）で表示されます。"
+              : undefined
+          }
+        >
           <div className="flex items-center gap-[12px] px-[24px]">
-            <Radio
-              checked={effectiveInternalOnly}
-              onChange={() => updateField("isInternalOnly", true)}
-              label="Y"
-              name="isInternalOnly"
-              disabled={isFormDisabled || isInternalLockedByParent}
+            <Checkbox
+              checked={form.isProductList}
+              onChange={(checked) => updateField("isProductList", checked)}
+              label="製品一覧に表示する"
+              disabled={isFormDisabled}
             />
-            <Radio
-              checked={!effectiveInternalOnly}
-              onChange={() => updateField("isInternalOnly", false)}
-              label="N"
-              name="isInternalOnly"
-              disabled={isFormDisabled || isInternalLockedByParent}
-            />
-            {isInternalLockedByParent && (
-              <span className="text-[13px] text-[#45576f] font-['Noto_Sans_JP']">
-                ※親カテゴリが社内会員専用のため変更できません。
-              </span>
-            )}
           </div>
         </FormRow>
 
-        {/* Row 2: 親カテゴリ — AutoCompleteSelect. 수정 모드 또는 RBAC readonly 시 비활성 */}
+        {/* Row 2: 社内会員専用 — 1Depth 는 하위 전체 토글(製品一覧表示 와 같은 규칙,
+            2026-10-23 통일). 2Depth 는 개별 편집 (RBAC readonly 시 비활성). */}
+        <FormRow
+          label="社内会員専用"
+          required
+          note={
+            isParentToggle
+              ? "下位カテゴリ全体に適用 · 下位項目に N がある場合、上位項目も N と表示"
+              : isNewMode
+                ? "親カテゴリ設定を初期値として適用 · 個別変更可能"
+                : undefined
+          }
+        >
+          <div className="flex items-center gap-[12px] px-[24px]">
+            <Radio
+              checked={form.isInternalOnly}
+              onChange={() => updateField("isInternalOnly", true)}
+              label="Y"
+              name="isInternalOnly"
+              disabled={isFormDisabled}
+            />
+            <Radio
+              checked={!form.isInternalOnly}
+              onChange={() => updateField("isInternalOnly", false)}
+              label="N"
+              name="isInternalOnly"
+              disabled={isFormDisabled}
+            />
+          </div>
+        </FormRow>
+
+        {/* Row 3: 親カテゴリ — AutoCompleteSelect. 수정 모드 또는 RBAC readonly 시 비활성 */}
         <FormRow label="親カテゴリ">
           <div className="w-full p-[8px]">
             <AutoCompleteSelect
@@ -208,14 +254,14 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 3: Depth */}
+        {/* Row 4: Depth */}
         <FormRow label="Depth">
           <div className="w-full p-[8px]">
             <InputBox value={String(depth)} readOnly />
           </div>
         </FormRow>
 
-        {/* Row 4: カテゴリコード */}
+        {/* Row 5: カテゴリコード */}
         <FormRow label="カテゴリコード" required>
           <div className="w-full p-[8px]">
             <InputBox
@@ -226,7 +272,7 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 5: カテゴリ名 */}
+        {/* Row 6: カテゴリ名 */}
         <FormRow label="カテゴリ名" required>
           <div className="w-full p-[8px]">
             <InputBox
@@ -237,7 +283,7 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 6: 表示順序 */}
+        {/* Row 7: 表示順序 */}
         <FormRow label="表示順序" required>
           <div className="w-full p-[8px]">
             <InputBox
@@ -249,7 +295,7 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 7: 使用 */}
+        {/* Row 8: 使用 */}
         <FormRow label="使用" required>
           <div className="flex items-center gap-[12px] px-[24px]">
             <Radio
@@ -269,7 +315,7 @@ export function CategoriesDetail({
           </div>
         </FormRow>
 
-        {/* Row 8: リスト表示 — 콘텐츠 목록 ag-grid 의 parent 카테고리 컬럼 노출 토글.
+        {/* Row 9: リスト表示 — 콘텐츠 목록 ag-grid 의 parent 카테고리 컬럼 노출 토글.
             1Depth 에만 적용되는 개념이므로 2Depth(자식) 카테고리에서는 영역 자체를 미노출. */}
         {depth === 1 && (
           <FormRow label="リスト表示" required>
@@ -303,23 +349,39 @@ export function CategoriesDetail({
 function FormRow({
   label,
   required,
+  note,
+  warning,
   children,
 }: {
   label: string;
   required?: boolean;
+  /** 보조 설명 (상속·전파 범위 안내 등) */
+  note?: string;
+  /** 설정은 유효하지만 결과가 달라지는 상태에 대한 경고 */
+  warning?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center w-full">
       <div className="flex items-center gap-[4px] w-full">
-        <div className="flex items-center w-[160px] h-[58px] pl-[16px] pr-[8px] bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] shrink-0">
+        <div className="flex items-center w-[160px] min-h-[58px] self-stretch pl-[16px] pr-[8px] bg-[#f7f9fb] border border-[#eaf0f6] rounded-[6px] shrink-0">
           <span className="text-[14px] font-medium text-[#45576f] font-['Noto_Sans_JP'] whitespace-nowrap overflow-hidden text-ellipsis">
             {label}
             {required && <span className="text-[#ff1a1a]">*</span>}
           </span>
         </div>
-        <div className="flex-1 flex items-center min-h-[58px] border border-[#eaf0f6] rounded-[6px]">
+        <div className="flex-1 flex flex-col justify-center min-h-[58px] border border-[#eaf0f6] rounded-[6px] py-[4px]">
           {children}
+          {note && (
+            <p className="px-[24px] pt-[2px] text-[12px] text-[#6a88a9] font-['Noto_Sans_JP']">
+              {note}
+            </p>
+          )}
+          {warning && (
+            <p className="px-[24px] pt-[2px] text-[12px] text-[#b42318] font-['Noto_Sans_JP']">
+              {warning}
+            </p>
+          )}
         </div>
       </div>
     </div>
