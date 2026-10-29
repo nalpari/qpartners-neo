@@ -34,4 +34,5 @@ export const ADMIN_MENU = {
   PERMISSIONS: "ADM_PERMISSION",
   MENUS: "ADM_MENU",
   CODES: "ADM_CODE",
+  PRODUCT_MODEL: "ADM_PRODUCT_MODEL",
 } as const satisfies Record<string, MenuCode>;

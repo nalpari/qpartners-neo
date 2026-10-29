@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { jstHourStart } from "@/lib/jst-day";
+import { commaIdList } from "@/lib/schemas/common";
 
 export { idParamSchema } from "@/lib/schemas/common";
 
@@ -68,7 +69,7 @@ function validateUniqueRoleCodes(
     if (seen.has(key)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "同一の掲載対象が重複しています",
+        message: "同一の掲示対象が重複しています",
         path: ["targets"],
       });
       return;
@@ -86,6 +87,12 @@ export const createContentSchema = z.object({
   approverLevel: z.number().int().min(0).max(127).optional(),
   targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
+  /**
+   * 紐づく型番 — REQ-009. 콘텐츠-형번 N:M 연결(`qp_content_product_models`).
+   * 비표시(`isVisible=false`) 형번도 선택할 수 있다 (REQ-007 방침2 — 공개 준비 중인 제품에
+   * 자료를 미리 붙여 둘 수 있어야 한다). 전달하면 기존 연결을 **전량 교체**한다.
+   */
+  productModelIds: z.array(z.number().int().positive()).optional(),
 }).superRefine((data, ctx) => {
   validateUniqueRoleCodes(data.targets, ctx);
 });
@@ -98,6 +105,12 @@ export const updateContentSchema = z.object({
   approverLevel: z.number().int().min(0).max(127).optional(),
   targets: z.array(contentTargetSchema).optional(),
   categoryIds: z.array(z.number().int().positive()).optional(),
+  /**
+   * 紐づく型番 — REQ-009. 콘텐츠-형번 N:M 연결(`qp_content_product_models`).
+   * 비표시(`isVisible=false`) 형번도 선택할 수 있다 (REQ-007 방침2 — 공개 준비 중인 제품에
+   * 자료를 미리 붙여 둘 수 있어야 한다). 전달하면 기존 연결을 **전량 교체**한다.
+   */
+  productModelIds: z.array(z.number().int().positive()).optional(),
 }).superRefine((data, ctx) => {
   validateUniqueRoleCodes(data.targets, ctx);
 });
@@ -114,7 +127,21 @@ export const listContentsQuerySchema = z.object({
    * AND = 한 필드 안에 모든 토큰 포함 / OR = 어느 한 토큰이라도 포함. 미지정 시 AND.
    */
   keywordOp: z.enum(["AND", "OR"]).default("AND"),
+  /**
+   * 카테고리 교집합(AND) 필터 — 선택한 카테고리를 **전부** 가진 콘텐츠만.
+   * 현행 목록 화면(`contents-search.tsx`)이 쓰는 파라미터다.
+   * 신규 검색 사이드바는 축 단위 결합이 필요해 아래 `facetAxes`/`facetCategoryIds` 를 쓴다.
+   */
   categoryIds: z.string().optional(),
+  /**
+   * 분류축(facet) 필터 — 검색 고도화 REQ-002/004.
+   * `facetCategoryIds` = 체크된 2Depth id. **축 안에서는 OR, 축 사이는 AND**.
+   * 체크가 하나도 없는 축은 조건이 아니다(거르지 않는다) — 2026-10-13 결정.
+   * 판정 상세는 `lib/content-visibility.ts#resolveFacetConditions`.
+   */
+  facetCategoryIds: commaIdList,
+  /** 型番 축 — 선택한 형번에 紐づく 자료만. 미지정 시 형번으로 걸러내지 않는다 */
+  productModelIds: commaIdList,
   status: z.enum(["draft", "published", "deleted"]).default("published"),
   /** 검색 필터: 게시대상 권한코드 (null = 비회원, 신규 권한 D 도 검색 가능). 비회원은 sentinel `__NON_MEMBER__` 로 전달. */
   roleCode: z
@@ -127,7 +154,22 @@ export const listContentsQuerySchema = z.object({
     .optional()
     .transform((v) => (v ? v.split(",").filter(Boolean) : undefined)),
   internalOnly: z.coerce.boolean().default(false),
-  sort: z.enum(["newest", "oldest", "views", "updated"]).default("newest"),
+  /**
+   * 분류축 집계 요청 — 검색 고도화 REQ-004.
+   *
+   * 지정하면 응답에 `availableFacets`(결과에 실제로 나타나는 2Depth id 목록)를 함께 담는다.
+   * 좌측 체크 상태를 키워드에 맞추려고 검색 화면이 `pageSize=1` 로 따로 부르는 전용 경로다.
+   *
+   * **기본값은 false** — 관리자 목록·페이지 이동·탭 전환까지 모든 조회에서 링크 테이블
+   * `distinct` 쿼리가 돌던 것을 막는다. 집계를 쓰지 않는 호출에는 비용만 남기 때문이다.
+   */
+  facets: z.coerce.boolean().default(false),
+  /**
+   * 정렬 프리셋. `relevance` 는 검색 고도화 추가분으로 **키워드가 있을 때만** 의미가 있다
+   * (키워드 없이 지정하면 `newest` 와 같게 동작) — 판정 기준은
+   * `lib/content-search.ts#hasTitleMatch` 주석 참조.
+   */
+  sort: z.enum(["newest", "oldest", "views", "updated", "relevance"]).default("newest"),
   /** ag-grid 헤더 클릭 전체 데이터 정렬 — 지정 시 위 sort(프리셋) 대신 이 필드+방향을 사용.
    *  sortCategoryCode/sortTargets 와 상호 배타적(동시 지정 시 validation 오류, 아래 superRefine). */
   sortField: z.enum(CONTENT_SORT_FIELDS).optional(),

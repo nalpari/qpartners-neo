@@ -70,6 +70,13 @@ const PUBLIC_GET_PATTERNS = [
   /^\/api\/home-notices\/active$/, // GET /api/home-notices/active
   /^\/api\/codes\/lookup$/, // GET /api/codes/lookup — 문의하기 문의유형 코드 조회
   /^\/api\/role-labels$/, // GET /api/role-labels — 콘텐츠 게시대상 권한명 라벨 (비회원 포함 모든 화면 사용)
+  // 검색기능 고도화 — 제품일람·제품상세·형번축·자동완성. `/api/contents` GET 과 같은 공개 범위다
+  // (게시대상·게시기간 판정은 각 핸들러가 publishedTargetFilter 로 수행).
+  // 형번 마스터 CRUD(`/api/product-models`)는 공개 대상이 **아니다** — 비표시 형번이 들어 있다.
+  /^\/api\/products$/, // GET /api/products — 제품일람 집계
+  /^\/api\/products\/axis$/, // GET /api/products/axis — 型番 축 선택지
+  /^\/api\/products\/\d+$/, // GET /api/products/[id] — 제품상세
+  /^\/api\/search\/suggest$/, // GET /api/search/suggest — 자동완성
 ];
 
 /** 2차 인증 미완료 상태에서 접근 가능한 경로 */
