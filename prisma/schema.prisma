@@ -143,6 +143,7 @@ model Content {
   updatedBy        String?               @map("updated_by") @db.VarChar(255)
   attachments      ContentAttachment[]
   categories       ContentCategory[]
+  productModels    ContentProductModel[]
   inlineImages     ContentInlineImage[]
   targets          ContentTarget[]
   downloadLogs     DownloadLog[]
@@ -189,6 +190,14 @@ model Category {
   sortOrder      Int               @default(1) @map("sort_order")
   isActive       Boolean           @default(true) @map("is_active")
   isVisible      Boolean           @default(true) @map("is_visible")
+  /**
+   * 제품일람(製品一覧) 노출 대상 여부 — REQ-008.
+   * 켜면 검색화면 제품일람 탭의 「型番」 축과 형번관리의 카테고리 선택지에 나타난다.
+   * 2026-10-08 현업 리뷰로 제품 카테고리 한정 → **전 카테고리** 적용으로 확장됐다(고객 확장성 요구).
+   * 실제 사용은 2Depth 한정 — 1Depth 에는 형번을 붙이지 않는다.
+   * `isVisible`(리스트 표시, 1Depth 전용)·`isActive`(사용 여부) 와는 독립된 축이다.
+   */
+  isProductList  Boolean           @default(false) @map("is_product_list")
   createdAt      DateTime          @default(dbgenerated("UTC_TIMESTAMP(3)")) @map("created_at")
   createdBy      String?           @map("created_by") @db.VarChar(255)
   updatedAt      DateTime          @updatedAt @map("updated_at")
@@ -196,6 +205,7 @@ model Category {
   parent         Category?         @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
   children       Category[]        @relation("CategoryTree")
   contents       ContentCategory[]
+  productModels  ProductModel[]
 
   @@index([parentId], map: "idx_parent_id")
   @@index([isActive, sortOrder], map: "idx_active_sort")
@@ -219,6 +229,78 @@ model ContentCategory {
   @@id([contentId, categoryId])
   @@index([categoryId, contentId], map: "qp_content_categories_category_content_idx")
   @@map("qp_content_categories")
+}
+
+/**
+ * 형번(型番) 마스터 — REQ-007.
+ *
+ * 형번을 카테고리로 관리하지 않는 이유:
+ *   - `/api/categories/route.ts` 가 3Depth 를 거부한다 (제품 카테고리 하위에 형번을 넣을 수 없음)
+ *   - `isVisible` 이 1Depth 전용이라 REQ-007 의 형번별 표시/비표시를 표현할 수 없음
+ *   - 카테고리끼리 연결하는 구조가 없어 제품 상태를 형번에 붙일 수 없음
+ * 따라서 별도 마스터로 분리하고, 카테고리에는 노출 플래그(`Category.isProductList`) 하나만 둔다.
+ *
+ * 기존 데이터 이행은 없다 — 운영 배포 시점부터 신규 등록·관리한다.
+ */
+model ProductModel {
+  id         Int                   @id @default(autoincrement())
+  categoryId Int                   @map("category_id")
+  /**
+   * 형번명. 동일 카테고리 내에서만 중복을 막는다 (다른 카테고리에는 같은 형번 등록 가능).
+   * 비교 규칙은 `@@unique` + 컬럼 콜레이션 `utf8mb4_unicode_ci` 가 담당한다:
+   *   - 대소문자 무시  (`_ci`)          — `HQJP-A44` == `hqjp-a44`
+   *   - 뒤 공백 무시  (PAD SPACE)       — `HQJP-A44 ` == `HQJP-A44`
+   * 앞 공백은 콜레이션이 처리하지 않으므로 **저장 전 애플리케이션에서 trim 한다**.
+   * 가운데 공백은 보존한다 — `栄信 SRシリーズ` 처럼 의미를 갖는 형번이 있어, 제거하면
+   * 서로 다른 형번이 중복으로 막힌다.
+   */
+  modelCode  String                @map("model_code") @db.VarChar(100)
+  /**
+   * 제품상태 — 요구사항정의서 v1.1 REQ-007 의 형번 마스터 관리 항목.
+   *
+   * 자료(콘텐츠)는 제품상태를 직접 갖지 않는다. 자료일람에 표시되는 제품상태는
+   * **연결된 형번에서 파생**한다 (REQ-005): 하나라도 `current` 면 현행품,
+   * 전부 `eol` 이면 단종품, 연결된 형번이 없으면 「-」.
+   *
+   * 값은 목업 `03-admin-models.html` 의 `modelStatus` 라디오와 같다 (`current` / `eol`).
+   * 기존 행은 `current` 로 채운다 — 단종 처리는 운영자가 형번관리에서 개별 지정한다.
+   */
+  status     ProductModelStatus    @default(current)
+
+  /** 표시 우선순위. 중복 허용 — 같은 값이면 형번명 昇順으로 정렬한다 (2026-10-08 리뷰 결정) */
+  sortOrder  Int                   @default(1) @map("sort_order")
+  /** 이용자 화면 노출 여부. false 여도 관리자 콘텐츠 등록 화면에서는 선택할 수 있다 (REQ-007 방침2) */
+  isVisible  Boolean               @default(true) @map("is_visible")
+  createdAt  DateTime              @default(dbgenerated("UTC_TIMESTAMP(3)")) @map("created_at")
+  createdBy  String?               @map("created_by") @db.VarChar(255)
+  updatedAt  DateTime              @updatedAt @map("updated_at")
+  updatedBy  String?               @map("updated_by") @db.VarChar(255)
+  category   Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  contents   ContentProductModel[]
+
+  @@unique([categoryId, modelCode], map: "qp_product_models_category_model_key")
+  @@index([categoryId, sortOrder], map: "idx_category_sort")
+  @@index([isVisible], map: "idx_visible")
+  @@map("qp_product_models")
+}
+
+/**
+ * 자료 ↔ 형번 N:M — REQ-009. 자료 1건에 형번을 복수 연결한다.
+ *
+ * 형번을 삭제하면 이 연결 행만 함께 사라지고 자료 자체는 남는다 (onDelete: Cascade).
+ * 연결을 남겨두면 존재하지 않는 형번이 자료 상세와 검색 필터에 유령으로 나타난다.
+ */
+model ContentProductModel {
+  contentId      Int          @map("content_id")
+  productModelId Int          @map("product_model_id")
+  createdAt      DateTime     @default(dbgenerated("UTC_TIMESTAMP(3)")) @map("created_at")
+  createdBy      String?      @map("created_by") @db.VarChar(255)
+  content        Content      @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  productModel   ProductModel @relation(fields: [productModelId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, productModelId])
+  @@index([productModelId, contentId], map: "qp_content_product_models_model_content_idx")
+  @@map("qp_content_product_models")
 }
 
 /// 콘텐츠 첨부파일
@@ -482,6 +564,13 @@ model Test {
   content   String?  @db.Text
   createdAt DateTime @default(dbgenerated("UTC_TIMESTAMP(3)"))
   updatedAt DateTime @updatedAt
+}
+
+enum ProductModelStatus {
+  /** 現行品 — 판매 중 */
+  current
+  /** 販売終了品 — 단종 (end of life) */
+  eol
 }
 
 enum ContentStatus {
