@@ -51,6 +51,9 @@ export const openApiSpec: OpenAPIV3.Document = {
     { name: "CodeHeader", description: "공통코드 헤더 관리" },
     { name: "CodeDetail", description: "공통코드 상세 관리" },
     { name: "Category", description: "카테고리 관리 (2Depth 트리)" },
+    { name: "ProductModel", description: "형번 마스터 관리 (検索고도화 REQ-007)" },
+    { name: "Product", description: "제품일람·제품상세 (検索고도화 REQ-003/010)" },
+    { name: "Search", description: "통합검색 자동완성 (検索고도화 REQ-001)" },
     { name: "Menu", description: "메뉴 관리 (2레벨 트리)" },
     { name: "Role", description: "역할(권한) 관리" },
     { name: "Permission", description: "메뉴별 CRUD 권한 관리" },
@@ -1851,18 +1854,31 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "타이틀·본문·첨부파일명 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "**타이틀·첨부파일명·형번** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시). ⚠️ **본문(body)은 검색 대상이 아니다** — 검색고도화(2026-10-12) 결정으로 제외됐다(자동완성 응답속도). 요구사항정의서 REQ-001 과 다른 점이라 고객 합의 대기 항목이다. 형번 매칭은 isVisible=true 형번만 본다.", schema: { type: "string" } },
           {
             name: "keywordOp",
             in: "query",
             description:
               "다중 키워드 결합 조건. 결합은 **필드 단위**로 필드를 넘나들지 않는다.\n\n" +
-              "- `AND`(기본): 타이틀에 모든 키워드 / 본문에 모든 키워드 / **첨부파일 한 건의 파일명**에 모든 키워드 — 셋 중 하나라도 만족하면 매칭. 타이틀에 `사과` + 본문에 `귤` 은 매칭되지 않으며, `사과.pdf`+`귤.pdf` 조합도 매칭되지 않는다.\n" +
-              "- `OR`: 타이틀·본문·첨부파일명 중 어느 하나에 키워드 하나라도 포함되면 매칭.\n\n" +
+              "- `AND`(기본): 타이틀에 모든 키워드 / **첨부파일 한 건의 파일명**에 모든 키워드 / **형번 한 건**에 모든 키워드 — 셋 중 하나라도 만족하면 매칭. 타이틀에 `사과` + 형번에 `귤` 은 매칭되지 않으며, `사과.pdf`+`귤.pdf` 조합도 매칭되지 않는다.\n" +
+              "- `OR`: 타이틀·첨부파일명·형번 중 어느 하나에 키워드 하나라도 포함되면 매칭.\n\n" +
               "`keyword` 가 없으면 무시된다.",
             schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
           },
-          { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID — AND(교집합) 조건. 지정한 카테고리를 모두 가진 콘텐츠만 반환", schema: { type: "string" } },
+          { name: "categoryIds", in: "query", description: "콤마 구분 카테고리 ID — AND(교집합) 조건. 지정한 카테고리를 모두 가진 콘텐츠만 반환. 현행 목록 화면이 쓰는 파라미터이며, 축 단위 결합이 필요한 신규 검색 사이드바는 facetAxes/facetCategoryIds 를 쓴다.", schema: { type: "string" } },
+          {
+            name: "facetCategoryIds",
+            in: "query",
+            description:
+              "분류축에서 **체크된 2Depth 카테고리 ID** — 콤마 구분. 축 안은 OR, 축 사이는 AND. **체크된 선택지가 하나도 없는 축은 조건이 아니다**(거르지 않는다). 체크된 선택지에 실제로 연결된 콘텐츠만 남으므로, 선택지를 하나씩 켠 누적과 전부 체크한 결과가 일치한다.",
+            schema: { type: "string" },
+          },
+          {
+            name: "productModelIds",
+            in: "query",
+            description: "型番 축 — 콤마 구분 형번 ID. 지정한 형번에 紐づく 자료만 반환한다. 미지정 시 형번으로 걸러내지 않는다.",
+            schema: { type: "string" },
+          },
           { name: "status", in: "query", schema: { type: "string", enum: ["draft", "published", "deleted"], default: "published" } },
           { name: "roleCode", in: "query", description: "게시대상 권한코드 필터 (qp_roles 동적). 비회원 검색 시 sentinel `__NON_MEMBER__` 전송 → 서버에서 null 변환.", schema: { type: "string" } },
           { name: "department", in: "query", description: "担当部門フィルター（複数選択時はカンマ区切り）", schema: { type: "string" } },
@@ -1873,7 +1889,20 @@ export const openApiSpec: OpenAPIV3.Document = {
               "사내회원 전용 게시글만 조회 여부.\n- 사내 사용자(ADMIN): true 시 외부 게시대상(비-INTERNAL_ROLE_CODES 또는 비회원 null)이 없는 게시글만 반환. roleCode 파라미터는 무시됨.\n- 비사내 사용자: 파라미터 값과 무관하게 사내전용 카테고리는 항상 제외 (bypass 불가).",
             schema: { type: "boolean", default: false },
           },
-          { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "oldest", "views", "updated"], default: "newest" } },
+          {
+            name: "facets",
+            in: "query",
+            description:
+              "분류축 집계 요청 (검색 고도화 REQ-004). true 로 호출하면 응답에 `availableFacets.categoryIds` — 축 조건을 뺀 결과 집합에 실제로 나타나는 2Depth 카테고리 ID 목록 — 이 추가됩니다. 검색 화면이 좌측 체크 상태를 키워드에 맞추려고 `pageSize=1` 로 따로 호출하는 경로이며, 기본값 false 인 일반 조회에서는 집계 쿼리가 실행되지 않고 `availableFacets` 필드도 응답에 없습니다.",
+            schema: { type: "boolean", default: false },
+          },
+          {
+            name: "sort",
+            in: "query",
+            description:
+              "정렬 프리셋. relevance 는 검색고도화 추가분으로 **키워드가 있을 때만** 의미가 있다 — 제목 매칭 여부를 1차 키, 갱신일 내림차순을 2차 키로 쓴다. 키워드 없이 지정하면 newest 와 동일하게 동작한다.",
+            schema: { type: "string", enum: ["newest", "oldest", "views", "updated", "relevance"], default: "newest" },
+          },
           {
             name: "sortField",
             in: "query",
@@ -1966,6 +1995,11 @@ export const openApiSpec: OpenAPIV3.Document = {
                     },
                   },
                   categoryIds: { type: "array", items: { type: "integer" } },
+                  productModelIds: {
+                    type: "array",
+                    items: { type: "integer" },
+                    description: "紐づく型番 (REQ-009). 비표시 형번도 선택 가능하다(REQ-007 방침2). 존재하지 않는 ID 가 섞이면 400. 전달 시 기존 연결을 전량 교체한다.",
+                  },
                 },
               },
             },
@@ -1995,6 +2029,13 @@ export const openApiSpec: OpenAPIV3.Document = {
         summary: "콘텐츠 상세 조회 (조회수 자동 증가)",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          {
+            name: "includeHiddenProductModels",
+            in: "query",
+            description:
+              "紐づく型番 을 **걸러내지 않고** 전부 반환한다 (수정 폼 전용). 기본 응답은 이용자 화면 기준으로 비표시·제품일람 OFF·사용중지·사내전용 카테고리의 형번을 제외하는데, 수정 폼은 productModelIds 를 **전량 교체**로 저장하므로 걸러진 상태로 폼을 채우면 저장하는 순간 보이지 않던 연결이 조용히 끊긴다.\n\n`CONTENT.update` 를 가진 호출자에게만 효력이 있다 — 권한이 없으면 파라미터를 무시하고 기본(필터 적용) 응답을 돌려준다. 플래그가 올 때만 권한을 1회 조회하므로 일반 상세 조회에는 비용이 붙지 않는다.",
+            schema: { type: "boolean", default: false },
+          },
         ],
         responses: {
           "200": {
@@ -2574,7 +2615,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Category"],
         summary: "카테고리 등록",
-        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다. 상위 카테고리가 사내전용(`isInternalOnly: true`)이면 요청값과 무관하게 자식도 사내전용으로 강제 저장됩니다 (400 거절이 아닌 승격).",
+        description: "parentId=null이면 1Depth, parentId 지정 시 2Depth. 3Depth 이상 불가. sortOrder 위치에 삽입하며 같은 parentId 형제의 순서를 자동 재정렬합니다(미지정 시 기본값 1). isVisible 은 1Depth 전용 정책이며, 자식 카테고리(parentId !== null) 에 false 가 전송되면 400 거절됩니다. `isInternalOnly`·`isProductList` 는 상위 카테고리 값을 **화면에서 초기값으로 상속**하지만 변경 가능하며, 서버는 요청값을 그대로 저장합니다.",
         requestBody: {
           required: true,
           content: {
@@ -2610,7 +2651,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 수정 (categoryCode, parentId 수정 불가)",
         description:
-          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다. `isInternalOnly: true` 를 전송하면 같은 트랜잭션에서 하위 카테고리도 모두 사내전용(Y)으로 승격됩니다 — 반대로 `false` 는 하위에 전파되지 않으며, 기존 자식의 Y 설정은 유지된 채 개별 편집이 가능해집니다. 단, 부모가 사내전용인 자식에 `isInternalOnly: false` 를 전송하면 \"자식 ≥ 부모\" 불변식 위반으로 400 거절됩니다.",
+          "sortOrder 변경 시 같은 parentId 형제 카테고리의 순서를 자동 재정렬합니다. isVisible 은 1Depth 카테고리 전용이며, 자식(2Depth) 카테고리에 대해 isVisible 을 전송하면 400 으로 거절됩니다. **isInternalOnly (社内会員専用) · isProductList (製品一覧表示, REQ-008)**: 두 플래그는 **같은 규칙**으로 동작합니다(2026-10-23 통일). 1Depth 카테고리에 전송하면 같은 트랜잭션에서 하위 2Depth 전체에 같은 값이 **양방향**(Y·N 모두)으로 전파됩니다 — 화면의 1Depth 입력이 「하위 전체 선택」 토글이기 때문입니다. 전파 후에도 개별 2Depth 를 따로 켜고 끌 수 있습니다(그 경우 화면의 1Depth 표시는 자식 전원 Y 여부에서 파생되어 N 으로 보입니다). 2Depth 에 전송하면 그 카테고리만 바뀝니다. 형번은 2Depth 에만 붙으므로(`POST /product-models` 가 2Depth 를 강제) **1Depth 자체 값은 기능에 쓰이지 않습니다**. 값이 바뀌지 않은 저장에서는 이 필드를 보내지 않는 것이 안전합니다 — 매번 보내면 1Depth 의 다른 필드만 고쳐도 자식 설정이 덮입니다.",
         parameters: [
           {
             name: "id",
@@ -2724,6 +2765,17 @@ export const openApiSpec: OpenAPIV3.Document = {
                         id: { type: "integer", example: 1 },
                         descendantCount: { type: "integer", example: 0 },
                         contentLinkCount: { type: "integer", example: 0 },
+                        productModelCount: {
+                          type: "integer",
+                          example: 0,
+                          description:
+                            "함께 삭제될 형번 마스터 건수. `ProductModel.category` 가 onDelete: Cascade 라, 자료 링크가 0건이어도 형번은 남아 있을 수 있다.",
+                        },
+                        productModelLinkCount: {
+                          type: "integer",
+                          example: 0,
+                          description: "함께 삭제될 자료↔형번 연결 건수.",
+                        },
                         previewedAt: {
                           type: "string",
                           format: "date-time",
@@ -2741,6 +2793,366 @@ export const openApiSpec: OpenAPIV3.Document = {
           "400": errorResponse("Invalid ID"),
           "404": errorResponse("Not found"),
           "422": errorResponse("Too many descendants to preview"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/product-models": {
+      get: {
+        tags: ["ProductModel"],
+        summary: "형번 마스터 목록 조회",
+        description:
+          "비표시(isVisible=false) 형번도 포함해 반환한다 — 이용자 화면용 조회는 /products(제품일람)와 /search/suggest(자동완성)가 담당하며 그쪽은 표시 형번만 본다.\n\n권한은 **ADM_PRODUCT_MODEL.read / CONTENT.create / CONTENT.update 중 하나라도 있으면 통과**한다. 소비처가 형번관리 화면과 콘텐츠 등록 폼의 紐づく型番 선택 두 군데여서, 운영자가 특정 역할에 콘텐츠 등록만 열어 준 경우 형번 선택지가 403 으로 비는 것을 피한다. 비로그인은 401.\n\n기본 정렬은 카테고리 표시순서 → 형번 표시순서 → 형번명 昇順이다 (표시순서가 중복 허용이라 형번명 tie-break 가 필수).",
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
+          {
+            name: "modelCode",
+            in: "query",
+            description: "형번명 부분일치. **3자 미만은 검색 조건에서 제외**된다 (400 이 아니라 전건 조회 — 목업 MIN_Q 게이트와 동일)",
+            schema: { type: "string", maxLength: 100 },
+          },
+          { name: "categoryId", in: "query", schema: { type: "integer", minimum: 1 } },
+          { name: "isVisible", in: "query", description: "표시/비표시 필터. 미지정 시 전체", schema: { type: "boolean" } },
+          {
+            name: "sortField",
+            in: "query",
+            description: "지정 시 기본 정렬 대신 이 필드 기준 (동점은 형번명 昇順)",
+            schema: { type: "string", enum: ["modelCode", "sortOrder", "createdAt", "isVisible"] },
+          },
+          { name: "sortDir", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "asc" } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { type: "array", items: { $ref: "#/components/schemas/ProductModel" } },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        totalPages: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "401": errorResponse("認証が必要です"),
+          "403": errorResponse("権限がありません (ADM_PRODUCT_MODEL.read / CONTENT.create / CONTENT.update 모두 없음)"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      post: {
+        tags: ["ProductModel"],
+        summary: "형번 등록 (ADM_PRODUCT_MODEL.create)",
+        description:
+          "카테고리는 **2Depth + 製品一覧表示=true** 만 허용한다. 1Depth 에는 형번을 붙이지 않으며(축 자체), 제품일람 대상이 아닌 카테고리에 넣으면 제품일람·형번축 어디에도 나타나지 않는 유령 데이터가 된다. 사용중지(isActive=false) 카테고리는 **허용**한다 — 일시 중지 중에도 편집이 가능해야 한다.\n\n중복 판정은 (category_id, model_code) UNIQUE 가 컬럼 콜레이션(대소문자·뒤 공백 무시) 기준으로 수행하며 위반 시 409 다. 애플리케이션 선조회를 두지 않아 판정 기준이 하나로 유지된다.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/CreateProductModel" } } },
+        },
+        responses: {
+          "201": {
+            description: "등록 성공",
+            content: {
+              "application/json": {
+                schema: { type: "object", properties: { data: { $ref: "#/components/schemas/ProductModel" } } },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "403": errorResponse("権限がありません (RBAC: ADM_PRODUCT_MODEL.create)"),
+          "404": errorResponse("カテゴリが存在しません"),
+          "409": errorResponse("同じカテゴリ内に同じ型番が登録されています。"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/product-models/{id}": {
+      put: {
+        tags: ["ProductModel"],
+        summary: "형번 수정 (ADM_PRODUCT_MODEL.update)",
+        description:
+          "카테고리 이동·형번명 변경으로 (category_id, model_code) UNIQUE 와 충돌하면 409. 카테고리 적격성 검증은 등록과 동일하다.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/UpdateProductModel" } } },
+        },
+        responses: {
+          "200": {
+            description: "수정 성공",
+            content: {
+              "application/json": {
+                schema: { type: "object", properties: { data: { $ref: "#/components/schemas/ProductModel" } } },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "403": errorResponse("権限がありません (RBAC: ADM_PRODUCT_MODEL.update)"),
+          "404": errorResponse("Not found"),
+          "409": errorResponse("同じカテゴリ内に同じ型番が登録されています。"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+      delete: {
+        tags: ["ProductModel"],
+        summary: "형번 삭제 (ADM_PRODUCT_MODEL.delete)",
+        description:
+          "콘텐츠-형번 연결(qp_content_product_models)은 FK onDelete: Cascade 로 함께 삭제되고 콘텐츠 본체는 보존된다. 끊어진 연결 수를 응답과 감사 로그에 남긴다.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: {
+          "200": {
+            description: "삭제 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        linkedContentCount: {
+                          type: "integer",
+                          description: "자동 해제된 콘텐츠-형번 연결 수",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "403": errorResponse("権限がありません (RBAC: ADM_PRODUCT_MODEL.delete)"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/product-models/{id}/cascade-preview": {
+      get: {
+        tags: ["ProductModel"],
+        summary: "형번 삭제 영향 범위 미리보기",
+        description:
+          "삭제 확인 다이얼로그용. 그 형번에 紐づく 자료 건수를 돌려준다 — 운영자에게 「この型番には N 件の資料が紐づいています」 를 보여주기 위한 경로다. DELETE 응답의 linkedContentCount 는 이미 지워진 뒤라 사전 경고에 쓸 수 없다.\n\n카테고리의 cascade-preview 와 같은 규약이다: delete 권한 가드, read-only, previewedAt 으로 preview↔DELETE 사이 TOCTOU 갭을 가시화. 형번에는 자손 개념이 없어 링크 수만 센다.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["id", "contentLinkCount", "previewedAt"],
+                      properties: {
+                        id: { type: "integer" },
+                        contentLinkCount: {
+                          type: "integer",
+                          description: "삭제 시 해제될 콘텐츠-형번 연결 수 (콘텐츠 본체는 보존)",
+                        },
+                        previewedAt: {
+                          type: "string",
+                          format: "date-time",
+                          description: "집계 시각 — 이후 DELETE 실제 결과와 차이가 날 수 있음을 운영자가 인지하도록 동봉",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse("Invalid ID"),
+          "403": errorResponse("権限がありません (RBAC: ADM_PRODUCT_MODEL.delete)"),
+          "404": errorResponse("Not found"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/products": {
+      get: {
+        tags: ["Product"],
+        summary: "제품일람 조회 (형번 단위 집계)",
+        description:
+          "비로그인 GET 이 허용된 공개 경로다. **자료일람과 같은 검색 결과를 형번 단위로 다시 묶는다** — 조건에 걸린 자료를 紐づく 형번마다 세어 資料数 를 만든다. 따라서 조건에 맞는 자료가 0건인 형번은 목록에 나오지 않는다(축에는 남는다 — /products/axis).\n\n자료의 노출 범위는 /contents GET 과 같은 게시대상·게시기간 규칙이며(사내 사용자는 게시기간 미적용), 형번은 표시(isVisible=true) + 제품일람 대상 + 사용중 카테고리만 집계한다. 비사내 사용자에게는 사내전용 카테고리의 형번이 제외된다.\n\n키워드·분류축 파라미터의 의미는 /contents GET 과 동일하다. 비사내 사용자의 keyword 요청에는 rate limit 이 적용된다(IP당 60회/분, IP 불명 시 20회/분).",
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
+          { name: "keyword", in: "query", description: "타이틀·첨부파일명·형번 부분일치 (본문 제외)", schema: { type: "string", maxLength: 100 } },
+          { name: "keywordOp", in: "query", schema: { type: "string", enum: ["AND", "OR"], default: "AND" } },
+          { name: "facetCategoryIds", in: "query", description: "콤마 구분 체크된 2Depth 카테고리 ID — 체크가 없는 축은 조건이 아니다", schema: { type: "string" } },
+          { name: "productModelIds", in: "query", description: "型番 축 — 콤마 구분 형번 ID. 체크한 형번의 행만 집계된다", schema: { type: "string" } },
+          {
+            name: "sortField",
+            in: "query",
+            description:
+              "헤더 클릭 정렬. 미지정 시 기본값은 키워드가 있으면 관련도(제목 매칭) → 형번 갱신일 내림차순, 없으면 갱신일 내림차순이다. ⚠️ 제품일람 정렬 기준은 현업 미회신 항목으로, 회신 시 기본값만 교체된다.",
+            schema: { type: "string", enum: ["modelCode", "documentCount"] },
+          },
+          { name: "sortDir", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "asc" } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { type: "array", items: { $ref: "#/components/schemas/ProductListItem" } },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        totalPages: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "429": errorResponse("요청 횟수 초과 — 비사내 사용자의 keyword 검색에 한해 적용"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/products/axis": {
+      get: {
+        tags: ["Product"],
+        summary: "型番 축 선택지 조회",
+        description:
+          "검색화면 좌측 型番（製品一覧）축의 고정 선택지다. 제품일람 집계(/products)와 달리 **검색조건과 무관**하게 전량을 반환한다 — 체크를 풀 때마다 선택지가 사라지면 되돌릴 수 없기 때문이다.\n\n카테고리 관리 설정 반영: 製品一覧表示=N 은 축에도 나오지 않고, 使用=N(isActive=false) 은 축에 남긴 채 isActive: false 로 내려보내 화면이 무효 표시한다. 제품일람 대상 카테고리가 0건이면 meta.enabled=false 로 제품일람 탭 자체를 끈다.\n\n「표시순서 기본 10건 + 전체보기 팝업」은 화면 표현이라 서버에서 자르지 않는다.",
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: { type: "array", items: { $ref: "#/components/schemas/ProductAxisItem" } },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        enabled: {
+                          type: "boolean",
+                          description: "제품일람 대상 카테고리가 1건 이상인지 — false 면 제품일람 탭 비활성",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/products/{id}": {
+      get: {
+        tags: ["Product"],
+        summary: "제품상세 조회 (REQ-010)",
+        description:
+          "그 형번에 紐づく 자료 목록을 반환한다. 검색화면의 분류축·키워드는 적용하지 않는다 — 형번 하나만 기준으로 모은다.\n\n노출 불가 형번(비표시 / 제품일람 OFF / 사용중지·사내전용 카테고리)은 **404** 로 답한다. 403 으로 구분하면 그 형번이 존재한다는 사실이 새어 나간다.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        product: { $ref: "#/components/schemas/ProductModel" },
+                        contents: {
+                          type: "array",
+                          description: "공개일 내림차순. 자료일람과 같은 뱃지 판정(isNew/isUpdated)을 포함한다",
+                          items: { $ref: "#/components/schemas/ProductDocumentItem" },
+                        },
+                      },
+                    },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        pageSize: { type: "integer" },
+                        totalPages: { type: "integer" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "404": errorResponse("Not found — 미존재 또는 노출 불가 형번"),
+          "500": errorResponse("서버 에러"),
+        },
+      },
+    },
+
+    "/search/suggest": {
+      get: {
+        tags: ["Search"],
+        summary: "통합검색 자동완성 (REQ-001)",
+        description:
+          "비로그인 GET 이 허용된 공개 경로다. **3자 이상**에서만 후보를 내며, 미달이면 400 이 아니라 빈 결과를 반환한다(타이핑 중 매 글자마다 에러를 내지 않는다).\n\n후보 대상은 **형번 + 콘텐츠 제목뿐**이다 — 첨부파일명과 본문은 보지 않는다. 표시 순서는 제품 → 자료이며 종류별 기본 4건이다.\n\n제품 후보의 부제는 카테고리명만 내려보낸다 — 형번 마스터에 제품상태 컬럼이 없다(목업 03 형번관리에서도 製品ステータス 는 관리항목 제외 확정이며, 제품상태는 콘텐츠의 분류축이다).\n\n타이핑마다 호출되는 경로라 rate limit 을 /contents 검색과 **별도 키**로 적용한다 — 자동완성 폭주가 본검색을 막지 않는다.",
+        parameters: [
+          { name: "q", in: "query", required: true, description: "검색어. 3자 미만이면 빈 결과", schema: { type: "string", maxLength: 100 } },
+          {
+            name: "limit",
+            in: "query",
+            description: "제품·자료 **각각**의 최대 건수",
+            schema: { type: "integer", minimum: 1, maximum: 10, default: 4 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "조회 성공",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { data: { $ref: "#/components/schemas/SuggestResult" } },
+                },
+              },
+            },
+          },
+          "400": validationErrorResponse,
+          "429": errorResponse("요청 횟수 초과 — 비사내 사용자에 한해 적용"),
           "500": errorResponse("서버 에러"),
         },
       },
@@ -4091,6 +4503,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           sortOrder: { type: "integer", example: 1 },
           isActive: { type: "boolean", example: true },
           isVisible: { type: "boolean", example: true, description: "콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (1Depth 전용)" },
+          isProductList: { type: "boolean", example: false, description: "제품일람(製品一覧) 노출 대상 여부 — REQ-008. 실제 사용은 2Depth 한정이며 1Depth 의 값은 무시된다." },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
@@ -4254,6 +4667,215 @@ export const openApiSpec: OpenAPIV3.Document = {
               },
             },
           },
+          productModels: {
+            type: "array",
+            description:
+              "紐づく型番 (REQ-009). 표시순서 → 형번명 昇順. 비사내 사용자에게는 노출 불가 형번(비표시 / 제품일람 OFF / 사용중지·사내전용 카테고리)이 제외된다 — 수정 폼은 `includeHiddenProductModels=true` 로 전량을 받는다.",
+            items: { $ref: "#/components/schemas/ProductModel" },
+          },
+        },
+      },
+      ProductModelCategory: {
+        type: "object",
+        description: "형번이 속한 2Depth 카테고리 (+ 1Depth 부모)",
+        required: ["id", "categoryCode", "name", "isActive", "isProductList", "isInternalOnly"],
+        properties: {
+          id: { type: "integer", example: 12 },
+          categoryCode: { type: "string", example: "MOD" },
+          name: { type: "string", example: "太陽電池モジュール" },
+          isActive: { type: "boolean", example: true },
+          isProductList: { type: "boolean", example: true },
+          isInternalOnly: { type: "boolean", example: false, description: "사내전용 카테고리 — 화면에서 카테고리명을 적색으로 표기한다. 노출 판정 자체는 서버(productModelVisibilityFilter)가 이미 끝낸 상태로 내려온다." },
+          parent: {
+            type: "object",
+            nullable: true,
+            properties: {
+              id: { type: "integer", example: 3 },
+              categoryCode: { type: "string", example: "PRODUCT" },
+              name: { type: "string", example: "製品カテゴリ" },
+              isActive: { type: "boolean", example: true },
+              isInternalOnly: { type: "boolean", example: false },
+            },
+          },
+        },
+      },
+      ProductModel: {
+        type: "object",
+        required: ["id", "categoryId", "modelCode", "sortOrder", "isVisible", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          categoryId: { type: "integer", example: 12 },
+          modelCode: { type: "string", maxLength: 100, example: "Q.TRON M-G2+ 440" },
+          sortOrder: { type: "integer", example: 1, description: "표시 우선순위. 중복 허용 — 같은 값이면 형번명 昇順" },
+          isVisible: {
+            type: "boolean",
+            example: true,
+            description: "이용자 화면 노출 여부. false 여도 콘텐츠 등록 폼에서는 선택할 수 있다 (REQ-007 방침2)",
+          },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", nullable: true },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", nullable: true },
+          category: { $ref: "#/components/schemas/ProductModelCategory" },
+        },
+      },
+      CreateProductModel: {
+        type: "object",
+        required: ["categoryId", "modelCode"],
+        properties: {
+          categoryId: {
+            type: "integer",
+            description: "2Depth + 製品一覧表示(isProductList)=true 카테고리만 허용. 1Depth 는 400, 미존재는 404",
+            example: 12,
+          },
+          modelCode: {
+            type: "string",
+            maxLength: 100,
+            description: "앞뒤 공백은 저장 전 제거된다. 가운데 공백은 보존 — 栄信 SRシリーズ 처럼 의미를 갖는 형번이 있다. 대소문자·뒤 공백 무시는 컬럼 콜레이션(utf8mb4_unicode_ci)이 처리한다",
+            example: "HQJP-A55-1",
+          },
+          sortOrder: { type: "integer", default: 1 },
+          isVisible: { type: "boolean", default: true },
+        },
+      },
+      UpdateProductModel: {
+        type: "object",
+        description: "변경할 필드만 전송. 빈 객체는 400",
+        properties: {
+          categoryId: { type: "integer" },
+          modelCode: { type: "string", maxLength: 100 },
+          sortOrder: { type: "integer" },
+          isVisible: { type: "boolean" },
+        },
+      },
+      ProductDocumentItem: {
+        type: "object",
+        description:
+          "제품상세의 자료 한 건 — 목업 7컬럼(公開日 / 更新日 / 情報種別 / 資料種別 / タイトル / 添付 / VIEW)에 필요한 필드만 담는다. 목록(ContentListItem)보다 좁다",
+        required: [
+          "id", "title", "viewCount", "createdAt", "updatedAt",
+          "hasBeenUpdated", "isNew", "isUpdated", "categories", "targets", "attachmentCount",
+        ],
+        properties: {
+          id: { type: "integer" },
+          title: { type: "string" },
+          publishedAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          viewCount: { type: "integer" },
+          hasBeenUpdated: { type: "boolean", description: "갱신 이력 — updatedAt !== createdAt" },
+          isNew: { type: "boolean", description: "NEW 뱃지 — 자료일람과 동일 판정" },
+          isUpdated: { type: "boolean", description: "UPDATE 뱃지 — isNew=true 이면 항상 false" },
+          categories: {
+            type: "array",
+            description: "부모-자식 트리. 분류 컬럼 표시에 사용 — 표시 축은 카테고리관리 설정(`一覧表示`)에 따라 동적이다",
+            items: { $ref: "#/components/schemas/CategoryTree" },
+          },
+          targets: {
+            type: "array",
+            description:
+              "게시대상 + 게시기간. 화면이 公開日 을 **목록과 같은 기준**으로 계산하는 데 쓴다 — 보는 사람의 계층(roleCode)에 적용되는 startAt 이 공개일이고, 사내 사용자에게는 최단 공개일이다. 같은 자료의 公開日 이 목록과 제품상세에서 달라지지 않도록 함께 내려보낸다.",
+            items: {
+              type: "object",
+              properties: {
+                roleCode: { type: "string", nullable: true, description: "null = 비회원" },
+                startAt: { type: "string", format: "date-time", nullable: true },
+                endAt: { type: "string", format: "date-time", nullable: true },
+              },
+            },
+          },
+          attachmentCount: { type: "integer" },
+        },
+      },
+      ProductListItem: {
+        allOf: [
+          { $ref: "#/components/schemas/ProductModel" },
+          {
+            type: "object",
+            required: ["documentCount"],
+            properties: {
+              documentCount: {
+                type: "integer",
+                description: "현재 검색·필터 조건에 걸린 자료 수 (資料数). 조건이 바뀌면 값도 바뀐다",
+                example: 4,
+              },
+            },
+          },
+        ],
+      },
+      ProductAxisItem: {
+        type: "object",
+        description: "型番 축 한 그룹 — 제품일람 대상 2Depth 카테고리 + 그 안의 노출 형번",
+        required: ["id", "categoryCode", "name", "sortOrder", "isActive", "productModels"],
+        properties: {
+          id: { type: "integer", example: 12 },
+          categoryCode: { type: "string", example: "MOD" },
+          name: { type: "string", example: "太陽電池モジュール" },
+          sortOrder: { type: "integer", example: 1 },
+          isActive: {
+            type: "boolean",
+            example: true,
+            description: "false 면 축에는 남기고 무효(disabled) 표시 — 검색 조건에서는 제외된다",
+          },
+          parent: {
+            type: "object",
+            nullable: true,
+            properties: {
+              id: { type: "integer" },
+              categoryCode: { type: "string" },
+              name: { type: "string" },
+              sortOrder: { type: "integer" },
+            },
+          },
+          productModels: {
+            type: "array",
+            description: "표시(isVisible=true) 형번만. 표시순서 → 형번명 昇順",
+            items: {
+              type: "object",
+              required: ["id", "modelCode", "sortOrder"],
+              properties: {
+                id: { type: "integer" },
+                modelCode: { type: "string" },
+                sortOrder: { type: "integer" },
+              },
+            },
+          },
+        },
+      },
+      SuggestResult: {
+        type: "object",
+        required: ["products", "contents"],
+        properties: {
+          products: {
+            type: "array",
+            description: "제품(형번) 후보 — 표시 순서상 자료보다 앞",
+            items: {
+              type: "object",
+              required: ["id", "modelCode"],
+              properties: {
+                id: { type: "integer" },
+                modelCode: { type: "string" },
+                category: { $ref: "#/components/schemas/ProductModelCategory" },
+              },
+            },
+          },
+          contents: {
+            type: "array",
+            description: "자료 후보 — 제목 부분일치만",
+            items: {
+              type: "object",
+              required: ["id", "title", "categories"],
+              properties: {
+                id: { type: "integer" },
+                title: { type: "string" },
+                categories: {
+                  type: "array",
+                  description: "부제(資料種別 등)로 쓸 분류 트리. 어느 축을 쓸지는 화면이 고른다 — 축 식별자는 카테고리 마스터 데이터이지 코드 상수가 아니다",
+                  items: { $ref: "#/components/schemas/CategoryTree" },
+                },
+              },
+            },
+          },
         },
       },
       CreateCategory: {
@@ -4267,6 +4889,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           sortOrder: { type: "integer", default: 1 },
           isActive: { type: "boolean", default: true },
           isVisible: { type: "boolean", default: true, description: "1Depth 전용 — 자식 등록 시 생략 가능 (서버 default true 적용)" },
+          isProductList: { type: "boolean", default: false, description: "제품일람 노출 대상 (REQ-008). 2Depth 에만 의미가 있다 — 형번 등록 시 `/product-models` 가 2Depth + 이 플래그를 함께 검증한다." },
         },
       },
       Menu: {
@@ -4607,6 +5230,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           sortOrder: { type: "integer" },
           isActive: { type: "boolean" },
           isVisible: { type: "boolean", description: "1Depth 전용 — 자식 카테고리(parentId !== null)에 전송 시 400 거절" },
+          isProductList: { type: "boolean", description: "제품일람 노출 대상 (REQ-008)" },
         },
       },
       UpdateCodeDetail: {
