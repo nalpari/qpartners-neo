@@ -239,6 +239,13 @@ export function CategoriesContents() {
       preview.descendantCount > 0
         ? `下位カテゴリー${preview.descendantCount}件もすべて削除されます。`
         : null,
+      // 형번은 cascade 로 **삭제**된다(링크 해제가 아니다) — 되돌릴 수 없으므로 건수를 먼저 띄운다.
+      preview.productModelCount > 0
+        ? `登録されている型番${preview.productModelCount}件もすべて削除されます（元に戻せません）。`
+        : null,
+      preview.productModelLinkCount > 0
+        ? `型番とコンテンツの紐付け${preview.productModelLinkCount}件も解除されます。`
+        : null,
       preview.contentLinkCount > 0
         ? `関連するコンテンツの紐付け${preview.contentLinkCount}件が自動で解除されます（コンテンツ本体は残ります）。`
         : null,

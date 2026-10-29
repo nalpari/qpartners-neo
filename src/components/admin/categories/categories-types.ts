@@ -170,11 +170,18 @@ export function findCategoryById(tree: CategoryNode[], id: number): CategoryNode
 }
 
 /** GET /api/categories/:id/cascade-preview 응답.
- *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 수 + 콘텐츠 링크 수)를 표시.
+ *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 · 콘텐츠 링크 · 형번 마스터)를 표시.
+ *
+ *  형번은 `ProductModel.category onDelete: Cascade` 로 **삭제**된다 — 콘텐츠 링크 해제와 달리
+ *  되돌릴 수 없고, 자료 링크가 0건이어도 형번은 남아 있을 수 있다. 건수를 보여주지 않으면
+ *  운영자가 「영향 없음」으로 오판하고 형번 마스터를 통째로 잃는다.
+ *
  *  previewedAt 은 preview/DELETE 사이 TOCTOU 갭 가시화용 메타(ISO 8601). */
 export interface CascadePreview {
   id: number;
   descendantCount: number;
   contentLinkCount: number;
+  productModelCount: number;
+  productModelLinkCount: number;
   previewedAt: string;
 }

@@ -2742,7 +2742,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Category"],
         summary: "카테고리 삭제 영향 범위 미리보기",
         description:
-          "삭제 전 운영자에게 영향 범위를 안내하기 위한 read-only API. 자손 카테고리 수와 영향받을 ContentCategory 링크 수를 사전 집계합니다. ADM_CATEGORY.delete 권한 필요.",
+          "삭제 전 운영자에게 영향 범위를 안내하기 위한 read-only API. 자손 카테고리 수, 영향받을 ContentCategory 링크 수, cascade 로 **삭제**되는 형번 마스터 수와 그 자료 링크 수를 사전 집계합니다. ADM_CATEGORY.delete 권한 필요.",
         parameters: [
           {
             name: "id",
