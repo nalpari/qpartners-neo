@@ -157,7 +157,7 @@ export function BulkMailTable({ searchParams, pageSize: perPage, onPageSizeChang
   );
 
   return (
-    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
+    <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[var(--page-max)]">
       {/* 상단 필터 바 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

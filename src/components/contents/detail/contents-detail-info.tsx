@@ -71,7 +71,7 @@ export function ContentsDetailInfo({
   return (
     <>
       {/* 상단 메타 + 우측 기능 버튼 (PC) */}
-      <div className="pt-6 lg:pt-0 pb-2 lg:pb-0 px-6 lg:px-0 w-full lg:w-[1440px]">
+      <div className="pt-6 lg:pt-0 pb-2 lg:pb-0 px-6 lg:px-0 w-full lg:w-[var(--page-max)]">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 pl-1">
             {/* 콘텐츠 번호 — 사내직원 전용. 관리정보 테이블과 동일 조건(showManagement)으로 묶는다. */}
@@ -108,7 +108,7 @@ export function ContentsDetailInfo({
       {showManagement && (
         <>
       {/* PC: 관리정보 4열 테이블 */}
-      <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[1440px]">
+      <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[var(--page-max)]">
         <div className="flex gap-1">
           {fields.map((field) => (
             <div key={field.label} className="flex flex-1 gap-1 h-[58px]">

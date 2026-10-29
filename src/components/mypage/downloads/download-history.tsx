@@ -327,7 +327,7 @@ export function DownloadHistory() {
   return (
     <section className="flex flex-col gap-[18px] items-center w-full">
       {/* 섹션 헤더 */}
-      <div className="flex items-center gap-[12px] pb-[4px] w-full max-w-[1440px] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
+      <div className="flex items-center gap-[12px] pb-[4px] w-full max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
         <Image
           src="/asset/images/contents/downdata_icon.svg"
           alt=""
@@ -342,7 +342,7 @@ export function DownloadHistory() {
 
       {/* 검색바 — 관리자 검색 패턴(MembersSearch) 차용. Figma 491:501(PC) / 491:839(MO).
           PC: 라벨박스 + 폼박스 가로 정렬, 한 행 2필드(키워드 + 기간) / MO: 라벨 위 + input 아래, 세로 스택. */}
-      <div className="w-full max-w-[1440px] px-[24px] lg:px-0">
+      <div className="w-full max-w-[var(--page-max)] px-[24px] lg:px-0">
         <DownloadHistorySearch
           keyword={keyword}
           dateFrom={dateFrom}
@@ -356,7 +356,7 @@ export function DownloadHistory() {
       </div>
 
       {/* 테이블 영역 */}
-      <div className="bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] w-full lg:max-w-[1440px] overflow-hidden mt-[6px]">
+      <div className="bg-white lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] w-full lg:max-w-[var(--page-max)] overflow-hidden mt-[6px]">
         {/* 건수 + SelectBox */}
         <div className="flex items-center gap-[14px] px-[24px] pt-[24px] lg:px-[42px] lg:pt-[34px] pb-[18px]">
           <p className="flex-1 font-['Noto_Sans_JP'] text-[14px] leading-normal text-[#101010]">

@@ -373,7 +373,7 @@ export function MenusContents() {
 
   return (
     <main className="flex flex-col items-center gap-[18px] w-full pb-[48px]">
-      <div className="flex flex-col gap-[32px] w-[1440px]">
+      <div className="flex flex-col gap-[32px] w-[var(--page-max)]">
         {/* 상단: 메뉴정보 */}
         <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px]">
           <MenusInfoForm

@@ -354,7 +354,7 @@ export function CodesDetailTable({
   }, [onCellEditStart, isUpdateReadOnly]);
 
   return (
-    <div className="flex flex-col w-[1440px] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
+    <div className="flex flex-col w-[var(--page-max)] gap-[18px] pt-[34px] pb-[42px] px-[42px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="font-['Noto_Sans_JP'] font-semibold text-[15px] text-[#101010]">Code Detail</h2>

@@ -20,7 +20,7 @@ export function CodesSearch({
   };
 
   return (
-    <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]">
+    <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[var(--page-max)]">
       <div className="flex gap-1 items-start">
         {/* Header Code 입력 */}
         <div className="flex flex-1 gap-1 h-[58px] items-center">

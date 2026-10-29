@@ -74,7 +74,7 @@ export function BulkMailSearch({ onSearch, onReset, initialValues }: BulkMailSea
   };
 
   return (
-    <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]">
+    <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[var(--page-max)]">
       <div className="flex flex-col gap-1">
         {/* 1행: タイトル / 登録者 */}
         <div className="flex gap-1 items-start">

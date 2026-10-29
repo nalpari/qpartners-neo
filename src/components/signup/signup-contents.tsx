@@ -323,7 +323,7 @@ export function SignupContents() {
       </div>
     )}
     <div className="flex flex-col gap-[10px] lg:gap-6 items-center w-full pb-6 lg:pb-12 mt-[10px] lg:mt-0">
-      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[1440px]">
+      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[var(--page-max)]">
         {/* 상단 안내 카드 */}
         <HeaderCard />
 
@@ -580,7 +580,7 @@ export function SignupContents() {
 
       {/* PC 하단: 등록 버튼 (카드 밖, 회색 배경 위).
           이용약관 동의 영역이 사라져 좌측 요소가 없으므로 justify-end 로 우측 정렬. */}
-      <div className="hidden lg:flex items-center justify-end w-full max-w-[1440px] pb-1">
+      <div className="hidden lg:flex items-center justify-end w-full max-w-[var(--page-max)] pb-1">
         <div className="flex items-center gap-2">
           <Button
             variant="primary"

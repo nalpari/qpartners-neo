@@ -418,7 +418,7 @@ export function Gnb() {
   return (
     <div className="relative h-[68px] lg:h-[78px]">
       <header className="fixed top-0 left-0 flex items-center justify-center w-full bg-black z-9999 h-[68px] lg:h-[78px] py-4.5" style={{ viewTransitionName: "header" }}>
-        <div className="flex items-center justify-between w-full max-w-[1440px] px-5 lg:px-0">
+        <div className="flex items-center justify-between w-full max-w-[var(--page-max)] px-5 lg:px-0">
           {/* PC 로고 — 가로 1줄. 클릭 시 SPA 캐시 우회 풀 리로드 (Redmine #2181):
               다운로드 이력 위젯 등 다른 화면에서의 mutation 이 홈 위젯에 즉시 반영되지
               않던 문제(F5 로만 갱신) 해결. 우클릭/Cmd-클릭은 a 의 기본 동작 유지. */}

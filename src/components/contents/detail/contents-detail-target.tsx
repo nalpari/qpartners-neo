@@ -44,7 +44,7 @@ export function ContentsDetailTarget({ targets }: ContentsDetailTargetProps) {
   return (
     <>
       {/* PC: th 한 줄 + td 5열 grid (옵션 6개 이상이면 아래 줄로 wrap) */}
-      <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[1440px]">
+      <div className="hidden lg:block bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] p-6 w-[var(--page-max)]">
         <div className="flex gap-1">
           {/* Th: 投稿対象 — self-stretch 로 td grid 전체 높이만큼 늘어남 */}
           <div className="w-[120px] shrink-0 flex items-center bg-[#F7F9FB] border border-[#EAF0F6] rounded-[6px] pl-4 pr-2 py-3 self-stretch">

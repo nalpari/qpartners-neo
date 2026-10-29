@@ -23,7 +23,9 @@ export function LoginTabs({ activeTab, onChange }: LoginTabsProps) {
             key={tab.key}
             type="button"
             onClick={() => onChange(tab.key)}
-            // PC(카드 최대폭 1440px 기준): 기존 디자인대로 탭 폭(=하단 보더 길이)을 균등 3분할.
+            // PC: 기존 디자인대로 탭 폭(=하단 보더 길이)을 균등 3분할.
+            //   (아래 실측값은 설계 기준 카드 폭 1440px 에서 잰 것이다. 카드 최대폭은 2026.10.22
+            //    추가 요청으로 `--page-max`(=98%) 가 됐고, 넓어지는 방향이라 넘침은 발생하지 않는다.)
             //   min-w-0 이 없으면 flex item 의 자동 최소 폭이 콘텐츠 폭이라 라벨이 긴
             //   既存Q.PARTNERS会員 탭이 넓어져 균등분할이 깨진다.
             //   폰트는 13px 이 상한이다 — 슬롯 140px 대비 라벨 실측(활성 font-medium 기준)

@@ -147,7 +147,7 @@ export function ContentsDetailAttachment({
   };
 
   return (
-    <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-4 lg:gap-6 pt-[34px] pb-6 px-6 w-full lg:w-[1440px]">
+    <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-4 lg:gap-6 pt-[34px] pb-6 px-6 w-full lg:w-[var(--page-max)]">
       {/* 헤더: 타이틀 + All Download */}
       <div className="flex items-center gap-[10px]">
         <h2 className="flex-1 font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
