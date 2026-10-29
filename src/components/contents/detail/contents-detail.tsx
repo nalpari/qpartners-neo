@@ -17,6 +17,8 @@ import type { CategoryNode } from "@/components/contents/list/contents-contents"
 import { ContentsDetailInfo } from "./contents-detail-info";
 import { ContentsDetailTarget } from "./contents-detail-target";
 import { ContentsDetailCategory } from "./contents-detail-category";
+import { ContentsDetailProductModels } from "./contents-detail-product-models";
+import type { DetailProductModel } from "./contents-detail-product-models";
 import { ContentsDetailBody } from "./contents-detail-body";
 import { ContentsDetailAttachment } from "./contents-detail-attachment";
 import { ContentsDetailActions } from "./contents-detail-actions";
@@ -66,6 +68,12 @@ interface ContentDetailData {
     mimeType: string | null;
     sortOrder: number;
   }[];
+  /**
+   * 紐づく型番 (REQ-009). 표시순서 → 형번명 昇順.
+   * 서버가 노출 범위를 이미 걸러서 내려준다 — 비사내 사용자에게는 비표시 형번과
+   * 제품일람 OFF·사용중지·사내전용 카테고리의 형번이 제외된다.
+   */
+  productModels: DetailProductModel[];
   isNew: boolean;
   isUpdated: boolean;
 }
@@ -244,6 +252,9 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           isInternal={isInternal}
         />
 
+        {/* 紐づく型番 — 목업 자료상세의 `.dmdl` 패널. 카테고리 바로 아래가 목업 순서다. */}
+        <ContentsDetailProductModels productModels={data.productModels ?? []} />
+
         <ContentsDetailBody
           title={data.title}
           createdAt={data.createdAt}
@@ -266,7 +277,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           onDelete={handleDelete}
           onEdit={handleEdit}
           onList={handleList}
-          className="w-full lg:w-[1440px] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end"
+          className="w-full lg:w-[var(--page-max)] px-6 lg:px-0 pt-[14px] lg:pt-1 pb-7 lg:pb-1 justify-end"
         />
       </main>
     </>
