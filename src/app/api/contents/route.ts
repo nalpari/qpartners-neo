@@ -324,21 +324,26 @@ export async function GET(request: NextRequest) {
         // buildKeywordCondition(lib/content-search.ts) 과 **동일 조건**의 raw SQL 판본이다.
         // 한쪽만 고치면 카테고리 정렬 상태에서만 검색 결과가 달라진다 — 함께 유지할 것.
         // 사용자가 입력한 `%`·`_` 는 와일드카드가 아니라 글자로 다룬다(escapeLikePattern).
-        // `ESCAPE '\\'` 를 명시해 `NO_BACKSLASH_ESCAPES` sql_mode 에서도 같게 동작시킨다.
+        // ESCAPE 절을 명시해 `NO_BACKSLASH_ESCAPES` sql_mode 에서도 같게 동작시킨다.
+        //
+        // ⚠️ 템플릿 리터럴에 **백슬래시 4개**를 쓴다. TS 가 2개로 줄이고, 그 2개가 MariaDB
+        // 문자열 리터럴에서 다시 1개로 줄어 `ESCAPE '\'` 가 된다. 2개만 쓰면 SQL 텍스트가
+        // `ESCAPE '\'` 라서 `\'` 가 이스케이프된 따옴표로 읽혀 **파싱 에러(1064)** 가 난다
+        // (2026-10-29 실측: 키워드 + 분류 정렬 조합이 500). E2E 에 그 조합 케이스가 있다.
         const kws = keywordTokens.map((t) => `%${escapeLikePattern(t)}%`);
         const glue = keywordOp === "AND" ? " AND " : " OR ";
         const titleCond = Prisma.join(
-          kws.map((k) => Prisma.sql`c.title LIKE ${k} ESCAPE '\\'`),
+          kws.map((k) => Prisma.sql`c.title LIKE ${k} ESCAPE '\\\\'`),
           glue,
         );
         const modelCond = Prisma.join(
-          kws.map((k) => Prisma.sql`pm.model_code LIKE ${k} ESCAPE '\\'`),
+          kws.map((k) => Prisma.sql`pm.model_code LIKE ${k} ESCAPE '\\\\'`),
           glue,
         );
         // 본문(c.body)은 검색 대상에서 빠졌다 — SEARCH_BODY 플래그로 되살릴 때 이 분기도 함께.
         const bodyGroup = SEARCH_BODY
           ? Prisma.sql` OR (${Prisma.join(
-              kws.map((k) => Prisma.sql`c.body LIKE ${k} ESCAPE '\\'`),
+              kws.map((k) => Prisma.sql`c.body LIKE ${k} ESCAPE '\\\\'`),
               glue,
             )})`
           : Prisma.empty;

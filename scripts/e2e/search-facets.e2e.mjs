@@ -24,9 +24,11 @@ import {
   actAndWait,
   assert,
   assertEqual,
+  BASE_URL,
   domClick,
   openDocContents,
   run,
+  signToken,
   test,
   withPage,
 } from "./harness.mjs";
@@ -178,6 +180,47 @@ test("「すべて選択」 은 미설정(초기)과 같은 조건이다", async
 
     assertEqual(after, initial, "「すべて選択」 이 미설정과 다른 건수를 냅니다");
   });
+});
+
+// 분류 컬럼 정렬은 Prisma 가 아니라 **raw SQL** 로 간다(`sortCategoryCode` 분기). 그래서
+// 키워드 조건도 raw SQL 판본이 따로 쓰이는데, 2026-10-29 에 그쪽 `ESCAPE` 절의 템플릿
+// 리터럴 이스케이프가 한 단계 모자라 **SQL 파싱 에러(1064) → 500** 이 됐다.
+//
+// 화면에서는 분류 컬럼 헤더로 정렬을 걸어 둔 상태에서 검색어를 3자 이상 입력하면 바로
+// 재현된다(실시간 검색이 정렬을 유지한다). 종전 케이스는 「키워드 없는 정렬」과
+// 「정렬 없는 키워드」만 덮어 이 조합을 통과시켰다 — API 레벨로 고정한다.
+test("분류 정렬 + 키워드 조합이 500 이 되지 않는다", async () => {
+  const token = await signToken("super");
+  const cookie = `qp-auth-token=${token}`;
+
+  // 축 코드를 코드에 박지 않는다 — 폐지된 축 상수로 깨진 선례가 있다(파일 상단 주석).
+  const treeRes = await fetch(`${BASE_URL}/api/categories?activeOnly=true`, {
+    headers: { cookie },
+  });
+  const axes = ((await treeRes.json()).data ?? []).filter((a) => a.isVisible !== false);
+  assert(axes.length > 0, "표시 중인 분류축이 없어 판정할 수 없습니다");
+  const axisCode = axes[0].categoryCode;
+
+  // 평범한 검색어 / LIKE 메타문자가 든 검색어 양쪽을 본다. 메타문자 쪽은 이스케이프가
+  // 실제로 적용되는 경로라, ESCAPE 절이 깨지면 여기서 먼저 터진다.
+  for (const keyword of ["TEST", "100%", "A_1"]) {
+    const url =
+      `${BASE_URL}/api/contents?page=1&pageSize=5&sortDir=asc` +
+      `&sortCategoryCode=${encodeURIComponent(axisCode)}` +
+      `&keyword=${encodeURIComponent(keyword)}`;
+    const res = await fetch(url, { headers: { cookie } });
+    let body = "";
+    try {
+      body = JSON.stringify(await res.json()).slice(0, 120);
+    } catch {
+      body = "(본문 없음)";
+    }
+    assertEqual(
+      res.status,
+      200,
+      `분류 정렬(${axisCode}) + 키워드 "${keyword}" 조회가 실패했습니다 — ${body}`,
+    );
+  }
 });
 
 process.exitCode = (await run("좌측영역 분류축 필터")) > 0 ? 1 : 0;
