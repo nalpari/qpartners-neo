@@ -469,6 +469,11 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       if (sort.categoryCode) params.sortCategoryCode = sort.categoryCode;
       if (sort.targets) params.sortTargets = true;
       if (sort.dir) params.sortDir = sort.dir;
+      // 검색 고도화 기본 정렬 — 키워드가 있으면 관련도순(서버 `sort=relevance`).
+      // 명시 정렬(헤더 클릭)이 걸려 있으면 서버가 그쪽 분기를 먼저 타므로 보내지 않는다.
+      if (searchParams.keyword && !sort.field && !sort.categoryCode && !sort.targets) {
+        params.sort = "relevance";
+      }
 
       try {
         const res = await api.get<{
