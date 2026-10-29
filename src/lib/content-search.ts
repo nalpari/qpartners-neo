@@ -55,9 +55,14 @@ export function tokenizeKeyword(keyword: string | undefined): string[] {
  * ⚠️ 토큰 **원본은 그대로 두고** LIKE 패턴을 만드는 지점에서만 적용한다. 관련도 정렬의
  * `hasTitleMatch` 는 JS 문자열 비교라, 이스케이프된 토큰을 넘기면 매칭이 어긋난다.
  *
- * ⚠️ 이스케이프 문자는 `\` 다 — raw SQL 분기는 `ESCAPE '\\'` 를 명시해 sql_mode 와
- * 무관하게 만들었지만, Prisma `contains` 는 ESCAPE 절을 넣을 수 없어 DB 기본값에 기댄다
- * (MariaDB 기본값은 `NO_BACKSLASH_ESCAPES` 가 꺼진 상태다).
+ * ⚠️ 이스케이프 문자는 `\` 이고, 이는 MariaDB **기본 sql_mode** 를 전제한다. raw SQL 분기는
+ * `ESCAPE` 절로 그 문자를 명시하고, Prisma `contains` 는 ESCAPE 절을 넣을 수 없어 DB 기본값에
+ * 기댄다 — 어느 쪽도 sql_mode 와 무관하지는 않다.
+ *
+ * `NO_BACKSLASH_ESCAPES` 를 켜면 **양쪽이 서로 다르게 깨진다**: Prisma 쪽은 `\` 가 평범한
+ * 글자가 되어 이스케이프가 무효가 되고, raw SQL 쪽은 `ESCAPE '\\'` 가 2문자 인수가 되어
+ * 거부된다(2026-10-29 실측: `ER_WRONG_ARGUMENTS` 1210). 그 모드가 필요해지면 이 함수의
+ * 이스케이프 문자와 raw SQL 의 `ESCAPE` 인수를 함께 바꿔야 한다.
  */
 export function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
