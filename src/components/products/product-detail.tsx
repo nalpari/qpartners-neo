@@ -11,6 +11,7 @@ import { Button, CategoryNameList, Pagination, ProductStatusBadge } from "@/comp
 import { resolveVisibleAxes } from "@/components/contents/list/contents-facet-utils";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { useIsInternal } from "@/hooks/use-is-internal";
+import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
 import { getFallbackRole } from "@/lib/auth-role";
 import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
@@ -260,6 +261,7 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
 
   // 목록으로 — 콘텐츠 목록의 검색조건·페이지를 복원시킨다(상세→목록 복귀 규약).
   const handleList = () => {
+    setListRestoreFlag("contents");
     router.push("/contents", { transitionTypes: ["fade"] });
   };
 
