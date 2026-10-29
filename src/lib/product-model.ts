@@ -87,6 +87,31 @@ export const PRODUCT_MODEL_CATEGORY_SELECT = {
   },
 } as const;
 
+/**
+ * **공개 응답용** 형번 select — 감사 컬럼(`createdBy`/`updatedBy`)을 제외한다.
+ *
+ * `select:` 에 **직접** 넘기는 필드맵이다 (`PRODUCT_MODEL_CATEGORY_SELECT` 는 `{ select: … }`
+ * 래퍼라 `include:`/`select:` 의 **값** 위치에 쓴다 — 두 상수의 사용 형태가 다르다).
+ *
+ * `/api/products`·`/api/products/[id]`·`/api/contents/[id]` GET 은 비로그인에게 열린 경로다
+ * (`middleware.ts` PUBLIC_GET_PATTERNS). 모델을 `include` 로 통째로 내보내면 등록·수정자의
+ * 로그인 ID 가 그대로 응답에 실린다 — 자동완성(`/api/search/suggest`)이 응답 매핑으로 이미
+ * 막고 있는 것과 같은 기준을 조회 단계에서 적용한다.
+ *
+ * 형번관리(`/api/product-models`)는 감사 컬럼을 화면에 쓰므로 이 select 를 쓰지 않는다.
+ */
+export const PRODUCT_MODEL_PUBLIC_SELECT = {
+  id: true,
+  categoryId: true,
+  modelCode: true,
+  status: true,
+  sortOrder: true,
+  isVisible: true,
+  createdAt: true,
+  updatedAt: true,
+  category: PRODUCT_MODEL_CATEGORY_SELECT,
+} as const;
+
 /** 형번명 정렬 비교자 — 목업 `titleCollator` 와 동일 기준(일본어, 숫자 인식, 대소문자 무시) */
 export const modelCodeCollator = new Intl.Collator("ja", {
   numeric: true,

@@ -28,6 +28,7 @@ import { prisma } from "@/lib/prisma";
 import {
   assertProductModelIds,
   PRODUCT_MODEL_CATEGORY_SELECT,
+  PRODUCT_MODEL_PUBLIC_SELECT,
   productModelVisibilityFilter,
 } from "@/lib/product-model";
 import { resolveUserName } from "@/lib/admin-name";
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest, { params }: Params) {
           where: allowAllProductModels
             ? {}
             : { productModel: productModelVisibilityFilter(false) },
-          include: { productModel: { include: { category: PRODUCT_MODEL_CATEGORY_SELECT } } },
+          select: { productModel: { select: PRODUCT_MODEL_PUBLIC_SELECT } },
           orderBy: [
             { productModel: { sortOrder: "asc" } },
             { productModel: { modelCode: "asc" } },

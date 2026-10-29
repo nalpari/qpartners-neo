@@ -10,7 +10,7 @@ import { publishedTargetFilter } from "@/lib/content-visibility";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import {
-  PRODUCT_MODEL_CATEGORY_SELECT,
+  PRODUCT_MODEL_PUBLIC_SELECT,
   productModelVisibilityFilter,
 } from "@/lib/product-model";
 import { idParamSchema, productDetailQuerySchema } from "@/lib/schemas/product-model";
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const product = await prisma.productModel.findFirst({
       where: { id: parsed.data, ...productModelVisibilityFilter(internal) },
-      include: { category: PRODUCT_MODEL_CATEGORY_SELECT },
+      select: PRODUCT_MODEL_PUBLIC_SELECT,
     });
 
     if (!product) {

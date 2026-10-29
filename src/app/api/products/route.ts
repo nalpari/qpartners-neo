@@ -17,7 +17,7 @@ import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import {
   modelCodeCollator,
-  PRODUCT_MODEL_CATEGORY_SELECT,
+  PRODUCT_MODEL_PUBLIC_SELECT,
   productModelVisibilityFilter,
 } from "@/lib/product-model";
 import { listProductsQuerySchema } from "@/lib/schemas/product-model";
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     const models = await prisma.productModel.findMany({
       where: { id: { in: [...agg.keys()] } },
-      include: { category: PRODUCT_MODEL_CATEGORY_SELECT },
+      select: PRODUCT_MODEL_PUBLIC_SELECT,
     });
 
     const rows = models.map((m) => ({

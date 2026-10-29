@@ -3095,7 +3095,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                     data: {
                       type: "object",
                       properties: {
-                        product: { $ref: "#/components/schemas/ProductModel" },
+                        product: { $ref: "#/components/schemas/ProductModelPublic" },
                         contents: {
                           type: "array",
                           description: "공개일 내림차순. 자료일람과 같은 뱃지 판정(isNew/isUpdated)을 포함한다",
@@ -4671,7 +4671,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             type: "array",
             description:
               "紐づく型番 (REQ-009). 표시순서 → 형번명 昇順. 비사내 사용자에게는 노출 불가 형번(비표시 / 제품일람 OFF / 사용중지·사내전용 카테고리)이 제외된다 — 수정 폼은 `includeHiddenProductModels=true` 로 전량을 받는다.",
-            items: { $ref: "#/components/schemas/ProductModel" },
+            items: { $ref: "#/components/schemas/ProductModelPublic" },
           },
         },
       },
@@ -4699,8 +4699,10 @@ export const openApiSpec: OpenAPIV3.Document = {
           },
         },
       },
-      ProductModel: {
+      ProductModelPublic: {
         type: "object",
+        description:
+          "**공개 GET 경로용 형번** — 감사 컬럼(createdBy/updatedBy)을 제외한다. `/api/products`, `/api/products/{id}`, `/api/contents/{id}` 는 비로그인 조회가 열려 있어 등록·수정자의 로그인 ID 를 응답에 싣지 않는다 (서버측 `PRODUCT_MODEL_PUBLIC_SELECT`).",
         required: ["id", "categoryId", "modelCode", "sortOrder", "isVisible", "createdAt", "updatedAt"],
         properties: {
           id: { type: "integer", example: 1 },
@@ -4713,11 +4715,22 @@ export const openApiSpec: OpenAPIV3.Document = {
             description: "이용자 화면 노출 여부. false 여도 콘텐츠 등록 폼에서는 선택할 수 있다 (REQ-007 방침2)",
           },
           createdAt: { type: "string", format: "date-time" },
-          createdBy: { type: "string", nullable: true },
           updatedAt: { type: "string", format: "date-time" },
-          updatedBy: { type: "string", nullable: true },
           category: { $ref: "#/components/schemas/ProductModelCategory" },
         },
+      },
+      ProductModel: {
+        allOf: [
+          { $ref: "#/components/schemas/ProductModelPublic" },
+          {
+            type: "object",
+            description: "형번관리(`/api/product-models*`) 응답 — 관리자 전용이므로 감사 컬럼을 포함한다",
+            properties: {
+              createdBy: { type: "string", nullable: true },
+              updatedBy: { type: "string", nullable: true },
+            },
+          },
+        ],
       },
       CreateProductModel: {
         type: "object",
@@ -4789,7 +4802,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
       ProductListItem: {
         allOf: [
-          { $ref: "#/components/schemas/ProductModel" },
+          { $ref: "#/components/schemas/ProductModelPublic" },
           {
             type: "object",
             required: ["documentCount"],
