@@ -432,7 +432,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
       {submitMutation.isPending && <DimSpinner />}
       <main className="flex flex-col items-center w-full lg:pb-[48px] pb-[28px] mt-[10px] lg:mt-0">
       {/* PC 카드 */}
-      <div className="hidden lg:flex flex-col gap-[24px] w-[1440px]">
+      <div className="hidden lg:flex flex-col gap-[24px] w-[var(--page-max)]">
         <div className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px]">
           <div className="flex flex-col gap-[4px]">
             <PcUserInfoRow fields={[userFields[0], userFields[1]]} />
@@ -460,7 +460,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
 
       {/* 비로그인 전용: 로그인 유도 안내 */}
       {!isLoggedIn && (
-        <div className="flex items-center justify-center gap-2 w-full max-w-[1440px] mt-[24px] px-[24px] lg:px-0">
+        <div className="flex items-center justify-center gap-2 w-full lg:max-w-[var(--page-max)] mt-[24px] px-[24px] lg:px-0">
           <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010]">
             ※ログイン後ご利用の場合、個人情報の入力は必要ありません。
           </p>

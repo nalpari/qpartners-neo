@@ -5,7 +5,7 @@ export function Footer() {
   return (
     <footer className="flex items-center justify-center w-full border-t border-[#f5f5f5] bg-white">
       {/* PC */}
-      <div className="hidden lg:flex items-center gap-[94px] w-[1440px] py-[20px]">
+      <div className="hidden lg:flex items-center gap-[94px] w-[var(--page-max)] py-[20px]">
         {/* 로고 + 사무국 */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}

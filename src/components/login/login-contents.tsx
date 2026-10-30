@@ -196,14 +196,14 @@ export function LoginContents({ initialSavedId = "", initialSavedTab = "dealer",
           <Spinner size={48} className="text-white" />
         </div>
       )}
-      <div className="flex flex-col w-full bg-white overflow-hidden lg:max-w-[1440px] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
+      <div className="flex flex-col w-full bg-white overflow-hidden lg:max-w-[var(--page-max)] lg:rounded-[12px] lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         <div className="flex w-full">
           {/* PC 좌측 — 이미지 패널 */}
           {/* 높이 702px 고정 — 세 탭 중 가장 높은 폼(에러 배너 표시 시 702.8px)에 맞춘 값이다.
               패널이 폼보다 높아 카드 높이를 패널이 결정하므로 하단 흰 여백이 생기지 않는다.
 
               폭은 카드 폭에 따라 3단계다. 패널이 shrink-0 이라 폼 컬럼은 카드에서 패널을
-              뺀 나머지를 갖는데, 설계폭(카드 1440px)의 860px 를 좁은 화면에서도 유지하면
+              뺀 나머지를 갖는데, 설계 기준 카드 폭 1440px 에서의 860px 를 좁은 화면에서도 유지하면
               폼이 고갈된다 — 안내문구가 4줄까지 접혀 폼이 782px 로 늘어나 여백이 80px 생기고,
               탭 슬롯도 81px 로 줄어 라벨(131px)이 넘친다. 그래서 2xl(1536px) 부터만 860px 를
               쓰고, 그 미만에서는 패널을 좁혀 폼 폭을 확보한다.

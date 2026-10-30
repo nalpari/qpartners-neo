@@ -334,7 +334,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
   const isPending = submitMutation.isPending || draftMutation.isPending || deleteMutation.isPending;
   const showSentAt = mode === "detail" || mode === "edit";
 
-  const cardClass = "bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[1440px]";
+  const cardClass = "bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[24px] px-[24px] w-[var(--page-max)]";
 
   return (
     <div className="flex flex-col items-center gap-[18px] w-full pb-[48px]">
@@ -412,7 +412,7 @@ export function BulkMailForm({ mode, initialData }: BulkMailFormProps) {
       </section>
 
       {/* 하단 버튼 — 모드별 분기. RBAC 패턴 A (미노출) + 핸들러 본체 패턴 E 이중 가드. #2183 note-12 통일 */}
-      <div className="flex items-center justify-end gap-2 w-[1440px] pb-1">
+      <div className="flex items-center justify-end gap-2 w-[var(--page-max)] pb-1">
         {isDetail ? (
           <>
             {/* コピーして作成 — RBAC 패턴 A (canCreate=false 시 미노출). */}

@@ -62,7 +62,7 @@ export function Location() {
 
   return (
     <div className="flex flex-col items-center w-full bg-white lg:bg-[#F7F9FB]">
-      <div className="flex items-center justify-between w-full max-w-[1440px] pt-[10px] pb-[10px] px-6 lg:pt-[42px] lg:pb-[24px] lg:px-0">
+      <div className="flex items-center justify-between w-full lg:max-w-[var(--page-max)] pt-[10px] pb-[10px] px-6 lg:pt-[42px] lg:pb-[24px] lg:px-0">
         {/* 좌측: 아이콘 + 타이틀 */}
         <div className="flex flex-1 items-center gap-1 pr-1">
           <div className="flex items-center justify-center size-10 shrink-0">

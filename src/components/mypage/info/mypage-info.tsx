@@ -282,7 +282,7 @@ export function MypageInfo() {
       {isSaving && <DimSpinner />}
 
       {/* 섹션 헤더 */}
-      <div className="flex items-center gap-[12px] pb-[4px] w-full max-w-[1440px] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
+      <div className="flex items-center gap-[12px] pb-[4px] w-full lg:max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
         <Image
           src="/asset/images/contents/myprofile_icon.svg"
           alt=""
@@ -325,7 +325,7 @@ export function MypageInfo() {
         </div>
       ) : profile ? (
         <>
-          <div className="flex flex-col lg:flex-row lg:items-stretch gap-[10px] lg:gap-[18px] w-full lg:max-w-[1440px]">
+          <div className="flex flex-col lg:flex-row lg:items-stretch gap-[10px] lg:gap-[18px] w-full lg:max-w-[var(--page-max)]">
             {/* Design Ref: §6.1 — STORE/ADMIN은 수정 모드에서 법인정보 숨김 */}
             {(!isEditing || showCorporateEdit) && (
               <MypageInfoCorporate
@@ -351,7 +351,7 @@ export function MypageInfo() {
           )}
 
           {isEditing && (
-            <div className="flex gap-[6px] justify-center lg:justify-end w-full lg:max-w-[1440px] px-[24px] lg:px-0 pb-[28px] lg:pb-0">
+            <div className="flex gap-[6px] justify-center lg:justify-end w-full lg:max-w-[var(--page-max)] px-[24px] lg:px-0 pb-[28px] lg:pb-0">
               <Button
                 variant="secondary"
                 className="flex-1 lg:flex-none lg:w-[97px]"
