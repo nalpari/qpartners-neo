@@ -24,10 +24,14 @@ interface CategoryTreeNode {
 /**
  * 형번 목록.
  *
- * 정렬은 **등록일 내림차순**을 명시 전송한다. API 기본 정렬(카테고리 표시순서 → 형번
- * 표시순서 → 형번명)은 이용자 화면용 「표시순서」 규칙이고, 관리 목록은 최근 등록분을
- * 위로 올리는 쪽이 운영에 맞다 — 목업도 `modelsByRegistration()`(`qp-shell.js:177`)로
- * createdAt 내림차순이다.
+ * 정렬은 **API 기본 정렬에 맡긴다** — 카테고리 표시순서 → 형번 표시순서 → 형번명,
+ * 세 축 모두 **오름차순**이다. 목업 `03-admin-models.html` 의 `filtered()` 가
+ * `Store.models()` 에 위임하는 것과 같다(2026-10-20 業務レビュー — 「カテゴリ順序」 열에
+ * 출력한 숫자와 목록 배열이 어긋나지 않게 한다). 요구사항정의서 v1.1 REQ-007 의
+ * 「형번 순서가 동일한 경우 형번명 오름차순으로 정렬한다」도 같은 기준이다.
+ *
+ * ⚠️ 목업 `modelsByRegistration()`(등록일 내림차순)은 2026-10-20 에 폐기돼 **호출처가 없다.**
+ * 「목업도 등록일순이다」라고 적혀 있던 종전 주석은 원본과 달랐다.
  *
  * `modelCode` 3자 미만은 **서버가 조건에서 제외**한다(목업 `MIN_Q` 게이트와 동일).
  * 화면에서 다시 자르지 않고 그대로 보내 판정 지점을 하나로 둔다.
@@ -50,8 +54,6 @@ export function useProductModelList(
       const params: Record<string, string> = {
         page: String(page),
         pageSize: String(pageSize),
-        sortField: "createdAt",
-        sortDir: "desc",
       };
       if (filters.modelCode.trim()) params.modelCode = filters.modelCode.trim();
       if (filters.categoryId) params.categoryId = filters.categoryId;
