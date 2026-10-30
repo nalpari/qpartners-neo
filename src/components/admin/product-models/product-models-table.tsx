@@ -171,9 +171,9 @@ export function ProductModelsTable({
       {
         headerName: "No",
         colId: "_no",
-        width: 80,
-        minWidth: 80,
-        maxWidth: 80,
+        width: 64,
+        minWidth: 64,
+        maxWidth: 64,
         resizable: false,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           offset + (p.node?.rowIndex ?? 0) + 1,
@@ -184,7 +184,7 @@ export function ProductModelsTable({
       {
         headerName: "型番",
         field: "modelCode",
-        flex: 2.4,
+        flex: 1.8,
         cellRenderer: ModelCodeCellRenderer,
         cellClass: editingCellClass,
         headerClass: "ag-header-cell-center",
@@ -192,7 +192,11 @@ export function ProductModelsTable({
       {
         headerName: "カテゴリ",
         colId: "category",
-        flex: 1.6,
+        // 1Depth > 2Depth 전체 표기가 들어가야 한다 — 개발 DB 최장 라벨
+        // `製品分類 > パワーコンディショナ` 가 약 217px, 셀 패딩까지 241px.
+        // 제품일람 대상 10건 기준 최장은 231px(+패딩 255px)이라 하한을 255 로 둔다.
+        flex: 2.4,
+        minWidth: 255,
         // valueGetter 는 유지 — 정렬·툴팁·내보내기가 문자열을 본다. 색만 renderer 로 얹는다.
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data ? formatCategoryLabel(p.data.category) : "",
@@ -207,6 +211,8 @@ export function ProductModelsTable({
         headerName: "カテゴリ順序",
         colId: "categorySortOrder",
         flex: 0.8,
+        // 헤더 `カテゴリ順序`(6자 ≈ 84px) 가 짤리지 않을 하한
+        minWidth: 96,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data?.category.sortOrder ?? "",
         cellStyle: CENTER_CELL_STYLE,
