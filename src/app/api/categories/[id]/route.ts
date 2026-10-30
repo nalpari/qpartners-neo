@@ -82,7 +82,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
       shiftedCount: number;
     } | null = null;
 
-    const { category, internalCascadeCount, productListCascadeCount } = await prisma.$transaction(
+    const {
+      category,
+      internalCascadeCount,
+      internalParentReleased,
+      productListCascadeCount,
+    } = await prisma.$transaction(
       async (tx) => {
         // sortOrder가 명시적으로 전달된 경우에만 같은 parentId 형제들 자동 재정렬
         // NOTE: parentId는 updateCategorySchema에서 수정 불가. 변경 시 이 로직도 수정 필요
@@ -164,6 +169,28 @@ export async function PUT(request: NextRequest, { params }: Params) {
           cascadedChildCount = cascaded.count;
         }
 
+        // 2Depth 를 공개(N)로 되돌릴 때는 **부모도 함께 N 으로 내린다.**
+        //
+        // 노출 판정(`category-tree.ts#shouldShow`)은 부모를 먼저 보고, 부모가 Y 면 자식 값과
+        // 무관하게 그 축 전체를 숨긴다(축 제목이 1Depth 이름이라 자식만 내보내면 사내 분류명이
+        // 드러나기 때문 — 이 동작 자체는 의도대로다). 문제는 부모 값이 Y 로 남는 조합이다:
+        //   - 방금 N 으로 바꾼 자식조차 비사내 사용자에게 보이지 않는다
+        //   - 1Depth 표시값은 자식에서 파생(`resolveInternalOnlyValue` = 자식 전원 Y 일 때만 Y)
+        //     되므로 화면에는 N 으로 보인다 → 화면과 실제가 어긋난다
+        //   - 폼이 「파생값과 다를 때만 전송」이라 1Depth 를 N 으로 눌러도 전송되지 않아,
+        //     UI 로 되돌리려면 Y 저장(전체 Y 전파) → N 저장(전체 N 전파) 밖에 없다
+        //
+        // 형제는 건드리지 않는다 — 각자 Y 면 자기 값으로 계속 숨겨진다. 결과적으로 운영자가
+        // 조작한 그대로 「그 2Depth 하나만 공개」가 된다.
+        let parentReleased = false;
+        if (result.data.isInternalOnly === false && updated.parentId !== null) {
+          const released = await tx.category.updateMany({
+            where: { id: updated.parentId, isInternalOnly: true },
+            data: { isInternalOnly: false },
+          });
+          parentReleased = released.count > 0;
+        }
+
         // 제품일람 하위 전파 — 1Depth 의 `製品一覧表示` 는 **하위 전체 선택 토글**이다
         // (목업 04 안내 문구: 「下位カテゴリ全体に適用 · 下位項目に N がある場合、上位項目も N と表示」).
         //
@@ -193,6 +220,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
         return {
           category: updated,
           internalCascadeCount: cascadedChildCount,
+          internalParentReleased: parentReleased,
           productListCascadeCount: productListCascadedCount,
         };
       },
@@ -208,6 +236,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
       console.info("[PUT /api/categories/:id] 사내전용 하위 전파", {
         categoryId: parsed.data,
         cascadedChildCount: internalCascadeCount,
+      });
+    }
+
+    // 부모 해제는 **노출 범위를 넓히는** 변경이라 승격보다 더 중요한 추적 대상이다.
+    if (internalParentReleased) {
+      console.info("[PUT /api/categories/:id] 사내전용 부모 해제", {
+        categoryId: parsed.data,
+        parentId: category.parentId,
       });
     }
 
