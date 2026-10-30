@@ -56,8 +56,9 @@ function editingCellClass(params: CellClassParams<ProductModelItem>): string | u
 /**
  * 형번 목록 — 목업 03 `型番一覧` 카드.
  *
- * 컬럼 6개: `No / 型番 / カテゴリ / 表示順序 / 表示／非表示 / 登録日`
- * (v0.8.1 대비 `更新日`→`登録日` 로 바뀌고 `操作` 컬럼이 빠졌다 — 대응표 §0 발견 E).
+ * 컬럼 8개: `No / 型番 / カテゴリ / カテゴリ順序 / 製品ステータス / 型番順序 / 表示／非表示 / 登録日`
+ * (v0.8.1 대비 `更新日`→`登録日` 로 바뀌고 `操作` 컬럼이 빠졌다 — 대응표 §0 발견 E.
+ *  `表示順序` 는 2026-10-20 業務レビュー로 `カテゴリ順序`·`型番順序` 2개로 분리됐다.)
  *
  * **행 클릭이 편집 진입**이다. 목업이 편집 버튼을 두지 않은 이유를 그대로 따른다
  * (`03-admin-models.html:462` 「行をクリックしたら編集状態にする（編集ボタンは置かない）」).
@@ -94,7 +95,7 @@ export function ProductModelsTable({
   //
   // `items` 도 의존성이다. `getRowId` 로 행을 id 매칭하는 동안 **살아남은 행의 셀은
   // 재평가되지 않아서**, 등록·삭제로 순서가 밀려도 `No`(rowIndex 파생)가 옛 값으로 남는다
-  // — 신규 1건을 맨 위에 추가하면 `1, 1, 2, 3…` 이 됐다 (2026-10-14).
+  // — 앞쪽에 행이 끼어들면 `1, 1, 2, 3…` 처럼 어긋났다 (2026-10-14).
   useEffect(() => {
     const api = gridApiRef.current;
     if (!api || api.isDestroyed()) return;
@@ -171,9 +172,10 @@ export function ProductModelsTable({
       {
         headerName: "No",
         colId: "_no",
-        width: 64,
-        minWidth: 64,
-        maxWidth: 64,
+        // 4자리(1000번대) 행번호까지 들어갈 폭. 목업은 44px 이지만 테마 셀 패딩이 더 크다.
+        width: 72,
+        minWidth: 72,
+        maxWidth: 72,
         resizable: false,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           offset + (p.node?.rowIndex ?? 0) + 1,
@@ -192,16 +194,25 @@ export function ProductModelsTable({
       {
         headerName: "カテゴリ",
         colId: "category",
-        // 1Depth > 2Depth 전체 표기가 들어가야 한다 — 개발 DB 최장 라벨
-        // `製品分類 > パワーコンディショナ` 가 약 217px, 셀 패딩까지 241px.
-        // 제품일람 대상 10건 기준 최장은 231px(+패딩 255px)이라 하한을 255 로 둔다.
+        // 1Depth > 2Depth 전체 표기가 들어가야 한다. 개발 DB 실측 글자폭은
+        // `製品分類 > パワーコンディショナ` 약 217px, 제품일람 대상 10건 최장 231px.
+        // 셀 좌우 패딩은 테마(`cellHorizontalPadding: 18`) 기준이며 브라우저 실측을
+        // 하지 않았으므로 여유를 두고 268 로 둔다. 초과분은 아래 말줄임·툴팁이 받는다.
         flex: 2.4,
-        minWidth: 255,
+        minWidth: 268,
         // valueGetter 는 유지 — 정렬·툴팁·내보내기가 문자열을 본다. 색만 renderer 로 얹는다.
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data ? formatCategoryLabel(p.data.category) : "",
+        // cellRenderer 컬럼은 셀이 flex 컨테이너라 상위 ellipsis 가 먹지 않는다
+        // (`ag-grid-theme.css` 주석) — renderer 안에서 직접 처리하고 툴팁을 단다.
+        tooltipValueGetter: (p) => (p.data ? formatCategoryLabel(p.data.category) : ""),
         cellRenderer: (p: ICellRendererParams<ProductModelItem>) =>
-          p.data ? <CategoryPath category={p.data.category} /> : null,
+          p.data ? (
+            <CategoryPath
+              category={p.data.category}
+              className="overflow-hidden text-ellipsis whitespace-nowrap"
+            />
+          ) : null,
         cellClass: editingCellClass,
         headerClass: "ag-header-cell-center",
       },
@@ -211,8 +222,8 @@ export function ProductModelsTable({
         headerName: "カテゴリ順序",
         colId: "categorySortOrder",
         flex: 0.8,
-        // 헤더 `カテゴリ順序`(6자 ≈ 84px) 가 짤리지 않을 하한
-        minWidth: 96,
+        // 헤더 `カテゴリ順序` 6전각자 ≈ 84px + 헤더 좌우 패딩. 96 으로는 모자랐다.
+        minWidth: 120,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data?.category.sortOrder ?? "",
         cellStyle: CENTER_CELL_STYLE,
