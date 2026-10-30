@@ -121,12 +121,15 @@ export async function POST(request: NextRequest) {
     const category = await prisma.$transaction(
       async (tx) => {
         // 2Depth 제한: parent의 parentId가 not null이면 3Depth → 거부.
-        // 같은 조회로 부모의 사내전용 여부도 함께 확인한다 (쿼리 추가 없음).
-        let isInternalOnly = result.data.isInternalOnly;
+        //
+        // 부모의 `社内会員専用` 을 자식에 강제하지 않는다 (2026-10-23 규칙 통일).
+        // `製品一覧表示` 와 같이 **화면에서 초기값으로 상속하되 변경 가능**하며, 1Depth 의
+        // 표시값은 자식 전원 Y 여부에서 파생된다(categories-types.ts#resolveInternalOnlyValue).
+        // 노출 판정은 축(1Depth)과 분류(2Depth)를 각각 보므로 둘이 달라도 범위가 넓어지지 않는다.
         if (result.data.parentId !== null) {
           const parent = await tx.category.findUnique({
             where: { id: result.data.parentId },
-            select: { parentId: true, isInternalOnly: true },
+            select: { parentId: true },
           });
 
           if (!parent) {
@@ -135,18 +138,6 @@ export async function POST(request: NextRequest) {
 
           if (parent.parentId !== null) {
             throw new CategoryError("DEPTH_EXCEEDED");
-          }
-
-          // 부모(1Depth)가 사내전용이면 자식도 사내전용으로 고정한다.
-          // 화면에서는 라디오가 잠기지만, API 직접 호출로 Y 부모 밑에 N 자식이 생기는 경로가
-          // 남아 있어 서버에서도 막는다. 400 거절이 아니라 승격으로 처리 — PUT 의 하위 전파와
-          // 같은 방향이라 "자식 ≥ 부모" 불변식이 두 라우트에서 동일하게 유지된다.
-          if (parent.isInternalOnly && !isInternalOnly) {
-            console.info(
-              "[POST /api/categories] 부모가 사내전용 — isInternalOnly 를 Y 로 강제",
-              { parentId: result.data.parentId },
-            );
-            isInternalOnly = true;
           }
         }
 
@@ -164,7 +155,7 @@ export async function POST(request: NextRequest) {
           shiftedCount: shifted.count,
         };
 
-        return tx.category.create({ data: { ...result.data, isInternalOnly } });
+        return tx.category.create({ data: result.data });
       },
       { isolationLevel: "Serializable" },
     );

@@ -13,6 +13,14 @@ export interface CategoryNode {
   isActive: boolean;
   /** 콘텐츠 목록 ag-grid 의 카테고리 컬럼 노출 여부 (관리자가 토글). false 면 컬럼 자체가 미노출. */
   isVisible: boolean;
+  /**
+   * 제품일람(製品一覧) 노출 대상 — REQ-008.
+   * 켜면 검색화면 제품일람 탭의 `型番` 축과 형번관리의 카테고리 선택지에 나타난다.
+   * 형번은 2Depth 에만 붙으므로 **1Depth 의 값은 기능에 쓰이지 않는다** —
+   * 1Depth 는 하위 전체 토글 용도이며 표시값도 자식에서 파생한다
+   * (`resolveProductListValue`).
+   */
+  isProductList: boolean;
   children: CategoryNode[];
 }
 
@@ -25,15 +33,19 @@ export interface CreateCategoryPayload {
   sortOrder: number;
   isActive: boolean;
   isVisible?: boolean;
+  isProductList: boolean;
 }
 
 /** PUT 요청 body (모든 필드 optional) */
 export interface UpdateCategoryPayload {
   name?: string;
+  /** 1Depth 에 전송하면 서버가 하위 2Depth 전체에 같은 값을 전파한다 (양방향) */
   isInternalOnly?: boolean;
   sortOrder?: number;
   isActive?: boolean;
   isVisible?: boolean;
+  /** 1Depth 에 전송하면 서버가 하위 2Depth 전체에 같은 값을 전파한다 (양방향) */
+  isProductList?: boolean;
 }
 
 /** CategoriesDetail 폼 상태 */
@@ -45,6 +57,40 @@ export interface CategoryFormState {
   sortOrder: number;
   isActive: boolean;
   isVisible: boolean;
+  isProductList: boolean;
+}
+
+/**
+ * 카테고리의 `製品一覧表示` 표시값.
+ *
+ * - **2Depth**: 자기 값 그대로
+ * - **1Depth**: 자식이 있으면 **자식 전원 Y 일 때만 Y** (목업 04 안내 문구
+ *   「下位項目に N がある場合、上位項目も N と表示」). 1Depth 체크박스는 하위 전체
+ *   토글이므로, 개별 2Depth 를 끈 뒤에도 부모가 Y 로 보이면 조작 결과와 어긋난다.
+ * - 자식이 없는 1Depth 는 파생할 근거가 없어 자기 값을 쓴다.
+ */
+export function resolveProductListValue(node: CategoryNode): boolean {
+  if (node.parentId !== null) return node.isProductList;
+  if (node.children.length === 0) return node.isProductList;
+  return node.children.every((c) => c.isProductList);
+}
+
+/**
+ * 카테고리의 `社内会員専用` 표시값.
+ *
+ * 규칙은 `製品一覧表示`(`resolveProductListValue`)와 **같다** — 2026-10-23 사용자 지시로
+ * 두 플래그의 동작을 통일했다. 종전에는 사내전용만 Y→N 전파를 하지 않아, 1Depth 를 N 으로
+ * 되돌려도 자식이 Y 로 남고 좌측 필터·목록에 적색 분류가 그대로 보였다.
+ *
+ * - **2Depth**: 자기 값 그대로
+ * - **1Depth**: 자식이 있으면 **자식 전원 Y 일 때만 Y**. 1Depth 입력이 하위 전체 토글이므로,
+ *   개별 2Depth 를 끈 뒤에도 부모가 Y 로 보이면 조작 결과와 어긋난다.
+ * - 자식이 없는 1Depth 는 파생할 근거가 없어 자기 값을 쓴다.
+ */
+export function resolveInternalOnlyValue(node: CategoryNode): boolean {
+  if (node.parentId !== null) return node.isInternalOnly;
+  if (node.children.length === 0) return node.isInternalOnly;
+  return node.children.every((c) => c.isInternalOnly);
 }
 
 /**
@@ -83,12 +129,6 @@ const STATUS_ERROR_MAP: Record<number, string> = {
 const BAD_REQUEST_PATTERNS: { keyword: string; message: string }[] = [
   { keyword: "콘텐츠", message: "コンテンツが紐づいているため削除できません。" },
   { keyword: "2Depth", message: "カテゴリはDepth-2までのみ登録できます。" },
-  // 사내전용 부모를 둔 자식의 해제 시도 — 화면에서는 라디오가 잠겨 도달하지 않지만,
-  // 잠금 우회(키보드/직접 호출) 시 GENERIC_ERROR 대신 사유를 그대로 보여준다.
-  {
-    keyword: "社内会員専用",
-    message: "親カテゴリが社内会員専用のため、この項目は変更できません。",
-  },
 ];
 
 /** 에러 응답에서 error 필드 안전 추출 */
@@ -130,11 +170,18 @@ export function findCategoryById(tree: CategoryNode[], id: number): CategoryNode
 }
 
 /** GET /api/categories/:id/cascade-preview 응답.
- *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 수 + 콘텐츠 링크 수)를 표시.
+ *  삭제 확인 다이얼로그에서 운영자에게 영향 범위(자손 카테고리 · 콘텐츠 링크 · 형번 마스터)를 표시.
+ *
+ *  형번은 `ProductModel.category onDelete: Cascade` 로 **삭제**된다 — 콘텐츠 링크 해제와 달리
+ *  되돌릴 수 없고, 자료 링크가 0건이어도 형번은 남아 있을 수 있다. 건수를 보여주지 않으면
+ *  운영자가 「영향 없음」으로 오판하고 형번 마스터를 통째로 잃는다.
+ *
  *  previewedAt 은 preview/DELETE 사이 TOCTOU 갭 가시화용 메타(ISO 8601). */
 export interface CascadePreview {
   id: number;
   descendantCount: number;
   contentLinkCount: number;
+  productModelCount: number;
+  productModelLinkCount: number;
   previewedAt: string;
 }

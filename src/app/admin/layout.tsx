@@ -12,7 +12,8 @@ import { getSessionUser } from "@/lib/session";
  * - 미인증(JWT 없음·만료) → `/login` redirect
  * - 2FA 미완료 → `/login` redirect (middleware 와 동일 fail-closed)
  * - roleCode 폴백 실패(미지의 userTp) → `/` redirect
- * - 매트릭스에서 ADM_* 7개 메뉴 중 `canRead=true` 가 하나도 없으면 → `/` redirect
+ * - 매트릭스에서 ADM_* 메뉴(현재 8개) 중 `canRead=true` 가 하나도 없으면 → `/` redirect
+ *   ※ 목록은 `Object.values(ADMIN_MENU)` 로 파생되므로 메뉴 추가 시 자동 반영된다.
  *
  * 정책 (2026-05-08): 종전 `isAdmin(role)` 하드코딩 분기 제거. 권한관리 매트릭스 단일 진실
  * 원천(SoT) 으로 수렴 — `qp_role_menu_permissions` 의 ADM_* 메뉴 read 보유 여부만으로 진입을

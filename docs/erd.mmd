@@ -117,6 +117,8 @@ erDiagram
         boolean is_internal_only
         int sort_order
         boolean is_active
+        boolean is_visible
+        boolean is_product_list
         datetime created_at
         varchar created_by
         datetime updated_at
@@ -126,6 +128,25 @@ erDiagram
     qp_content_categories {
         int content_id PK_FK
         int category_id PK_FK
+        datetime created_at
+        varchar created_by
+    }
+
+    qp_product_models {
+        int id PK
+        int category_id FK
+        varchar model_code
+        int sort_order
+        boolean is_visible
+        datetime created_at
+        varchar created_by
+        datetime updated_at
+        varchar updated_by
+    }
+
+    qp_content_product_models {
+        int content_id PK_FK
+        int product_model_id PK_FK
         datetime created_at
         varchar created_by
     }
@@ -318,6 +339,9 @@ erDiagram
     qp_content_attachments ||--o{ qp_download_logs : "has"
     qp_categories ||--o{ qp_content_categories : "has"
     qp_categories ||--o{ qp_categories : "parent"
+    qp_categories ||--o{ qp_product_models : "has"
+    qp_contents ||--o{ qp_content_product_models : "has"
+    qp_product_models ||--o{ qp_content_product_models : "has"
     qp_home_notices ||--o{ qp_home_notice_targets : "has"
     qp_mass_mails ||--o{ qp_mass_mail_targets : "has"
     qp_mass_mails ||--o{ qp_mass_mail_attachments : "has"

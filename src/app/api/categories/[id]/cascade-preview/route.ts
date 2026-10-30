@@ -70,6 +70,16 @@ export async function GET(request: NextRequest, { params }: Params) {
       where: { categoryId: { in: affectedCategoryIds } },
     });
 
+    // 형번 마스터도 cascade 대상이다 (`ProductModel.category` onDelete: Cascade).
+    // 자료 링크가 0건이어도 형번은 남아 있을 수 있어, 건수를 함께 보여주지 않으면
+    // 운영자가 「영향 없음」으로 오판하고 형번 마스터를 통째로 잃는다.
+    const productModelCount = await prisma.productModel.count({
+      where: { categoryId: { in: affectedCategoryIds } },
+    });
+    const productModelLinkCount = await prisma.contentProductModel.count({
+      where: { productModel: { categoryId: { in: affectedCategoryIds } } },
+    });
+
     // previewedAt — preview/DELETE 사이 TOCTOU 갭 가시화. 운영자가 oo초 전 수치임을
     // 인지하고 재요청 여부를 판단할 수 있도록 ISO 8601 timestamp 동봉.
     return NextResponse.json({
@@ -77,6 +87,8 @@ export async function GET(request: NextRequest, { params }: Params) {
         id: parsed.data,
         descendantCount: descendantIds.length,
         contentLinkCount,
+        productModelCount,
+        productModelLinkCount,
         previewedAt: new Date().toISOString(),
       },
     });

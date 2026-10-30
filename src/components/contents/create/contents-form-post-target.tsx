@@ -23,6 +23,13 @@ interface PostTargetItem {
 }
 
 export interface PostTargetState {
+  /**
+   * 사내전용 — REQ-011. 체크하면 게시대상을 **하나도 고르지 않은 상태**가 되고,
+   * 저장 시 `targets` 가 빈 배열로 나간다. neo 는 사내전용을 별도 컬럼으로 갖지 않고
+   * 「외부 게시대상이 0건인 콘텐츠」로 판정하므로(`lib/content-internal-only.ts`)
+   * 이 체크박스는 그 상태를 **명시적으로 표현**하는 UI 다.
+   */
+  internalOnly: boolean;
   selectAll: boolean;
   allStartDate: Date | null;
   allEndDate: Date | null;
@@ -106,6 +113,12 @@ export function buildInitialPostTargetsState(
   }
 
   return {
+    // 사내전용 = 게시대상이 하나도 선택되지 않은 상태. 별도 플래그로 들지 않고 items 에서
+    // 파생한다 — 따로 들면 「체크박스는 꺼져 있는데 저장 결과는 사내전용」 처럼 표시와
+    // 저장이 어긋난다(`isInternalOnlyContent` 가 타깃만 보고 판정하기 때문).
+    // 신규 등록은 타깃이 비어 있어 자연히 체크된 상태로 시작한다(REQ-011). 비관리자
+    // 작성자는 `forcedRoleCode` 행이 항상 체크되므로 사내전용이 될 수 없다.
+    internalOnly: !items.some((i) => i.checked),
     selectAll: items.length > 0 && items.every((i) => i.checked),
     allStartDate: today,
     allEndDate: null,
@@ -126,11 +139,49 @@ export function ContentsFormPostTarget({
   const isForcedRow = (roleCode: string | null) =>
     forcedRoleCode != null && roleCode === forcedRoleCode;
 
-  const handleSelectAll = (checked: boolean) => {
+  /**
+   * 게시대상 변경을 반영한다 — 사내전용·전체선택 표시는 항상 `targets` 에서 파생한다.
+   *
+   * 「사내전용 = 선택된 게시대상이 0건」 이 저장 기준이므로(`isInternalOnlyContent`),
+   * 체크박스도 같은 식으로 계산해야 표시와 저장 결과가 어긋나지 않는다. 종전에는 체크를
+   * 켤 때만 `internalOnly: false` 로 바꿔, 마지막 게시대상을 **해제**하면 체크박스는 꺼진
+   * 채로 사내전용으로 저장됐다.
+   */
+  const commitTargets = (targets: PostTargetItem[]) => {
     onPostTargetsChange({
       ...postTargets,
-      selectAll: checked,
-      targets: postTargets.targets.map((t) => {
+      internalOnly: !targets.some((t) => t.checked),
+      selectAll: targets.length > 0 && targets.every((t) => t.checked),
+      targets,
+    });
+  };
+
+  /**
+   * 사내전용 ↔ 게시대상 배타 (REQ-011 / 목업 `02-content-create.html:607`).
+   *
+   * 체크하면 게시대상 선택을 **모두 해제**한다. 반대 방향(게시대상을 고르면 사내전용 해제)은
+   * `handleTargetCheck` · `handleSelectAll` 에서 일어난다.
+   *
+   * 체크를 **끄는 조작은 받지 않는다** — 사내전용을 벗어나는 수단은 게시대상 선택뿐이고
+   * (해제만 하면 여전히 타깃 0건 = 사내전용), 상태만 꺼 두면 저장 결과와 어긋난다.
+   * 안내 문구가 그 관계를 설명한다.
+   *
+   * ⚠️ 게시대상 행을 `disabled` 로 막지 않는다 — 목업 주석 그대로다. 막으면 「다른 것을
+   * 고르면 사내전용이 풀린다」는 반대 방향 동작 자체가 일어날 수 없게 된다.
+   */
+  const handleInternalOnly = (checked: boolean) => {
+    if (!checked) return;
+    commitTargets(
+      postTargets.targets.map((t) =>
+        // forcedRoleCode 행은 작성자 본인 권한이라 해제 대상이 아니다
+        isForcedRow(t.roleCode) ? t : { ...t, checked: false },
+      ),
+    );
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    commitTargets(
+      postTargets.targets.map((t) => {
         // forcedRoleCode 행은 전체해제에도 항상 체크 유지
         if (isForcedRow(t.roleCode)) return { ...t, checked: true };
         const opt = allOptions.find((o) => o.roleCode === t.roleCode);
@@ -138,21 +189,17 @@ export function ContentsFormPostTarget({
         if (!checked) return { ...t, checked: false };
         return { ...t, checked: available ? true : t.checked };
       }),
-    });
+    );
   };
 
   const handleTargetCheck = (roleCode: string | null, checked: boolean) => {
     // forcedRoleCode 행 해제 시도는 무시
     if (isForcedRow(roleCode) && !checked) return;
-    const newTargets = postTargets.targets.map((t) =>
-      t.roleCode === roleCode ? { ...t, checked } : t,
+    commitTargets(
+      postTargets.targets.map((t) =>
+        t.roleCode === roleCode ? { ...t, checked } : t,
+      ),
     );
-    const allChecked = newTargets.every((t) => t.checked);
-    onPostTargetsChange({
-      ...postTargets,
-      selectAll: allChecked,
-      targets: newTargets,
-    });
   };
 
   const handleTargetDate = (
@@ -197,10 +244,32 @@ export function ContentsFormPostTarget({
     postTargets.targets.find((t) => t.roleCode === roleCode);
 
   return (
-    <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[14px] pt-[34px] pb-6 px-6 w-[1440px]">
+    <section className="bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[14px] pt-[34px] pb-6 px-6 w-[var(--page-max)]">
       <h2 className="font-['Noto_Sans_JP'] font-medium text-[15px] leading-normal text-[#101010]">
         投稿対象
       </h2>
+
+      {/* 사내전용 — REQ-011. 게시대상 선택 영역 **상단**. 목업 `02-content-create.html:413`
+          `.tg-internal` 블록과 같은 구성(체크박스 + 적색 계열 안내).
+
+          **사내회원(SUPER_ADMIN/ADMIN)에게만 노출한다.** `forcedRoleCode` 가 있으면
+          비관리자 작성자이고, 그 경우 본인 권한 행이 항상 체크되어 사내전용(타깃 0건)을
+          만들 수 없다. 사내전용 자료는 비관리자에게 목록·상세 모두 차단되므로
+          (`publishedTargetFilter` · `canAccessContent`) 만들 수도 볼 수도 없는 설정이다 —
+          비활성 상태로 남겨 두지 않고 숨긴다(2026-10-29 사용자 결정). */}
+      {forcedRoleCode == null && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] border border-[#F5D0D0] bg-[#FDF4F4] px-4 py-[14px]">
+          <Checkbox
+            checked={postTargets.internalOnly}
+            onChange={handleInternalOnly}
+            label="社内専用"
+            disabled={isLoading}
+          />
+          <p className="font-['Noto_Sans_JP'] text-[12px] leading-normal text-[#B3261E]">
+            ※ 社内専用は社内会員（スーパー管理者／管理者）だけが閲覧できます。ほかの掲示対象とは同時に選択できません。
+          </p>
+        </div>
+      )}
 
       {/* 헤더 바: 전체선택 + 기간 + 적용 + 안내 */}
       <div className="flex items-center gap-[18px] bg-[#F7F9FB] rounded-[6px] px-4 py-[14px]">

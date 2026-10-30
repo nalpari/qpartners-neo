@@ -82,7 +82,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
       shiftedCount: number;
     } | null = null;
 
-    const { category, internalCascadeCount } = await prisma.$transaction(
+    const {
+      category,
+      internalCascadeCount,
+      internalParentReleased,
+      productListCascadeCount,
+    } = await prisma.$transaction(
       async (tx) => {
         // sortOrder가 명시적으로 전달된 경우에만 같은 parentId 형제들 자동 재정렬
         // NOTE: parentId는 updateCategorySchema에서 수정 불가. 변경 시 이 로직도 수정 필요
@@ -137,48 +142,87 @@ export async function PUT(request: NextRequest, { params }: Params) {
           // newOrder === current.sortOrder: 형제 재정렬 불필요
         }
 
-        // 사내전용 해제 가드 — 부모가 사내전용인 자식은 N 으로 되돌릴 수 없다.
-        // POST 의 상속 강제와 짝을 이루는 PUT 측 방어. 화면에서는 라디오가 잠겨 있지만
-        // API 직접 호출로 "자식 ≥ 부모" 불변식이 깨지면, 이후 부모를 N 으로 되돌리는 시점에
-        // 그 자식 분류가 외부로 노출된다. 같은 트랜잭션(Serializable) 안이라 검사와 갱신
-        // 사이에 부모가 바뀌는 TOCTOU 도 없다.
-        if (result.data.isInternalOnly === false) {
-          const target = await tx.category.findUnique({
-            where: { id: parsed.data },
-            select: { parent: { select: { isInternalOnly: true } } },
-          });
-          if (!target) {
-            throw new CategoryError("NOT_FOUND");
-          }
-          if (target.parent?.isInternalOnly === true) {
-            throw new CategoryError("INTERNAL_PARENT_LOCKED");
-          }
-        }
-
         const updated = await tx.category.update({
           where: { id: parsed.data },
           data: result.data,
         });
 
-        // 사내전용 하위 전파 — 1Depth 를 Y 로 바꾸면 이미 등록된 2Depth 도 전부 Y 가 된다.
+        // 사내전용 하위 전파 — 1Depth 의 `社内会員専用` 은 **하위 전체 선택 토글**이다.
         //
-        // 단방향인 이유: Y→N 은 전파하지 않는다. 자식은 기존 Y 설정을 유지한 채 개별 편집이
-        // 가능해지는 것이 확정 정책이며, 되돌릴 때 자식 설정까지 일괄로 날리면 복구 불가능하다.
-        // 부모가 Y 인 동안 자식 라디오는 FE 에서 잠기므로(categories-detail), 여기서의 일괄
-        // 승격과 FE 표시가 어긋나지 않는다.
+        // 2026-10-23 사용자 지시로 `製品一覧表示` 와 **같은 규칙**이 됐다. 종전에는 Y 만
+        // 전파하고 Y→N 은 자식 설정을 보존했는데, 그 결과 1Depth 를 N 으로 되돌려도 자식이
+        // Y 로 남아 좌측 필터·목록에 적색 분류가 그대로 보였다 — 조작과 결과가 어긋난다.
+        // 개별 2Depth 는 전파 후에 따로 켜고 끌 수 있고, 그러면 1Depth 표시가 N 으로 보인다
+        // (표시는 자식 전원 Y 여부에서 파생 — categories-types.ts#resolveInternalOnlyValue).
         //
-        // 대상이 2Depth 면 자식이 없어 count=0 (카테고리는 Depth-2 까지만 관리).
-        // 같은 트랜잭션(Serializable) 안이라 부모만 Y 이고 자식은 N 인 중간 상태가 노출되지 않는다.
+        // 대상이 2Depth 면 전파하지 않는다 (카테고리는 Depth-2 까지만 관리).
+        // 같은 트랜잭션(Serializable) 안이라 부모와 자식이 어긋난 중간 상태가 노출되지 않는다.
         let cascadedChildCount = 0;
-        if (result.data.isInternalOnly === true) {
+        if (result.data.isInternalOnly !== undefined && updated.parentId === null) {
           const cascaded = await tx.category.updateMany({
-            where: { parentId: parsed.data, isInternalOnly: false },
-            data: { isInternalOnly: true },
+            where: {
+              parentId: parsed.data,
+              isInternalOnly: { not: result.data.isInternalOnly },
+            },
+            data: { isInternalOnly: result.data.isInternalOnly },
           });
           cascadedChildCount = cascaded.count;
         }
 
-        return { category: updated, internalCascadeCount: cascadedChildCount };
+        // 2Depth 를 공개(N)로 되돌릴 때는 **부모도 함께 N 으로 내린다.**
+        //
+        // 노출 판정(`category-tree.ts#shouldShow`)은 부모를 먼저 보고, 부모가 Y 면 자식 값과
+        // 무관하게 그 축 전체를 숨긴다(축 제목이 1Depth 이름이라 자식만 내보내면 사내 분류명이
+        // 드러나기 때문 — 이 동작 자체는 의도대로다). 문제는 부모 값이 Y 로 남는 조합이다:
+        //   - 방금 N 으로 바꾼 자식조차 비사내 사용자에게 보이지 않는다
+        //   - 1Depth 표시값은 자식에서 파생(`resolveInternalOnlyValue` = 자식 전원 Y 일 때만 Y)
+        //     되므로 화면에는 N 으로 보인다 → 화면과 실제가 어긋난다
+        //   - 폼이 「파생값과 다를 때만 전송」이라 1Depth 를 N 으로 눌러도 전송되지 않아,
+        //     UI 로 되돌리려면 Y 저장(전체 Y 전파) → N 저장(전체 N 전파) 밖에 없다
+        //
+        // 형제는 건드리지 않는다 — 각자 Y 면 자기 값으로 계속 숨겨진다. 결과적으로 운영자가
+        // 조작한 그대로 「그 2Depth 하나만 공개」가 된다.
+        let parentReleased = false;
+        if (result.data.isInternalOnly === false && updated.parentId !== null) {
+          const released = await tx.category.updateMany({
+            where: { id: updated.parentId, isInternalOnly: true },
+            data: { isInternalOnly: false },
+          });
+          parentReleased = released.count > 0;
+        }
+
+        // 제품일람 하위 전파 — 1Depth 의 `製品一覧表示` 는 **하위 전체 선택 토글**이다
+        // (목업 04 안내 문구: 「下位カテゴリ全体に適用 · 下位項目に N がある場合、上位項目も N と表示」).
+        //
+        // 사내전용 전파와 달리 **양방향**이다. 사내전용은 노출 범위를 좁히는 쪽만 전파해
+        // (Y→N 은 자식 설정 보존) 되돌릴 때 자식 설정이 날아가지 않게 하지만, 이쪽은
+        // 「전체 선택」 체크박스라 해제도 전체에 적용돼야 조작과 결과가 일치한다.
+        // 개별 2Depth 는 그 뒤에 따로 켜고 끌 수 있고, 그러면 1Depth 표시가 N 으로 보인다
+        // (표시는 자식 전원 Y 여부에서 파생 — categories-types.ts#resolveProductListValue).
+        //
+        // 형번은 2Depth 에만 붙으므로(`assertProductCategory`) 1Depth 자체 값은 기능에
+        // 쓰이지 않는다. 전파가 없으면 1Depth 체크박스는 아무 효과 없는 장식이 된다.
+        let productListCascadedCount = 0;
+        if (result.data.isProductList !== undefined) {
+          const isParent = updated.parentId === null;
+          if (isParent) {
+            const cascaded = await tx.category.updateMany({
+              where: {
+                parentId: parsed.data,
+                isProductList: { not: result.data.isProductList },
+              },
+              data: { isProductList: result.data.isProductList },
+            });
+            productListCascadedCount = cascaded.count;
+          }
+        }
+
+        return {
+          category: updated,
+          internalCascadeCount: cascadedChildCount,
+          internalParentReleased: parentReleased,
+          productListCascadeCount: productListCascadedCount,
+        };
       },
       { isolationLevel: "Serializable" },
     );
@@ -195,16 +239,27 @@ export async function PUT(request: NextRequest, { params }: Params) {
       });
     }
 
+    // 부모 해제는 **노출 범위를 넓히는** 변경이라 승격보다 더 중요한 추적 대상이다.
+    if (internalParentReleased) {
+      console.info("[PUT /api/categories/:id] 사내전용 부모 해제", {
+        categoryId: parsed.data,
+        parentId: category.parentId,
+      });
+    }
+
+    // 제품일람 전파는 검색화면 형번축·형번관리 선택지를 한꺼번에 바꾸므로 추적 대상.
+    if (productListCascadeCount > 0) {
+      console.info("[PUT /api/categories/:id] 제품일람 하위 전파", {
+        categoryId: parsed.data,
+        isProductList: result.data.isProductList,
+        cascadedChildCount: productListCascadeCount,
+      });
+    }
+
     return NextResponse.json({ data: category });
   } catch (error) {
     if (error instanceof CategoryError && error.kind === "NOT_FOUND") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (error instanceof CategoryError && error.kind === "INTERNAL_PARENT_LOCKED") {
-      return NextResponse.json(
-        { error: "親カテゴリが社内会員専用のため、社内会員専用を解除できません" },
-        { status: 400 },
-      );
     }
     if (
       error instanceof PrismaClientKnownRequestError &&
@@ -273,6 +328,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           where: { categoryId: { in: affectedCategoryIds } },
         });
 
+        // 형번 마스터도 같은 cascade 로 사라진다 (`ProductModel.category` onDelete: Cascade).
+        // 복구는 백업뿐이므로 「몇 건이 사라졌는가」가 로그에 남아야 한다.
+        const cascadedProductModelCount = await tx.productModel.count({
+          where: { categoryId: { in: affectedCategoryIds } },
+        });
+        const cascadedProductModelLinkCount = await tx.contentProductModel.count({
+          where: { productModel: { categoryId: { in: affectedCategoryIds } } },
+        });
+
         // 3. 형제 재정렬용 — 삭제 대상의 parentId / sortOrder 미리 확보.
         //    delete 후엔 row 가 사라져 조회 불가하므로 반드시 delete 이전 시점.
         const target = await tx.category.findUnique({
@@ -301,6 +365,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           id: parsed.data,
           cascadedCategoryIds: descendantIds,
           cascadedContentLinkCount,
+          cascadedProductModelCount,
+          cascadedProductModelLinkCount,
           reorderedSiblingCount: reordered.count,
           parentId: target.parentId,
           removedSortOrder: target.sortOrder,
@@ -316,6 +382,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     if (
       deleted.cascadedCategoryIds.length > 0 ||
       deleted.cascadedContentLinkCount > 0 ||
+      deleted.cascadedProductModelCount > 0 ||
       deleted.reorderedSiblingCount > 0
     ) {
       const AUDIT_ID_PREVIEW_MAX = 50;
@@ -329,6 +396,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         cascadedCategoryIdsPreview: previewIds,
         cascadedCategoryIdsTruncated: totalIds > AUDIT_ID_PREVIEW_MAX,
         cascadedContentLinkCount: deleted.cascadedContentLinkCount,
+        cascadedProductModelCount: deleted.cascadedProductModelCount,
+        cascadedProductModelLinkCount: deleted.cascadedProductModelLinkCount,
         reorderedSiblingCount: deleted.reorderedSiblingCount,
       });
     }

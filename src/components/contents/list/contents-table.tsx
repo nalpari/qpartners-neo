@@ -6,31 +6,40 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import type { ColDef, GridApi, GridReadyEvent, ICellRendererParams, SortChangedEvent } from "ag-grid-community";
+import type {
+  ColDef,
+  GridApi,
+  GridReadyEvent,
+  ICellRendererParams,
+  RowClassParams,
+  SortChangedEvent,
+} from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import {
-  Button,
-  Pagination,
-  PageSizeSelect,
-} from "@/components/common";
+import { Button, CategoryPath, PageSizeSelect, Pagination, ProductStatusBadge } from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { MENU } from "@/lib/menu-codes";
-import type { ContentListItem, CategoryNode } from "./contents-contents";
+import type { ContentListItem, CategoryNode, ListView } from "./contents-contents";
+import type { ProductListRow } from "./contents-facet-utils";
+import { resolveVisibleAxes } from "./contents-facet-utils";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { targetOrderRank } from "@/lib/target-role-order";
 import { parseContentDispositionFilename } from "@/lib/content-disposition";
+import { isInternalOnlyContent } from "@/lib/content-internal-only";
 
-/** 콘텐츠 목록 카테고리 컬럼 우선 노출 순서. 여기에 없는 카테고리는 VIEW 뒤에 기존 sortOrder 순으로 배치. */
-const PRIORITY_CATEGORY_ORDER: Record<string, number> = {
-  INFO: 1, // 情報種別
-  BIZ: 2, // 業務分類
-  DATA: 3, // 資料分類
-  CONT: 4, // 内容分類
-};
+/**
+ * 분류 컬럼 배치 — **카테고리 `sortOrder` 순으로 `更新日`↔`タイトル` 사이에 일괄**.
+ *
+ * 종전에는 `PRIORITY_CATEGORY_ORDER` 로 축 코드를 화면에 박아 앞/뒤를 갈랐는데, 그 상수가
+ * 폐지된 `業務分類`(BIZ)·`内容分類`(CONT) 를 들고 있었다 — 축이 바뀌면 조용히 어긋나는 방식이다.
+ * 축의 구성·순서·표시 여부는 전부 카테고리관리에서 정해지도록 코드에서 걷어냈다 (2026-10-12 결정).
+ *
+ * 목업(`01-search.html:1511`)은 `製品ステータス` 만 VIEW 뒤에 두지만, 그 위치를 표현할
+ * 데이터 속성이 없어 축 코드 하드코딩이 필요하다 — `sortOrder` 순 일괄로 근사한다.
+ */
 
 /** 掲示対象 컬럼 정렬 식별용 colId — 카테고리(categoryCode)·고정 필드와 겹치지 않는 예약값.
  *  ContentsContents.handleSortChange 가 이 값으로 sortTargets=true 요청을 분기한다. */
@@ -50,19 +59,26 @@ function getFirstCategoryChildName(item: ContentListItem, parentCategoryCode: st
 /** 콘텐츠 아이템의 카테고리를 부모 코드 기준으로 매칭하여 렌더링 (빈값 시 "-")
  * 비사내 사용자(`isInternal = false`)에게는 사내전용 카테고리 라벨을 숨긴다.
  * Issue: #2160 — 비회원 화면에서 사내전용 카테고리 라벨이 노출되던 문제 차단.
+ *
+ * 사내전용 판정(적색)은 **카테고리 트리**(`internalCategoryIds`)를 기준으로 한다.
+ * 목록 응답 안의 `isInternalOnly` 는 그 목록을 조회한 시점의 값이라, 카테고리관리에서
+ * 설정을 바꾸고 곧바로 목록으로 넘어오면 좌측 사이드바(트리 기준)만 적색이 되고 셀은
+ * 옛 색으로 남는다 — 새로고침해야 맞아지던 증상이 이것이다. 두 곳이 같은 소스를 보게 한다.
  */
 function renderCategoryCell(
   item: ContentListItem,
   parentCategoryCode: string,
   inlineStyle: boolean,
   isInternal: boolean,
+  internalCategoryIds: Set<number>,
 ): ReactNode {
   const matched = item.categories.find((c) => c.categoryCode === parentCategoryCode);
   if (!matched || matched.children.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
   }
-  const normal = matched.children.filter((c) => !c.isInternalOnly);
-  const internal = isInternal ? matched.children.filter((c) => c.isInternalOnly) : [];
+  const isInternalCat = (c: { id: number }) => internalCategoryIds.has(c.id);
+  const normal = matched.children.filter((c) => !isInternalCat(c));
+  const internal = isInternal ? matched.children.filter(isInternalCat) : [];
   if (normal.length === 0 && internal.length === 0) {
     return <span style={inlineStyle ? { fontSize: "12px" } : undefined}>-</span>;
   }
@@ -96,13 +112,17 @@ function resolvePublishStartAt(
   isInternal: boolean,
   viewerRoleCode: string | null,
 ): string | null {
+  // 그리드가 다른 행 타입을 잠깐 물고 있는 순간에도 터지지 않게 방어한다 — 근본 원인(탭 전환 시
+  // 그리드 인스턴스 재사용)은 DataGrid 의 key 로 막았지만, valueGetter 는 화면 전체를 내리는
+  // 자리라 한 칸의 데이터 결손으로 목록이 사라지면 안 된다.
+  const targets = item.targets ?? [];
   if (!isInternal) {
-    return item.targets.find((t) => t.roleCode === viewerRoleCode)?.startAt ?? null;
+    return targets.find((t) => t.roleCode === viewerRoleCode)?.startAt ?? null;
   }
-  if (item.targets.length === 0) return null;
-  if (item.targets.some((t) => t.startAt === null)) return null;
+  if (targets.length === 0) return null;
+  if (targets.some((t) => t.startAt === null)) return null;
   // ISO 8601 문자열은 사전순 = 시간순 (登録日 comparator 와 동일 전제).
-  return item.targets.reduce<string | null>(
+  return targets.reduce<string | null>(
     (min, t) => (min === null || (t.startAt !== null && t.startAt < min) ? t.startAt : min),
     null,
   );
@@ -234,6 +254,18 @@ function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
 
 /** 상세 화면(contents-detail-body.tsx MetaBadge)과 동일한 라벨(흰 배경 박스) + 값 스타일.
  *  value 는 문자열뿐 아니라 아이콘(添付 뱃지)도 받을 수 있게 ReactNode 로 둔다. */
+/**
+ * 사내전용 자료 행 지색 — 좌측 「社内会員の投稿のみ表示」 와 같은 기준(`isInternalOnlyContent`)을 쓴다.
+ * 반환하면 짝수행 지브라(`ag-row-striped`)를 대체한다 — 지색이 줄무늬에 끊기지 않게 하려는 의도.
+ */
+function getDocumentRowClass(params: RowClassParams<ContentListItem>): string | undefined {
+  // 탭 전환 순간 제품 행(`targets` 없음)이 자료용 그리드에 들어오는 사례가 있었다(아래 `key` 주석 참조).
+  // 여기서 터지면 목록 전체가 죽으므로 배열 여부를 먼저 본다.
+  const targets = params.data?.targets;
+  if (!Array.isArray(targets)) return undefined;
+  return isInternalOnlyContent(targets) ? "ag-row-internal" : undefined;
+}
+
 function MobileMetaBadge({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -276,7 +308,11 @@ function MobileContentCard({
   return (
     // stretched button 패턴: absolute inset-0 버튼으로 카드 전체 클릭 영역을 확보하고,
     // 내부 다운로드 <button>은 relative로 stacking order상 위에 위치해 중첩을 회피한다.
-    <div className="relative bg-white px-6 py-5 flex flex-col gap-3">
+    <div
+      className={`relative px-6 py-5 flex flex-col gap-3 ${
+        isInternalOnlyContent(item.targets) ? "bg-[#FDF2F2]" : "bg-white"
+      }`}
+    >
       <button
         type="button"
         className="absolute inset-0 cursor-pointer"
@@ -357,6 +393,15 @@ interface ContentsTableProps {
    * 데이터 정렬 자체는 부모가 이미 sort 파라미터로 조회하므로, 여기서는 헤더 UI 동기화 용도.
    */
   initialSort?: { colId: string; dir: "asc" | "desc" } | null;
+  /** 선택된 탭 — `探し方`(좌측 필터 영역의 `ContentsModeSwitch`)가 정한다 (REQ-005) */
+  view: ListView;
+  /** 제품일람 탭 데이터 — 자료 검색 결과를 형번 단위로 묶은 집계 */
+  productData: ProductListRow[];
+  productMeta?: { total: number; page: number; pageSize: number; totalPages: number };
+  isProductLoading: boolean;
+  isProductError?: boolean;
+  /** 제품일람 대상 카테고리가 1건 이상인지 — 0건이면 안내 문구가 달라진다 */
+  isProductAxisEnabled: boolean;
 }
 
 export function ContentsTable({
@@ -373,6 +418,12 @@ export function ContentsTable({
   onSortChange,
   sortResetKey,
   initialSort = null,
+  view,
+  productData,
+  productMeta,
+  isProductLoading,
+  isProductError = false,
+  isProductAxisEnabled,
 }: ContentsTableProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -397,12 +448,22 @@ export function ContentsTable({
     [data, sortTargets],
   );
 
-  const totalCount = meta?.total ?? 0;
-  const currentPage = meta?.page ?? 1;
-  const totalPages = meta?.totalPages ?? 1;
+  const isProdView = view === "prod";
+  const activeMeta = isProdView ? productMeta : meta;
+  const totalCount = activeMeta?.total ?? 0;
+  const currentPage = activeMeta?.page ?? 1;
+  const totalPages = activeMeta?.totalPages ?? 1;
 
 
   const columnDefs = useMemo<ColDef<ContentListItem>[]>(() => {
+    // 사내전용 2Depth id — 적색 판정의 단일 소스(좌측 사이드바와 같은 트리).
+    const internalCategoryIds = new Set<number>();
+    for (const parent of categories) {
+      for (const child of parent.children) {
+        if (child.isInternalOnly) internalCategoryIds.add(child.id);
+      }
+    }
+
     // 카테고리 그룹 컬럼: parent.name → 헤더, children.name → 셀 (사내 전용 적색)
     const toCategoryColumn = (parent: CategoryNode): ColDef<ContentListItem> => ({
       headerName: parent.name,
@@ -430,7 +491,13 @@ export function ContentsTable({
       },
       cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
         if (!params.data) return null;
-        return renderCategoryCell(params.data, parent.categoryCode, true, isInternal);
+        return renderCategoryCell(
+          params.data,
+          parent.categoryCode,
+          true,
+          isInternal,
+          internalCategoryIds,
+        );
       },
       flex: 1,
       minWidth: 90,
@@ -438,25 +505,11 @@ export function ContentsTable({
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
     });
 
-    // 우선 노출 카테고리(PRIORITY_CATEGORY_ORDER)는 지정 순서로 更新日과 タイトル 사이에,
-    // 그 외 카테고리는 기존 sortOrder 순서 그대로 VIEW 뒤에 배치.
-    // isVisible === false 인 parent 는 관리자가 명시적으로 컬럼 미노출로 토글한 상태 → 제외.
-    // 사내전용 1depth 는 비사내 사용자에게 컬럼 자체를 노출하지 않는다 — headerName 이
-    // 부모 카테고리명이라, 컬럼을 남기면 셀이 비어도 사내 전용 분류명이 그대로 드러난다.
-    const visibleParents = categories.filter(
-      (parent) =>
-        parent.isVisible !== false && (isInternal || !parent.isInternalOnly),
-    );
-    const priorityCategoryColumns = visibleParents
-      .filter((parent) => Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
-      .sort(
-        (a, b) =>
-          PRIORITY_CATEGORY_ORDER[a.categoryCode] - PRIORITY_CATEGORY_ORDER[b.categoryCode],
-      )
-      .map(toCategoryColumn);
-    const otherCategoryColumns = visibleParents
-      .filter((parent) => !Object.hasOwn(PRIORITY_CATEGORY_ORDER, parent.categoryCode))
-      .map(toCategoryColumn);
+    // 축 선정 기준은 좌측 사이드바와 **동일**하다 (`resolveVisibleAxes`) — 컬럼과 축이
+    // 갈라지면 "사이드바엔 있는데 컬럼엔 없는 분류" 가 생긴다.
+    // 순서는 카테고리 `sortOrder`(API 가 그 순으로 반환) 그대로.
+    const visibleParents = resolveVisibleAxes(categories, isInternal);
+    const categoryColumns = visibleParents.map(toCategoryColumn);
     const hasCategoryColumns = visibleParents.length > 0;
 
     const baseCols: ColDef<ContentListItem>[] = [
@@ -531,7 +584,7 @@ export function ContentsTable({
           return formatDate(params.value);
         },
       },
-      ...priorityCategoryColumns,
+      ...categoryColumns,
       {
         headerName: "タイトル",
         field: "title",
@@ -563,7 +616,23 @@ export function ContentsTable({
         headerClass: "ag-header-cell-center",
         valueFormatter: (params) => params.data?.viewCount.toLocaleString() ?? "-",
       },
-      ...otherCategoryColumns,
+      {
+        // 製品ステータス — 목업 `01-search.html:1842` 의 자료일람 컬럼 순서(VIEW 다음).
+        // 값은 **연결된 형번에서 파생**한다(REQ-005) — 카테고리 축이 아니다.
+        // 연결 형번이 없으면 「-」.
+        headerName: "製品ステータス",
+        colId: "productStatus",
+        width: 130,
+        cellDataType: false,
+        valueGetter: (p) =>
+          p.data?.productStatus === "eol"
+            ? "販売終了品"
+            : p.data?.productStatus === "current"
+              ? "現行品"
+              : "-",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        headerClass: "ag-header-cell-center",
+      },
     ];
 
     if (isInternal) {
@@ -737,6 +806,80 @@ export function ContentsTable({
   // 헤더 클릭 정렬 — colId 는 필드 컬럼은 field 값, 카테고리 컬럼은 명시한 categoryCode(colId) 값.
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
   // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
+  /**
+   * 제품일람 3컬럼 — 목업 `renderProdTable`(`01-search.html:1518`).
+   *
+   * 헤더 클릭 정렬은 붙이지 않았다. 제품일람 정렬 기준 자체가 현업 미회신 항목이라
+   * (목업 리뷰 질의 5번: 「등록일시 최신순」 vs 「카테고리 표시순서 → 형번 표시순서」),
+   * 확정 전에 정렬 UI 를 노출하면 회신 때 다시 손대야 한다. 기본 정렬은 서버가 정한다
+   * (키워드가 있으면 관련도 → 형번 갱신일 내림차순).
+   */
+  const productColumnDefs = useMemo<ColDef<ProductListRow>[]>(
+    () => [
+      {
+        headerName: "製品カテゴリ",
+        colId: "productCategory",
+        sortable: false,
+        flex: 1.4,
+        minWidth: 160,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        valueGetter: (params) => {
+          const category = params.data?.category;
+          if (!category) return "-";
+          // 제품일람 대상이 전 카테고리로 확장돼(REQ-008) 서로 다른 축에 같은 이름의
+          // 2Depth 가 생길 수 있다 — 부모를 함께 보여 구분한다.
+          return category.parent ? `${category.parent.name} > ${category.name}` : category.name;
+        },
+        // 사내전용 카테고리 적색 — 색만 renderer 로 얹고 문자열(정렬·내보내기)은 valueGetter 유지.
+        cellRenderer: (params: ICellRendererParams<ProductListRow>) =>
+          params.data ? <CategoryPath category={params.data.category} /> : "-",
+      },
+      {
+        headerName: "型番",
+        field: "modelCode",
+        sortable: false,
+        flex: 2,
+        minWidth: 220,
+        headerClass: "ag-header-cell-center",
+        cellRenderer: (params: ICellRendererParams<ProductListRow>) => {
+          const row = params.data;
+          if (!row) return null;
+          return (
+            <Link
+              href={`/products/${row.id}`}
+              transitionTypes={["fade"]}
+              className="font-mono text-[14px] font-semibold text-[#1060B4] underline"
+            >
+              {row.modelCode}
+            </Link>
+          );
+        },
+      },
+      {
+        // 製品ステータス — 목업 제품일람 4컬럼 중 하나(`01-search.html:1854` `statusBadge`).
+        // 형번의 속성이므로(REQ-007) 자료일람의 파생 텍스트와 달리 **배지**로 그린다.
+        headerName: "製品ステータス",
+        colId: "productStatus",
+        flex: 1,
+        cellRenderer: (p: ICellRendererParams<ProductListRow>) =>
+          p.data ? <ProductStatusBadge status={p.data.status} /> : null,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        headerClass: "ag-header-cell-center",
+      },
+      {
+        headerName: "資料数",
+        field: "documentCount",
+        sortable: false,
+        width: 110,
+        headerClass: "ag-header-cell-center",
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+        valueFormatter: (params) => params.data?.documentCount.toLocaleString() ?? "-",
+      },
+    ],
+    [],
+  );
+
   const handleSortChanged = (event: SortChangedEvent<ContentListItem>) => {
     // applyColumnState(source="api") 로 우리가 직접 넣은 정렬 초기화/복원은 무시한다 —
     // 부모의 정렬·페이지 상태를 되돌려(page=1) 복원 결과를 깨뜨리는 되먹임 차단.
@@ -745,14 +888,34 @@ export function ContentsTable({
     onSortChange(active?.colId, active?.sort ?? undefined);
   };
 
+  // topBar 가 쓰므로 그보다 먼저 선언한다 (const 는 TDZ — 뒤에 두면 ReferenceError).
+  const activeIsError = isProdView ? isProductError : isError;
+
   const topBar = (
-    <div className="flex items-center justify-between">
-      <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+    <div className="flex items-center justify-between gap-3">
+      {/* key — **브라우저 자동 번역 대응**.
+          Chrome 번역기는 「合計 N件の資料」 처럼 텍스트와 <span> 이 붙어 있는 구간을 통째로
+          <font> 로 바꿔치기한다. 그 뒤 React 가 숫자만 갱신하면 번역된 블록은 옛 문장 그대로
+          남아 **옛 건수와 새 건수가 겹쳐 보인다**(2026-10-13 실측: 제품일람 탭에서
+          "총 2,423 건의 자료 3"). key 를 값에 걸어 요소를 통째로 교체하면 번역기가 다시 번역한다. */}
+      <p
+        key={`${isProdView ? "prod" : "doc"}-${activeIsError ? "err" : totalCount}`}
+        className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010] whitespace-nowrap"
+      >
         合計{" "}
-        <span className="font-semibold text-[#E97923]">
-          {totalCount.toLocaleString()}
+        {/* data-testid — E2E(`scripts/e2e`)가 결과 건수를 읽는 지점. 표기(`2,422`)가 바뀌어도
+            테스트가 깨지지 않도록 숫자만 담긴 요소에 붙인다.
+            translate="no" — 숫자는 번역 대상이 아니다. 번역 블록에 흡수되지 않게 떼어 둔다. */}
+        {/* 조회 실패 시 `0` 을 쓰면 **「0건 검색됨」과 구분되지 않는다.** 실패는 `-` 로 표시한다
+            (2026-10-13 피드백 7). 목록 쪽 오류 안내는 아래 emptyMessage 가 따로 띄운다. */}
+        <span
+          data-testid="result-total"
+          translate="no"
+          className="font-semibold text-[#E97923]"
+        >
+          {activeIsError ? "-" : totalCount.toLocaleString()}
         </span>
-        件
+        {isProdView ? "件の製品" : "件の資料"}
       </p>
       <div className="flex items-center gap-[6px]">
         {/* 서버는 권한 로딩 전이라 항상 미노출 상태로 렌더 — 클라이언트에서 권한 확정 시점에
@@ -778,35 +941,66 @@ export function ContentsTable({
     ? "コンテンツの取得に失敗しました。時間をおいて再度お試しください。"
     : "該当するコンテンツがありません。";
 
+  // 제품일람은 "결과 0건" 과 "제품일람 대상 카테고리가 아직 없음" 을 구분해 안내한다 —
+  // 후자는 검색을 바꿔도 해결되지 않고 카테고리관리 설정이 필요하다 (목업 `renderEmpty`).
+  const productEmptyMessage = isProductError
+    ? "製品一覧の取得に失敗しました。時間をおいて再度お試しください。"
+    : !isProductAxisEnabled
+      ? "製品一覧に表示するカテゴリがありません。管理者設定 > カテゴリ管理の「製品一覧表示」で対象カテゴリを選択してください。"
+      : "該当する製品がありません。";
+
+
   return (
     <>
       {/* 데스크톱 */}
       {!isMobile && (
-        <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[1440px]">
+        <div className="hidden lg:flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-full min-w-0">
           {topBar}
 
           {/* rowData.length > 0 이면 TanStack Query 가 이전 성공 데이터를 유지한 채 isError=true
               (백그라운드 refetch 실패)일 수 있어, emptyMessage(빈 목록일 때만 노출)와 별개로
               항상 배너를 띄운다 — 오래된 목록이 조용히 계속 보이는 것을 방지. */}
-          {isError && (
+          {activeIsError && (
             <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
-              コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+              {isProdView
+                ? "製品一覧の取得に失敗しました。表示中の内容が最新でない可能性があります。"
+                : "コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。"}
             </p>
           )}
 
           <div className="flex flex-col gap-6">
-            <DataGrid<ContentListItem>
-              columnDefs={columnDefs}
-              rowData={rowData}
-              className="contents-grid"
-              loading={isLoading}
-              emptyMessage={emptyMessage}
-              autoHeight={!(isLoading || rowData.length === 0)}
-              maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
-              onGridReady={handleGridReady}
-              onSortChanged={handleSortChanged}
-              suppressMultiSort
-            />
+            {isProdView ? (
+              // key 필수 — 두 DataGrid 가 삼항의 **같은 자리**에 있어 key 가 없으면 React 가
+              // 같은 인스턴스로 재사용한다. 탭 전환 순간 ag-grid 에 제품 행(`targets` 없음)이
+              // 먼저 들어가고 자료용 컬럼의 valueGetter 가 그 위에서 돌아
+              // `Cannot read properties of undefined (reading 'find')` 로 터졌다(간헐적).
+              <DataGrid<ProductListRow>
+                key="product-grid"
+                columnDefs={productColumnDefs}
+                rowData={productData}
+                className="contents-grid"
+                loading={isProductLoading}
+                emptyMessage={productEmptyMessage}
+                getRowId={(params) => String(params.data.id)}
+                autoHeight={!(isProductLoading || productData.length === 0)}
+                maxHeight={isProductLoading || productData.length === 0 ? 200 : undefined}
+              />
+            ) : (
+              <DataGrid<ContentListItem>
+                key="document-grid"
+                columnDefs={columnDefs}
+                rowData={rowData}
+                className="contents-grid"
+                loading={isLoading}
+                emptyMessage={emptyMessage}
+                autoHeight={!(isLoading || rowData.length === 0)}
+                maxHeight={isLoading || rowData.length === 0 ? 200 : undefined}
+                getRowClass={getDocumentRowClass}
+                onGridReady={handleGridReady}
+                onSortChanged={handleSortChanged}
+                suppressMultiSort
+              />
+            )}
             {totalPages > 0 && (
               <Pagination
                 currentPage={currentPage}
@@ -824,14 +1018,48 @@ export function ContentsTable({
           <div className="bg-white p-6">
             {topBar}
             {/* 데스크톱과 동일 이유 — data.length>0(이전 성공 캐시) 이어도 isError 면 항상 배너 노출. */}
-            {isError && (
+            {activeIsError && (
               <p className="mt-2 font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
-                コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。
+                {isProdView
+                  ? "製品一覧の取得に失敗しました。表示中の内容が最新でない可能性があります。"
+                  : "コンテンツの取得に失敗しました。表示中の内容が最新でない可能性があります。"}
               </p>
             )}
           </div>
           <div className="block lg:hidden h-[10px] bg-[#F5F5F5]" />
-          {data.length === 0 ? (
+          {/* 제품일람 모바일 — REQ-006 모바일 전용 UI 는 차기. 목록을 읽고 상세로 갈 수 있는
+              최소 형태만 제공한다(3컬럼을 한 줄 카드로). */}
+          {isProdView ? (
+            productData.length === 0 ? (
+              <div className="flex items-center justify-center min-h-[300px] bg-white px-6">
+                <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
+                  {productEmptyMessage}
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-[#EFF4F8] bg-white">
+                {productData.map((row) => (
+                  <Link
+                    key={row.id}
+                    href={`/products/${row.id}`}
+                    transitionTypes={["fade"]}
+                    className="flex flex-col gap-1 px-6 py-4"
+                  >
+                    <CategoryPath
+                      category={row.category}
+                      className="font-['Noto_Sans_JP'] text-[12px] text-[#6a88a9]"
+                    />
+                    <span className="font-mono text-[14px] font-semibold text-[#1060B4]">
+                      {row.modelCode}
+                    </span>
+                    <span className="font-['Noto_Sans_JP'] text-[12px] text-[#101010]">
+                      資料数 {row.documentCount.toLocaleString()}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )
+          ) : data.length === 0 ? (
             <div className="flex items-center justify-center min-h-[300px] bg-white">
               <p className="font-['Noto_Sans_JP'] text-[14px] text-[#999] text-center">
                 {emptyMessage}

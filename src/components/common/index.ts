@@ -15,3 +15,11 @@ export type { MobileCardField } from "./mobile-card-list";
 export { AlertDialog } from "./alert-dialog";
 export { Spinner } from "./spinner";
 export { DimSpinner } from "./dim-spinner";
+export { ProductStatusBadge } from "./product-status-badge";
+export {
+  CategoryName,
+  CategoryPath,
+  CategoryNameList,
+  INTERNAL_CATEGORY_TEXT_CLASS,
+} from "./category-label";
+export type { CategoryLabelSource } from "./category-label";

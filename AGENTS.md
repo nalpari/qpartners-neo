@@ -23,6 +23,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 - `pnpm prisma migrate dev --name <name>` — Create and apply migration
 - `docker compose up -d db` — Start MariaDB only (for local dev)
 - `docker compose up -d --build` — Start full stack (app + db) in Docker
+- `node scripts/e2e/run-all.mjs` — 검색 계통 E2E (dev 서버 기동 + `PLAYWRIGHT_PATH` 필요). 레포에 테스트 프레임워크가 없어 의존성 없이 도는 형태다 — 전제·실행법은 `scripts/e2e/README.md`
 
 ## Architecture
 
@@ -36,6 +37,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 - **Editor/Grid**: Tiptap 리치 에디터 (`src/lib/rich-editor/`), ag-grid (콘텐츠 목록)
 - **Mail**: nodemailer (`src/lib/mailer.ts`, `src/lib/mail-templates/`, `src/lib/mass-mail/`)
 - **API Docs**: Scalar (`/api-docs`), 스펙은 `src/lib/openapi.ts`
+- **형번/제품일람**: 자료를 제품 모델번호 축으로 찾는 계통 (검색 고도화). 마스터는 `qp_product_models`, 자료 연결은 `qp_content_product_models`, 노출 판정은 `src/lib/product-model.ts` / 검색 조건은 `src/lib/content-search.ts` · `src/lib/content-visibility.ts`. 관리 화면 `/admin/product-models`, 이용자 조회 `/api/products*` · `/api/search/suggest`. 설계·결정 이력은 `docs/01-plan/features/search-enhancement.{plan,mapping}.md`
 - **External**: QSP 회원 API 연동 (`src/lib/qsp-member.ts`), AS-IS Q.Partners 시공점(SEKO) 커넥터 (`src/lib/seko-connector.ts`) — 배선된 I/F 목록은 해당 파일 헤더 주석 참조
 
 ## Key Conventions

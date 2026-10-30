@@ -46,9 +46,11 @@ const menus2UnderAdmin = [
   { menuCode: "ADM_BULK_MAIL",  menuName: "大量メール発送",   pageUrl: "/admin/bulk-mail",   sortOrder: 2 },
   { menuCode: "ADM_NOTICE",     menuName: "お知らせ管理",     pageUrl: "/admin/notices",     sortOrder: 3 },
   { menuCode: "ADM_CATEGORY",   menuName: "カテゴリ管理",     pageUrl: "/admin/categories",  sortOrder: 4 },
-  { menuCode: "ADM_PERMISSION", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 5 },
-  { menuCode: "ADM_MENU",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 6 },
-  { menuCode: "ADM_CODE",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 7 },
+  // 형번관리 — 카테고리관리 다음(5번째). 요구사항·목업 03 의 탭 배치이며 2026-10-28 사용자 지시다.
+  { menuCode: "ADM_PRODUCT_MODEL", menuName: "型番管理",      pageUrl: "/admin/product-models", sortOrder: 5 },
+  { menuCode: "ADM_PERMISSION", menuName: "権限管理",         pageUrl: "/admin/permissions", sortOrder: 6 },
+  { menuCode: "ADM_MENU",       menuName: "メニュー管理",     pageUrl: "/admin/menus",       sortOrder: 7 },
+  { menuCode: "ADM_CODE",       menuName: "コード管理",       pageUrl: "/admin/codes",       sortOrder: 8 },
 ];
 
 /**
@@ -90,7 +92,7 @@ const GENERAL_MENUS = [
 ];
 const ADMIN_FULL_MENUS = [
   "ADM_MEMBER", "ADM_BULK_MAIL", "ADM_NOTICE", "ADM_CATEGORY",
-  "ADM_PERMISSION", "ADM_MENU", "ADM_CODE",
+  "ADM_PERMISSION", "ADM_MENU", "ADM_CODE", "ADM_PRODUCT_MODEL",
   "CONTENT", "CONT_LIST", "CONT_CREATE",
 ];
 const ALL_MENU_CODES = [

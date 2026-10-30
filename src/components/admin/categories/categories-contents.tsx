@@ -12,7 +12,11 @@ import { ADMIN_MENU } from "@/lib/menu-codes";
 import { CategoriesTree } from "./categories-tree";
 import { CategoriesDetail } from "./categories-detail";
 import type { CategoryFormState, CascadePreview } from "./categories-types";
-import { findCategoryById } from "./categories-types";
+import {
+  findCategoryById,
+  resolveInternalOnlyValue,
+  resolveProductListValue,
+} from "./categories-types";
 import { useCategoryQuery } from "./use-category-query";
 import { useCategoryMutations } from "./use-category-mutations";
 
@@ -36,6 +40,10 @@ export function CategoriesContents() {
   const [isNewMode, setIsNewMode] = useState(false);
   const [filterInternalOnly, setFilterInternalOnly] = useState(false);
   const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+  // 「製品一覧表示のみ」 (REQ-008). 자체 값 기준 — 1Depth 는 파생값이 아니라 컬럼값으로
+  // 판정한다. 부모 자체가 N 이어도 자식이 걸리면 아래 `matchSelf(p) || children.length>0`
+  // 규칙으로 부모가 결과에 남아 트리 구조가 유지된다 (사내전용 필터와 동일 방식).
+  const [filterProductListOnly, setFilterProductListOnly] = useState(false);
   const [hasUserToggled, setHasUserToggled] = useState(false);
   // CategoriesDetail 내부 form state 를 리마운트로 재초기화하기 위한 토큰.
   // 초기화 버튼 클릭 시 증가 → key 변경 → CategoriesDetail 이 selectedCategory/INITIAL_FORM 으로 재생성.
@@ -67,17 +75,22 @@ export function CategoriesContents() {
   // 필터 매칭만 「부모 자체 매칭 OR 자식 매칭」 룰을 적용하여 사내전용 자식이 있는 부모도
   // 필터 결과에 포함되도록 한다.
   const filteredTree = useMemo(() => {
-    if (!filterInternalOnly && !filterActiveOnly) return treeData;
-    const matchSelf = (n: { isInternalOnly: boolean; isActive: boolean }) =>
+    if (!filterInternalOnly && !filterActiveOnly && !filterProductListOnly) return treeData;
+    const matchSelf = (n: {
+      isInternalOnly: boolean;
+      isActive: boolean;
+      isProductList: boolean;
+    }) =>
       (!filterInternalOnly || n.isInternalOnly) &&
-      (!filterActiveOnly || n.isActive);
+      (!filterActiveOnly || n.isActive) &&
+      (!filterProductListOnly || n.isProductList);
     return treeData
       .map((parent) => ({
         ...parent,
         children: parent.children.filter(matchSelf),
       }))
       .filter((p) => matchSelf(p) || p.children.length > 0);
-  }, [treeData, filterInternalOnly, filterActiveOnly]);
+  }, [treeData, filterInternalOnly, filterActiveOnly, filterProductListOnly]);
 
   const totalCount = filteredTree.reduce(
     (sum, p) => sum + 1 + p.children.length,
@@ -147,17 +160,34 @@ export function CategoriesContents() {
         isInternalOnly: form.isInternalOnly,
         sortOrder: form.sortOrder,
         isActive: form.isActive,
+        isProductList: form.isProductList,
         ...(isParent && { isVisible: form.isVisible }),
       });
     } else if (selectedId !== null) {
+      // `isInternalOnly`·`isProductList` 는 **값이 바뀐 경우에만** 보낸다.
+      //
+      // 1Depth 에 이 값을 보내면 서버가 하위 2Depth 전체에 전파한다(전체 선택 토글).
+      // 매번 보내면, 운영자가 1Depth 의 이름만 고쳐 저장했을 때도 전파가 일어나
+      // 개별로 켜 둔 자식 설정이 통째로 덮인다. 비교 기준은 폼 초기값과 같은
+      // 파생값이라 "화면에 보인 값과 다를 때만" 전송된다.
+      const initialProductList = selectedCategory
+        ? resolveProductListValue(selectedCategory)
+        : false;
+      const isProductListChanged = form.isProductList !== initialProductList;
+      const initialInternalOnly = selectedCategory
+        ? resolveInternalOnlyValue(selectedCategory)
+        : false;
+      const isInternalOnlyChanged = form.isInternalOnly !== initialInternalOnly;
+
       updateMutation.mutate({
         id: selectedId,
         payload: {
           name: form.name.trim(),
-          isInternalOnly: form.isInternalOnly,
+          ...(isInternalOnlyChanged && { isInternalOnly: form.isInternalOnly }),
           sortOrder: form.sortOrder,
           isActive: form.isActive,
           ...(isParent && { isVisible: form.isVisible }),
+          ...(isProductListChanged && { isProductList: form.isProductList }),
         },
       });
     }
@@ -209,6 +239,13 @@ export function CategoriesContents() {
       preview.descendantCount > 0
         ? `下位カテゴリー${preview.descendantCount}件もすべて削除されます。`
         : null,
+      // 형번은 cascade 로 **삭제**된다(링크 해제가 아니다) — 되돌릴 수 없으므로 건수를 먼저 띄운다.
+      preview.productModelCount > 0
+        ? `登録されている型番${preview.productModelCount}件もすべて削除されます（元に戻せません）。`
+        : null,
+      preview.productModelLinkCount > 0
+        ? `型番とコンテンツの紐付け${preview.productModelLinkCount}件も解除されます。`
+        : null,
       preview.contentLinkCount > 0
         ? `関連するコンテンツの紐付け${preview.contentLinkCount}件が自動で解除されます（コンテンツ本体は残ります）。`
         : null,
@@ -252,7 +289,7 @@ export function CategoriesContents() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center w-[1440px] h-[400px]">
+      <div className="flex items-center justify-center w-[var(--page-max)] h-[400px]">
         <Spinner />
       </div>
     );
@@ -260,7 +297,7 @@ export function CategoriesContents() {
 
   if (isError) {
     return (
-      <div className="flex items-center justify-center w-[1440px] h-[400px]">
+      <div className="flex items-center justify-center w-[var(--page-max)] h-[400px]">
         <p className="text-[14px] text-[#999] font-['Noto_Sans_JP']">
           カテゴリの読み込みに失敗しました。ページを更新してください。
         </p>
@@ -269,7 +306,7 @@ export function CategoriesContents() {
   }
 
   return (
-    <div className="flex gap-[18px] items-start w-[1440px] pb-[48px]">
+    <div className="flex gap-[18px] items-start w-[var(--page-max)] pb-[48px]">
       <CategoriesTree
         treeData={filteredTree}
         selectedId={selectedId}
@@ -277,10 +314,12 @@ export function CategoriesContents() {
         totalCount={totalCount}
         filterInternalOnly={filterInternalOnly}
         filterActiveOnly={filterActiveOnly}
+        filterProductListOnly={filterProductListOnly}
         onSelect={handleSelect}
         onToggle={handleToggle}
         onFilterChange={setFilterInternalOnly}
         onActiveOnlyChange={setFilterActiveOnly}
+        onProductListOnlyChange={setFilterProductListOnly}
       />
       <CategoriesDetail
         key={`${isNewMode ? "new" : String(selectedId)}-${resetToken}`}

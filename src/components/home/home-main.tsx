@@ -49,7 +49,7 @@ export function HomeMain() {
       <HomeVisual />
       <HomeSearchMobile />
 
-      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[1440px] lg:px-0 pb-[10px] lg:pb-[48px] lg:mt-[-40px] relative z-5">
+      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[var(--page-max)] lg:px-0 pb-[10px] lg:pb-[48px] lg:mt-[-40px] relative z-5">
         <HomeNotices />
 
         <div className="flex flex-col lg:flex-row gap-[10px] lg:gap-[18px] w-full">

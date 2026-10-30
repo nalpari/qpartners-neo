@@ -11,7 +11,7 @@
 ## 개요
 
 Q.PARTNERS 시스템의 전체 테이블 구조를 설명합니다.
-**사용자 마스터 데이터는 QSP에 저장**하고, TO-BE Q.Partners-neo는 **서비스 운영 테이블(18개)**만 관리합니다.
+**사용자 마스터 데이터는 QSP에 저장**하고, TO-BE Q.Partners-neo는 **서비스 운영 테이블(20개)**만 관리합니다.
 
 ### 아키텍처 요약
 
@@ -26,6 +26,7 @@ QSP (사용자 마스터)
 TO-BE Q.Partners-neo (서비스 운영)
 ├── 권한/메뉴 (4개): qp_roles, qp_role_menu_permissions, qp_menus, qp_code_*
 ├── 콘텐츠 (5개): qp_contents, qp_content_targets, qp_categories, qp_content_categories, qp_content_attachments
+├── 형번 (2개): qp_product_models, qp_content_product_models
 ├── 인증 (2개): qp_password_reset_tokens, qp_two_factor_codes
 └── 관리 (7개): qp_home_notices, qp_mass_mails, qp_mass_mail_recipients, qp_mass_mail_attachments, qp_download_logs, qp_inquiries
 ```
@@ -101,7 +102,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 
 ---
 
-## TO-BE QPartners 테이블 (18개)
+## TO-BE QPartners 테이블 (20개)
 
 ### ━━━ 권한/메뉴 관련 (4개) ━━━
 
@@ -243,9 +244,11 @@ TO-BE Q.Partners-neo (서비스 운영)
 | parent_id | INT? FK(self) | 상위 카테고리 ID (NULL=1Depth) | 2Depth 트리 구조 (p.53 #8), 수정 불가 |
 | category_code | VARCHAR(50) UNIQUE | 카테고리 코드 (수정 불가) | 카테고리 관리 (p.53 #10), 1Depth=수동입력, 2Depth=자동채번 |
 | name | VARCHAR(100) | 카테고리명 (필수) | 카테고리 관리 (p.53 #10), 예: 정보유형, 업무분류, 태양광모듈 |
-| is_internal_only | BOOLEAN | 사내회원 전용 Y/N | 카테고리 관리 (p.53 #9), "사내전용"은 빨간색 표시, 권한자에게만 노출 |
+| is_internal_only | BOOLEAN | 사내회원 전용 Y/N | 카테고리 관리 (p.53 #9), 사내전용 분류는 **2Depth 만** 적색 표시(1Depth 는 기본색), 권한자에게만 노출. 1Depth 설정은 하위 전체 토글이며 표시값은 자식 전원 Y 여부에서 파생 |
 | sort_order | INT | 표시 순서 | 카테고리 관리 (p.53 #10), 같은 Depth 내 정렬 |
 | is_active | BOOLEAN | 사용 여부 Y/N | 카테고리 관리 (p.53 #10), 비활성화 시 검색/등록 화면에서 숨김 |
+| is_visible | BOOLEAN | 목록 표시 여부 Y/N (1Depth 전용) | 콘텐츠 목록의 분류 컬럼·좌측 분류축 노출 여부. 2Depth 에는 적용되지 않는다 |
+| is_product_list | BOOLEAN | 제품일람 노출 대상 Y/N | **검색고도화 REQ-008** 신규. 켜면 검색화면 제품일람 탭의 `型番` 축과 형번관리의 카테고리 선택지에 나타난다. 형번은 2Depth 에만 붙으므로 1Depth 값은 하위 전체 토글 용도 |
 | created_at | DATETIME | 등록일시 | - |
 | created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
 | updated_at | DATETIME | 수정일시 | - |
@@ -529,6 +532,56 @@ TO-BE Q.Partners-neo (서비스 운영)
 
 ---
 
+### ━━━ 형번(제품일람) 관련 (2개) ━━━
+
+### 21. qp_product_models (형번 마스터)
+
+| 항목 | 내용 |
+|------|------|
+| **테이블이 필요한 이유** | 자료를 **제품 모델번호(형번)** 축으로 찾기 위한 마스터. 형번을 카테고리 체계로 관리하려 했으나 ① 카테고리 API 가 3Depth 를 거부하고 ② `is_visible` 이 1Depth 전용이라 형번별 표시/비표시를 표현할 수 없으며 ③ 카테고리끼리 연결하는 구조가 없어 제품 상태를 형번에 붙일 수 없다. 따라서 별도 마스터로 분리했다 |
+| **화면 근거** | 관리자 > 형번관리 (목업 `03-admin-models.html`), 검색화면 제품일람 탭 `型番` 축, 제품상세 |
+| **비즈니스 규칙** | 형번은 **2Depth 카테고리에만** 붙는다. 중복 판정은 `(category_id, model_code)` UNIQUE + `utf8mb4_unicode_ci`(대소문자·끝공백 무시). 앞공백은 애플리케이션에서 trim, **가운데 공백은 보존**(`栄信 SRシリーズ` 처럼 의미를 갖는 형번이 있다) |
+| **근거 요구사항** | REQ-007 / REQ-008 / REQ-009 |
+
+| 컬럼 | 타입 | 설명 | 근거 |
+|------|------|------|------|
+| id | INT PK | 자동증가 PK | - |
+| category_id | INT FK | 소속 2Depth 카테고리 → qp_categories.id | 형번관리에서 카테고리를 먼저 고르고 형번을 등록 |
+| model_code | VARCHAR(100) | 형번 (예: HQJP-A44-1) | 형번관리 목록·검색화면 `型番` 축에 표시 |
+| sort_order | INT | 표시 순서 | 제품일람 정렬(카테고리 표시순서 → 형번 표시순서) |
+| is_visible | BOOLEAN | 표시/비표시 Y/N | REQ-007. N 이면 이용자 화면(제품일람·제품상세·자료상세 형번 섹션)에서 제외 |
+| created_at | DATETIME | 등록일시 | - |
+| created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
+| updated_at | DATETIME | 수정일시 | - |
+| updated_by | VARCHAR(255)? | 수정자 ID | 감사 추적용 |
+
+**복합 유니크**: `(category_id, model_code)` — 같은 카테고리 안에서 형번 중복 불가
+**인덱스**: `(category_id, sort_order)`, `(is_visible)`
+**FK**: category_id → qp_categories.id (CASCADE DELETE)
+
+---
+
+### 22. qp_content_product_models (자료-형번 연결)
+
+| 항목 | 내용 |
+|------|------|
+| **테이블이 필요한 이유** | 하나의 자료가 여러 형번에 걸리고, 하나의 형번에도 여러 자료가 붙는 N:M. 제품일람은 이 연결을 형번 단위로 집계해 `資料数` 를 만들고, 제품상세는 역방향으로 자료 목록을 만든다 |
+| **화면 근거** | 콘텐츠 등록·수정 > 紐づく型番 섹션, 자료상세 형번 칩, 제품일람 `資料数`, 제품상세 연결 자료 목록 |
+| **비즈니스 규칙** | 형번을 지우면 **자료는 남기고 연결만 지운다**(CASCADE). 연결을 남겨두면 존재하지 않는 형번이 자료상세·검색 필터에 유령으로 나타난다 |
+| **근거 요구사항** | REQ-009 / REQ-010 |
+
+| 컬럼 | 타입 | 설명 | 근거 |
+|------|------|------|------|
+| content_id | INT PK/FK | 자료 ID → qp_contents.id | 복합 PK의 일부 |
+| product_model_id | INT PK/FK | 형번 ID → qp_product_models.id | 복합 PK의 일부 |
+| created_at | DATETIME | 등록일시 | - |
+| created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
+
+**복합 PK**: `(content_id, product_model_id)` — 양쪽 모두 CASCADE DELETE
+**인덱스**: `(product_model_id, content_id)` — 제품일람의 형번→자료 집계용 역방향 탐색
+
+---
+
 ## Enum 정의
 
 | Enum | 값 | 설명 | 사용 테이블 |
@@ -565,3 +618,5 @@ TO-BE Q.Partners-neo (서비스 운영)
 | 18 | 관리 | Inquiry | qp_inquiries | p.43-44 | 문의등록 (비로그인도 가능) |
 | 19 | 시스템 | CodeHeader | qp_code_headers | p.57 | 공통코드 그룹(헤더) |
 | 20 | 시스템 | CodeDetail | qp_code_details | p.52 | 공통코드 상세값 |
+| 21 | 형번 | ProductModel | qp_product_models | 목업 `03-admin-models.html`, 제품일람 | 형번 마스터 (REQ-007/008) |
+| 22 | 형번 | ContentProductModel | qp_content_product_models | 콘텐츠 등록 紐づく型番, 제품상세 | 자료-형번 N:M 연결 (REQ-009/010) |

@@ -27,6 +27,7 @@ const FALLBACK_TABS: AdminTabItem[] = [
   { menuCode: ADMIN_MENU.PERMISSIONS, label: "権限管理",         href: "/admin/permissions" },
   { menuCode: ADMIN_MENU.MENUS,       label: "メニュー管理",     href: "/admin/menus"       },
   { menuCode: ADMIN_MENU.CODES,       label: "コード管理",       href: "/admin/codes"       },
+  { menuCode: ADMIN_MENU.PRODUCT_MODEL, label: "型番管理",       href: "/admin/product-models" },
 ];
 
 /** 관리자(ADMIN) 1-Level 메뉴의 2-Level children을 탭으로 변환 */
@@ -87,7 +88,7 @@ export function AdminTab() {
   const tabs = rawTabs.filter((t) => has(t.menuCode, "read"));
 
   return (
-    <nav className="flex gap-1 w-full max-w-[1440px] pb-[32px]">
+    <nav className="flex gap-1 w-full max-w-[var(--page-max)] pb-[32px]">
       {tabs.map((tab) => {
         const active = pathname.startsWith(tab.href);
         return (

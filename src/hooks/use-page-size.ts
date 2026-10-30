@@ -54,7 +54,7 @@ export function usePageSize(hookOptions?: { storageKey?: string; shouldRestore?:
   // 404(헤더 비활성/미등록) 는 에러가 아닌 정상 분기로 처리 — useQuery error 흐름을 타면
   // 콘솔 빨간 로그 + DevTools 빨강 표시가 떠 운영 노이즈가 발생한다. queryFn 내부에서
   // catch 해 `{ options: [], isHidden: true }` 로 변환하면 정상 data 로 흐른다.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["common-code", "PAGE_SIZE"],
     queryFn: async (): Promise<{ options: SelectOption[]; isHidden: boolean }> => {
       try {
@@ -127,5 +127,17 @@ export function usePageSize(hookOptions?: { storageKey?: string; shouldRestore?:
     }
   }, []);
 
-  return { options, pageSize: effectivePageSize, setPageSize, isLoading, isHidden };
+  // `isError` 를 밖으로 낸다 — 이것이 없으면 소비처가 **「운영자가 코드를 등록 안 함」(정상)** 과
+  // **「조회가 실패함」(비정상)** 을 구분할 수 없다. 둘 다 options=[] 로 떨어지기 때문이다.
+  // 2026-10-13 실측: DB 가 잠깐 끊긴 사이 조회가 실패하자 건수 select 가 `-` 로 고착되고
+  // 오류 표시도 복구 수단도 없어, 사용자는 새로고침 전까지 원인을 알 수 없었다.
+  return {
+    options,
+    pageSize: effectivePageSize,
+    setPageSize,
+    isLoading,
+    isHidden,
+    isError,
+    refetch,
+  };
 }
