@@ -56,8 +56,9 @@ function editingCellClass(params: CellClassParams<ProductModelItem>): string | u
 /**
  * 형번 목록 — 목업 03 `型番一覧` 카드.
  *
- * 컬럼 6개: `No / 型番 / カテゴリ / 表示順序 / 表示／非表示 / 登録日`
- * (v0.8.1 대비 `更新日`→`登録日` 로 바뀌고 `操作` 컬럼이 빠졌다 — 대응표 §0 발견 E).
+ * 컬럼 8개: `No / 型番 / カテゴリ / カテゴリ順序 / 製品ステータス / 型番順序 / 表示／非表示 / 登録日`
+ * (v0.8.1 대비 `更新日`→`登録日` 로 바뀌고 `操作` 컬럼이 빠졌다 — 대응표 §0 발견 E.
+ *  `表示順序` 는 2026-10-20 業務レビュー로 `カテゴリ順序`·`型番順序` 2개로 분리됐다.)
  *
  * **행 클릭이 편집 진입**이다. 목업이 편집 버튼을 두지 않은 이유를 그대로 따른다
  * (`03-admin-models.html:462` 「行をクリックしたら編集状態にする（編集ボタンは置かない）」).
@@ -94,7 +95,7 @@ export function ProductModelsTable({
   //
   // `items` 도 의존성이다. `getRowId` 로 행을 id 매칭하는 동안 **살아남은 행의 셀은
   // 재평가되지 않아서**, 등록·삭제로 순서가 밀려도 `No`(rowIndex 파생)가 옛 값으로 남는다
-  // — 신규 1건을 맨 위에 추가하면 `1, 1, 2, 3…` 이 됐다 (2026-10-14).
+  // — 앞쪽에 행이 끼어들면 `1, 1, 2, 3…` 처럼 어긋났다 (2026-10-14).
   useEffect(() => {
     const api = gridApiRef.current;
     if (!api || api.isDestroyed()) return;
@@ -171,9 +172,10 @@ export function ProductModelsTable({
       {
         headerName: "No",
         colId: "_no",
-        width: 80,
-        minWidth: 80,
-        maxWidth: 80,
+        // 4자리(1000번대) 행번호까지 들어갈 폭. 목업은 44px 이지만 테마 셀 패딩이 더 크다.
+        width: 72,
+        minWidth: 72,
+        maxWidth: 72,
         resizable: false,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           offset + (p.node?.rowIndex ?? 0) + 1,
@@ -184,7 +186,7 @@ export function ProductModelsTable({
       {
         headerName: "型番",
         field: "modelCode",
-        flex: 2.4,
+        flex: 1.8,
         cellRenderer: ModelCodeCellRenderer,
         cellClass: editingCellClass,
         headerClass: "ag-header-cell-center",
@@ -192,12 +194,33 @@ export function ProductModelsTable({
       {
         headerName: "カテゴリ",
         colId: "category",
-        flex: 1.6,
+        // 1Depth > 2Depth 전체 표기가 들어가야 한다. 개발 DB 실측 글자폭은
+        // `製品分類 > パワーコンディショナ` 약 217px, 제품일람 대상 10건 최장 231px.
+        //
+        // minWidth 는 **가용폭 하한을 직접 올린다** — 8컬럼 합이 커지면 좁은 창에서
+        // 그리드에 가로 스크롤이 생긴다(ag-grid 기본 컬럼 최소폭 36px). 240 이면
+        // 합계 612px, 임계 창폭 약 1210px 으로 1280 노트북에 여유가 남는다.
+        // 초과분은 아래 말줄임 + `title` 이 받는다.
+        flex: 2.4,
+        minWidth: 240,
         // valueGetter 는 유지 — 정렬·툴팁·내보내기가 문자열을 본다. 색만 renderer 로 얹는다.
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data ? formatCategoryLabel(p.data.category) : "",
+        // 잘린 라벨을 읽을 수단. `tooltipValueGetter` 는 `TooltipModule` 이 필요한데
+        // `data-grid.tsx` 가 등록하지 않아 무음으로 무시된다 — 같은 파일
+        // `ModelCodeCellRenderer` 처럼 네이티브 `title` 을 쓴다.
+        //
+        // `CategoryPath` 는 inline `<span>` 이라 overflow 가 적용되지 않는다.
+        // 말줄임이 걸리도록 `block` 래퍼로 감싼다.
         cellRenderer: (p: ICellRendererParams<ProductModelItem>) =>
-          p.data ? <CategoryPath category={p.data.category} /> : null,
+          p.data ? (
+            <span
+              className="block overflow-hidden text-ellipsis whitespace-nowrap"
+              title={formatCategoryLabel(p.data.category)}
+            >
+              <CategoryPath category={p.data.category} />
+            </span>
+          ) : null,
         cellClass: editingCellClass,
         headerClass: "ag-header-cell-center",
       },
@@ -207,6 +230,12 @@ export function ProductModelsTable({
         headerName: "カテゴリ順序",
         colId: "categorySortOrder",
         flex: 0.8,
+        // 헤더 `カテゴリ順序` 6전각자 ≈ 84px + 헤더 좌우 패딩. 고정폭을 더 주면
+        // 위 카테고리 컬럼과 같은 이유로 가로 스크롤 임계가 올라가므로,
+        // 하한은 100 으로 두고 넘치는 분은 헤더 2줄로 흘린다.
+        minWidth: 100,
+        wrapHeaderText: true,
+        autoHeaderHeight: true,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data?.category.sortOrder ?? "",
         cellStyle: CENTER_CELL_STYLE,

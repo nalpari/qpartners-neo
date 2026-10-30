@@ -104,7 +104,7 @@ export const listProductsQuerySchema = z.object({
   facetCategoryIds: commaIdList,
   /** 型番 축 — 체크된 형번 id. 미지정 시 전체 */
   productModelIds: commaIdList,
-  /** 型番 헤더 클릭 정렬. 미지정 시 관련도(키워드 있을 때) → 형번 갱신일 내림차순 */
+  /** 型番 헤더 클릭 정렬. 미지정 시 카테고리 표시순서 → 형번 표시순서 → 형번명 오름차순 (REQ-005) */
   sortField: z.enum(["modelCode", "documentCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
 });

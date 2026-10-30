@@ -3004,7 +3004,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "sortField",
             in: "query",
             description:
-              "헤더 클릭 정렬. 미지정 시 기본값은 키워드가 있으면 관련도(제목 매칭) → 형번 갱신일 내림차순, 없으면 갱신일 내림차순이다. ⚠️ 제품일람 정렬 기준은 현업 미회신 항목으로, 회신 시 기본값만 교체된다.",
+              "헤더 클릭 정렬. 미지정 시 기본값은 **카테고리 표시순서 → 형번 표시순서 → 형번명 오름차순**이다(요구사항정의서 v1.1 REQ-005, 2026-10-20 業務レビュー 확정). 키워드가 있어도 관련도순으로 바뀌지 않는다 — 관련도 점수는 자료일람(`/api/contents`)에만 쓰인다.",
             schema: { type: "string", enum: ["modelCode", "documentCount"] },
           },
           { name: "sortDir", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "asc" } },
