@@ -196,22 +196,30 @@ export function ProductModelsTable({
         colId: "category",
         // 1Depth > 2Depth 전체 표기가 들어가야 한다. 개발 DB 실측 글자폭은
         // `製品分類 > パワーコンディショナ` 약 217px, 제품일람 대상 10건 최장 231px.
-        // 셀 좌우 패딩은 테마(`cellHorizontalPadding: 18`) 기준이며 브라우저 실측을
-        // 하지 않았으므로 여유를 두고 268 로 둔다. 초과분은 아래 말줄임·툴팁이 받는다.
+        //
+        // minWidth 는 **가용폭 하한을 직접 올린다** — 8컬럼 합이 커지면 좁은 창에서
+        // 그리드에 가로 스크롤이 생긴다(ag-grid 기본 컬럼 최소폭 36px). 240 이면
+        // 합계 612px, 임계 창폭 약 1210px 으로 1280 노트북에 여유가 남는다.
+        // 초과분은 아래 말줄임 + `title` 이 받는다.
         flex: 2.4,
-        minWidth: 268,
+        minWidth: 240,
         // valueGetter 는 유지 — 정렬·툴팁·내보내기가 문자열을 본다. 색만 renderer 로 얹는다.
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data ? formatCategoryLabel(p.data.category) : "",
-        // cellRenderer 컬럼은 셀이 flex 컨테이너라 상위 ellipsis 가 먹지 않는다
-        // (`ag-grid-theme.css` 주석) — renderer 안에서 직접 처리하고 툴팁을 단다.
-        tooltipValueGetter: (p) => (p.data ? formatCategoryLabel(p.data.category) : ""),
+        // 잘린 라벨을 읽을 수단. `tooltipValueGetter` 는 `TooltipModule` 이 필요한데
+        // `data-grid.tsx` 가 등록하지 않아 무음으로 무시된다 — 같은 파일
+        // `ModelCodeCellRenderer` 처럼 네이티브 `title` 을 쓴다.
+        //
+        // `CategoryPath` 는 inline `<span>` 이라 overflow 가 적용되지 않는다.
+        // 말줄임이 걸리도록 `block` 래퍼로 감싼다.
         cellRenderer: (p: ICellRendererParams<ProductModelItem>) =>
           p.data ? (
-            <CategoryPath
-              category={p.data.category}
-              className="overflow-hidden text-ellipsis whitespace-nowrap"
-            />
+            <span
+              className="block overflow-hidden text-ellipsis whitespace-nowrap"
+              title={formatCategoryLabel(p.data.category)}
+            >
+              <CategoryPath category={p.data.category} />
+            </span>
           ) : null,
         cellClass: editingCellClass,
         headerClass: "ag-header-cell-center",
@@ -222,8 +230,12 @@ export function ProductModelsTable({
         headerName: "カテゴリ順序",
         colId: "categorySortOrder",
         flex: 0.8,
-        // 헤더 `カテゴリ順序` 6전각자 ≈ 84px + 헤더 좌우 패딩. 96 으로는 모자랐다.
-        minWidth: 120,
+        // 헤더 `カテゴリ順序` 6전각자 ≈ 84px + 헤더 좌우 패딩. 고정폭을 더 주면
+        // 위 카테고리 컬럼과 같은 이유로 가로 스크롤 임계가 올라가므로,
+        // 하한은 100 으로 두고 넘치는 분은 헤더 2줄로 흘린다.
+        minWidth: 100,
+        wrapHeaderText: true,
+        autoHeaderHeight: true,
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data?.category.sortOrder ?? "",
         cellStyle: CENTER_CELL_STYLE,
