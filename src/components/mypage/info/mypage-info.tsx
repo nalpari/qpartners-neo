@@ -282,7 +282,7 @@ export function MypageInfo() {
       {isSaving && <DimSpinner />}
 
       {/* 섹션 헤더 */}
-      <div className="flex items-center gap-[12px] pb-[4px] w-full max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
+      <div className="flex items-center gap-[12px] pb-[4px] w-full lg:max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
         <Image
           src="/asset/images/contents/myprofile_icon.svg"
           alt=""

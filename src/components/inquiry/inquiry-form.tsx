@@ -460,7 +460,7 @@ function InquiryFormInner({ user }: { user: LoginUser | null }) {
 
       {/* 비로그인 전용: 로그인 유도 안내 */}
       {!isLoggedIn && (
-        <div className="flex items-center justify-center gap-2 w-full max-w-[var(--page-max)] mt-[24px] px-[24px] lg:px-0">
+        <div className="flex items-center justify-center gap-2 w-full lg:max-w-[var(--page-max)] mt-[24px] px-[24px] lg:px-0">
           <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#101010]">
             ※ログイン後ご利用の場合、個人情報の入力は必要ありません。
           </p>

@@ -327,7 +327,7 @@ export function DownloadHistory() {
   return (
     <section className="flex flex-col gap-[18px] items-center w-full">
       {/* 섹션 헤더 */}
-      <div className="flex items-center gap-[12px] pb-[4px] w-full max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
+      <div className="flex items-center gap-[12px] pb-[4px] w-full lg:max-w-[var(--page-max)] px-[24px] lg:px-0 pt-[18px] lg:pt-0">
         <Image
           src="/asset/images/contents/downdata_icon.svg"
           alt=""
@@ -342,7 +342,7 @@ export function DownloadHistory() {
 
       {/* 검색바 — 관리자 검색 패턴(MembersSearch) 차용. Figma 491:501(PC) / 491:839(MO).
           PC: 라벨박스 + 폼박스 가로 정렬, 한 행 2필드(키워드 + 기간) / MO: 라벨 위 + input 아래, 세로 스택. */}
-      <div className="w-full max-w-[var(--page-max)] px-[24px] lg:px-0">
+      <div className="w-full lg:max-w-[var(--page-max)] px-[24px] lg:px-0">
         <DownloadHistorySearch
           keyword={keyword}
           dateFrom={dateFrom}

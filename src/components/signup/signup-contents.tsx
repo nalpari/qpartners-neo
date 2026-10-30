@@ -323,7 +323,7 @@ export function SignupContents() {
       </div>
     )}
     <div className="flex flex-col gap-[10px] lg:gap-6 items-center w-full pb-6 lg:pb-12 mt-[10px] lg:mt-0">
-      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full max-w-[var(--page-max)]">
+      <div className="flex flex-col gap-[10px] lg:gap-[18px] w-full lg:max-w-[var(--page-max)]">
         {/* 상단 안내 카드 */}
         <HeaderCard />
 

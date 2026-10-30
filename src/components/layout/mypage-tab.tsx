@@ -36,7 +36,7 @@ export function MypageTab() {
     <>
       {/* PC */}
       <div className="hidden lg:flex flex-col items-center w-full bg-white border-b border-[#dee5ed] shadow-[0px_1px_1px_0px_rgba(32,55,77,0.05)]">
-        <div className="relative flex items-center justify-between w-full max-w-[var(--page-max)] py-[16px]">
+        <div className="relative flex items-center justify-between w-full lg:max-w-[var(--page-max)] py-[16px]">
           {/* 타이틀 */}
           <div className="flex items-center gap-1 shrink-0">
             <h1 className="font-['Noto_Sans_JP'] font-semibold text-[20px] leading-[1.5] text-[#101010] w-[100px]">
