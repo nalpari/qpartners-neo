@@ -134,6 +134,27 @@ export const commaIdList = z
       : undefined,
   );
 
+/**
+ * 검색어 최소 길이 (3자) — 미만이면 **키워드만 빼고** 좌측 필터·정렬 조건 그대로 조회한다
+ * (목업 `eff = v.trim().length >= MIN_Q ? v : ""`, 2026-10-13 결정).
+ *
+ * 종전에는 이 게이트가 **실시간 타이핑 경로에만** 있어, 같은 2자라도 검색 버튼·Enter 로
+ * 보내면 조건에 들어갔다(자료일람 22→5건, 제품일람 6→4건, 2026-11-02 실측).
+ * 프론트 한 곳만 고치면 직접 API 호출이 남으므로 **서버 스키마를 단일 출처로 둔다** —
+ * 3자 게이트 판정은 서버가 정한다는 `/api/search/suggest` 의 기존 방침과 같다.
+ */
+export const SEARCH_KEYWORD_MIN = 3;
+
+/** 목록 조회용 검색어 — 3자 미만이면 `undefined`(= 키워드 조건 없음). 자료일람·제품일람 공용. */
+export const searchKeyword = z
+  .string()
+  .max(100)
+  .optional()
+  .transform((v) => {
+    const trimmed = v?.trim();
+    return trimmed && trimmed.length >= SEARCH_KEYWORD_MIN ? trimmed : undefined;
+  });
+
 /** 신규/수정 여부 판단 기준 (5일) */
 export const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
