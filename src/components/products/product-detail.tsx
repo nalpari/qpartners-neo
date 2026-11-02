@@ -7,7 +7,13 @@ import { isAxiosError } from "axios";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Button, CategoryNameList, Pagination, ProductStatusBadge } from "@/components/common";
+import {
+  Button,
+  CategoryNameList,
+  ContentStateBadge,
+  Pagination,
+  ProductStatusBadge,
+} from "@/components/common";
 import { resolveVisibleAxes } from "@/components/contents/list/contents-facet-utils";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { useIsInternal } from "@/hooks/use-is-internal";
@@ -211,6 +217,8 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
         flex: 2.5,
         minWidth: 300,
         headerClass: "ag-header-cell-center",
+        // 제목이 먼저 줄고 뒤의 NEW/UPDATE 배지가 잘리지 않게 한다 — 정의는 ag-grid-theme.css
+        cellClass: "ag-cell-title-flex",
         cellRenderer: (params: ICellRendererParams<ProductDocument>) => {
           const row = params.data;
           if (!row) return null;
@@ -218,19 +226,21 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
             <button
               type="button"
               onClick={() => router.push(`/contents/${row.id}`, { transitionTypes: ["fade"] })}
-              className="flex items-center gap-2 text-left font-['Noto_Sans_JP'] text-[14px] text-[#1060B4] underline"
+              className="flex w-full min-w-0 items-center gap-2 overflow-hidden text-left font-['Noto_Sans_JP'] text-[14px] text-[#1060B4] underline"
             >
-              <span className="truncate">{row.title}</span>
-              {row.isNew && (
-                <span className="shrink-0 rounded-[2px] bg-[#E97923] px-[6px] py-[1px] text-[10px] font-medium text-white no-underline">
-                  NEW
-                </span>
-              )}
-              {row.isUpdated && (
-                <span className="shrink-0 rounded-[2px] bg-[#506273] px-[6px] py-[1px] text-[10px] font-medium text-white no-underline">
-                  UPDATE
-                </span>
-              )}
+              {/* 이 버튼의 부모는 ag-grid 가 끼우는 `span.ag-cell-value`(display:block) 라
+                  `flex-1` 은 듣지 않는다 — 폭을 맞추려면 `w-full` 이어야 한다. 그 span 과
+                  `.ag-cell-wrapper` 의 `min-width:auto` 를 함께 풀어야 효과가 있어
+                  `cellClass="ag-cell-title-flex"` 를 같이 건다(ag-grid-theme.css).
+                  배지가 13px 로 커진 뒤 「UPDAT」로 잘렸던 원인이다. */}
+              <span className="min-w-0 truncate">{row.title}</span>
+              {/* `shrink-0`·`no-underline` 은 이 화면 고유 사정: 버튼 전체에 underline 이
+                  걸려 있고 제목이 truncate 라 배지가 눌리면 안 된다. */}
+              <ContentStateBadge
+                isNew={row.isNew}
+                isUpdated={row.hasBeenUpdated && row.isUpdated}
+                className="shrink-0 no-underline"
+              />
             </button>
           );
         },

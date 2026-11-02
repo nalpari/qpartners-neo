@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import { ContentStateBadge } from "@/components/common";
 import api from "@/lib/axios";
 import { formatDate } from "@/lib/format";
 import { useAlertStore } from "@/lib/store";
@@ -143,17 +144,11 @@ export function HomeContentCard({ item }: HomeContentCardProps) {
           <div className="flex flex-col gap-[8px]">
             {/* Badges — 다운로드 버튼은 하단 영역으로 이동했으므로 상단은 배지만 노출 */}
             <div className="flex items-center gap-[4px]">
-              {item.isNew && (
-                <span className="px-[8px] py-[2px] rounded-[4px] bg-[#f4f9fd] border border-[#e3effb] font-['Pretendard'] font-medium text-[13px] text-[#63a5f2] leading-[1.5]">
-                  NEW
-                </span>
-              )}
               {/* NEW 우선순위(동시 충족 시 UPDATE 숨김)는 서버 resolveBadgeFlags 가 이미 반영해 내려준다 */}
-              {item.hasBeenUpdated && item.isUpdated && (
-                <span className="px-[8px] py-[2px] rounded-[4px] bg-[#fff3f8] border border-[#f8e3eb] font-['Pretendard'] font-medium text-[13px] text-[#bc6e8d] leading-[1.5]">
-                  UPDATE
-                </span>
-              )}
+              <ContentStateBadge
+                isNew={item.isNew}
+                isUpdated={item.hasBeenUpdated && item.isUpdated}
+              />
             </div>
 
             {/* Date */}

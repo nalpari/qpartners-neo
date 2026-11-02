@@ -1,5 +1,6 @@
 "use client";
 
+import { ContentStateBadge } from "@/components/common";
 import { prepareBodyForRender } from "@/lib/rich-editor/prepare-body-for-render";
 import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
 
@@ -13,6 +14,8 @@ interface ContentsDetailBodyProps {
   updatedAt: string;
   /** 서버 단일 출처 — 최초 등록 이후 1회 이상 갱신 여부 */
   hasBeenUpdated: boolean;
+  isNew: boolean;
+  isUpdated: boolean;
   viewCount: number;
   body: string | null;
 }
@@ -35,11 +38,21 @@ export function ContentsDetailBody({
   createdAt,
   updatedAt,
   hasBeenUpdated,
+  isNew,
+  isUpdated,
   viewCount,
   body,
 }: ContentsDetailBodyProps) {
   const formattedCreated = formatDate(createdAt);
   const formattedUpdated = formatDate(updatedAt);
+  /** 제목 옆 NEW/UPDATE — 목업 자료상세 `<h1>${title}<span class="tag …">` (01-search.html:2050) */
+  const stateBadge = (
+    <ContentStateBadge
+      isNew={isNew}
+      isUpdated={hasBeenUpdated && isUpdated}
+      className="shrink-0 align-middle"
+    />
+  );
 
   return (
     <div className="bg-white rounded-none lg:rounded-[12px] shadow-none lg:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] flex flex-col gap-[18px] px-6 py-[34px] lg:py-[48px] w-full lg:w-[var(--page-max)]">
@@ -47,8 +60,9 @@ export function ContentsDetailBody({
       <div className="border-b border-[#EEE] pb-6">
         {/* PC: 가로 (제목 좌 / 메타 우) */}
         <div className="hidden lg:flex items-center gap-[10px]">
-          <h1 className="flex-1 font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
-            {title}
+          <h1 className="flex flex-1 min-w-0 items-center gap-2 font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
+            <span className="min-w-0">{title}</span>
+            {stateBadge}
           </h1>
           <div className="flex items-center gap-3 shrink-0">
             <MetaBadge label="登録日" value={formattedCreated} />
@@ -64,8 +78,9 @@ export function ContentsDetailBody({
             {hasBeenUpdated && <MetaBadge label="更新日" value={formattedUpdated} />}
             <MetaBadge label="VIEW" value={viewCount.toLocaleString()} />
           </div>
-          <h1 className="font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
-            {title}
+          <h1 className="flex flex-wrap items-center gap-2 font-['Noto_Sans_JP'] font-semibold text-[18px] leading-normal text-[#101010]">
+            <span className="min-w-0">{title}</span>
+            {stateBadge}
           </h1>
         </div>
       </div>
