@@ -142,6 +142,15 @@ export async function resolveFacetConditions(
  * 2패스는 **고정점이라 더 돌릴 필요가 없다** — 남은 자료는 모두 그 분류값을 갖고 있어
  * 재조회해도 탈락하지 않고, 조건이 좁아졌으므로 새로 들어올 자료도 없다.
  *
+ * ⚠️ **2패스가 0행이면 1패스를 돌려준다.** 고정점 성질은 2패스 생존 집합이 비지 않을 때만
+ * 성립한다. `[]` 를 그대로 주면 클라이언트가 「전부 해제」로 읽어(`toFacetSelection([]) = []`
+ * → `facetParams` 가 `facetCategoryIds` 를 아예 생략) 축 조건이 통째로 빠지고 목록이 오히려
+ * **넓어진다** — #2752 의 역방향 불일치다. 0행은 「1패스 분류값을 전부 AND 로 걸면 생존
+ * 자료가 없다」는 뜻이므로, 좁히기를 포기하고 1패스를 쓰는 아래 세 조기반환과 같게 다룬다.
+ * 도달 가능성은 낮지 않다 — published 2,461건 중 표시 4축을 **모두** 가진 자료가 24건뿐이라
+ * (2026-11-02 실측) 키워드 결과가 집합으로는 여러 축을 덮지만 한 건도 전 축을 못 갖는
+ * 상태가 흔하다.
+ *
  * ⚠️ 2패스 조건에는 **화면에 노출되는 축의 선택지만** 넣는다. 1패스 결과에는 사이드바에
  * 나오지 않는 축(`製品ステータス`·비표시·사내전용 축, 폐지된 `PVモジュールラインナップ`·
  * `架台メーカ` 등)의 값도 섞여 있어, 그대로 AND 로 걸면 조건이 과도하게 좁아져 2패스가
@@ -187,9 +196,11 @@ export async function resolveAvailableFacets(
   const { conditions } = await resolveFacetConditions(visibleIds.map((row) => row.id));
   if (conditions.length === 0) return first;
 
-  return prisma.contentCategory.findMany({
+  const second = await prisma.contentCategory.findMany({
     where: { AND: [{ content: axisFreeWhere }, { content: { AND: conditions } }] },
     select: { categoryId: true },
     distinct: ["categoryId"],
   });
+  // 0행이면 1패스로 폴백 — 위 ⚠️ 주석 참조. `[]` 는 「전부 해제」로 오독된다.
+  return second.length > 0 ? second : first;
 }
