@@ -24,8 +24,9 @@ type Params = { params: Promise<{ id: string }> };
  * 목업 `renderProductPage()` 가 `DOCS.filter(d => d.productIds.includes(p.id))` 로
  * 형번 하나만 기준으로 모으는 것과 같다.
  *
- * 노출 불가 형번(비표시 / 제품일람 OFF / 사용중지·사내전용 카테고리)은 **404** 로 답한다.
+ * 노출 불가 형번(제품일람 OFF / 사용중지·사내전용 카테고리)은 **404** 로 답한다.
  * 403 으로 구분하면 "그 형번은 존재한다" 는 사실이 새어 나간다.
+ * 단 **비표시(isVisible=false) 는 사내 사용자에게 404 가 아니다** — 아래 주석 참조(#2746).
  */
 export async function GET(request: NextRequest, { params }: Params) {
   try {
@@ -49,8 +50,21 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     const { page, pageSize } = query.data;
 
+    // 숨김(isVisible=false) 형번도 **사내 사용자에게는 상세를 연다**.
+    // REQ-007 의 숨김 적용 범위는 [제품일람 필터·검색 결과] / [자동완성 후보] /
+    // [자료 콘텐츠 상세의 형번 연결 정보] 3곳이며 제품상세는 포함되지 않는다. 자료상세는
+    // 사내에게 숨김 형번까지 링크로 내려주는데(`/api/contents/[id]` allowAllProductModels
+    // = internal) 여기서 404 를 내면 그 링크가 깨진다 (Redmine #2746 — 2026-11-02 기획 확인:
+    // 「숨김은 관리자 권한 미만 사용자에게 숨긴다는 의미」).
+    // 카테고리 조건(제품일람 OFF / 사용중지 / 사내전용)은 그대로 둔다.
     const product = await prisma.productModel.findFirst({
-      where: { id: parsed.data, ...productModelVisibilityFilter(internal) },
+      where: {
+        id: parsed.data,
+        ...productModelVisibilityFilter(internal),
+        // `undefined` 는 Prisma 에서 **그 조건을 걸지 않는다**는 뜻이다 — 사내 사용자에 한해
+        // 위 필터의 `isVisible: true` 를 지운다. 카테고리 조건은 그대로 남는다.
+        ...(internal ? { isVisible: undefined } : {}),
+      },
       select: PRODUCT_MODEL_PUBLIC_SELECT,
     });
 

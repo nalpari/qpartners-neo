@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { jstHourStart } from "@/lib/jst-day";
-import { commaIdList } from "@/lib/schemas/common";
+import { commaIdList, searchKeyword } from "@/lib/schemas/common";
 
 export { idParamSchema } from "@/lib/schemas/common";
 
@@ -121,7 +121,8 @@ export const listContentsQuerySchema = z.object({
   // 자유 등록(5/20/50/100 등) 하므로 서버 측 화이트리스트(`[20,50,100]`) 강제는 운영 불가.
   // downloadLogsQuerySchema 와 동일하게 양의 정수 + 상한(100) 만 둔다 — 상한은 단일 요청 폭주 방지.
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  keyword: z.string().max(100).optional(),
+  /** 3자 미만이면 조건에서 빠진다 — `searchKeyword` 주석 참조 */
+  keyword: searchKeyword,
   /**
    * 키워드 결합 조건 — 입력값을 공백으로 분리한 토큰들을 어떻게 묶을지.
    * AND = 한 필드 안에 모든 토큰 포함 / OR = 어느 한 토큰이라도 포함. 미지정 시 AND.

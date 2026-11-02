@@ -1854,7 +1854,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "**타이틀·첨부파일명·형번** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시). ⚠️ **본문(body)은 검색 대상이 아니다** — 검색고도화(2026-10-12) 결정으로 제외됐다(자동완성 응답속도). 요구사항정의서 REQ-001 과 다른 점이라 고객 합의 대기 항목이다. 형번 매칭은 isVisible=true 형번만 본다.", schema: { type: "string" } },
+          { name: "keyword", in: "query", description: "**타이틀·첨부파일명·형번** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시). ⚠️ **본문(body)은 검색 대상이 아니다** — 검색고도화(2026-10-12) 결정으로 제외됐다(자동완성 응답속도). 요구사항정의서 REQ-001 과 다른 점이라 고객 합의 대기 항목이다. 형번 매칭은 isVisible=true 형번만 본다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며, 나머지 필터·정렬은 그대로 적용해 조회한다(목업 게이트와 동일). 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
           {
             name: "keywordOp",
             in: "query",
@@ -1893,7 +1893,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "facets",
             in: "query",
             description:
-              "분류축 집계 요청 (검색 고도화 REQ-004). true 로 호출하면 응답에 `availableFacets.categoryIds` — 축 조건을 뺀 결과 집합에 실제로 나타나는 2Depth 카테고리 ID 목록 — 이 추가됩니다. 검색 화면이 좌측 체크 상태를 키워드에 맞추려고 `pageSize=1` 로 따로 호출하는 경로이며, 기본값 false 인 일반 조회에서는 집계 쿼리가 실행되지 않고 `availableFacets` 필드도 응답에 없습니다.",
+              "분류축 집계 요청 (검색 고도화 REQ-004). true 로 호출하면 응답에 `availableFacets.categoryIds` — **목록에 실제로 보이는 자료가 가진** 2Depth 카테고리 ID 목록 — 이 추가됩니다.\n\n두 단계로 셉니다: ① 축 조건을 뺀 집합(키워드·상태·노출범위만)의 분류값을 모으고, 그 중 화면 표시 축의 선택지만 추려 축 조건으로 삼습니다. ② 그 조건으로 남는 자료의 분류값을 반환합니다. ①만 쓰면 목록에 없는 분류가 체크된 채 남습니다(Redmine #2752).\n\n검색 화면이 좌측 체크 상태를 맞추려고 `pageSize=1` 로 따로 호출하는 경로이며, 기본값 false 인 일반 조회에서는 집계 쿼리가 실행되지 않고 `availableFacets` 필드도 응답에 없습니다.",
             schema: { type: "boolean", default: false },
           },
           {
@@ -2996,7 +2996,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "타이틀·첨부파일명·형번 부분일치 (본문 제외)", schema: { type: "string", maxLength: 100 } },
+          { name: "keyword", in: "query", description: "타이틀·첨부파일명·형번 부분일치 (본문 제외). ⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며 나머지 필터·정렬은 그대로 적용한다. 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
           { name: "keywordOp", in: "query", schema: { type: "string", enum: ["AND", "OR"], default: "AND" } },
           { name: "facetCategoryIds", in: "query", description: "콤마 구분 체크된 2Depth 카테고리 ID — 체크가 없는 축은 조건이 아니다", schema: { type: "string" } },
           { name: "productModelIds", in: "query", description: "型番 축 — 콤마 구분 형번 ID. 체크한 형번의 행만 집계된다", schema: { type: "string" } },
@@ -3078,7 +3078,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Product"],
         summary: "제품상세 조회 (REQ-010)",
         description:
-          "그 형번에 紐づく 자료 목록을 반환한다. 검색화면의 분류축·키워드는 적용하지 않는다 — 형번 하나만 기준으로 모은다.\n\n노출 불가 형번(비표시 / 제품일람 OFF / 사용중지·사내전용 카테고리)은 **404** 로 답한다. 403 으로 구분하면 그 형번이 존재한다는 사실이 새어 나간다.",
+          "그 형번에 紐づく 자료 목록을 반환한다. 검색화면의 분류축·키워드는 적용하지 않는다 — 형번 하나만 기준으로 모은다.\n\n노출 불가 형번(제품일람 OFF / 사용중지·사내전용 카테고리)은 **404** 로 답한다. 403 으로 구분하면 그 형번이 존재한다는 사실이 새어 나간다.\n\n⚠️ **비표시(isVisible=false) 형번은 사내 사용자에게 404 가 아니다** — REQ-007 의 숨김 적용 범위는 [제품일람 필터·검색 결과] / [자동완성 후보] / [자료상세의 형번 연결 정보] 3곳이며 제품상세는 포함되지 않는다. 자료상세가 사내에게 숨김 형번을 링크로 내려주므로 여기서 404 를 내면 그 링크가 깨진다. 비사내 사용자에게는 종전대로 404 다.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },

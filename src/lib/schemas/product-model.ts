@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { commaIdList } from "@/lib/schemas/common";
+import { commaIdList, searchKeyword, SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
 
 export { idParamSchema } from "@/lib/schemas/common";
 
@@ -10,8 +10,11 @@ export { idParamSchema } from "@/lib/schemas/common";
  * 형번명 검색 최소 입력 길이 — 목업 `MIN_Q = 3`.
  * 3자 미만은 **검색 조건에서 제외**한다(400 이 아니라 무조건 검색). 목업
  * (`const eff = v.trim().length >= MIN_Q ? v : ""`)과 동일한 게이트다.
+ *
+ * 값은 목록 검색어와 **같은 기준**이어야 하므로 `common.ts` 의 `SEARCH_KEYWORD_MIN` 을
+ * 단일 출처로 쓴다. 기존 import 경로(`@/lib/schemas/product-model`)는 그대로 유지한다.
  */
-export const MODEL_CODE_SEARCH_MIN = 3;
+export const MODEL_CODE_SEARCH_MIN = SEARCH_KEYWORD_MIN;
 
 /**
  * 형번명 필드.
@@ -98,7 +101,8 @@ export const listProductModelsQuerySchema = z.object({
 export const listProductsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  keyword: z.string().max(100).optional(),
+  /** 3자 미만이면 조건에서 빠진다 — `searchKeyword` 주석 참조 */
+  keyword: searchKeyword,
   keywordOp: z.enum(["AND", "OR"]).default("AND"),
   /** 체크된 2Depth 카테고리 id. 체크가 없는 축은 조건이 아니다 */
   facetCategoryIds: commaIdList,

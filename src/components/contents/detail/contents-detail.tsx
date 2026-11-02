@@ -260,6 +260,8 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
           createdAt={data.createdAt}
           updatedAt={data.updatedAt}
           hasBeenUpdated={data.hasBeenUpdated}
+          isNew={data.isNew}
+          isUpdated={data.isUpdated}
           viewCount={data.viewCount}
           body={data.body}
         />

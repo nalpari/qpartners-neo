@@ -16,6 +16,7 @@ export { AlertDialog } from "./alert-dialog";
 export { Spinner } from "./spinner";
 export { DimSpinner } from "./dim-spinner";
 export { ProductStatusBadge } from "./product-status-badge";
+export { ContentStateBadge } from "./content-state-badge";
 export {
   CategoryName,
   CategoryPath,

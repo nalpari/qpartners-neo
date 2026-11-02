@@ -16,7 +16,14 @@ import type {
 } from "ag-grid-community";
 import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { Button, CategoryPath, PageSizeSelect, Pagination, ProductStatusBadge } from "@/components/common";
+import {
+  Button,
+  CategoryPath,
+  ContentStateBadge,
+  PageSizeSelect,
+  Pagination,
+  ProductStatusBadge,
+} from "@/components/common";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAlertStore } from "@/lib/store";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
@@ -148,17 +155,12 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
       >
         {data.title}
       </Link>
-      {data.isNew && (
-        <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#F4F9FD] border border-[#E3EFFB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#63A5F2] whitespace-nowrap">
-          NEW
-        </span>
-      )}
       {/* NEW 우선순위(동시 충족 시 UPDATE 숨김)는 서버 resolveBadgeFlags 가 이미 반영해 내려준다 */}
-      {data.hasBeenUpdated && data.isUpdated && (
-        <span className="inline-flex items-center justify-center px-2 py-[2px] rounded-[4px] bg-[#FFF3F8] border border-[#F8E3EB] font-pretendard font-medium text-[13px] leading-[1.5] text-[#BC6E8D] whitespace-nowrap">
-          UPDATE
-        </span>
-      )}
+      <ContentStateBadge
+        isNew={data.isNew}
+        isUpdated={data.hasBeenUpdated && data.isUpdated}
+        className="shrink-0"
+      />
     </div>
   );
 }
@@ -305,12 +307,15 @@ function MobileContentCard({
     })();
   };
 
+  // 사내전용 판정 — 배경과 제목 글자색 두 곳이 같은 기준을 써야 한다(Redmine #2750).
+  const isInternalOnly = isInternalOnlyContent(item.targets);
+
   return (
     // stretched button 패턴: absolute inset-0 버튼으로 카드 전체 클릭 영역을 확보하고,
     // 내부 다운로드 <button>은 relative로 stacking order상 위에 위치해 중첩을 회피한다.
     <div
       className={`relative px-6 py-5 flex flex-col gap-3 ${
-        isInternalOnlyContent(item.targets) ? "bg-[#FDF2F2]" : "bg-white"
+        isInternalOnly ? "bg-[#FDF2F2]" : "bg-white"
       }`}
     >
       <button
@@ -358,7 +363,15 @@ function MobileContentCard({
 
       {/* 하단 — 제목(볼드). position 미지정(non-positioned) 유지 — relative 를 주면 stacking
           순서상 absolute 오버레이 버튼(위 stretched button) 보다 위로 올라와 클릭을 가로챈다. */}
-      <p className="font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] text-[#101010] break-words whitespace-normal">
+      {/* 사내전용은 제목도 적자 — PC 그리드 `.ag-row-internal .ag-cell { color:#C0392B }` 과
+          같은 기준이다(Redmine #2750). 종전에는 모바일만 배경색(`bg-[#FDF2F2]`)만 적용돼
+          글자가 검정으로 남아 있었다. 상단 `MobileMetaBadge` 의 회색 라벨칩(`text-[#999]`)은
+          PC 그리드에 없는 모바일 전용 디자인이라 그대로 둔다. */}
+      <p
+        className={`font-['Noto_Sans_JP'] font-bold text-[15px] leading-[1.5] break-words whitespace-normal ${
+          isInternalOnly ? "text-[#C0392B]" : "text-[#101010]"
+        }`}
+      >
         {item.title}
       </p>
     </div>

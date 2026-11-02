@@ -14,6 +14,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { jstHourStart } from "@/lib/jst-day";
 import { prisma } from "@/lib/prisma";
+import { LEGACY_PRODUCT_STATUS_AXIS_CODE } from "@/lib/schemas/common";
 
 /**
  * 비사내 사용자에게 노출 가능한 콘텐츠 조건 — 게시대상 매칭 + 게시기간.
@@ -124,4 +125,82 @@ export async function resolveFacetConditions(
   }
 
   return { groups, conditions };
+}
+
+/**
+ * 좌측 분류 체크 상태로 내려보낼 분류값 집계 — REQ-004 / Redmine #2752.
+ *
+ * **목록에 실제로 보이는 자료가 가진 분류값만** 돌려준다. 두 단계로 센다.
+ *   1패스 — 축 조건을 뺀 집합(`axisFreeWhere`: 키워드·상태·노출범위만)의 분류값.
+ *           이 값들이 그대로 축 조건이 된다.
+ *   2패스 — 그 축 조건을 적용했을 때 남는 자료의 분류값. 이것이 반환값이다.
+ *
+ * 1패스만 쓰면 목록에 없는 분류가 체크된 채 남는다. `nbc` 검색이 그 사례였다 —
+ * 걸린 37건 중 13건이 `架台` 를 갖지만 그 13건은 `資料分類` 가 비어 축 조건에서 탈락한다.
+ * 목록은 4건인데 `架台` 는 켜져 있었다(2026-11-02 실측).
+ *
+ * 2패스는 **고정점이라 더 돌릴 필요가 없다** — 남은 자료는 모두 그 분류값을 갖고 있어
+ * 재조회해도 탈락하지 않고, 조건이 좁아졌으므로 새로 들어올 자료도 없다.
+ *
+ * ⚠️ **2패스가 0행이면 1패스를 돌려준다.** 고정점 성질은 2패스 생존 집합이 비지 않을 때만
+ * 성립한다. `[]` 를 그대로 주면 클라이언트가 「전부 해제」로 읽어(`toFacetSelection([]) = []`
+ * → `facetParams` 가 `facetCategoryIds` 를 아예 생략) 축 조건이 통째로 빠지고 목록이 오히려
+ * **넓어진다** — #2752 의 역방향 불일치다. 0행은 「1패스 분류값을 전부 AND 로 걸면 생존
+ * 자료가 없다」는 뜻이므로, 좁히기를 포기하고 1패스를 쓰는 아래 세 조기반환과 같게 다룬다.
+ * 도달 가능성은 낮지 않다 — published 2,461건 중 표시 4축을 **모두** 가진 자료가 24건뿐이라
+ * (2026-11-02 실측) 키워드 결과가 집합으로는 여러 축을 덮지만 한 건도 전 축을 못 갖는
+ * 상태가 흔하다.
+ *
+ * ⚠️ 2패스 조건에는 **화면에 노출되는 축의 선택지만** 넣는다. 1패스 결과에는 사이드바에
+ * 나오지 않는 축(`製品ステータス`·비표시·사내전용 축, 폐지된 `PVモジュールラインナップ`·
+ * `架台メーカ` 등)의 값도 섞여 있어, 그대로 AND 로 걸면 조건이 과도하게 좁아져 2패스가
+ * 0건이 된다(2026-11-02 실측). 축 선정 기준은 화면의 `resolveVisibleAxes` 와 같다.
+ *
+ * ⚠️ 1패스 결과가 `FACET_ID_LIMIT` 를 넘으면 `resolveFacetConditions` 가 잘라낸다.
+ * 그만큼 축 조건이 느슨해져 2패스가 1패스에 가까워질 뿐, 결과가 틀리지는 않는다.
+ *
+ * @param axisFreeWhere 축(분류·형번) 조건을 **뺀** 콘텐츠 where
+ * @param internal      사내 사용자 여부 — 사내전용 축·선택지를 조건에 넣을지 가른다
+ */
+export async function resolveAvailableFacets(
+  axisFreeWhere: Prisma.ContentWhereInput,
+  internal: boolean,
+): Promise<{ categoryId: number }[]> {
+  const first = await prisma.contentCategory.findMany({
+    where: { content: axisFreeWhere },
+    select: { categoryId: true },
+    distinct: ["categoryId"],
+  });
+  if (first.length === 0) return first;
+
+  const visibleIds = await prisma.category.findMany({
+    where: {
+      id: { in: first.map((row) => row.categoryId) },
+      // 자식(2Depth)에도 `isActive` 를 건다. 화면 선택지는 `/api/categories?activeOnly=true`
+      // 에서 오는데 그 쿼리는 **부모·자식 모두** 사용중인 것만 돌려준다. 여기서 자식 조건을
+      // 빼면 「부모는 사용중, 2Depth 만 사용중지」인 분류가 서버 축 조건에만 들어가
+      // 목록에 없는 값이 체크되는 #2752 증상이 그 축에서 재발한다.
+      isActive: true,
+      ...(internal ? {} : { isInternalOnly: false }),
+      parent: {
+        categoryCode: { not: LEGACY_PRODUCT_STATUS_AXIS_CODE },
+        isVisible: true,
+        isActive: true,
+        ...(internal ? {} : { isInternalOnly: false }),
+      },
+    },
+    select: { id: true },
+  });
+  if (visibleIds.length === 0) return first;
+
+  const { conditions } = await resolveFacetConditions(visibleIds.map((row) => row.id));
+  if (conditions.length === 0) return first;
+
+  const second = await prisma.contentCategory.findMany({
+    where: { AND: [{ content: axisFreeWhere }, { content: { AND: conditions } }] },
+    select: { categoryId: true },
+    distinct: ["categoryId"],
+  });
+  // 0행이면 1패스로 폴백 — 위 ⚠️ 주석 참조. `[]` 는 「전부 해제」로 오독된다.
+  return second.length > 0 ? second : first;
 }

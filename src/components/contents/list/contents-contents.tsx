@@ -16,6 +16,7 @@ import {
 import { usePageSize } from "@/hooks/use-page-size";
 import { getFallbackRole } from "@/lib/auth-role";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
 import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsFacets, ContentsModeSwitch } from "./contents-facets";
 import type { ProductAxisGroup, ProductListRow } from "./contents-facet-utils";
@@ -600,6 +601,17 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    *   선택으로 되돌리면 좁혀 둔 체크가 글자를 지우는 순간 날아간다.
    *
    * 집계 호출이 실패하면 체크를 건드리지 않는다 — 검색 자체는 진행해야 한다.
+   *
+   * ⚠️ 「검색어가 빈 경우」 판정은 **`SEARCH_KEYWORD_MIN` 기준**이다. 서버가 3자 미만을
+   * 조건에서 버리므로(`searchKeyword`), 2자를 키워드 있음으로 보면 **전건 기준** 집계가
+   * 돌아와 사용자가 좁혀 둔 체크를 제3의 상태로 덮어쓴다. 입력창에는 2자가 남아 원인도
+   * 보이지 않는다. 종전에는 `keyword.trim()` 만 봐서 같은 2자가 버튼 경로에서는 체크를
+   * 날리고 타이핑 경로에서는 유지되는 모순이 있었다 — 두 경로를 같은 기준으로 맞춘다.
+   *
+   * ⚠️ **제품일람 탭에서는 체크를 건드리지 않는다.** 집계는 `/api/contents?facets=1` 즉
+   * **자료 기준**인데 제품일람(`/api/products`)은 거기에 형번 링크 조건을 더 걸어 더 좁다
+   * (`facets` 파라미터 자체가 없다). 자료 기준 결과로 체크를 덮으면 「체크는 켜졌는데
+   * 제품일람 0건」이 된다. 제품일람 기준 집계가 생기기 전까지의 처리다.
    */
   const resolveFacetPatch = async (
     keyword: string,
@@ -608,7 +620,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   ): Promise<FacetOutcome> => {
     const seq = facetSeqRef.current + 1;
     facetSeqRef.current = seq;
-    if (!keyword.trim()) {
+    if (searchParams.view === "prod") return { kind: "keep" };
+    if (keyword.trim().length < SEARCH_KEYWORD_MIN) {
       return trigger === "realtime"
         ? { kind: "keep" }
         : { kind: "apply", facetCategoryIds: null };
