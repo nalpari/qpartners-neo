@@ -16,6 +16,7 @@ import {
 } from "@/lib/content-search";
 import {
   publishedTargetFilter,
+  resolveAvailableFacets,
   resolveFacetConditions,
 } from "@/lib/content-visibility";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
@@ -794,21 +795,27 @@ export async function GET(request: NextRequest) {
       total = contentsTotal;
     }
 
-    // REQ-004 「키워드 검색과 카테고리 필터 연동」 — 검색 결과에 **실제로 나타나는** 분류값.
+    // REQ-004 「키워드 검색과 카테고리 필터 연동」 — 화면은 이 목록으로 좌측 체크 상태를
+    // 갱신한다. **목록에 실제로 보이는 자료가 가진 분류값만** 체크되어야 한다 (Redmine #2752).
     //
-    // 화면은 이 목록으로 좌측 체크 상태를 갱신한다(결과에 있는 값만 체크). 집계는 축 조건을
-    // 뺀 `axisFreeWhere` 로 한다 — 체크 결과로 다시 세면 연쇄해 수렴하지 않는다.
+    // 두 단계로 센다.
+    //   1패스 — 축 조건을 뺀 `axisFreeWhere`(키워드·상태·노출범위만) 집합의 분류값.
+    //           이 값들이 곧 축 조건이 된다.
+    //   2패스 — 그 축 조건을 적용했을 때 **남는 자료**가 가진 분류값. 이것을 반환한다.
+    //
+    // 1패스만 쓰면 「목록에 없는 분류가 체크된 채로 남는」 어긋남이 생긴다. `nbc` 검색이
+    // 그 사례다 — 걸린 37건 중 13건이 `架台` 를 갖지만 그 13건은 `資料分類` 가 비어 축
+    // 조건에서 탈락한다. 목록은 4건인데 架台 는 켜져 있었다.
+    //
+    // 2패스는 **고정점이라 더 돌릴 필요가 없다** — 2패스 결과의 자료는 모두 그 분류값을
+    // 갖고 있어 재조회해도 탈락하지 않고, 조건이 좁아졌으므로 새로 들어올 자료도 없다.
+    // 목업 주석(`01-search.html:2247`)이 경고한 「외는다 → 결과가 변한다 → 또 왼다」 연쇄는
+    // 체크를 매번 결과 기준으로 재계산할 때의 이야기이며, 여기서는 한 번으로 수렴한다.
     //
     // `facets=1` 로 **명시한 요청에서만** 집계한다. 종전에는 모든 GET 이 링크 테이블
     // `distinct` 를 돌려, 집계를 쓰지 않는 관리자 목록·페이지 이동·탭 전환까지 쿼리를 더
     // 썼다. 형번축 집계도 함께 돌렸지만 쓰는 화면이 없어 걷어냈다 — 필요해지면 되살린다.
-    const facetCatRows = facets
-      ? await prisma.contentCategory.findMany({
-          where: { content: axisFreeWhere },
-          select: { categoryId: true },
-          distinct: ["categoryId"],
-        })
-      : null;
+    const facetCatRows = facets ? await resolveAvailableFacets(axisFreeWhere, internal) : null;
 
     return NextResponse.json({
       data,
