@@ -258,10 +258,17 @@ export async function GET(request: NextRequest) {
     //   - keyword 검색 — title/body 선행 와일드카드 LIKE + attachments 상관 EXISTS(fileName LIKE).
     //     findMany 와 count 가 각각 평가하므로 불일치 검색어를 반복해도 매번 full 비용이 든다.
     //   - sortCategoryCode — 카테고리 자식명 기준 정렬 raw SQL.
-    // 단순 페이징(keyword·정렬 없음)은 제외한다 — NAT 뒤 공유 IP 에서 일반 열람이 막히지 않도록.
+    //   - facets=1 — `resolveAvailableFacets` 가 1·2패스로 링크 테이블 전건 distinct 를 두 번
+    //     돌린다(+ 축 조회). 키워드가 없어도 비싸고, 타이핑 디바운스마다 들어온다.
+    // 단순 페이징(keyword·정렬·집계 없음)은 제외한다 — NAT 뒤 공유 IP 에서 일반 열람이 막히지 않도록.
+    //
+    // ⚠️ 판정은 **transform 전 원본 키워드**로 한다. `searchKeyword` 가 3자 미만을 `undefined`
+    // 로 바꾸므로 파싱된 `keyword` 를 보면 2자 검색이 제한을 통째로 빠져나간다 — 조건은 빠졌는데
+    // `facets=1` 집계는 그대로 도는 무인증 증폭 경로가 된다.
     //
     // 쿼리 실행 전에 둔다 — 차단 대상 요청이 DB 를 한 번도 건드리지 않아야 의미가 있다.
-    if (!internal && (keyword || sortCategoryCode)) {
+    const rawKeyword = request.nextUrl.searchParams.get("keyword")?.trim();
+    if (!internal && (rawKeyword || sortCategoryCode || facets)) {
       const limited = checkSearchRateLimit(request, "contents-search", user?.userId ?? null);
       if (limited) return limited;
     }
