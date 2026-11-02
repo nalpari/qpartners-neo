@@ -103,6 +103,30 @@
 .ag-row-internal:hover {
   background-color: #FBE4E4 !important;
 }
+/* 행 전체 적자 — 목업 `tr.is-internal td { color:#C0392B }` (2026-10-20 업무리뷰).
+   배지(NEW/UPDATE·제품상태)는 자기 color 를 직접 갖고 있어 셀의 상속을 덮으므로 그대로
+   남는다 — 목업 `span:not(.tag)` 와 같은 결과다. 제목 링크만 Tailwind 인라인 색
+   (`text-[#1060B4]`)을 직접 갖고 있어 !important 로 덮는다. */
+.ag-row-internal .ag-cell {
+  color: #C0392B;
+}
+.ag-row-internal .ag-cell a {
+  color: #C0392B !important;
+  text-decoration-color: #C0392B;
+}
+
+/* 제목 + 배지가 한 셀에 들어가는 컬럼 — 긴 제목이 먼저 줄고 뒤의 배지가 잘리지 않게 한다.
+   ag-grid 는 cellRenderer 결과를 `span.ag-cell-value` 로 감싸는데, 그 span 이
+   `.ag-cell-wrapper`(flex)의 item 이라 기본 `min-width:auto` 로 **콘텐츠 크기를 하한**으로
+   잡는다. 그래서 renderer 안에서 `w-full`·`flex-1`·`min-w-0` 을 아무리 줘도 셀을 넘친다
+   (실측: 셀 486px / 래퍼·값 482px, 배지가 14px 밖으로 나가 「UPDAT」로 잘렸다).
+   래퍼(`.ag-cell-wrapper`)와 값(`.ag-cell-value`) **둘 다** 풀어야 한다 — 한쪽만 풀면
+   남은 쪽이 그대로 하한을 잡는다. */
+.ag-cell-title-flex .ag-cell-wrapper,
+.ag-cell-title-flex .ag-cell-value {
+  min-width: 0;
+  overflow: hidden;
+}
 
 /* Sort input: number spinner 제거 */
 .sort-input-no-spinner::-webkit-outer-spin-button,
