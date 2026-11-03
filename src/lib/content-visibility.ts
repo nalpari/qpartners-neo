@@ -57,6 +57,16 @@ export interface FacetConditions {
 /** 분류축 필터 입력 상한 — 선택 ID 가 그대로 IN 절 길이가 되므로 방어적으로 자른다. */
 export const FACET_ID_LIMIT = 200;
 
+/** 연결 자료 0건 선택지를 조건에서 걸러낼 때 쓰는 노출 범위 (Redmine #2745). */
+export interface FacetScope {
+  /** 사내 사용자 여부 — 사내는 게시대상·게시기간을 적용하지 않는다 */
+  internal: boolean;
+  /** 조회자 권한코드. 비로그인은 `null` */
+  roleCode: string | null;
+  /** where 절 전체가 공유하는 시각 스냅샷 */
+  now: Date;
+}
+
 /**
  * 분류축(facet) 필터 조건 생성 — 목업 `passesFacets()` 의 서버 구현.
  *
@@ -65,32 +75,47 @@ export const FACET_ID_LIMIT = 200;
  * (기존 `categoryIds` 파라미터는 선택 전부를 AND 로 묶는 교집합 검색이라 의미가 다르다 —
  *  현행 목록 화면이 쓰고 있어 그대로 두고, 신규 사이드바는 이 축 방식을 쓴다.)
  *
- * **받은 id 가 있는 축만 조건이 된다** (계획서 §27.3, 2026-10-23 사용자 확정):
+ * **받은 id 가 있는 축만 조건이 된다**:
  * - id 가 **하나도 없는 축** → 그 축은 조건이 아니다. 거르지 않는다.
  * - id 가 있으면 → 그 선택지에 **실제로 연결된** 자료만 남는다.
  *
- * 그래서 「선택지를 하나씩 켜 나간 누적」과 「그 축을 전부 체크한 결과」가 정확히 일치한다.
+ * ⚠️ **「좌측영역 전체 선택」은 여기까지 오지 않는다** (2026-11-03 회의 확정, 예외처리 ①).
+ * 전부 체크 상태에서는 `contents-contents.tsx` 의 `facetParams` 가 `facetCategoryIds` 를
+ * **아예 보내지 않아** 분류 조건이 걸리지 않는다. 그래서 「전부 체크 = 전체 콘텐츠」와
+ * 「축 사이 AND」가 양립한다 — AND 규칙을 바꾸는 게 아니라 AND 평가를 건너뛴다.
+ * 이전에는 `null`(전부 체크)을 전체 id 로 펼쳐 보내 전부 체크도 AND 조건이 됐고, 그래서 분류가
+ * 비어 있는 자료가 초기 화면에서 통째로 빠졌다 (Redmine #2747 — published 2,461건 중 표시
+ * 4축을 모두 가진 24건만 남았다).
  *
- * ⚠️ **화면의 체크 상태와 이 함수의 입력은 1:1 이 아니다.** 화면 초기 상태는 전 축 전부
- * 체크이고 state 는 `null`(미설정)인데, `contents-contents.tsx` 의 `facetParams` 가 그
- * `null` 을 **각 축의 전체 id 로 펼쳐서** 보낸다. 전부 해제한 축만 id 가 비어 여기서 조건에서
- * 빠진다. 즉 「전부 해제 = 그 축만 AND 조건에서 제외」라는 §27.3 규칙은 **클라이언트가 조립하고
- * 이 함수가 받는다.**
+ * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 그래서 전부 체크에서
+ * 한 칸만 꺼도 AND 가 되살아나 건수가 크게 떨어진다 — 2026-11-03 회의에서 **수용하기로
+ * 결정**했다. 완화하려면 축마다 「未分類」 선택지를 두는 별건 작업이 필요하다.
  *
- * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 개발 DB 는 5개 축에
- * 모두 분류를 가진 published 자료가 2,459건 중 21건뿐이라 초기 화면이 21건으로 보인다
- * (2026-10-26 실측) — 데이터 상태이며 구현 문제가 아니다.
+ * **예외처리 ③ (`scope` 지정 시)** — 공개 자료가 **한 건도 연결되지 않은 선택지**는 조건에서
+ * 뺀다. 체크는 화면에 그대로 남는다 (형번과 달리 분류는 비활성화하지 않는다). 축 안이 OR 이라
+ * 선택지 하나를 빼는 것만으로는 결과가 바뀌지 않고, **그 축의 체크가 전부 연결 0건일 때**
+ * 비로소 달라진다 — 그 축이 조건에서 빠져 「체크했는데 0건」이 사라진다 (Redmine #2745).
+ * 판정은 **전역**이다 — 키워드 결과 기준이 아니다. 「이번 검색 결과에 없는 분류」는
+ * `resolveAvailableFacets` 기반 자동 체크 동기화가 담당한다.
  *
- * 결정 이력: 2026-10-13 에는 「초기 = 전 축 체크 해제」였고(목업
- * `axisPass(set,value){return set.has(value)}` 를 뒤집은 것), 10-23 에 「전부 체크·일부 체크는
- * AND 대상 / 전부 해제만 제외」로 교체되었다. 회귀 방어는
- * `scripts/e2e/search-facets.e2e.mjs` 6케이스가 담당한다.
+ * ⚠️ ③ 의 집계는 `status: "published"` 로 고정이다 — 형번 `hasDocuments` 와 같은 기준을 쓰기
+ * 위해서다. 사내 사용자가 `status=draft` 로 직접 호출하면 초안만 달린 선택지가 제거돼 그 축이
+ * 빠지고 **결과가 요청보다 넓어질 수 있다.** 화면은 `status` 를 보내지 않아 도달하지 않는다 —
+ * 닫으려면 `scope` 에 조회 상태를 실어 보내면 된다 (후속).
  *
- * @param categoryIds    조건으로 쓸 2Depth 카테고리 id 목록 (클라이언트가 조립한 결과)
+ * 결정 이력: 2026-10-13 「초기 = 전 축 체크 해제」 → 10-23 「전부 체크·일부 체크는 AND 대상 /
+ * 전부 해제만 축 제외」 → 11-03 「전부 체크는 조건 생략(①) / 전부 해제는 0건(②) / 연결 0건
+ * 선택지는 조건 제외(③)」. 회귀 방어는 `scripts/e2e/search-facets.e2e.mjs` 가 담당한다.
+ *
+ * @param categoryIds 조건으로 쓸 2Depth 카테고리 id 목록 (클라이언트가 조립한 결과)
+ * @param scope       예외처리 ③ 의 노출 범위. `null` 이면 ③ 을 적용하지 않는다 — 입력 id 가
+ *                    이미 「조회 범위에 자료가 있는 것」으로 걸러져 있을 때만 쓴다
+ *                    (`resolveAvailableFacets` 2패스)
  * @returns AND 로 합칠 Prisma 조건과 축별 묶음. 빈 배열이면 빈 조건.
  */
 export async function resolveFacetConditions(
   categoryIds: number[],
+  scope: FacetScope | null,
 ): Promise<FacetConditions> {
   const selectedIds = [...new Set(categoryIds)].slice(0, FACET_ID_LIMIT);
   if (selectedIds.length === 0) return { groups: [], conditions: [] };
@@ -102,6 +127,28 @@ export async function resolveFacetConditions(
     select: { id: true, parentId: true },
   });
 
+  // 예외처리 ③ — 공개 자료가 연결된 선택지만 남긴다. 범위는 사이드바 형번의
+  // `hasDocuments`(`/api/products/axis`) 와 **같아야 한다.** 갈라지면 「화면에서는 고를 수
+  // 있는데 고르면 0건」이 분류축에서 되살아난다.
+  //
+  // `findMany` + `distinct` 가 아니라 `groupBy` 를 쓴다 — Prisma 의 `distinct` 는 MariaDB 로
+  // 내려가지 않고 클라이언트 메모리에서 적용돼, 선택이 넓으면 링크 행 수천 건을 그대로
+  // 전송받는다. 이 함수는 페이징·정렬마다 도는 핫 패스다.
+  let linkedIds: Set<number> | null = null;
+  if (scope) {
+    const linked = await prisma.contentCategory.groupBy({
+      by: ["categoryId"],
+      where: {
+        categoryId: { in: selectedIds },
+        content: {
+          status: "published",
+          ...(scope.internal ? {} : publishedTargetFilter(scope.roleCode, scope.now)),
+        },
+      },
+    });
+    linkedIds = new Set(linked.map((row) => row.categoryId));
+  }
+
   const selectedByAxis = new Map<number, number[]>();
   for (const row of rows) {
     if (row.parentId === null) {
@@ -111,6 +158,9 @@ export async function resolveFacetConditions(
       });
       continue;
     }
+    // ③ — 연결 자료가 없으면 조건에 넣지 않는다. 그 축의 선택이 전부 빠지면 아래 루프에 축
+    // 자체가 등장하지 않아 「체크 0개인 축은 조건에서 제외」와 같은 결과가 된다.
+    if (linkedIds && !linkedIds.has(row.id)) continue;
     const bucket = selectedByAxis.get(row.parentId);
     if (bucket) bucket.push(row.id);
     else selectedByAxis.set(row.parentId, [row.id]);
@@ -193,7 +243,14 @@ export async function resolveAvailableFacets(
   });
   if (visibleIds.length === 0) return first;
 
-  const { conditions } = await resolveFacetConditions(visibleIds.map((row) => row.id));
+  // ③(연결 0건 선택지 제외)은 적용하지 않는다 — `visibleIds` 는 1패스 집계에서 나왔고, 그
+  // 집계 모집합(`axisFreeWhere`)에 **실제로 존재하는 분류값**이라 재확인이 불필요하다.
+  // ③ 을 걸면 기준이 `status: "published"` 로 고정돼, 사내 사용자의 초안 조회에서 오히려
+  // 선택지가 깎인다.
+  const { conditions } = await resolveFacetConditions(
+    visibleIds.map((row) => row.id),
+    null,
+  );
   if (conditions.length === 0) return first;
 
   const second = await prisma.contentCategory.findMany({
