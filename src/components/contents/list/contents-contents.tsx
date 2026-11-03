@@ -57,23 +57,23 @@ interface SearchFilters {
 /**
  * 분류축·형번축 선택 상태.
  *
- * 값이 셋이다:
- * - `null` = **미설정(초기 상태)**. 화면에는 **전부 체크**로 보이고, 서버에도 **전부 체크와 같은
- *   조건**(각 축의 전체 id)이 나간다 — 「전부 체크 = AND 조건 대상」 이라는 2026-10-23 사용자
- *   결정 때문이다(목업 `01-search.html:1317` 도 전 항목 `checked` 로 그린다). 조립은
- *   `facetParams` 가 한다. 전체 id 를 state 에 채우지 않는 이유는 축 데이터가 비동기로 와서
- *   `useEffect` 안 setState 가 필요해지기 때문이다(React Compiler 금지 규칙).
- * - `[]` = 사용자가 **전부 해제**했다. 전부 해제된 축만 조건에서 빠진다(§27.3).
- * - 그 외 = 체크된 id 만 조건으로 보낸다.
+ * 값이 셋이고, **2026-11-03 회의 확정 예외처리**(계획서 §33)로 각각의 의미가 바뀌었다.
  *
- * 그래서 `null` 과 `[]` 는 **서버 조건이 다르다** — `null` 은 축 전체가 조건이 되고, `[]` 는 그
- * 축이 조건에서 빠진다. 둘을 하나로 합치면 「전부 해제」를 눌러도 다시 전부 체크로 보여
- * 버튼이 듣지 않는 것처럼 된다.
+ * - `null` = **미설정 = 전부 체크**. 화면에는 전부 체크로 보이고, 서버에는 `facetCategoryIds` 를
+ *   **아예 보내지 않는다**(①). 분류 조건 없이 키워드·게시상태·권한·노출기간만 적용된 전체가
+ *   나온다. 조립은 `facetParams` 가 한다. 전체 id 를 state 에 채우지 않는 이유는 축 데이터가
+ *   비동기로 와서 `useEffect` 안 setState 가 필요해지기 때문이다(React Compiler 금지 규칙).
+ *   ⚠️ 종전에는 이 `null` 을 각 축의 전체 id 로 **펼쳐 보냈다.** 그러면 전부 체크도 AND 조건이
+ *   되어 그 축에 분류가 없는 자료가 통째로 탈락했고, 초기 화면이 published 2,461건 중 표시
+ *   4축을 모두 가진 24건으로 보였다 — Redmine #2747 의 원인이다. **되돌리지 말 것.**
+ * - `[]` = **사용자가 직접 전부 해제**했다. 조회하지 않고 **0건**이다(②). 종전에는 전 축이
+ *   조건에서 빠져 오히려 넓어졌다.
+ *   ⚠️ **자동 경로는 `[]` 를 만들어서는 안 된다.** `[]` 는 사용자 의도의 표현이다. 집계 동기화
+ *   (`toFacetSelection`)와 상단 버튼(`ContentsFacets#commitCategories`)에 그 가드가 있다.
+ * - 그 외 = 체크된 id 만 조건으로 보낸다. 축 안 OR / 축 사이 AND.
  *
- * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 개발 DB 는 축이 5개이고
- * 전 축에 분류를 가진 published 자료가 2,459건 중 21건뿐이라, 초기 화면이 21건으로 보인다.
- * 제품일람은 형번 연결 자료가 7건(축 커버리지 최대 3개)이어서 전 축 조건 시 0건이 된다 —
- * 구현 문제가 아니라 데이터 상태다(2026-10-26 실측).
+ * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 그래서 전부 체크에서
+ * 한 칸만 꺼도 ① 이 꺼지고 건수가 크게 떨어진다 — 회의에서 **수용 결정**했다. 버그가 아니다.
  */
 interface FacetSelection {
   /** 체크된 2Depth 카테고리 id — 서버 `facetCategoryIds` 와 1:1. `null` = 미설정(전부 체크 표시) */
@@ -376,6 +376,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const {
     data: categories = [],
     isError: isCategoriesError,
+    isLoading: isCategoriesLoading,
   } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
@@ -392,7 +393,11 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
 
   // 型番 축 선택지 — 제품일람 탭에서만 쓰지만, 탭 전환마다 받아오지 않도록 항상 조회해 캐시한다.
   // 검색조건과 무관하게 고정인 목록이다 (`/api/products/axis` 주석 참조).
-  const { data: productAxisResponse, isError: isProductAxisError } = useQuery({
+  const {
+    data: productAxisResponse,
+    isError: isProductAxisError,
+    isLoading: isProductAxisLoading,
+  } = useQuery({
     queryKey: ["products", "axis", userScope],
     queryFn: async () => {
       const res = await api.get<{
@@ -407,47 +412,120 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const isProductAxisEnabled = productAxisResponse?.meta.enabled ?? false;
 
   /**
+   * 사이드바에 **실제로 노출되는** 2Depth 선택지 id 전부 — 조건 조립과 전체 해제 판정(②)에
+   * 쓴다. 축 선정 기준은 `ContentsFacets` 의 `resolveVisibleAxes` 와 같아야 한다.
+   */
+  const visibleFacetIds = useMemo<number[]>(() => {
+    const ids: number[] = [];
+    for (const axis of resolveVisibleAxes(categories, isInternal)) {
+      for (const child of axis.children) {
+        if (isInternal || !child.isInternalOnly) ids.push(child.id);
+      }
+    }
+    return ids;
+  }, [categories, isInternal]);
+
+  /**
    * 분류축 쿼리 파라미터.
    *
-   * **결합 규칙 (2026-10-23 사용자 확정)**
-   * - 축 **안**: OR — 체크한 선택지 중 하나라도 맞으면 통과
-   * - **전부 체크 · 일부 체크**: 그 축은 **AND 조건 대상**
-   * - **전부 해제**: 그 축만 AND 조건에서 **제외**. 「체크가 없으니 0건」이 아니라
-   *   그 축을 조건에서 빼는 것이다 — 나머지 축의 조건만으로 조회한다.
+   * **결합 규칙** — 축 **안**은 OR, 축 **사이**는 AND. 판정은 서버가 한다
+   * (`lib/content-visibility.ts#resolveFacetConditions`) — 보낸 id 를 부모(축)로 다시 묶어
+   * 축 안은 `IN`, 축 사이는 조건을 따로 걸어 AND 가 된다.
    *
-   * 판정은 서버가 한다(`lib/content-visibility.ts#resolveFacetConditions`) — 보낸 id 를
-   * 축별로 묶어 축 안은 `IN`, 축 사이는 조건을 따로 걸어 AND 가 된다.
+   * **예외처리 ① 「좌측영역 전체 선택 = 전체 데이터」** (2026-11-03 회의 확정)
+   * 전부 체크(`null` = 미설정)면 `facetCategoryIds` 를 **아예 보내지 않는다.** 분류 조건이
+   * 걸리지 않아 키워드·게시상태·권한·노출기간만 적용된 전체가 나온다. AND 규칙을 바꾸는 게
+   * 아니라 AND 평가를 건너뛰는 것이라, 「전부 체크 = 전체」와 「축 사이 AND」가 양립한다.
    *
-   * 조건이 걸린 축은 **그 축에 분류가 없는 자료를 탈락**시킨다. 그래서 전부 체크를 조건으로
-   * 쓰는 이 규칙에서는 분류가 비어 있는 자료가 보이지 않는다 — 이는 규칙의 정의대로이며,
-   * 보이게 하려면 카테고리 데이터(미지정 자료)를 채워야 한다.
+   * 이전에는 `null` 을 각 축의 전체 id 로 펼쳐 보냈다. 그러면 전부 체크도 AND 조건이 되어
+   * **그 축에 분류가 없는 자료가 통째로 탈락**했고, 초기 화면이 published 2,461건 중 24건으로
+   * 보였다 — Redmine #2747 의 원인이다.
    *
-   * `null`(초기 미설정) 은 화면상 전부 체크이므로 **전부 체크와 같게** 다룬다.
+   * ⚠️ 전부 체크에서 **한 칸만 꺼도** ① 이 꺼지고 AND 가 되살아나 건수가 크게 떨어진다.
+   * 2026-11-03 회의에서 이 동작을 **수용하기로 결정**했다 — 버그 신고가 들어오면 이 주석을
+   * 먼저 확인할 것. 완화하려면 축마다 「未分類」 선택지를 두는 별건 작업이 필요하다.
+   *
+   * 전부 해제된 축은 보낼 id 가 없어 자연히 조건에서 빠진다(§27.3). 전 축이 해제된 경우만
+   * 조건이 아니라 **0건 확정**이며, 그건 `isAllFacetsCleared`(②) 가 조회 자체를 막는다.
    */
   const facetParams = useMemo<Record<string, string>>(() => {
     const params: Record<string, string> = {};
     const selected = searchParams.facetCategoryIds;
-    const chosen = selected === null ? null : new Set(selected);
-
-    const conditioned: number[] = [];
-    for (const axis of resolveVisibleAxes(categories, isInternal)) {
-      const axisIds = axis.children
-        .filter((child) => isInternal || !child.isInternalOnly)
-        .map((child) => child.id);
-      // null = 초기(전부 체크) — 축 전체가 조건이 된다.
-      const picked = chosen === null ? axisIds : axisIds.filter((id) => chosen.has(id));
-      // 전부 해제된 축만 조건에서 뺀다.
-      if (picked.length > 0) conditioned.push(...picked);
-    }
-
+    // ① 전부 체크 — 분류 조건을 걸지 않는다.
+    if (selected === null) return params;
+    const chosen = new Set(selected);
+    // 축별로 나눠 담을 필요가 없다 — 서버가 부모(축)로 다시 묶는다. 체크가 없는 축은 보낼
+    // id 가 없으므로 결과적으로 조건에서 빠진다.
+    const conditioned = visibleFacetIds.filter((id) => chosen.has(id));
     if (conditioned.length > 0) params.facetCategoryIds = conditioned.join(",");
     return params;
-  }, [searchParams.facetCategoryIds, categories, isInternal]);
+  }, [searchParams.facetCategoryIds, visibleFacetIds]);
+
+  /** 형번 축이 화면에 나오는 탭인지 — `ContentsFacets#showModelAxis` 와 같은 조건이다. */
+  const isModelAxisShown =
+    searchParams.view === "prod" && isProductAxisEnabled && productAxis.length > 0;
+
+  /**
+   * **예외처리 ② 「좌측영역 전체 해제 = 0건」** (2026-11-03 회의 확정).
+   *
+   * 조회하지 않고 목록·총건수·페이지네이션을 0 으로 확정한다. ⚠️ 쿼리를 끄는 것만으로는
+   * 안 된다 — TanStack Query 는 직전 결과를 캐시에 들고 있어 **해제 전 목록이 화면에 그대로
+   * 남는다.** 그래서 아래 렌더에서 데이터·메타·에러를 명시적으로 비운다.
+   *
+   * 선택지가 **하나도 없는** 상태(카테고리 미로딩 등)는 전체 해제로 보지 않는다 — 고를 게
+   * 없는 것과 고르기를 그만둔 것은 다르다. `ContentsFacets#commitCategories` 의
+   * `allCategoryIds.length > 0` 가드와 같은 취지다.
+   *
+   * 형번 축은 제품일람 탭에서만 화면에 나오므로, 자료일람 탭에서는 형번 체크 상태를 판정에
+   * 넣지 않는다.
+   */
+  /**
+   * ② 판정에 필요한 **선택지가 아직 안 온 구간** — 판정을 보류하고 로딩으로 둔다.
+   *
+   * 분류가 전부 해제(`[]`)된 상태는 sessionStorage 로 복원되는데, 그 직후에는 아직
+   * `visibleFacetIds` 가 비어 있어 ② 가 걸리지 않는다. 그대로 두면 **전체 목록이 한 번 보였다가
+   * 0건으로 바뀐다.** 제품일람 탭은 반대 방향으로 튄다 — 형번 축 로딩 중에는
+   * `isModelAxisShown` 이 `false` 라 형번 체크를 보지 않아 **0건 → 결과**로 뒤집힌다.
+   *
+   * 분류가 비어 판정이 걸리는 경우에만 보류한다. 정상 경로(일부 체크·전부 체크)는 건드리지
+   * 않는다.
+   *
+   * ⚠️ **「받아오는 중」일 때만 보류한다**(`isCategoriesLoading`). 조회가 **실패**했거나
+   * 성공했는데 표시 축이 0개면 `visibleFacetIds` 가 영구히 비어, 「비었으면 보류」로 두면
+   * 보류가 풀리지 않는다. 그러면 두 목록 쿼리가 영구 disabled 이고 `isAllFacetsCleared` 는
+   * 거짓이라 `isLoading` 이 참으로 고정돼 **양 탭이 무한 스피너**가 된다 — 0건 메시지도,
+   * 에러도 뜨지 않고 새로고침 외에 탈출 수단이 없었다(2026-11-03 적대적 리뷰 블로커 2).
+   * 보류가 풀리면 `visibleFacetIds` 가 비어 ② 가 걸리지 않으므로 조건 없는 목록이 나온다 —
+   * 변경 전과 같은 동작이다.
+   */
+  const isFacetStatePending =
+    searchParams.facetCategoryIds !== null &&
+    searchParams.facetCategoryIds.length === 0 &&
+    ((visibleFacetIds.length === 0 && isCategoriesLoading) ||
+      (searchParams.view === "prod" && isProductAxisLoading));
+
+  const isAllFacetsCleared =
+    !isFacetStatePending &&
+    visibleFacetIds.length > 0 &&
+    searchParams.facetCategoryIds !== null &&
+    searchParams.facetCategoryIds.length === 0 &&
+    (!isModelAxisShown ||
+      (searchParams.productModelIds !== null && searchParams.productModelIds.length === 0));
+
+  /** ② 전체 해제 시 내려보낼 0건 메타 — 총건수와 페이지네이션도 함께 비운다. */
+  const clearedMeta = useMemo(
+    () => ({ total: 0, page: 1, pageSize, totalPages: 0 }),
+    [pageSize],
+  );
 
   // 컨텐츠 목록 조회 — PAGE_SIZE 공통코드 로딩 중에는 게이트하여 두 번 fetch (20 → sort=1) 회피.
   // 탭별로 조회 대상이 달라 각각 자기 탭에서만 활성화한다 (전환 후 복귀는 캐시에서 즉시).
+  // ② 좌측영역 전체 해제는 조회 없이 0건 확정 — 네트워크 호출 자체를 막는다.
   const isContentsQueryEnabled =
-    !isPageSizeLoading && searchParams.view === "doc";
+    !isPageSizeLoading &&
+    searchParams.view === "doc" &&
+    !isAllFacetsCleared &&
+    !isFacetStatePending;
   const { data: contentsResponse, isLoading, isError: isContentsError } = useQuery({
     queryKey: ["contents", searchParams, pageSize, userScope, sort, facetParams],
     queryFn: async () => {
@@ -491,9 +569,12 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   });
 
   // 제품일람 — 자료 검색 결과를 형번 단위로 묶은 집계 (`/api/products`).
+  // ② 좌측영역(분류 + 형번) 전체 해제는 조회 없이 0건 확정.
   const isProductsQueryEnabled =
     !isPageSizeLoading &&
-    searchParams.view === "prod";
+    searchParams.view === "prod" &&
+    !isAllFacetsCleared &&
+    !isFacetStatePending;
   const {
     data: productsResponse,
     isLoading: isProductsLoading,
@@ -571,15 +652,32 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
   };
 
-  /** 집계 결과를 체크 상태로 환산 — 표시 중인 축의 선택지 중 결과에 나타나는 것만 남긴다. */
-  const toFacetSelection = (availableIds: number[]): number[] => {
+  /**
+   * 집계 결과를 체크 상태로 환산 — 표시 중인 축의 선택지 중 결과에 나타나는 것만 남긴다.
+   *
+   * ⚠️ 결과가 **선택지 전부**면 `null`(미설정 = 전부 체크)로 정규화한다. 그래야 예외처리 ① 이
+   * 걸려 분류 조건 없이 조회된다. 전체 id 를 배열로 그대로 담으면 화면은 초기와 똑같이 전부
+   * 체크인데 서버에는 AND 조건이 나가, 분류가 비어 있는 자료가 탈락한다 — 같은 화면 상태에서
+   * 건수가 달라지는 #2747 의 재발 경로다. `ContentsFacets#commitCategories` 와 같은 규칙이다.
+   */
+  const toFacetSelection = (availableIds: number[]): number[] | null => {
     const available = new Set(availableIds);
-    const selectable = resolveVisibleAxes(categories, isInternal).flatMap((axis) =>
-      axis.children
-        .filter((child) => isInternal || !child.isInternalOnly)
-        .map((child) => child.id),
-    );
-    return selectable.filter((id) => available.has(id));
+    const picked = visibleFacetIds.filter((id) => available.has(id));
+    // ⚠️ **자동 경로는 절대 `[]` 를 만들지 않는다.** `[]` 는 ②(조회 없이 0건) 트리거이고
+    // 그건 **사용자가 직접 전부 해제했을 때만** 성립하는 의미다. 여기서 `[]` 가 나오는 경우가
+    // 둘 있는데 둘 다 「좁힐 근거가 없다」는 뜻이므로 전부 체크(`null`)로 둔다.
+    //
+    //   ① 선택지가 아직 안 옴 (`/api/categories` 미완료·실패) — `visibleFacetIds` 가 비어 있다.
+    //   ② 집계 결과가 표시 축 선택지와 **교집합이 없음** — `resolveAvailableFacets` 가
+    //      `first.length === 0`(매칭 자료에 분류값이 하나도 없음) 또는 `visibleIds.length === 0`
+    //      (분류값이 전부 비표시·폐지 축) 으로 조기반환한 경우. 서버는 `[]` 도 키를 생략하지
+    //      않고 내려보내므로 `?? null` 이 받아 주지 않는다.
+    //
+    // 종전에는 ② 에서 `[]` 가 커밋돼, **키워드에 걸린 자료가 N건 있는데 조회조차 하지 않고
+    // 0건 + 전 체크 해제**로 잠겼다(2026-11-03 적대적 리뷰 블로커 1, 리뷰어 3개 전원 지적).
+    // 서버 `resolveAvailableFacets` 가 2패스 0행에 `return first` 폴백을 둔 것과 같은 취지다.
+    if (picked.length === 0) return null;
+    return picked.length === visibleFacetIds.length ? null : picked;
   };
 
   /**
@@ -822,12 +920,17 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             isInternal={isInternal}
             viewerRoleCode={viewerRoleCode}
             categories={categories}
-            data={contentsResponse?.data ?? []}
-            meta={contentsResponse?.meta}
+            // ② 전체 해제 — 캐시에 남은 직전 결과가 보이지 않게 명시적으로 비운다.
+            data={isAllFacetsCleared ? [] : contentsResponse?.data ?? []}
+            meta={isAllFacetsCleared ? clearedMeta : contentsResponse?.meta}
             // 쿼리 게이트(enabled=false) 시 isLoading=false 로 떨어지므로,
             // PAGE_SIZE 공통코드 로딩 중인 빈 시간을 로딩 상태로 표시 — 빈 화면 방지.
-            isLoading={isLoading || (searchParams.view === "doc" && !isContentsQueryEnabled)}
-            isError={isContentsError}
+            // 단 ② 전체 해제는 결과가 확정된 0건이므로 로딩으로 보이면 안 된다.
+            isLoading={
+              !isAllFacetsCleared &&
+              (isLoading || (searchParams.view === "doc" && !isContentsQueryEnabled))
+            }
+            isError={!isAllFacetsCleared && isContentsError}
             pageSize={pageSize}
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
@@ -835,14 +938,16 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             sortResetKey={sortResetKey}
             initialSort={initialGridSort}
             view={searchParams.view}
-            productData={productsResponse?.data ?? []}
-            productMeta={productsResponse?.meta}
-            // 型番 축 전부 해제는 조회 없이 0건 확정 — 로딩으로 보이면 안 된다.
+            // ② 전체 해제 — 캐시에 남은 직전 결과가 보이지 않게 명시적으로 비운다.
+            productData={isAllFacetsCleared ? [] : productsResponse?.data ?? []}
+            productMeta={isAllFacetsCleared ? clearedMeta : productsResponse?.meta}
+            // ② 전체 해제는 조회 없이 0건 확정 — 로딩으로 보이면 안 된다.
             isProductLoading={
-              isProductsLoading ||
-              (searchParams.view === "prod" && !isProductsQueryEnabled)
+              !isAllFacetsCleared &&
+              (isProductsLoading ||
+                (searchParams.view === "prod" && !isProductsQueryEnabled))
             }
-            isProductError={isProductsError}
+            isProductError={!isAllFacetsCleared && isProductsError}
             isProductAxisEnabled={isProductAxisEnabled}
           />
         </div>

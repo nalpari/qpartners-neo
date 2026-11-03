@@ -89,7 +89,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 체크된 축만 조건이 된다 — 체크가 없으면 빈 조건이다 (거르지 않는다).
-    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? []);
+    // 전부 체크(①)는 클라이언트가 `facetCategoryIds` 를 보내지 않아 여기서 빈 조건이 된다.
+    // `scope` 는 예외처리 ③ — 공개 자료가 0건인 선택지를 조건에서 뺀다 (Redmine #2745).
+    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? [], {
+      internal,
+      roleCode: user ? user.role : null,
+      now,
+    });
+    // 분류 체크는 있었는데 ③ 이 전부 걸러 조건이 0개가 된 경우 — 조회하지 않고 0건이다.
+    // 「조건 없음」(= 전부 체크, ①)과 구분된다.
+    if (facetConditions.unsatisfiable) return emptyResponse;
     andConditions.push(...facetConditions.conditions);
 
     const keywordTokens = tokenizeKeyword(keyword);

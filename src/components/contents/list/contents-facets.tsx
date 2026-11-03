@@ -60,15 +60,28 @@ interface ContentsFacetsProps {
  * 그 방식의 실패 사례다. 축의 구성·순서·표시 여부는 전부 카테고리관리에서 정해진다.
  *
  * 결합 규칙은 **축 안에서는 OR, 축 사이는 AND** 이며 서버가 판정한다
- * (`lib/content-visibility.ts#resolveFacetConditions`). 축의 상태별 취급은 계획서 §27.3
- * (2026-10-23 사용자 확정)을 따른다.
+ * (`lib/content-visibility.ts#resolveFacetConditions`).
  *
- * - **전부 체크·일부 체크** → 그 축이 AND 조건 대상이 된다
- * - **전부 해제** → 그 축만 AND 조건에서 **빠진다**. 조회 자체에서 빠지는 것이 아니므로
- *   결과는 **0건이 되지 않고 오히려 넓어진다**
+ * **상태별 취급 — 2026-11-03 회의 확정 「예외처리 3건」** (계획서 §27.6)
  *
- * 초기 상태(`facetCategoryIds: null` = 미설정)는 화면에 전부 체크로 보이고 서버에도 전부
- * 체크와 같은 조건이 나간다 — 조립은 `contents-contents.tsx` 의 `facetParams` 가 한다.
+ * - **전 축 전부 체크**(= 아래 `すべて選択`, 그리고 초기 상태) → 분류·형번 조건을 **아예 보내지
+ *   않는다.** 분류 조건 없이 키워드·게시상태·권한·노출기간만 적용된 전체가 나온다 (①).
+ *   종전에는 전체 id 로 펼쳐 보내 AND 조건이 됐고, 그래서 분류가 비어 있는 자료가 초기 화면에서
+ *   통째로 빠졌다 (Redmine #2747).
+ * - **전 축 전부 해제**(= 아래 `すべて解除`) → **조회하지 않고 0건** 이며 목록·총건수·
+ *   페이지네이션을 함께 비운다 (②). 종전에는 전 축이 조건에서 빠져 **오히려 넓어졌다.**
+ * - **한 축만 전부 해제** → §27.3 대로 **그 축만** AND 조건에서 빠진다. 전 축이 해제될 때만
+ *   ② 가 걸린다.
+ * - **일부 체크** → 그 축이 AND 조건 대상이 된다. ⚠️ 전부 체크에서 **한 칸만 꺼도** ① 이
+ *   꺼지고 AND 가 되살아나 건수가 크게 떨어진다 — 회의에서 **수용하기로 결정**했다. 버그가
+ *   아니다. 완화안(축마다 「未分類」 선택지 추가)은 미채택·별건이다.
+ * - **공개 자료가 0건인 선택지** → 조건에서만 빠진다. 체크는 **그대로 둔다** — 형번과 달리
+ *   분류는 비활성화하지 않는다 (③).
+ *
+ * 초기 상태(`facetCategoryIds: null` = 미설정)와 전부 체크는 **같게 다룬다** — 아래
+ * `commitCategories` 가 전부 체크를 `null` 로 정규화하고, `contents-contents.tsx` 의
+ * `facetParams` 가 그 `null` 에서 파라미터를 생략한다. 판정이 상태 기반이라 체크를 끄고 다시
+ * 켜는 왕복은 원상복귀된다.
  *
  * **축별 건수는 표시하지 않는다.** 목업도 같은 결론(B안)이며 사유도 같다 — 축 수만큼
  * COUNT 쿼리가 늘어 검색 본체보다 무거워진다. 총 건수만 목록 상단에 낸다.
@@ -202,17 +215,26 @@ export function ContentsFacets({
   // (분류가 없는 자료까지 포함한 전체)으로 돌아간다. 전체 id 를 그대로 조건으로 보내면
   // 분류가 하나도 없는 자료가 빠져 초기 건수와 어긋난다.
   //
-  // ⚠️ `all*.length > 0` 가드가 필요하다. 축 데이터가 아직 안 왔거나(`/api/categories` 미완료)
-  // 조건을 만족하는 형번이 0건이면 `all*.length === 0` 이고, 그때 「전부 해제」를 누르면
-  // `next.length === 0 === all.length` 가 성립해 `null`(= 화면 전부 체크)로 뒤집힌다 —
-  // 누른 버튼과 정반대 결과가 된다.
+  // 전부 체크로 되돌아오면 `null`(미설정)로 정규화한다 — 예외처리 ① 로 분류 조건이 생략돼
+  // 초기 화면과 같은 조건이 된다.
+  //
+  // ⚠️ **선택지가 0개면 `null` 로 둔다.** 축 데이터가 아직 안 왔거나(`/api/categories`
+  // 미완료·실패) 표시 축이 0개면 `all*.length === 0` 인데, 그때 「전부 해제」를 눌러 `[]` 가
+  // 커밋되면 예외처리 ②(조회 없이 0건) 가 걸려 **목록이 무한 스피너로 잠긴다** — 0건 메시지도
+  // 에러도 뜨지 않고, 「전부 선택」을 눌러도 같은 경로로 다시 `[]` 가 커밋돼 탈출할 수 없었다
+  // (2026-11-03 적대적 리뷰 블로커 2). 「선택지가 0개인 축은 전부 해제로 보지 않는다」는
+  // 2026-11-03 회의 확정 사항과도 같은 방향이다.
+  //
+  // 종전 주석은 같은 `all*.length === 0` 상황에서 `null` 로 뒤집히는 것을 막으려 했는데,
+  // 고를 선택지가 하나도 없으면 체크/해제 어느 쪽으로도 보여 줄 것이 없어 그 우려는 성립하지
+  // 않는다. 반면 `[]` 의 귀결은 ② 도입으로 「넓어짐」에서 「0건 잠금」으로 바뀌었다.
   const commitCategories = (next: number[]) =>
     onCategoryIdsChange(
-      allCategoryIds.length > 0 && next.length === allCategoryIds.length ? null : next,
+      allCategoryIds.length === 0 || next.length === allCategoryIds.length ? null : next,
     );
   const commitModels = (next: number[]) =>
     onProductModelIdsChange(
-      allProductModelIds.length > 0 && next.length === allProductModelIds.length
+      allProductModelIds.length === 0 || next.length === allProductModelIds.length
         ? null
         : next,
     );

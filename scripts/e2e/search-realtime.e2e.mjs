@@ -108,8 +108,12 @@ test("3자 미만으로 지우면 검색어만 빼고 현재 조건으로 재조
 
     // 3자 이상 검색은 좌측 체크를 결과에 맞춰 좁힌다(REQ-004, 사용자 요구). 그 체크가
     // 이후의 기준이 된다 — 아래 재조회가 이 값을 그대로 쓰는지 본다.
+    //
+    // `null`(= `facetCategoryIds` 미전송)도 **정상값**이다. 집계 결과가 표시 중인 선택지를
+    // 전부 덮으면 `toFacetSelection` 이 전부 체크로 정규화하고, 예외처리 ①(2026-11-03 회의)에
+    // 따라 파라미터가 생략된다. 그래서 「실렸는지」를 단언하지 않고, 아래에서 재조회가 **같은
+    // 값**(둘 다 `null` 이어도 성립)을 쓰는지만 본다.
     const axisAfterSearch = lastFacetParam(listCallsOnly(calls));
-    assert(axisAfterSearch !== null, "검색 조회에 분류축 조건이 실리지 않았습니다");
     calls.length = 0;
 
     const restored = await fillAndWait(page, "PH");
@@ -151,9 +155,10 @@ test("2자 이하로 지워도 좌측 체크가 전체 선택으로 리셋되지
     });
     await openDocContents(page);
 
-    // 진입 시점의 축 — 화면 오픈은 전부 체크다(고객 요구). 이 값으로 되돌아가면 안 된다.
+    // 진입 시점의 축 — 화면 오픈은 전부 체크이고, 예외처리 ①(2026-11-03 회의)에 따라
+    // `facetCategoryIds` 가 **전송되지 않는다**(= `null`). 이 상태로 되돌아가면 안 된다.
     const axisOnOpen = lastFacetParam(listCallsOnly(calls));
-    assert(axisOnOpen !== null, "진입 조회에 분류축 조건이 실리지 않았습니다");
+    assertEqual(axisOnOpen, null, "진입 조회에 분류축 조건이 실렸습니다 — 예외처리 ① 위반");
 
     await typeAndWait(page, "PHASE9-TEST");
     calls.length = 0;
@@ -162,8 +167,9 @@ test("2자 이하로 지워도 좌측 체크가 전체 선택으로 리셋되지
     // 2026-10-28 구현은 빈 키워드를 받으면 축을 **미설정(전부 체크)** 으로 되돌렸다. 그러면
     // 좁혀 둔 체크가 글자를 지우는 순간 날아간다 — 2026-10-29 사용자 확인으로 실시간
     // 경로에서는 되돌리지 않기로 했다. 전체 선택 복귀는 아래 「[검색] 클릭」 케이스뿐이다.
-    const axisAfterErase = lastFacetParam(listCallsOnly(calls));
-    assert(axisAfterErase !== null, "검색어를 지웠는데 재조회가 나가지 않았습니다");
+    const reQueries = listCallsOnly(calls);
+    assert(reQueries.length > 0, "검색어를 지웠는데 재조회가 나가지 않았습니다");
+    const axisAfterErase = lastFacetParam(reQueries);
     assert(
       axisAfterErase !== axisOnOpen,
       `2자 이하로 지웠는데 축이 전체 선택으로 되돌아갔습니다 — ${axisAfterErase}`,
@@ -220,21 +226,39 @@ test("디바운스 — 연속 타이핑에도 목록 조회는 1회", async () =
   });
 });
 
-test("Enter 는 글자수와 무관하게 즉시 검색한다", async () => {
+test("Enter 는 글자수와 무관하게 즉시 조회를 보낸다", async () => {
   await withPage({ role: "store1" }, async (page) => {
-    const before = await openDocContents(page);
+    const calls = [];
+    page.on("request", (r) => {
+      const u = r.url();
+      if (u.includes("/api/contents?")) calls.push(decodeURIComponent(u));
+    });
+    await openDocContents(page);
+    calls.length = 0;
 
-    // 2자 — 실시간 게이트에는 걸리지만 명시적 검색은 통과해야 한다
-    const after = await actAndWait(page, async () => {
+    // 2자 — 실시간 게이트(3자)에는 걸리지만 **명시적 검색은 요청을 보낸다.**
+    //
+    // ⚠️ **건수로는 판정할 수 없다.** 서버 스키마(`searchKeyword`, `lib/schemas/common.ts`)가
+    // 3자 미만을 조건에서 버리므로 2자 Enter 의 결과 집합은 「키워드 없음」과 같다. 게다가
+    // `resolveFacetPatch` 가 3자 미만 + 명시적 검색에서 좌측 체크를 전체 선택으로 되돌리므로
+    // 분류 조건도 같아진다 — 건수가 바뀔 수 없다.
+    //
+    // 종전 이 케이스는 `before !== after` 를 단언했다. PR #304(`38e42794`)가 3자 게이트를
+    // 클라이언트에 통일하기 전에는 2자도 「키워드 있음」으로 보고 전건 기준 집계로 체크를
+    // 덮어 건수가 움직였다. 그 커밋 이후로 **구조적으로 깨진 단언**이며 2026-11-03 E2E 실행에서
+    // 드러났다(이 변경과 무관한 선행 회귀). 조회가 나갔는지로 판정을 바꾼다.
+    await actAndWait(page, async () => {
       const input = page.locator(SEARCH_INPUT);
       await input.click();
       await input.type("G2", { delay: 40 });
       await page.keyboard.press("Enter");
     });
 
+    const sent = listCallsOnly(calls);
+    assert(sent.length > 0, "2자 Enter 가 목록 조회를 보내지 않았습니다");
     assert(
-      after !== null && after !== before,
-      `2자 Enter 검색이 반영되지 않았습니다 — 전 ${before} / 후 ${after}`,
+      /[?&]keyword=G2(&|$)/.test(sent.at(-1)),
+      `2자 Enter 가 검색어를 싣지 않았습니다 — ${sent.at(-1)}`,
     );
   });
 });

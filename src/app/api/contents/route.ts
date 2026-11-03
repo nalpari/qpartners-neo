@@ -155,11 +155,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // publication window 경계값 일관성 — 동일 where 절 안의 now 를 상수화.
+    // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
+    // 아래 분류축 조건(예외처리 ③)이 연결 자료를 셀 때도 이 스냅샷을 쓴다.
+    const now = new Date();
+
     // 분류축(facet) 필터 — 검색 고도화 REQ-002/004. 축 안에서는 OR, 축 사이는 AND.
     // 위 categoryIds(교집합) 와 의미가 다른 별개 파라미터다 — 현행 목록 화면이 categoryIds 를
     // 쓰고 있어 그대로 두고, 신규 사이드바만 이 축 방식을 쓴다.
     // 체크된 축만 조건이 된다 — 체크가 없으면 빈 조건이다 (거르지 않는다).
-    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? []);
+    // 전부 체크(①)는 클라이언트가 `facetCategoryIds` 를 보내지 않아 여기서 빈 조건이 된다.
+    // `scope` 는 예외처리 ③ — 공개 자료가 0건인 선택지를 조건에서 뺀다 (Redmine #2745).
+    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? [], {
+      internal,
+      roleCode: user ? user.role : null,
+      now,
+    });
     // ⚠️ 축 조건은 `andConditions`(그 외 전부)와 **따로 모은다**. REQ-004 의 「키워드 연동
     // 카테고리 체크」 집계가 **축 조건을 뺀 집합**을 세야 하기 때문이다 — 체크 결과로 다시
     // 세면 「해제 → 결과 변함 → 또 해제」가 연쇄해 상태가 수렴하지 않는다
@@ -175,16 +186,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (categoryEmpty) {
+    // `facetConditions.unsatisfiable` — 분류 체크는 있었는데 ③ 이 전부 걸러 조건이 0개가 된
+    // 경우다. 「조건 없음」(= 전부 체크, ①)과 달리 조회하지 않고 0건이다.
+    if (categoryEmpty || facetConditions.unsatisfiable) {
       return NextResponse.json({
         data: [],
         meta: { total: 0, page, pageSize, totalPages: 0 },
       });
     }
 
-    // publication window 경계값 일관성 — 동일 where 절 안의 now 를 상수화.
-    // (findMany / count 가 Promise.all 로 병렬 실행되어도 같은 스냅샷 사용)
-    const now = new Date();
     // 게시 **종료** 경계는 "종료 시각이 속한 시간대의 끝까지" 다 — `canAccessContent`(auth.ts)
     // 와 `publishedTargetFilter`(content-visibility.ts) 가 쓰는 기준과 같아야 한다.
     // 아래 raw SQL 분기(sortCategoryCode 정렬)가 `now` 로 비교하고 있어, 14:00 종료 자료가
