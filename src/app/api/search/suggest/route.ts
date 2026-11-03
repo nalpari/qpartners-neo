@@ -23,6 +23,9 @@ import { MODEL_CODE_SEARCH_MIN, suggestQuerySchema } from "@/lib/schemas/product
  *     (타이핑 중 매 글자마다 에러를 내지 않는다)
  *   - 후보 대상은 **형번 + 콘텐츠 제목뿐**. 첨부파일명과 본문은 보지 않는다
  *     (본문 제외는 §5-① 확정, 첨부파일명은 목업 주석의 명시 제외 항목)
+ *   - **조회 가능한 자료가 있는 것만** 후보가 된다 (Redmine #2748, 2026-11-03 회의 예외처리 ③).
+ *     자료 후보는 `contentWhere` 가 이미 그 역할을 하고, 제품 후보는 아래 `contents.some` 이 한다.
+ *     판정은 **보는 사람 기준**이라 사내 사용자에게 후보가 더 많이 나온다
  *   - 표시 순서는 `[제품]` → `[자료]`, 종류별 기본 4건
  *
  * 제품 후보의 부제(목업 `p.status==="eol" ? "販売終了品" : p.cat`)는 **카테고리명으로만**
@@ -75,6 +78,19 @@ export async function GET(request: NextRequest) {
         where: {
           ...productModelVisibilityFilter(internal),
           modelCode: { contains: keywordPattern },
+          // 공개 자료가 **한 건이라도 연결된** 형번만 후보로 낸다 (Redmine #2748, 예외처리 ③).
+          // 후보는 검색어를 바꾸는 게 아니라 제품상세로 가는 바로가기라서, 자료 0건 형번을
+          // 내보내면 들어간 화면이 비어 있다. 범위는 사이드바 형번의
+          // `hasDocuments`(`/api/products/axis`) 와 **같아야 한다** — 갈라지면 「좌측에서는
+          // 비활성인데 자동완성에는 뜬다」가 된다.
+          contents: {
+            some: {
+              content: {
+                status: "published",
+                ...(internal ? {} : publishedTargetFilter(user ? user.role : null, now)),
+              },
+            },
+          },
         },
         include: { category: PRODUCT_MODEL_CATEGORY_SELECT },
         orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { modelCode: "asc" }],
