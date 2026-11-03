@@ -14,8 +14,8 @@
 // 자료가 2,461건 중 24건뿐이다(2026-11-02 실측). 이 급락은 회의에서 **수용하기로 결정**했다 —
 // 그래서 이 스펙은 「해제하면 넓어진다」를 **초기 건수와 비교하지 않는다.**
 //
-// ③ 은 「연결 자료 0건인 선택지」가 개발 DB 에 존재한다고 보장할 수 없어 E2E 로 고정하지
-// 않는다. 근거는 `lib/content-visibility.ts#resolveFacetConditions` 주석에 있다.
+// ③ 은 「연결 자료 0건인 선택지」를 **집계로 찾아서** 검증한다 — 개발 DB 에 그런 선택지가
+// 없으면 SKIP 이다. 카테고리 명칭은 코드에 박지 않는다(파일 상단 주석).
 //
 // 이 스펙은 **절대 건수를 단언하지 않고 상대 비교만** 한다 — ② 의 0건만 예외다.
 //
@@ -257,6 +257,67 @@ test("분류 정렬 + 키워드 조합이 500 이 되지 않는다", async () =>
       `분류 정렬(${axisCode}) + 키워드 "${keyword}" 조회가 실패했습니다 — ${body}`,
     );
   }
+});
+
+test("단독 선택이 전건을 반환하지 않는다 (예외처리 ③)", async () => {
+  // ③ 은 공개 자료가 한 건도 없는 선택지를 조건에서 뺀다. 그 결과 **유효한 체크가 0개**가 되면
+  // 「전부 해제」와 같은 상태이므로 0건이다.
+  //
+  // 처음 구현은 전건이었다 — 조건이 전부 걸러지면 `conditions: []` 가 되고 호출부가 그것을
+  // 「조건 없음」으로 받아, **체크 1개만 켜진 상태로 published 전건**이 나왔다(2026-11-03 화면
+  // 확인에서 드러남). 「파라미터 미전송 = 전체 선택 = 전건」(①)과 구분되어야 한다.
+  //
+  // 카테고리 명칭을 코드에 박지 않는다. 표시 축의 2Depth 를 **하나씩 단독으로** 걸어 보고,
+  // 전체 건수와 **똑같은 결과**를 내는 선택지가 하나라도 있으면 FAIL 이다 — 그게 조건이
+  // 통째로 빠졌다는 신호다. 자료 0건 선택지는 0 을, 자료 있는 선택지는 전체보다 작은 수를
+  // 돌려줘야 한다.
+  //
+  // ⚠️ 어떤 분류가 **모든 자료에 붙어 있으면** 단독 선택이 전건과 같아져 오탐이 된다. 개발 DB
+  // 최대는 `情報種別` 의 한 선택지로 2,461건 중 2,402건이라 여유가 있다(2026-11-03 실측).
+  // 오탐이 나면 그 분류의 커버리지를 먼저 확인할 것.
+  const token = await signToken("super");
+  const cookie = `qp-auth-token=${token}`;
+
+  const treeRes = await fetch(`${BASE_URL}/api/categories?activeOnly=true`, {
+    headers: { cookie },
+  });
+  assertEqual(treeRes.status, 200, "카테고리 트리 조회가 실패했습니다");
+  const axes = ((await treeRes.json()).data ?? []).filter((a) => a.isVisible !== false);
+  const selectable = axes.flatMap((a) => (a.children ?? []).map((c) => c.id));
+  assert(selectable.length > 0, "표시 축에 선택지가 없어 판정할 수 없습니다");
+
+  const baseRes = await fetch(`${BASE_URL}/api/contents?page=1&pageSize=1`, {
+    headers: { cookie },
+  });
+  assertEqual(baseRes.status, 200, "분류 조건 없는 조회가 실패했습니다");
+  const unfiltered = (await baseRes.json()).meta?.total;
+  assert(
+    typeof unfiltered === "number" && unfiltered > 0,
+    `분류 조건 없는 전체 건수를 읽지 못했습니다 — ${unfiltered}`,
+  );
+
+  const totals = [];
+  for (const id of selectable) {
+    const res = await fetch(
+      `${BASE_URL}/api/contents?page=1&pageSize=1&facetCategoryIds=${id}`,
+      { headers: { cookie } },
+    );
+    assertEqual(res.status, 200, `facetCategoryIds=${id} 조회가 실패했습니다`);
+    totals.push({ id, total: (await res.json()).meta?.total });
+  }
+
+  const leaked = totals.filter((t) => t.total === unfiltered);
+  assert(
+    leaked.length === 0,
+    `단독 선택인데 전건(${unfiltered}건)이 나온 선택지가 있습니다 — ` +
+      `id=${leaked.map((t) => t.id).join(",")}. ③ 이 조건을 비워 「조건 없음」으로 흘렀습니다`,
+  );
+
+  // 과도하게 지우지 않는지 — 자료가 있는 선택지는 0 이 아니어야 한다.
+  assert(
+    totals.some((t) => t.total > 0),
+    "모든 선택지가 0건입니다 — ③ 이 과도하게 걸러내고 있습니다",
+  );
 });
 
 process.exitCode = (await run("좌측영역 분류축 필터")) > 0 ? 1 : 0;

@@ -52,6 +52,17 @@ export interface FacetGroup {
 export interface FacetConditions {
   groups: FacetGroup[];
   conditions: Prisma.ContentWhereInput[];
+  /**
+   * **고른 것이 있었는데 조건이 하나도 안 남았다** — 호출부는 조회하지 말고 0건을 반환해야 한다.
+   *
+   * 예외처리 ③ 이 공개 자료 0건인 선택지를 걸러낸 결과 유효한 체크가 0개가 된 경우다.
+   * 이걸 그냥 `conditions: []` 로 돌려주면 호출부가 「조건 없음」으로 받아 **전건**이 나간다 —
+   * 체크 1개만 켜져 있는데 published 전건이 보인다(2026-11-03 화면 확인에서 드러남).
+   * 유효 체크가 0개면 「전부 해제」와 같은 상태이므로 예외처리 ② 를 따라 0건이 맞다.
+   *
+   * 입력 자체가 비어 있는 경우(= 전부 체크, ①)와는 **다르다.** 그쪽은 조건 없음이 맞다.
+   */
+  unsatisfiable: boolean;
 }
 
 /** 분류축 필터 입력 상한 — 선택 ID 가 그대로 IN 절 길이가 되므로 방어적으로 자른다. */
@@ -98,13 +109,16 @@ export interface FacetScope {
  * 판정은 **전역**이다 — 키워드 결과 기준이 아니다. 「이번 검색 결과에 없는 분류」는
  * `resolveAvailableFacets` 기반 자동 체크 동기화가 담당한다.
  *
- * ⚠️ **③ 이 체크된 선택지를 전부 떨어뜨리면 분류 조건이 통째로 사라진다 — 즉 전건이 된다.**
- * 공개 자료 0건인 선택지 하나만 체크한 상태가 그 경우다: `selectedByAxis` 가 비어
- * `conditions` 가 `[]` 가 되고, 호출부는 그것을 「조건 없음」으로 받는다. 화면은 체크 1개만
- * 켜진 상태로 published 전건을 보여준다. **2026-11-03 사용자 결정으로 이 동작을 유지한다** —
- * 대안은 0건 확정인데, 그건 ③ 이 없애려던 「체크했는데 0건」(Redmine #2745) 과 정반대다.
- * 2026-11-03 적대적 리뷰 블로커 3 으로 보고돼 「지금 그대로」로 확정된 항목이다.
- * 개발 DB 실측: 사이드바 선택지 26개 중 공개 자료 0건이 3개
+ * ⚠️ **③ 이 체크된 선택지를 전부 떨어뜨리면 `unsatisfiable` 로 신호한다 — 호출부는 0건이다.**
+ * 공개 자료 0건인 선택지 하나만 체크한 상태가 그 경우다. 그대로 `conditions: []` 를 돌려주면
+ * 호출부가 「조건 없음」으로 받아 **전건**이 나간다 — 체크 1개만 켜져 있는데 published 전건이
+ * 보인다(2026-11-03 화면 확인에서 실제로 드러났다).
+ *
+ * ③ 의 기준은 형번 비활성화와 같다 — 「무의미한 선택지가 조회에 끼어들지 못하게」다. 그 선택지를
+ * 뺀 뒤 **유효한 체크가 0개**면 「전부 해제」와 같은 상태이므로 예외처리 ② 를 따라 0건이 맞다.
+ * 「체크했는데 0건」(Redmine #2745) 은 전체선택 상태의 문제였고 그건 ① 이 막는다 — 재발이 아니다.
+ *
+ * 개발 DB 실측: 비사내 사이드바 선택지 24개 중 공개 자료 0건이 3개
  * (`情報種別/その他`, `資料分類/各種申請書式・フォーマット`, `資料分類/カタログ`).
  *
  * ⚠️ ③ 의 집계는 `status: "published"` 로 고정이다 — 형번 `hasDocuments` 와 같은 기준을 쓰기
@@ -127,7 +141,9 @@ export async function resolveFacetConditions(
   scope: FacetScope | null,
 ): Promise<FacetConditions> {
   const selectedIds = [...new Set(categoryIds)].slice(0, FACET_ID_LIMIT);
-  if (selectedIds.length === 0) return { groups: [], conditions: [] };
+  // 입력이 비었으면 「전부 체크」(①)다 — 조건 없음이 맞다. `unsatisfiable` 과 구분된다.
+  if (selectedIds.length === 0)
+    return { groups: [], conditions: [], unsatisfiable: false };
 
   // 선택값의 부모(=축)로 묶는다. 축 목록(`axisIds`)은 더 이상 조건을 만들지 않으므로
   // (체크가 없는 축은 조건이 아니다) 여기서는 부모 조회만으로 충분하다.
@@ -183,7 +199,9 @@ export async function resolveFacetConditions(
     conditions.push({ categories: { some: { categoryId: { in: selected } } } });
   }
 
-  return { groups, conditions };
+  // 고른 것이 있었는데 조건이 하나도 안 남았다 — ③ 이 전부 걸렀거나(공개 자료 0건 선택지만
+  // 체크) 입력이 1Depth 뿐이었다. 어느 쪽이든 「조건이 될 수 있는 체크가 0개」이므로 0건이다.
+  return { groups, conditions, unsatisfiable: conditions.length === 0 };
 }
 
 /**

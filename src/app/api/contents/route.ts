@@ -186,7 +186,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (categoryEmpty) {
+    // `facetConditions.unsatisfiable` — 분류 체크는 있었는데 ③ 이 전부 걸러 조건이 0개가 된
+    // 경우다. 「조건 없음」(= 전부 체크, ①)과 달리 조회하지 않고 0건이다.
+    if (categoryEmpty || facetConditions.unsatisfiable) {
       return NextResponse.json({
         data: [],
         meta: { total: 0, page, pageSize, totalPages: 0 },
