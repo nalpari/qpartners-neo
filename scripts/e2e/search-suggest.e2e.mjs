@@ -91,6 +91,10 @@ test("3자 이상 입력하면 후보가 [製品] → [資料] 순으로 뜬다"
     assertEqual(await page.locator(SUGGEST_BOX).count(), 1, "드롭다운이 열리지 않았습니다");
     const kinds = await readKinds(page);
     assert(kinds.length > 0, "후보가 0건입니다");
+    // ⚠️ #2748(2026-11-03) 로 **공개 자료가 0건인 형번은 후보에서 빠진다.** `Q.TRON` 은
+    // 개발 DB 에서 노출 형번 5건 중 1건(`Q.TRON M-G2+ 440`, 자료 4건)만 남는다(2026-11-03
+    // 실측) — 그 1건이 자료 연결을 잃으면 이 단언이 깨진다. 그때는 `[3]` 기준으로 자료가
+    // 붙은 다른 형번명으로 키워드를 바꿀 것.
     assert(kinds.includes("製品"), "제품 후보가 없습니다");
     const lastProduct = kinds.lastIndexOf("製品");
     const firstDoc = kinds.indexOf("資料");

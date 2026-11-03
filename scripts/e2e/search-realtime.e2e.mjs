@@ -108,8 +108,12 @@ test("3자 미만으로 지우면 검색어만 빼고 현재 조건으로 재조
 
     // 3자 이상 검색은 좌측 체크를 결과에 맞춰 좁힌다(REQ-004, 사용자 요구). 그 체크가
     // 이후의 기준이 된다 — 아래 재조회가 이 값을 그대로 쓰는지 본다.
+    //
+    // `null`(= `facetCategoryIds` 미전송)도 **정상값**이다. 집계 결과가 표시 중인 선택지를
+    // 전부 덮으면 `toFacetSelection` 이 전부 체크로 정규화하고, 예외처리 ①(2026-11-03 회의)에
+    // 따라 파라미터가 생략된다. 그래서 「실렸는지」를 단언하지 않고, 아래에서 재조회가 **같은
+    // 값**(둘 다 `null` 이어도 성립)을 쓰는지만 본다.
     const axisAfterSearch = lastFacetParam(listCallsOnly(calls));
-    assert(axisAfterSearch !== null, "검색 조회에 분류축 조건이 실리지 않았습니다");
     calls.length = 0;
 
     const restored = await fillAndWait(page, "PH");
