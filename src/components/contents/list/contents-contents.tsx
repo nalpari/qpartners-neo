@@ -57,23 +57,23 @@ interface SearchFilters {
 /**
  * 분류축·형번축 선택 상태.
  *
- * 값이 셋이다:
- * - `null` = **미설정(초기 상태)**. 화면에는 **전부 체크**로 보이고, 서버에도 **전부 체크와 같은
- *   조건**(각 축의 전체 id)이 나간다 — 「전부 체크 = AND 조건 대상」 이라는 2026-10-23 사용자
- *   결정 때문이다(목업 `01-search.html:1317` 도 전 항목 `checked` 로 그린다). 조립은
- *   `facetParams` 가 한다. 전체 id 를 state 에 채우지 않는 이유는 축 데이터가 비동기로 와서
- *   `useEffect` 안 setState 가 필요해지기 때문이다(React Compiler 금지 규칙).
- * - `[]` = 사용자가 **전부 해제**했다. 전부 해제된 축만 조건에서 빠진다(§27.3).
- * - 그 외 = 체크된 id 만 조건으로 보낸다.
+ * 값이 셋이고, **2026-11-03 회의 확정 예외처리**(계획서 §33)로 각각의 의미가 바뀌었다.
  *
- * 그래서 `null` 과 `[]` 는 **서버 조건이 다르다** — `null` 은 축 전체가 조건이 되고, `[]` 는 그
- * 축이 조건에서 빠진다. 둘을 하나로 합치면 「전부 해제」를 눌러도 다시 전부 체크로 보여
- * 버튼이 듣지 않는 것처럼 된다.
+ * - `null` = **미설정 = 전부 체크**. 화면에는 전부 체크로 보이고, 서버에는 `facetCategoryIds` 를
+ *   **아예 보내지 않는다**(①). 분류 조건 없이 키워드·게시상태·권한·노출기간만 적용된 전체가
+ *   나온다. 조립은 `facetParams` 가 한다. 전체 id 를 state 에 채우지 않는 이유는 축 데이터가
+ *   비동기로 와서 `useEffect` 안 setState 가 필요해지기 때문이다(React Compiler 금지 규칙).
+ *   ⚠️ 종전에는 이 `null` 을 각 축의 전체 id 로 **펼쳐 보냈다.** 그러면 전부 체크도 AND 조건이
+ *   되어 그 축에 분류가 없는 자료가 통째로 탈락했고, 초기 화면이 published 2,461건 중 표시
+ *   4축을 모두 가진 24건으로 보였다 — Redmine #2747 의 원인이다. **되돌리지 말 것.**
+ * - `[]` = **사용자가 직접 전부 해제**했다. 조회하지 않고 **0건**이다(②). 종전에는 전 축이
+ *   조건에서 빠져 오히려 넓어졌다.
+ *   ⚠️ **자동 경로는 `[]` 를 만들어서는 안 된다.** `[]` 는 사용자 의도의 표현이다. 집계 동기화
+ *   (`toFacetSelection`)와 상단 버튼(`ContentsFacets#commitCategories`)에 그 가드가 있다.
+ * - 그 외 = 체크된 id 만 조건으로 보낸다. 축 안 OR / 축 사이 AND.
  *
- * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 개발 DB 는 축이 5개이고
- * 전 축에 분류를 가진 published 자료가 2,459건 중 21건뿐이라, 초기 화면이 21건으로 보인다.
- * 제품일람은 형번 연결 자료가 7건(축 커버리지 최대 3개)이어서 전 축 조건 시 0건이 된다 —
- * 구현 문제가 아니라 데이터 상태다(2026-10-26 실측).
+ * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 그래서 전부 체크에서
+ * 한 칸만 꺼도 ① 이 꺼지고 건수가 크게 떨어진다 — 회의에서 **수용 결정**했다. 버그가 아니다.
  */
 interface FacetSelection {
   /** 체크된 2Depth 카테고리 id — 서버 `facetCategoryIds` 와 1:1. `null` = 미설정(전부 체크 표시) */
@@ -376,6 +376,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const {
     data: categories = [],
     isError: isCategoriesError,
+    isLoading: isCategoriesLoading,
   } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
@@ -488,11 +489,19 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    *
    * 분류가 비어 판정이 걸리는 경우에만 보류한다. 정상 경로(일부 체크·전부 체크)는 건드리지
    * 않는다.
+   *
+   * ⚠️ **「받아오는 중」일 때만 보류한다**(`isCategoriesLoading`). 조회가 **실패**했거나
+   * 성공했는데 표시 축이 0개면 `visibleFacetIds` 가 영구히 비어, 「비었으면 보류」로 두면
+   * 보류가 풀리지 않는다. 그러면 두 목록 쿼리가 영구 disabled 이고 `isAllFacetsCleared` 는
+   * 거짓이라 `isLoading` 이 참으로 고정돼 **양 탭이 무한 스피너**가 된다 — 0건 메시지도,
+   * 에러도 뜨지 않고 새로고침 외에 탈출 수단이 없었다(2026-11-03 적대적 리뷰 블로커 2).
+   * 보류가 풀리면 `visibleFacetIds` 가 비어 ② 가 걸리지 않으므로 조건 없는 목록이 나온다 —
+   * 변경 전과 같은 동작이다.
    */
   const isFacetStatePending =
     searchParams.facetCategoryIds !== null &&
     searchParams.facetCategoryIds.length === 0 &&
-    (visibleFacetIds.length === 0 ||
+    ((visibleFacetIds.length === 0 && isCategoriesLoading) ||
       (searchParams.view === "prod" && isProductAxisLoading));
 
   const isAllFacetsCleared =
@@ -652,12 +661,22 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 건수가 달라지는 #2747 의 재발 경로다. `ContentsFacets#commitCategories` 와 같은 규칙이다.
    */
   const toFacetSelection = (availableIds: number[]): number[] | null => {
-    // ⚠️ 선택지가 아직 안 왔으면 체크 상태를 만들 수 없다 — `[]` 를 커밋하면 카테고리가
-    // 도착한 순간 ② 가 걸려 **사용자가 해제하지 않았는데 0건 + 전 체크 해제**로 잠긴다
-    // (변경 전에는 `[]` 가 「조건 없음」이라 눈에 띄지 않았다). 전부 체크로 둔다.
-    if (visibleFacetIds.length === 0) return null;
     const available = new Set(availableIds);
     const picked = visibleFacetIds.filter((id) => available.has(id));
+    // ⚠️ **자동 경로는 절대 `[]` 를 만들지 않는다.** `[]` 는 ②(조회 없이 0건) 트리거이고
+    // 그건 **사용자가 직접 전부 해제했을 때만** 성립하는 의미다. 여기서 `[]` 가 나오는 경우가
+    // 둘 있는데 둘 다 「좁힐 근거가 없다」는 뜻이므로 전부 체크(`null`)로 둔다.
+    //
+    //   ① 선택지가 아직 안 옴 (`/api/categories` 미완료·실패) — `visibleFacetIds` 가 비어 있다.
+    //   ② 집계 결과가 표시 축 선택지와 **교집합이 없음** — `resolveAvailableFacets` 가
+    //      `first.length === 0`(매칭 자료에 분류값이 하나도 없음) 또는 `visibleIds.length === 0`
+    //      (분류값이 전부 비표시·폐지 축) 으로 조기반환한 경우. 서버는 `[]` 도 키를 생략하지
+    //      않고 내려보내므로 `?? null` 이 받아 주지 않는다.
+    //
+    // 종전에는 ② 에서 `[]` 가 커밋돼, **키워드에 걸린 자료가 N건 있는데 조회조차 하지 않고
+    // 0건 + 전 체크 해제**로 잠겼다(2026-11-03 적대적 리뷰 블로커 1, 리뷰어 3개 전원 지적).
+    // 서버 `resolveAvailableFacets` 가 2패스 0행에 `return first` 폴백을 둔 것과 같은 취지다.
+    if (picked.length === 0) return null;
     return picked.length === visibleFacetIds.length ? null : picked;
   };
 

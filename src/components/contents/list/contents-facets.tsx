@@ -215,17 +215,26 @@ export function ContentsFacets({
   // (분류가 없는 자료까지 포함한 전체)으로 돌아간다. 전체 id 를 그대로 조건으로 보내면
   // 분류가 하나도 없는 자료가 빠져 초기 건수와 어긋난다.
   //
-  // ⚠️ `all*.length > 0` 가드가 필요하다. 축 데이터가 아직 안 왔거나(`/api/categories` 미완료)
-  // 조건을 만족하는 형번이 0건이면 `all*.length === 0` 이고, 그때 「전부 해제」를 누르면
-  // `next.length === 0 === all.length` 가 성립해 `null`(= 화면 전부 체크)로 뒤집힌다 —
-  // 누른 버튼과 정반대 결과가 된다.
+  // 전부 체크로 되돌아오면 `null`(미설정)로 정규화한다 — 예외처리 ① 로 분류 조건이 생략돼
+  // 초기 화면과 같은 조건이 된다.
+  //
+  // ⚠️ **선택지가 0개면 `null` 로 둔다.** 축 데이터가 아직 안 왔거나(`/api/categories`
+  // 미완료·실패) 표시 축이 0개면 `all*.length === 0` 인데, 그때 「전부 해제」를 눌러 `[]` 가
+  // 커밋되면 예외처리 ②(조회 없이 0건) 가 걸려 **목록이 무한 스피너로 잠긴다** — 0건 메시지도
+  // 에러도 뜨지 않고, 「전부 선택」을 눌러도 같은 경로로 다시 `[]` 가 커밋돼 탈출할 수 없었다
+  // (2026-11-03 적대적 리뷰 블로커 2). 「선택지가 0개인 축은 전부 해제로 보지 않는다」는
+  // 2026-11-03 회의 확정 사항과도 같은 방향이다.
+  //
+  // 종전 주석은 같은 `all*.length === 0` 상황에서 `null` 로 뒤집히는 것을 막으려 했는데,
+  // 고를 선택지가 하나도 없으면 체크/해제 어느 쪽으로도 보여 줄 것이 없어 그 우려는 성립하지
+  // 않는다. 반면 `[]` 의 귀결은 ② 도입으로 「넓어짐」에서 「0건 잠금」으로 바뀌었다.
   const commitCategories = (next: number[]) =>
     onCategoryIdsChange(
-      allCategoryIds.length > 0 && next.length === allCategoryIds.length ? null : next,
+      allCategoryIds.length === 0 || next.length === allCategoryIds.length ? null : next,
     );
   const commitModels = (next: number[]) =>
     onProductModelIdsChange(
-      allProductModelIds.length > 0 && next.length === allProductModelIds.length
+      allProductModelIds.length === 0 || next.length === allProductModelIds.length
         ? null
         : next,
     );
