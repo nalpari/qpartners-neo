@@ -11,6 +11,7 @@ import {
   Button,
   CategoryNameList,
   ContentStateBadge,
+  DimSpinner,
   Pagination,
   ProductStatusBadge,
 } from "@/components/common";
@@ -286,6 +287,19 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
         </Button>
       </main>
     );
+  }
+
+  // 첫 로드 동안에는 **아무것도 그리지 않는다** — 자료상세(`contents-detail.tsx`)와 같은 처리.
+  //
+  // 종전에는 로딩 중에도 헤더를 폴백(`-`)으로 그렸다. 그 폴백 텍스트 노드를 브라우저 자동
+  // 번역이 바꿔치기하면, 응답이 와도 React 가 그 자리를 갱신하지 못해 `-` 가 그대로 남는다
+  // (Redmine #2764). 데이터가 온 뒤에 처음 그리면 번역기가 미리 점유할 노드 자체가 없다 —
+  // 같은 화면에서 자료 목록과 제품상태 배지가 멀쩡했던 이유도 이것이다.
+  //
+  // `isLoading` 은 **첫 로드에만** true 다(페이지 이동은 `isFetching`). 자료 목록 페이지를
+  // 넘길 때 헤더가 사라지지 않는다.
+  if (isLoading) {
+    return <DimSpinner />;
   }
 
   const product = data?.data.product;

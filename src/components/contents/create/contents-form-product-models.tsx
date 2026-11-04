@@ -190,20 +190,29 @@ export function ContentsFormProductModels({
         )}
       </div>
 
-      {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2763).
-          번역 확장이 **데이터 도착 전 폴백(`Total 0`)** 을 통째로 점유하면, 응답이 와도
-          React 가 숫자를 갱신하지 못해 목록은 19건인데 `Total 0` 이 남는다. 형번관리
-          (`product-models-search.tsx`)·자료일람(`合計`)이 같은 이유로 같은 처리를 한다.
-          증상이 **간헐적**인 이유는 번역 시점과 응답 도착 시점의 경합이기 때문이다. */}
+      {/* Redmine #2763 — 건수는 **값이 확정된 뒤에만** 그린다.
+          종전에는 로딩 중에도 폴백 `Total 0` 을 먼저 그렸다. 그 텍스트를 브라우저 자동
+          번역이 바꿔치기하면 응답이 와도 React 가 숫자를 갱신하지 못해, 목록은 19건인데
+          `Total 0` 이 남는다. 데이터가 온 뒤 처음 그리면 번역기가 점유할 노드가 없다 —
+          바로 아래 목록이 멀쩡했던 이유와 같다.
+
+          로딩 가드만으로는 **값이 중간에 바뀌는 경우**(검색·페이지 이동)를 못 막으므로
+          `key`(값이 바뀌면 요소를 새로 생성) + `translate="no"`(번역 제외) 를 함께 둔다.
+          자료일람 `合計`·형번관리 `Total` 도 같은 처리다. 높이는 비어 있을 때도 유지해
+          로딩 전후로 레이아웃이 흔들리지 않게 한다. */}
       <p
-        key={`total-${isError ? "err" : total}`}
-        className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
+        key={`total-${isLoading ? "loading" : isError ? "err" : total}`}
+        className="min-h-[18px] font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
       >
-        Total{" "}
-        {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
-        <span translate="no" className="font-semibold text-[#E97923]">
-          {isError ? "-" : total.toLocaleString()}
-        </span>
+        {!isLoading && (
+          <>
+            Total{" "}
+            {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
+            <span translate="no" className="font-semibold text-[#E97923]">
+              {isError ? "-" : total.toLocaleString()}
+            </span>
+          </>
+        )}
       </p>
 
       {/* 선택 목록 — 높이 520px 고정 (2026-10-08 리뷰 결정) */}
