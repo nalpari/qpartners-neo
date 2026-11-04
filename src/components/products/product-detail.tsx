@@ -10,6 +10,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
   CategoryNameList,
+  ProductCategoryLabel,
   ContentStateBadge,
   Pagination,
   ProductStatusBadge,
@@ -75,6 +76,8 @@ interface ProductDetailResponse {
         id: number;
         categoryCode: string;
         name: string;
+        /** 사내전용 카테고리 적색 표기용 — 서버가 `PRODUCT_MODEL_CATEGORY_SELECT` 로 내려준다 */
+        isInternalOnly: boolean;
         parent: { id: number; categoryCode: string; name: string } | null;
       };
     };
@@ -288,6 +291,19 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
     );
   }
 
+  // ⚠️ 여기에 `if (isLoading) return <DimSpinner />` 를 두면 안 된다 (2026-11-04 리뷰에서 되돌림).
+  //
+  // 자료상세(`contents-detail.tsx:197`)가 그렇게 하길래 같은 처리인 줄 알고 옮겼는데, 그쪽
+  // 쿼리 키는 `["contents", contentId]` 라 `isLoading` 이 정말 첫 로드 전용이다. 이 화면은
+  // 키에 **`page` 와 `userScope` 가 들어 있어**(`:147`) 자료목록 페이지를 넘길 때마다, 그리고
+  // Gnb 의 인증 응답이 늦게 와 스코프가 `anon` → 실제 권한으로 바뀔 때마다 새 캐시 키가 되어
+  // `isLoading` 이 다시 true 가 된다. `DimSpinner` 는 `fixed inset-0 z-50` 전체 화면
+  // 오버레이라 헤더·그리드·GNB 까지 덮인다.
+  //
+  // 폴백(`-`) 을 번역 확장이 점유하는 문제(Redmine #2764)는 아래 헤더의 `key` 가 막는다 —
+  // 값이 바뀌면 요소를 통째로 새로 만들어 점유된 노드를 버린다. 폴백과 실제 값이 같아
+  // `key` 가 고정되는 경우는 형번·카테고리에서는 발생하지 않는다.
+
   const product = data?.data.product;
 
   return (
@@ -295,19 +311,42 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
       <div className="flex w-full max-w-[var(--page-max)] flex-col gap-[18px] rounded-[12px] bg-white px-6 pt-[34px] pb-[34px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         {/* 헤더 — 형번 + 카테고리 + リスト */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="font-mono text-[22px] font-bold text-[#101010]">
+          {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2764).
+              번역 확장이 **데이터 도착 전 폴백(`-`)** 텍스트 노드를 점유하면, 응답이 와도
+              React 가 그 자리를 갱신하지 못해 `-` 가 그대로 남는다. 아래 `この製品の資料（N件）`
+              와 같은 건이다. `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어
+              점유된 노드를 버린다. 형번은 고유명사라 번역 자체도 대상이 아니다.
+              증상이 **간헐적**인 이유는 번역 시점과 응답 도착 시점의 경합이기 때문이다. */}
+          <h1
+            key={`model-${product?.modelCode ?? "none"}`}
+            translate="no"
+            className="font-mono text-[22px] font-bold text-[#101010]"
+          >
             {product?.modelCode ?? "-"}
           </h1>
           <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
             カテゴリ
           </span>
-          <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
-            {product
-              ? product.category.parent
-                ? `${product.category.parent.name} > ${product.category.name}`
-                : product.category.name
-              : "-"}
-          </span>
+          {/* Redmine #2755(공통) — **2Depth 만** 표시한다. 종전에는 `제품분류 > 태양전지모듈`
+              처럼 1Depth 까지 찍었다. 목업 `01-search.html:2127` 의 `${p.cat}` 도 2Depth
+              단독이다. 정확히는 목업 `assets/qp-shell.js:230` 의 규칙—제품분류 하위는
+              2Depth 만, 다른 축은 `1Depth > 2Depth`—를 `ProductCategoryLabel` 이 담고 있고
+              제품일람 목록·형번관리도 같은 컴포넌트를 쓴다.
+
+              카테고리명은 일본어라 번역돼도 뜻이 통한다 — `translate="no"` 없이 `key` 로
+              노드 재생성만 보장한다(값이 사라지는 것만 막는다). `CategoryName` 을 쓰는
+              이유는 사내전용 카테고리 적색 규칙을 유지하기 위함이다. */}
+          {product ? (
+            <ProductCategoryLabel
+              key={`cat-${product.category.id}`}
+              category={product.category}
+              className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
+            />
+          ) : (
+            <span key="cat-none" className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
+              -
+            </span>
+          )}
           {/* 製品ステータス — 목업 `01-search.html:2127` 의 헤더 구성(型番 / カテゴリ / 製品ステータス).
               형번의 속성이라 여기서 바로 보여준다. 자동완성으로 들어온 이용자가 단종 여부를
               이 화면에서 알 수 있어야 한다. */}

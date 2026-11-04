@@ -12,7 +12,7 @@ import type {
 } from "ag-grid-community";
 
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { CategoryPath, Pagination, ProductStatusBadge } from "@/components/common";
+import { Pagination, ProductCategoryLabel, ProductStatusBadge } from "@/components/common";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 
 import { ProductModelsSearch } from "./product-models-search";
@@ -194,15 +194,23 @@ export function ProductModelsTable({
       {
         headerName: "カテゴリ",
         colId: "category",
-        // 1Depth > 2Depth 전체 표기가 들어가야 한다. 개발 DB 실측 글자폭은
-        // `製品分類 > パワーコンディショナ` 약 217px, 제품일람 대상 10건 최장 231px.
+        // 제품분류 하위는 2Depth 만 표기한다(Redmine #2755). 개발 DB 실측 글자폭
+        // (2026-11-04, 14px 기준)은 활성 축 하위 최장이 `表示モニター・監視装置` 154px —
+        // 종전 하한 240 은 `製品分類 > パワーコンディショナ` 217px 를 담던 값이라 지금은
+        // 과하다. 비활성 축 하위에 `PVモジュールラインナップ > Re.RISE-NBCシリーズ`
+        // 325px 가 한 건 있지만, 그런 긴 라벨은 말줄임 + `title` 이 받는다.
         //
-        // minWidth 는 **가용폭 하한을 직접 올린다** — 8컬럼 합이 커지면 좁은 창에서
-        // 그리드에 가로 스크롤이 생긴다(ag-grid 기본 컬럼 최소폭 36px). 240 이면
-        // 합계 612px, 임계 창폭 약 1210px 으로 1280 노트북에 여유가 남는다.
-        // 초과분은 아래 말줄임 + `title` 이 받는다.
+        // minWidth 는 **전 컬럼 최소폭 합을 직접 올린다** — 그 합이 그리드 폭을 넘으면
+        // 가로 스크롤이 생긴다. 하한을 60px 내렸으므로 스크롤이 생기는 창폭도 그만큼
+        // 내려간다(합계 절대값은 `defaultColDef` 에 minWidth 가 없어 ag-grid 기본값에
+        // 달려 있다 — 여기서 수치로 단정하지 않는다).
+        //
+        // 넓은 화면에서는 이 하한이 쓰이지 않는다: flex 합 9.0 중 이 컬럼 몫이 2.4 라
+        // 배분값은 가용폭의 26.7% 이고, 그리드 폭이 약 750px 을 넘으면 180 을 넘어선다
+        // (종전 240 은 약 970px). 즉 1280 노트북 기준 표시 결과는 바뀌지 않고,
+        // 좁은 창에서만 카테고리 열이 더 줄어들며 가로 스크롤을 늦춘다.
         flex: 2.4,
-        minWidth: 240,
+        minWidth: 180,
         // valueGetter 는 유지 — 정렬·툴팁·내보내기가 문자열을 본다. 색만 renderer 로 얹는다.
         valueGetter: (p: ValueGetterParams<ProductModelItem>) =>
           p.data ? formatCategoryLabel(p.data.category) : "",
@@ -210,7 +218,7 @@ export function ProductModelsTable({
         // `data-grid.tsx` 가 등록하지 않아 무음으로 무시된다 — 같은 파일
         // `ModelCodeCellRenderer` 처럼 네이티브 `title` 을 쓴다.
         //
-        // `CategoryPath` 는 inline `<span>` 이라 overflow 가 적용되지 않는다.
+        // `ProductCategoryLabel` 은 inline `<span>` 이라 overflow 가 적용되지 않는다.
         // 말줄임이 걸리도록 `block` 래퍼로 감싼다.
         cellRenderer: (p: ICellRendererParams<ProductModelItem>) =>
           p.data ? (
@@ -218,7 +226,7 @@ export function ProductModelsTable({
               className="block overflow-hidden text-ellipsis whitespace-nowrap"
               title={formatCategoryLabel(p.data.category)}
             >
-              <CategoryPath category={p.data.category} />
+              <ProductCategoryLabel category={p.data.category} />
             </span>
           ) : null,
         cellClass: editingCellClass,

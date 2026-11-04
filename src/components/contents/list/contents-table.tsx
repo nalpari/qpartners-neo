@@ -17,7 +17,8 @@ import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
-  CategoryName,
+  ProductCategoryLabel,
+  formatProductCategoryLabel,
   ContentStateBadge,
   PageSizeSelect,
   Pagination,
@@ -773,13 +774,14 @@ export function ContentsTable({
         minWidth: 160,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        // Redmine #2755(공통)·#2761 — **2Depth 만** 표시한다. 종전에는 서로 다른 축에
-        // 같은 이름의 2Depth 가 생길 수 있어(REQ-008) 부모를 함께 찍었는데, 목업과
-        // 고객 요청이 2Depth 단독이다 (2026-11-04 확정).
-        valueGetter: (params) => params.data?.category.name ?? "-",
+        // Redmine #2755(공통)·#2761 — 표기 규칙은 `formatProductCategoryLabel` 단일 출처다
+        // (제품분류 하위는 2Depth 만, 다른 축은 `1Depth > 2Depth`). 목업
+        // `assets/qp-shell.js:230` 과 같은 규칙이고, 형번관리·제품상세도 같은 함수를 쓴다.
+        valueGetter: (params) =>
+          params.data ? formatProductCategoryLabel(params.data.category) : "-",
         // 사내전용 카테고리 적색 — 색만 renderer 로 얹고 문자열(정렬·내보내기)은 valueGetter 유지.
         cellRenderer: (params: ICellRendererParams<ProductListRow>) =>
-          params.data ? <CategoryName category={params.data.category} /> : "-",
+          params.data ? <ProductCategoryLabel category={params.data.category} /> : "-",
       },
       {
         headerName: "型番",
@@ -991,7 +993,7 @@ export function ContentsTable({
                     transitionTypes={["fade"]}
                     className="flex flex-col gap-1 px-6 py-4"
                   >
-                    <CategoryName
+                    <ProductCategoryLabel
                       category={row.category}
                       className="font-['Noto_Sans_JP'] text-[12px] text-[#6a88a9]"
                     />

@@ -45,9 +45,17 @@ export function CategoriesTree({
           カテゴリ一覧
         </h2>
         <div className="flex items-center gap-[18px]">
-          <p className="flex-1 text-[14px] text-[#101010] font-['Noto_Sans_JP']">
+          {/* key + translate="no" — 건수는 값이 바뀔 때 요소를 새로 만들어 그려야 한다.
+          로딩 중 폴백(`0`)을 미리 그리면 브라우저 자동 번역이 그 텍스트를 점유해, 응답이 와도
+          React 가 숫자를 갱신하지 못한다 (Redmine #2763 · #2764 와 같은 건). */}
+          <p
+            key={`cat-total-${totalCount}`}
+            className="flex-1 text-[14px] text-[#101010] font-['Noto_Sans_JP']"
+          >
             Total{" "}
-            <span className="font-semibold text-[#e97923]">{totalCount}</span>
+            <span translate="no" className="font-semibold text-[#e97923]">
+              {totalCount}
+            </span>
           </p>
           <Checkbox
             checked={filterProductListOnly}

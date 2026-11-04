@@ -190,8 +190,25 @@ export function ContentsFormProductModels({
         )}
       </div>
 
-      <p className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]">
-        Total <span className="font-semibold text-[#E97923]">{total.toLocaleString()}</span>
+      {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2763).
+          번역 확장이 **데이터 도착 전 폴백(`Total 0`)** 텍스트 노드를 바꿔치기하면, 응답이
+          와도 React 가 그 자리를 갱신하지 못해 목록은 19건인데 `Total 0` 이 남는다.
+          `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어 점유된 노드를 버린다.
+          자료일람 `合計`(`contents-table.tsx`)·형번관리 `Total`(`product-models-search.tsx`)
+          이 같은 처리다.
+
+          ⚠️ 로딩 중 건수를 아예 안 그리는 방식도 검토했으나 되돌렸다 (2026-11-04 리뷰).
+          쿼리 키에 `modelCode`·`includeHidden`·`page` 가 있어 타이핑·토글·페이지 이동마다
+          `isLoading` 이 다시 true 가 되고, 그때마다 `Total` 라벨이 통째로 사라졌다 나타난다. */}
+      <p
+        key={`total-${isError ? "err" : total}`}
+        className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
+      >
+        Total{" "}
+        {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
+        <span translate="no" className="font-semibold text-[#E97923]">
+          {isError ? "-" : total.toLocaleString()}
+        </span>
       </p>
 
       {/* 선택 목록 — 높이 520px 고정 (2026-10-08 리뷰 결정) */}
@@ -274,7 +291,10 @@ export function ContentsFormProductModels({
           >
             前へ
           </button>
-          <span className="text-[#45576f]">
+          {/* `translate="no"` 만 둔다. `key` 는 필요 없다 — 이 `<nav>` 는 `totalPages > 1`
+              조건 안이라 로딩 중(`totalPages === 0`)에는 통째로 언마운트되고, 값이 생길 때
+              새로 마운트된다. 번역기가 점유할 낡은 노드가 남지 않는다. */}
+          <span translate="no" className="text-[#45576f]">
             {page} / {totalPages}
           </span>
           <button
