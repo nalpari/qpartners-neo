@@ -323,6 +323,10 @@ export function ContentsFacets({
                         onChange={(checked) => setModelCatAll(group, checked)}
                         disabled={!selectable}
                       />
+                      {/* Redmine #2762 — 열림/닫힘 표식은 **행 오른쪽 끝**에 둔다
+                          (2026-11-03 고객 요청). 종전에는 체크박스 바로 옆(라벨 앞)이라
+                          분류축의 체크 목록과 들쭉날쭉해 보였다. 버튼 자체는 행 전체를
+                          차지해 이름 어디를 눌러도 펼쳐진다 — 클릭 영역은 줄이지 않는다. */}
                       <button
                         type="button"
                         className="flex flex-1 min-w-0 items-center gap-[4px] text-left"
@@ -337,14 +341,14 @@ export function ContentsFacets({
                         disabled={group.productModels.length === 0}
                         aria-expanded={isExpanded}
                       >
-                        <span className="text-[10px] text-[#8a95a1] w-[10px] shrink-0">
-                          {group.productModels.length > 0 ? (isExpanded ? "▼" : "▶") : ""}
-                        </span>
                         <span
                           className="flex-1 min-w-0 font-['Noto_Sans_JP'] text-[13px] text-[#45576f] truncate"
                           title={group.name}
                         >
                           {group.name}
+                        </span>
+                        <span className="ml-auto shrink-0 w-[10px] text-right text-[10px] text-[#8a95a1]">
+                          {group.productModels.length > 0 ? (isExpanded ? "▼" : "▶") : ""}
                         </span>
                       </button>
                     </div>
