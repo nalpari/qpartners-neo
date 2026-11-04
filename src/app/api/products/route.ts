@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import {
-  buildKeywordCondition,
+  buildModelCodeCondition,
   checkSearchRateLimit,
   tokenizeKeyword,
 } from "@/lib/content-search";
@@ -25,11 +25,13 @@ import { listProductsQuerySchema } from "@/lib/schemas/product-model";
 /**
  * GET /api/products — 제품일람 탭 (REQ-003 / REQ-005).
  *
- * **자료일람과 같은 검색 결과를 형번 단위로 다시 묶는다.** 목업 `render()` 의
- * `state.view === "prod"` 분기와 동일하게, 조건에 걸린 자료를 紐づく 형번마다 세어
- * `資料数` 를 만든다. 따라서:
+ * 조건에 걸린 자료를 紐づく 형번마다 세어 `資料数` 를 만든다(목업 `render()` 의
+ * `state.view === "prod"` 분기). 따라서:
  *   - 조건에 맞는 자료가 0건인 형번은 **목록에 나오지 않는다** (축에는 남는다 — `/api/products/axis`)
  *   - 한 자료가 형번 N 개를 가지면 N 행에 각각 집계된다 (자료 : 제품 = 1 : N)
+ *
+ * ⚠️ **키워드 대상은 자료일람과 다르다.** 여기는 형번명(`modelCode`)만 보고,
+ * 자료일람은 제목만 본다 (2026-11-03 확정, Redmine #2760). 분류축·노출 범위는 같다.
  *
  * 비로그인 포함 공개 조회(middleware `PUBLIC_GET_PATTERNS`)이며, 자료의 노출 범위는
  * `/api/contents` GET 과 같은 게시대상·게시기간 규칙을 쓴다(`publishedTargetFilter`).
@@ -101,9 +103,15 @@ export async function GET(request: NextRequest) {
     if (facetConditions.unsatisfiable) return emptyResponse;
     andConditions.push(...facetConditions.conditions);
 
+    // 키워드는 **형번명에만** 건다 — 자료 where 가 아니라 아래 2단계 링크 조회의 형번 필터로
+    // 간다. 형번관리에서 형번 자체가 제품의 제목이고, 제품일람 검색 대상은 그 제목이다
+    // (요구사항정의서 v1.1 REQ-001, 2026-11-03 사용자 확정).
+    //
+    // ⚠️ 종전에는 `buildKeywordCondition`(제목 + 형번)을 자료 where 에 걸었다. 그래서 키워드가
+    // 자료 **제목**에 맞으면 그 자료에 연결된 **다른 형번까지** 행으로 나왔다 — `435` 검색 시
+    // 형번에 435 가 없는 제품 4건이 섞여 자동완성 2건과 어긋났다 (Redmine #2760·#2748).
     const keywordTokens = tokenizeKeyword(keyword);
-    const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
-    if (keywordCondition) andConditions.push(keywordCondition);
+    const modelCodeCondition = buildModelCodeCondition(keywordTokens, keywordOp);
 
     // 型番 축 — 체크된 형번에 紐づく 자료만 대상으로 한다.
     // 아래 링크 조회에서도 같은 필터를 걸어야 한다. 여기만 걸면 "체크한 형번 때문에 살아남은
@@ -132,7 +140,10 @@ export async function GET(request: NextRequest) {
         ...(productModelIds && productModelIds.length > 0
           ? { productModelId: { in: productModelIds } }
           : {}),
-        productModel: productModelVisibilityFilter(internal),
+        productModel: {
+          ...productModelVisibilityFilter(internal),
+          ...(modelCodeCondition ?? {}),
+        },
       },
       select: { contentId: true, productModelId: true },
     });
@@ -142,7 +153,10 @@ export async function GET(request: NextRequest) {
     //
     // 종전에는 "제목에 맞은 자료가 있는가"(관련도 점수)도 함께 집계했으나, 제품일람 정렬이
     // **카테고리 표시순서 → 형번 오름차순**으로 확정되어(REQ-005) 관련도가 정렬에 쓰이지
-    // 않는다. 키워드는 `where` 로 이미 걸러졌으므로 점수 계산은 비용만 남는다.
+    // 않는다.
+    //
+    // ⚠️ 키워드는 자료 `where` 가 아니라 **2단계 링크 조회의 `modelCodeCondition`** 이
+    // 거른다 (Redmine #2760). 그걸 정리하면 키워드 게이트가 통째로 사라진다.
     const agg = new Map<number, number>();
     for (const link of links) {
       agg.set(link.productModelId, (agg.get(link.productModelId) ?? 0) + 1);

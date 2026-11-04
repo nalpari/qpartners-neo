@@ -242,8 +242,8 @@ export async function GET(request: NextRequest) {
     // Prisma where 절과 raw SQL 분기가 같은 토큰 배열을 공유해야 결과가 일치한다.
     const keywordTokens = tokenizeKeyword(keyword);
 
-    // 키워드 검색 조건 — 제목 / 첨부파일명 / 형번. 본문은 제외(lib/content-search.ts SEARCH_BODY).
-    // 결합 규칙과 형번 매칭 범위는 buildKeywordCondition 주석 참조.
+    // 키워드 검색 조건 — **제목만**. 본문은 SEARCH_BODY 로 닫혀 있고, 첨부파일명·형번은
+    // 검색 대상이 아니다(Redmine #2760). 결합 규칙은 buildKeywordCondition 주석 참조.
     // ⚠️ sortCategoryCode 분기가 같은 조건을 raw SQL 로 다시 쓴다 — 함께 유지할 것.
     const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
 
@@ -359,10 +359,6 @@ export async function GET(request: NextRequest) {
           kws.map((k) => Prisma.sql`c.title LIKE ${k} ESCAPE '\\\\'`),
           glue,
         );
-        const modelCond = Prisma.join(
-          kws.map((k) => Prisma.sql`pm.model_code LIKE ${k} ESCAPE '\\\\'`),
-          glue,
-        );
         // 본문(c.body)은 검색 대상에서 빠졌다 — SEARCH_BODY 플래그로 되살릴 때 이 분기도 함께.
         const bodyGroup = SEARCH_BODY
           ? Prisma.sql` OR (${Prisma.join(
@@ -371,11 +367,11 @@ export async function GET(request: NextRequest) {
             )})`
           : Prisma.empty;
         // 첨부파일명(qp_content_attachments.file_name)은 검색 대상이 아니다 — REQ-001.
-        sqlConds.push(Prisma.sql`((${titleCond})${bodyGroup} OR EXISTS (
-          SELECT 1 FROM qp_content_product_models cpm
-          JOIN qp_product_models pm ON cpm.product_model_id = pm.id
-          WHERE cpm.content_id = c.id AND pm.is_visible = 1 AND (${modelCond})
-        ))`);
+        //
+        // ⚠️ **형번(model_code)은 보지 않는다.** 자료 검색은 제목만이다 — 종전에는 여기에
+        // `EXISTS(qp_product_models …)` 가 있어 자료에 연결된 형번으로 그 자료가 끌려 나왔다
+        // (2026-11-03 사용자 확정, Redmine #2760). `buildKeywordCondition` 과 같은 기준이다.
+        sqlConds.push(Prisma.sql`((${titleCond})${bodyGroup})`);
       }
 
       if (department && department.length > 0) {

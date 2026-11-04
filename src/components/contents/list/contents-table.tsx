@@ -5,7 +5,6 @@ import type { ReactNode, MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { isAxiosError } from "axios";
 import type {
   ColDef,
   GridApi,
@@ -18,7 +17,7 @@ import { formatDate } from "@/lib/format";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
-  CategoryPath,
+  CategoryName,
   ContentStateBadge,
   PageSizeSelect,
   Pagination,
@@ -34,8 +33,12 @@ import { resolveVisibleAxes } from "./contents-facet-utils";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { targetOrderRank } from "@/lib/target-role-order";
-import { parseContentDispositionFilename } from "@/lib/content-disposition";
 import { isInternalOnlyContent } from "@/lib/content-internal-only";
+import {
+  AttachmentCellRenderer,
+  downloadAllAttachments,
+  resolveDownloadErrorMessage,
+} from "@/components/contents/attachment-download";
 
 /**
  * 분류 컬럼 배치 — **카테고리 `sortOrder` 순으로 `更新日`↔`タイトル` 사이에 일괄**.
@@ -161,95 +164,6 @@ function TitleCellRenderer(params: ICellRendererParams<ContentListItem>) {
         isUpdated={data.hasBeenUpdated && data.isUpdated}
         className="shrink-0"
       />
-    </div>
-  );
-}
-
-type DownloadResult =
-  | { ok: true }
-  /** 실패 시 axios 응답 상태 코드 (네트워크 단절 등 응답 자체가 없으면 undefined) */
-  | { ok: false; status?: number };
-
-/** 컨텐츠 첨부파일 일괄 다운로드 (ZIP) — fetch + blob으로 에러 감지 */
-async function downloadAllAttachments(contentId: number): Promise<DownloadResult> {
-  try {
-    const { default: api } = await import("@/lib/axios");
-    const res = await api.get<Blob>(`/contents/${contentId}/files/download-all`, {
-      responseType: "blob",
-    });
-    // blob URL 다운로드 시 a.download 가 비어 있으면 브라우저가 Content-Disposition 을
-    // 무시하고 blob URL 의 마지막 segment(UUID) 를 파일명으로 사용한다.
-    // 서버 응답 헤더(`{title}_{YYYYMMDD}.zip` 또는 단일 파일 원본명) 를 파싱해 명시한다.
-    const dispo =
-      typeof res.headers["content-disposition"] === "string"
-        ? res.headers["content-disposition"]
-        : null;
-    const fileName = parseContentDispositionFilename(dispo) ?? "download.zip";
-    const url = URL.createObjectURL(res.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // 브라우저가 Blob URL을 읽기 전에 즉시 해제하면 일부 브라우저에서 0바이트 다운로드가
-    // 발생하므로, 충분한 시간을 준 뒤 해제한다.
-    setTimeout(() => URL.revokeObjectURL(url), 100);
-    return { ok: true };
-  } catch (err: unknown) {
-    if (isAxiosError(err)) {
-      console.error("[Contents] ZIP 일괄 다운로드 실패:", { status: err.response?.status, data: err.response?.data });
-    } else {
-      console.error("[Contents] ZIP 일괄 다운로드 실패:", err);
-    }
-    const status = isAxiosError(err) ? err.response?.status : undefined;
-    return { ok: false, status };
-  }
-}
-
-/** status 코드별 안내 메시지 — download-all/route.ts 가 실제로 내려주는 상태코드(403/404/413/500)와 매칭. */
-function resolveDownloadErrorMessage(status: number | undefined): string {
-  switch (status) {
-    case 403:
-      return "この操作を行う権限がありません。";
-    case 404:
-      return "対象が見つかりません。既に削除された可能性があります。";
-    case 413:
-      return "ファイルサイズが大きすぎてダウンロードできません。";
-    default:
-      return "ファイルの一括ダウンロードに失敗しました。";
-  }
-}
-
-function AttachmentCellRenderer(params: ICellRendererParams<ContentListItem>) {
-  const { openAlert } = useAlertStore();
-
-  if (!params.data || params.data.attachmentCount === 0) return null;
-  const contentId = params.data.id;
-
-  const handleClick = async () => {
-    const result = await downloadAllAttachments(contentId);
-    if (!result.ok) {
-      openAlert({ type: "alert", message: resolveDownloadErrorMessage(result.status) });
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-center w-full">
-      <button
-        type="button"
-        aria-label="添付ファイルダウンロード"
-        className="cursor-pointer"
-        onClick={() => { void handleClick(); }}
-      >
-        <Image
-          src="/asset/images/layout/download_icon.svg"
-          alt=""
-          width={16}
-          height={18}
-          unoptimized
-        />
-      </button>
     </div>
   );
 }
@@ -679,8 +593,27 @@ export function ContentsTable({
           },
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
             // rowData 에서 이미 정렬된 targets 를 사용 (cellRenderer sort 비용 회피)
-            const targets = params.data?.targets ?? [];
-            if (targets.length === 0) return <span>-</span>;
+            //
+            // ⚠️ 배열 여부를 **판정보다 먼저** 본다. `?? []` 로 폴백하면
+            // `isInternalOnlyContent([]) === true` 라 「targets 를 모르는 행」이 사내전용으로
+            // 찍힌다. 탭 전환 순간 제품 행(`targets` 없음)이 자료용 그리드에 들어오는 사례가
+            // 있었고(위 `getDocumentRowClass` 주석), 그때 행 적색은 같은 가드로 안 붙어
+            // 「행은 붉지 않은데 게시대상만 社内専用」이 된다.
+            const targets = params.data?.targets;
+            if (!Array.isArray(targets)) return <span>-</span>;
+            // Redmine #2757 / 요구사항정의서 v1.1 REQ-005 「사내전용 콘텐츠는 게시대상 항목에
+            // 「사내전용」을 표시한다」. 판정은 행 적색(`getDocumentRowClass`)·좌측
+            // 「社内会員の投稿のみ表示」 필터와 같은 `isInternalOnlyContent` 를 쓴다 — 갈라지면
+            // 행은 붉은데 게시대상은 일반으로 보인다.
+            //
+            // 게시대상 0건이 곧 사내전용이다 — 등록 화면의 `社内専用` 체크박스가 그 상태를
+            // 만들고(REQ-011, `contents-form-post-target.tsx` 의 파생 `internalOnly`),
+            // neo 는 사내전용 플래그 컬럼을 따로 두지 않는다. 개발 DB published 2,461건 중
+            // 27건이 여기 해당한다(2026-11-03 실측).
+            //
+            // 0건은 위 판정에서 이미 `社内専用` 으로 걸린다 — 「targets 가 비었으면 `-`」
+            // 분기는 더 이상 두지 않는다. `-` 는 데이터를 모르는 행에만 쓴다.
+            if (isInternalOnlyContent(targets)) return <span>社内専用</span>;
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
                 {targets.map((t) => (
@@ -820,7 +753,7 @@ export function ContentsTable({
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
   // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
   /**
-   * 제품일람 4컬럼 — `製品カテゴリ` / `型番` / `製品ステータス` / `資料数`.
+   * 제품일람 4컬럼 — `カテゴリ` / `型番` / `製品ステータス` / `資料数`.
    * 요구사항정의서 v1.1 REQ-005, 목업 `renderProdTable`.
    *
    * 헤더 클릭 정렬은 붙이지 않았다. 정렬 기준이 REQ-005 로 **카테고리 표시순서 → 형번
@@ -831,23 +764,22 @@ export function ContentsTable({
   const productColumnDefs = useMemo<ColDef<ProductListRow>[]>(
     () => [
       {
-        headerName: "製品カテゴリ",
+        // Redmine #2761 — 「製品カテゴリ」 → 「カテゴリ」 (2026-11-03 고객 요청).
+        // 요구사항정의서 v1.1 REQ-005 의 컬럼명(「제품 카테고리」)과는 다르다.
+        headerName: "カテゴリ",
         colId: "productCategory",
         sortable: false,
         flex: 1.4,
         minWidth: 160,
         headerClass: "ag-header-cell-center",
         cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
-        valueGetter: (params) => {
-          const category = params.data?.category;
-          if (!category) return "-";
-          // 제품일람 대상이 전 카테고리로 확장돼(REQ-008) 서로 다른 축에 같은 이름의
-          // 2Depth 가 생길 수 있다 — 부모를 함께 보여 구분한다.
-          return category.parent ? `${category.parent.name} > ${category.name}` : category.name;
-        },
+        // Redmine #2755(공통)·#2761 — **2Depth 만** 표시한다. 종전에는 서로 다른 축에
+        // 같은 이름의 2Depth 가 생길 수 있어(REQ-008) 부모를 함께 찍었는데, 목업과
+        // 고객 요청이 2Depth 단독이다 (2026-11-04 확정).
+        valueGetter: (params) => params.data?.category.name ?? "-",
         // 사내전용 카테고리 적색 — 색만 renderer 로 얹고 문자열(정렬·내보내기)은 valueGetter 유지.
         cellRenderer: (params: ICellRendererParams<ProductListRow>) =>
-          params.data ? <CategoryPath category={params.data.category} /> : "-",
+          params.data ? <CategoryName category={params.data.category} /> : "-",
       },
       {
         headerName: "型番",
@@ -1059,7 +991,7 @@ export function ContentsTable({
                     transitionTypes={["fade"]}
                     className="flex flex-col gap-1 px-6 py-4"
                   >
-                    <CategoryPath
+                    <CategoryName
                       category={row.category}
                       className="font-['Noto_Sans_JP'] text-[12px] text-[#6a88a9]"
                     />

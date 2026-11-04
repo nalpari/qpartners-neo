@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
-import { CategoryPath, Checkbox } from "@/components/common";
+import { CategoryName, Checkbox, ProductStatusBadge } from "@/components/common";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import api from "@/lib/axios";
 import { ADMIN_MENU } from "@/lib/menu-codes";
@@ -13,6 +13,8 @@ import { ADMIN_MENU } from "@/lib/menu-codes";
 interface ProductModelOption {
   id: number;
   modelCode: string;
+  /** 제품상태 — `GET /api/product-models` 가 `include` 로 이미 내려준다 (Redmine #2756) */
+  status: "current" | "eol";
   isVisible: boolean;
   category: {
     id: number;
@@ -155,19 +157,23 @@ export function ContentsFormProductModels({
           selected.map((model) => (
             <span
               key={model.id}
-              className={`inline-flex items-center gap-[6px] rounded-full border bg-white py-1 pl-[10px] pr-[5px] ${
+              className={`inline-flex items-center gap-[8px] rounded-[8px] border bg-white py-[5px] pl-[12px] pr-[6px] ${
                 model.isVisible
                   ? "border-[#C2CDDB]"
                   : "border-dashed border-[#C2CDDB] bg-[#F2F5F8]"
               }`}
             >
-              <b className="font-mono text-[12px] text-[#101010]">{model.modelCode}</b>
-              <CategoryPath
+              <b className="font-mono text-[13px] text-[#101010]">{model.modelCode}</b>
+              {/* Redmine #2756 — 목업(`02-contents-form`)의 선택 칩 형태에 맞춘다:
+                  카테고리는 **2Depth 만**(1Depth 생략), 제품상태는 흐린 텍스트가 아니라
+                  목록·상세와 같은 `ProductStatusBadge`. */}
+              <CategoryName
                 category={model.category}
-                className="font-['Noto_Sans_JP'] text-[11px] text-[#8a95a1]"
+                className="font-['Noto_Sans_JP'] text-[12px] text-[#8a95a1]"
               />
+              <ProductStatusBadge status={model.status} />
               {!model.isVisible && (
-                <span className="rounded-full border border-[#E4EAF0] bg-[#F2F5F8] px-[7px] py-[1px] font-['Noto_Sans_JP'] text-[10px] font-bold text-[#767676]">
+                <span className="font-['Noto_Sans_JP'] text-[12px] font-semibold text-[#ff1a1a]">
                   非表示
                 </span>
               )}
@@ -190,10 +196,13 @@ export function ContentsFormProductModels({
 
       {/* 선택 목록 — 높이 520px 고정 (2026-10-08 리뷰 결정) */}
       <div className="h-[520px] overflow-y-auto rounded-[6px] border border-[#EAF0F6] bg-white [scrollbar-gutter:stable]">
-        <div className="sticky top-0 z-[1] grid grid-cols-[44px_minmax(150px,2fr)_minmax(150px,1fr)_110px] border-b border-[#C2CDDB] bg-[#506273] font-['Noto_Sans_JP'] text-[12px] font-semibold text-white">
+        <div className="sticky top-0 z-[1] grid grid-cols-[44px_minmax(130px,1fr)_minmax(200px,2fr)_minmax(120px,0.36fr)_minmax(90px,0.27fr)] border-b border-[#C2CDDB] bg-[#506273] font-['Noto_Sans_JP'] text-[12px] font-semibold text-white">
           <span className="flex items-center justify-center px-0 py-[10px]">選択</span>
           <span className="flex items-center px-3 py-[10px]">カテゴリ</span>
           <span className="flex items-center px-3 py-[10px]">型番</span>
+          {/* Redmine #2756 — 제품상태 컬럼 추가. 카테고리 열이 과하게 넓어 형번·상태가
+              오른쪽 끝으로 밀려 있던 것도 함께 좁혔다. */}
+          <span className="flex items-center justify-center px-3 py-[10px]">製品ステータス</span>
           <span className="flex items-center justify-center px-3 py-[10px]">表示／非表示</span>
         </div>
 
@@ -213,7 +222,7 @@ export function ContentsFormProductModels({
           rows.map((row) => (
             <label
               key={row.id}
-              className={`grid min-h-[44px] cursor-pointer grid-cols-[44px_minmax(150px,2fr)_minmax(150px,1fr)_110px] items-stretch border-b border-[#EFF4F8] text-[12.5px] last:border-b-0 hover:bg-[#F0F4F8] ${
+              className={`grid min-h-[44px] cursor-pointer grid-cols-[44px_minmax(130px,1fr)_minmax(200px,2fr)_minmax(120px,0.36fr)_minmax(90px,0.27fr)] items-stretch border-b border-[#EFF4F8] text-[12.5px] last:border-b-0 hover:bg-[#F0F4F8] ${
                 row.isVisible ? "" : "bg-[#F2F5F8]"
               }`}
             >
@@ -223,13 +232,18 @@ export function ContentsFormProductModels({
                   onChange={(checked) => toggle(row, checked)}
                 />
               </span>
+              {/* Redmine #2755(공통) — 카테고리는 2Depth 만. 1Depth 까지 찍던 탓에
+                  카테고리 열이 형번 열을 밀어내고 있었다(#2756). */}
               <span className="flex items-center px-3 py-[10px] font-['Noto_Sans_JP'] text-[#45576f]">
-                <CategoryPath category={row.category} />
+                <CategoryName category={row.category} />
               </span>
               <span className="flex items-center overflow-hidden px-3 py-[10px] font-mono font-bold text-[#101010]">
                 <span className="truncate" title={row.modelCode}>
                   {row.modelCode}
                 </span>
+              </span>
+              <span className="flex items-center justify-center px-3 py-[10px]">
+                <ProductStatusBadge status={row.status} />
               </span>
               <span className="flex items-center justify-center px-3 py-[10px]">
                 <span
