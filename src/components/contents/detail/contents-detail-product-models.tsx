@@ -71,9 +71,14 @@ export function ContentsDetailProductModels({
           <span aria-hidden className="text-[12px] text-[#C2CDDB]">
             |
           </span>
-          {/* Redmine #2755 — **2Depth 만** 표시한다. 종전에는 `CategoryPath` 로
-              「제품분류 > 태양전지모듈」처럼 1Depth 까지 찍었다.
-              `CategoryName` 을 쓰는 이유는 사내전용 카테고리 적색 규칙을 유지하기 위함이다. */}
+          {/* Redmine #2755 — **2Depth 만** 표시한다. 종전에는 「제품분류 > 태양전지모듈」처럼
+              1Depth 까지 찍었다. `CategoryName` 을 쓰는 이유는 사내전용 카테고리 적색 규칙을
+              유지하기 위함이다.
+
+              제품일람·제품상세·형번관리는 `ProductCategoryLabel` 로 축에 따라 표기를 가른다
+              (제품분류 하위만 2Depth, 다른 축은 `1Depth > 2Depth`). 이 칩은 아직 2Depth
+              고정이다 — `/api/contents/:id` 응답의 형번 카테고리에 `parent.categoryCode` 가
+              없어 축을 판별할 수 없다. 맞추려면 API 응답부터 넓혀야 해서 후속 작업으로 둔다. */}
           <CategoryName
             category={model.category}
             className="font-['Noto_Sans_JP'] text-[12px] text-[#6a88a9]"
