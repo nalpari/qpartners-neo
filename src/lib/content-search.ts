@@ -69,18 +69,22 @@ export function escapeLikePattern(value: string): string {
 }
 
 /**
- * 키워드 조건(OR 그룹) 생성 — **제목 / 형번**(+ 본문은 `SEARCH_BODY` 시).
+ * 자료(콘텐츠) 키워드 조건 — **제목만**(+ 본문은 `SEARCH_BODY` 시).
  *
- * 첨부파일명은 **검색 대상이 아니다** — 요구사항정의서 v1.1 REQ-001 「콘텐츠 내용 및
- * 첨부파일명을 대상으로 하는 부분일치 검색(Like 검색)은 제거한다」. 목업 업무리뷰
- * 결정사항(2026-10-20)도 「본문과 첨부파일명은 대상 외」로 같다.
+ * 요구사항정의서 v1.1 REQ-001:
+ *   「검색어 입력 및 변경 시 **제품 형번과 콘텐츠 제목**을 대상으로 검색 결과를 실시간 갱신한다」
+ *   「콘텐츠 내용 및 첨부파일명을 대상으로 하는 부분일치 검색(Like 검색)은 제거한다」
+ *
+ * ⚠️ **「제품 형번과 콘텐츠 제목」은 대상별로 하나씩이다.** 제품은 형번, 자료는 제목이다 —
+ * 한 검색 안에서 둘을 OR 로 묶는다는 뜻이 아니다(2026-11-03 사용자 확정). 형번관리에서
+ * **형번 자체가 제품의 제목**이므로, 양쪽 모두 「자기 제목만 본다」로 같다.
+ *
+ * 종전에는 여기에 `productModels.modelCode` 분기가 있어, **자료에 연결된 형번으로 그 자료가
+ * 끌려 나왔다.** 제품일람도 이 함수를 써서 자료 제목으로 제품이 걸렸고, `435` 검색 시 형번에
+ * 435 가 없는 제품 4건이 섞여 나왔다 (Redmine #2760·#2748).
+ * 제품(형번) 쪽 조건은 `buildModelCodeCondition` 이 따로 만든다.
  *
  * 토큰 결합은 **필드 단위**다. AND 는 "한 필드 안에 모든 토큰" 이지 필드를 넘나들지 않는다.
- *   예) `사과 귤` AND → 제목에 둘 다 / 한 첨부파일명에 둘 다 / 한 형번에 둘 다 중 하나
- *       (제목에 `사과` + 형번에 `귤` 은 매칭되지 않음 — 기획 확정 사항)
- *
- * 형번 매칭은 `isVisible=true` 형번만 본다. 비표시 형번은 이용자 화면에 나타나지 않는
- * 값이므로 검색 키로도 쓰지 않는다(관리자는 형번관리 화면에서 직접 조회).
  *
  * ⚠️ `/api/contents` GET 의 `sortCategoryCode` 분기는 같은 조건을 raw SQL 로 다시 쓴다.
  *    한쪽만 고치면 카테고리 정렬 상태에서 검색 결과가 달라진다 — 함께 유지할 것.
@@ -101,16 +105,6 @@ export function buildKeywordCondition(
       OR: [
         { AND: patterns.map((t) => ({ title: { contains: t } })) },
         ...(SEARCH_BODY ? [{ AND: patterns.map((t) => ({ body: { contains: t } })) }] : []),
-        {
-          productModels: {
-            some: {
-              productModel: {
-                isVisible: true,
-                AND: patterns.map((t) => ({ modelCode: { contains: t } })),
-              },
-            },
-          },
-        },
       ],
     };
   }
@@ -119,18 +113,32 @@ export function buildKeywordCondition(
     OR: [
       ...patterns.map((t) => ({ title: { contains: t } })),
       ...(SEARCH_BODY ? patterns.map((t) => ({ body: { contains: t } })) : []),
-      {
-        productModels: {
-          some: {
-            productModel: {
-              isVisible: true,
-              OR: patterns.map((t) => ({ modelCode: { contains: t } })),
-            },
-          },
-        },
-      },
     ],
   };
+}
+
+/**
+ * 제품(형번) 키워드 조건 — **형번명(`modelCode`)만**.
+ *
+ * 형번관리에서 형번 자체가 제품의 제목이다. 그래서 제품일람 검색은 형번명만 본다 —
+ * 자료 제목은 보지 않는다 (요구사항정의서 v1.1 REQ-001, 2026-11-03 사용자 확정).
+ * 자동완성 `[제품]` 후보(`/api/search/suggest`)가 쓰는 기준과 같아야 한다 — 갈라지면
+ * 「자동완성 2건인데 목록 6건」이 된다 (Redmine #2760).
+ *
+ * 노출 제어(`isVisible`·카테고리)는 `productModelVisibilityFilter` 가 따로 건다 —
+ * 여기서는 키워드만 만든다.
+ *
+ * @returns 토큰이 없으면 `undefined`
+ */
+export function buildModelCodeCondition(
+  tokens: string[],
+  keywordOp: "AND" | "OR",
+): Prisma.ProductModelWhereInput | undefined {
+  if (tokens.length === 0) return undefined;
+  const patterns = tokens.map(escapeLikePattern);
+  return keywordOp === "AND"
+    ? { AND: patterns.map((t) => ({ modelCode: { contains: t } })) }
+    : { OR: patterns.map((t) => ({ modelCode: { contains: t } })) };
 }
 
 /**

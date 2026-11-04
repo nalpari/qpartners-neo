@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import {
-  buildKeywordCondition,
+  buildModelCodeCondition,
   checkSearchRateLimit,
   tokenizeKeyword,
 } from "@/lib/content-search";
@@ -101,9 +101,15 @@ export async function GET(request: NextRequest) {
     if (facetConditions.unsatisfiable) return emptyResponse;
     andConditions.push(...facetConditions.conditions);
 
+    // 키워드는 **형번명에만** 건다 — 자료 where 가 아니라 아래 2단계 링크 조회의 형번 필터로
+    // 간다. 형번관리에서 형번 자체가 제품의 제목이고, 제품일람 검색 대상은 그 제목이다
+    // (요구사항정의서 v1.1 REQ-001, 2026-11-03 사용자 확정).
+    //
+    // ⚠️ 종전에는 `buildKeywordCondition`(제목 + 형번)을 자료 where 에 걸었다. 그래서 키워드가
+    // 자료 **제목**에 맞으면 그 자료에 연결된 **다른 형번까지** 행으로 나왔다 — `435` 검색 시
+    // 형번에 435 가 없는 제품 4건이 섞여 자동완성 2건과 어긋났다 (Redmine #2760·#2748).
     const keywordTokens = tokenizeKeyword(keyword);
-    const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
-    if (keywordCondition) andConditions.push(keywordCondition);
+    const modelCodeCondition = buildModelCodeCondition(keywordTokens, keywordOp);
 
     // 型番 축 — 체크된 형번에 紐づく 자료만 대상으로 한다.
     // 아래 링크 조회에서도 같은 필터를 걸어야 한다. 여기만 걸면 "체크한 형번 때문에 살아남은
@@ -132,7 +138,10 @@ export async function GET(request: NextRequest) {
         ...(productModelIds && productModelIds.length > 0
           ? { productModelId: { in: productModelIds } }
           : {}),
-        productModel: productModelVisibilityFilter(internal),
+        productModel: {
+          ...productModelVisibilityFilter(internal),
+          ...(modelCodeCondition ?? {}),
+        },
       },
       select: { contentId: true, productModelId: true },
     });

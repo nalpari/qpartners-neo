@@ -359,10 +359,6 @@ export async function GET(request: NextRequest) {
           kws.map((k) => Prisma.sql`c.title LIKE ${k} ESCAPE '\\\\'`),
           glue,
         );
-        const modelCond = Prisma.join(
-          kws.map((k) => Prisma.sql`pm.model_code LIKE ${k} ESCAPE '\\\\'`),
-          glue,
-        );
         // 본문(c.body)은 검색 대상에서 빠졌다 — SEARCH_BODY 플래그로 되살릴 때 이 분기도 함께.
         const bodyGroup = SEARCH_BODY
           ? Prisma.sql` OR (${Prisma.join(
@@ -371,11 +367,11 @@ export async function GET(request: NextRequest) {
             )})`
           : Prisma.empty;
         // 첨부파일명(qp_content_attachments.file_name)은 검색 대상이 아니다 — REQ-001.
-        sqlConds.push(Prisma.sql`((${titleCond})${bodyGroup} OR EXISTS (
-          SELECT 1 FROM qp_content_product_models cpm
-          JOIN qp_product_models pm ON cpm.product_model_id = pm.id
-          WHERE cpm.content_id = c.id AND pm.is_visible = 1 AND (${modelCond})
-        ))`);
+        //
+        // ⚠️ **형번(model_code)은 보지 않는다.** 자료 검색은 제목만이다 — 종전에는 여기에
+        // `EXISTS(qp_product_models …)` 가 있어 자료에 연결된 형번으로 그 자료가 끌려 나왔다
+        // (2026-11-03 사용자 확정, Redmine #2760). `buildKeywordCondition` 과 같은 기준이다.
+        sqlConds.push(Prisma.sql`((${titleCond})${bodyGroup})`);
       }
 
       if (department && department.length > 0) {
