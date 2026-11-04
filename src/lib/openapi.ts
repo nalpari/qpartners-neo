@@ -1854,14 +1854,14 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "**타이틀·첨부파일명·형번** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시). ⚠️ **본문(body)은 검색 대상이 아니다** — 검색고도화(2026-10-12) 결정으로 제외됐다(자동완성 응답속도). 요구사항정의서 REQ-001 과 다른 점이라 고객 합의 대기 항목이다. 형번 매칭은 isVisible=true 형번만 본다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며, 나머지 필터·정렬은 그대로 적용해 조회한다(목업 게이트와 동일). 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
+          { name: "keyword", in: "query", description: "**タイトル(제목)** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).\n\n⚠️ **본문(body)·첨부파일명·형번은 검색 대상이 아니다.** 본문·첨부파일명은 요구사항정의서 v1.1 REQ-001 「콘텐츠 내용 및 첨부파일명을 대상으로 하는 부분일치 검색은 제거한다」 에 따라, 형번은 2026-11-03 확정(Redmine #2760)으로 제외됐다. REQ-001 의 「제품 형번과 콘텐츠 제목」 은 **대상별로 하나씩**이라는 뜻이고, 형번 검색은 /api/products 가 담당한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며, 나머지 필터·정렬은 그대로 적용해 조회한다(목업 게이트와 동일). 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
           {
             name: "keywordOp",
             in: "query",
             description:
-              "다중 키워드 결합 조건. 결합은 **필드 단위**로 필드를 넘나들지 않는다.\n\n" +
-              "- `AND`(기본): 타이틀에 모든 키워드 / **첨부파일 한 건의 파일명**에 모든 키워드 / **형번 한 건**에 모든 키워드 — 셋 중 하나라도 만족하면 매칭. 타이틀에 `사과` + 형번에 `귤` 은 매칭되지 않으며, `사과.pdf`+`귤.pdf` 조합도 매칭되지 않는다.\n" +
-              "- `OR`: 타이틀·첨부파일명·형번 중 어느 하나에 키워드 하나라도 포함되면 매칭.\n\n" +
+              "다중 키워드 결합 조건. 검색 대상이 타이틀 하나뿐이라 필드를 넘나드는 결합은 없다.\n\n" +
+              "- `AND`(기본): 타이틀에 모든 키워드가 포함되면 매칭.\n" +
+              "- `OR`: 타이틀에 키워드 하나라도 포함되면 매칭.\n\n" +
               "`keyword` 가 없으면 무시된다.",
             schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
           },
@@ -2992,11 +2992,11 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Product"],
         summary: "제품일람 조회 (형번 단위 집계)",
         description:
-          "비로그인 GET 이 허용된 공개 경로다. **자료일람과 같은 검색 결과를 형번 단위로 다시 묶는다** — 조건에 걸린 자료를 紐づく 형번마다 세어 資料数 를 만든다. 따라서 조건에 맞는 자료가 0건인 형번은 목록에 나오지 않는다(축에는 남는다 — /products/axis).\n\n자료의 노출 범위는 /contents GET 과 같은 게시대상·게시기간 규칙이며(사내 사용자는 게시기간 미적용), 형번은 표시(isVisible=true) + 제품일람 대상 + 사용중 카테고리만 집계한다. 비사내 사용자에게는 사내전용 카테고리의 형번이 제외된다.\n\n키워드·분류축 파라미터의 의미는 /contents GET 과 동일하다. 비사내 사용자의 keyword 요청에는 rate limit 이 적용된다(IP당 60회/분, IP 불명 시 20회/분).",
+          "비로그인 GET 이 허용된 공개 경로다. 조건에 걸린 자료를 紐づく 형번마다 세어 資料数 를 만든다. 따라서 조건에 맞는 자료가 0건인 형번은 목록에 나오지 않는다(축에는 남는다 — /products/axis).\n\n자료의 노출 범위는 /contents GET 과 같은 게시대상·게시기간 규칙이며(사내 사용자는 게시기간 미적용), 형번은 표시(isVisible=true) + 제품일람 대상 + 사용중 카테고리만 집계한다. 비사내 사용자에게는 사내전용 카테고리의 형번이 제외된다.\n\n⚠️ **키워드의 의미는 /contents GET 과 다르다** — 이쪽은 **형번명(modelCode)** 에만 걸고, /contents 는 타이틀에만 건다(2026-11-03 확정, Redmine #2760). 분류축 파라미터의 의미는 동일하다. 비사내 사용자의 keyword 요청에는 rate limit 이 적용된다(IP당 60회/분, IP 불명 시 20회/분).",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "타이틀·첨부파일명·형번 부분일치 (본문 제외). ⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며 나머지 필터·정렬은 그대로 적용한다. 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
+          { name: "keyword", in: "query", description: "**형번명(modelCode)** 부분일치. 자료의 타이틀·본문·첨부파일명은 보지 않는다 — 형번관리에서 형번 자체가 제품의 제목이기 때문이다(Redmine #2760). 공백으로 분리한 다중 키워드는 keywordOp 로 결합하며, 한 형번명 안에서 판정한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며 나머지 필터·정렬은 그대로 적용한다. 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
           { name: "keywordOp", in: "query", schema: { type: "string", enum: ["AND", "OR"], default: "AND" } },
           {
             name: "facetCategoryIds",

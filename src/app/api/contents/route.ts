@@ -242,8 +242,8 @@ export async function GET(request: NextRequest) {
     // Prisma where 절과 raw SQL 분기가 같은 토큰 배열을 공유해야 결과가 일치한다.
     const keywordTokens = tokenizeKeyword(keyword);
 
-    // 키워드 검색 조건 — 제목 / 첨부파일명 / 형번. 본문은 제외(lib/content-search.ts SEARCH_BODY).
-    // 결합 규칙과 형번 매칭 범위는 buildKeywordCondition 주석 참조.
+    // 키워드 검색 조건 — **제목만**. 본문은 SEARCH_BODY 로 닫혀 있고, 첨부파일명·형번은
+    // 검색 대상이 아니다(Redmine #2760). 결합 규칙은 buildKeywordCondition 주석 참조.
     // ⚠️ sortCategoryCode 분기가 같은 조건을 raw SQL 로 다시 쓴다 — 함께 유지할 것.
     const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
 

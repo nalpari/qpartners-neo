@@ -1,9 +1,14 @@
 /**
  * 콘텐츠 키워드 검색 조건 — 검색기능 고도화 Phase 3.
  *
- * `/api/contents` GET 안에 있던 토큰 분리·OR 그룹 조립을 끌어내 제품일람(`/api/products`)과
- * 공유한다. 자료일람과 제품일람은 **같은 검색 결과를 축만 바꿔 보여주는 화면**이라
- * (목업 `currentResults()` 를 자료/제품 두 탭이 공유) 조건이 갈라지면 두 탭의 건수가 어긋난다.
+ * `/api/contents` GET 안에 있던 토큰 분리·OR 그룹 조립을 끌어낸 모듈이다.
+ *
+ * ⚠️ **자료와 제품은 키워드 대상이 다르다** (2026-11-03 확정, Redmine #2760).
+ *   - 자료(`buildKeywordCondition`)  → 제목
+ *   - 제품(`buildModelCodeCondition`) → 형번명
+ *
+ * 종전에는 두 탭이 한 조건을 공유했고(목업 `currentResults()` 를 양쪽이 썼다), 그 탓에
+ * 「자동완성 2건인데 목록 6건」이 나왔다. 분류축·노출 범위·게시기간은 여전히 같다.
  */
 
 import type { NextRequest } from "next/server";
@@ -122,8 +127,12 @@ export function buildKeywordCondition(
  *
  * 형번관리에서 형번 자체가 제품의 제목이다. 그래서 제품일람 검색은 형번명만 본다 —
  * 자료 제목은 보지 않는다 (요구사항정의서 v1.1 REQ-001, 2026-11-03 사용자 확정).
- * 자동완성 `[제품]` 후보(`/api/search/suggest`)가 쓰는 기준과 같아야 한다 — 갈라지면
- * 「자동완성 2건인데 목록 6건」이 된다 (Redmine #2760).
+ * 자동완성 `[제품]` 후보(`/api/search/suggest`)도 같은 **필드**(`modelCode`)를 본다 —
+ * 갈라지면 「자동완성 2건인데 목록 6건」이 된다 (Redmine #2760).
+ *
+ * ⚠️ 다만 **토큰화는 다르다.** 여기는 공백으로 나눠 `keywordOp` 로 결합하고,
+ * 자동완성은 입력 전체를 한 덩어리 LIKE 로 쓴다(`suggest/route.ts`). 그래서 공백이 들어간
+ * 검색어(`Q.TRON 440`)에서는 여전히 건수가 갈린다 — 종전부터 그러했고 이번 범위 밖이다.
  *
  * 노출 제어(`isVisible`·카테고리)는 `productModelVisibilityFilter` 가 따로 건다 —
  * 여기서는 키워드만 만든다.
@@ -166,7 +175,7 @@ export function hasTitleMatch(
 /**
  * 비사내 공개 경로의 검색 rate limit — DB 부하 방지 (IP당 60회/분, IP 불명 시 20회/분).
  *
- * 대상은 인덱스로 값싸게 처리되지 않는 경로다. 키워드 검색은 제목·첨부파일명·형번에
+ * 대상은 인덱스로 값싸게 처리되지 않는 경로다. 키워드 검색은 제목(자료)·형번명(제품)에
  * 선행 와일드카드 LIKE 를 걸고 findMany 와 count 가 각각 평가하므로, 불일치 검색어를
  * 반복해도 매번 full 비용이 든다.
  *
