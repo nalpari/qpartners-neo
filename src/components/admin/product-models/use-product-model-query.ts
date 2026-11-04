@@ -102,7 +102,10 @@ export function useProductCategoryOptions() {
     for (const parent of tree) {
       for (const child of parent.children) {
         if (!child.isProductList) continue;
-        const label = formatCategoryLabel({ name: child.name, parent: { name: parent.name } });
+        const label = formatCategoryLabel({
+          name: child.name,
+          parent: { name: parent.name, categoryCode: parent.categoryCode },
+        });
         if (child.isActive && parent.isActive) {
           opts.push({ value: String(child.id), label });
         } else {

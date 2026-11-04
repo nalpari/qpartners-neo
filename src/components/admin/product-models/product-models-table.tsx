@@ -12,7 +12,7 @@ import type {
 } from "ag-grid-community";
 
 import { DataGrid } from "@/components/ag-grid/data-grid";
-import { CategoryPath, Pagination, ProductStatusBadge } from "@/components/common";
+import { Pagination, ProductCategoryLabel, ProductStatusBadge } from "@/components/common";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 
 import { ProductModelsSearch } from "./product-models-search";
@@ -210,7 +210,7 @@ export function ProductModelsTable({
         // `data-grid.tsx` 가 등록하지 않아 무음으로 무시된다 — 같은 파일
         // `ModelCodeCellRenderer` 처럼 네이티브 `title` 을 쓴다.
         //
-        // `CategoryPath` 는 inline `<span>` 이라 overflow 가 적용되지 않는다.
+        // `ProductCategoryLabel` 은 inline `<span>` 이라 overflow 가 적용되지 않는다.
         // 말줄임이 걸리도록 `block` 래퍼로 감싼다.
         cellRenderer: (p: ICellRendererParams<ProductModelItem>) =>
           p.data ? (
@@ -218,7 +218,7 @@ export function ProductModelsTable({
               className="block overflow-hidden text-ellipsis whitespace-nowrap"
               title={formatCategoryLabel(p.data.category)}
             >
-              <CategoryPath category={p.data.category} />
+              <ProductCategoryLabel category={p.data.category} />
             </span>
           ) : null,
         cellClass: editingCellClass,

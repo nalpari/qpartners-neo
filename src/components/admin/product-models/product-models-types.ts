@@ -167,17 +167,13 @@ export function formatDate(value: string | null | undefined): string {
 }
 
 /**
- * 카테고리 표시명 — 1Depth 부모가 있으면 `부모 > 자식`.
+ * 카테고리 표시명 — **제품분류 하위는 2Depth 만**, 다른 축 하위는 `부모 > 자식`.
  *
- * 제품일람 대상은 제품 카테고리 한정이 아니라 **전 카테고리**로 확장됐다(고객 확장성 요구).
- * 서로 다른 축에 같은 이름의 2Depth 가 생길 수 있어 부모를 함께 보여준다.
+ * 규칙·근거는 `@/components/common` 의 `formatProductCategoryLabel` 에 있다. 제품일람·
+ * 제품상세·형번관리가 같은 표기를 써야 해서 그쪽을 단일 출처로 두고 여기서는 재노출만 한다
+ * (2026-11-04, 목업 `assets/qp-shell.js:230` 과 일치시킴).
  */
-export function formatCategoryLabel(category: {
-  name: string;
-  parent: { name: string } | null;
-}): string {
-  return category.parent ? `${category.parent.name} > ${category.name}` : category.name;
-}
+export { formatProductCategoryLabel as formatCategoryLabel } from "@/components/common";
 
 // ─── API 에러 → 일본어 UI 메시지 ───
 

@@ -10,8 +10,8 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
   CategoryNameList,
+  ProductCategoryLabel,
   ContentStateBadge,
-  DimSpinner,
   Pagination,
   ProductStatusBadge,
 } from "@/components/common";
@@ -76,6 +76,8 @@ interface ProductDetailResponse {
         id: number;
         categoryCode: string;
         name: string;
+        /** 사내전용 카테고리 적색 표기용 — 서버가 `PRODUCT_MODEL_CATEGORY_SELECT` 로 내려준다 */
+        isInternalOnly: boolean;
         parent: { id: number; categoryCode: string; name: string } | null;
       };
     };
@@ -289,18 +291,18 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
     );
   }
 
-  // 첫 로드 동안에는 **아무것도 그리지 않는다** — 자료상세(`contents-detail.tsx`)와 같은 처리.
+  // ⚠️ 여기에 `if (isLoading) return <DimSpinner />` 를 두면 안 된다 (2026-11-04 리뷰에서 되돌림).
   //
-  // 종전에는 로딩 중에도 헤더를 폴백(`-`)으로 그렸다. 그 폴백 텍스트 노드를 브라우저 자동
-  // 번역이 바꿔치기하면, 응답이 와도 React 가 그 자리를 갱신하지 못해 `-` 가 그대로 남는다
-  // (Redmine #2764). 데이터가 온 뒤에 처음 그리면 번역기가 미리 점유할 노드 자체가 없다 —
-  // 같은 화면에서 자료 목록과 제품상태 배지가 멀쩡했던 이유도 이것이다.
+  // 자료상세(`contents-detail.tsx:197`)가 그렇게 하길래 같은 처리인 줄 알고 옮겼는데, 그쪽
+  // 쿼리 키는 `["contents", contentId]` 라 `isLoading` 이 정말 첫 로드 전용이다. 이 화면은
+  // 키에 **`page` 와 `userScope` 가 들어 있어**(`:147`) 자료목록 페이지를 넘길 때마다, 그리고
+  // Gnb 의 인증 응답이 늦게 와 스코프가 `anon` → 실제 권한으로 바뀔 때마다 새 캐시 키가 되어
+  // `isLoading` 이 다시 true 가 된다. `DimSpinner` 는 `fixed inset-0 z-50` 전체 화면
+  // 오버레이라 헤더·그리드·GNB 까지 덮인다.
   //
-  // `isLoading` 은 **첫 로드에만** true 다(페이지 이동은 `isFetching`). 자료 목록 페이지를
-  // 넘길 때 헤더가 사라지지 않는다.
-  if (isLoading) {
-    return <DimSpinner />;
-  }
+  // 폴백(`-`) 을 번역 확장이 점유하는 문제(Redmine #2764)는 아래 헤더의 `key` 가 막는다 —
+  // 값이 바뀌면 요소를 통째로 새로 만들어 점유된 노드를 버린다. 폴백과 실제 값이 같아
+  // `key` 가 고정되는 경우는 형번·카테고리에서는 발생하지 않는다.
 
   const product = data?.data.product;
 
@@ -325,18 +327,26 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
           <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
             カテゴリ
           </span>
-          {/* 카테고리명은 일본어라 번역돼도 뜻이 통한다 — `translate="no"` 없이 `key` 로
-              노드 재생성만 보장한다(값이 사라지는 것만 막는다). */}
-          <span
-            key={`cat-${product?.category.id ?? "none"}`}
-            className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
-          >
-            {product
-              ? product.category.parent
-                ? `${product.category.parent.name} > ${product.category.name}`
-                : product.category.name
-              : "-"}
-          </span>
+          {/* Redmine #2755(공통) — **2Depth 만** 표시한다. 종전에는 `제품분류 > 태양전지모듈`
+              처럼 1Depth 까지 찍었다. 목업 `01-search.html:2127` 의 `${p.cat}` 도 2Depth
+              단독이다. 정확히는 목업 `assets/qp-shell.js:230` 의 규칙—제품분류 하위는
+              2Depth 만, 다른 축은 `1Depth > 2Depth`—를 `ProductCategoryLabel` 이 담고 있고
+              제품일람 목록·형번관리도 같은 컴포넌트를 쓴다.
+
+              카테고리명은 일본어라 번역돼도 뜻이 통한다 — `translate="no"` 없이 `key` 로
+              노드 재생성만 보장한다(값이 사라지는 것만 막는다). `CategoryName` 을 쓰는
+              이유는 사내전용 카테고리 적색 규칙을 유지하기 위함이다. */}
+          {product ? (
+            <ProductCategoryLabel
+              key={`cat-${product.category.id}`}
+              category={product.category}
+              className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
+            />
+          ) : (
+            <span key="cat-none" className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
+              -
+            </span>
+          )}
           {/* 製品ステータス — 목업 `01-search.html:2127` 의 헤더 구성(型番 / カテゴリ / 製品ステータス).
               형번의 속성이라 여기서 바로 보여준다. 자동완성으로 들어온 이용자가 단종 여부를
               이 화면에서 알 수 있어야 한다. */}

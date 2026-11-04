@@ -21,6 +21,9 @@ export {
   CategoryName,
   CategoryPath,
   CategoryNameList,
+  ProductCategoryLabel,
+  formatProductCategoryLabel,
+  PRODUCT_CATEGORY_PARENT_CODE,
   INTERNAL_CATEGORY_TEXT_CLASS,
 } from "./category-label";
 export type { CategoryLabelSource } from "./category-label";
