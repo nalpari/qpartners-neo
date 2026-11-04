@@ -593,7 +593,14 @@ export function ContentsTable({
           },
           cellRenderer: (params: ICellRendererParams<ContentListItem>) => {
             // rowData 에서 이미 정렬된 targets 를 사용 (cellRenderer sort 비용 회피)
-            const targets = params.data?.targets ?? [];
+            //
+            // ⚠️ 배열 여부를 **판정보다 먼저** 본다. `?? []` 로 폴백하면
+            // `isInternalOnlyContent([]) === true` 라 「targets 를 모르는 행」이 사내전용으로
+            // 찍힌다. 탭 전환 순간 제품 행(`targets` 없음)이 자료용 그리드에 들어오는 사례가
+            // 있었고(위 `getDocumentRowClass` 주석), 그때 행 적색은 같은 가드로 안 붙어
+            // 「행은 붉지 않은데 게시대상만 社内専用」이 된다.
+            const targets = params.data?.targets;
+            if (!Array.isArray(targets)) return <span>-</span>;
             // Redmine #2757 / 요구사항정의서 v1.1 REQ-005 「사내전용 콘텐츠는 게시대상 항목에
             // 「사내전용」을 표시한다」. 판정은 행 적색(`getDocumentRowClass`)·좌측
             // 「社内会員の投稿のみ表示」 필터와 같은 `isInternalOnlyContent` 를 쓴다 — 갈라지면
@@ -603,8 +610,10 @@ export function ContentsTable({
             // 만들고(REQ-011, `contents-form-post-target.tsx` 의 파생 `internalOnly`),
             // neo 는 사내전용 플래그 컬럼을 따로 두지 않는다. 개발 DB published 2,461건 중
             // 27건이 여기 해당한다(2026-11-03 실측).
+            //
+            // 0건은 위 판정에서 이미 `社内専用` 으로 걸린다 — 「targets 가 비었으면 `-`」
+            // 분기는 더 이상 두지 않는다. `-` 는 데이터를 모르는 행에만 쓴다.
             if (isInternalOnlyContent(targets)) return <span>社内専用</span>;
-            if (targets.length === 0) return <span>-</span>;
             return (
               <div className="flex flex-col gap-1 pt-3 pb-3 text-center">
                 {targets.map((t) => (
@@ -744,7 +753,7 @@ export function ContentsTable({
   // 어느 쪽인지 판별은 호출자(ContentsContents)가 CONTENT_SORT_FIELDS 화이트리스트로 수행.
   // AG Grid 는 단일 컬럼 정렬만 사용(멀티 정렬 UI 미제공) — 활성 정렬 컬럼 1개만 취해 전달.
   /**
-   * 제품일람 4컬럼 — `製品カテゴリ` / `型番` / `製品ステータス` / `資料数`.
+   * 제품일람 4컬럼 — `カテゴリ` / `型番` / `製品ステータス` / `資料数`.
    * 요구사항정의서 v1.1 REQ-005, 목업 `renderProdTable`.
    *
    * 헤더 클릭 정렬은 붙이지 않았다. 정렬 기준이 REQ-005 로 **카테고리 표시순서 → 형번
