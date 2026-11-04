@@ -23,6 +23,7 @@ import api from "@/lib/axios";
 import { CENTER_CELL_STYLE } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import type { LoginUser } from "@/lib/schemas/auth";
+import { AttachmentCellRenderer } from "@/components/contents/attachment-download";
 
 /** `GET /api/products/:id` 의 자료 1건 — 목업 제품상세 자료목록 7컬럼에 필요한 필드 */
 interface ProductDocument {
@@ -246,16 +247,15 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
         },
       },
       {
+        // Redmine #2759 — 종전에는 첨부 **건수(숫자)** 를 찍어 자료일람(다운로드 아이콘)과
+        // 모양이 달랐다. 같은 셀 컴포넌트를 공유해 두 화면을 묶는다.
         headerName: "添付",
         field: "attachmentCount",
         sortable: false,
         width: 90,
         headerClass: "ag-header-cell-center",
         cellStyle: CENTER_CELL_STYLE,
-        valueFormatter: (params) =>
-          params.data && params.data.attachmentCount > 0
-            ? String(params.data.attachmentCount)
-            : "-",
+        cellRenderer: AttachmentCellRenderer,
       },
       {
         headerName: "VIEW",
