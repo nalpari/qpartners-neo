@@ -295,13 +295,28 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
       <div className="flex w-full max-w-[var(--page-max)] flex-col gap-[18px] rounded-[12px] bg-white px-6 pt-[34px] pb-[34px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         {/* 헤더 — 형번 + 카테고리 + リスト */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="font-mono text-[22px] font-bold text-[#101010]">
+          {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2764).
+              번역 확장이 **데이터 도착 전 폴백(`-`)** 텍스트 노드를 점유하면, 응답이 와도
+              React 가 그 자리를 갱신하지 못해 `-` 가 그대로 남는다. 아래 `この製品の資料（N件）`
+              와 같은 건이다. `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어
+              점유된 노드를 버린다. 형번은 고유명사라 번역 자체도 대상이 아니다.
+              증상이 **간헐적**인 이유는 번역 시점과 응답 도착 시점의 경합이기 때문이다. */}
+          <h1
+            key={`model-${product?.modelCode ?? "none"}`}
+            translate="no"
+            className="font-mono text-[22px] font-bold text-[#101010]"
+          >
             {product?.modelCode ?? "-"}
           </h1>
           <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
             カテゴリ
           </span>
-          <span className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
+          {/* 카테고리명은 일본어라 번역돼도 뜻이 통한다 — `translate="no"` 없이 `key` 로
+              노드 재생성만 보장한다(값이 사라지는 것만 막는다). */}
+          <span
+            key={`cat-${product?.category.id ?? "none"}`}
+            className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
+          >
             {product
               ? product.category.parent
                 ? `${product.category.parent.name} > ${product.category.name}`

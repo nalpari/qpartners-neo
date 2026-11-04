@@ -190,8 +190,20 @@ export function ContentsFormProductModels({
         )}
       </div>
 
-      <p className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]">
-        Total <span className="font-semibold text-[#E97923]">{total.toLocaleString()}</span>
+      {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2763).
+          번역 확장이 **데이터 도착 전 폴백(`Total 0`)** 을 통째로 점유하면, 응답이 와도
+          React 가 숫자를 갱신하지 못해 목록은 19건인데 `Total 0` 이 남는다. 형번관리
+          (`product-models-search.tsx`)·자료일람(`合計`)이 같은 이유로 같은 처리를 한다.
+          증상이 **간헐적**인 이유는 번역 시점과 응답 도착 시점의 경합이기 때문이다. */}
+      <p
+        key={`total-${isError ? "err" : total}`}
+        className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
+      >
+        Total{" "}
+        {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
+        <span translate="no" className="font-semibold text-[#E97923]">
+          {isError ? "-" : total.toLocaleString()}
+        </span>
       </p>
 
       {/* 선택 목록 — 높이 520px 고정 (2026-10-08 리뷰 결정) */}
@@ -274,7 +286,8 @@ export function ContentsFormProductModels({
           >
             前へ
           </button>
-          <span className="text-[#45576f]">
+          {/* 숫자 쌍도 같은 번역 경합을 탄다 — 위 Total 과 같은 처리 */}
+          <span key={`page-${page}-${totalPages}`} translate="no" className="text-[#45576f]">
             {page} / {totalPages}
           </span>
           <button
