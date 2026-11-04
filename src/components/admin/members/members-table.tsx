@@ -190,9 +190,15 @@ export function MembersTable({
     <div className="flex flex-col gap-[18px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] pt-[34px] pb-[42px] px-[42px] w-[var(--page-max)]">
       {/* 상단 바 */}
       <div className="flex items-center justify-between">
-        <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+        {/* key + translate="no" — 건수는 값이 바뀔 때 요소를 새로 만들어 그려야 한다.
+          로딩 중 폴백(`0`)을 미리 그리면 브라우저 자동 번역이 그 텍스트를 점유해, 응답이 와도
+          React 가 숫자를 갱신하지 못한다 (Redmine #2763 · #2764 와 같은 건). */}
+        <p
+          key={`member-total-${totalCount}`}
+          className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]"
+        >
           合計{" "}
-          <span className="font-semibold text-[#E97923]">
+          <span translate="no" className="font-semibold text-[#E97923]">
             {totalCount.toLocaleString()}
           </span>
           件

@@ -161,9 +161,15 @@ export function BulkMailTable({ searchParams, pageSize: perPage, onPageSizeChang
       {/* 상단 필터 바 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <p className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]">
+          {/* key + translate="no" — 건수는 값이 바뀔 때 요소를 새로 만들어 그려야 한다.
+          로딩 중 폴백(`0`)을 미리 그리면 브라우저 자동 번역이 그 텍스트를 점유해, 응답이 와도
+          React 가 숫자를 갱신하지 못한다 (Redmine #2763 · #2764 와 같은 건). */}
+          <p
+            key={`mail-total-${totalCount}`}
+            className="font-['Noto_Sans_JP'] text-[14px] leading-[1.5] text-[#101010]"
+          >
             送信メール一覧{" "}
-            <span className="font-semibold text-[#E97923]">
+            <span translate="no" className="font-semibold text-[#E97923]">
               ({totalCount.toLocaleString()}件)
             </span>
           </p>
