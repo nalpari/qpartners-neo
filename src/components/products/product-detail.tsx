@@ -335,7 +335,6 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
     );
   }
 
-
   return (
     <main className="flex w-full flex-col items-center gap-[10px] pb-[60px] lg:gap-[18px] lg:pb-[120px]">
       <div className="flex w-full max-w-[var(--page-max)] flex-col gap-[18px] rounded-[12px] bg-white px-6 pt-[34px] pb-[34px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
@@ -375,9 +374,25 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
           </div>
         </div>
 
-        {/* 숫자에만 `translate="no"` — 건수는 번역 대상이 아니다. 로딩 가드가 값을
-            보장하므로 `0` 폴백이 화면에 나오는 경로는 없다. */}
-        <h2 className="font-['Noto_Sans_JP'] text-[15px] font-medium text-[#101010]">
+        {/* key + translate="no" — 브라우저 자동 번역 **2종 방어** (Redmine #2764).
+            위 로딩 가드가 보장하는 것은 **첫 페인트**뿐이고, 마운트를 유지한 채 `total` 이
+            바뀌는 경로가 남는다. ① Gnb 의 인증 쿼리가 `placeholderData: null`
+            (`header.tsx:245`) 이라 `userScope`(`:137`) 가 `anon` 으로 먼저 조회되고, 인증
+            응답이 도착하면 새 캐시 키가 되는데 `keepPreviousData`(`:160`) 로 이전 건수가
+            유지된 채 교체된다. ② 자료상세를 다녀와 `staleTime` 이 지난 뒤의 background
+            refetch. 둘 다 같은 텍스트 노드에서 값→값 제자리 갱신이고, 번역 확장이
+            「この製品の資料（N件）」 구간을 점유하고 있으면 React 갱신이 반영되지 않아 옛
+            건수가 남는다. `key` 를 값에 묶어 요소를 통째로 교체하면 점유된 노드를 버린다.
+            자료일람 `合計`(`contents-table.tsx:850`)·형번관리 `Total`
+            (`product-models-search.tsx:82`) 이 같은 처리다.
+
+            형번 `h1`·카테고리에는 `key` 가 필요 없다 — 마운트 유지 중 값이 바뀌는 경로가
+            없다. 제품상세에서 다른 제품상세로 가는 인앱 경로가 없고, `/products/:id` 진입은
+            전부 재마운트다. */}
+        <h2
+          key={`doc-count-${total}`}
+          className="font-['Noto_Sans_JP'] text-[15px] font-medium text-[#101010]"
+        >
           この製品の資料（
           <span translate="no" className="font-semibold text-[#E97923]">
             {total.toLocaleString()}
