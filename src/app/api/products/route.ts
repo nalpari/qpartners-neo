@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
       productModelIds,
       sortField,
       sortDir,
+      facets,
     } = query.data;
 
     const emptyResponse = NextResponse.json({
@@ -209,9 +210,30 @@ export async function GET(request: NextRequest) {
     const total = rows.length;
     const pageRows = rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
 
+    // 좌측 체크 동기화용 집계 — **결과 전건** 기준이다 (Redmine #2745).
+    // 형번은 위에서 이미 모아 둔 `agg` 의 키가 그대로 답이고(페이징 전), 분류는 그 형번들에
+    // 걸린 자료의 분류값이다. `facets=1` 로 명시한 요청에서만 분류 조회를 더 돈다.
+    //
+    // ⚠️ 여기서 나온 체크를 **다시 조회 조건으로 걸면 안 된다.** 자료일람과 같은 이유다 —
+    // 어떤 축이 비어 있는 자료·형번이 그 축이 조건이 되는 순간 탈락해, 검색이 찾아낸 것을
+    // 자동 체크가 도로 숨긴다(#2748). 클라이언트가 `facetFromSearch` 로 구분한다.
+    const availableFacets = facets
+      ? {
+          productModelIds: [...agg.keys()],
+          categoryIds: (
+            await prisma.contentCategory.findMany({
+              where: { contentId: { in: [...new Set(links.map((l) => l.contentId))] } },
+              select: { categoryId: true },
+              distinct: ["categoryId"],
+            })
+          ).map((r) => r.categoryId),
+        }
+      : null;
+
     return NextResponse.json({
       data: pageRows,
       meta: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+      ...(availableFacets && { availableFacets }),
     });
   } catch (error) {
     logError("GET /api/products", error);

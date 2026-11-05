@@ -268,7 +268,7 @@ export async function GET(request: NextRequest) {
     //   - keyword 검색 — title/body 선행 와일드카드 LIKE + attachments 상관 EXISTS(fileName LIKE).
     //     findMany 와 count 가 각각 평가하므로 불일치 검색어를 반복해도 매번 full 비용이 든다.
     //   - sortCategoryCode — 카테고리 자식명 기준 정렬 raw SQL.
-    //   - facets=1 — `resolveAvailableFacets` 가 1·2패스로 링크 테이블 전건 distinct 를 두 번
+    //   - facets=1 — `resolveAvailableFacets` 가 링크 테이블 distinct 를 한 번
     //     돌린다(+ 축 조회). 키워드가 없어도 비싸고, 타이핑 디바운스마다 들어온다.
     // 단순 페이징(keyword·정렬·집계 없음)은 제외한다 — NAT 뒤 공유 IP 에서 일반 열람이 막히지 않도록.
     //
@@ -828,7 +828,7 @@ export async function GET(request: NextRequest) {
     // `facets=1` 로 **명시한 요청에서만** 집계한다. 종전에는 모든 GET 이 링크 테이블
     // `distinct` 를 돌려, 집계를 쓰지 않는 관리자 목록·페이지 이동·탭 전환까지 쿼리를 더
     // 썼다. 형번축 집계도 함께 돌렸지만 쓰는 화면이 없어 걷어냈다 — 필요해지면 되살린다.
-    const facetCatRows = facets ? await resolveAvailableFacets(axisFreeWhere, internal) : null;
+    const facetCatRows = facets ? await resolveAvailableFacets(axisFreeWhere) : null;
 
     return NextResponse.json({
       data,

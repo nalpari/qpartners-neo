@@ -111,6 +111,12 @@ export const listProductsQuerySchema = z.object({
   /** 型番 헤더 클릭 정렬. 미지정 시 카테고리 표시순서 → 형번 표시순서 → 형번명 오름차순 (REQ-005) */
   sortField: z.enum(["modelCode", "documentCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
+  /**
+   * 좌측 체크 동기화용 집계를 함께 받을지 — `/api/contents` 의 `facets` 와 같은 역할이다
+   * (Redmine #2745). 제품일람에는 이 집계가 없어서 검색해도 좌측이 결과를 따라오지 않았다.
+   * 집계는 **페이지가 아니라 결과 전건** 기준이다.
+   */
+  facets: z.coerce.boolean().default(false),
 });
 
 /** 제품상세 — REQ-010. 그 제품에 紐づく 자료 목록 */

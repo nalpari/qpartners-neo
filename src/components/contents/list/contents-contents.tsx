@@ -20,7 +20,7 @@ import { SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
 import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsFacets, ContentsModeSwitch } from "./contents-facets";
 import type { ProductAxisGroup, ProductListRow } from "./contents-facet-utils";
-import { resolveVisibleAxes } from "./contents-facet-utils";
+import { isProductAxisGroupActive, resolveVisibleAxes } from "./contents-facet-utils";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
@@ -33,12 +33,21 @@ type ListView = "doc" | "prod";
 /**
  * 분류축 집계 결과를 어떻게 반영할지 — REQ-004.
  *
- * - `apply` : 체크 상태를 이 값으로 덮는다 (`null` = 미설정 = 화면상 전부 체크)
- * - `keep`  : 체크를 **그대로 둔다** — 2자 이하 실시간 재조회, 집계 호출 실패
- * - `stale` : 더 새 요청이 진행 중이라 이 응답은 버린다 (키워드도 반영하지 않는다)
+ * - `apply`  : 체크 상태를 이 값으로 덮는다 (`null` = 미설정 = 화면상 전부 체크)
+ * - `keep`   : 아무것도 건드리지 않는다 — 집계 호출 실패, 그리고 **사람이 직접 건 체크**를
+ *              들고 2자 이하로 내려간 경우(2026-10-29 확인: 좁혀 둔 체크를 글자 지웠다고
+ *              날리지 않는다). 그 체크는 이미 조건이므로 그대로 좌측 기준 재조회가 된다
+ * - `stale`  : 더 새 요청이 진행 중이라 이 응답은 버린다 (키워드도 반영하지 않는다)
  */
 type FacetOutcome =
-  | { kind: "apply"; facetCategoryIds: number[] | null }
+  | {
+      kind: "apply";
+      facetCategoryIds: number[] | null;
+      /** 이 체크가 **검색이 만든 것**인지 — false 면 평소대로 조건이 된다 */
+      fromSearch: boolean;
+      /** 제품일람 탭에서만 채워진다 — 자료일람에는 형번 축이 없다 (Redmine #2745) */
+      productModelIds?: number[] | null;
+    }
   | { kind: "keep" }
   | { kind: "stale" };
 
@@ -80,6 +89,17 @@ interface FacetSelection {
   facetCategoryIds: number[] | null;
   /** 체크된 형번 id (型番 축). `null` = 미설정(전부 체크 표시) */
   productModelIds: number[] | null;
+  /**
+   * 지금 체크가 **검색이 만든 것**인가 — true 면 화면에만 켜고 **조회 조건에는 넣지 않는다**.
+   *
+   * 검색은 「검색어로 목록을 뽑고, 그 목록의 분류를 좌측에 켜 준다」가 전부다. 켜 준 체크를
+   * 다시 조건으로 걸면 **검색이 찾아낸 자료를 자동 체크가 도로 숨긴다** — 어떤 축이 비어 있는
+   * 자료는 그 축이 조건이 되는 순간 탈락하기 때문이다. `PHASE9-TEST` 가 자동완성 3건인데
+   * 목록 2건이던 것이 이 경로였다(Redmine #2748). 빠지던 자료는 `情報種別` 가 비어 있었다.
+   *
+   * 사용자가 체크를 직접 건드리면 false 가 되고, 그때부터는 평소대로 조건이 된다.
+   */
+  facetFromSearch: boolean;
 }
 
 /**
@@ -181,6 +201,7 @@ const EMPTY_SEARCH_PARAMS: SearchParams = {
   // null = 미설정 — 좌측영역은 전부 체크로 보이고 조건은 걸지 않는다 (2026-10-23).
   facetCategoryIds: null,
   productModelIds: null,
+  facetFromSearch: false,
 };
 
 /** sessionStorage 의 직렬화된 검색조건을 안전하게 역직렬화. 손상/스키마변동 시 빈 값. */
@@ -206,6 +227,7 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
       internalOnly: parsed.internalOnly === true,
       facetCategoryIds: parseIdArrayOrNull(parsed.facetCategoryIds),
       productModelIds: parseIdArrayOrNull(parsed.productModelIds),
+      facetFromSearch: parsed.facetFromSearch === true,
     };
   } catch (error: unknown) {
     console.warn("[ContentsContents] sessionStorage JSON 파싱 실패:", error);
@@ -408,7 +430,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     },
     staleTime: 5 * 60 * 1000,
   });
-  const productAxis = productAxisResponse?.data ?? [];
+  // `visibleModelIds` 가 이 값을 의존한다 — 매 렌더 새 배열이면 메모가 무의미해진다.
+  const productAxis = useMemo(() => productAxisResponse?.data ?? [], [productAxisResponse]);
   const isProductAxisEnabled = productAxisResponse?.meta.enabled ?? false;
 
   /**
@@ -424,6 +447,19 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     }
     return ids;
   }, [categories, isInternal]);
+
+  /**
+   * 사이드바에 **선택 가능한 형번** id 전부 — 제품일람 자동 체크의 「전부 체크」 판정에 쓴다.
+   * 기준은 `ContentsFacets#allProductModelIds` 와 같아야 한다 (사용중지 카테고리 제외,
+   * 공개 자료 0건 형번 제외).
+   */
+  const visibleModelIds = useMemo<number[]>(
+    () =>
+      productAxis
+        .filter(isProductAxisGroupActive)
+        .flatMap((group) => group.productModels.filter((m) => m.hasDocuments).map((m) => m.id)),
+    [productAxis],
+  );
 
   /**
    * 분류축 쿼리 파라미터.
@@ -450,6 +486,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    */
   const facetParams = useMemo<Record<string, string>>(() => {
     const params: Record<string, string> = {};
+    // 검색이 만든 체크는 **표시 전용**이다 — 조건으로 쓰면 검색이 찾아낸 자료를 도로 숨긴다
+    // (Redmine #2748). 자세한 사유는 `FacetSelection#facetFromSearch` 주석 참조.
+    if (searchParams.facetFromSearch) return params;
     const selected = searchParams.facetCategoryIds;
     // ① 전부 체크 — 분류 조건을 걸지 않는다.
     if (selected === null) return params;
@@ -459,7 +498,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     const conditioned = visibleFacetIds.filter((id) => chosen.has(id));
     if (conditioned.length > 0) params.facetCategoryIds = conditioned.join(",");
     return params;
-  }, [searchParams.facetCategoryIds, visibleFacetIds]);
+  }, [searchParams.facetCategoryIds, searchParams.facetFromSearch, visibleFacetIds]);
 
   /** 형번 축이 화면에 나오는 탭인지 — `ContentsFacets#showModelAxis` 와 같은 조건이다. */
   const isModelAxisShown =
@@ -591,7 +630,10 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         if (searchParams.keywordOp === "OR") params.keywordOp = "OR";
       }
       Object.assign(params, facetParams);
-      const selectedModelIds = searchParams.productModelIds ?? [];
+      // 검색이 만든 형번 체크도 **표시 전용**이다 — 분류와 같은 이유(#2748).
+      const selectedModelIds = searchParams.facetFromSearch
+        ? []
+        : (searchParams.productModelIds ?? []);
       if (selectedModelIds.length > 0) {
         params.productModelIds = selectedModelIds.join(",");
       }
@@ -653,6 +695,36 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   };
 
   /**
+   * 제품일람 집계 — `/api/products?facets=1`. 자료일람의 `fetchAvailableFacets` 와 짝이다.
+   *
+   * 자료 기준 집계(`/api/contents?facets=1`)를 제품일람에 쓰면 안 된다 — 제품일람은 거기에
+   * 형번 링크 조건을 더 걸어 더 좁다. 그래서 탭마다 제 집계를 쓴다 (Redmine #2745).
+   */
+  const fetchAvailableProductFacets = async (
+    keyword: string,
+    keywordOp: SearchParams["keywordOp"],
+  ): Promise<{ categoryIds: number[]; productModelIds: number[] } | null> => {
+    try {
+      const params: Record<string, string | number | boolean> = {
+        page: 1,
+        pageSize: 1,
+        facets: true,
+      };
+      if (keyword) {
+        params.keyword = keyword;
+        if (keywordOp === "OR") params.keywordOp = "OR";
+      }
+      const res = await api.get<{
+        availableFacets?: { categoryIds: number[]; productModelIds: number[] };
+      }>("/products", { params });
+      return res.data.availableFacets ?? null;
+    } catch (err: unknown) {
+      console.warn("[ContentsContents] 제품일람 집계 조회 실패 — 체크 상태를 유지합니다:", err);
+      return null;
+    }
+  };
+
+  /**
    * 집계 결과를 체크 상태로 환산 — 표시 중인 축의 선택지 중 결과에 나타나는 것만 남긴다.
    *
    * ⚠️ 결과가 **선택지 전부**면 `null`(미설정 = 전부 체크)로 정규화한다. 그래야 예외처리 ① 이
@@ -660,9 +732,12 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 체크인데 서버에는 AND 조건이 나가, 분류가 비어 있는 자료가 탈락한다 — 같은 화면 상태에서
    * 건수가 달라지는 #2747 의 재발 경로다. `ContentsFacets#commitCategories` 와 같은 규칙이다.
    */
-  const toFacetSelection = (availableIds: number[]): number[] | null => {
+  const toFacetSelection = (
+    availableIds: number[],
+    allIds: number[] = visibleFacetIds,
+  ): number[] | null => {
     const available = new Set(availableIds);
-    const picked = visibleFacetIds.filter((id) => available.has(id));
+    const picked = allIds.filter((id) => available.has(id));
     // ⚠️ **자동 경로는 절대 `[]` 를 만들지 않는다.** `[]` 는 ②(조회 없이 0건) 트리거이고
     // 그건 **사용자가 직접 전부 해제했을 때만** 성립하는 의미다. 여기서 `[]` 가 나오는 경우가
     // 둘 있는데 둘 다 「좁힐 근거가 없다」는 뜻이므로 전부 체크(`null`)로 둔다.
@@ -677,7 +752,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     // 0건 + 전 체크 해제**로 잠겼다(2026-11-03 적대적 리뷰 블로커 1, 리뷰어 3개 전원 지적).
     // 서버 `resolveAvailableFacets` 가 2패스 0행에 `return first` 폴백을 둔 것과 같은 취지다.
     if (picked.length === 0) return null;
-    return picked.length === visibleFacetIds.length ? null : picked;
+    return picked.length === allIds.length ? null : picked;
   };
 
   /**
@@ -718,16 +793,49 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   ): Promise<FacetOutcome> => {
     const seq = facetSeqRef.current + 1;
     facetSeqRef.current = seq;
-    if (searchParams.view === "prod") return { kind: "keep" };
+    const isProd = searchParams.view === "prod";
     if (keyword.trim().length < SEARCH_KEYWORD_MIN) {
-      return trigger === "realtime"
-        ? { kind: "keep" }
-        : { kind: "apply", facetCategoryIds: null };
+      // [검색] 클릭 — 요구사항 ③ 「검색어 삭제 후 검색 → 조건 초기화 / 전체 선택」.
+      if (trigger !== "realtime") {
+        return {
+          kind: "apply",
+          facetCategoryIds: null,
+          fromSearch: false,
+          ...(isProd && { productModelIds: null }),
+        };
+      }
+      // 실시간으로 2자 이하까지 지운 경우 — **검색이 없던 일이 된다.** 3자 미만은 자동완성도
+      // 검색어 조건도 빠지는 구간이라, 남는 것은 「검색하기 전」 상태다. 그래서 재조회가 아니라
+      // **초기화**이고 좌측도 전체 선택으로 되돌린다 (2026-11-05 사용자 확정).
+      //
+      // 종전에는 이 경로에서 체크를 그대로 뒀다(2026-10-29). 그때는 검색이 만든 체크가 곧
+      // 조건이라 구분이 없었는데, 지금은 검색이 만든 체크가 조건이 아니다(#2748). 그 상태로
+      // 체크만 남기면 「검색은 취소됐는데 그 검색이 만든 체크로 거르는」 상태가 된다.
+      return {
+        kind: "apply",
+        facetCategoryIds: null,
+        fromSearch: false,
+        ...(isProd && { productModelIds: null }),
+      };
     }
+
+    // 제품일람은 제 집계를 쓴다 — 형번 축까지 결과 기준으로 켠다 (Redmine #2745).
+    if (isProd) {
+      const available = await fetchAvailableProductFacets(keyword, keywordOp);
+      if (seq !== facetSeqRef.current) return { kind: "stale" };
+      if (!available) return { kind: "keep" };
+      return {
+        kind: "apply",
+        facetCategoryIds: toFacetSelection(available.categoryIds),
+        productModelIds: toFacetSelection(available.productModelIds, visibleModelIds),
+        fromSearch: true,
+      };
+    }
+
     const availableIds = await fetchAvailableFacets(keyword, keywordOp);
     if (seq !== facetSeqRef.current) return { kind: "stale" };
     if (!availableIds) return { kind: "keep" };
-    return { kind: "apply", facetCategoryIds: toFacetSelection(availableIds) };
+    return { kind: "apply", facetCategoryIds: toFacetSelection(availableIds), fromSearch: true };
   };
 
   /** 집계 결과를 검색 조건에 반영한다. `stale` 이면 아무것도 하지 않는다. */
@@ -736,7 +844,14 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     setSearchParams((prev) => ({
       ...prev,
       ...filters,
-      ...(outcome.kind === "apply" && { facetCategoryIds: outcome.facetCategoryIds }),
+      ...(outcome.kind === "apply" && {
+        facetCategoryIds: outcome.facetCategoryIds,
+        // 검색이 만든 체크면 화면에만 켜고 조건에서는 뺀다 (#2748).
+        facetFromSearch: outcome.fromSearch,
+        ...(outcome.productModelIds !== undefined && {
+          productModelIds: outcome.productModelIds,
+        }),
+      }),
       page: 1,
     }));
   };
@@ -779,12 +894,23 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     setSearchParams((prev) => ({ ...prev, view, page: 1 }));
   };
 
+  // 사용자가 직접 건드린 체크는 조건이 된다 — `facetFromSearch` 를 내린다.
   const handleFacetCategoryIdsChange = (ids: number[] | null) => {
-    setSearchParams((prev) => ({ ...prev, facetCategoryIds: ids, page: 1 }));
+    setSearchParams((prev) => ({
+      ...prev,
+      facetCategoryIds: ids,
+      facetFromSearch: false,
+      page: 1,
+    }));
   };
 
   const handleProductModelIdsChange = (ids: number[] | null) => {
-    setSearchParams((prev) => ({ ...prev, productModelIds: ids, page: 1 }));
+    setSearchParams((prev) => ({
+      ...prev,
+      productModelIds: ids,
+      facetFromSearch: false,
+      page: 1,
+    }));
   };
 
   const handleRoleCodeChange = (roleCode: string) => {
