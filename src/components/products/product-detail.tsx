@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 
@@ -10,6 +10,7 @@ import { DataGrid } from "@/components/ag-grid/data-grid";
 import {
   Button,
   CategoryNameList,
+  DimSpinner,
   ProductCategoryLabel,
   ContentStateBadge,
   Pagination,
@@ -145,7 +146,7 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data, isLoading, isError, error } = useQuery<ProductDetailResponse>({
+  const { data, isLoading, isFetching, isError, error } = useQuery<ProductDetailResponse>({
     queryKey: ["products", "detail", productId, page, userScope],
     queryFn: async () => {
       const res = await api.get<ProductDetailResponse>(`/products/${productId}`, {
@@ -153,11 +154,17 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
       });
       return res.data;
     },
+    // 키에 `page`·`userScope` 가 있어 그 둘이 바뀌면 새 쿼리가 된다. 그때 이전 데이터를
+    // 유지해야 `isLoading` 이 **첫 로드 전용**이 되고, 아래 로딩 가드가 페이지 이동마다
+    // 화면을 덮지 않는다(자료상세와 같은 조건이 된다).
+    placeholderData: keepPreviousData,
   });
 
   const isNotFound = isError && isAxiosError(error) && error.response?.status === 404;
 
   const contents = useMemo(() => data?.data.contents ?? [], [data]);
+  // `?? 0` 은 훅 순서 때문에 로딩 가드보다 위에 있어야 해서 남는다 — 가드를 지나면
+  // `data` 가 보장되므로 이 폴백이 화면에 쓰이는 경로는 없다.
   const total = data?.meta.total ?? 0;
   const totalPages = data?.meta.totalPages ?? 0;
 
@@ -291,38 +298,52 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
     );
   }
 
-  // ⚠️ 여기에 `if (isLoading) return <DimSpinner />` 를 두면 안 된다 (2026-11-04 리뷰에서 되돌림).
+  // 로딩 가드 — 자료상세(`contents-detail.tsx:197`)와 **같은 처리**다. 값이 도착할
+  // 때까지 화면을 그리지 않는다.
   //
-  // 자료상세(`contents-detail.tsx:197`)가 그렇게 하길래 같은 처리인 줄 알고 옮겼는데, 그쪽
-  // 쿼리 키는 `["contents", contentId]` 라 `isLoading` 이 정말 첫 로드 전용이다. 이 화면은
-  // 키에 **`page` 와 `userScope` 가 들어 있어**(`:147`) 자료목록 페이지를 넘길 때마다, 그리고
-  // Gnb 의 인증 응답이 늦게 와 스코프가 `anon` → 실제 권한으로 바뀔 때마다 새 캐시 키가 되어
-  // `isLoading` 이 다시 true 가 된다. `DimSpinner` 는 `fixed inset-0 z-50` 전체 화면
-  // 오버레이라 헤더·그리드·GNB 까지 덮인다.
+  // 종전에는 `product?.modelCode ?? "-"` 로 **없는 값을 글자로 대체**했다. 그러면 응답이
+  // 늦는 순간(캐시 없는 첫 진입 등)에 형번·카테고리가 `-`, 자료 건수가 `0` 으로 보여
+  // 「값이 틀렸다」고 읽힌다 — Redmine #2763·#2764 의 증상이 이것이다.
   //
-  // 폴백(`-`) 을 번역 확장이 점유하는 문제(Redmine #2764)는 아래 헤더의 `key` 가 막는다 —
-  // 값이 바뀌면 요소를 통째로 새로 만들어 점유된 노드를 버린다. 폴백과 실제 값이 같아
-  // `key` 가 고정되는 경우는 형번·카테고리에서는 발생하지 않는다.
+  // `product` 가 없는 경우는 **로딩 중과 조회 실패뿐**이다. API 는 형번이 없거나 노출
+  // 대상이 아니면 404 를 내고(`api/products/[id]/route.ts:71`) 그건 바로 위에서 걸러낸다.
+  // 둘 다 값처럼 보이는 글자를 보여줄 상황이 아니다.
+  //
+  // 전에 이 가드를 넣었다가 되돌렸는데(2026-11-04 리뷰), 문제는 가드가 아니라 쿼리 키에
+  // `page`·`userScope` 가 있어 그 둘이 바뀔 때마다 `isLoading` 이 다시 true 가 되고,
+  // `DimSpinner` 가 `fixed inset-0 z-50` 전체 화면 오버레이라 페이지 이동마다 암전된
+  // 점이었다. 지금은 `placeholderData: keepPreviousData`(`:159`) 로 키가 바뀔 때 이전
+  // 데이터를 유지하므로 `isLoading` 은 **첫 로드에만** true 다.
+  if (isLoading) {
+    return <DimSpinner />;
+  }
 
   const product = data?.data.product;
+
+  // 조회 실패 — 헤더를 폴백으로 그리지 않고 실패 사실만 알린다.
+  // (404 는 위에서 전용 화면으로 빠진다)
+  if (!product) {
+    return (
+      <main className="flex w-full flex-col items-center gap-4 px-6 py-[80px]">
+        <p className="font-['Noto_Sans_JP'] text-[15px] text-[#ff1a1a]">
+          製品情報の取得に失敗しました。時間をおいて再度お試しください。
+        </p>
+        <Button variant="primary" onClick={handleList}>
+          リスト
+        </Button>
+      </main>
+    );
+  }
 
   return (
     <main className="flex w-full flex-col items-center gap-[10px] pb-[60px] lg:gap-[18px] lg:pb-[120px]">
       <div className="flex w-full max-w-[var(--page-max)] flex-col gap-[18px] rounded-[12px] bg-white px-6 pt-[34px] pb-[34px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)]">
         {/* 헤더 — 형번 + 카테고리 + リスト */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2764).
-              번역 확장이 **데이터 도착 전 폴백(`-`)** 텍스트 노드를 점유하면, 응답이 와도
-              React 가 그 자리를 갱신하지 못해 `-` 가 그대로 남는다. 아래 `この製品の資料（N件）`
-              와 같은 건이다. `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어
-              점유된 노드를 버린다. 형번은 고유명사라 번역 자체도 대상이 아니다.
-              증상이 **간헐적**인 이유는 번역 시점과 응답 도착 시점의 경합이기 때문이다. */}
-          <h1
-            key={`model-${product?.modelCode ?? "none"}`}
-            translate="no"
-            className="font-mono text-[22px] font-bold text-[#101010]"
-          >
-            {product?.modelCode ?? "-"}
+          {/* `translate="no"` — 형번은 고유명사라 번역 대상이 아니다. 위 로딩 가드가
+              값을 보장하므로 폴백은 쓰지 않는다. */}
+          <h1 translate="no" className="font-mono text-[22px] font-bold text-[#101010]">
+            {product.modelCode}
           </h1>
           <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
             カテゴリ
@@ -333,31 +354,19 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
               2Depth 만, 다른 축은 `1Depth > 2Depth`—를 `ProductCategoryLabel` 이 담고 있고
               제품일람 목록·형번관리도 같은 컴포넌트를 쓴다.
 
-              카테고리명은 일본어라 번역돼도 뜻이 통한다 — `translate="no"` 없이 `key` 로
-              노드 재생성만 보장한다(값이 사라지는 것만 막는다). `CategoryName` 을 쓰는
-              이유는 사내전용 카테고리 적색 규칙을 유지하기 위함이다. */}
-          {product ? (
-            <ProductCategoryLabel
-              key={`cat-${product.category.id}`}
-              category={product.category}
-              className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
-            />
-          ) : (
-            <span key="cat-none" className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]">
-              -
-            </span>
-          )}
+              카테고리명은 일본어라 번역돼도 뜻이 통하므로 `translate="no"` 를 붙이지 않는다.
+              `ProductCategoryLabel` 이 사내전용 카테고리 적색 규칙도 함께 담당한다. */}
+          <ProductCategoryLabel
+            category={product.category}
+            className="font-['Noto_Sans_JP'] text-[14px] text-[#101010]"
+          />
           {/* 製品ステータス — 목업 `01-search.html:2127` 의 헤더 구성(型番 / カテゴリ / 製品ステータス).
               형번의 속성이라 여기서 바로 보여준다. 자동완성으로 들어온 이용자가 단종 여부를
               이 화면에서 알 수 있어야 한다. */}
-          {product && (
-            <>
-              <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
-                製品ステータス
-              </span>
-              <ProductStatusBadge status={product.status} />
-            </>
-          )}
+          <span className="rounded-[4px] bg-[#F7F9FB] px-2 py-1 font-['Noto_Sans_JP'] text-[12px] font-medium text-[#45576F]">
+            製品ステータス
+          </span>
+          <ProductStatusBadge status={product.status} />
           <div className="ml-auto">
             <Button variant="primary" onClick={handleList}>
               リスト
@@ -365,7 +374,21 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
           </div>
         </div>
 
-        {/* key + translate="no" — 브라우저 자동 번역 대응(contents-table 의 合計 와 같은 건) */}
+        {/* key + translate="no" — 브라우저 자동 번역 **2종 방어** (Redmine #2764).
+            위 로딩 가드가 보장하는 것은 **첫 페인트**뿐이고, 마운트를 유지한 채 `total` 이
+            바뀌는 경로가 남는다. ① Gnb 의 인증 쿼리가 `placeholderData: null`
+            (`header.tsx:245`) 이라 `userScope`(`:137`) 가 `anon` 으로 먼저 조회되고, 인증
+            응답이 도착하면 새 캐시 키가 되는데 `keepPreviousData`(`:160`) 로 이전 건수가
+            유지된 채 교체된다. ② 자료상세를 다녀와 `staleTime` 이 지난 뒤의 background
+            refetch. 둘 다 같은 텍스트 노드에서 값→값 제자리 갱신이고, 번역 확장이
+            「この製品の資料（N件）」 구간을 점유하고 있으면 React 갱신이 반영되지 않아 옛
+            건수가 남는다. `key` 를 값에 묶어 요소를 통째로 교체하면 점유된 노드를 버린다.
+            자료일람 `合計`(`contents-table.tsx:850`)·형번관리 `Total`
+            (`product-models-search.tsx:82`) 이 같은 처리다.
+
+            형번 `h1`·카테고리에는 `key` 가 필요 없다 — 마운트 유지 중 값이 바뀌는 경로가
+            없다. 제품상세에서 다른 제품상세로 가는 인앱 경로가 없고, `/products/:id` 진입은
+            전부 재마운트다. */}
         <h2
           key={`doc-count-${total}`}
           className="font-['Noto_Sans_JP'] text-[15px] font-medium text-[#101010]"
@@ -384,18 +407,20 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
         )}
 
         <div className="flex flex-col gap-6">
+          {/* 첫 로드는 위 로딩 가드가 막으므로, 그리드의 `loading` 은 **재조회**
+              (자료목록 페이지 이동 등) 에만 걸린다. */}
           <DataGrid<ProductDocument>
             columnDefs={columnDefs}
             rowData={contents}
-            loading={isLoading}
+            loading={isFetching}
             getRowId={(params) => String(params.data.id)}
             emptyMessage={
               isError
                 ? "製品情報の取得に失敗しました。時間をおいて再度お試しください。"
                 : "登録された資料はありません。"
             }
-            autoHeight={!(isLoading || contents.length === 0)}
-            maxHeight={isLoading || contents.length === 0 ? 200 : undefined}
+            autoHeight={!(isFetching || contents.length === 0)}
+            maxHeight={isFetching || contents.length === 0 ? 200 : undefined}
           />
           {totalPages > 0 && (
             <Pagination

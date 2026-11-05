@@ -98,6 +98,12 @@ export function ContentsFormProductModels({
       const res = await api.get<ProductModelListResponse>("/product-models", { params });
       return res.data;
     },
+    // ⚠️ `placeholderData: keepPreviousData` 를 쓰지 않는다. 키에 `modelCode`(검색어)·
+    // `includeHidden`·`page` 가 들어 있어 조회 조건이 바뀔 때마다 새 쿼리가 되는데, 그때 이전
+    // 데이터를 유지하면 **직전 조건의 행·건수가 현재 조건의 결과로 보인다** — 검색어를
+    // 바꾼 직후 무관한 형번 20건이 결과처럼 뜨고, 페이저 라벨은 `2 / 5` 인데 행은 1페이지다.
+    // `isLoading` 이 첫 로드 전용이 되어 `読み込み中...` 분기(아래)도 도달 불가가 된다.
+    // 조회 중임을 드러내는 쪽을 택했다.
   });
 
   const rows = data?.data ?? [];
@@ -190,24 +196,29 @@ export function ContentsFormProductModels({
         )}
       </div>
 
-      {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2763).
-          번역 확장이 **데이터 도착 전 폴백(`Total 0`)** 텍스트 노드를 바꿔치기하면, 응답이
-          와도 React 가 그 자리를 갱신하지 못해 목록은 19건인데 `Total 0` 이 남는다.
-          `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어 점유된 노드를 버린다.
-          자료일람 `合計`(`contents-table.tsx`)·형번관리 `Total`(`product-models-search.tsx`)
-          이 같은 처리다.
+      {/* key + translate="no" — 브라우저 자동 번역 **2종 방어** (Redmine #2763).
+          번역 확장이 「Total N」 구간을 통째로 <font> 로 바꿔치기한 뒤 React 가 숫자만
+          갱신하면 번역된 블록은 옛 건수 그대로 남는다. `key` 를 값에 묶어 두면 값이 바뀔 때
+          요소를 통째로 새로 만들어 점유된 노드를 버린다. 자료일람 `合計`(`contents-table.tsx`)
+          ·형번관리 `Total`(`product-models-search.tsx`) 이 같은 처리다.
+          `translate="no"` 하나로는 막히지 않는다 — contents-table 에 실측 사례가 적혀 있다.
 
-          ⚠️ 로딩 중 건수를 아예 안 그리는 방식도 검토했으나 되돌렸다 (2026-11-04 리뷰).
-          쿼리 키에 `modelCode`·`includeHidden`·`page` 가 있어 타이핑·토글·페이지 이동마다
-          `isLoading` 이 다시 true 가 되고, 그때마다 `Total` 라벨이 통째로 사라졌다 나타난다. */}
+          건수는 **값이 있을 때만** 그린다. 종전에는 응답 전 `total` 이 `0` 이라 목록은 비어
+          있는데 `Total 0` 이 떠서 「집계가 틀렸다」로 읽혔다(#2763 의 증상). 같은 순간 아래
+          목록도 `読み込み中...` 라 표시가 어긋나지 않는다. `Total` 라벨은 남겨 레이아웃이
+          흔들리지 않게 한다.
+
+          `key` 에 로딩 상태를 함께 넣는 이유 — 0건 조회(`total === 0`)에서는 로딩 중과 결과가
+          같은 키가 되어 빈 문자열→`0` 이 제자리 갱신이 되고, 그 경로가 위 점유 조건이다.
+
+          조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않아 `-` 로 낸다 (2026-10-13 피드백 7). */}
       <p
-        key={`total-${isError ? "err" : total}`}
+        key={`total-${isError ? "err" : data ? total : "load"}`}
         className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
       >
         Total{" "}
-        {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
         <span translate="no" className="font-semibold text-[#E97923]">
-          {isError ? "-" : total.toLocaleString()}
+          {isError ? "-" : data ? total.toLocaleString() : ""}
         </span>
       </p>
 
