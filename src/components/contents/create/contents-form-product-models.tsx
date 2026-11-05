@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { CategoryName, Checkbox, ProductStatusBadge } from "@/components/common";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
@@ -98,6 +98,9 @@ export function ContentsFormProductModels({
       const res = await api.get<ProductModelListResponse>("/product-models", { params });
       return res.data;
     },
+    // 키에 `modelCode`(검색어)·`includeHidden`·`page` 가 있어 타이핑·토글·페이지 이동마다
+    // 새 쿼리가 된다. 이전 데이터를 유지해 **건수가 비는 순간을 첫 로드 1회로 제한**한다.
+    placeholderData: keepPreviousData,
   });
 
   const rows = data?.data ?? [];
@@ -190,24 +193,17 @@ export function ContentsFormProductModels({
         )}
       </div>
 
-      {/* key + translate="no" — 브라우저 자동 번역 대응 (Redmine #2763).
-          번역 확장이 **데이터 도착 전 폴백(`Total 0`)** 텍스트 노드를 바꿔치기하면, 응답이
-          와도 React 가 그 자리를 갱신하지 못해 목록은 19건인데 `Total 0` 이 남는다.
-          `key` 를 값에 묶어 두면 값이 바뀔 때 요소를 통째로 새로 만들어 점유된 노드를 버린다.
-          자료일람 `合計`(`contents-table.tsx`)·형번관리 `Total`(`product-models-search.tsx`)
-          이 같은 처리다.
+      {/* 건수는 **값이 있을 때만** 그린다 (Redmine #2763).
+          종전에는 응답 전 `total` 이 `0` 이라 목록은 비어 있는데 `Total 0` 이 떠서
+          「집계가 틀렸다」로 읽혔다. 위 `placeholderData` 로 타이핑·페이지 이동 때는 이전
+          건수가 유지되므로, 숫자가 비는 건 첫 로드 한 번뿐이다.
 
-          ⚠️ 로딩 중 건수를 아예 안 그리는 방식도 검토했으나 되돌렸다 (2026-11-04 리뷰).
-          쿼리 키에 `modelCode`·`includeHidden`·`page` 가 있어 타이핑·토글·페이지 이동마다
-          `isLoading` 이 다시 true 가 되고, 그때마다 `Total` 라벨이 통째로 사라졌다 나타난다. */}
-      <p
-        key={`total-${isError ? "err" : total}`}
-        className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]"
-      >
+          `Total` 라벨은 남겨 레이아웃이 흔들리지 않게 한다. 조회 실패에 `0` 을 쓰면
+          「0건 조회됨」과 구분되지 않아 `-` 로 낸다 (2026-10-13 피드백 7). */}
+      <p className="font-['Noto_Sans_JP'] text-[12px] text-[#152c42]">
         Total{" "}
-        {/* 조회 실패에 `0` 을 쓰면 「0건 조회됨」과 구분되지 않는다 (2026-10-13 피드백 7) */}
         <span translate="no" className="font-semibold text-[#E97923]">
-          {isError ? "-" : total.toLocaleString()}
+          {isError ? "-" : data ? total.toLocaleString() : ""}
         </span>
       </p>
 
