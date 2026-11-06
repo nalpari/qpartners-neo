@@ -837,7 +837,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    *
    * **다시 세는 축** = 사용자가 **방금 건드린 축을 뺀** 나머지다. 방금 건드린 축은 그 자체가
    * 사용자의 의도라 건드리지 않는다 — 다시 세면 방금 끈 체크가 되살아난다.
-   * 반영 방식은 축의 출처에 따라 다르다 (`mergeFacetSelection` — 덮기 또는 교집합).
+   * 그중 **실제로 덮는 축**은 또 좁혀진다 — 아래 `overwrite` 주석 참조.
    *
    * ⚠️ 다시 세는 축의 **조건은 빼고** 집계한다(`fetchAvailableProductFacets` 의 `recount`).
    * 자기 조건으로 자기 선택지를 세면 고른 것만 되돌아와 한 번 좁힌 축이 영영 넓어지지 못한다.
@@ -880,26 +880,52 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     };
     if (!recount.category && !recount.model) return { kind: "keep" };
 
-    // 다시 세는 축은 **결과로 덮는다.** 그 체크는 조건이 아니라 표시이므로(`fromSearch`)
-    // 좁혀도 목록이 바뀌지 않는다 — 좌측이 목록을 그대로 비춘다.
+    /**
+     * 실제로 **덮을** 축 — 다시 세는 축 중에서도 아래 둘뿐이다.
+     *
+     *   ① 검색이 만든 체크(`*FromSearch`) — 조건이 아니라 표시라서 좁혀도 목록이 안 바뀐다
+     *   ② 미설정(`null`) 축 **+ 검색어가 있을 때** — 검색 결과를 비춰 줄 기준이 있다
+     *
+     * ⚠️ **사용자가 직접 건 체크는 덮지 않는다.** 덮으면 `fromSearch` 가 true 로 올라가
+     * `facetParams` 가 조기반환해 **그 조건이 통째로 사라진다.** 분류를 좁혀 둔 채 게시대상만
+     * 바꾸거나 탭을 전환했을 뿐인데 필터가 풀리고 건수가 넓어지던 경로다(2026-11-06 리뷰 1).
+     * 덮지 않아도 좌측과 목록은 어긋나지 않는다 — 그 체크가 곧 조회 조건이기 때문이다.
+     *
+     * ⚠️ **검색어가 없으면 미설정 축도 덮지 않는다.** 집계에는 공개 자료가 0건인 선택지가
+     * 나타날 수 없어 `toFacetSelection` 이 전부 체크(`null`)로 정규화하지 못하고, 조작도 안
+     * 했는데 체크 몇 개가 꺼진 채 남는다. 그 상태에서 한 칸만 건드리면 나머지가 전부 AND
+     * 조건으로 승격돼 #2747 이 재현된다(2026-11-06 리뷰 5).
+     */
+    const hasKeyword = (next.keyword ?? "").trim().length >= SEARCH_KEYWORD_MIN;
+    const overwrite = {
+      category:
+        recount.category &&
+        (next.facetFromSearch || (next.facetCategoryIds === null && hasKeyword)),
+      model:
+        recount.model && (next.modelFromSearch || (next.productModelIds === null && hasKeyword)),
+    };
+    if (!overwrite.category && !overwrite.model) return { kind: "keep" };
+
     if (isProd) {
+      // 집계에서 빼는 축은 `recount` 기준이다 — 덮지 않는 축도 **조건으로는 넣어야** 좌측이
+      // 목록과 같은 모집합을 센다.
       const available = await fetchAvailableProductFacets(next, recount);
       if (seq !== facetSeqRef.current) return { kind: "stale" };
       if (!available) return { kind: "keep" };
       return {
         kind: "apply",
-        ...(recount.category && {
+        ...(overwrite.category && {
           facetCategoryIds: toFacetSelection(available.categoryIds),
           fromSearch: true,
         }),
-        ...(recount.model && {
+        ...(overwrite.model && {
           productModelIds: toFacetSelection(available.productModelIds, visibleModelIds),
           modelFromSearch: true,
         }),
       };
     }
 
-    // 자료일람은 축이 분류 하나뿐이다 — 여기 도달했다면 `recount.category` 가 참이다.
+    // 자료일람은 축이 분류 하나뿐이다 — 여기 도달했다면 `overwrite.category` 가 참이다.
     const availableIds = await fetchAvailableFacets(next);
     if (seq !== facetSeqRef.current) return { kind: "stale" };
     if (!availableIds) return { kind: "keep" };
@@ -1033,9 +1059,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   // 여기서도 재집계를 돌린다 — 분류를 좁혔는데 형번 체크가 직전 그대로 남아 목록에 없는 형번이
   // 켜져 있던 것이 이 경로였다(2026-11-05 실화면 확인).
   //
-  // ⚠️ **결과 밖 선택지를 다시 켜면 반대 축 조건을 푼다**(`isReviving`). 결과에 없다는 것은
-  // 반대 축이 그 항목을 가리고 있다는 뜻이라, 그대로 두면 체크해도 목록이 변하지 않아
-  // 「체크가 안 먹는다」가 된다 (2026-11-06 사용자 확정).
+  // ⚠️ 반대 축은 **검색이 만든 체크일 때만** 덮인다(`resolveFacetPatch` 의 `overwrite`).
+  // 사용자가 직접 건 체크는 그 자체가 조회 조건이라, 덮으면 조건이 통째로 사라진다.
   const handleFacetCategoryIdsChange = async (ids: number[] | null) => {
     await applyAndRecount(
       { ...searchParams, facetCategoryIds: ids, facetFromSearch: false, page: 1 },
