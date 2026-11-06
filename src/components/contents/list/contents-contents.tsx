@@ -34,19 +34,26 @@ type ListView = "doc" | "prod";
  * 분류축 집계 결과를 어떻게 반영할지 — REQ-004.
  *
  * - `apply`  : 체크 상태를 이 값으로 덮는다 (`null` = 미설정 = 화면상 전부 체크)
- * - `keep`   : 아무것도 건드리지 않는다 — 집계 호출 실패, 그리고 **사람이 직접 건 체크**를
- *              들고 2자 이하로 내려간 경우(2026-10-29 확인: 좁혀 둔 체크를 글자 지웠다고
- *              날리지 않는다). 그 체크는 이미 조건이므로 그대로 좌측 기준 재조회가 된다
+ * - `keep`   : 아무것도 건드리지 않는다 — 집계 호출이 실패했거나, **다시 셀 축이 없는** 경우
+ *              (두 축 모두 사용자가 직접 건 체크라 목록이 이미 그 조건을 따른다). 조회는
+ *              진행해야 하므로 체크를 제3의 상태로 덮지 않고 직전 상태를 유지한다.
+ *              2자 이하로 내려간 경우는 `keep` 이 아니라 전체 선택 복귀다 — `runSearch` 참조
  * - `stale`  : 더 새 요청이 진행 중이라 이 응답은 버린다 (키워드도 반영하지 않는다)
  */
 type FacetOutcome =
   | {
       kind: "apply";
-      facetCategoryIds: number[] | null;
-      /** 이 체크가 **검색이 만든 것**인지 — false 면 평소대로 조건이 된다 */
-      fromSearch: boolean;
-      /** 제품일람 탭에서만 채워진다 — 자료일람에는 형번 축이 없다 (Redmine #2745) */
+      /**
+       * 분류축을 이 값으로 덮는다. **`undefined` = 덮지 않는다** — 사용자가 직접 건 체크는
+       * 선언한 조회 조건이므로 건드리지 않는다. `null`(전부 체크)과 구분된다.
+       */
+      facetCategoryIds?: number[] | null;
+      /** 분류축 체크가 **검색이 만든 것**인지 — false 면 평소대로 조건이 된다 */
+      fromSearch?: boolean;
+      /** 형번축을 덮을 값. 제품일람 탭에서만 온다 — 자료일람에는 형번 축이 없다 (#2745) */
       productModelIds?: number[] | null;
+      /** 형번축 체크가 검색이 만든 것인지 — `productModelIds` 를 채울 때만 함께 온다 */
+      modelFromSearch?: boolean;
     }
   | { kind: "keep" }
   | { kind: "stale" };
@@ -90,16 +97,27 @@ interface FacetSelection {
   /** 체크된 형번 id (型番 축). `null` = 미설정(전부 체크 표시) */
   productModelIds: number[] | null;
   /**
-   * 지금 체크가 **검색이 만든 것**인가 — true 면 화면에만 켜고 **조회 조건에는 넣지 않는다**.
+   * 지금 **분류축** 체크가 검색이 만든 것인가 — true 면 화면에만 켜고 **조회 조건에는 넣지
+   * 않는다**.
    *
    * 검색은 「검색어로 목록을 뽑고, 그 목록의 분류를 좌측에 켜 준다」가 전부다. 켜 준 체크를
    * 다시 조건으로 걸면 **검색이 찾아낸 자료를 자동 체크가 도로 숨긴다** — 어떤 축이 비어 있는
    * 자료는 그 축이 조건이 되는 순간 탈락하기 때문이다. `PHASE9-TEST` 가 자동완성 3건인데
    * 목록 2건이던 것이 이 경로였다(Redmine #2748). 빠지던 자료는 `情報種別` 가 비어 있었다.
    *
-   * 사용자가 체크를 직접 건드리면 false 가 되고, 그때부터는 평소대로 조건이 된다.
+   * 사용자가 분류 체크를 직접 건드리면 false 가 되고, 그때부터는 평소대로 조건이 된다.
    */
   facetFromSearch: boolean;
+  /**
+   * 위와 같은 판정을 **형번축에 대해 따로** 들고 있는 플래그.
+   *
+   * ⚠️ 두 축을 한 플래그로 묶으면 **형번 한 칸을 건드린 순간 분류 자동 체크까지 조건으로
+   * 승격된다.** 사용자가 손대지도 않은 분류 체크가 AND 가 되어 그 축이 비어 있는 자료가
+   * 통째로 탈락하고(`資料分類` 는 published 2,461건 중 36건만 입력), 해제한 형번과 무관하게
+   * 건수가 급감하거나 0건이 된다 — #2748 이 막으려던 것이 클릭 한 번 뒤로 미뤄질 뿐이다.
+   * 그래서 **사용자가 실제로 건드린 축만** 조건화한다.
+   */
+  modelFromSearch: boolean;
 }
 
 /**
@@ -202,6 +220,7 @@ const EMPTY_SEARCH_PARAMS: SearchParams = {
   facetCategoryIds: null,
   productModelIds: null,
   facetFromSearch: false,
+  modelFromSearch: false,
 };
 
 /** sessionStorage 의 직렬화된 검색조건을 안전하게 역직렬화. 손상/스키마변동 시 빈 값. */
@@ -228,6 +247,7 @@ function parseStoredSearchParams(raw: string | null): SearchParams {
       facetCategoryIds: parseIdArrayOrNull(parsed.facetCategoryIds),
       productModelIds: parseIdArrayOrNull(parsed.productModelIds),
       facetFromSearch: parsed.facetFromSearch === true,
+      modelFromSearch: parsed.modelFromSearch === true,
     };
   } catch (error: unknown) {
     console.warn("[ContentsContents] sessionStorage JSON 파싱 실패:", error);
@@ -500,6 +520,31 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     return params;
   }, [searchParams.facetCategoryIds, searchParams.facetFromSearch, visibleFacetIds]);
 
+  /**
+   * 목록에 **지금 걸려 있는 조건 전부** — 분류 + 형번.
+   *
+   * 목록 조회와 자동완성이 **같은 값을 쓴다.** 두 곳에서 따로 조립하면 한쪽만 고쳐져
+   * 「자동완성에는 뜨는데 목록에는 없다」로 갈라진다 (2026-11-06 사용자 확정: 목록·자동완성·
+   * 좌측 체크는 같아야 한다).
+   *
+   * 형번은 **제품일람 탭에서만** 조건이다 — 자료일람 목록(`/api/contents`)은 형번 축을 쓰지
+   * 않는다. 검색이 만든 형번 체크는 표시 전용이라 조건에서 빠진다(#2748).
+   */
+  const listConditionParams = useMemo<Record<string, string>>(() => {
+    const params: Record<string, string> = { ...facetParams };
+    const selectedModelIds =
+      searchParams.view === "prod" && !searchParams.modelFromSearch
+        ? (searchParams.productModelIds ?? [])
+        : [];
+    if (selectedModelIds.length > 0) params.productModelIds = selectedModelIds.join(",");
+    return params;
+  }, [
+    facetParams,
+    searchParams.view,
+    searchParams.modelFromSearch,
+    searchParams.productModelIds,
+  ]);
+
   /** 형번 축이 화면에 나오는 탭인지 — `ContentsFacets#showModelAxis` 와 같은 조건이다. */
   const isModelAxisShown =
     searchParams.view === "prod" && isProductAxisEnabled && productAxis.length > 0;
@@ -619,7 +664,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     isLoading: isProductsLoading,
     isError: isProductsError,
   } = useQuery({
-    queryKey: ["products", "list", searchParams, pageSize, userScope, facetParams],
+    queryKey: ["products", "list", searchParams, pageSize, userScope, listConditionParams],
     queryFn: async () => {
       const params: Record<string, string | number> = {
         page: searchParams.page,
@@ -629,14 +674,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         params.keyword = searchParams.keyword;
         if (searchParams.keywordOp === "OR") params.keywordOp = "OR";
       }
-      Object.assign(params, facetParams);
-      // 검색이 만든 형번 체크도 **표시 전용**이다 — 분류와 같은 이유(#2748).
-      const selectedModelIds = searchParams.facetFromSearch
-        ? []
-        : (searchParams.productModelIds ?? []);
-      if (selectedModelIds.length > 0) {
-        params.productModelIds = selectedModelIds.join(",");
-      }
+      // 분류·형번 조건은 자동완성과 **같은 값**을 쓴다 — 따로 조립하면 갈라진다.
+      // 검색이 만든 형번 체크가 조건에서 빠지는 판정도 그 안에 있다(#2748).
+      Object.assign(params, listConditionParams);
       try {
         const res = await api.get<{
           data: ProductListRow[];
@@ -664,10 +704,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    *
    * 집계 호출이 실패하면 체크를 건드리지 않고 키워드만 바꾼다 — 검색 자체가 막히면 안 된다.
    */
-  const fetchAvailableFacets = async (
-    keyword: string,
-    keywordOp: SearchParams["keywordOp"],
-  ): Promise<number[] | null> => {
+  const fetchAvailableFacets = async (next: SearchParams): Promise<number[] | null> => {
     try {
       // `facets=1` 이 집계 전용 플래그다 — 이 플래그 없는 조회는 서버가 집계를 건너뛴다.
       const params: Record<string, string | number | boolean> = {
@@ -675,14 +712,15 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         pageSize: 1,
         facets: true,
       };
-      if (keyword) {
-        params.keyword = keyword;
-        if (keywordOp === "OR") params.keywordOp = "OR";
+      if (next.keyword) {
+        params.keyword = next.keyword;
+        if (next.keywordOp === "OR") params.keywordOp = "OR";
       }
-      if (searchParams.roleCode) params.roleCode = searchParams.roleCode;
-      if (searchParams.departments.length > 0)
-        params.department = searchParams.departments.join(",");
-      if (searchParams.internalOnly) params.internalOnly = true;
+      // ⚠️ 조건은 **적용될 값**(`next`)에서 읽는다. `searchParams` 는 이 호출 시점에 아직 직전
+      // 상태라, 검색바에서 함께 바뀐 게시대상·부서·사내전용이 집계에 빠져 목록과 어긋난다.
+      if (next.roleCode) params.roleCode = next.roleCode;
+      if (next.departments.length > 0) params.department = next.departments.join(",");
+      if (next.internalOnly) params.internalOnly = true;
       const res = await api.get<{ availableFacets?: { categoryIds: number[] } }>(
         "/contents",
         { params },
@@ -701,8 +739,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 형번 링크 조건을 더 걸어 더 좁다. 그래서 탭마다 제 집계를 쓴다 (Redmine #2745).
    */
   const fetchAvailableProductFacets = async (
-    keyword: string,
-    keywordOp: SearchParams["keywordOp"],
+    next: SearchParams,
+    /** 다시 셀 축 — 그 축의 **조건은 빼고** 집계한다 */
+    recount: { category: boolean; model: boolean },
   ): Promise<{ categoryIds: number[]; productModelIds: number[] } | null> => {
     try {
       const params: Record<string, string | number | boolean> = {
@@ -710,9 +749,23 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         pageSize: 1,
         facets: true,
       };
-      if (keyword) {
-        params.keyword = keyword;
-        if (keywordOp === "OR") params.keywordOp = "OR";
+      if (next.keyword) {
+        params.keyword = next.keyword;
+        if (next.keywordOp === "OR") params.keywordOp = "OR";
+      }
+      // ⚠️ **다시 셀 축의 조건은 빼고, 나머지 축의 조건은 넣는다.**
+      //
+      //   - 빼는 이유: 자기 조건으로 자기 선택지를 집계하면 고른 것만 되돌아온다. 한 번 좁힌
+      //     축이 영영 넓어지지 못한다.
+      //   - 넣는 이유: 좌측이 **목록과 같은 모집합**을 세야 한다. 분류를 직접 좁혀 목록이
+      //     줄었는데 형번 축을 키워드만으로 집계하면, 목록에 없는 형번이 좌측에 켜진 채 남는다.
+      if (!recount.category && next.facetCategoryIds !== null) {
+        const chosen = new Set(next.facetCategoryIds);
+        const conditioned = visibleFacetIds.filter((id) => chosen.has(id));
+        if (conditioned.length > 0) params.facetCategoryIds = conditioned.join(",");
+      }
+      if (!recount.model && next.productModelIds !== null && next.productModelIds.length > 0) {
+        params.productModelIds = next.productModelIds.join(",");
       }
       const res = await api.get<{
         availableFacets?: { categoryIds: number[]; productModelIds: number[] };
@@ -764,107 +817,144 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
   const facetSeqRef = useRef(0);
 
   /**
-   * 키워드에 맞춘 체크 상태를 만든다 — REQ-004.
+   * **적용될 조건(`next`) 기준으로 좌측 체크를 다시 센다** — REQ-004 / #2745.
    *
-   * 검색어가 빈 경우의 처리가 **경로마다 다르다**:
-   * - `explicit`([검색] 클릭) → 전체 선택으로 복귀. 요구사항 ③ 「검색어 삭제 후 [검색]
-   *   클릭 → 검색 조건 초기화 / 모든 필터 옵션 전체 선택 / 전체 콘텐츠 표시」.
-   * - `realtime`(타이핑 중 2자 이하) → 체크를 **그대로 둔다.** 이 경로는 키워드만 풀고
-   *   좌측영역 선택 기준으로 다시 조회하는 것이 요구다(2026-10-29 사용자 확인). 전체
-   *   선택으로 되돌리면 좁혀 둔 체크가 글자를 지우는 순간 날아간다.
+   * 좌측은 「지금 목록에 나온 것」을 보여야 한다. 그래서 집계는 목록과 **같은 조건**으로
+   * 돌리고, 조건이 바뀌는 모든 경로(검색 / 탭 전환 / 좌측 체크 변경)에서 호출된다.
    *
-   * 집계 호출이 실패하면 체크를 건드리지 않는다 — 검색 자체는 진행해야 한다.
+   * **다시 세는 축** = 사용자가 **방금 건드린 축을 뺀** 나머지다. 방금 건드린 축은 그 자체가
+   * 사용자의 의도라 건드리지 않는다 — 다시 세면 방금 끈 체크가 되살아난다.
+   * 반영 방식은 축의 출처에 따라 다르다 (`mergeFacetSelection` — 덮기 또는 교집합).
    *
-   * ⚠️ 「검색어가 빈 경우」 판정은 **`SEARCH_KEYWORD_MIN` 기준**이다. 서버가 3자 미만을
-   * 조건에서 버리므로(`searchKeyword`), 2자를 키워드 있음으로 보면 **전건 기준** 집계가
-   * 돌아와 사용자가 좁혀 둔 체크를 제3의 상태로 덮어쓴다. 입력창에는 2자가 남아 원인도
-   * 보이지 않는다. 종전에는 `keyword.trim()` 만 봐서 같은 2자가 버튼 경로에서는 체크를
-   * 날리고 타이핑 경로에서는 유지되는 모순이 있었다 — 두 경로를 같은 기준으로 맞춘다.
+   * ⚠️ 다시 세는 축의 **조건은 빼고** 집계한다(`fetchAvailableProductFacets` 의 `recount`).
+   * 자기 조건으로 자기 선택지를 세면 고른 것만 되돌아와 한 번 좁힌 축이 영영 넓어지지 못한다.
+   * 반대로 **나머지 축의 조건은 넣는다** — 그래야 좌측이 목록과 같은 모집합을 센다. 분류를
+   * 직접 좁혀 목록이 줄었는데 형번 축을 키워드만으로 집계하면, 목록에 없는 형번이 좌측에
+   * 켜진 채 남는다(2026-11-05 실화면 확인).
    *
-   * ⚠️ **제품일람 탭에서는 체크를 건드리지 않는다.** 집계는 `/api/contents?facets=1` 즉
-   * **자료 기준**인데 제품일람(`/api/products`)은 거기에 형번 링크 조건을 더 걸어 더 좁다
-   * (`facets` 파라미터 자체가 없다). 자료 기준 결과로 체크를 덮으면 「체크는 켜졌는데
-   * 제품일람 0건」이 된다. 제품일람 기준 집계가 생기기 전까지의 처리다.
+   * ⚠️ 탭마다 **제 집계**를 쓴다. 자료일람은 `/api/contents?facets=1`(제목 기준), 제품일람은
+   * `/api/products?facets=1`(형번명 기준)이다. 자료 기준 결과로 제품일람 체크를 덮으면
+   * 제품일람은 거기에 형번 링크 조건을 더 걸어 더 좁으므로 「체크는 켜졌는데 0건」이 된다.
+   *
+   * ⚠️ 탭·조건을 **인자로** 받는다. 호출 시점에는 `setSearchParams` 가 아직 반영되지 않아
+   * `searchParams` 는 직전 상태다. 그대로 읽으면 옛 조건 기준 집계가 새 좌측에 들어간다.
+   *
+   * 집계 호출이 실패하면 체크를 건드리지 않는다 — 조회 자체는 진행해야 한다.
    */
   const resolveFacetPatch = async (
-    keyword: string,
-    keywordOp: SearchParams["keywordOp"],
-    trigger: "explicit" | "realtime",
+    next: SearchParams,
+    /** 사용자가 방금 건드린 축 — 조건으로는 쓰되 다시 세지는 않는다 */
+    touched?: "category" | "model",
   ): Promise<FacetOutcome> => {
     const seq = facetSeqRef.current + 1;
     facetSeqRef.current = seq;
-    const isProd = searchParams.view === "prod";
-    if (keyword.trim().length < SEARCH_KEYWORD_MIN) {
-      // [검색] 클릭 — 요구사항 ③ 「검색어 삭제 후 검색 → 조건 초기화 / 전체 선택」.
-      if (trigger !== "realtime") {
-        return {
-          kind: "apply",
-          facetCategoryIds: null,
-          fromSearch: false,
-          ...(isProd && { productModelIds: null }),
-        };
-      }
-      // 실시간으로 2자 이하까지 지운 경우 — **검색이 없던 일이 된다.** 3자 미만은 자동완성도
-      // 검색어 조건도 빠지는 구간이라, 남는 것은 「검색하기 전」 상태다. 그래서 재조회가 아니라
-      // **초기화**이고 좌측도 전체 선택으로 되돌린다 (2026-11-05 사용자 확정).
-      //
-      // 종전에는 이 경로에서 체크를 그대로 뒀다(2026-10-29). 그때는 검색이 만든 체크가 곧
-      // 조건이라 구분이 없었는데, 지금은 검색이 만든 체크가 조건이 아니다(#2748). 그 상태로
-      // 체크만 남기면 「검색은 취소됐는데 그 검색이 만든 체크로 거르는」 상태가 된다.
-      return {
-        kind: "apply",
-        facetCategoryIds: null,
-        fromSearch: false,
-        ...(isProd && { productModelIds: null }),
-      };
+    const isProd = next.view === "prod";
+
+    // 전체 해제(②)는 조회 없이 0건으로 확정된다 — 집계할 모집합이 없으므로 건드리지 않는다.
+    if (next.facetCategoryIds !== null && next.facetCategoryIds.length === 0) {
+      return { kind: "keep" };
     }
 
-    // 제품일람은 제 집계를 쓴다 — 형번 축까지 결과 기준으로 켠다 (Redmine #2745).
+    const recount = {
+      category: touched !== "category",
+      model: isProd && touched !== "model",
+    };
+    if (!recount.category && !recount.model) return { kind: "keep" };
+
+    // 다시 세는 축은 **결과로 덮는다.** 그 체크는 조건이 아니라 표시이므로(`fromSearch`)
+    // 좁혀도 목록이 바뀌지 않는다 — 좌측이 목록을 그대로 비춘다.
     if (isProd) {
-      const available = await fetchAvailableProductFacets(keyword, keywordOp);
+      const available = await fetchAvailableProductFacets(next, recount);
       if (seq !== facetSeqRef.current) return { kind: "stale" };
       if (!available) return { kind: "keep" };
       return {
         kind: "apply",
-        facetCategoryIds: toFacetSelection(available.categoryIds),
-        productModelIds: toFacetSelection(available.productModelIds, visibleModelIds),
-        fromSearch: true,
+        ...(recount.category && {
+          facetCategoryIds: toFacetSelection(available.categoryIds),
+          fromSearch: true,
+        }),
+        ...(recount.model && {
+          productModelIds: toFacetSelection(available.productModelIds, visibleModelIds),
+          modelFromSearch: true,
+        }),
       };
     }
 
-    const availableIds = await fetchAvailableFacets(keyword, keywordOp);
+    // 자료일람은 축이 분류 하나뿐이다 — 여기 도달했다면 `recount.category` 가 참이다.
+    const availableIds = await fetchAvailableFacets(next);
     if (seq !== facetSeqRef.current) return { kind: "stale" };
     if (!availableIds) return { kind: "keep" };
-    return { kind: "apply", facetCategoryIds: toFacetSelection(availableIds), fromSearch: true };
+    return {
+      kind: "apply",
+      facetCategoryIds: toFacetSelection(availableIds),
+      fromSearch: true,
+    };
   };
 
-  /** 집계 결과를 검색 조건에 반영한다. `stale` 이면 아무것도 하지 않는다. */
-  const applyFilters = (filters: SearchFilters, outcome: FacetOutcome) => {
-    if (outcome.kind === "stale") return;
+  /**
+   * 조건을 적용하고, **그 조건 기준으로 좌측 체크를 다시 센다.**
+   *
+   * 목록은 즉시 바뀌고 좌측은 집계가 도착하면 뒤따른다. 도중에 더 새 요청이 들어오면
+   * `facetSeqRef` 가 옛 응답을 `stale` 로 버린다.
+   */
+  const applyAndRecount = async (next: SearchParams, touched?: "category" | "model") => {
+    setSearchParams(next);
+    const outcome = await resolveFacetPatch(next, touched);
+    if (outcome.kind !== "apply") return;
     setSearchParams((prev) => ({
       ...prev,
-      ...filters,
-      ...(outcome.kind === "apply" && {
+      // 온 축만 덮는다. 검색이 만든 체크는 화면에만 켜고 조건에서는 뺀다 (#2748).
+      ...(outcome.facetCategoryIds !== undefined && {
         facetCategoryIds: outcome.facetCategoryIds,
-        // 검색이 만든 체크면 화면에만 켜고 조건에서는 뺀다 (#2748).
-        facetFromSearch: outcome.fromSearch,
-        ...(outcome.productModelIds !== undefined && {
-          productModelIds: outcome.productModelIds,
-        }),
+        facetFromSearch: outcome.fromSearch === true,
       }),
-      page: 1,
+      ...(outcome.productModelIds !== undefined && {
+        productModelIds: outcome.productModelIds,
+        modelFromSearch: outcome.modelFromSearch === true,
+      }),
     }));
+  };
+
+  /**
+   * 검색 실행 — 키워드·필터를 적용하고 좌측 체크를 다시 센다.
+   *
+   * 검색어가 **3자 미만이면 좌측을 전체 선택으로 되돌린다.** 3자 미만은 자동완성도 검색어
+   * 조건도 빠지는 구간이라 남는 것은 「검색하기 전」 상태다 — 검색이 없던 일이 된다
+   * (2026-11-05 사용자 확정). 요구사항 ③ 「검색어 삭제 후 [검색] 클릭 → 검색 조건 초기화 /
+   * 모든 필터 옵션 전체 선택 / 전체 콘텐츠 표시」와 같은 결과이므로 두 경로를 분기하지 않는다.
+   *
+   * ⚠️ 판정은 **`SEARCH_KEYWORD_MIN` 기준**이다. 서버가 3자 미만을 조건에서 버리므로
+   * (`searchKeyword`), 2자를 키워드 있음으로 보면 **전건 기준** 집계가 돌아와 사용자가 좁혀 둔
+   * 체크를 제3의 상태로 덮어쓴다. 입력창에는 2자가 남아 원인도 보이지 않는다.
+   */
+  const runSearch = async (filters: SearchFilters) => {
+    const reset = (filters.keyword ?? "").trim().length < SEARCH_KEYWORD_MIN;
+    // **최종 액션이 검색이면 좌측은 그 결과 기준으로 다시 켜진다.** 직전 체크 상태(전부 체크·
+    // 전부 해제·일부 체크)는 기준이 아니다 — 검색은 「지금 이 키워드로 뭐가 나오는가」를 묻는
+    // 행위이고, 좌측은 그 답을 비춰야 한다 (2026-11-06 사용자 확정).
+    //
+    // 전부 해제 상태를 들고 검색해도 여기서 풀리므로 ②(조회 없이 0건)에 잠기지 않는다.
+    const next: SearchParams = {
+      ...searchParams,
+      ...filters,
+      page: 1,
+      facetCategoryIds: null,
+      facetFromSearch: false,
+      productModelIds: null,
+      modelFromSearch: false,
+    };
+    // 초기화는 집계가 필요 없다 — 전체 선택이 곧 「조건 없음」이다.
+    if (reset) {
+      setSearchParams(next);
+      return;
+    }
+    await applyAndRecount(next);
   };
 
   const handleSearch = async (filters: SearchFilters) => {
     setSort(EMPTY_SORT);
     setSortResetKey((k) => k + 1);
-    const outcome = await resolveFacetPatch(
-      filters.keyword ?? "",
-      filters.keywordOp ?? searchParams.keywordOp,
-      "explicit",
-    );
-    applyFilters(filters, outcome);
+    await runSearch(filters);
   };
 
   /**
@@ -875,50 +965,91 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 조작과 결과가 어긋난다 (목업 `runSearchDebounced()` 도 정렬을 건드리지 않는다).
    */
   const handleRealtimeSearch = async (filters: SearchFilters) => {
-    const outcome = await resolveFacetPatch(
-      filters.keyword ?? "",
-      filters.keywordOp ?? searchParams.keywordOp,
-      "realtime",
-    );
-    applyFilters(filters, outcome);
+    await runSearch(filters);
   };
 
   const handlePageChange = (page: number) => {
     setSearchParams((prev) => ({ ...prev, page }));
   };
 
-  // 탭 전환 — 조회 대상과 컬럼 구성이 완전히 달라지므로 정렬·페이지를 초기화한다.
-  const handleViewChange = (view: ListView) => {
+  /**
+   * 탭 전환 — 조회 대상과 컬럼 구성이 완전히 달라지므로 정렬·페이지를 초기화하고,
+   * **좌측 체크를 새 탭 기준으로 다시 집계한다.**
+   *
+   * 두 탭은 검색 대상이 다르다 — 자료일람은 제목, 제품일람은 형번명이다(#2760). 그래서 같은
+   * 키워드라도 목록이 다르고, 좌측은 **그 탭의 목록**을 따라야 한다(REQ-004 / #2745). 옛 탭의
+   * 집계를 들고 넘어가면 「목록은 새 탭 기준인데 좌측은 옛 탭 기준」으로 어긋나고, 플래그가
+   * true 로 이월되면 새 탭에서 분류 조건까지 통째로 빠져(`facetParams` 조기반환) 건수가 넓어진다.
+   *
+   * 사용자가 직접 건 체크는 새 탭 결과와 **교집합**이 된다 — 선언한 조건은 지키되 새 탭에서
+   * 결과가 없는 선택지는 내린다.
+   *
+   * 집계는 비동기라 목록이 먼저 바뀌고 좌측이 뒤따른다 — 검색 경로와 같다. 전환 도중 사용자가
+   * 검색하면 `facetSeqRef` 가 옛 응답을 `stale` 로 버린다.
+   */
+  const handleViewChange = async (view: ListView) => {
     setSort(EMPTY_SORT);
     setSortResetKey((k) => k + 1);
-    setSearchParams((prev) => ({ ...prev, view, page: 1 }));
+    await applyAndRecount({ ...searchParams, view, page: 1 });
   };
 
-  // 사용자가 직접 건드린 체크는 조건이 된다 — `facetFromSearch` 를 내린다.
-  const handleFacetCategoryIdsChange = (ids: number[] | null) => {
+  // 사용자가 직접 건드린 체크는 조건이 된다 — 그 축의 플래그를 내린다.
+  //
+  // ⚠️ **건드린 축의 플래그만** 내린다. 두 축을 한 플래그로 묶으면 형번 한 칸을 해제한 순간
+  // 손대지도 않은 분류 자동 체크가 AND 조건으로 승격돼, 해제한 형번과 무관하게 건수가
+  // 급감한다(#2748 의 재발 경로). `FacetSelection#modelFromSearch` 주석 참조.
+  //
+  // ⚠️ 건드린 축이 조건이 되면 **목록이 줄고, 그러면 반대 축의 선택지도 줄어야 한다.** 그래서
+  // 여기서도 재집계를 돌린다 — 분류를 좁혔는데 형번 체크가 직전 그대로 남아 목록에 없는 형번이
+  // 켜져 있던 것이 이 경로였다(2026-11-05 실화면 확인).
+  //
+  // ⚠️ **결과 밖 선택지를 다시 켜면 반대 축 조건을 푼다**(`isReviving`). 결과에 없다는 것은
+  // 반대 축이 그 항목을 가리고 있다는 뜻이라, 그대로 두면 체크해도 목록이 변하지 않아
+  // 「체크가 안 먹는다」가 된다 (2026-11-06 사용자 확정).
+  const handleFacetCategoryIdsChange = async (ids: number[] | null) => {
+    await applyAndRecount(
+      { ...searchParams, facetCategoryIds: ids, facetFromSearch: false, page: 1 },
+      "category",
+    );
+  };
+
+  const handleProductModelIdsChange = async (ids: number[] | null) => {
+    await applyAndRecount(
+      { ...searchParams, productModelIds: ids, modelFromSearch: false, page: 1 },
+      "model",
+    );
+  };
+
+  /**
+   * 사이드바 최상단 「すべて選択 / すべて解除」 — 두 축을 **한 번의 갱신**으로 바꾼다.
+   *
+   * ⚠️ 축별 핸들러를 두 번 부르면 뒤 호출이 앞 변경을 덮어쓴다(`ContentsFacets#setAll` 주석).
+   *
+   * 재집계는 하지 않는다 — 전체 선택은 「조건 없음」, 전체 해제는 「0건」이라 좌측과 목록이
+   * 그 자체로 일치한다. 여기서 집계를 돌려 체크를 덮으면 사용자가 방금 누른 전체 선택이
+   * 결과 기준 부분 체크로 바뀐다.
+   */
+  const handleAllAxesChange = (
+    categoryIds: number[] | null,
+    productModelIds: number[] | null,
+  ) => {
     setSearchParams((prev) => ({
       ...prev,
-      facetCategoryIds: ids,
+      facetCategoryIds: categoryIds,
       facetFromSearch: false,
+      productModelIds,
+      modelFromSearch: false,
       page: 1,
     }));
   };
 
-  const handleProductModelIdsChange = (ids: number[] | null) => {
-    setSearchParams((prev) => ({
-      ...prev,
-      productModelIds: ids,
-      facetFromSearch: false,
-      page: 1,
-    }));
+  // 게시대상·부서·사내전용도 목록을 좁히는 조건이다 — 바뀌면 좌측 선택지도 함께 다시 센다.
+  const handleRoleCodeChange = async (roleCode: string) => {
+    await applyAndRecount({ ...searchParams, roleCode, page: 1 });
   };
 
-  const handleRoleCodeChange = (roleCode: string) => {
-    setSearchParams((prev) => ({ ...prev, roleCode, page: 1 }));
-  };
-
-  const handleDepartmentsChange = (departments: string[]) => {
-    setSearchParams((prev) => ({ ...prev, departments, page: 1 }));
+  const handleDepartmentsChange = async (departments: string[]) => {
+    await applyAndRecount({ ...searchParams, departments, page: 1 });
   };
 
   /**
@@ -928,13 +1059,13 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 남겨 두면 "조건에는 있는데 결과에 반영되지 않는 값" 이 되고, 끈 뒤에 그 값이 되살아나
    * 사용자가 설정한 적 없는 조건으로 조회된다 (목업 v0.94 요구 ⑤).
    */
-  const handleInternalOnlyChange = (internalOnly: boolean) => {
-    setSearchParams((prev) => ({
-      ...prev,
+  const handleInternalOnlyChange = async (internalOnly: boolean) => {
+    await applyAndRecount({
+      ...searchParams,
       internalOnly,
-      roleCode: internalOnly ? "" : prev.roleCode,
+      roleCode: internalOnly ? "" : searchParams.roleCode,
       page: 1,
-    }));
+    });
   };
 
   const handlePageSizeChange = (newPageSize: number) => {
@@ -993,6 +1124,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             categories={categories}
             isInternal={isInternal}
             userScope={userScope}
+            listConditionParams={listConditionParams}
           />
         </div>
       {/* 모바일 상단 바 — 목업 v0.94 모바일(`assets/qp-mobile.js:152`)과 같은 구성:
@@ -1030,6 +1162,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             internalOnly={searchParams.internalOnly}
             onCategoryIdsChange={handleFacetCategoryIdsChange}
             onProductModelIdsChange={handleProductModelIdsChange}
+            onAllAxesChange={handleAllAxesChange}
             onRoleCodeChange={handleRoleCodeChange}
             onDepartmentsChange={handleDepartmentsChange}
             onInternalOnlyChange={handleInternalOnlyChange}

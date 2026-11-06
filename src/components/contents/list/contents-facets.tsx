@@ -47,6 +47,17 @@ interface ContentsFacetsProps {
   internalOnly: boolean;
   onCategoryIdsChange: (ids: number[] | null) => void;
   onProductModelIdsChange: (ids: number[] | null) => void;
+  /**
+   * 사이드바 최상단 「すべて選択 / すべて解除」 — **두 축을 한 번에** 넘긴다.
+   *
+   * ⚠️ 위 두 콜백을 연달아 부르면 안 된다. 부모가 `searchParams` 를 펼쳐 새 객체를 만드는
+   * 구조라, 두 번째 호출이 **갱신 전 값**을 기준으로 만들어져 첫 번째 변경을 덮어쓴다.
+   * 그래서 분류만 바꾸고 형번을 바꾸면 분류 변경이 사라진다(2026-11-06 실화면).
+   */
+  onAllAxesChange: (
+    categoryIds: number[] | null,
+    productModelIds: number[] | null,
+  ) => void;
   onRoleCodeChange: (roleCode: string) => void;
   onDepartmentsChange: (departments: string[]) => void;
   onInternalOnlyChange: (internalOnly: boolean) => void;
@@ -106,6 +117,7 @@ export function ContentsFacets({
   internalOnly,
   onCategoryIdsChange,
   onProductModelIdsChange,
+  onAllAxesChange,
   onRoleCodeChange,
   onDepartmentsChange,
   onInternalOnlyChange,
@@ -273,10 +285,23 @@ export function ContentsFacets({
     commitModels(checked ? allProductModelIds : []);
   };
 
-  /** 사이드바 전체 선택/해제 — 분류축과 형번축을 함께 움직인다 */
+  /**
+   * 사이드바 전체 선택/해제 — 분류축과 형번축을 **한 번에** 넘긴다.
+   *
+   * ⚠️ `commitCategories` 와 `commitModels` 를 연달아 부르면 뒤 호출이 앞 변경을 덮어쓴다
+   * (`onAllAxesChange` 주석 참조). 정규화 규칙(전부 체크면 `null`)은 두 commit 과 같다.
+   */
   const setAll = (checked: boolean) => {
-    commitCategories(checked ? allCategoryIds : []);
-    commitModels(checked ? allProductModelIds : []);
+    const nextCategories = checked ? allCategoryIds : [];
+    const nextModels = checked ? allProductModelIds : [];
+    onAllAxesChange(
+      allCategoryIds.length === 0 || nextCategories.length === allCategoryIds.length
+        ? null
+        : nextCategories,
+      allProductModelIds.length === 0 || nextModels.length === allProductModelIds.length
+        ? null
+        : nextModels,
+    );
   };
 
   // 型番 축은 제품일람 탭에서만 적용된다(목업 `toggleModelGroup`). 제품일람 대상

@@ -62,9 +62,15 @@ export async function GET(request: NextRequest) {
       facets,
     } = query.data;
 
+    // ⚠️ 0건이어도 `facets=1` 이면 집계 키를 **반드시 함께 내린다.** 키를 생략하면 클라이언트가
+    // 「필드 없음」을 집계 호출 실패와 같은 `null` 로 읽어 체크를 그대로 유지하고(`keep`),
+    // **목록은 0건인데 좌측은 직전 검색이 만든 체크가 켜진 상태**로 남는다. 자료일람
+    // (`resolveAvailableFacets`)은 0행에도 `[]` 를 내려 전체 선택으로 복귀하므로, 빈 집계를
+    // 내려 두 탭의 기준을 맞춘다 — 이 라우트의 집계가 존재하는 이유 자체다 (Redmine #2745).
     const emptyResponse = NextResponse.json({
       data: [],
       meta: { total: 0, page, pageSize, totalPages: 0 },
+      ...(facets && { availableFacets: { productModelIds: [], categoryIds: [] } }),
     });
 
     // 비사내 호출 **전체**에 적용한다 (2026-10-29 사용자 결정). 이 경로는 키워드가 없어도

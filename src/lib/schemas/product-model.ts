@@ -134,6 +134,16 @@ export const suggestQuerySchema = z.object({
   q: z.string().max(100),
   /** 제품·자료 **각각**의 최대 건수 */
   limit: z.coerce.number().int().positive().max(10).default(SUGGEST_DEFAULT_LIMIT),
+  /**
+   * 목록에 **지금 걸려 있는 분류 조건** — 후보를 목록과 같은 모집합에서 낸다.
+   *
+   * 자동완성과 목록이 같은 키워드로 다른 집합을 내면 「후보에는 뜨는데 목록에는 없다」가
+   * 된다. 후보는 제품상세로 가는 바로가기라서 그 상태로 들어가면 목록에서 이미 제외된
+   * 제품을 보게 된다 (2026-11-06 사용자 확정: 자동완성·목록·좌측 체크는 같아야 한다).
+   */
+  facetCategoryIds: commaIdList,
+  /** 목록에 걸린 형번 조건 — 제품일람 좌측에서 사용자가 직접 고른 형번 */
+  productModelIds: commaIdList,
 });
 
 // ─── Types ───
