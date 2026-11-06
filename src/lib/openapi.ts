@@ -1893,7 +1893,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "facets",
             in: "query",
             description:
-              "분류축 집계 요청 (검색 고도화 REQ-004). true 로 호출하면 응답에 `availableFacets.categoryIds` — **목록에 실제로 보이는 자료가 가진** 2Depth 카테고리 ID 목록 — 이 추가됩니다.\n\n두 단계로 셉니다: ① 축 조건을 뺀 집합(키워드·상태·노출범위만)의 분류값을 모으고, 그 중 화면 표시 축의 선택지만 추려 축 조건으로 삼습니다. ② 그 조건으로 남는 자료의 분류값을 반환합니다. ①만 쓰면 목록에 없는 분류가 체크된 채 남습니다(Redmine #2752).\n\n검색 화면이 좌측 체크 상태를 맞추려고 `pageSize=1` 로 따로 호출하는 경로이며, 기본값 false 인 일반 조회에서는 집계 쿼리가 실행되지 않고 `availableFacets` 필드도 응답에 없습니다.",
+              "분류축 집계 요청 (검색 고도화 REQ-004). true 로 호출하면 응답에 `availableFacets.categoryIds` — **목록에 나온 자료가 가진** 2Depth 카테고리 ID 목록 — 이 추가됩니다.\n\n집계 모집합은 **목록과 같은** 조건(키워드·상태·노출범위)이며 조회는 한 번입니다. 반환값에는 사이드바에 없는 축(製品ステータス·비표시·사내전용)의 값도 섞여 있고, 표시 축으로 거르는 것은 화면이 합니다.\n\n⚠️ **여기서 나온 체크를 다시 조회 조건으로 걸면 안 됩니다.** 어떤 축이 비어 있는 자료는 그 축이 조건이 되는 순간 탈락해, 검색이 찾아낸 자료를 자동 체크가 도로 숨깁니다(Redmine #2748). 종전에는 2패스로 재집계했으나, 그 불일치의 원인이 체크를 조건으로 되걸던 것 자체였으므로 1패스로 정리됐습니다.\n\n검색 화면이 좌측 체크 상태를 맞추려고 `pageSize=1` 로 따로 호출하는 경로이며, 기본값 false 인 일반 조회에서는 집계 쿼리가 실행되지 않고 `availableFacets` 필드도 응답에 없습니다.",
             schema: { type: "boolean", default: false },
           },
           {
@@ -3014,6 +3014,13 @@ export const openApiSpec: OpenAPIV3.Document = {
             schema: { type: "string", enum: ["modelCode", "documentCount"] },
           },
           { name: "sortDir", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "asc" } },
+          {
+            name: "facets",
+            in: "query",
+            description:
+              "좌측 체크 동기화용 집계 요청 (검색 고도화 REQ-004 / Redmine #2745). true 로 호출하면 응답에 `availableFacets` 가 추가된다 — `productModelIds`(결과에 나온 형번 ID 전건)와 `categoryIds`(그 형번들에 걸린 자료의 2Depth 카테고리 ID).\n\n집계는 **페이지가 아니라 결과 전건** 기준이며, **0건이어도 빈 배열을 담아 반환**한다. 키를 생략하면 클라이언트가 집계 실패와 구분하지 못해 직전 체크를 그대로 유지하게 된다.\n\n자료일람(`/contents`)의 `facets` 와 짝이지만 **기준이 다르다** — 이쪽은 형번 링크 조건까지 걸린 더 좁은 집합이다. 자료 기준 집계를 제품일람 좌측에 쓰면 「체크는 켜졌는데 목록에 없다」가 된다.\n\n⚠️ 여기서 나온 체크를 **다시 조회 조건으로 걸면 안 된다** — `/contents` 의 `facets` 와 같은 이유(Redmine #2748).",
+            schema: { type: "boolean", default: false },
+          },
         ],
         responses: {
           "200": {
@@ -3031,6 +3038,15 @@ export const openApiSpec: OpenAPIV3.Document = {
                         page: { type: "integer" },
                         pageSize: { type: "integer" },
                         totalPages: { type: "integer" },
+                      },
+                    },
+                    availableFacets: {
+                      type: "object",
+                      description:
+                        "`facets=true` 일 때만 포함. 좌측 체크를 결과에 맞추는 데 쓴다 (0건이어도 빈 배열로 반환).",
+                      properties: {
+                        productModelIds: { type: "array", items: { type: "integer" } },
+                        categoryIds: { type: "array", items: { type: "integer" } },
                       },
                     },
                   },
@@ -3135,7 +3151,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         tags: ["Search"],
         summary: "통합검색 자동완성 (REQ-001)",
         description:
-          "비로그인 GET 이 허용된 공개 경로다. **3자 이상**에서만 후보를 내며, 미달이면 400 이 아니라 빈 결과를 반환한다(타이핑 중 매 글자마다 에러를 내지 않는다).\n\n후보 대상은 **형번 + 콘텐츠 제목뿐**이다 — 첨부파일명과 본문은 보지 않는다. 표시 순서는 제품 → 자료이며 종류별 기본 4건이다.\n\n**조회 가능한 자료가 있는 것만 후보가 된다** (Redmine #2748, 2026-11-03 회의 확정). 자료 후보는 게시상태·게시대상·게시기간 조건이 이미 걸려 있고, 제품 후보는 **공개 자료가 한 건이라도 연결된 형번**만 낸다 — 후보는 검색어를 바꾸는 게 아니라 제품상세로 가는 바로가기라서, 자료 0건 형번을 내보내면 들어간 화면이 비어 있다. 판정 범위는 사이드바 형번의 hasDocuments(/products/axis)와 동일하며 **보는 사람 기준**이라 사내 사용자에게 후보가 더 많이 나온다. 전역 기준이므로 「이 키워드로 자료일람을 검색한 결과 건수」와는 일치하지 않는다.\n\n제품 후보의 부제는 카테고리명만 내려보낸다 — 형번 마스터에 제품상태 컬럼이 없다(목업 03 형번관리에서도 製品ステータス 는 관리항목 제외 확정이며, 제품상태는 콘텐츠의 분류축이다).\n\n타이핑마다 호출되는 경로라 rate limit 을 /contents 검색과 **별도 키**로 적용한다 — 자동완성 폭주가 본검색을 막지 않는다.",
+          "비로그인 GET 이 허용된 공개 경로다. **3자 이상**에서만 후보를 내며, 미달이면 400 이 아니라 빈 결과를 반환한다(타이핑 중 매 글자마다 에러를 내지 않는다).\n\n후보 대상은 **형번 + 콘텐츠 제목뿐**이다 — 첨부파일명과 본문은 보지 않는다. 표시 순서는 제품 → 자료이며 종류별 기본 4건이다.\n\n**조회 가능한 자료가 있는 것만 후보가 된다** (Redmine #2748, 2026-11-03 회의 확정). 자료 후보는 게시상태·게시대상·게시기간 조건이 이미 걸려 있고, 제품 후보는 **공개 자료가 한 건이라도 연결된 형번**만 낸다 — 후보는 검색어를 바꾸는 게 아니라 제품상세로 가는 바로가기라서, 자료 0건 형번을 내보내면 들어간 화면이 비어 있다. 판정 범위는 사이드바 형번의 hasDocuments(/products/axis)와 동일하며 **보는 사람 기준**이라 사내 사용자에게 후보가 더 많이 나온다.\n\n**목록에 걸린 조건(facetCategoryIds·productModelIds)을 함께 보내면 그 조건까지 적용한다** (2026-11-06 확정). 자동완성·목록·좌측 체크가 같은 집합을 가리켜야 하기 때문이며, 조건을 보내지 않으면 전역 기준이라 「이 키워드로 제품일람을 검색한 결과」와 어긋난다.\n\n제품 후보의 부제는 카테고리명만 내려보낸다 — 형번 마스터에 제품상태 컬럼이 없다(목업 03 형번관리에서도 製品ステータス 는 관리항목 제외 확정이며, 제품상태는 콘텐츠의 분류축이다).\n\n타이핑마다 호출되는 경로라 rate limit 을 /contents 검색과 **별도 키**로 적용한다 — 자동완성 폭주가 본검색을 막지 않는다.",
         parameters: [
           { name: "q", in: "query", required: true, description: "검색어. 3자 미만이면 빈 결과", schema: { type: "string", maxLength: 100 } },
           {
@@ -3143,6 +3159,20 @@ export const openApiSpec: OpenAPIV3.Document = {
             in: "query",
             description: "제품·자료 **각각**의 최대 건수",
             schema: { type: "integer", minimum: 1, maximum: 10, default: 4 },
+          },
+          {
+            name: "facetCategoryIds",
+            in: "query",
+            description:
+              "목록에 **지금 걸려 있는 분류 조건** — 콤마 구분 2Depth 카테고리 ID. 의미와 예외처리는 `/contents`·`/products` 의 같은 이름 파라미터와 동일하다.\n\n후보를 목록과 **같은 모집합**에서 내기 위한 것이다 (2026-11-06 확정). 보내지 않으면 분류를 좁혀 목록이 줄어도 후보는 그대로 남아 「후보에는 뜨는데 목록에는 없다」가 된다 — 후보는 제품상세로 가는 바로가기라서 목록에서 이미 제외된 제품으로 들어가게 된다.",
+            schema: { type: "string" },
+          },
+          {
+            name: "productModelIds",
+            in: "query",
+            description:
+              "목록에 걸린 형번 조건 — 콤마 구분 형번 ID. 제품일람 좌측에서 **사용자가 직접 고른** 형번이며, 그 안에서만 제품 후보를 낸다. 검색이 만든 자동 체크는 조건이 아니므로 보내지 않는다(Redmine #2748).",
+            schema: { type: "string" },
           },
         ],
         responses: {

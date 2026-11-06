@@ -52,6 +52,14 @@ interface ContentsSearchProps {
   isInternal: boolean;
   /** 권한별 캐시 분리 시드 — 자동완성 결과는 보는 사람의 노출범위에 따라 달라진다 */
   userScope: string;
+  /**
+   * 목록에 **지금 걸려 있는 조건**(분류·형번) 쿼리 파라미터.
+   *
+   * 자동완성 후보를 목록과 같은 모집합에서 내기 위해 그대로 함께 보낸다. 같은 키워드로
+   * 둘이 다른 집합을 내면 「후보에는 뜨는데 목록에는 없다」가 되는데, 후보는 제품상세로 가는
+   * 바로가기라서 목록에서 이미 제외된 제품으로 들어가게 된다 (2026-11-06 사용자 확정).
+   */
+  listConditionParams: Record<string, string>;
 }
 
 /**
@@ -80,6 +88,7 @@ export function ContentsSearch({
   categories,
   isInternal,
   userScope,
+  listConditionParams,
 }: ContentsSearchProps) {
   const [keyword, setKeyword] = useState(initialFilters?.keyword ?? "");
   const [keywordOp, setKeywordOp] = useState<KeywordOp>(initialFilters?.keywordOp ?? "AND");
@@ -114,11 +123,11 @@ export function ContentsSearch({
 
   const trimmedSuggestQuery = suggestQuery.trim();
   const { data: suggestData } = useQuery<SuggestData>({
-    queryKey: ["search", "suggest", trimmedSuggestQuery, userScope],
+    // 조건이 바뀌면 후보도 달라진다 — queryKey 에 넣어야 캐시가 갈린다.
+    queryKey: ["search", "suggest", trimmedSuggestQuery, userScope, listConditionParams],
     queryFn: async () => {
-      const res = await api.get<{ data: SuggestData }>(
-        `/search/suggest?q=${encodeURIComponent(trimmedSuggestQuery)}`,
-      );
+      const params = new URLSearchParams({ q: trimmedSuggestQuery, ...listConditionParams });
+      const res = await api.get<{ data: SuggestData }>(`/search/suggest?${params.toString()}`);
       return res.data.data;
     },
     // 3자 게이트의 판정은 서버가 단일 출처다(미달이면 빈 결과를 돌려준다).

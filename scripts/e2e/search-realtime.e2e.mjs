@@ -6,9 +6,8 @@
 // 우리는 본문 제외(계획서 §5-①)를 택했으므로 실시간 쪽을 가져와야 한다.
 // 목업 구현은 `01-search.html` 의 `runSearchDebounced()` — `SEARCH_BODY=false` 라 가드를 통과한다.
 //
-// ⚠️ 목업과 **의도적으로 다른 점 1건** (2026-10-12 사용자 결정):
-//   3자 미만으로 지웠을 때 목업은 검색어를 빈 값으로 되돌려 전체 목록으로 복귀하지만,
-//   여기서는 **직전 결과를 유지**한다. 지우는 중에 전체목록이 깜빡이는 것을 피하기 위함이다.
+// 3자 미만으로 지우면 **초기화**다 — 목록은 전체, 좌측 체크도 전체 선택 (2026-11-05 확정).
+// 3자 미만은 자동완성도 검색어 조건도 빠지는 구간이라 「검색하기 전」과 같은 상태이기 때문이다.
 //
 // 대기 원칙 (2026-10-27):
 //   - **조회가 일어나야 하는 조작**은 `actAndWait` 로 응답을 기다린다. 고정 대기를 쓰면 디바운스
@@ -26,6 +25,7 @@ import {
   run,
   SEARCH_INPUT,
   test,
+  waitForStableNumber,
   withPage,
 } from "./harness.mjs";
 
@@ -39,11 +39,6 @@ function typeAndWait(page, text) {
     await input.click();
     await input.type(text, { delay: 40 });
   });
-}
-
-/** 검색어를 바꿔 넣고(fill) 재조회가 끝날 때까지 기다린다. */
-function fillAndWait(page, text) {
-  return actAndWait(page, () => page.locator(SEARCH_INPUT).fill(text));
 }
 
 test("3자 이상 입력하면 Enter 없이 목록이 걸러진다", async () => {
@@ -94,7 +89,7 @@ function listCallsOnly(urls) {
   return urls.filter((u) => !/[?&]facets=true(&|$)/.test(u));
 }
 
-test("3자 미만으로 지우면 검색어만 빼고 현재 조건으로 재조회한다", async () => {
+test("3자 미만으로 지우면 전체 조회로 초기화된다", async () => {
   await withPage({ role: "store1" }, async (page) => {
     const calls = [];
     page.on("request", (r) => {
@@ -105,37 +100,56 @@ test("3자 미만으로 지우면 검색어만 빼고 현재 조건으로 재조
 
     const filtered = await typeAndWait(page, "PHASE9-TEST");
     assert(filtered !== null && filtered < initial, `선행 조건 불성립 — ${initial} → ${filtered}`);
-
-    // 3자 이상 검색은 좌측 체크를 결과에 맞춰 좁힌다(REQ-004, 사용자 요구). 그 체크가
-    // 이후의 기준이 된다 — 아래 재조회가 이 값을 그대로 쓰는지 본다.
-    //
-    // `null`(= `facetCategoryIds` 미전송)도 **정상값**이다. 집계 결과가 표시 중인 선택지를
-    // 전부 덮으면 `toFacetSelection` 이 전부 체크로 정규화하고, 예외처리 ①(2026-11-03 회의)에
-    // 따라 파라미터가 생략된다. 그래서 「실렸는지」를 단언하지 않고, 아래에서 재조회가 **같은
-    // 값**(둘 다 `null` 이어도 성립)을 쓰는지만 본다.
-    const axisAfterSearch = lastFacetParam(listCallsOnly(calls));
     calls.length = 0;
 
-    const restored = await fillAndWait(page, "PH");
+    // 3자 미만은 **검색이 없던 상태**다 — 자동완성도 검색어 조건도 빠지는 구간이라, 남는 것은
+    // 검색하기 전 화면이다. 그래서 「직전 조건으로 재조회」가 아니라 **초기화**다
+    // (2026-11-05 사용자 확정). 종전에는 체크를 그대로 두고 그 기준으로 재조회했는데,
+    // 검색이 만든 체크가 더 이상 조건이 아니게 되면서(#2748) 「검색은 취소됐는데 그 검색이
+    // 만든 체크로 거르는」 상태가 되어 뒤집었다.
+    await page.locator(SEARCH_INPUT).fill("PH");
+    const restored = await waitForStableNumber(page, RESULT_TOTAL);
 
-    // 2자 이하는 **키워드만 풀고 좌측영역 선택 기준으로 재조회**한다(2026-10-29 사용자 확인).
-    // 전체 선택으로 되돌리지 않으므로 초기 건수와 같아질 이유가 없다 — 축 사이는 AND 라
-    // 체크가 적은 쪽이 오히려 결과가 많다. 보는 것은 ①키워드가 빠졌는지 ②축이 그대로인지다.
-    const reQueries = listCallsOnly(calls);
-    const reQuery = reQueries.at(-1);
-    assert(reQuery !== undefined, "검색어를 지웠는데 재조회가 나가지 않았습니다");
+    assertEqual(restored, initial, "2자 이하로 지웠는데 전체 건수로 돌아오지 않았습니다");
+
+    // 조회가 나갔다면 검색어도 분류축도 실려 있으면 안 된다. 초기 상태와 같은 쿼리라
+    // 캐시로 처리되어 **요청이 없을 수도** 있다 — 있을 때만 본다.
+    const reQuery = listCallsOnly(calls).at(-1);
+    if (reQuery !== undefined) {
+      assert(!/[?&]keyword=[^&]/.test(reQuery), `재조회에 검색어가 남아 있습니다 — ${reQuery}`);
+      assertEqual(lastFacetParam([reQuery]), null, "초기화 조회에 분류축 조건이 실렸습니다");
+    }
+  });
+});
+
+test("3자 미만으로 지우면 좌측 체크도 전체 선택으로 돌아간다", async () => {
+  await withPage({ role: "store1" }, async (page) => {
+    await openDocContents(page);
+
+    const countChecked = () =>
+      page.$$eval('aside input[type="checkbox"]', (boxes) => {
+        const usable = boxes.filter((b) => !b.disabled);
+        return { on: usable.filter((b) => b.checked).length, all: usable.length };
+      });
+
+    const onOpen = await countChecked();
+    assert(onOpen.all > 0, "좌측영역 체크박스를 찾지 못했습니다");
+    assertEqual(onOpen.on, onOpen.all, "진입 시점이 전체 선택이 아닙니다");
+
+    await typeAndWait(page, "PHASE9-TEST");
+    const narrowed = await countChecked();
     assert(
-      !/[?&]keyword=[^&]/.test(reQuery),
-      `재조회에 검색어가 남아 있습니다 — ${reQuery}`,
+      narrowed.on < narrowed.all,
+      `검색이 좌측 체크를 결과 기준으로 좁히지 않았습니다 — ${narrowed.on}/${narrowed.all}`,
     );
+
+    await page.locator(SEARCH_INPUT).fill("PH");
+    await waitForStableNumber(page, RESULT_TOTAL);
+    const reset = await countChecked();
     assertEqual(
-      lastFacetParam([reQuery]),
-      axisAfterSearch,
-      "재조회가 좌측영역 선택 기준이 아닙니다",
-    );
-    assert(
-      restored !== null && restored > filtered,
-      `키워드가 실제로 풀리지 않았습니다 — ${filtered} → ${restored}`,
+      reset.on,
+      reset.all,
+      "2자 이하로 지웠는데 좌측 체크가 전체 선택으로 돌아가지 않았습니다",
     );
   });
 });
@@ -145,37 +159,6 @@ function narrowFirstAxis(page) {
   const axis = page.locator("aside > div").filter({ has: page.locator("h2") }).first();
   return actAndWait(page, () => domClick(axis.locator('input[type="checkbox"]')));
 }
-
-test("2자 이하로 지워도 좌측 체크가 전체 선택으로 리셋되지 않는다", async () => {
-  await withPage({ role: "store1" }, async (page) => {
-    const calls = [];
-    page.on("request", (r) => {
-      const url = r.url();
-      if (url.includes("/api/contents?")) calls.push(decodeURIComponent(url));
-    });
-    await openDocContents(page);
-
-    // 진입 시점의 축 — 화면 오픈은 전부 체크이고, 예외처리 ①(2026-11-03 회의)에 따라
-    // `facetCategoryIds` 가 **전송되지 않는다**(= `null`). 이 상태로 되돌아가면 안 된다.
-    const axisOnOpen = lastFacetParam(listCallsOnly(calls));
-    assertEqual(axisOnOpen, null, "진입 조회에 분류축 조건이 실렸습니다 — 예외처리 ① 위반");
-
-    await typeAndWait(page, "PHASE9-TEST");
-    calls.length = 0;
-    await fillAndWait(page, "P");
-
-    // 2026-10-28 구현은 빈 키워드를 받으면 축을 **미설정(전부 체크)** 으로 되돌렸다. 그러면
-    // 좁혀 둔 체크가 글자를 지우는 순간 날아간다 — 2026-10-29 사용자 확인으로 실시간
-    // 경로에서는 되돌리지 않기로 했다. 전체 선택 복귀는 아래 「[검색] 클릭」 케이스뿐이다.
-    const reQueries = listCallsOnly(calls);
-    assert(reQueries.length > 0, "검색어를 지웠는데 재조회가 나가지 않았습니다");
-    const axisAfterErase = lastFacetParam(reQueries);
-    assert(
-      axisAfterErase !== axisOnOpen,
-      `2자 이하로 지웠는데 축이 전체 선택으로 되돌아갔습니다 — ${axisAfterErase}`,
-    );
-  });
-});
 
 test("검색어를 지우고 [검색] 하면 분류축이 전체 선택으로 돌아간다", async () => {
   await withPage({ role: "store1" }, async (page) => {
