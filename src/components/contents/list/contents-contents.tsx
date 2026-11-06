@@ -582,19 +582,32 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * 보류가 풀리면 `visibleFacetIds` 가 비어 ② 가 걸리지 않으므로 조건 없는 목록이 나온다 —
    * 변경 전과 같은 동작이다.
    */
-  const isFacetStatePending =
+  /**
+   * ⚠️ ② 판정은 **사용자가 직접 전부 해제했을 때만** 성립한다.
+   *
+   * 검색이 만든 체크(`facetFromSearch`)는 조건이 아니라 표시라서, 값이 `[]` 로 보여도
+   * 「조회하지 말라」는 뜻이 아니다. 플래그를 보지 않으면 전부 해제 상태로 검색했을 때
+   * 키워드를 넣어도 0건에 잠긴다.
+   */
+  const isCategoryCleared =
+    !searchParams.facetFromSearch &&
     searchParams.facetCategoryIds !== null &&
-    searchParams.facetCategoryIds.length === 0 &&
+    searchParams.facetCategoryIds.length === 0;
+  const isModelCleared =
+    !searchParams.modelFromSearch &&
+    searchParams.productModelIds !== null &&
+    searchParams.productModelIds.length === 0;
+
+  const isFacetStatePending =
+    isCategoryCleared &&
     ((visibleFacetIds.length === 0 && isCategoriesLoading) ||
       (searchParams.view === "prod" && isProductAxisLoading));
 
   const isAllFacetsCleared =
     !isFacetStatePending &&
     visibleFacetIds.length > 0 &&
-    searchParams.facetCategoryIds !== null &&
-    searchParams.facetCategoryIds.length === 0 &&
-    (!isModelAxisShown ||
-      (searchParams.productModelIds !== null && searchParams.productModelIds.length === 0));
+    isCategoryCleared &&
+    (!isModelAxisShown || isModelCleared);
 
   /** ② 전체 해제 시 내려보낼 0건 메타 — 총건수와 페이지네이션도 함께 비운다. */
   const clearedMeta = useMemo(
@@ -851,7 +864,13 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
     const isProd = next.view === "prod";
 
     // 전체 해제(②)는 조회 없이 0건으로 확정된다 — 집계할 모집합이 없으므로 건드리지 않는다.
-    if (next.facetCategoryIds !== null && next.facetCategoryIds.length === 0) {
+    // ⚠️ **사용자가 직접 해제했을 때만** 그렇다. 검색이 만든 체크는 조건이 아니라서 `[]` 여도
+    // 0건이 아니며, 여기서 걸러 버리면 전부 해제 상태로 검색했을 때 좌측이 갱신되지 않는다.
+    if (
+      !next.facetFromSearch &&
+      next.facetCategoryIds !== null &&
+      next.facetCategoryIds.length === 0
+    ) {
       return { kind: "keep" };
     }
 
@@ -929,26 +948,37 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    */
   const runSearch = async (filters: SearchFilters) => {
     const reset = (filters.keyword ?? "").trim().length < SEARCH_KEYWORD_MIN;
+    // 3자 미만 — 검색이 없던 일이 되므로 좌측을 **전체 선택으로 되돌린다.** 그게 최종 상태다.
+    if (reset) {
+      setSearchParams({
+        ...searchParams,
+        ...filters,
+        page: 1,
+        facetCategoryIds: null,
+        facetFromSearch: false,
+        productModelIds: null,
+        modelFromSearch: false,
+      });
+      return;
+    }
+
     // **최종 액션이 검색이면 좌측은 그 결과 기준으로 다시 켜진다.** 직전 체크 상태(전부 체크·
     // 전부 해제·일부 체크)는 기준이 아니다 — 검색은 「지금 이 키워드로 뭐가 나오는가」를 묻는
     // 행위이고, 좌측은 그 답을 비춰야 한다 (2026-11-06 사용자 확정).
     //
-    // 전부 해제 상태를 들고 검색해도 여기서 풀리므로 ②(조회 없이 0건)에 잠기지 않는다.
-    const next: SearchParams = {
+    // ⚠️ 체크 **값은 건드리지 않고 플래그만 올린다.** 값을 `null` 로 비우면 그 상태가 화면에
+    // **「전체 선택」으로 한 번 그려졌다가** 집계 도착 후 결과 기준으로 바뀌어, 검색할 때마다
+    // 좌측이 전부 켜졌다 꺼지는 것이 보인다(2026-11-06 실화면). 플래그만 올리면
+    //   - 목록: `facetParams` 가 조기반환해 조건 없이 **즉시** 키워드로 조회되고
+    //   - 좌측: 직전 체크를 유지하다가 집계 도착 시 **한 번에** 결과 기준으로 바뀐다.
+    // 전부 해제(②) 상태도 플래그가 올라가면 조건에서 빠지므로 0건에 잠기지 않는다.
+    await applyAndRecount({
       ...searchParams,
       ...filters,
       page: 1,
-      facetCategoryIds: null,
-      facetFromSearch: false,
-      productModelIds: null,
-      modelFromSearch: false,
-    };
-    // 초기화는 집계가 필요 없다 — 전체 선택이 곧 「조건 없음」이다.
-    if (reset) {
-      setSearchParams(next);
-      return;
-    }
-    await applyAndRecount(next);
+      facetFromSearch: true,
+      modelFromSearch: true,
+    });
   };
 
   const handleSearch = async (filters: SearchFilters) => {
