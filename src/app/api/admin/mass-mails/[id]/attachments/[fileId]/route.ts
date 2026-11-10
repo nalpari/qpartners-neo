@@ -47,7 +47,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "メールが見つかりません" }, { status: 404 });
     }
 
-    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인.
+    // 소유권 검증: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인.
     // ownership → status 순서 — 타인 소유 메일의 상태 enumeration 차단 (메일 단건 DELETE 핸들러와 동일.
     // PUT 핸들러는 status 우선이라 순서가 다름 — 본 핸들러는 enumeration 방어를 위해 ownership 우선 채택).
     if (!(await canModifyResource(user, mail))) {

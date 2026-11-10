@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         { status: 404 },
       );
     }
-    // SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
     if (!(await canModifyResource(user, mail))) {
       return NextResponse.json(
         { error: "このメールを再送信する権限がありません" },

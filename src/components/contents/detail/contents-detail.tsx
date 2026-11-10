@@ -123,7 +123,7 @@ export function ContentsDetail({ contentId }: ContentsDetailProps) {
   // hydration-safe: SSR/초기 hydration 은 false → Gnb 의 auth flag 전파 후 재평가
   const isInternal = useIsInternal();
   // 삭제/수정 버튼 노출: 서버 canModifyResource 로직을 UI 에 반영 (서버 재검증 보장 전제)
-  // SUPER_ADMIN → 모든 글, ADMIN → SUPER_ADMIN 작성글 제외, 그외 → 본인 글만
+  // SUPER_ADMIN → 모든 글, 그외(ADMIN 포함) → 본인 글만
   const canModify = data ? canModifyClient(user, data) : false;
 
   // RBAC Phase 3 §버튼 정책: 작성자 가드(canModify) 통과한 버튼에 한해 메뉴 권한 alert 가드.

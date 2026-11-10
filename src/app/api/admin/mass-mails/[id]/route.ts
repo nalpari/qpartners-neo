@@ -205,7 +205,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // 소유권 검증: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
     // retry 핸들러와 동일하게 ownership → status 순서로 체크 — 타인 소유 메일의 상태 enumeration 차단
     if (!(await canModifyResource(user, mail))) {
       return NextResponse.json(
@@ -353,7 +353,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       );
     }
 
-    // 소유권 검증: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // 소유권 검증: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
     if (!(await canModifyResource(user, existing))) {
       return NextResponse.json(
         { error: "このメールを編集する権限がありません" },

@@ -157,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
         if (!existing) throw new HomeNoticeUpdateError("NOT_FOUND");
 
-        if (!(await canModifyResource(auth.user, existing, tx))) {
+        if (!(await canModifyResource(auth.user, existing))) {
           throw new HomeNoticeUpdateError("FORBIDDEN");
         }
 

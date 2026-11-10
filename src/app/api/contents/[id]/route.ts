@@ -242,7 +242,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // 권한 세분화: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
       select: { userType: true, userId: true },
@@ -418,7 +418,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
     }
 
-    // 권한 세분화: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+    // 권한 세분화: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
     const existing = await prisma.content.findUnique({
       where: { id: parsed.data },
       select: { userType: true, userId: true },

@@ -4066,7 +4066,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description:
           "관리자 전용 — 임시저장(draft) 상태 메일의 첨부파일을 저장(PUT) 없이 즉시 삭제한다. " +
           "콘텐츠(DELETE /contents/{id}/files/{fileId})와 동일한 즉시 삭제 UX 제공. " +
-          "권한: ADM_BULK_MAIL.update (편집 컨텍스트). 소유권: SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인.",
+          "권한: ADM_BULK_MAIL.update (편집 컨텍스트). 소유권: SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인.",
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "integer" }, description: "대량메일 ID" },
           { name: "fileId", in: "path", required: true, schema: { type: "integer" }, description: "첨부파일 ID" },

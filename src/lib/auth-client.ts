@@ -7,23 +7,21 @@ import type { LoginUser } from "@/lib/schemas/auth";
 /**
  * 클라이언트 수정/삭제 권한 — 서버 canModifyResource 와 동기화
  * - SUPER_ADMIN: 모든 글
- * - ADMIN: 슈퍼관리자 작성글 제외 모든 글
- * - 그 외: 본인 작성글만
+ * - 그 외(ADMIN 포함): 본인 작성글만
+ *
+ * ⚠️ 2026-11-10 (Redmine #2779) 로 ADMIN 분기를 제거했다. 서버 `lib/auth.ts` 의
+ * `canModifyResource` 와 쌍이므로 한쪽만 바꾸면 「버튼은 보이는데 403」 이 된다.
  *
  * authRole 미설정 과도기 폴백: userTp="ADMIN" 이면 ADMIN 으로 간주,
  * 그 외에는 role 없음으로 처리해 본인 매칭 쪽으로 보수적 폴백 (STORE/GENERAL 잘못 ADMIN 처리 방지).
- *
- * authorIsSuperAdmin이 undefined 인 경우(일반 사용자 응답에서 누락)에는 boolean 명시 비교로
- * `!undefined === true` 권한 우회를 차단 — 값이 확실히 false 로 내려왔을 때만 ADMIN 수정 허용.
  */
 export function canModifyClient(
   user: LoginUser | null | undefined,
-  resource: { userId: string; authorIsSuperAdmin?: boolean },
+  resource: { userId: string },
 ): boolean {
   if (!user) return false;
   const role = user.authRole ?? (user.userTp === "ADMIN" ? "ADMIN" : null);
   if (role === "SUPER_ADMIN") return true;
-  if (role === "ADMIN") return resource.authorIsSuperAdmin === false;
   return user.userId === resource.userId;
 }
 

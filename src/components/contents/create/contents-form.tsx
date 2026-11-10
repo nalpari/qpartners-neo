@@ -139,7 +139,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     enabled: false,
   });
 
-  // edit 진입 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
+  // edit 진입 권한 — SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
   // 권한 없으면 안내 후 상세 페이지로 되돌림 (URL 직접 입력 시에도 차단)
   // useRef 가드: refetch 로 existingData 참조가 갱신돼도 alert 은 1회만 띄움
   // contentId 가 바뀌면(SPA 전환: /contents/10/edit → /contents/11/edit) ref 를 초기화해 다음 콘텐츠에서 재평가
