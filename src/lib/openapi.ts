@@ -5355,7 +5355,8 @@ export const openApiSpec: OpenAPIV3.Document = {
           userRole: {
             type: "string",
             description:
-              "현재 권한 코드. 응답에는 SEKO 포함 가능(레거시 데이터). 요청(MemberUpdateRequest.userRole)에는 SEKO 부여 불가 — 2026-04-23 정책.",
+              "현재 권한 코드. 응답에는 SEKO 포함 가능(레거시 데이터). 요청(MemberUpdateRequest.userRole)에는 SEKO 부여 불가 — 2026-04-23 정책. " +
+              "userTp=ADMIN 회원은 QSP authCd 에 슈퍼관리자 구분이 없어, 코드관리 `ADMIN_ROLE` 명단을 조회해 SUPER_ADMIN|ADMIN 으로 확정해 반환한다 (Redmine #2780). 조회 불확실 시 ADMIN 으로 폴백.",
           },
           companyName: { type: "string" },
           companyNameKana: { type: "string" },
