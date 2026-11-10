@@ -58,7 +58,7 @@ export function BulkMailDetailClient({ id }: BulkMailDetailClientProps) {
 
   const detail = data.data;
 
-  // 수정/삭제 권한 — SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
+  // 수정/삭제 권한 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인
   const canModify = canModifyClient(user, detail);
 
   // Design Ref: §4.3 — 편집 가능(draft 또는 미도래 예약) → edit, 그 외(발송/도래) → detail.

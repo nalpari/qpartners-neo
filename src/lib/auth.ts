@@ -405,25 +405,62 @@ export async function resolveAuthorSuperAdmin(
 }
 
 /**
+ * 권한 판정용 boolean wrapper — canModifyResource 내부에서만 사용.
+ * GET 응답 필드 세팅에는 {@link resolveAuthorSuperAdmin} 을 직접 사용해 status 도 함께 확인할 수 있게 한다.
+ */
+export async function isAuthorSuperAdmin(
+  resource: { userType: string; userId: string },
+  tx?: Prisma.TransactionClient,
+): Promise<boolean> {
+  const result = await resolveAuthorSuperAdmin(resource, tx);
+  return result.isSuperAdmin;
+}
+
+/**
  * 게시글/콘텐츠 수정/삭제 권한 — 작성자가 있는 모든 리소스 공용
  * - SUPER_ADMIN: 모든 글
- * - 그 외(ADMIN 포함): `{ userType, userId }` 동시 일치 시에만(본인 작성글)
+ * - ADMIN: 슈퍼관리자 작성글 제외 모든 글
+ * - 그 외: `{ userType, userId }` 동시 일치 시에만(본인 작성글)
  *   · userType 미비교 시 Prisma `@@index([userType, userId])` 복합키 기반이라 타입 간 userId 중복 → IDOR 여지
  *   · 공용 유틸이므로 호출 경로 의존 없이 방어적 계약 유지
  *
- * ⚠️ 2026-11-10 (Redmine #2779) 로 ADMIN 분기를 제거했다. 이전에는 ADMIN 이 「슈퍼관리자
- * 작성글만 제외」 였으나, 현업 요청으로 **일반관리자는 본인 글만** 으로 좁혔다. 되돌릴 때는
- * 같은 판정을 복제한 `lib/auth-client.ts` 의 `canModifyClient` 도 함께 볼 것.
- *
  * 적용 대상: Content, HomeNotice, MassMail 등 `{ userType, userId }` 를 가진 리소스
  *
- * 판정이 작성자 비교만 남아 DB 조회가 없어졌지만, 호출부 10여 곳이 모두 `await` 하고 있어
- * 시그니처(Promise 반환)는 유지한다 — 호출부 일괄 수정의 회귀 위험을 피하기 위함.
+ * @param tx Optional Prisma 트랜잭션 클라이언트 — 권한 검증을 동일 트랜잭션 안에서
+ *   수행해야 하는 핸들러(예: PUT/DELETE 의 Serializable tx) 에서 전달.
  */
 export async function canModifyResource(
   user: UserInfo,
   resource: { userType: string; userId: string },
+  tx?: Prisma.TransactionClient,
 ): Promise<boolean> {
+  if (user.role === "SUPER_ADMIN") return true;
+  if (user.role === "ADMIN") {
+    return !(await isAuthorSuperAdmin(resource, tx));
+  }
+  return user.userType === resource.userType && user.userId === resource.userId;
+}
+
+/**
+ * 콘텐츠(자료) 수정/삭제 권한 — Redmine #2779
+ * - SUPER_ADMIN: 모든 글
+ * - 그 외(ADMIN 포함): `{ userType, userId }` 동시 일치 시에만(본인 작성글)
+ *
+ * 공용 {@link canModifyResource} 와 분리한 이유: #2779 의 요구 범위는 **콘텐츠 화면 한정**이다.
+ * 공용 함수에서 ADMIN 분기를 지우면 같은 함수를 쓰는 홈공지(`/api/home-notices/*`)·
+ * 대량메일(`/api/admin/mass-mails/*`) 권한까지 요구 범위 밖에서 함께 좁아진다.
+ *
+ * `userType` 까지 비교하는 이유는 canModifyResource 와 동일 — Prisma `@@index([userType, userId])`
+ * 기반이라 타입 간 userId 중복 시 IDOR 여지가 생긴다.
+ *
+ * 작성자 비교만 하므로 DB 조회가 없다(= tx 파라미터 불요, 동기 함수).
+ * 쌍이 되는 클라이언트 판정은 `lib/auth-client.ts` 의 `canModifyContentClient` —
+ * 한쪽만 바꾸면 「버튼은 보이는데 403」 이 된다.
+ */
+export function canModifyContent(
+  user: UserInfo,
+  resource: { userType: string; userId: string },
+): boolean {
   if (user.role === "SUPER_ADMIN") return true;
   return user.userType === resource.userType && user.userId === resource.userId;
 }

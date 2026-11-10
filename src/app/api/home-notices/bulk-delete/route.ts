@@ -37,7 +37,7 @@ class BulkDeleteError extends Error {
 //   - 요청한 ID 중 하나라도 권한 없음 → 403 + deniedIds, 어느 것도 삭제하지 않음
 //   - 모두 통과 시에만 일괄 삭제 (하나의 트랜잭션, deleteMany)
 //
-// 단건 DELETE 와 권한 모델은 동일 — SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인 작성글.
+// 단건 DELETE 와 권한 모델은 동일 — SUPER_ADMIN=전체, ADMIN=SUPER_ADMIN 작성글 제외, 그외=본인 작성글.
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireMenuPermission(request.headers, "ADM_NOTICE", "delete");
@@ -82,11 +82,13 @@ export async function POST(request: NextRequest) {
         }
 
         // 3. 권한 검증 — 한 건이라도 권한 없으면 전체 거부 (fail-closed).
-        //    canModifyResource 는 시그니처가 Promise 라 순차 await 한다 (Redmine #2779 이후
-        //    작성자 비교만 남아 DB 조회는 없다).
+        //    canModifyResource 는 SUPER_ADMIN 작성글 식별 위해 비동기 (DB 조회 가능).
+        //    Serializable 트랜잭션 안에서 Promise.all 병렬 실행은 일부 드라이버/풀에서
+        //    동일 트랜잭션 커넥션의 동시 사용을 막기 때문에 dead-lock 위험이 있어 순차 처리.
+        //    tx 전달 → admin role 조회까지 동일 트랜잭션 스냅샷에서 평가.
         const deniedIds: number[] = [];
         for (const notice of notices) {
-          const allowed = await canModifyResource(auth.user, notice);
+          const allowed = await canModifyResource(auth.user, notice, tx);
           if (!allowed) deniedIds.push(notice.id);
         }
         if (deniedIds.length > 0) {

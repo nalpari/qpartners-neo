@@ -10,7 +10,7 @@ import { formatDate } from "@/lib/format";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { canModifyClient } from "@/lib/auth-client";
+import { canModifyContentClient } from "@/lib/auth-client";
 import { useTargetLabels, type TargetRoleOption } from "@/hooks/use-target-labels";
 import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
@@ -139,7 +139,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     enabled: false,
   });
 
-  // edit 진입 권한 — SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인
+  // edit 진입 권한 (Redmine #2779) — SUPER_ADMIN=전체, 그외(ADMIN 포함)=본인 작성글만
   // 권한 없으면 안내 후 상세 페이지로 되돌림 (URL 직접 입력 시에도 차단)
   // useRef 가드: refetch 로 existingData 참조가 갱신돼도 alert 은 1회만 띄움
   // contentId 가 바뀌면(SPA 전환: /contents/10/edit → /contents/11/edit) ref 를 초기화해 다음 콘텐츠에서 재평가
@@ -149,7 +149,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
   }, [contentId]);
   useEffect(() => {
     if (mode !== "edit" || !existingData || !loginUser) return;
-    if (canModifyClient(loginUser, existingData)) return;
+    if (canModifyContentClient(loginUser, existingData)) return;
     if (unauthorizedAlertFiredRef.current) return;
     unauthorizedAlertFiredRef.current = true;
     openAlert({
@@ -218,7 +218,7 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
 
   // forcedRoleCode — 비관리자 작성자/편집자의 본인 권한코드.
   // 본인 콘텐츠가 본인 목록에서 사라지는 회귀 방지 (목록 GET 가 roleCode=user.role 매칭).
-  // auth-client.canModifyClient 와 동일 폴백 (authRole 미보유 구 JWT 호환).
+  // auth-client.canModifyContentClient 와 동일 폴백 (authRole 미보유 구 JWT 호환).
   // 사내회원(SUPER_ADMIN/ADMIN) 은 항상 조회 가능하므로 강제 없음 → null.
   const effectiveRole =
     loginUser?.authRole ?? (loginUser?.userTp === "ADMIN" ? "ADMIN" : null);

@@ -7,15 +7,41 @@ import type { LoginUser } from "@/lib/schemas/auth";
 /**
  * 클라이언트 수정/삭제 권한 — 서버 canModifyResource 와 동기화
  * - SUPER_ADMIN: 모든 글
- * - 그 외(ADMIN 포함): 본인 작성글만
- *
- * ⚠️ 2026-11-10 (Redmine #2779) 로 ADMIN 분기를 제거했다. 서버 `lib/auth.ts` 의
- * `canModifyResource` 와 쌍이므로 한쪽만 바꾸면 「버튼은 보이는데 403」 이 된다.
+ * - ADMIN: 슈퍼관리자 작성글 제외 모든 글
+ * - 그 외: 본인 작성글만
  *
  * authRole 미설정 과도기 폴백: userTp="ADMIN" 이면 ADMIN 으로 간주,
  * 그 외에는 role 없음으로 처리해 본인 매칭 쪽으로 보수적 폴백 (STORE/GENERAL 잘못 ADMIN 처리 방지).
+ *
+ * authorIsSuperAdmin이 undefined 인 경우(일반 사용자 응답에서 누락)에는 boolean 명시 비교로
+ * `!undefined === true` 권한 우회를 차단 — 값이 확실히 false 로 내려왔을 때만 ADMIN 수정 허용.
  */
 export function canModifyClient(
+  user: LoginUser | null | undefined,
+  resource: { userId: string; authorIsSuperAdmin?: boolean },
+): boolean {
+  if (!user) return false;
+  const role = user.authRole ?? (user.userTp === "ADMIN" ? "ADMIN" : null);
+  if (role === "SUPER_ADMIN") return true;
+  if (role === "ADMIN") return resource.authorIsSuperAdmin === false;
+  return user.userId === resource.userId;
+}
+
+/**
+ * 콘텐츠(자료) 전용 클라이언트 수정/삭제 권한 — 서버 `canModifyContent` 와 동기화 (Redmine #2779)
+ * - SUPER_ADMIN: 모든 글
+ * - 그 외(ADMIN 포함): 본인 작성글만
+ *
+ * 공용 {@link canModifyClient} 와 분리한 이유는 서버 쪽과 동일 — #2779 의 요구 범위가
+ * 콘텐츠 화면 한정이라, 홈공지·대량메일이 쓰는 판정은 건드리지 않는다.
+ *
+ * authRole 미설정 과도기 폴백: ADMIN 도 본인 매칭으로 수렴하므로 role 판정은 SUPER_ADMIN 여부만 본다.
+ *
+ * ⚠️ 서버 `canModifyContent` 는 `{ userType, userId }` 를 동시 비교하지만 여기서는 `userId` 만
+ * 비교한다(콘텐츠 상세 응답에 작성자 `userType` 이 없다). 타입 간 userId 중복 시 버튼이 보이고
+ * 저장에서 403 이 될 수 있으나, 서버가 엄격한 쪽이므로 권한 우회는 아니다.
+ */
+export function canModifyContentClient(
   user: LoginUser | null | undefined,
   resource: { userId: string },
 ): boolean {
