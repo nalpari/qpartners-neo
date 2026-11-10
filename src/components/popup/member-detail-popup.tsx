@@ -10,7 +10,6 @@ import { usePopupStore, useAlertStore } from "@/lib/store";
 import { Button, SelectBox, Radio, Spinner } from "@/components/common";
 import type { MemberDetail, MemberUpdatePayload, MemberListItem } from "@/components/admin/members/members-types";
 import {
-  ROLE_LABEL_MAP,
   API_TO_STATUS,
   formatDateTime,
   formatDate,
@@ -18,6 +17,7 @@ import {
 import type { RoleApiItem, RolesResponse } from "@/components/admin/permissions/permissions-types";
 import { rolesQueryKey } from "@/components/admin/permissions/permissions-types";
 import { useUserType } from "@/hooks/use-user-type";
+import { useTargetLabels } from "@/hooks/use-target-labels";
 import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { ADMIN_MENU } from "@/lib/menu-codes";
 
@@ -428,6 +428,15 @@ function MemberEditForm({
     .filter((r) => r.roleCode !== "SUPER_ADMIN" && r.roleCode !== "ADMIN")
     .map((r) => ({ value: r.roleCode, label: r.roleName }));
   const editableRoleValues = roleOptions.map((o) => o.value);
+  // 권한명 표시는 권한관리(`qp_roles.role_name`) 정본을 쓴다 — Redmine #2780 note-7.
+  // 하드코딩 라벨(구 `ROLE_LABEL_MAP`)을 쓰면 운영자가 권한관리에서 이름을 바꿨을 때 회원 상세만
+  // 옛 이름으로 남는다. 개발 DB 실측으로 `2ND_STORE`(2次以下販売店 ↔ 2次以降販売店)·
+  // `GENERAL`(一般会員 ↔ 一般) 두 건이 이미 어긋나 있었다.
+  //
+  // 위 `roleOptions`(= /api/roles?activeOnly=true) 가 아니라 `/api/role-labels` 전용 훅을 쓴다 —
+  // 드롭다운 옵션은 SUPER_ADMIN/ADMIN 과 비활성 권한을 빼기 때문에, 그대로 쓰면 관리자 회원이나
+  // 비활성 권한 보유 회원의 이름이 코드(`TEST15`)로 노출된다. role-labels 는 비활성까지 전부 준다.
+  const { resolveLabel: resolveRoleLabel, isLoading: isRoleLabelsLoading } = useTargetLabels();
   const safeRole = (role: string | undefined) => {
     if (!role) return "GENERAL";
     if (editableRoleValues.includes(role)) return role;
@@ -573,10 +582,19 @@ function MemberEditForm({
                     ) : (
                       // userRole(권한) 과 userType(회원유형) 은 서로 다른 도메인 — 권한 미설정
                       // 시 회원유형으로 폴백하면 의미론적으로 잘못된 표시가 된다(会員タイプ 행과
-                      // 중복 노출되기도 함). 라벨 매핑 → 원본 코드 → "-" 순으로 정직하게 표시.
+                      // 중복 노출되기도 함). 권한관리 권한명 → 원본 코드 → "-" 순으로 정직하게 표시.
+                      // 로딩 중 "-" — 권한명 도착 전에 원본 코드(`2ND_STORE`)가 잠깐 보이는 것을 막는다.
                       // TODO: 非GENERAL 의 userRole 이 QSP 응답에서 빈 값으로 도착하는 근본 원인을
                       //       BE 에서 해결할 것 (다음 스프린트 추적 대상).
-                      <TextValue value={ROLE_LABEL_MAP[member.userRole] || member.userRole || "-"} />
+                      <TextValue
+                        value={
+                          isRoleLabelsLoading
+                            ? "-"
+                            : member.userRole
+                              ? resolveRoleLabel(member.userRole)
+                              : "-"
+                        }
+                      />
                     ),
                   }}
                 />
