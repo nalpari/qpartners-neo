@@ -131,16 +131,9 @@ export interface MemberUpdatePayload {
   newsRcptYn?: string;
 }
 
-/** 권한 코드 → 표시 레이블 */
-export const ROLE_LABEL_MAP: Record<string, string> = {
-  // 관리자 회원은 회원 상세에서 SUPER_ADMIN/ADMIN 으로 구분되어 내려온다 (Redmine #2780).
-  SUPER_ADMIN: "スーパー管理者",
-  ADMIN: "管理者",
-  "1ST_STORE": "1次販売店",
-  "2ND_STORE": "2次以降販売店",
-  SEKO: "施工店",
-  GENERAL: "一般",
-};
+// 권한 코드 → 표시 레이블 하드코딩(`ROLE_LABEL_MAP`)은 제거했다 — Redmine #2780 note-7.
+// 권한명 정본은 권한관리 화면이 쓰는 `qp_roles.role_name` 이고, 회원 상세는 `/api/roles` 응답에서
+// 조회한다(`member-detail-popup.tsx`). 하드코딩을 되살리면 운영자가 바꾼 이름과 다시 어긋난다.
 
 /** API status → 표시 레이블 */
 export const API_TO_STATUS: Record<string, string> = {
