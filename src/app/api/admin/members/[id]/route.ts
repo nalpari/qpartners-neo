@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireMenuPermission } from "@/lib/auth";
+import { requireMenuPermission, resolveAuthorSuperAdmin } from "@/lib/auth";
 import { QSP_API, SITE_DEFAULTS } from "@/lib/config";
 import { fetchWithLog, maskEmail } from "@/lib/interface-logger";
 import { logError } from "@/lib/log-error";
@@ -106,10 +106,36 @@ const ALLOWED_NON_GENERAL_FIELDS: ReadonlySet<keyof MemberUpdateInput> = new Set
  * userTypeLabelMap 은 코드관리(USER_TYPE) 디테일 기반 — 운영자가 codeName 을 변경하면
  * 즉시 회원 상세 응답 라벨에 반영. 호출측에서 `await getUserTypeLabelMap()` 으로 주입한다.
  */
+/**
+ * 표시용 권한 코드 확정 (Redmine #2780).
+ *
+ * QSP `authCd` 에는 슈퍼관리자 구분이 없어 관리자 회원이 전부 `ADMIN` 으로 내려온다.
+ * Q.Partners 의 슈퍼관리자 정본은 코드관리 `ADMIN_ROLE` 명단이고, 로그인 권한 판정
+ * (`resolveAuthRole`)도 같은 기준을 쓴다. 회원 상세만 QSP 값을 그대로 보여주면
+ * 화면과 실제 권한이 어긋나므로 여기서 동일 기준으로 맞춘다.
+ *
+ * ⚠️ `resolveAuthorSuperAdmin` 은 권한 판정용이라 조회 실패 시 fail-closed 로
+ * `isSuperAdmin: true` 를 반환한다. 여기는 **표시 전용**이므로 그 값을 그대로 쓰면
+ * DB 장애 때 일반관리자가 슈퍼관리자로 보인다 — `status === "known"` 일 때만 격상한다.
+ */
+async function resolveMemberUserRole(d: QspMemberDetail): Promise<string> {
+  const fromQsp =
+    normalizeAuthCdToUserRole(d.authCd) ||
+    fallbackUserRoleFromUserTp(d.userTp, d.storeLvl);
+  if (d.userTp !== "ADMIN") return fromQsp;
+
+  const { isSuperAdmin, status } = await resolveAuthorSuperAdmin({
+    userType: "ADMIN",
+    userId: d.userId,
+  });
+  return status === "known" && isSuperAdmin ? "SUPER_ADMIN" : "ADMIN";
+}
+
 function mapQspDetailToResponse(
   d: QspMemberDetail,
   id: string,
   userTypeLabelMap: Map<string, string>,
+  userRole: string,
 ): MemberDetail {
   return {
     id,
@@ -122,11 +148,8 @@ function mapQspDetailToResponse(
     lastNameKana: d.user2ndNmKana ?? "",
     email: d.email ?? "",
     userType: (d.userTp ? userTypeLabelMap.get(d.userTp) : undefined) ?? "unknown",
-    // authCd 누락 회원(QSP 응답 결손) 은 userTp + storeLvl 기반으로 폴백 — display 한정.
-    // 권한 결정 경로는 JWT/QSP 직접 값을 사용하므로 본 폴백은 영향 없음 (member.ts 주석 참조).
-    userRole:
-      normalizeAuthCdToUserRole(d.authCd) ||
-      fallbackUserRoleFromUserTp(d.userTp, d.storeLvl),
+    // 호출부에서 `resolveMemberUserRole` 로 확정해 주입 — 관리자 회원은 ADMIN_ROLE 명단 반영.
+    userRole,
     companyName: d.compNm ?? "",
     companyNameKana: d.compNmKana ?? "",
     zipcode: d.compPostCd ?? "",
@@ -237,7 +260,12 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     // 4. 응답 매핑 (QSP → TO-BE)
     const userTypeLabelMap = await getUserTypeLabelMap();
-    const mapped = mapQspDetailToResponse(detailResult.detail, idResult.data, userTypeLabelMap);
+    const mapped = mapQspDetailToResponse(
+      detailResult.detail,
+      idResult.data,
+      userTypeLabelMap,
+      await resolveMemberUserRole(detailResult.detail),
+    );
 
     console.log("[GET /api/admin/members/:id] 회원 상세 조회 완료");
 
@@ -822,9 +850,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     let memberSnapshot: MemberDetail | undefined;
     const userTypeLabelMap = await getUserTypeLabelMap();
     if (postDetail) {
-      memberSnapshot = mapQspDetailToResponse(postDetail, idResult.data, userTypeLabelMap);
+      memberSnapshot = mapQspDetailToResponse(
+        postDetail,
+        idResult.data,
+        userTypeLabelMap,
+        await resolveMemberUserRole(postDetail),
+      );
     } else if (preDetail && !userRolePostCheckFailed) {
-      const base = mapQspDetailToResponse(preDetail, idResult.data, userTypeLabelMap);
+      const base = mapQspDetailToResponse(
+        preDetail,
+        idResult.data,
+        userTypeLabelMap,
+        await resolveMemberUserRole(preDetail),
+      );
       memberSnapshot = {
         ...base,
         ...(result.data.userRole !== undefined && { userRole: result.data.userRole }),

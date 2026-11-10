@@ -133,6 +133,8 @@ export interface MemberUpdatePayload {
 
 /** 권한 코드 → 표시 레이블 */
 export const ROLE_LABEL_MAP: Record<string, string> = {
+  // 관리자 회원은 회원 상세에서 SUPER_ADMIN/ADMIN 으로 구분되어 내려온다 (Redmine #2780).
+  SUPER_ADMIN: "スーパー管理者",
   ADMIN: "管理者",
   "1ST_STORE": "1次販売店",
   "2ND_STORE": "2次以降販売店",

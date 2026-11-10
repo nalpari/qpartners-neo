@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { canModifyResource, requireMenuPermission } from "@/lib/auth";
+import { canModifyContent, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import {
   containsOOXMLMacro,
@@ -58,7 +58,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!(await canModifyResource(user, content))) {
+    if (!canModifyContent(user, content)) {
       return NextResponse.json(
         { error: "削除する権限がありません" },
         { status: 403 },
@@ -214,7 +214,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!(await canModifyResource(user, content))) {
+    if (!canModifyContent(user, content)) {
       return NextResponse.json(
         { error: "編集する権限がありません" },
         { status: 403 },

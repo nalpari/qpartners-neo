@@ -440,3 +440,27 @@ export async function canModifyResource(
   }
   return user.userType === resource.userType && user.userId === resource.userId;
 }
+
+/**
+ * 콘텐츠(자료) 수정/삭제 권한 — Redmine #2779
+ * - SUPER_ADMIN: 모든 글
+ * - 그 외(ADMIN 포함): `{ userType, userId }` 동시 일치 시에만(본인 작성글)
+ *
+ * 공용 {@link canModifyResource} 와 분리한 이유: #2779 의 요구 범위는 **콘텐츠 화면 한정**이다.
+ * 공용 함수에서 ADMIN 분기를 지우면 같은 함수를 쓰는 홈공지(`/api/home-notices/*`)·
+ * 대량메일(`/api/admin/mass-mails/*`) 권한까지 요구 범위 밖에서 함께 좁아진다.
+ *
+ * `userType` 까지 비교하는 이유는 canModifyResource 와 동일 — Prisma `@@index([userType, userId])`
+ * 기반이라 타입 간 userId 중복 시 IDOR 여지가 생긴다.
+ *
+ * 작성자 비교만 하므로 DB 조회가 없다(= tx 파라미터 불요, 동기 함수).
+ * 쌍이 되는 클라이언트 판정은 `lib/auth-client.ts` 의 `canModifyContentClient` —
+ * 한쪽만 바꾸면 「버튼은 보이는데 403」 이 된다.
+ */
+export function canModifyContent(
+  user: UserInfo,
+  resource: { userType: string; userId: string },
+): boolean {
+  if (user.role === "SUPER_ADMIN") return true;
+  return user.userType === resource.userType && user.userId === resource.userId;
+}

@@ -4,7 +4,7 @@ import { writeFile, mkdir, unlink } from "fs/promises";
 import { join, basename, relative, resolve } from "path";
 import { randomUUID } from "crypto";
 
-import { canModifyResource, requireMenuPermission } from "@/lib/auth";
+import { canModifyContent, requireMenuPermission } from "@/lib/auth";
 import { UPLOAD_DIR } from "@/lib/config";
 import {
   containsOOXMLMacro,
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "対象が見つかりません" }, { status: 404 });
     }
 
-    if (!(await canModifyResource(user, content))) {
+    if (!canModifyContent(user, content)) {
       return NextResponse.json(
         { error: "ファイルアップロードの権限がありません" },
         { status: 403 },
