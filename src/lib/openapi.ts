@@ -1854,7 +1854,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "**タイトル(제목)** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).\n\n⚠️ **본문(body)·첨부파일명·형번은 검색 대상이 아니다.** 본문·첨부파일명은 요구사항정의서 v1.1 REQ-001 「콘텐츠 내용 및 첨부파일명을 대상으로 하는 부분일치 검색은 제거한다」 에 따라, 형번은 2026-11-03 확정(Redmine #2760)으로 제외됐다. REQ-001 의 「제품 형번과 콘텐츠 제목」 은 **대상별로 하나씩**이라는 뜻이고, 형번 검색은 /api/products 가 담당한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며, 나머지 필터·정렬은 그대로 적용해 조회한다(목업 게이트와 동일). 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
+          { name: "keyword", in: "query", description: "**タイトル(제목)** 부분일치 검색. 공백(연속 공백 포함, 전각 공백 가능)으로 분리한 다중 키워드를 지원하며 최대 10개까지 사용한다(초과분은 무시).\n\n⚠️ **본문(body)·첨부파일명·형번은 검색 대상이 아니다.** 본문·첨부파일명은 요구사항정의서 v1.1 REQ-001 「콘텐츠 내용 및 첨부파일명을 대상으로 하는 부분일치 검색은 제거한다」 에 따라, 형번은 2026-11-03 확정(Redmine #2760)으로 제외됐다. REQ-001 의 「제품 형번과 콘텐츠 제목」 은 **대상별로 하나씩**이라는 뜻이고, 형번 검색은 /api/products 가 담당한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며, 나머지 필터·정렬은 그대로 적용해 조회한다(목업 게이트와 동일). 전체 문자열이 3자 미만이면 통째로 빠지고, 3자 이상이면 **공백으로 나눈 단어마다** 다시 같은 기준이 적용돼 2자 이하 단어가 빠진다(`ab tron` → `tron` 만. `abtron` 은 한 단어라 그대로). 남는 단어가 없으면 키워드 조건 없이 조회된다 — Redmine #2751.", schema: { type: "string", maxLength: 100 } },
           {
             name: "keywordOp",
             in: "query",
@@ -2816,7 +2816,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           {
             name: "modelCode",
             in: "query",
-            description: "형번명 부분일치. **3자 미만은 검색 조건에서 제외**된다 (400 이 아니라 전건 조회 — 목업 MIN_Q 게이트와 동일)",
+            description: "형번명 부분일치. **3자 미만은 검색 조건에서 제외**된다 (400 이 아니라 전건 조회 — 목업 MIN_Q 게이트와 동일). 공백으로 나눈 단어마다 같은 기준이 적용된다 (Redmine #2751)",
             schema: { type: "string", maxLength: 100 },
           },
           { name: "categoryId", in: "query", schema: { type: "integer", minimum: 1 } },
@@ -3002,7 +3002,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
-          { name: "keyword", in: "query", description: "**형번명(modelCode)** 부분일치. 자료의 타이틀·본문·첨부파일명은 보지 않는다 — 형번관리에서 형번 자체가 제품의 제목이기 때문이다(Redmine #2760). 공백으로 분리한 다중 키워드는 keywordOp 로 결합하며, 한 형번명 안에서 판정한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며 나머지 필터·정렬은 그대로 적용한다. 공백 분리 전 **전체 문자열 길이** 기준이다.", schema: { type: "string", maxLength: 100 } },
+          { name: "keyword", in: "query", description: "**형번명(modelCode)** 부분일치. 자료의 타이틀·본문·첨부파일명은 보지 않는다 — 형번관리에서 형번 자체가 제품의 제목이기 때문이다(Redmine #2760). 공백으로 분리한 다중 키워드는 keywordOp 로 결합하며, 한 형번명 안에서 판정한다.\n\n⚠️ **3자 미만은 조건에서 제외된다** — 400 이 아니라 무음으로 무시하며 나머지 필터·정렬은 그대로 적용한다. 전체 문자열이 3자 미만이면 통째로 빠지고, 3자 이상이면 **공백으로 나눈 단어마다** 다시 같은 기준이 적용돼 2자 이하 단어가 빠진다(`ab tron` → `tron` 만. `abtron` 은 한 단어라 그대로). 남는 단어가 없으면 키워드 조건 없이 조회된다 — Redmine #2751.", schema: { type: "string", maxLength: 100 } },
           { name: "keywordOp", in: "query", schema: { type: "string", enum: ["AND", "OR"], default: "AND" } },
           {
             name: "facetCategoryIds",
@@ -3159,7 +3159,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         description:
           "비로그인 GET 이 허용된 공개 경로다. **3자 이상**에서만 후보를 내며, 미달이면 400 이 아니라 빈 결과를 반환한다(타이핑 중 매 글자마다 에러를 내지 않는다).\n\n후보 대상은 **형번 + 콘텐츠 제목뿐**이다 — 첨부파일명과 본문은 보지 않는다. 표시 순서는 제품 → 자료이며 종류별 기본 4건이다.\n\n**조회 가능한 자료가 있는 것만 후보가 된다** (Redmine #2748, 2026-11-03 회의 확정). 자료 후보는 게시상태·게시대상·게시기간 조건이 이미 걸려 있고, 제품 후보는 **공개 자료가 한 건이라도 연결된 형번**만 낸다 — 후보는 검색어를 바꾸는 게 아니라 제품상세로 가는 바로가기라서, 자료 0건 형번을 내보내면 들어간 화면이 비어 있다. 판정 범위는 사이드바 형번의 hasDocuments(/products/axis)와 동일하며 **보는 사람 기준**이라 사내 사용자에게 후보가 더 많이 나온다.\n\n**목록에 걸린 조건(facetCategoryIds·productModelIds)을 함께 보내면 그 조건까지 적용한다** (2026-11-06 확정). 자동완성·목록·좌측 체크가 같은 집합을 가리켜야 하기 때문이며, 조건을 보내지 않으면 전역 기준이라 「이 키워드로 제품일람을 검색한 결과」와 어긋난다.\n\n제품 후보의 부제는 카테고리명만 내려보낸다 — 형번 마스터에 제품상태 컬럼이 없다(목업 03 형번관리에서도 製品ステータス 는 관리항목 제외 확정이며, 제품상태는 콘텐츠의 분류축이다).\n\n타이핑마다 호출되는 경로라 rate limit 을 /contents 검색과 **별도 키**로 적용한다 — 자동완성 폭주가 본검색을 막지 않는다.",
         parameters: [
-          { name: "q", in: "query", required: true, description: "검색어. 3자 미만이면 빈 결과", schema: { type: "string", maxLength: 100 } },
+          { name: "q", in: "query", required: true, description: "검색어. 3자 미만이면 빈 결과. 3자 이상이어도 **공백으로 나눈 단어가 모두 2자 이하면**(`ab cd`) 빈 결과다 — 상세는 keywordOp 설명 참조", schema: { type: "string", maxLength: 100 } },
           {
             name: "limit",
             in: "query",
@@ -3184,7 +3184,7 @@ export const openApiSpec: OpenAPIV3.Document = {
             name: "keywordOp",
             in: "query",
             description:
-              "검색어를 공백으로 나눈 단어들의 결합 방식 — 목록(`/contents`·`/products`)의 같은 이름 파라미터와 의미·기본값이 같다 (Redmine #2751).\n\n종전에는 이 파라미터가 없어 입력 전체를 한 덩어리 LIKE 로 찾았고, 그래서 공백으로 단어를 둘 이상 넣으면 **AND·OR 양쪽 모두** 후보가 0건이었다(목록은 정상).\n\n⚠️ **3자 게이트는 나눈 단어마다 적용한다** — 2자 이하 단어는 후보 조건에서 빠진다(`Q.TRON TE` → `Q.TRON` 만으로 후보). 3자 이상 단어가 하나도 없으면 빈 결과다. 목록은 전체 검색어만 3자로 끊으므로, 2자 단어가 섞인 입력에서는 후보와 목록의 건수가 다를 수 있다(의도된 차이).",
+              "검색어를 공백으로 나눈 단어들의 결합 방식 — 목록(`/contents`·`/products`)의 같은 이름 파라미터와 의미·기본값이 같다 (Redmine #2751).\n\n종전에는 이 파라미터가 없어 입력 전체를 한 덩어리 LIKE 로 찾았고, 그래서 공백으로 단어를 둘 이상 넣으면 **AND·OR 양쪽 모두** 후보가 0건이었다(목록은 정상).\n\n**3자 게이트는 나눈 단어마다 적용된다** — 2자 이하 단어는 조건에서 빠진다(`ab tron` → `tron` 만. `abtron` 은 한 단어라 그대로 쓴다). 자동완성과 목록이 같은 토큰화 함수를 쓰므로 양쪽 조건이 항상 같다 — 「자동완성에 N건이면 목록도 N건(상한 4건에 걸렸을 때만 목록이 더 많다)」이 성립한다.\n\n3자 이상 단어가 하나도 없으면(`ab cd`) 자동완성은 빈 결과이고, 목록은 키워드 조건 없이 조회된다 — 2자 단독 입력(`ab`)과 같은 동작이다.",
             schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
           },
         ],

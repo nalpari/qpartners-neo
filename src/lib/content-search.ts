@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { checkRateLimit } from "@/lib/rate-limit";
+import { SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
 
 /**
  * 키워드 토큰 상한.
@@ -41,10 +42,30 @@ export const SEARCH_BODY: boolean = false;
 /**
  * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
  * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
+ *
+ * **3자 미만 단어는 버린다** (Redmine #2751, 2026-11-11 사용자 확정). 종전에는 전체 검색어만
+ * 3자로 끊고(`searchKeyword`) 나눈 단어의 길이는 보지 않았다. `ab tron` 과 `abtron` 은 다른
+ * 입력이므로, 전자의 `ab` 는 `ab` 단독 입력과 같이 조건에서 빠진다.
+ *
+ * ⚠️ 이 함수가 **자료일람·제품일람·자동완성 세 경로의 공용 입구**다. 한쪽에만 필터를 두면
+ * 「자동완성에는 뜨는데 목록에는 없다」가 생긴다 — 특히 AND 에서는 단어를 버리는 쪽이
+ * 조건을 **느슨하게** 만들어 후보가 목록의 초집합이 된다. 그래서 필터를 호출부가 아니라
+ * 여기에 둔다. (`/api/contents` 의 `sortCategoryCode` raw SQL 분기와 관련도 정렬의
+ * `hasTitleMatch` 도 같은 토큰을 쓰므로 함께 따라온다.)
+ *
+ * 토큰 상한(10) 절단은 **필터 뒤**다. 2자 이하 단어가 상한을 먼저 소진해 뒤의 유효 단어가
+ * 버려지는 것을 막는다.
+ *
+ * 남는 단어가 없으면 빈 배열이고, 두 조건 빌더가 `undefined` 를 반환해 **키워드 조건이 아예
+ * 붙지 않는다** — 목록은 키워드 없이 조회되고(2자 단독 입력과 같은 동작), 자동완성은
+ * 호출부에서 빈 결과로 끊는다.
  */
 export function tokenizeKeyword(keyword: string | undefined): string[] {
   if (!keyword) return [];
-  return keyword.split(/\s+/).filter(Boolean).slice(0, KEYWORD_TOKEN_LIMIT);
+  return keyword
+    .split(/\s+/)
+    .filter((token) => token.length >= SEARCH_KEYWORD_MIN)
+    .slice(0, KEYWORD_TOKEN_LIMIT);
 }
 
 /**
@@ -131,11 +152,11 @@ export function buildKeywordCondition(
  * 갈라지면 「자동완성 2건인데 목록 6건」이 된다 (Redmine #2760).
  *
  * 토큰화도 같다 — 자동완성이 입력 전체를 한 덩어리 LIKE 로 쓰던 것을 고쳐, 이제 같은
- * `tokenizeKeyword` + `keywordOp` 를 쓴다 (Redmine #2751).
+ * `tokenizeKeyword` + `keywordOp` 를 쓴다 (Redmine #2751). 3자 미만 단어 버리기도 그 함수
+ * 안에 있어 양쪽이 같다.
  *
- * ⚠️ 한 가지만 다르다: 자동완성은 **나눈 단어마다** 3자 게이트를 걸어 2자 이하 단어를 버린다
- * (2026-11-11 사용자 확정). 목록은 전체 검색어만 3자로 끊는다. 그래서 `Q.TRON TE` 처럼 2자
- * 단어가 섞인 입력에서는 후보와 목록의 건수가 다를 수 있다 — 의도된 차이다.
+ * 보장해야 하는 규칙(2026-11-11 사용자 확정): **자동완성에 N건이 뜨면 목록도 N건**이고,
+ * 상한(4건)에 걸렸을 때만 목록이 더 많다. 조건이 한쪽만 달라지면 즉시 깨진다.
  *
  * 노출 제어(`isVisible`·카테고리)는 `productModelVisibilityFilter` 가 따로 건다 —
  * 여기서는 키워드만 만든다.
