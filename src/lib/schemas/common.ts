@@ -145,7 +145,13 @@ export const commaIdList = z
  */
 export const SEARCH_KEYWORD_MIN = 3;
 
-/** 목록 조회용 검색어 — 3자 미만이면 `undefined`(= 키워드 조건 없음). 자료일람·제품일람 공용. */
+/**
+ * 목록 조회용 검색어 — 3자 미만이면 `undefined`(= 키워드 조건 없음). 자료일람·제품일람 공용.
+ *
+ * ⚠️ 여기서 보는 것은 **전체 문자열 길이**다. 공백으로 나눈 단어의 길이는 `tokenizeKeyword`
+ * (`lib/keyword-tokens.ts`)가 같은 기준으로 다시 걸러낸다 — `ab tron` 은 전체 7자로 여기를
+ * 통과하고 `ab` 만 그쪽에서 빠진다 (Redmine #2751).
+ */
 export const searchKeyword = z
   .string()
   .max(100)

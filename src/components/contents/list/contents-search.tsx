@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { SelectBox } from "@/components/common";
 import api from "@/lib/axios";
+import { tokenizeKeyword } from "@/lib/keyword-tokens";
 import { MODEL_CODE_SEARCH_MIN } from "@/lib/schemas/product-model";
 
 import type { CategoryNode, KeywordOp, SearchFilters } from "./contents-contents";
@@ -124,9 +125,21 @@ export function ContentsSearch({
   const trimmedSuggestQuery = suggestQuery.trim();
   const { data: suggestData } = useQuery<SuggestData>({
     // 조건이 바뀌면 후보도 달라진다 — queryKey 에 넣어야 캐시가 갈린다.
-    queryKey: ["search", "suggest", trimmedSuggestQuery, userScope, listConditionParams],
+    // `keywordOp` 도 키에 넣는다 — AND/OR 를 바꾸면 같은 검색어라도 후보가 달라진다 (#2751).
+    queryKey: [
+      "search",
+      "suggest",
+      trimmedSuggestQuery,
+      keywordOp,
+      userScope,
+      listConditionParams,
+    ],
     queryFn: async () => {
-      const params = new URLSearchParams({ q: trimmedSuggestQuery, ...listConditionParams });
+      const params = new URLSearchParams({
+        q: trimmedSuggestQuery,
+        keywordOp,
+        ...listConditionParams,
+      });
       const res = await api.get<{ data: SuggestData }>(`/search/suggest?${params.toString()}`);
       return res.data.data;
     },
@@ -173,15 +186,49 @@ export function ContentsSearch({
     }, SEARCH_DEBOUNCE_MS);
   };
 
+  /**
+   * AND/OR 변경 — **목록도 즉시 다시 조회한다** (Redmine #2751, 2026-11-11 사용자 확정 A안).
+   *
+   * 자동완성 후보는 `keywordOp` 가 queryKey 에 들어 있어 셀렉트를 바꾸는 즉시 새 연산자로
+   * 재조회된다. 목록을 그대로 두면 「후보는 OR 8건인데 뒤 목록은 AND 4건」이 되어, 후보에만
+   * 있고 목록에는 없는 자료가 생긴다 — 「자동완성에 N건이 뜨면 목록도 N건」 규칙 위반이다.
+   *
+   * 검색어 타이핑이 이미 버튼 없이 목록을 갱신하므로(실시간 검색), 같은 검색 조건인 AND/OR 도
+   * 같이 움직이는 쪽으로 맞춘다.
+   *
+   * ⚠️ `appliedKeywordRef` 비교를 거치지 않는다 — 검색어는 그대로이고 연산자만 바뀌므로
+   * 그 비교에 걸려 조회가 생략되면 목록이 옛 연산자에 남는다. 보내는 검색어도 입력 중인
+   * 값이 아니라 **이미 적용된 값**이다(디바운스 전 글자가 목록에 먼저 반영되지 않게 한다).
+   */
+  const handleKeywordOpChange = (next: KeywordOp) => {
+    // ① `SelectBox` 는 **이미 선택된 값을 다시 골라도** onChange 를 호출한다
+    //    (`components/common/select-box.tsx` 의 `handleSelect`). 가드가 없으면 「AND 인데 AND
+    //    재선택」만으로 아래 재조회가 돌아, 아무것도 바뀌지 않은 조작이 좌측 체크와 페이지를
+    //    초기화한다.
+    if (next === keywordOp) return;
+    setKeywordOp(next);
+    // ② 유효 단어가 없으면 AND/OR 는 결과에 영향이 **0** 이다 — 키워드 조건 자체가 안 붙는다.
+    //    그런데 재조회는 `runSearch` 의 reset 분기를 타 사용자가 직접 건 분류·형번 체크를
+    //    전체 선택으로 되돌린다. 바꿀 것이 없는 조작이 조건만 파괴하므로, 연산자 상태만
+    //    바꾸고 조회는 하지 않는다. (좌측 전체 해제 = 0건 확정 상태가 전건으로 뒤집히는 것도 막는다.)
+    if (tokenizeKeyword(appliedKeywordRef.current).length === 0) return;
+    onRealtimeSearch(buildFilters(appliedKeywordRef.current, next));
+  };
+
   // 포커스가 검색바 바깥으로 나가면 닫는다. 후보(Link)는 래퍼 안에 있어 클릭이 먼저 성립한다.
   const handleWrapBlur = (e: React.FocusEvent) => {
     if (!searchWrapRef.current?.contains(e.relatedTarget)) setIsSuggestOpen(false);
   };
 
-  /** 조회 조건 묶음 — 명시적 검색과 실시간 검색이 같은 형태를 보낸다. */
-  const buildFilters = (value: string): SearchFilters => ({
+  /**
+   * 조회 조건 묶음 — 명시적 검색과 실시간 검색이 같은 형태를 보낸다.
+   *
+   * `op` 를 인자로 받는 이유: `setKeywordOp` 직후 같은 핸들러 안에서는 state 가 아직 옛 값이라,
+   * AND/OR 변경 경로가 `keywordOp` 를 읽으면 한 박자 전 연산자로 조회된다.
+   */
+  const buildFilters = (value: string, op: KeywordOp = keywordOp): SearchFilters => ({
     keyword: value,
-    keywordOp,
+    keywordOp: op,
     // UI 가 제거된 필터들 — 복구 지점을 남기기 위해 값은 그대로 통과시킨다.
     categoryIds: initialFilters?.categoryIds ?? [],
     roleCode: initialFilters?.roleCode ?? "",
@@ -195,13 +242,42 @@ export function ContentsSearch({
     onSearch(buildFilters(keyword));
   };
 
-  // [x] 클릭 — 입력값만 비우고 재조회는 트리거하지 않는다. 사용자가 명시적으로 検索/Enter 를
-  // 눌렀을 때만 검색한다. focus 를 input 으로 되돌려 이어진 Enter 가 button click 재트리거가
-  // 아니라 input onKeyDown 으로 처리되게 한다 (#2169).
+  /**
+   * [x] 클릭 — **검색어를 지우는 것은 검색 초기화다.** 좌측 분류·형번 체크가 전체 선택으로
+   * 돌아가고 목록도 전건이 된다 (2026-11-11 사용자 확정).
+   *
+   * 실시간 검색이 들어온 뒤로는 검색어를 3자 미만으로 줄이기만 해도 `runSearch` 의 reset
+   * 분기가 돌아 같은 상태가 된다. [x] 는 그 극단(전부 지움)이므로 같은 경로를 탄다 — 여기만
+   * 재조회를 하지 않으면 「2자로 줄이면 초기화되는데 전부 지우면 지운 검색어 결과가 남는」
+   * 비일관이 된다. `4dcb3111`(2026-05-04)이 자동 재조회를 뺀 것은 실시간 검색 **이전**이고,
+   * 「명시적으로 検索/Enter 를 눌렀을 때만 검색」이라는 그 전제는 지금 성립하지 않는다.
+   *
+   * `onSearch` 가 아니라 `onRealtimeSearch` 다 — 정렬을 초기화하지 않는다. 3자 미만으로
+   * 줄이는 경로가 정렬을 유지하므로 전부 지울 때만 정렬이 풀리면 조작과 결과가 어긋난다.
+   *
+   * `appliedKeywordRef` 도 함께 비운다. 이 ref 는 「목록에 적용된 검색어」이고 지금 빈 값이
+   * 적용되므로, 갱신하지 않으면 뒤이은 AND/OR 변경이 지운 검색어로 목록을 다시 조회한다.
+   *
+   * `closeSuggest()` 를 먼저 호출해 대기 중인 디바운스를 취소한다 — 안 그러면 타이머가
+   * 지우기 직전 입력으로 목록을 덮는다. focus 를 input 으로 되돌려 이어진 Enter 가
+   * button click 재트리거가 아니라 input onKeyDown 으로 처리되게 한다 (#2169).
+   *
+   * ⚠️ **지울 검색어가 없으면 재조회하지 않는다** — `handleKeywordOpChange` 의 가드 ②와
+   * 같은 경계다. [x] 는 검색어 유무와 무관하게 상시 눌리므로(`disabled` 없음), 가드가 없으면
+   * 「지운 것이 하나도 없는 조작」이 reset 분기를 타 사용자가 직접 건 분류·형번 체크를
+   * 전체 선택으로 되돌리고 좌측 전체 해제(0건 확정)를 전건으로 뒤집는다.
+   *
+   * 판정 기준은 **입력창이 비었는지가 아니라 목록에 적용된 검색어가 있는지**다. 입력창에
+   * 남은 2자(`ab`)는 3자 게이트에 걸려 목록에 적용된 적이 없으므로 지울 검색도 없다.
+   * 입력값 비우기·드롭다운 닫기·focus 복귀는 [x] 의 기본 기능이라 가드 밖에서 수행한다.
+   */
   const handleClearKeyword = () => {
+    const hadAppliedKeyword = tokenizeKeyword(appliedKeywordRef.current).length > 0;
     setKeyword("");
     setSuggestQuery("");
     closeSuggest();
+    appliedKeywordRef.current = "";
+    if (hadAppliedKeyword) onRealtimeSearch(buildFilters(""));
     keywordInputRef.current?.focus();
   };
 
@@ -289,7 +365,7 @@ export function ContentsSearch({
           <SelectBox
             options={KEYWORD_OP_OPTIONS}
             value={keywordOp}
-            onChange={(v) => setKeywordOp(v === "OR" ? "OR" : "AND")}
+            onChange={(v) => handleKeywordOpChange(v === "OR" ? "OR" : "AND")}
           />
         </div>
         <div className="flex flex-1 min-w-0 items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">

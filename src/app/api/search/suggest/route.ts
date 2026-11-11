@@ -5,7 +5,12 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
-import { checkSearchRateLimit, escapeLikePattern } from "@/lib/content-search";
+import {
+  buildKeywordCondition,
+  buildModelCodeCondition,
+  checkSearchRateLimit,
+  tokenizeKeyword,
+} from "@/lib/content-search";
 import { publishedTargetFilter, resolveFacetConditions } from "@/lib/content-visibility";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +26,8 @@ import { MODEL_CODE_SEARCH_MIN, suggestQuerySchema } from "@/lib/schemas/product
  * 목업 `updateSuggest()` 의 서버 구현. 규칙을 그대로 옮겼다:
  *   - **3자 이상**에서만 후보를 낸다. 미달이면 400 이 아니라 **빈 결과**다
  *     (타이핑 중 매 글자마다 에러를 내지 않는다)
+ *   - 공백으로 단어를 둘 이상 넣으면 목록과 같은 토큰화·`keywordOp` 결합을 쓴다 (Redmine #2751).
+ *     3자 게이트는 **나눈 단어마다** 걸리며(`tokenizeKeyword` 공용), 남는 단어가 없으면 빈 결과다
  *   - 후보 대상은 **형번 + 콘텐츠 제목뿐**. 첨부파일명과 본문은 보지 않는다
  *     (본문 제외는 §5-① 확정, 첨부파일명은 목업 주석의 명시 제외 항목)
  *   - **조회 가능한 자료가 있는 것만** 후보가 된다 (Redmine #2748, 2026-11-03 회의 예외처리 ③).
@@ -51,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     const keyword = query.data.q.trim();
-    const { limit, facetCategoryIds, productModelIds } = query.data;
+    const { limit, facetCategoryIds, productModelIds, keywordOp } = query.data;
 
     if (keyword.length < MODEL_CODE_SEARCH_MIN) {
       return NextResponse.json({ data: { products: [], contents: [] } });
@@ -86,18 +93,48 @@ export async function GET(request: NextRequest) {
       ...(facetConditions.conditions.length > 0 && { AND: facetConditions.conditions }),
     };
 
-    // 입력한 `%`·`_` 를 와일드카드로 해석하지 않는다 — 본검색(buildKeywordCondition)과 같은 기준.
-    const keywordPattern = escapeLikePattern(keyword);
+    // 키워드 조건은 목록과 **같은 함수**로 만든다 (Redmine #2751).
+    //
+    // 종전에는 입력 전체를 한 덩어리 LIKE 로 썼다. 그래서 `re.rise q.tron` 처럼 공백으로 단어를
+    // 둘 이상 넣으면 목록은 나오는데 후보만 0건이었고, 이 증상은 AND·OR 양쪽에서 같았다
+    // (자동완성이 `keywordOp` 를 아예 받지 않았다).
+    //
+    // 3자 미만 단어 버리기는 `tokenizeKeyword` **안**에 있다 (2026-11-11 사용자 확정).
+    // 여기서 따로 걸지 않는다 — 목록(`/api/contents`·`/api/products`)과 같은 입구를 쓰는 것이
+    // 「자동완성에 N건이면 목록도 N건」을 구조적으로 보장하는 유일한 방법이다. 한쪽에만 필터를
+    // 두면 AND 에서 후보가 목록의 초집합이 된다(단어를 버리는 쪽이 조건을 느슨하게 만든다).
+    //
+    // LIKE 메타문자 이스케이프는 두 빌더가 내부에서 처리한다 — 여기서 미리 하면 이중 이스케이프다.
+    const keywordTokens = tokenizeKeyword(keyword);
+    // 3자 이상 단어가 하나도 없으면 빈 결과다. 조건 없이 내려가면 키워드와 무관한 전 자료가
+    // 후보로 나온다 (`ab cd` 는 전체 길이 게이트는 통과한다).
+    //
+    // 목록은 같은 입력에서 키워드 조건 없이 조회된다 — 2자 단독(`ab`) 입력과 같은 동작이고,
+    // 자동완성이 0건이면 「후보 N건 = 목록 N건」 규칙의 적용 대상이 아니다.
+    if (keywordTokens.length === 0) {
+      return NextResponse.json({ data: { products: [], contents: [] } });
+    }
+    const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
+    const modelCodeCondition = buildModelCodeCondition(keywordTokens, keywordOp);
+
+    // 분류 조건과 키워드 조건을 **한 `AND` 배열**에 모은다. 둘 다 최상위 `AND` 키를 쓸 수 있어
+    // 객체 스프레드로 합치면 한쪽이 지워진다.
+    const contentAndConditions: Prisma.ContentWhereInput[] = [
+      ...facetConditions.conditions,
+      ...(keywordCondition ? [keywordCondition] : []),
+    ];
     const contentWhere: Prisma.ContentWhereInput = {
       ...visibleContentWhere,
-      title: { contains: keywordPattern },
+      ...(contentAndConditions.length > 0 && { AND: contentAndConditions }),
     };
 
     const [products, contents] = await Promise.all([
       prisma.productModel.findMany({
         where: {
           ...productModelVisibilityFilter(internal),
-          modelCode: { contains: keywordPattern },
+          // 형번도 목록(`/api/products`)과 같은 빌더를 쓴다. `AND` 배열로 감싸는 이유는
+          // 위 `contentAndConditions` 와 같다 — 빌더가 `AND`/`OR` 중 어느 키를 내도 안전하다.
+          ...(modelCodeCondition ? { AND: [modelCodeCondition] } : {}),
           // 좌측에서 사용자가 직접 고른 형번이 있으면 그 안에서만 낸다 — 목록과 같은 조건이다.
           ...(productModelIds && productModelIds.length > 0
             ? { id: { in: productModelIds } }

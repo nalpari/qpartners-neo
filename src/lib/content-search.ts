@@ -17,13 +17,9 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { checkRateLimit } from "@/lib/rate-limit";
-
-/**
- * 키워드 토큰 상한.
- * 선행 와일드카드 LIKE(`%kw%`)는 인덱스를 못 타므로 토큰 수가 그대로 full scan 비용이 된다.
- * keyword 는 100자 제한이라 이론상 50토큰까지 들어올 수 있어 상한을 둔다.
- */
-export const KEYWORD_TOKEN_LIMIT = 10;
+// 토큰화는 클라이언트도 같은 판정을 써야 해서 의존성 없는 모듈로 분리돼 있다.
+// 기존 import 경로(`@/lib/content-search`)를 유지하려고 여기서 다시 내보낸다.
+export { KEYWORD_TOKEN_LIMIT, tokenizeKeyword } from "@/lib/keyword-tokens";
 
 /**
  * 본문(`body`) 검색 스위치 — **검색 고도화로 꺼졌다**.
@@ -37,15 +33,6 @@ export const KEYWORD_TOKEN_LIMIT = 10;
  */
 // 타입을 boolean 으로 고정해, 끄고 켤 때 분기가 죽은 코드로 좁혀지지 않게 한다.
 export const SEARCH_BODY: boolean = false;
-
-/**
- * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
- * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
- */
-export function tokenizeKeyword(keyword: string | undefined): string[] {
-  if (!keyword) return [];
-  return keyword.split(/\s+/).filter(Boolean).slice(0, KEYWORD_TOKEN_LIMIT);
-}
 
 /**
  * LIKE 패턴 메타문자 이스케이프 — `%`(임의 길이) · `_`(한 글자) · `\`(이스케이프 문자).
@@ -130,9 +117,12 @@ export function buildKeywordCondition(
  * 자동완성 `[제품]` 후보(`/api/search/suggest`)도 같은 **필드**(`modelCode`)를 본다 —
  * 갈라지면 「자동완성 2건인데 목록 6건」이 된다 (Redmine #2760).
  *
- * ⚠️ 다만 **토큰화는 다르다.** 여기는 공백으로 나눠 `keywordOp` 로 결합하고,
- * 자동완성은 입력 전체를 한 덩어리 LIKE 로 쓴다(`suggest/route.ts`). 그래서 공백이 들어간
- * 검색어(`Q.TRON 440`)에서는 여전히 건수가 갈린다 — 종전부터 그러했고 이번 범위 밖이다.
+ * 토큰화도 같다 — 자동완성이 입력 전체를 한 덩어리 LIKE 로 쓰던 것을 고쳐, 이제 같은
+ * `tokenizeKeyword` + `keywordOp` 를 쓴다 (Redmine #2751). 3자 미만 단어 버리기도 그 함수
+ * 안에 있어 양쪽이 같다.
+ *
+ * 보장해야 하는 규칙(2026-11-11 사용자 확정): **자동완성에 N건이 뜨면 목록도 N건**이고,
+ * 상한(4건)에 걸렸을 때만 목록이 더 많다. 조건이 한쪽만 달라지면 즉시 깨진다.
  *
  * 노출 제어(`isVisible`·카테고리)는 `productModelVisibilityFilter` 가 따로 건다 —
  * 여기서는 키워드만 만든다.

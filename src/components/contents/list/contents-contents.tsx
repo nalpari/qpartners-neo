@@ -16,7 +16,7 @@ import {
 import { usePageSize } from "@/hooks/use-page-size";
 import { getFallbackRole } from "@/lib/auth-role";
 import type { LoginUser } from "@/lib/schemas/auth";
-import { SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
+import { tokenizeKeyword } from "@/lib/keyword-tokens";
 import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/content";
 import { ContentsFacets, ContentsModeSwitch } from "./contents-facets";
 import type { ProductAxisGroup, ProductListRow } from "./contents-facet-utils";
@@ -896,7 +896,9 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
      * 했는데 체크 몇 개가 꺼진 채 남는다. 그 상태에서 한 칸만 건드리면 나머지가 전부 AND
      * 조건으로 승격돼 #2747 이 재현된다(2026-11-06 리뷰 5).
      */
-    const hasKeyword = (next.keyword ?? "").trim().length >= SEARCH_KEYWORD_MIN;
+    // 서버와 같은 함수로 판정한다 — 글자 수로 세면 공백이 글자로 잡혀 `ab cd` 가
+    // 「키워드 있음」이 되는데, 서버는 2자 단어를 전부 버려 조건이 없다 (Redmine #2751).
+    const hasKeyword = tokenizeKeyword(next.keyword).length > 0;
     const overwrite = {
       category:
         recount.category &&
@@ -968,13 +970,17 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
    * (2026-11-05 사용자 확정). 요구사항 ③ 「검색어 삭제 후 [검색] 클릭 → 검색 조건 초기화 /
    * 모든 필터 옵션 전체 선택 / 전체 콘텐츠 표시」와 같은 결과이므로 두 경로를 분기하지 않는다.
    *
-   * ⚠️ 판정은 **`SEARCH_KEYWORD_MIN` 기준**이다. 서버가 3자 미만을 조건에서 버리므로
-   * (`searchKeyword`), 2자를 키워드 있음으로 보면 **전건 기준** 집계가 돌아와 사용자가 좁혀 둔
-   * 체크를 제3의 상태로 덮어쓴다. 입력창에는 2자가 남아 원인도 보이지 않는다.
+   * ⚠️ 판정 기준은 **유효 단어 존재 여부**(`tokenizeKeyword`)다. 글자 수가 아니다.
+   * 서버가 조건에서 버리는 입력을 여기서 키워드 있음으로 보면 **전건 기준** 집계가 돌아와
+   * 사용자가 좁혀 둔 체크를 제3의 상태로 덮어쓴다. 입력창에는 검색어가 남아 원인도 보이지 않는다.
+   *
+   * 글자 수로 세면 **공백이 글자로 잡힌다** — `ab cd` 가 5자가 되어 「검색」으로 취급되는데
+   * 서버는 2자 단어 둘을 전부 버려 키워드 조건이 없다. 공백은 구분자이지 글자가 아니므로
+   * 서버와 같은 함수로 센다 (Redmine #2751).
    */
   const runSearch = async (filters: SearchFilters) => {
-    const reset = (filters.keyword ?? "").trim().length < SEARCH_KEYWORD_MIN;
-    // 3자 미만 — 검색이 없던 일이 되므로 좌측을 **전체 선택으로 되돌린다.** 그게 최종 상태다.
+    const reset = tokenizeKeyword(filters.keyword).length === 0;
+    // 유효 단어 없음 — 검색이 없던 일이 되므로 좌측을 **전체 선택으로 되돌린다.** 그게 최종 상태다.
     if (reset) {
       setSearchParams({
         ...searchParams,
