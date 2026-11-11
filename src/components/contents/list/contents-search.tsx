@@ -185,15 +185,39 @@ export function ContentsSearch({
     }, SEARCH_DEBOUNCE_MS);
   };
 
+  /**
+   * AND/OR 변경 — **목록도 즉시 다시 조회한다** (Redmine #2751, 2026-11-11 사용자 확정 A안).
+   *
+   * 자동완성 후보는 `keywordOp` 가 queryKey 에 들어 있어 셀렉트를 바꾸는 즉시 새 연산자로
+   * 재조회된다. 목록을 그대로 두면 「후보는 OR 8건인데 뒤 목록은 AND 4건」이 되어, 후보에만
+   * 있고 목록에는 없는 자료가 생긴다 — 「자동완성에 N건이 뜨면 목록도 N건」 규칙 위반이다.
+   *
+   * 검색어 타이핑이 이미 버튼 없이 목록을 갱신하므로(실시간 검색), 같은 검색 조건인 AND/OR 도
+   * 같이 움직이는 쪽으로 맞춘다.
+   *
+   * ⚠️ `appliedKeywordRef` 비교를 거치지 않는다 — 검색어는 그대로이고 연산자만 바뀌므로
+   * 그 비교에 걸려 조회가 생략되면 목록이 옛 연산자에 남는다. 보내는 검색어도 입력 중인
+   * 값이 아니라 **이미 적용된 값**이다(디바운스 전 글자가 목록에 먼저 반영되지 않게 한다).
+   */
+  const handleKeywordOpChange = (next: KeywordOp) => {
+    setKeywordOp(next);
+    onRealtimeSearch(buildFilters(appliedKeywordRef.current, next));
+  };
+
   // 포커스가 검색바 바깥으로 나가면 닫는다. 후보(Link)는 래퍼 안에 있어 클릭이 먼저 성립한다.
   const handleWrapBlur = (e: React.FocusEvent) => {
     if (!searchWrapRef.current?.contains(e.relatedTarget)) setIsSuggestOpen(false);
   };
 
-  /** 조회 조건 묶음 — 명시적 검색과 실시간 검색이 같은 형태를 보낸다. */
-  const buildFilters = (value: string): SearchFilters => ({
+  /**
+   * 조회 조건 묶음 — 명시적 검색과 실시간 검색이 같은 형태를 보낸다.
+   *
+   * `op` 를 인자로 받는 이유: `setKeywordOp` 직후 같은 핸들러 안에서는 state 가 아직 옛 값이라,
+   * AND/OR 변경 경로가 `keywordOp` 를 읽으면 한 박자 전 연산자로 조회된다.
+   */
+  const buildFilters = (value: string, op: KeywordOp = keywordOp): SearchFilters => ({
     keyword: value,
-    keywordOp,
+    keywordOp: op,
     // UI 가 제거된 필터들 — 복구 지점을 남기기 위해 값은 그대로 통과시킨다.
     categoryIds: initialFilters?.categoryIds ?? [],
     roleCode: initialFilters?.roleCode ?? "",
@@ -301,7 +325,7 @@ export function ContentsSearch({
           <SelectBox
             options={KEYWORD_OP_OPTIONS}
             value={keywordOp}
-            onChange={(v) => setKeywordOp(v === "OR" ? "OR" : "AND")}
+            onChange={(v) => handleKeywordOpChange(v === "OR" ? "OR" : "AND")}
           />
         </div>
         <div className="flex flex-1 min-w-0 items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">

@@ -2816,7 +2816,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           {
             name: "modelCode",
             in: "query",
-            description: "형번명 부분일치. **3자 미만은 검색 조건에서 제외**된다 (400 이 아니라 전건 조회 — 목업 MIN_Q 게이트와 동일). 공백으로 나눈 단어마다 같은 기준이 적용된다 (Redmine #2751)",
+            description: "형번명 부분일치. **3자 미만은 검색 조건에서 제외**된다 (400 이 아니라 전건 조회 — 목업 MIN_Q 게이트와 동일). ⚠️ 이 어드민 조회는 **공백 분리를 하지 않는다** — 입력 전체를 한 덩어리 LIKE 로 쓰므로 `ab tron` 은 공백까지 포함해 매칭된다. 단어별 토큰화는 이용자 화면용 `/contents`·`/products`·`/search/suggest` 만 해당한다 (Redmine #2751)",
             schema: { type: "string", maxLength: 100 },
           },
           { name: "categoryId", in: "query", schema: { type: "integer", minimum: 1 } },

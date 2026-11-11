@@ -17,14 +17,9 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { checkRateLimit } from "@/lib/rate-limit";
-import { SEARCH_KEYWORD_MIN } from "@/lib/schemas/common";
-
-/**
- * 키워드 토큰 상한.
- * 선행 와일드카드 LIKE(`%kw%`)는 인덱스를 못 타므로 토큰 수가 그대로 full scan 비용이 된다.
- * keyword 는 100자 제한이라 이론상 50토큰까지 들어올 수 있어 상한을 둔다.
- */
-export const KEYWORD_TOKEN_LIMIT = 10;
+// 토큰화는 클라이언트도 같은 판정을 써야 해서 의존성 없는 모듈로 분리돼 있다.
+// 기존 import 경로(`@/lib/content-search`)를 유지하려고 여기서 다시 내보낸다.
+export { KEYWORD_TOKEN_LIMIT, tokenizeKeyword } from "@/lib/keyword-tokens";
 
 /**
  * 본문(`body`) 검색 스위치 — **검색 고도화로 꺼졌다**.
@@ -38,35 +33,6 @@ export const KEYWORD_TOKEN_LIMIT = 10;
  */
 // 타입을 boolean 으로 고정해, 끄고 켤 때 분기가 죽은 코드로 좁혀지지 않게 한다.
 export const SEARCH_BODY: boolean = false;
-
-/**
- * 검색어를 공백 기준으로 토큰 분리 — 연속 공백은 구분자 하나로 처리한다.
- * JS `\s` 는 전각 공백(U+3000)도 포함하므로 일본어 입력 환경을 그대로 커버한다.
- *
- * **3자 미만 단어는 버린다** (Redmine #2751, 2026-11-11 사용자 확정). 종전에는 전체 검색어만
- * 3자로 끊고(`searchKeyword`) 나눈 단어의 길이는 보지 않았다. `ab tron` 과 `abtron` 은 다른
- * 입력이므로, 전자의 `ab` 는 `ab` 단독 입력과 같이 조건에서 빠진다.
- *
- * ⚠️ 이 함수가 **자료일람·제품일람·자동완성 세 경로의 공용 입구**다. 한쪽에만 필터를 두면
- * 「자동완성에는 뜨는데 목록에는 없다」가 생긴다 — 특히 AND 에서는 단어를 버리는 쪽이
- * 조건을 **느슨하게** 만들어 후보가 목록의 초집합이 된다. 그래서 필터를 호출부가 아니라
- * 여기에 둔다. (`/api/contents` 의 `sortCategoryCode` raw SQL 분기와 관련도 정렬의
- * `hasTitleMatch` 도 같은 토큰을 쓰므로 함께 따라온다.)
- *
- * 토큰 상한(10) 절단은 **필터 뒤**다. 2자 이하 단어가 상한을 먼저 소진해 뒤의 유효 단어가
- * 버려지는 것을 막는다.
- *
- * 남는 단어가 없으면 빈 배열이고, 두 조건 빌더가 `undefined` 를 반환해 **키워드 조건이 아예
- * 붙지 않는다** — 목록은 키워드 없이 조회되고(2자 단독 입력과 같은 동작), 자동완성은
- * 호출부에서 빈 결과로 끊는다.
- */
-export function tokenizeKeyword(keyword: string | undefined): string[] {
-  if (!keyword) return [];
-  return keyword
-    .split(/\s+/)
-    .filter((token) => token.length >= SEARCH_KEYWORD_MIN)
-    .slice(0, KEYWORD_TOKEN_LIMIT);
-}
 
 /**
  * LIKE 패턴 메타문자 이스케이프 — `%`(임의 길이) · `_`(한 글자) · `\`(이스케이프 문자).
