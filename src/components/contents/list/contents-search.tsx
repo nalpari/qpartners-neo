@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { SelectBox } from "@/components/common";
 import api from "@/lib/axios";
+import { tokenizeKeyword } from "@/lib/keyword-tokens";
 import { MODEL_CODE_SEARCH_MIN } from "@/lib/schemas/product-model";
 
 import type { CategoryNode, KeywordOp, SearchFilters } from "./contents-contents";
@@ -200,7 +201,17 @@ export function ContentsSearch({
    * 값이 아니라 **이미 적용된 값**이다(디바운스 전 글자가 목록에 먼저 반영되지 않게 한다).
    */
   const handleKeywordOpChange = (next: KeywordOp) => {
+    // ① `SelectBox` 는 **이미 선택된 값을 다시 골라도** onChange 를 호출한다
+    //    (`components/common/select-box.tsx` 의 `handleSelect`). 가드가 없으면 「AND 인데 AND
+    //    재선택」만으로 아래 재조회가 돌아, 아무것도 바뀌지 않은 조작이 좌측 체크와 페이지를
+    //    초기화한다.
+    if (next === keywordOp) return;
     setKeywordOp(next);
+    // ② 유효 단어가 없으면 AND/OR 는 결과에 영향이 **0** 이다 — 키워드 조건 자체가 안 붙는다.
+    //    그런데 재조회는 `runSearch` 의 reset 분기를 타 사용자가 직접 건 분류·형번 체크를
+    //    전체 선택으로 되돌린다. 바꿀 것이 없는 조작이 조건만 파괴하므로, 연산자 상태만
+    //    바꾸고 조회는 하지 않는다. (좌측 전체 해제 = 0건 확정 상태가 전건으로 뒤집히는 것도 막는다.)
+    if (tokenizeKeyword(appliedKeywordRef.current).length === 0) return;
     onRealtimeSearch(buildFilters(appliedKeywordRef.current, next));
   };
 
