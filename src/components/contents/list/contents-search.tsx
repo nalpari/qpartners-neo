@@ -261,13 +261,23 @@ export function ContentsSearch({
    * `closeSuggest()` 를 먼저 호출해 대기 중인 디바운스를 취소한다 — 안 그러면 타이머가
    * 지우기 직전 입력으로 목록을 덮는다. focus 를 input 으로 되돌려 이어진 Enter 가
    * button click 재트리거가 아니라 input onKeyDown 으로 처리되게 한다 (#2169).
+   *
+   * ⚠️ **지울 검색어가 없으면 재조회하지 않는다** — `handleKeywordOpChange` 의 가드 ②와
+   * 같은 경계다. [x] 는 검색어 유무와 무관하게 상시 눌리므로(`disabled` 없음), 가드가 없으면
+   * 「지운 것이 하나도 없는 조작」이 reset 분기를 타 사용자가 직접 건 분류·형번 체크를
+   * 전체 선택으로 되돌리고 좌측 전체 해제(0건 확정)를 전건으로 뒤집는다.
+   *
+   * 판정 기준은 **입력창이 비었는지가 아니라 목록에 적용된 검색어가 있는지**다. 입력창에
+   * 남은 2자(`ab`)는 3자 게이트에 걸려 목록에 적용된 적이 없으므로 지울 검색도 없다.
+   * 입력값 비우기·드롭다운 닫기·focus 복귀는 [x] 의 기본 기능이라 가드 밖에서 수행한다.
    */
   const handleClearKeyword = () => {
+    const hadAppliedKeyword = tokenizeKeyword(appliedKeywordRef.current).length > 0;
     setKeyword("");
     setSuggestQuery("");
     closeSuggest();
     appliedKeywordRef.current = "";
-    onRealtimeSearch(buildFilters(""));
+    if (hadAppliedKeyword) onRealtimeSearch(buildFilters(""));
     keywordInputRef.current?.focus();
   };
 
