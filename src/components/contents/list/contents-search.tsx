@@ -124,9 +124,21 @@ export function ContentsSearch({
   const trimmedSuggestQuery = suggestQuery.trim();
   const { data: suggestData } = useQuery<SuggestData>({
     // 조건이 바뀌면 후보도 달라진다 — queryKey 에 넣어야 캐시가 갈린다.
-    queryKey: ["search", "suggest", trimmedSuggestQuery, userScope, listConditionParams],
+    // `keywordOp` 도 키에 넣는다 — AND/OR 를 바꾸면 같은 검색어라도 후보가 달라진다 (#2751).
+    queryKey: [
+      "search",
+      "suggest",
+      trimmedSuggestQuery,
+      keywordOp,
+      userScope,
+      listConditionParams,
+    ],
     queryFn: async () => {
-      const params = new URLSearchParams({ q: trimmedSuggestQuery, ...listConditionParams });
+      const params = new URLSearchParams({
+        q: trimmedSuggestQuery,
+        keywordOp,
+        ...listConditionParams,
+      });
       const res = await api.get<{ data: SuggestData }>(`/search/suggest?${params.toString()}`);
       return res.data.data;
     },

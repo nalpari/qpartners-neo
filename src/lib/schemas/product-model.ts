@@ -144,6 +144,15 @@ export const suggestQuerySchema = z.object({
   facetCategoryIds: commaIdList,
   /** 목록에 걸린 형번 조건 — 제품일람 좌측에서 사용자가 직접 고른 형번 */
   productModelIds: commaIdList,
+  /**
+   * 키워드 결합 방식 — 검색바의 `AND`/`OR` 선택 (Redmine #2751).
+   *
+   * 종전에는 이 파라미터가 없어 자동완성이 입력 전체를 한 덩어리 LIKE 로 찾았다. 그래서
+   * 공백으로 단어를 둘 이상 넣으면 **AND·OR 양쪽 모두** 후보가 0건이었다(목록은 정상).
+   * 목록(`listContentsQuerySchema`·`listProductsQuerySchema`)과 이름·기본값을 맞춘다 —
+   * 갈라지면 「목록에는 나오는데 후보에는 없다」가 다시 생긴다.
+   */
+  keywordOp: z.enum(["AND", "OR"]).default("AND"),
 });
 
 // ─── Types ───

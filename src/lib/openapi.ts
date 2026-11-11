@@ -3180,6 +3180,13 @@ export const openApiSpec: OpenAPIV3.Document = {
               "목록에 걸린 형번 조건 — 콤마 구분 형번 ID. 제품일람 좌측에서 **사용자가 직접 고른** 형번이며, 그 안에서만 제품 후보를 낸다. 검색이 만든 자동 체크는 조건이 아니므로 보내지 않는다(Redmine #2748).",
             schema: { type: "string" },
           },
+          {
+            name: "keywordOp",
+            in: "query",
+            description:
+              "검색어를 공백으로 나눈 단어들의 결합 방식 — 목록(`/contents`·`/products`)의 같은 이름 파라미터와 의미·기본값이 같다 (Redmine #2751).\n\n종전에는 이 파라미터가 없어 입력 전체를 한 덩어리 LIKE 로 찾았고, 그래서 공백으로 단어를 둘 이상 넣으면 **AND·OR 양쪽 모두** 후보가 0건이었다(목록은 정상).\n\n⚠️ **3자 게이트는 나눈 단어마다 적용한다** — 2자 이하 단어는 후보 조건에서 빠진다(`Q.TRON TE` → `Q.TRON` 만으로 후보). 3자 이상 단어가 하나도 없으면 빈 결과다. 목록은 전체 검색어만 3자로 끊으므로, 2자 단어가 섞인 입력에서는 후보와 목록의 건수가 다를 수 있다(의도된 차이).",
+            schema: { type: "string", enum: ["AND", "OR"], default: "AND" },
+          },
         ],
         responses: {
           "200": {

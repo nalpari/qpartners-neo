@@ -5,7 +5,12 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getUserFromHeaders, isInternalUser } from "@/lib/auth";
 import { buildCategoryTree, CATEGORY_TREE_INCLUDE } from "@/lib/category-tree";
-import { checkSearchRateLimit, escapeLikePattern } from "@/lib/content-search";
+import {
+  buildKeywordCondition,
+  buildModelCodeCondition,
+  checkSearchRateLimit,
+  tokenizeKeyword,
+} from "@/lib/content-search";
 import { publishedTargetFilter, resolveFacetConditions } from "@/lib/content-visibility";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +26,8 @@ import { MODEL_CODE_SEARCH_MIN, suggestQuerySchema } from "@/lib/schemas/product
  * 목업 `updateSuggest()` 의 서버 구현. 규칙을 그대로 옮겼다:
  *   - **3자 이상**에서만 후보를 낸다. 미달이면 400 이 아니라 **빈 결과**다
  *     (타이핑 중 매 글자마다 에러를 내지 않는다)
+ *   - 공백으로 단어를 둘 이상 넣으면 목록과 같은 토큰화·`keywordOp` 결합을 쓴다 (Redmine #2751).
+ *     3자 게이트는 **나눈 단어마다** 걸린다 — 2자 이하 단어는 버리고, 남는 단어가 없으면 빈 결과다
  *   - 후보 대상은 **형번 + 콘텐츠 제목뿐**. 첨부파일명과 본문은 보지 않는다
  *     (본문 제외는 §5-① 확정, 첨부파일명은 목업 주석의 명시 제외 항목)
  *   - **조회 가능한 자료가 있는 것만** 후보가 된다 (Redmine #2748, 2026-11-03 회의 예외처리 ③).
@@ -51,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     const keyword = query.data.q.trim();
-    const { limit, facetCategoryIds, productModelIds } = query.data;
+    const { limit, facetCategoryIds, productModelIds, keywordOp } = query.data;
 
     if (keyword.length < MODEL_CODE_SEARCH_MIN) {
       return NextResponse.json({ data: { products: [], contents: [] } });
@@ -86,18 +93,53 @@ export async function GET(request: NextRequest) {
       ...(facetConditions.conditions.length > 0 && { AND: facetConditions.conditions }),
     };
 
-    // 입력한 `%`·`_` 를 와일드카드로 해석하지 않는다 — 본검색(buildKeywordCondition)과 같은 기준.
-    const keywordPattern = escapeLikePattern(keyword);
+    // 키워드 조건은 목록과 **같은 함수**로 만든다 (Redmine #2751).
+    //
+    // 종전에는 입력 전체를 한 덩어리 LIKE 로 썼다. 그래서 `re.rise q.tron` 처럼 공백으로 단어를
+    // 둘 이상 넣으면 목록은 나오는데 후보만 0건이었고, 이 증상은 AND·OR 양쪽에서 같았다
+    // (자동완성이 `keywordOp` 를 아예 받지 않았다).
+    //
+    // 3자 게이트는 **단어마다** 적용한다 (2026-11-11 사용자 확정). 자동완성은 3자 이상에서만
+    // 후보를 낸다는 것이 기능 전제이고, 그 전제를 나눈 단어에도 그대로 적용한다.
+    // 그래서 `Q.TRON TE` 는 `Q.TRON` 만으로 후보를 낸다.
+    //
+    // ⚠️ #2751 note-4(「3글자를 입력한 경우에만 … 1글자씩은 제공하지 않습니다」)를 근거로 삼지
+    // 말 것. 그 답변은 질문의 `a b c` 를 단어 예시가 아니라 한 글자 입력으로 읽은 것이어서
+    // 복수 키워드에 대한 사양이 아니다.
+    //
+    // ⚠️ 목록은 전체 검색어만 3자로 끊고 나눈 단어의 길이는 보지 않는다(`tokenizeKeyword`).
+    // 즉 2자 단어가 섞인 입력에서는 후보와 목록의 건수가 다를 수 있다 — **의도된 차이**다.
+    //
+    // LIKE 메타문자 이스케이프는 두 빌더가 내부에서 처리한다 — 여기서 미리 하면 이중 이스케이프다.
+    const keywordTokens = tokenizeKeyword(keyword).filter(
+      (t) => t.length >= MODEL_CODE_SEARCH_MIN,
+    );
+    // 3자 이상 단어가 하나도 없으면 빈 결과다. 조건 없이 내려가면 키워드와 무관한 전 자료가
+    // 후보로 나온다 (`ab cd` 는 전체 길이 게이트는 통과한다).
+    if (keywordTokens.length === 0) {
+      return NextResponse.json({ data: { products: [], contents: [] } });
+    }
+    const keywordCondition = buildKeywordCondition(keywordTokens, keywordOp);
+    const modelCodeCondition = buildModelCodeCondition(keywordTokens, keywordOp);
+
+    // 분류 조건과 키워드 조건을 **한 `AND` 배열**에 모은다. 둘 다 최상위 `AND` 키를 쓸 수 있어
+    // 객체 스프레드로 합치면 한쪽이 지워진다.
+    const contentAndConditions: Prisma.ContentWhereInput[] = [
+      ...facetConditions.conditions,
+      ...(keywordCondition ? [keywordCondition] : []),
+    ];
     const contentWhere: Prisma.ContentWhereInput = {
       ...visibleContentWhere,
-      title: { contains: keywordPattern },
+      ...(contentAndConditions.length > 0 && { AND: contentAndConditions }),
     };
 
     const [products, contents] = await Promise.all([
       prisma.productModel.findMany({
         where: {
           ...productModelVisibilityFilter(internal),
-          modelCode: { contains: keywordPattern },
+          // 형번도 목록(`/api/products`)과 같은 빌더를 쓴다. `AND` 배열로 감싸는 이유는
+          // 위 `contentAndConditions` 와 같다 — 빌더가 `AND`/`OR` 중 어느 키를 내도 안전하다.
+          ...(modelCodeCondition ? { AND: [modelCodeCondition] } : {}),
           // 좌측에서 사용자가 직접 고른 형번이 있으면 그 안에서만 낸다 — 목록과 같은 조건이다.
           ...(productModelIds && productModelIds.length > 0
             ? { id: { in: productModelIds } }
