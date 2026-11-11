@@ -242,13 +242,32 @@ export function ContentsSearch({
     onSearch(buildFilters(keyword));
   };
 
-  // [x] 클릭 — 입력값만 비우고 재조회는 트리거하지 않는다. 사용자가 명시적으로 検索/Enter 를
-  // 눌렀을 때만 검색한다. focus 를 input 으로 되돌려 이어진 Enter 가 button click 재트리거가
-  // 아니라 input onKeyDown 으로 처리되게 한다 (#2169).
+  /**
+   * [x] 클릭 — **검색어를 지우는 것은 검색 초기화다.** 좌측 분류·형번 체크가 전체 선택으로
+   * 돌아가고 목록도 전건이 된다 (2026-11-11 사용자 확정).
+   *
+   * 실시간 검색이 들어온 뒤로는 검색어를 3자 미만으로 줄이기만 해도 `runSearch` 의 reset
+   * 분기가 돌아 같은 상태가 된다. [x] 는 그 극단(전부 지움)이므로 같은 경로를 탄다 — 여기만
+   * 재조회를 하지 않으면 「2자로 줄이면 초기화되는데 전부 지우면 지운 검색어 결과가 남는」
+   * 비일관이 된다. `4dcb3111`(2026-05-04)이 자동 재조회를 뺀 것은 실시간 검색 **이전**이고,
+   * 「명시적으로 検索/Enter 를 눌렀을 때만 검색」이라는 그 전제는 지금 성립하지 않는다.
+   *
+   * `onSearch` 가 아니라 `onRealtimeSearch` 다 — 정렬을 초기화하지 않는다. 3자 미만으로
+   * 줄이는 경로가 정렬을 유지하므로 전부 지울 때만 정렬이 풀리면 조작과 결과가 어긋난다.
+   *
+   * `appliedKeywordRef` 도 함께 비운다. 이 ref 는 「목록에 적용된 검색어」이고 지금 빈 값이
+   * 적용되므로, 갱신하지 않으면 뒤이은 AND/OR 변경이 지운 검색어로 목록을 다시 조회한다.
+   *
+   * `closeSuggest()` 를 먼저 호출해 대기 중인 디바운스를 취소한다 — 안 그러면 타이머가
+   * 지우기 직전 입력으로 목록을 덮는다. focus 를 input 으로 되돌려 이어진 Enter 가
+   * button click 재트리거가 아니라 input onKeyDown 으로 처리되게 한다 (#2169).
+   */
   const handleClearKeyword = () => {
     setKeyword("");
     setSuggestQuery("");
     closeSuggest();
+    appliedKeywordRef.current = "";
+    onRealtimeSearch(buildFilters(""));
     keywordInputRef.current?.focus();
   };
 
