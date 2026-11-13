@@ -20,11 +20,7 @@ const BUBBLE_W = 320;
 const GAP = 12;
 
 const noopSubscribe = () => () => {};
-// shortcut: 테스트 중이라 진입할 때마다 노출한다. 운영 반영 전 false 로 되돌릴 것.
-const ALWAYS_SHOW_FOR_TEST = true;
-
 function readSeen(): boolean {
-  if (ALWAYS_SHOW_FOR_TEST) return false;
   try {
     return localStorage.getItem(STORAGE_KEY) === "1";
   } catch {
