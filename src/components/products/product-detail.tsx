@@ -16,7 +16,7 @@ import {
   Pagination,
   ProductStatusBadge,
 } from "@/components/common";
-import { resolveVisibleAxes } from "@/components/contents/list/contents-facet-utils";
+import { resolveColumnAxes } from "@/components/contents/list/contents-facet-utils";
 import type { CategoryNode } from "@/components/contents/list/contents-contents";
 import { useIsInternal } from "@/hooks/use-is-internal";
 import { setListRestoreFlag } from "@/hooks/use-list-state-persist";
@@ -119,7 +119,7 @@ interface ProductDetailProps {
  * 그 형번에 紐づく 자료를 나열한다. 검색화면의 분류축·키워드는 적용하지 않는다 —
  * 형번 하나만 기준으로 모은다.
  *
- * **분류 컬럼은 콘텐츠 목록과 같은 기준으로 동적 생성**한다(`resolveVisibleAxes`).
+ * **분류 컬럼은 콘텐츠 목록과 같은 기준으로 동적 생성**한다(`resolveColumnAxes`).
  * 목업은 `情報種別`·`資料種別` 2개만 두지만, 어느 축인지 특정하려면 축 코드를 화면에 박아야
  * 한다 — Phase 6 에서 걷어낸 방식이다. 표시 축이 바뀌면 이 화면도 따라간다.
  */
@@ -169,7 +169,7 @@ export function ProductDetail({ productId, page }: ProductDetailProps) {
   const totalPages = data?.meta.totalPages ?? 0;
 
   const columnDefs = useMemo<ColDef<ProductDocument>[]>(() => {
-    const categoryColumns: ColDef<ProductDocument>[] = resolveVisibleAxes(
+    const categoryColumns: ColDef<ProductDocument>[] = resolveColumnAxes(
       categories,
       isInternal,
     ).map((axis) => ({

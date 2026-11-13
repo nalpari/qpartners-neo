@@ -1,24 +1,30 @@
 // 분류축(facet) 공용 — 축 선정 규칙과 제품일람 축 타입.
 //
-// 사이드바(`contents-facets.tsx`)와 컨테이너(`contents-contents.tsx`)가 **같은 축 집합**을
-// 써야 한다. 사이드바가 렌더한 축을 컨테이너가 `facetAxes` 로 서버에 신고하는 구조라,
+// 사이드바(`contents-facets.tsx`)와 컨테이너(`contents-contents.tsx`)가 **같은 축 집합**
+// (`resolveFilterAxes`)을 써야 한다. 사이드바가 렌더한 축을 컨테이너가 `facetAxes` 로 서버에 신고하는 구조라,
 // 두 쪽이 갈라지면 "화면에 없는 축이 조건에 걸려 0건" 같은 증상이 난다.
 
 import type { CategoryNode } from "./contents-contents";
 import { LEGACY_PRODUCT_STATUS_AXIS_CODE } from "@/lib/schemas/common";
 
 /**
- * 분류축으로 쓸 1Depth 카테고리.
+ * 좌측 필터의 분류축으로 쓸 1Depth 카테고리.
  *
- * 기준은 **테이블의 분류 컬럼과 동일**하다 — `isVisible`(카테고리관리의 `一覧表示`)이 켜진
- * 1Depth 만. 사내전용 1Depth 는 비사내 사용자에게 내보내지 않는다: 축 제목이 부모
- * 카테고리명이라, 선택지가 비어도 사내 분류명이 그대로 드러난다.
+ * 기준은 카테고리관리의 **사용 여부**뿐이다 — 호출부가 `activeOnly=true` 로 받아온 트리를
+ * 그대로 쓴다(REQ-003 「사용 여부 Y 인 카테고리를 공통 필터로 제공」). `一覧表示`(`isVisible`)는
+ * 보지 않는다 — 그건 목록 컬럼 전용 설정이다(`resolveColumnAxes`). 운영(main)도 같은 기준이다.
+ * (Redmine #2781 — 한때 필터도 `isVisible` 을 따르게 묶었다가 요구사항 근거가 없어 원복.)
+ *
+ * 그래서 「사용 Y · 一覧表示 N」 카테고리는 필터에는 있고 목록 컬럼에는 없다.
+ *
+ * 사내전용 1Depth 는 비사내 사용자에게 내보내지 않는다: 축 제목이 부모 카테고리명이라,
+ * 선택지가 비어도 사내 분류명이 그대로 드러난다.
  *
  * 축의 구성·순서·표시 여부는 전부 카테고리관리에서 정해진다 — 코드에 축 코드를 박지 않는다.
  * (종전 `PRIORITY_CATEGORY_ORDER` 가 폐지된 `業務分類`·`内容分類` 코드를 들고 있던 것이
  *  그 방식의 실패 사례다.)
  */
-export function resolveVisibleAxes(
+export function resolveFilterAxes(
   categories: CategoryNode[],
   isInternal: boolean,
 ): CategoryNode[] {
@@ -27,8 +33,22 @@ export function resolveVisibleAxes(
       // 제품상태는 형번의 속성으로 옮겨졌다 — 카테고리 축은 화면 어디에도 내지 않는다.
       // 카테고리 관리 설정과 무관하게 코드가 제외한다 (운영자가 켤 대상이 아니다).
       parent.categoryCode !== LEGACY_PRODUCT_STATUS_AXIS_CODE &&
-      parent.isVisible !== false &&
       (isInternal || !parent.isInternalOnly),
+  );
+}
+
+/**
+ * 목록의 분류 컬럼으로 쓸 1Depth 카테고리 — 필터 축 중 `一覧表示`(`isVisible`)가 켜진 것.
+ *
+ * 콘텐츠 목록 테이블과 제품상세 자료 테이블이 쓴다. 필터 축의 부분집합이라
+ * 「컬럼에는 있는데 필터에는 없는 분류」는 생기지 않는다.
+ */
+export function resolveColumnAxes(
+  categories: CategoryNode[],
+  isInternal: boolean,
+): CategoryNode[] {
+  return resolveFilterAxes(categories, isInternal).filter(
+    (parent) => parent.isVisible !== false,
   );
 }
 

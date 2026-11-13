@@ -141,6 +141,15 @@ export const listContentsQuerySchema = z.object({
    * 판정 상세는 `lib/content-visibility.ts#resolveFacetConditions`.
    */
   facetCategoryIds: commaIdList,
+  /**
+   * 「その他」 가상 선택지가 체크된 **1Depth 축** id 목록.
+   *
+   * 그 축에 분류가 하나도 연결되지 않은 자료를 같은 축의 OR 분기로 포함한다. 카테고리
+   * 마스터에 「該当なし」 항목을 만들지 않는다 — 2Depth 가 비어 있는 것과 「該当なし」가
+   * 들어 있는 것은 같은 상태이므로, 데이터를 채우는 대신 조건으로 번역한다.
+   * 2Depth id 를 받는 `facetCategoryIds` 와 섞을 수 없어 파라미터를 분리했다.
+   */
+  facetNoneAxisIds: commaIdList,
   /** 型番 축 — 선택한 형번에 紐づく 자료만. 미지정 시 형번으로 걸러내지 않는다 */
   productModelIds: commaIdList,
   status: z.enum(["draft", "published", "deleted"]).default("published"),

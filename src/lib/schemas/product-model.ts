@@ -106,6 +106,11 @@ export const listProductsQuerySchema = z.object({
   keywordOp: z.enum(["AND", "OR"]).default("AND"),
   /** 체크된 2Depth 카테고리 id. 체크가 없는 축은 조건이 아니다 */
   facetCategoryIds: commaIdList,
+  /**
+   * 「その他」 가상 선택지가 체크된 1Depth 축 id — 그 축에 연결이 없는 자료를 OR 로 포함한다.
+   * 자료일람(`listContentsQuerySchema`)과 이름·의미를 맞춘다.
+   */
+  facetNoneAxisIds: commaIdList,
   /** 型番 축 — 체크된 형번 id. 미지정 시 전체 */
   productModelIds: commaIdList,
   /** 型番 헤더 클릭 정렬. 미지정 시 카테고리 표시순서 → 형번 표시순서 → 형번명 오름차순 (REQ-005) */
@@ -142,6 +147,11 @@ export const suggestQuerySchema = z.object({
    * 제품을 보게 된다 (2026-11-06 사용자 확정: 자동완성·목록·좌측 체크는 같아야 한다).
    */
   facetCategoryIds: commaIdList,
+  /**
+   * 「その他」 가상 선택지가 체크된 1Depth 축 id — 목록과 같은 모집합을 쓰기 위해 받는다.
+   * 빠지면 「후보에는 뜨는데 목록에는 없다」가 생긴다.
+   */
+  facetNoneAxisIds: commaIdList,
   /** 목록에 걸린 형번 조건 — 제품일람 좌측에서 사용자가 직접 고른 형번 */
   productModelIds: commaIdList,
   /**

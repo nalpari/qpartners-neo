@@ -30,7 +30,7 @@ import { useMenuPermission } from "@/hooks/use-menu-permission";
 import { MENU } from "@/lib/menu-codes";
 import type { ContentListItem, CategoryNode, ListView } from "./contents-contents";
 import type { ProductListRow } from "./contents-facet-utils";
-import { resolveVisibleAxes } from "./contents-facet-utils";
+import { resolveColumnAxes } from "./contents-facet-utils";
 import { useApprover } from "@/hooks/use-approver";
 import { useTargetLabels } from "@/hooks/use-target-labels";
 import { targetOrderRank } from "@/lib/target-role-order";
@@ -433,10 +433,10 @@ export function ContentsTable({
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
     });
 
-    // 축 선정 기준은 좌측 사이드바와 **동일**하다 (`resolveVisibleAxes`) — 컬럼과 축이
-    // 갈라지면 "사이드바엔 있는데 컬럼엔 없는 분류" 가 생긴다.
+    // 컬럼은 좌측 필터 축 중 `一覧表示`(`isVisible`)가 켜진 것만 (`resolveColumnAxes`).
+    // 「사용 Y · 一覧表示 N」 분류는 필터에는 있고 컬럼에는 없다 — 운영과 같은 기준(Redmine #2781).
     // 순서는 카테고리 `sortOrder`(API 가 그 순으로 반환) 그대로.
-    const visibleParents = resolveVisibleAxes(categories, isInternal);
+    const visibleParents = resolveColumnAxes(categories, isInternal);
     const categoryColumns = visibleParents.map(toCategoryColumn);
     const hasCategoryColumns = visibleParents.length > 0;
 

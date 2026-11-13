@@ -58,7 +58,8 @@ export async function GET(request: NextRequest) {
     }
 
     const keyword = query.data.q.trim();
-    const { limit, facetCategoryIds, productModelIds, keywordOp } = query.data;
+    const { limit, facetCategoryIds, facetNoneAxisIds, productModelIds, keywordOp } =
+      query.data;
 
     if (keyword.length < MODEL_CODE_SEARCH_MIN) {
       return NextResponse.json({ data: { products: [], contents: [] } });
@@ -76,11 +77,15 @@ export async function GET(request: NextRequest) {
     // 목록에 걸린 분류 조건을 **그대로** 적용한다 — 후보와 목록이 같은 모집합에서 나와야
     // 「후보에는 뜨는데 목록에는 없다」가 생기지 않는다 (2026-11-06 사용자 확정).
     // 판정 로직은 `/api/contents`·`/api/products` 와 같은 함수를 쓴다.
-    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? [], {
-      internal,
-      roleCode: user ? user.role : null,
-      now,
-    });
+    const facetConditions = await resolveFacetConditions(
+      facetCategoryIds ?? [],
+      {
+        internal,
+        roleCode: user ? user.role : null,
+        now,
+      },
+      facetNoneAxisIds ?? [],
+    );
     // 분류 체크는 있었는데 예외처리 ③ 이 전부 걸러 조건이 0개가 된 경우 — 목록이 0건이므로
     // 후보도 없다.
     if (facetConditions.unsatisfiable) {

@@ -13,7 +13,7 @@ import { useTargetLabels } from "@/hooks/use-target-labels";
 import api from "@/lib/axios";
 
 import type { ProductAxisGroup } from "./contents-facet-utils";
-import { isProductAxisGroupActive, resolveVisibleAxes } from "./contents-facet-utils";
+import { isProductAxisGroupActive, resolveFilterAxes } from "./contents-facet-utils";
 import type { CategoryNode, ListView } from "./contents-contents";
 
 /** 카테고리별 형번 초기 표시 건수 — 목업 `MODEL_LIMIT`. 넘치면 「すべて表示」 로 펼친다 */
@@ -32,10 +32,15 @@ interface ContentsFacetsProps {
   isInternal: boolean;
   categories: CategoryNode[];
   view: ListView;
-  /** 체크된 2Depth id. `null` = 미설정(전부 체크로 표시) / `[]` = 전부 해제 */
+  /** 체크된 2Depth id. `null` = 2Depth 전부 체크 / `[]` = 전부 해제(초기 상태) */
   selectedCategoryIds: number[] | null;
-  /** 체크된 형번 id. `null` = 미설정(전부 체크로 표시) / `[]` = 전부 해제 */
+  /** 체크된 형번 id. `null` = 전부 체크 / `[]` = 전부 해제(초기 상태) */
   selectedProductModelIds: number[] | null;
+  /**
+   * 「その他」가 체크된 1Depth 축 id — 그 축에 분류가 **없는** 자료도 함께 보겠다는 선택.
+   * 카테고리 마스터에 없는 가상 선택지라 2Depth id 와 섞지 않고 따로 받는다.
+   */
+  selectedNoneAxisIds: number[];
   productAxis: ProductAxisGroup[];
   /** 제품일람 대상 카테고리가 1건 이상인지 (`/api/products/axis` meta.enabled) */
   isProductAxisEnabled: boolean;
@@ -46,6 +51,15 @@ interface ContentsFacetsProps {
   /** 사내전용 자료만 조회 */
   internalOnly: boolean;
   onCategoryIdsChange: (ids: number[] | null) => void;
+  onNoneAxisIdsChange: (axisIds: number[]) => void;
+  /**
+   * 분류 체크와 「その他」를 **한 번에** 넘긴다 — 축별 「全選択 / 全解除」 용.
+   *
+   * ⚠️ `onCategoryIdsChange` 와 `onNoneAxisIdsChange` 를 연달아 부르면 안 된다. 부모가 두 번 모두
+   * **변경 전 `searchParams`** 를 펼쳐 새 상태를 만들어, 뒤 호출이 앞 변경을 덮어쓴다 — 축별
+   * 전체 선택에서 「その他」만 켜지지 않던 원인이다(2026-11-12 실화면). `onAllAxesChange` 와 같은 이유다.
+   */
+  onCategoryAndNoneChange: (categoryIds: number[] | null, noneAxisIds: number[]) => void;
   onProductModelIdsChange: (ids: number[] | null) => void;
   /**
    * 사이드바 최상단 「すべて選択 / すべて解除」 — **두 축을 한 번에** 넘긴다.
@@ -57,6 +71,7 @@ interface ContentsFacetsProps {
   onAllAxesChange: (
     categoryIds: number[] | null,
     productModelIds: number[] | null,
+    noneAxisIds: number[],
   ) => void;
   onRoleCodeChange: (roleCode: string) => void;
   onDepartmentsChange: (departments: string[]) => void;
@@ -73,26 +88,20 @@ interface ContentsFacetsProps {
  * 결합 규칙은 **축 안에서는 OR, 축 사이는 AND** 이며 서버가 판정한다
  * (`lib/content-visibility.ts#resolveFacetConditions`).
  *
- * **상태별 취급 — 2026-11-03 회의 확정 「예외처리 3건」** (계획서 §27.6)
+ * **상태별 취급 — 2026-11-12 회의 확정** (종전 2026-11-03 「예외처리 3건」을 갱신)
  *
- * - **전 축 전부 체크**(= 아래 `すべて選択`, 그리고 초기 상태) → 분류·형번 조건을 **아예 보내지
- *   않는다.** 분류 조건 없이 키워드·게시상태·권한·노출기간만 적용된 전체가 나온다 (①).
- *   종전에는 전체 id 로 펼쳐 보내 AND 조건이 됐고, 그래서 분류가 비어 있는 자료가 초기 화면에서
- *   통째로 빠졌다 (Redmine #2747).
- * - **전 축 전부 해제**(= 아래 `すべて解除`) → **조회하지 않고 0건** 이며 목록·총건수·
- *   페이지네이션을 함께 비운다 (②). 종전에는 전 축이 조건에서 빠져 **오히려 넓어졌다.**
- * - **한 축만 전부 해제** → §27.3 대로 **그 축만** AND 조건에서 빠진다. 전 축이 해제될 때만
- *   ② 가 걸린다.
- * - **일부 체크** → 그 축이 AND 조건 대상이 된다. ⚠️ 전부 체크에서 **한 칸만 꺼도** ① 이
- *   꺼지고 AND 가 되살아나 건수가 크게 떨어진다 — 회의에서 **수용하기로 결정**했다. 버그가
- *   아니다. 완화안(축마다 「未分類」 선택지 추가)은 미채택·별건이다.
+ * 축마다 2Depth 선택지와 「その他」(가상 선택지)가 있고, **체크한 축만 조건**이다.
+ * 판정은 `contents-contents.tsx#buildFacetConditionParams` 가 축 단위로 한다.
+ *
+ * - **화면 첫 진입·검색어 3자 미만·검색어 [x]** → 좌측 **전체 해제**, 목록은 전체 데이터.
+ * - **전 축 전부 해제**(= 아래 `すべて解除`) → 조건 없음 = 전체 데이터 (초기 상태와 같다).
+ *   종전에는 「조회하지 않고 0건」(②)이었으나 폐지됐다.
+ * - **전 축 전부 체크**(= 아래 `すべて選択`, 「その他」 포함) → 각 축이 「값 있음 + 값 없음」을
+ *   모두 허용하므로 조건 없음 = 전체 데이터. 「その他」가 있어 이 동치가 논리적으로 성립한다.
+ * - **일부 체크** → 그 축만 조건(축 안 OR, 축 사이 AND). 그 축이 빈 자료도 보려면 그 축의
+ *   「その他」를 함께 켠다. 손대지 않은 축은 조건이 아니므로 비어 있어도 빠지지 않는다.
  * - **공개 자료가 0건인 선택지** → 조건에서만 빠진다. 체크는 **그대로 둔다** — 형번과 달리
  *   분류는 비활성화하지 않는다 (③).
- *
- * 초기 상태(`facetCategoryIds: null` = 미설정)와 전부 체크는 **같게 다룬다** — 아래
- * `commitCategories` 가 전부 체크를 `null` 로 정규화하고, `contents-contents.tsx` 의
- * `facetParams` 가 그 `null` 에서 파라미터를 생략한다. 판정이 상태 기반이라 체크를 끄고 다시
- * 켜는 왕복은 원상복귀된다.
  *
  * **축별 건수는 표시하지 않는다.** 목업도 같은 결론(B안)이며 사유도 같다 — 축 수만큼
  * COUNT 쿼리가 늘어 검색 본체보다 무거워진다. 총 건수만 목록 상단에 낸다.
@@ -110,12 +119,15 @@ export function ContentsFacets({
   view,
   selectedCategoryIds,
   selectedProductModelIds,
+  selectedNoneAxisIds,
   productAxis,
   isProductAxisEnabled,
   roleCode,
   departments,
   internalOnly,
   onCategoryIdsChange,
+  onNoneAxisIdsChange,
+  onCategoryAndNoneChange,
   onProductModelIdsChange,
   onAllAxesChange,
   onRoleCodeChange,
@@ -174,11 +186,12 @@ export function ContentsFacets({
   const isDeptEmpty =
     isInternal && !isDeptLoading && !isDeptLoadError && deptItems.length === 0;
 
-  // 표시 축 — 테이블의 분류 컬럼과 **같은 기준**을 쓴다(`isVisible` = 一覧表示).
+  // 표시 축 — 카테고리관리 **사용 여부**만 본다. `一覧表示`(`isVisible`)는 목록 컬럼 전용이라
+  // 여기서는 보지 않는다(Redmine #2781, REQ-003).
   // 사내전용 1Depth 는 비사내 사용자에게 축 자체를 내보내지 않는다 — 축 제목이 부모
   // 카테고리명이라, 선택지가 비어도 사내 분류명이 그대로 드러난다.
   const visibleAxes = useMemo(
-    () => resolveVisibleAxes(categories, isInternal),
+    () => resolveFilterAxes(categories, isInternal),
     [categories, isInternal],
   );
 
@@ -215,31 +228,23 @@ export function ContentsFacets({
     [productAxis],
   );
 
-  // `null`(미설정) 은 **전부 체크**로 보인다 — 초기 화면이 전부 체크여야 한다는 2026-10-23
-  // 사용자 결정. 조건으로는 「거르지 않음」이라 전체 건수가 그대로 나온다.
-  // `[]`(사용자가 전부 해제) 는 표시도 전부 해제다.
+  // `null` 은 **2Depth 전부 체크**로 보인다(전체 선택). `[]` 는 전부 해제(초기 상태)다.
+  // 조건 여부는 체크 표시가 아니라 축 단위 판정으로 정해진다(`buildFacetConditionParams`).
   const effectiveCategoryIds = selectedCategoryIds ?? allCategoryIds;
   const effectiveModelIds = selectedProductModelIds ?? allProductModelIds;
   const categorySet = useMemo(() => new Set(effectiveCategoryIds), [effectiveCategoryIds]);
+  const noneAxisSet = useMemo(
+    () => new Set(selectedNoneAxisIds ?? []),
+    [selectedNoneAxisIds],
+  );
   const modelSet = useMemo(() => new Set(effectiveModelIds), [effectiveModelIds]);
 
-  // 전부 체크로 되돌아오면 미설정(`null`)으로 정규화한다 — 그래야 초기 화면과 같은 조건
-  // (분류가 없는 자료까지 포함한 전체)으로 돌아간다. 전체 id 를 그대로 조건으로 보내면
-  // 분류가 하나도 없는 자료가 빠져 초기 건수와 어긋난다.
+  // 2Depth 를 전부 체크하면 `null` 로 정규화한다 — 같은 상태를 한 가지로만 표현해, 「전부 체크」
+  // 판정과 표시가 갈리지 않게 한다. 조건으로는 펼친 전체 id 와 같다(축 단위 판정).
   //
-  // 전부 체크로 되돌아오면 `null`(미설정)로 정규화한다 — 예외처리 ① 로 분류 조건이 생략돼
-  // 초기 화면과 같은 조건이 된다.
-  //
-  // ⚠️ **선택지가 0개면 `null` 로 둔다.** 축 데이터가 아직 안 왔거나(`/api/categories`
-  // 미완료·실패) 표시 축이 0개면 `all*.length === 0` 인데, 그때 「전부 해제」를 눌러 `[]` 가
-  // 커밋되면 예외처리 ②(조회 없이 0건) 가 걸려 **목록이 무한 스피너로 잠긴다** — 0건 메시지도
-  // 에러도 뜨지 않고, 「전부 선택」을 눌러도 같은 경로로 다시 `[]` 가 커밋돼 탈출할 수 없었다
-  // (2026-11-03 적대적 리뷰 블로커 2). 「선택지가 0개인 축은 전부 해제로 보지 않는다」는
-  // 2026-11-03 회의 확정 사항과도 같은 방향이다.
-  //
-  // 종전 주석은 같은 `all*.length === 0` 상황에서 `null` 로 뒤집히는 것을 막으려 했는데,
-  // 고를 선택지가 하나도 없으면 체크/해제 어느 쪽으로도 보여 줄 것이 없어 그 우려는 성립하지
-  // 않는다. 반면 `[]` 의 귀결은 ② 도입으로 「넓어짐」에서 「0건 잠금」으로 바뀌었다.
+  // 선택지가 0개면(카테고리 미로딩·표시 축 0개) `null` 로 둔다 — 고를 것이 없어 어느 쪽이든
+  // 조건이 생기지 않는다. 종전에는 이때 `[]` 가 「조회 없이 0건」(②)을 걸어 목록이 잠겼지만
+  // ② 가 폐지돼 그 위험은 없다.
   const commitCategories = (next: number[]) =>
     onCategoryIdsChange(
       allCategoryIds.length === 0 || next.length === allCategoryIds.length ? null : next,
@@ -259,11 +264,43 @@ export function ContentsFacets({
     );
   };
 
+  /**
+   * 「その他」 토글 — 2Depth 체크(`commitCategories`)와 **섞지 않는다.**
+   *
+   * 가상 선택지라 `allCategoryIds` 에 들어 있지 않아, 같이 담으면 「전부 체크 → null 정규화」
+   * 판정이 어긋난다. 상태를 따로 들고 서버에도 별도 파라미터(`facetNoneAxisIds`)로 보낸다.
+   */
+  const toggleNoneAxis = (axisId: number, checked: boolean) => {
+    const current = selectedNoneAxisIds ?? [];
+    onNoneAxisIdsChange(
+      checked ? [...current, axisId] : current.filter((v) => v !== axisId),
+    );
+  };
+
+  /**
+   * 축 단위 전체 선택/해제 — 「その他」도 **같은 축의 선택지로 취급해** 함께 토글한다.
+   *
+   * 「전체 선택 = 그 축의 모든 상태」가 성립해야 「전체 선택 결과 = 전체 데이터」가 된다.
+   * 「その他」를 빼면 전체 선택이 「그 축에 값이 있는 것만」이 되어 빈 자료가 탈락한다.
+   */
   const setAxisAll = (axisId: number, checked: boolean) => {
     const ids = axisChildIds.get(axisId) ?? [];
     const idSet = new Set(ids);
     const rest = effectiveCategoryIds.filter((v) => !idSet.has(v));
-    commitCategories(checked ? [...rest, ...ids] : rest);
+    const nextCategories = checked ? [...rest, ...ids] : rest;
+    const currentNone = selectedNoneAxisIds ?? [];
+    const nextNone = checked
+      ? currentNone.includes(axisId)
+        ? currentNone
+        : [...currentNone, axisId]
+      : currentNone.filter((v) => v !== axisId);
+    // 분류와 「その他」를 **한 번에** 넘긴다. 정규화(전부 체크면 `null`)는 `commitCategories` 와 같다.
+    onCategoryAndNoneChange(
+      allCategoryIds.length === 0 || nextCategories.length === allCategoryIds.length
+        ? null
+        : nextCategories,
+      nextNone,
+    );
   };
 
   const toggleModel = (id: number, checked: boolean) => {
@@ -294,6 +331,8 @@ export function ContentsFacets({
   const setAll = (checked: boolean) => {
     const nextCategories = checked ? allCategoryIds : [];
     const nextModels = checked ? allProductModelIds : [];
+    // 「その他」도 같은 버튼으로 움직인다 — 셋을 한 번에 넘겨야 뒤 호출이 앞 변경을 덮지 않는다.
+    const nextNone = checked ? visibleAxes.map((a) => a.id) : [];
     onAllAxesChange(
       allCategoryIds.length === 0 || nextCategories.length === allCategoryIds.length
         ? null
@@ -301,12 +340,19 @@ export function ContentsFacets({
       allProductModelIds.length === 0 || nextModels.length === allProductModelIds.length
         ? null
         : nextModels,
+      nextNone,
     );
   };
 
   // 型番 축은 제품일람 탭에서만 적용된다(목업 `toggleModelGroup`). 제품일람 대상
   // 카테고리가 0건이면 제목만 남아 미완성으로 보이므로 그룹째 감춘다.
-  const showModelAxis = view === "prod" && isProductAxisEnabled && productAxis.length > 0;
+  // 사용중지(2Depth 자신 또는 1Depth 부모)는 좌측에 내지 않는다 — 형번관리 카테고리 선택지와
+  // 같은 기준이다. 섹션 표시 판정도 **걸러낸 뒤의 개수**로 해야 제목만 남지 않는다.
+  const activeProductAxis = useMemo(
+    () => productAxis.filter(isProductAxisGroupActive),
+    [productAxis],
+  );
+  const showModelAxis = view === "prod" && isProductAxisEnabled && activeProductAxis.length > 0;
 
   return (
     <aside className="flex w-full flex-col gap-[14px] bg-white rounded-[12px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] px-[18px] py-[22px]">
@@ -329,9 +375,14 @@ export function ContentsFacets({
               onNone={() => setModelAxisAll(false)}
             />
             <div className="flex flex-col gap-[2px]">
-              {productAxis.map((group) => {
+              {/* 사용중지 카테고리는 **노출하지 않는다** — 2Depth 자신이든 1Depth 부모든
+                  하나라도 사용여부가 N 이면 뺀다. 형번관리의 카테고리 선택지
+                  (`use-product-model-query.ts#useProductCategoryOptions`)와 같은 기준이다.
+                  종전에는 선택 불가(회색)로 그려만 두어, 부모가 사용중지인데도 좌측에 보였다. */}
+              {activeProductAxis.map((group) => {
                 const ids = group.productModels.filter((m) => m.hasDocuments).map((m) => m.id);
-                const selectable = isProductAxisGroupActive(group) && ids.length > 0;
+                // 위에서 사용여부를 이미 걸렀으므로 남은 판정은 「선택할 형번이 있는가」뿐이다.
+                const selectable = ids.length > 0;
                 const checkedCount = ids.filter((id) => modelSet.has(id)).length;
                 const isExpanded = expandedModelCats[group.id] === true;
                 const showAll = shownAllModelCats[group.id] === true;
@@ -452,15 +503,32 @@ export function ContentsFacets({
                   />
                 );
               })}
+              {/* 「その他」 — 카테고리 마스터에 없는 **가상 선택지**다. 체크하면 그 축에 분류가
+                  하나도 연결되지 않은 자료를 OR 로 함께 포함한다.
+
+                  축 목록을 순회해 붙이므로 카테고리 관리에서 축이 추가되면 자동으로 생긴다.
+                  데이터를 「該当なし」로 채우지 않는 이유: 2Depth 가 비어 있는 것과 같은
+                  상태이고, 마스터에 실제 항목을 만들면 등록 화면·자료 상세·통계에까지 가짜
+                  분류값이 퍼진다. 조건으로 번역하면 기존 자료를 손대지 않고 되돌릴 수도 있다. */}
+              {/* 라벨은 「その他」(2026-11-12 현업 피드백). 세 축 모두 카테고리 마스터에 실제
+                  2Depth 「その他」가 있어 같은 이름이 둘 보일 수 있다 — 가상 선택지는 회색 글자와
+                  축 맨 끝 위치로 구분하고, `data-facet-none` 으로 테스트가 둘을 가른다. */}
+              <div data-facet-none="">
+                <Checkbox
+                  checked={noneAxisSet.has(axis.id)}
+                  onChange={(checked) => toggleNoneAxis(axis.id, checked)}
+                  label="その他"
+                  className="[&>span:last-child]:!text-[#777]"
+                />
+              </div>
             </div>
           </div>
         );
       })}
 
-      {/* 「カテゴリをリセット」 버튼 삭제 (2026-10-13 사용자 지시, 2026-10-23 근거 갱신).
-          초기 상태는 `facetCategoryIds: null` = 미설정이고 화면에는 **전부 체크**로 보인다.
-          그 기준에서 「리셋」은 전부 체크이고, 그 동작은 이미 상단 `すべて選択` 가 한다 —
-          같은 일을 하는 버튼이 둘이 되므로 뺀다. */}
+      {/* 「カテゴリをリセット」 버튼 삭제 (2026-10-13 사용자 지시). 초기 상태는 전체 해제이고
+          (2026-11-12), 그 동작은 이미 상단 `すべて解除` 가 한다 — 같은 일을 하는 버튼이 둘이
+          되므로 두지 않는다. */}
 
       {/* 관리자 전용 필터 — 좌측영역 최하단 3개 묶음 (목업 v0.94 `#docExtraGroup`).
           라벨을 적색으로 두는 것은 사내 전용 항목 표식이다(사내전용 카테고리와 같은 색). */}

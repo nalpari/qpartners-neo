@@ -19,10 +19,6 @@ import {
   reconcileInlineImages,
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
-import {
-  findMissingRequiredAxes,
-  missingAxesMessage,
-} from "@/lib/content-required-axes";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import {
@@ -280,16 +276,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const { targets, categoryIds, productModelIds, ...contentData } = result.data;
-
-    // 축별 필수 분류. **`categoryIds` 를 보낸 경우에만** 판정한다 —
-    // 수정 API 는 미지정(undefined)이 "변경 의도 없음"이라, 분류를 건드리지 않은 수정까지
-    // 막으면 기존 자료를 고칠 수 없게 된다.
-    if (categoryIds !== undefined) {
-      const missingAxes = await findMissingRequiredAxes(categoryIds);
-      if (missingAxes.length > 0) {
-        return NextResponse.json({ error: missingAxesMessage(missingAxes) }, { status: 400 });
-      }
-    }
 
     if (productModelIds && productModelIds.length > 0) {
       const modelError = await assertProductModelIds(productModelIds);
