@@ -6,7 +6,8 @@
 // 우리는 본문 제외(계획서 §5-①)를 택했으므로 실시간 쪽을 가져와야 한다.
 // 목업 구현은 `01-search.html` 의 `runSearchDebounced()` — `SEARCH_BODY=false` 라 가드를 통과한다.
 //
-// 3자 미만으로 지우면 **초기화**다 — 목록은 전체, 좌측 체크도 전체 선택 (2026-11-05 확정).
+// 3자 미만으로 지우면 **초기화**다 — 목록은 전체, 좌측 체크는 **전체 해제** (2026-11-05 확정,
+// 2026-11-12 회의로 「전체 선택」에서 「전체 해제」로 변경 — 화면 첫 진입과 같은 상태).
 // 3자 미만은 자동완성도 검색어 조건도 빠지는 구간이라 「검색하기 전」과 같은 상태이기 때문이다.
 //
 // 대기 원칙 (2026-10-27):
@@ -122,7 +123,7 @@ test("3자 미만으로 지우면 전체 조회로 초기화된다", async () =>
   });
 });
 
-test("3자 미만으로 지우면 좌측 체크도 전체 선택으로 돌아간다", async () => {
+test("3자 미만으로 지우면 좌측 체크도 전체 해제로 돌아간다", async () => {
   await withPage({ role: "store1" }, async (page) => {
     await openDocContents(page);
 
@@ -134,33 +135,29 @@ test("3자 미만으로 지우면 좌측 체크도 전체 선택으로 돌아간
 
     const onOpen = await countChecked();
     assert(onOpen.all > 0, "좌측영역 체크박스를 찾지 못했습니다");
-    assertEqual(onOpen.on, onOpen.all, "진입 시점이 전체 선택이 아닙니다");
+    assertEqual(onOpen.on, 0, "진입 시점이 전체 해제가 아닙니다");
 
     await typeAndWait(page, "PHASE9-TEST");
     const narrowed = await countChecked();
     assert(
-      narrowed.on < narrowed.all,
-      `검색이 좌측 체크를 결과 기준으로 좁히지 않았습니다 — ${narrowed.on}/${narrowed.all}`,
+      narrowed.on > 0,
+      `검색이 좌측 체크를 결과 기준으로 켜지 않았습니다 — ${narrowed.on}/${narrowed.all}`,
     );
 
     await page.locator(SEARCH_INPUT).fill("PH");
     await waitForStableNumber(page, RESULT_TOTAL);
     const reset = await countChecked();
-    assertEqual(
-      reset.on,
-      reset.all,
-      "2자 이하로 지웠는데 좌측 체크가 전체 선택으로 돌아가지 않았습니다",
-    );
+    assertEqual(reset.on, 0, "2자 이하로 지웠는데 좌측 체크가 전체 해제로 돌아가지 않았습니다");
   });
 });
 
-/** 첫 분류축의 첫 선택지를 해제해 「일부 체크」 상태를 만든다 — 카테고리 명칭을 코드에 박지 않는다. */
+/** 첫 분류축의 첫 선택지를 체크해 「일부 체크」 상태를 만든다 — 카테고리 명칭을 코드에 박지 않는다. */
 function narrowFirstAxis(page) {
   const axis = page.locator("aside > div").filter({ has: page.locator("h2") }).first();
   return actAndWait(page, () => domClick(axis.locator('input[type="checkbox"]')));
 }
 
-test("검색어를 지우고 [검색] 하면 분류축이 전체 선택으로 돌아간다", async () => {
+test("검색어를 지우고 [검색] 하면 분류축이 전체 해제(초기)로 돌아간다", async () => {
   await withPage({ role: "store1" }, async (page) => {
     const initial = await openDocContents(page);
 
@@ -172,14 +169,15 @@ test("검색어를 지우고 [검색] 하면 분류축이 전체 선택으로 �
 
     await typeAndWait(page, "PHASE9-TEST");
 
-    // 요구사항정의서 v1.1 REQ-004 ③ 「검색어 삭제 후 **[검색] 클릭** → 검색 조건 초기화 /
-    // 모든 필터 옵션 전체 선택 / 전체 콘텐츠 표시」. 명시적 검색만 이 동작을 한다.
+    // 요구사항정의서 v1.1 REQ-004 ③ 원문은 「검색어 삭제 후 [검색] 클릭 → 검색 조건 초기화 /
+    // 모든 필터 옵션 **전체 선택** / 전체 콘텐츠 표시」다. 2026-11-12 회의에서 초기 상태를
+    // **전체 해제**로 정해 좌측 표시는 정의서 문구와 다르다 — 목록(전체 콘텐츠)은 같다.
     const afterSearch = await actAndWait(page, async () => {
       const input = page.locator(SEARCH_INPUT);
       await input.fill("");
       await input.press("Enter");
     });
-    assertEqual(afterSearch, initial, "검색어를 지우고 [검색] 했는데 전체 선택으로 돌아가지 않았습니다");
+    assertEqual(afterSearch, initial, "검색어를 지우고 [검색] 했는데 초기(전체) 건수로 돌아가지 않았습니다");
   });
 });
 
@@ -223,7 +221,7 @@ test("Enter 는 글자수와 무관하게 즉시 조회를 보낸다", async () 
     //
     // ⚠️ **건수로는 판정할 수 없다.** 서버 스키마(`searchKeyword`, `lib/schemas/common.ts`)가
     // 3자 미만을 조건에서 버리므로 2자 Enter 의 결과 집합은 「키워드 없음」과 같다. 게다가
-    // `resolveFacetPatch` 가 3자 미만 + 명시적 검색에서 좌측 체크를 전체 선택으로 되돌리므로
+    // `runSearch` 가 3자 미만 + 명시적 검색에서 좌측 체크를 전체 해제(초기)로 되돌리므로
     // 분류 조건도 같아진다 — 건수가 바뀔 수 없다.
     //
     // 종전 이 케이스는 `before !== after` 를 단언했다. PR #304(`38e42794`)가 3자 게이트를

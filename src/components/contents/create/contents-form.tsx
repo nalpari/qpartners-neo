@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import api from "@/lib/axios";
-import { REQUIRED_AXIS_CODES } from "@/lib/schemas/common";
 import { formatDate } from "@/lib/format";
 import { Button, DimSpinner, Spinner } from "@/components/common";
 import { useAlertStore } from "@/lib/store";
@@ -286,23 +285,12 @@ function ContentsFormInner({ mode, contentId, existingData, allOptions }: Conten
     }
     // 内容(본문)은 필수 아님 — 서버 스키마의 body 도 optional.
     //
-    // 카테고리는 **축별로** 1개 이상이다 (2026-10-14). 종전처럼 「전체에서 1개 이상」이면
-    // `製品分類` 만 고르고 저장돼 `情報種別`·`製品ステータス` 가 빈 자료가 쌓이고,
-    // 그 자료는 좌측영역에서 해당 축을 쓰는 순간 결과에서 사라진다 (계획서 §24·§26).
-    // 판정 대상은 **현재 표시 중인 축**뿐이라, 축이 폐지되면 요구가 자동으로 빠진다.
-    const selectedSet = new Set(selectedCategoryIds);
-    const missingAxes = categories
-      .filter(
-        (axis) =>
-          axis.isVisible !== false &&
-          REQUIRED_AXIS_CODES.includes(axis.categoryCode as (typeof REQUIRED_AXIS_CODES)[number]),
-      )
-      .filter((axis) => !(axis.children ?? []).some((child) => selectedSet.has(child.id)));
-    if (missingAxes.length > 0) {
-      openAlert({
-        type: "alert",
-        message: `${missingAxes.map((a) => `「${a.name}」`).join("・")}を1つ以上選択してください。`,
-      });
+    // 카테고리는 전체 카테고리 중 최소 1개 이상 선택해야 한다 — **현 운영 규칙**이다.
+    // 2026-10-14 에 축별 필수(情報種別·製品分類 각 1개 이상)로 바꿨으나, 2026-11-12 회의에서
+    // 현업 업무를 유지하기로 해 운영 규칙으로 되돌렸다. 분류가 빈 자료는 좌측영역의
+    // 「その他」로 조회한다.
+    if (selectedCategoryIds.length === 0) {
+      openAlert({ type: "alert", message: "カテゴリを1つ以上選択してください。" });
       return;
     }
 

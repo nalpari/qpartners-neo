@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CategoryName, type CategoryLabelSource } from "@/components/common";
 
 import type { CategoryNode } from "./contents-contents";
-import { resolveVisibleAxes } from "./contents-facet-utils";
+import { resolveColumnAxes } from "./contents-facet-utils";
 import { DOC_TYPE_AXIS_CODE } from "@/lib/schemas/common";
 
 /** `GET /api/search/suggest` 응답의 제품 후보 1건 */
@@ -70,7 +70,7 @@ export function toSuggestNavItems(data: SuggestData | undefined): SuggestNavItem
  * (`contents-table.tsx` 의 분류 컬럼이 `PRIORITY_CATEGORY_ORDER` 를 걷어낸 것과 같은 이유).
  * 그래서 축 코드를 고르지 않고 **표시 축 중 첫 값**을 쓴다.
  *
- * 축 선정은 사이드바·테이블과 같은 `resolveVisibleAxes` 이고, 축 안에서 고르는 자식도
+ * 축 선정은 테이블 컬럼과 같은 `resolveColumnAxes` 이고, 축 안에서 고르는 자식도
  * 테이블의 `getFirstCategoryChildName` 과 같은 `children[0]` 이다 — 같은 자료가 목록과
  * 자동완성에서 다른 분류로 보이지 않게 맞춘다.
  */
@@ -236,7 +236,7 @@ export function ContentsSearchSuggest({
   const contents = data?.contents ?? [];
   if (products.length === 0 && contents.length === 0) return null;
 
-  const axes = resolveVisibleAxes(categories, isInternal);
+  const axes = resolveColumnAxes(categories, isInternal);
 
   return (
     <div

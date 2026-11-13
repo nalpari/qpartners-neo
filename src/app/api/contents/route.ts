@@ -17,6 +17,7 @@ import {
 import {
   publishedTargetFilter,
   resolveAvailableFacets,
+  resolveAvailableNoneAxes,
   resolveFacetConditions,
 } from "@/lib/content-visibility";
 import { ensureAuthorTarget } from "@/lib/contents-author-target";
@@ -25,10 +26,6 @@ import {
   unlinkInlineImages,
 } from "@/lib/inline-image-cleanup";
 import { jstHourStart } from "@/lib/jst-day";
-import {
-  findMissingRequiredAxes,
-  missingAxesMessage,
-} from "@/lib/content-required-axes";
 import { logError } from "@/lib/log-error";
 import { prisma } from "@/lib/prisma";
 import {
@@ -63,6 +60,7 @@ export async function GET(request: NextRequest) {
       keywordOp,
       categoryIds,
       facetCategoryIds,
+      facetNoneAxisIds,
       productModelIds,
       status,
       roleCode,
@@ -166,11 +164,15 @@ export async function GET(request: NextRequest) {
     // 체크된 축만 조건이 된다 — 체크가 없으면 빈 조건이다 (거르지 않는다).
     // 전부 체크(①)는 클라이언트가 `facetCategoryIds` 를 보내지 않아 여기서 빈 조건이 된다.
     // `scope` 는 예외처리 ③ — 공개 자료가 0건인 선택지를 조건에서 뺀다 (Redmine #2745).
-    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? [], {
-      internal,
-      roleCode: user ? user.role : null,
-      now,
-    });
+    const facetConditions = await resolveFacetConditions(
+      facetCategoryIds ?? [],
+      {
+        internal,
+        roleCode: user ? user.role : null,
+        now,
+      },
+      facetNoneAxisIds ?? [],
+    );
     // ⚠️ 축 조건은 `andConditions`(그 외 전부)와 **따로 모은다**. REQ-004 의 「키워드 연동
     // 카테고리 체크」 집계가 **축 조건을 뺀 집합**을 세야 하기 때문이다 — 체크 결과로 다시
     // 세면 「해제 → 결과 변함 → 또 해제」가 연쇄해 상태가 수렴하지 않는다
@@ -381,11 +383,26 @@ export async function GET(request: NextRequest) {
       // 분류축(facet) — resolveFacetConditions 의 Prisma 조건과 **동일해야 한다**.
       // 축 안 OR / 축 사이 AND, 그리고 연결이 없는 콘텐츠도 탈락(엄격, 규칙 2).
       // 여기가 갈라지면 "정렬을 걸면 건수가 달라지는" 증상이 난다.
+      //
+      // `includeNone`(「その他」)은 그 축에 연결이 **없는** 콘텐츠를 OR 로 더한다 —
+      // Prisma 쪽 `categories: { none: { category: { parentId } } }` 와 같은 뜻이다.
       for (const group of facetConditions.groups) {
-        sqlConds.push(Prisma.sql`EXISTS (
-          SELECT 1 FROM qp_content_categories fcc
-          WHERE fcc.content_id = c.id AND fcc.category_id IN (${Prisma.join(group.categoryIds)})
-        )`);
+        const branches: Prisma.Sql[] = [];
+        if (group.categoryIds.length > 0) {
+          branches.push(Prisma.sql`EXISTS (
+            SELECT 1 FROM qp_content_categories fcc
+            WHERE fcc.content_id = c.id AND fcc.category_id IN (${Prisma.join(group.categoryIds)})
+          )`);
+        }
+        if (group.includeNone) {
+          branches.push(Prisma.sql`NOT EXISTS (
+            SELECT 1 FROM qp_content_categories nfcc
+            JOIN qp_categories ncat ON ncat.id = nfcc.category_id
+            WHERE nfcc.content_id = c.id AND ncat.parent_id = ${group.axisId}
+          )`);
+        }
+        if (branches.length === 0) continue;
+        sqlConds.push(Prisma.sql`(${Prisma.join(branches, " OR ")})`);
       }
 
       // 型番 축
@@ -828,7 +845,13 @@ export async function GET(request: NextRequest) {
     // `facets=1` 로 **명시한 요청에서만** 집계한다. 종전에는 모든 GET 이 링크 테이블
     // `distinct` 를 돌려, 집계를 쓰지 않는 관리자 목록·페이지 이동·탭 전환까지 쿼리를 더
     // 썼다. 형번축 집계도 함께 돌렸지만 쓰는 화면이 없어 걷어냈다 — 필요해지면 되살린다.
-    const facetCatRows = facets ? await resolveAvailableFacets(axisFreeWhere) : null;
+    // 「その他」 자동 체크 — 분류값 집계와 **같은 모집합**(`axisFreeWhere`)에서 센다.
+    const [facetCatRows, facetNoneAxisRows] = facets
+      ? await Promise.all([
+          resolveAvailableFacets(axisFreeWhere),
+          resolveAvailableNoneAxes(axisFreeWhere),
+        ])
+      : [null, null];
 
     return NextResponse.json({
       data,
@@ -840,7 +863,11 @@ export async function GET(request: NextRequest) {
       },
       /** 검색 결과에 나타나는 분류값 — 좌측 체크 상태 동기화용(REQ-004). `facets=1` 일 때만 */
       ...(facetCatRows && {
-        availableFacets: { categoryIds: facetCatRows.map((r) => r.categoryId) },
+        availableFacets: {
+          categoryIds: facetCatRows.map((r) => r.categoryId),
+          /** 결과 중 그 축에 분류가 없는 자료가 있는 1Depth 축 — 「その他」 자동 체크용 */
+          noneAxisIds: facetNoneAxisRows ?? [],
+        },
       }),
     });
   } catch (error) {
@@ -880,12 +907,6 @@ export async function POST(request: NextRequest) {
     }
 
     const { targets, categoryIds, productModelIds, ...contentData } = result.data;
-
-    // 축별 필수 분류 — 화면에서도 막지만 API 직접 호출까지 대비해 서버에서 판정한다.
-    const missingAxes = await findMissingRequiredAxes(categoryIds);
-    if (missingAxes.length > 0) {
-      return NextResponse.json({ error: missingAxesMessage(missingAxes) }, { status: 400 });
-    }
 
     if (productModelIds && productModelIds.length > 0) {
       const modelError = await assertProductModelIds(productModelIds);

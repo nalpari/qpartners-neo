@@ -173,35 +173,16 @@ export const SYSTEM_ROLE_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * 콘텐츠 등록·수정에서 **각 1개 이상 필수**인 분류축의 `categoryCode` (2026-10-14 결정).
- *
- * 축 코드를 상수로 두지만, 소비처는 **현재 표시 중인 축에만 적용**해야 한다 —
- * 축이 폐지되면 요구가 자동으로 빠지도록. 판정 구현은 `lib/content-required-axes.ts`
- * (서버) / `contents-form.tsx` (화면).
- *
- * prisma 비의존 모듈에 둔다 — 클라이언트 컴포넌트가 import 하기 때문이다.
- */
-/**
  * 제품분류(`製品分類`) 축의 `categoryCode` — 형번 카테고리 표기의 **기본 축**.
  *
  * 부모가 이 축이면 2Depth 만 보이고, 다른 축 하위면 `1Depth > 2Depth` 로 축을 함께 낸다
  * (목업 `assets/qp-shell.js:230` `categoryLabel()`, 구현은 `@/components/common` 의
- * `ProductCategoryLabel`). 콘텐츠 등록의 필수 분류축이기도 해서 아래
- * `REQUIRED_AXIS_CODES` 도 이 값을 쓴다.
+ * `ProductCategoryLabel`).
  *
  * 화면마다 `"PROD"` 를 다시 쓰지 않는다 — 축 코드가 바뀌면 한 곳만 빠져도 그 화면에서만
  * 축 이름이 남거나 사라진다.
  */
 export const PRODUCT_AXIS_CODE = "PROD";
-
-/**
- * 콘텐츠 등록 시 **각 1개 이상** 필수인 분류축.
- *
- * `PRDST`(製品ステータス) 는 **2026-10-28 에 빠졌다** — 제품상태가 형번의 속성이 되면서
- * (REQ-007) 자료가 직접 갖는 분류가 아니게 됐다. 자료일람 표시는 연결된 형번에서
- * 파생한다(`deriveProductStatus`).
- */
-export const REQUIRED_AXIS_CODES = ["INFO", PRODUCT_AXIS_CODE] as const;
 
 /**
  * 제품상태(`製品ステータス`) 축 코드 — **화면에서 제외하는 레거시 축**이다.

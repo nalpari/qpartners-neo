@@ -46,6 +46,13 @@ export function publishedTargetFilter(
 export interface FacetGroup {
   axisId: number;
   categoryIds: number[];
+  /**
+   * 「その他」 가상 선택지가 체크됐는지 — 그 축에 **연결이 없는** 자료를 함께 포함한다.
+   *
+   * 카테고리 마스터에 실제 항목을 만들지 않는다. 2Depth 가 비어 있는 것과 「該当なし」가
+   * 들어 있는 것은 같은 상태이므로, 데이터를 채우는 대신 조건으로 번역한다.
+   */
+  includeNone: boolean;
 }
 
 export interface FacetConditions {
@@ -89,17 +96,19 @@ export interface FacetScope {
  * - id 가 **하나도 없는 축** → 그 축은 조건이 아니다. 거르지 않는다.
  * - id 가 있으면 → 그 선택지에 **실제로 연결된** 자료만 남는다.
  *
- * ⚠️ **「좌측영역 전체 선택」은 여기까지 오지 않는다** (2026-11-03 회의 확정, 예외처리 ①).
- * 전부 체크 상태에서는 `contents-contents.tsx` 의 `facetParams` 가 `facetCategoryIds` 를
- * **아예 보내지 않아** 분류 조건이 걸리지 않는다. 그래서 「전부 체크 = 전체 콘텐츠」와
- * 「축 사이 AND」가 양립한다 — AND 규칙을 바꾸는 게 아니라 AND 평가를 건너뛴다.
- * 이전에는 `null`(전부 체크)을 전체 id 로 펼쳐 보내 전부 체크도 AND 조건이 됐고, 그래서 분류가
- * 비어 있는 자료가 초기 화면에서 통째로 빠졌다 (Redmine #2747 — published 2,461건 중 표시
- * 4축을 모두 가진 24건만 남았다).
+ * **어느 축이 여기 도착하는가**는 클라이언트(`contents-contents.tsx#buildFacetConditionParams`)가
+ * 축 단위로 정한다 — 체크가 없는 축, 그리고 2Depth 전부 + 「その他」가 체크된 축은 보내지 않는다.
+ * 그래서 좌측 **전체 해제·전체 선택**은 둘 다 이 함수에 빈 입력으로 와서 조건 없음이 된다
+ * (2026-11-12 회의 확정 — 종전 「전체 해제 = 조회 없이 0건」(②)은 폐지).
  *
- * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 그래서 전부 체크에서
- * 한 칸만 꺼도 AND 가 되살아나 건수가 크게 떨어진다 — 2026-11-03 회의에서 **수용하기로
- * 결정**했다. 완화하려면 축마다 「未分類」 선택지를 두는 별건 작업이 필요하다.
+ * ⚠️ 조건이 걸린 축은 **그 축에 분류가 하나도 없는 자료를 탈락시킨다.** 그 축의 빈 자료도
+ * 보려면 아래 「その他」를 함께 켠다.
+ *
+ * `noneAxisIds` 가 그 완화 수단이다 — 축마다 「その他」 **가상 선택지**를 두고, 체크되면
+ * 그 축에 연결이 없는 자료를 OR 로 함께 포함한다. 카테고리 마스터에 실제 항목을 만들지
+ * 않는다: 2Depth 가 비어 있는 것과 「該当なし」가 들어 있는 것은 **같은 상태**이므로
+ * 데이터를 채울 이유가 없고, 채우면 등록 화면·자료 상세·통계에까지 가짜 분류값이 퍼진다.
+ * 조건으로 번역하면 기존 자료를 손대지 않고 되돌릴 수도 있다.
  *
  * **예외처리 ③ (`scope` 지정 시)** — 공개 자료가 **한 건도 연결되지 않은 선택지**는 조건에서
  * 뺀다. 체크는 화면에 그대로 남는다 (형번과 달리 분류는 비활성화하지 않는다). 축 안이 OR 이라
@@ -133,23 +142,33 @@ export interface FacetScope {
  * @param scope       예외처리 ③ 의 노출 범위. `null` 이면 ③ 을 적용하지 않는다 — 입력 id 가
  *                    이미 「조회 범위에 자료가 있는 것」으로 걸러져 있을 때만 쓴다
  *                    (`resolveAvailableFacets` 2패스)
+ * @param noneAxisIds 「その他」 가상 선택지가 체크된 **1Depth 축** id 목록. 그 축에 연결이
+ *                    없는 자료를 OR 로 포함한다. 예외처리 ③ 의 대상이 아니다 — 연결이
+ *                    없는 것을 찾는 조건이므로 연결 건수로 거를 수 없다.
  * @returns AND 로 합칠 Prisma 조건과 축별 묶음. 빈 배열이면 빈 조건.
  */
 export async function resolveFacetConditions(
   categoryIds: number[],
   scope: FacetScope | null,
+  noneAxisIds: number[] = [],
 ): Promise<FacetConditions> {
   const selectedIds = [...new Set(categoryIds)].slice(0, FACET_ID_LIMIT);
+  const noneSet = new Set(noneAxisIds.slice(0, FACET_ID_LIMIT));
   // 입력이 비었으면 「전부 체크」(①)다 — 조건 없음이 맞다. `unsatisfiable` 과 구분된다.
-  if (selectedIds.length === 0)
+  // 「その他」만 체크된 축이 있으면 그것도 조건이므로 여기서 끊지 않는다.
+  if (selectedIds.length === 0 && noneSet.size === 0)
     return { groups: [], conditions: [], unsatisfiable: false };
 
   // 선택값의 부모(=축)로 묶는다. 축 목록(`axisIds`)은 더 이상 조건을 만들지 않으므로
   // (체크가 없는 축은 조건이 아니다) 여기서는 부모 조회만으로 충분하다.
-  const rows = await prisma.category.findMany({
-    where: { id: { in: selectedIds } },
-    select: { id: true, parentId: true },
-  });
+  // 「その他」만 체크된 경우 조회할 선택지가 없다 — 쿼리를 건너뛴다.
+  const rows =
+    selectedIds.length > 0
+      ? await prisma.category.findMany({
+          where: { id: { in: selectedIds } },
+          select: { id: true, parentId: true },
+        })
+      : [];
 
   // 예외처리 ③ — 공개 자료가 연결된 선택지만 남긴다. 범위는 사이드바 형번의
   // `hasDocuments`(`/api/products/axis`) 와 **같아야 한다.** 갈라지면 「화면에서는 고를 수
@@ -159,7 +178,7 @@ export async function resolveFacetConditions(
   // 내려가지 않고 클라이언트 메모리에서 적용돼, 선택이 넓으면 링크 행 수천 건을 그대로
   // 전송받는다. 이 함수는 페이징·정렬마다 도는 핫 패스다.
   let linkedIds: Set<number> | null = null;
-  if (scope) {
+  if (scope && selectedIds.length > 0) {
     const linked = await prisma.contentCategory.groupBy({
       by: ["categoryId"],
       where: {
@@ -192,10 +211,24 @@ export async function resolveFacetConditions(
 
   const groups: FacetGroup[] = [];
   const conditions: Prisma.ContentWhereInput[] = [];
-  for (const [axisId, selected] of selectedByAxis) {
-    groups.push({ axisId, categoryIds: selected });
-    // 축 안은 OR(IN), 축 사이는 AND(조건을 따로 push). 체크된 선택지에 실제로 연결된 자료만.
-    conditions.push({ categories: { some: { categoryId: { in: selected } } } });
+  // 조건을 만들 축 = 「선택지가 남은 축」 ∪ 「「その他」가 체크된 축」.
+  // 「その他」만 체크된 축은 `selectedByAxis` 에 없으므로 합집합으로 돌아야 빠지지 않는다.
+  for (const axisId of new Set([...selectedByAxis.keys(), ...noneSet])) {
+    const selected = selectedByAxis.get(axisId) ?? [];
+    const includeNone = noneSet.has(axisId);
+    // 축 안은 OR, 축 사이는 AND(조건을 따로 push).
+    const orBranches: Prisma.ContentWhereInput[] = [];
+    // 체크된 선택지에 실제로 연결된 자료만.
+    if (selected.length > 0)
+      orBranches.push({ categories: { some: { categoryId: { in: selected } } } });
+    // 「その他」 — 그 축의 2Depth 가 하나도 연결되지 않은 자료. 데이터를 채우지 않고 조건으로
+    // 표현하므로 기존 자료를 손대지 않는다.
+    if (includeNone)
+      orBranches.push({ categories: { none: { category: { parentId: axisId } } } });
+    // ③ 이 선택지를 전부 걸렀고 「その他」도 아니면 그 축은 조건이 아니다.
+    if (orBranches.length === 0) continue;
+    groups.push({ axisId, categoryIds: selected, includeNone });
+    conditions.push(orBranches.length === 1 ? orBranches[0] : { OR: orBranches });
   }
 
   // 고른 것이 있었는데 조건이 하나도 안 남았다 — ③ 이 전부 걸렀거나(공개 자료 0건 선택지만
@@ -236,4 +269,39 @@ export async function resolveAvailableFacets(
     select: { categoryId: true },
     distinct: ["categoryId"],
   });
+}
+
+/**
+ * 「その他」 자동 체크용 집계 — 결과 자료 중 **그 축에 분류가 하나도 없는 자료가 있는** 1Depth 축.
+ *
+ * `resolveAvailableFacets` 와 짝이다. 그쪽은 「결과 자료가 가진 분류값」이라 연결이 **없는**
+ * 상태는 나타날 수 없다 — 「その他」는 카테고리 마스터에 없는 가상 선택지이기 때문이다.
+ * 그래서 축마다 「연결 없음」 자료가 결과 안에 존재하는지를 따로 센다.
+ *
+ * 집계 모집합(`where`)은 목록과 **같아야** 한다. 갈라지면 「목록에는 분류 없는 자료가 있는데
+ * 좌측 「その他」는 꺼져 있다」가 된다.
+ *
+ * 존재 여부만 필요하므로 축마다 `findFirst` 1회다. 축은 1Depth 전체이고(수 개), 화면이
+ * 표시 축으로 교집합을 낸다 — `resolveAvailableFacets` 와 같은 분담이다.
+ *
+ * @param where 결과 자료 범위 — 축 조건(분류·형번)을 **뺀** where
+ * @returns 그 축에 분류가 없는 자료가 결과에 1건 이상 있는 1Depth 축 id
+ */
+export async function resolveAvailableNoneAxes(
+  where: Prisma.ContentWhereInput,
+): Promise<number[]> {
+  const axes = await prisma.category.findMany({
+    where: { parentId: null },
+    select: { id: true },
+  });
+  const hits = await Promise.all(
+    axes.map(async ({ id }) => {
+      const row = await prisma.content.findFirst({
+        where: { AND: [where, { categories: { none: { category: { parentId: id } } } }] },
+        select: { id: true },
+      });
+      return row ? id : null;
+    }),
+  );
+  return hits.filter((v): v is number => v !== null);
 }

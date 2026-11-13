@@ -27,7 +27,7 @@
 |---|---|---|
 | 1 | **노출 판정은 서버가 끝낸다** | 클라이언트 판정은 UI 힌트일 뿐. 비공개 자료·형번의 존재가 새어 나가면 안 된다 |
 | 2 | **축 코드를 코드에 박지 않는다** | 폐지된 `業務分類`·`内容分類` 코드를 상수로 들고 있다가 깨진 선례가 있다 (`PRIORITY_CATEGORY_ORDER`) |
-| 3 | **사이드바와 테이블이 같은 축 집합을 쓴다** | 갈라지면 「사이드바엔 있는데 컬럼엔 없는 분류」가 생긴다 → `resolveVisibleAxes()` 공유 |
+| 3 | **필터 축과 목록 컬럼은 기준이 다르다** | 좌측 필터는 카테고리관리 **사용 여부**만 따르고(`resolveFilterAxes()`, REQ-003), `一覧表示` 는 목록 컬럼에만 적용한다(`resolveColumnAxes()` = 필터 축 중 `一覧表示` Y). 컬럼 축이 필터 축의 부분집합이라 「컬럼에는 있는데 필터에는 없는 분류」는 생기지 않는다 (Redmine #2781, 2026-11-12) |
 | 4 | **형번은 2Depth 카테고리에만 붙는다** | 1Depth 는 축이지 분류가 아니다. 서버가 `assertProductCategory` 로 강제 |
 | 5 | **삭제는 연결만 끊는다** | 형번을 지워도 자료는 남는다. 연결이 남으면 유령 형번이 화면에 뜬다 |
 
@@ -61,7 +61,6 @@
   product-model.ts          형번 노출 판정 select / visibility filter
   content-search.ts         키워드 검색 조건 조립
   content-visibility.ts     게시대상·기간·분류축 결합(resolveFacetConditions)
-  content-required-axes.ts  콘텐츠 등록 시 축별 필수 분류
   content-internal-only.ts  사내전용 자료 판정(서버·화면 공용)
 ```
 
@@ -221,36 +220,51 @@ export function isInternalOnlyContent(targets: { roleCode: string | null }[]): b
 
 ---
 
-## 6. 분류축 결합 규칙 (2026-10-23 확정)
+## 6. 분류축 결합 규칙 (2026-11-12 회의 확정)
+
+> 10-23 확정본(초기 전부 체크 · 전부 해제 = 그 축 조건 제외)과 11-03 예외처리 ②(전체 해제 = 조회 없이 0건)는
+> 이 규칙으로 **대체됐다.** 경위는 계획서 `search-enhancement.plan.md` 참조.
 
 ### 6.1 규칙
 
 | 축 상태 | 동작 |
 |---|---|
-| 축 **안** | **OR** — 체크한 선택지 중 하나라도 맞으면 통과 |
-| **전부 체크** | **AND 조건 대상** |
-| **일부 체크** | **AND 조건 대상** |
-| **전부 해제** | 그 축만 AND 조건에서 **제외**. 나머지 축 조건으로 계속 조회한다 |
+| 축 **안** | **OR** — 체크한 선택지(2Depth · 「その他」) 중 하나라도 맞으면 통과 |
+| 축 **사이** | **AND** |
+| **체크 없음** | 그 축은 **조건이 아니다** — 거르지 않는다 |
+| **모든 상태 체크**(2Depth 전부 + 「その他」) | 값이 있든 없든 전부 허용 = **조건이 아니다** |
+| 그 외 | 체크한 2Depth 와 (켜졌다면) 「その他」를 그 축의 OR 조건으로 보낸다 |
 
-초기 상태는 화면상 **전부 체크**이며, 조건으로도 전부 체크와 같게 다룬다.
+- **화면 첫 진입은 전체 해제**, 목록은 전체 데이터. 검색어 3자 미만 · 검색어 `[x]` 도 이 상태로 초기화한다.
+- 그래서 **전체 해제와 전체 선택은 모두 전체 데이터**다. 「その他」가 있어 이 동치가 성립한다.
+- 판정은 축 단위 빌더 `buildFacetConditionParams`(클라이언트)와 `resolveFacetConditions`(서버)가 한다.
+- 예외처리 ③(공개 자료 0건 선택지는 조건에서 제외)은 유지된다.
 
-### 6.2 상태 표현
+### 6.2 가상 선택지 「その他」
 
-`facetCategoryIds: number[] | null`
+- 축마다 붙는 **가상 선택지**다. 카테고리 마스터에 항목을 만들지 않는다. 체크하면 **그 축에 분류가 하나도 연결되지 않은 자료**를 같은 축의 OR 분기로 포함한다.
+- 파라미터는 `facetNoneAxisIds`(1Depth 축 id) — 2Depth id 를 받는 `facetCategoryIds` 와 섞을 수 없어 분리했다. 자료일람 · 제품일람 · 자동완성이 같은 조건을 받는다.
+- 전체 선택/해제 · 축별 전체 선택/해제는 「その他」까지 함께 토글한다.
+- 검색하면 결과 기준으로 「その他」도 자동 체크된다. 검색이 만든 체크는 **표시 전용**이라 조건으로 되걸지 않는다(#2748).
+- 마이그레이션이 없다. 2Depth 가 비어 있는 것과 「該当なし」 항목이 들어 있는 것은 같은 상태이므로 데이터를 채우지 않고 조건으로 번역한다.
+- 실제 2Depth 「その他」 카테고리는 같은 이름이 둘 보이지 않도록 정리했다(개발 DB 2026-11-12, 연결은 백업 후 제거). **운영 배포 시 같은 정리가 필요하다.**
 
-| 값 | 의미 | 화면 |
-|---|---|---|
-| `null` | 미설정(초기) | 전부 체크 |
-| `[]` | 사용자가 전부 해제 | 전부 해제 |
-| 그 외 | 체크된 id | 그대로 |
+### 6.3 상태 표현
 
-`null` 과 `[]` 는 **서버 조건으로는 같고 화면 표시만 다르다.** 둘을 합치면 「전부 해제」 버튼이 듣지 않는 것처럼 보인다.
-전체 id 를 state 에 채우지 않는 이유 — 축 데이터가 비동기라 `useEffect` 안 setState 가 필요해지고(React Compiler 금지), 서버 전송에도 불리하다.
+`facetCategoryIds: number[] | null` + `facetNoneAxisIds: number[]`
 
-### 6.3 알려진 영향
+| 값 | 의미 |
+|---|---|
+| `[]` | 전부 해제 (초기 상태) |
+| `null` | 2Depth 전부 체크 — 「その他」 상태와 함께 축별로 판정한다 |
+| 그 외 | 체크된 2Depth id |
 
-조건이 걸린 축은 **그 축에 분류가 없는 자료를 탈락**시킨다. 개발 DB 기준 `資料分類` 는 3,252건 중 50건에만 연결돼 있어, 전 축을 조건으로 쓰면 28건까지 줄어든다.
-**규칙의 문제가 아니라 카테고리 데이터 미정리 문제**다 — 자료에 분류를 채우면 해소된다.
+`null` 은 더 이상 「조건 없음」을 뜻하지 않는다. 「その他」가 꺼진 채 2Depth 만 전부 켠 축은 「그 축에 값이 있는 자료」라는 조건이다.
+옛 형식의 sessionStorage 값(`facetNoneAxisIds` 없음)의 `null` 은 「조건 없음」이었으므로 복원 시 `[]` 로 옮긴다.
+
+### 6.4 등록 · 수정 시 카테고리
+
+운영(main)과 같이 **카테고리 아무거나 1개 이상**이다(「カテゴリを1つ以上選択してください。」). 10-14 에 도입했던 축별 필수(`content-required-axes.ts`)는 「その他」가 같은 문제를 대신하게 되어 **철회**했다(2026-11-12).
 
 ---
 
@@ -263,7 +277,7 @@ export function isInternalOnlyContent(targets: { roleCode: string | null }[]): b
 1. **`探し方` 카드** — `資料から探す` / `製品から探す`. 기본 **제품에서 찾기**
 2. **`カテゴリ` 헤더** — `すべて選択` / `すべて解除`
 3. **`型番（製品一覧）` 축** — 제품일람 모드에서만. 카테고리별 **기본 10건**, 초과 시 `すべて表示`
-4. **동적 분류축** — `resolveVisibleAxes()` 결과 순서(카테고리 `sortOrder`)
+4. **동적 분류축** — `resolveFilterAxes()` 결과 순서(카테고리 `sortOrder`). 축마다 끝에 가상 선택지 「その他」
 5. **관리자 전용 필터 3개** — `掲示対象` 셀렉트 · `社内会員の掲示のみ表示` 체크 · `担当部門`(복수선택)
 
 5번은 **`isInternal && view === "doc"`** 조건이다. 사내 직원만, 그리고 자료에서 찾기 모드에서만.
@@ -327,7 +341,7 @@ export function isInternalOnlyContent(targets: { roleCode: string | null }[]): b
 | 3 | 형번 API | `src/app/api/product-models/**` |
 | 4 | 제품 API | `src/app/api/products/**` |
 | 5 | 자동완성 API | `src/app/api/search/suggest/route.ts` |
-| 6 | 판정 모듈 | `src/lib/{product-model,content-search,content-visibility,content-required-axes,content-internal-only}.ts` |
+| 6 | 판정 모듈 | `src/lib/{product-model,content-search,content-visibility,content-internal-only}.ts` |
 | 7 | 형번관리 화면 | `src/app/admin/product-models/`, `src/components/admin/product-models/**` |
 | 8 | 제품상세 화면 | `src/app/products/[id]/`, `src/components/products/product-detail.tsx` |
 | 9 | 목록 개편 | `src/components/contents/list/{contents-contents,contents-facets,contents-facet-utils,contents-search,contents-search-suggest,contents-table}.tsx` |
@@ -342,3 +356,4 @@ export function isInternalOnlyContent(targets: { roleCode: string | null }[]): b
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2026-10-23 | 최초 작성 — Phase 1~9 + 목업 v0.94 추가 반영분(사내전용 행 배경색·카테고리 적색·관리자 필터 복원·폭 98%·축 결합 규칙)까지 반영 | CK |
+| 1.1 | 2026-11-13 | §6 분류축 결합 규칙을 2026-11-12 회의 확정안으로 교체(전체 해제 시작 · 가상 선택지 「その他」 · 축 단위 조건 · 축별 필수 철회). 원칙 3번을 필터/컬럼 기준 분리로 정정(#2781). 판정 모듈 목록에서 `content-required-axes.ts` 제거 | CK |

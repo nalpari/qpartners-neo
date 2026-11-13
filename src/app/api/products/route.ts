@@ -11,6 +11,7 @@ import {
 } from "@/lib/content-search";
 import {
   publishedTargetFilter,
+  resolveAvailableNoneAxes,
   resolveFacetConditions,
 } from "@/lib/content-visibility";
 import { logError } from "@/lib/log-error";
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
       keyword,
       keywordOp,
       facetCategoryIds,
+      facetNoneAxisIds,
       productModelIds,
       sortField,
       sortDir,
@@ -70,7 +72,7 @@ export async function GET(request: NextRequest) {
     const emptyResponse = NextResponse.json({
       data: [],
       meta: { total: 0, page, pageSize, totalPages: 0 },
-      ...(facets && { availableFacets: { productModelIds: [], categoryIds: [] } }),
+      ...(facets && { availableFacets: { productModelIds: [], categoryIds: [], noneAxisIds: [] } }),
     });
 
     // 비사내 호출 **전체**에 적용한다 (2026-10-29 사용자 결정). 이 경로는 키워드가 없어도
@@ -100,11 +102,15 @@ export async function GET(request: NextRequest) {
     // 체크된 축만 조건이 된다 — 체크가 없으면 빈 조건이다 (거르지 않는다).
     // 전부 체크(①)는 클라이언트가 `facetCategoryIds` 를 보내지 않아 여기서 빈 조건이 된다.
     // `scope` 는 예외처리 ③ — 공개 자료가 0건인 선택지를 조건에서 뺀다 (Redmine #2745).
-    const facetConditions = await resolveFacetConditions(facetCategoryIds ?? [], {
-      internal,
-      roleCode: user ? user.role : null,
-      now,
-    });
+    const facetConditions = await resolveFacetConditions(
+      facetCategoryIds ?? [],
+      {
+        internal,
+        roleCode: user ? user.role : null,
+        now,
+      },
+      facetNoneAxisIds ?? [],
+    );
     // 분류 체크는 있었는데 ③ 이 전부 걸러 조건이 0개가 된 경우 — 조회하지 않고 0건이다.
     // 「조건 없음」(= 전부 체크, ①)과 구분된다.
     if (facetConditions.unsatisfiable) return emptyResponse;
@@ -223,16 +229,20 @@ export async function GET(request: NextRequest) {
     // ⚠️ 여기서 나온 체크를 **다시 조회 조건으로 걸면 안 된다.** 자료일람과 같은 이유다 —
     // 어떤 축이 비어 있는 자료·형번이 그 축이 조건이 되는 순간 탈락해, 검색이 찾아낸 것을
     // 자동 체크가 도로 숨긴다(#2748). 클라이언트가 `facetFromSearch` 로 구분한다.
+    // 분류값과 「その他」는 **같은 자료 집합**(결과 형번에 걸린 자료)에서 센다.
+    const facetContentIds = facets ? [...new Set(links.map((l) => l.contentId))] : [];
     const availableFacets = facets
       ? {
           productModelIds: [...agg.keys()],
           categoryIds: (
             await prisma.contentCategory.findMany({
-              where: { contentId: { in: [...new Set(links.map((l) => l.contentId))] } },
+              where: { contentId: { in: facetContentIds } },
               select: { categoryId: true },
               distinct: ["categoryId"],
             })
           ).map((r) => r.categoryId),
+          /** 결과 중 그 축에 분류가 없는 자료가 있는 1Depth 축 — 「その他」 자동 체크용 */
+          noneAxisIds: await resolveAvailableNoneAxes({ id: { in: facetContentIds } }),
         }
       : null;
 
