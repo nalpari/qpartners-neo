@@ -361,14 +361,14 @@ export function ContentsSearch({
 
             보더는 기본/hover/focus 3상태 모두 투명으로 덮는다 — 한 상태만 빠뜨리면
             마우스오버·클릭 때만 회색 테두리가 튀어나온다. 포커스 표시는 outline 으로 유지. */}
-        <div className="w-[110px] shrink-0 [&>div>button]:h-[60px] [&>div>button]:rounded-[8px] [&>div>button]:pl-5 [&>div>button]:pr-4 [&>div>button]:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] [&>div>button]:border-transparent [&>div>button:hover]:border-transparent [&>div>button:focus]:border-transparent [&>div>button:focus-visible]:[outline:2px_solid_#246097]">
+        <div data-guide="keyword-op" className="w-[110px] shrink-0 [&>div>button]:h-[60px] [&>div>button]:rounded-[8px] [&>div>button]:pl-5 [&>div>button]:pr-4 [&>div>button]:shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] [&>div>button]:border-transparent [&>div>button:hover]:border-transparent [&>div>button:focus]:border-transparent [&>div>button:focus-visible]:[outline:2px_solid_#246097]">
           <SelectBox
             options={KEYWORD_OP_OPTIONS}
             value={keywordOp}
             onChange={(v) => handleKeywordOpChange(v === "OR" ? "OR" : "AND")}
           />
         </div>
-        <div className="flex flex-1 min-w-0 items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">
+        <div data-guide="keyword" className="flex flex-1 min-w-0 items-start bg-white rounded-[8px] shadow-[0px_6px_32px_-8px_rgba(0,0,0,0.05)] overflow-hidden h-[60px]">
           <div className="flex flex-1 min-w-0 items-center h-[60px] pl-5">
             <input
               ref={keywordInputRef}
