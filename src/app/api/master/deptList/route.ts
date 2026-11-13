@@ -8,8 +8,8 @@ import { qspDeptListResponseSchema } from "@/lib/schemas/master";
 
 // GET /api/master/deptList — QSP 担当部門 목록 (콘텐츠 검색 필터의 부서 dropdown)
 //
-// 권한: CONT_LIST.canRead 매트릭스 가드 — 콘텐츠 목록 화면에 종속된 부서 dropdown 이므로
-// 콘텐츠 목록 read 권한을 그대로 따른다. 종전 requireAdmin 하드코딩 분기는 폐지
+// 권한: CONTENT.canRead 매트릭스 가드 — 다른 콘텐츠 API(`/api/contents*`)와 같이
+// 콘텐츠 메뉴(1-Level) 권한을 따른다. 종전 requireAdmin 하드코딩 분기는 폐지
 // (2026-05-08 정책 — 권한관리 매트릭스 단일 진실).
 // loginId 는 클라이언트 페이로드가 아닌 인증 세션의 userId 를 그대로 QSP 에 전달 — 위조 불가.
 // 응답은 `/codes/lookup` 패턴과 일관된 `{ data: [{ deptCd, deptNm }] }` 형태로 정규화하여,
@@ -20,8 +20,8 @@ const QSP_TIMEOUT_MS = 10_000;
 
 export async function GET(request: NextRequest) {
   try {
-    // 1) 매트릭스 가드 — CONT_LIST.canRead 보유자만 QSP 부서 목록 조회 허용 (fail-closed)
-    const auth = await requireMenuPermission(request.headers, "CONT_LIST", "read");
+    // 1) 매트릭스 가드 — CONTENT.canRead 보유자만 QSP 부서 목록 조회 허용 (fail-closed)
+    const auth = await requireMenuPermission(request.headers, "CONTENT", "read");
     if (auth instanceof NextResponse) return auth;
     const { user } = auth;
 

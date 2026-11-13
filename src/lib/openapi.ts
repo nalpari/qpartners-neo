@@ -4140,11 +4140,11 @@ export const openApiSpec: OpenAPIV3.Document = {
     "/master/deptList": {
       get: {
         tags: ["Master"],
-        summary: "부서(担当部門) 목록 조회 (CONT_LIST.read 매트릭스 가드)",
+        summary: "부서(担当部門) 목록 조회 (CONTENT.read 매트릭스 가드)",
         description:
           "QSP 부서 마스터 조회. 콘텐츠 검색 화면의 担当部門 셀렉트 옵션용. " +
-          "**권한**: CONT_LIST.canRead 매트릭스 가드 — 콘텐츠 목록 화면에 종속된 dropdown 이므로 " +
-          "콘텐츠 목록 read 권한을 그대로 따른다 (2026-05-08 정책 — 권한관리 매트릭스 단일 진실). " +
+          "**권한**: CONTENT.canRead 매트릭스 가드 — 다른 콘텐츠 API 와 같이 콘텐츠 메뉴(1-Level) " +
+          "read 권한을 따른다 (2026-05-08 정책 — 권한관리 매트릭스 단일 진실). " +
           "loginId 는 인증 세션의 userId 를 그대로 사용 (클라이언트 페이로드 아님). " +
           "QSP 의 result envelope 은 노출하지 않고 `{ data: [{ deptCd, deptNm }] }` 형태로 정규화.",
         responses: {
