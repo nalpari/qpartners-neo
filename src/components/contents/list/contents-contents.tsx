@@ -1215,24 +1215,24 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             <ContentsModeSwitch view={searchParams.view} onViewChange={handleViewChange} />
           </div>
           <div data-guide="facets">
-          <ContentsFacets
-            isInternal={isInternal}
-            categories={categories}
-            view={searchParams.view}
-            selectedCategoryIds={searchParams.facetCategoryIds}
-            selectedProductModelIds={searchParams.productModelIds}
-            productAxis={productAxis}
-            isProductAxisEnabled={isProductAxisEnabled}
-            roleCode={searchParams.roleCode}
-            departments={searchParams.departments}
-            internalOnly={searchParams.internalOnly}
-            onCategoryIdsChange={handleFacetCategoryIdsChange}
-            onProductModelIdsChange={handleProductModelIdsChange}
-            onAllAxesChange={handleAllAxesChange}
-            onRoleCodeChange={handleRoleCodeChange}
-            onDepartmentsChange={handleDepartmentsChange}
-            onInternalOnlyChange={handleInternalOnlyChange}
-          />
+            <ContentsFacets
+              isInternal={isInternal}
+              categories={categories}
+              view={searchParams.view}
+              selectedCategoryIds={searchParams.facetCategoryIds}
+              selectedProductModelIds={searchParams.productModelIds}
+              productAxis={productAxis}
+              isProductAxisEnabled={isProductAxisEnabled}
+              roleCode={searchParams.roleCode}
+              departments={searchParams.departments}
+              internalOnly={searchParams.internalOnly}
+              onCategoryIdsChange={handleFacetCategoryIdsChange}
+              onProductModelIdsChange={handleProductModelIdsChange}
+              onAllAxesChange={handleAllAxesChange}
+              onRoleCodeChange={handleRoleCodeChange}
+              onDepartmentsChange={handleDepartmentsChange}
+              onInternalOnlyChange={handleInternalOnlyChange}
+            />
           </div>
         </div>
 
@@ -1278,7 +1278,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
           />
         </div>
       </div>
-      {/* 첫 진입 1회 가이드 — 위 data-guide 표시 위치에 말풍선을 단다 */}
+      {/* 첫 진입 1회 가이드 — data-guide 앵커(이 파일 + contents-search.tsx)에 말풍선을 단다 */}
       <ContentsGuideTour />
     </main>
   );
