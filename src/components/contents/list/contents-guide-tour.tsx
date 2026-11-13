@@ -8,11 +8,11 @@ const STORAGE_KEY = "qp-contents-guide-seen";
 
 /** `data-guide` 값 ↔ 말풍선 문구. 대상이 화면에 없으면(모바일 숨김 등) 그 단계는 건너뛴다. */
 const STEPS = [
-  { key: "mode", title: "探し方の切り替え", body: "資料から探すか、製品(型番)から探すかを切り替えます。" },
-  { key: "facets", title: "フィルター", body: "カテゴリにチェックを入れると、該当する資料だけに絞り込めます。" },
-  { key: "keyword-op", title: "AND / OR", body: "複数キーワードを「すべて含む(AND)」か「いずれかを含む(OR)」で検索するか切り替えます。" },
-  { key: "keyword", title: "キーワード検索", body: "キーワードを入力すると候補が表示され、Enterで検索します。スペースで区切って複数入力できます。" },
-  { key: "list", title: "コンテンツ一覧", body: "タイトルをクリックすると資料の詳細を表示します。" },
+  { key: "mode", title: "探し方を選ぶ", body: "資料から探すか、製品（型番）から探すかを選べます。" },
+  { key: "facets", title: "カテゴリで絞り込む", body: "カテゴリにチェックを入れると、該当する資料だけを表示できます。複数選ぶこともできます。" },
+  { key: "keyword-op", title: "AND／OR検索", body: "キーワードを複数入れたときの検索条件を選べます。\nAND：すべてのキーワードを含む資料\nOR：どれか1つでも含む資料" },
+  { key: "keyword", title: "キーワード検索", body: "入力すると候補が表示され、Enterキーで検索できます。\nキーワードを複数入れるときは、スペースで区切ってください。" },
+  { key: "list", title: "資料一覧", body: "タイトルをクリックすると、資料の詳細を確認できます。" },
 ] as const;
 
 const PAD = 6;
@@ -144,7 +144,7 @@ export function ContentsGuideTour() {
         <h2 id="contents-guide-title" className="mt-1 text-[15px] font-bold text-[#e9711c]">
           {step.title}
         </h2>
-        <p className="mt-2 text-[13px] leading-[1.6] text-[#45576f]">{step.body}</p>
+        <p className="mt-2 whitespace-pre-line text-[13px] leading-[1.6] text-[#45576f]">{step.body}</p>
         <div className="mt-4 flex items-center justify-between">
           <button type="button" onClick={finish} className="text-[13px] text-[#999] underline">
             スキップ
