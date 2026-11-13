@@ -247,7 +247,7 @@ TO-BE Q.Partners-neo (서비스 운영)
 | is_internal_only | BOOLEAN | 사내회원 전용 Y/N | 카테고리 관리 (p.53 #9), 사내전용 분류는 **2Depth 만** 적색 표시(1Depth 는 기본색), 권한자에게만 노출. 1Depth 설정은 하위 전체 토글이며 표시값은 자식 전원 Y 여부에서 파생 |
 | sort_order | INT | 표시 순서 | 카테고리 관리 (p.53 #10), 같은 Depth 내 정렬 |
 | is_active | BOOLEAN | 사용 여부 Y/N | 카테고리 관리 (p.53 #10), 비활성화 시 검색/등록 화면에서 숨김 |
-| is_visible | BOOLEAN | 목록 표시 여부 Y/N (1Depth 전용) | 콘텐츠 목록의 분류 컬럼·좌측 분류축 노출 여부. 2Depth 에는 적용되지 않는다 |
+| is_visible | BOOLEAN | 목록 표시 여부 Y/N (1Depth 전용) | 콘텐츠 목록(제품상세 자료 목록 포함)의 분류 컬럼 노출 여부. 좌측 분류축 노출은 `is_active` 만 따른다(Redmine #2781). 2Depth 에는 적용되지 않는다 |
 | is_product_list | BOOLEAN | 제품일람 노출 대상 Y/N | **검색고도화 REQ-008** 신규. 켜면 검색화면 제품일람 탭의 `型番` 축과 형번관리의 카테고리 선택지에 나타난다. 형번은 2Depth 에만 붙으므로 1Depth 값은 하위 전체 토글 용도 |
 | created_at | DATETIME | 등록일시 | - |
 | created_by | VARCHAR(255)? | 등록자 ID | 감사 추적용 |
