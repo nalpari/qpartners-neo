@@ -28,6 +28,14 @@ function readSeen(): boolean {
   }
 }
 
+function markSeen() {
+  try {
+    localStorage.setItem(STORAGE_KEY, "1");
+  } catch {
+    // 저장 실패 시에도 이번 화면에서는 닫는다
+  }
+}
+
 function findTarget(key: string): HTMLElement | null {
   for (const el of document.querySelectorAll<HTMLElement>(`[data-guide="${key}"]`)) {
     const r = el.getBoundingClientRect();
@@ -43,6 +51,7 @@ export function ContentsGuideTour() {
   const [pos, setPos] = useState(0);
   const [rects, setRects] = useState<(DOMRect | null)[]>([]);
   const nextRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const open = !seen && !closed;
 
   const visible = STEPS.map((s, i) => ({ ...s, rect: rects[i] ?? null })).filter((s) => s.rect);
@@ -80,13 +89,31 @@ export function ContentsGuideTour() {
   }, [stepKey]);
 
   const finish = () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // 저장 실패 시에도 이번 화면에서는 닫는다
-    }
+    markSeen();
     setClosed(true);
   };
+
+  // 열려 있는 동안 모달처럼 동작 — 배경을 inert 로 막아 Tab 이 뒤 화면으로 새지 않게 하고,
+  // Esc 는 document 에서 받는다(딤 영역 클릭으로 포커스가 body 로 빠져도 닫히도록).
+  const shown = open && !!step?.rect;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!shown || !root) return;
+    const others = [...document.body.children].filter(
+      (el): el is HTMLElement => el !== root && el instanceof HTMLElement && !el.inert,
+    );
+    others.forEach((el) => (el.inert = true));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      markSeen();
+      setClosed(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      others.forEach((el) => (el.inert = false));
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [shown]);
 
   if (!open || !step?.rect) return null;
 
@@ -112,11 +139,11 @@ export function ContentsGuideTour() {
 
   return createPortal(
     <div
+      ref={rootRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="contents-guide-title"
       className="fixed inset-0 z-[9999]"
-      onKeyDown={(e) => e.key === "Escape" && finish()}
     >
       {/* 스포트라이트 — 큰 그림자로 주변을 어둡게 덮고 대상만 뚫어 보인다. 클릭은 막는다. */}
       <div
