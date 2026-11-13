@@ -136,6 +136,16 @@ export async function withPage(options, body) {
       { name: "qp-auth-token", value: token, domain: "localhost", path: "/" },
     ]);
   }
+  // 콘텐츠 화면 첫 진입 가이드(`contents-guide-tour.tsx`, PR #313)는 화면 전체를 덮는 레이어라
+  // 열려 있으면 모든 클릭이 막힌다. 스펙은 매번 새 컨텍스트로 시작하므로 「이미 봤음」을 미리 넣는다.
+  // 키는 컴포넌트의 `STORAGE_KEY` 와 같아야 한다.
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem("qp-contents-guide-seen", "1");
+    } catch {
+      // 저장소가 막힌 환경 — 가이드가 뜨면 해당 스펙이 실패로 드러난다
+    }
+  });
   const page = await context.newPage();
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));

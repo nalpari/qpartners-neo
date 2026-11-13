@@ -1,26 +1,16 @@
-// 좌측영역(분류축) 필터 — 2026-11-03 회의 확정 「예외처리 3건」 모델.
+// 좌측영역(분류축) 필터 — 2026-11-12 회의 확정 모델.
 //
-//   ① 전부 체크(= 좌측영역 전체 선택) → `facetCategoryIds` 를 **보내지 않는다.** 분류 조건
-//      없이 키워드·게시상태·권한·노출기간만 적용된 전체가 나온다 (Redmine #2747).
-//   ② 전 축 전부 해제 → **조회하지 않고 0건.** 목록·총건수·페이지네이션을 함께 비운다.
-//   ③ 공개 자료가 한 건도 연결되지 않은 선택지는 **조건에서 제외**(체크는 화면에 유지,
-//      Redmine #2745).
+//   - 축마다 2Depth 선택지 + 「その他」(가상 선택지)가 있고, **체크한 축만 조건**이다.
+//   - 화면 첫 진입·검색어 3자 미만·검색어 [x] → 좌측 **전체 해제**, 목록은 전체 데이터.
+//   - 「すべて解除」 → 조건 없음 = 전체 데이터(초기와 같다). 종전 「조회 없이 0건」(②)은 폐지.
+//   - 「すべて選択」(「その他」 포함) → 각 축이 값 있음·없음을 모두 허용 = 전체 데이터.
+//   - 공개 자료가 한 건도 연결되지 않은 선택지는 **조건에서 제외**(체크는 화면에 유지, ③,
+//     Redmine #2745).
 //
-// 그 외(일부 체크)는 종전대로 축 안 OR / 축 사이 AND 이며, **전부 해제한 축만 조건에서
-// 빠진다** (계획서 §27.3, 2026-10-23 확정).
+// 「その他」는 그 축에 분류가 하나도 없는 자료를 같은 축의 OR 로 더한다. 그래서 한 축에서
+// 「2Depth 전부 체크」와 「その他」 건수의 합은 전체 건수와 같아야 한다(분할).
 //
-// ⚠️ ① 때문에 「초기 진입」과 「한 칸만 끈 상태」 사이에 **큰 건수 차이**가 있다. 조건이 걸린
-// 축은 그 축에 분류가 없는 자료를 탈락시키는데, 개발 DB 는 표시 4축을 모두 가진 published
-// 자료가 2,461건 중 24건뿐이다(2026-11-02 실측). 이 급락은 회의에서 **수용하기로 결정**했다 —
-// 그래서 이 스펙은 「해제하면 넓어진다」를 **초기 건수와 비교하지 않는다.**
-//
-// ③ 은 「연결 자료 0건인 선택지」를 **집계로 찾아서** 검증한다 — 개발 DB 에 그런 선택지가
-// 없으면 SKIP 이다. 카테고리 명칭은 코드에 박지 않는다(파일 상단 주석).
-//
-// 이 스펙은 **절대 건수를 단언하지 않고 상대 비교만** 한다 — ② 의 0건만 예외다.
-//
-// 2026-10-13 의 옛 모델(초기 전부 해제 / 체크한 축만 조건)과 2026-10-23 모델(전부 체크도
-// AND 조건)을 전제한 케이스를 교체했다.
+// 이 스펙은 **절대 건수를 단언하지 않고 상대 비교만** 한다.
 //
 // 카테고리 **명칭을 코드에 박지 않는다.** 폐지된 `業務分類`·`内容分類` 상수로 화면이 깨진
 // 선례가 있어, 축과 선택지는 DOM 순서로 집는다.
@@ -42,6 +32,16 @@ import {
 } from "./harness.mjs";
 
 /**
+ * 좌측 분류축 = 카테고리관리 **사용 여부** Y 인 1Depth (`resolveFilterAxes` 와 같은 기준).
+ * `isVisible`(一覧表示)은 목록 컬럼 전용이라 보지 않는다(Redmine #2781). 제품상태 축(`PRDST`)은
+ * 형번 속성으로 옮겨져 화면 어디에도 나오지 않는다. 슈퍼관리자 토큰이라 사내전용도 포함된다.
+ */
+const LEGACY_PRODUCT_STATUS_AXIS_CODE = "PRDST";
+function filterAxes(tree) {
+  return (tree ?? []).filter((a) => a.categoryCode !== LEGACY_PRODUCT_STATUS_AXIS_CODE);
+}
+
+/**
  * 분류축 블록들 — `aside` 직계 `div` 중 `h2`(축 제목)를 가진 것.
  * 형번축·관리자 전용 필터는 `section` 이므로 걸리지 않는다.
  */
@@ -49,9 +49,17 @@ function axisBlocks(page) {
   return page.locator("aside > div").filter({ has: page.locator("h2") });
 }
 
-/** 축 블록 안의 체크박스 — sr-only input */
+/**
+ * 축 블록 안의 **2Depth 선택지** 체크박스 — 가상 선택지 「その他」는 뺀다.
+ * 실제 2Depth 에도 「その他」가 있어 텍스트로는 못 가른다 — `data-facet-none` 래퍼로 가른다.
+ */
 function axisChecks(block) {
-  return block.locator('input[type="checkbox"]');
+  return block.locator('div:not([data-facet-none]) > label input[type="checkbox"]');
+}
+
+/** 축 블록의 「その他」 체크박스 */
+function noneCheck(block) {
+  return block.locator('[data-facet-none] input[type="checkbox"]');
 }
 
 function axisButton(page, block, name) {
@@ -95,7 +103,7 @@ async function enter(page) {
   return total;
 }
 
-test("초기 진입은 분류축이 전부 체크로 보이고 건수가 나온다", async () => {
+test("초기 진입은 분류축이 전부 해제로 보이고 건수가 나온다", async () => {
   await withPage({ role: "super" }, async (page) => {
     await enter(page);
 
@@ -105,44 +113,38 @@ test("초기 진입은 분류축이 전부 체크로 보이고 건수가 나온�
 
     for (let i = 0; i < axisCount; i += 1) {
       const block = blocks.nth(i);
-      const total = await axisChecks(block).count();
-      if (total === 0) continue; // 선택지 없는 축(`-` 표시)
       const checked = await block.locator('input[type="checkbox"]:checked').count();
       const title = await block.locator("h2").first().innerText();
-      assertEqual(checked, total, `축 「${title}」 가 전부 체크가 아닙니다`);
+      assertEqual(checked, 0, `축 「${title}」 에 체크가 남아 있습니다 — 초기 상태는 전체 해제입니다`);
     }
   });
 });
 
-test("초기 진입은 분류 조건이 걸리지 않는다 (예외처리 ①)", async () => {
-  // 전부 체크를 전체 id 로 펼쳐 보내면 그 축에 분류가 없는 자료가 AND 로 탈락한다 —
-  // 초기 화면이 2,461건 중 24건으로 보였던 Redmine #2747 이다.
-  // 화면 초기 건수가 **분류 조건을 전혀 안 건 API 건수와 같은지**로 ① 을 고정한다.
+/** 분류 조건을 전혀 안 건 API 건수 — 전체 해제·전체 선택의 기준값 */
+async function unfilteredTotal() {
   const token = await signToken("super");
   const res = await fetch(`${BASE_URL}/api/contents?page=1&pageSize=1`, {
     headers: { cookie: `qp-auth-token=${token}` },
   });
   assertEqual(res.status, 200, "분류 조건 없는 조회가 실패했습니다");
-  const unfiltered = (await res.json()).meta?.total;
-  assert(
-    typeof unfiltered === "number" && unfiltered > 0,
-    `분류 조건 없는 전체 건수를 읽지 못했습니다 — ${unfiltered}`,
-  );
+  const total = (await res.json()).meta?.total;
+  assert(typeof total === "number" && total > 0, `분류 조건 없는 전체 건수를 읽지 못했습니다 — ${total}`);
+  return total;
+}
 
+test("초기 진입은 분류 조건이 걸리지 않는다", async () => {
+  // 전체 해제는 「체크한 축이 없다」는 뜻이라 조건이 없다. 화면 초기 건수가 분류 조건을
+  // 전혀 안 건 API 건수와 같은지로 고정한다.
+  const unfiltered = await unfilteredTotal();
   await withPage({ role: "super" }, async (page) => {
     const initial = await enter(page);
-
-    assertEqual(
-      initial,
-      unfiltered,
-      "초기 진입에 분류 조건이 걸렸습니다 — facetParams 가 전부 체크를 전체 id 로 펼치고 있습니다",
-    );
+    assertEqual(initial, unfiltered, "초기 진입에 분류 조건이 걸렸습니다");
   });
 });
 
-test("축에서 선택지를 줄이면 좁혀지고, 전부 해제하면 다시 넓어진다", async () => {
+test("축에서 선택지를 좁히면 좁혀지고, 그 축을 전부 해제하면 다시 넓어진다", async () => {
   await withPage({ role: "super" }, async (page) => {
-    await enter(page);
+    const initial = await enter(page);
 
     const [axis] = await usableAxisIndexes(page, 1);
     assert(axis !== undefined, "선택지 2개 이상인 축이 없습니다");
@@ -151,11 +153,8 @@ test("축에서 선택지를 줄이면 좁혀지고, 전부 해제하면 다시 
     const narrowed = await narrowToFirst(page, block);
     const released = await axisButton(page, block, "全解除");
 
-    assert(
-      released >= narrowed,
-      `전부 해제가 선택지 1개보다 좁습니다 — ${narrowed} → ${released}`,
-    );
-    assert(released > 0, "전부 해제 결과가 0건입니다");
+    assert(narrowed <= initial, `선택지 1개로 좁혔는데 늘었습니다 — ${initial} → ${narrowed}`);
+    assertEqual(released, initial, "축을 전부 해제했는데 초기(전체) 건수로 돌아오지 않습니다");
   });
 });
 
@@ -176,46 +175,85 @@ test("두 축을 함께 좁히면 AND 로 더 좁혀진다", async () => {
   });
 });
 
-test("「すべて解除」 는 조회 없이 0건이다 (예외처리 ②)", async () => {
-  // 종전에는 전 축이 조건에서 빠져 **초기보다 넓어졌다.** 11-03 회의에서 0건으로 확정했다.
+test("「その他」 를 켜면 그 축이 빈 자료가 OR 로 더해진다 (줄지 않는다)", async () => {
   await withPage({ role: "super" }, async (page) => {
-    const initial = await enter(page);
-    assert(initial > 0, `초기 건수가 0이라 ② 를 판정할 수 없습니다 — ${initial}`);
+    await enter(page);
 
-    // ② 는 조회 자체를 하지 않으므로 API 응답을 기다릴 필요가 없다 — 기본 10초 대기를 줄인다.
-    const cleared = await topButton(page, "すべて解除", { responseTimeout: 1_500 });
+    const [axis] = await usableAxisIndexes(page, 1);
+    assert(axis !== undefined, "선택지 2개 이상인 축이 없습니다");
+    const block = axisBlocks(page).nth(axis);
 
-    assertEqual(
-      cleared,
-      0,
-      "「すべて解除」 가 0건이 아닙니다 — 전 축이 조건에서 빠져 오히려 넓어졌습니다",
+    const narrowed = await narrowToFirst(page, block);
+    const withNone = await actAndWait(page, () => domClick(noneCheck(block)));
+
+    assert(
+      withNone >= narrowed,
+      `「その他」를 켰는데 줄었습니다 — ${narrowed} → ${withNone}. OR 가 아니라 조건이 뒤집혔습니다`,
     );
   });
 });
 
-test("「すべて解除」 → 「すべて選択」 은 초기 건수로 돌아온다", async () => {
-  // ② 로 비운 뒤 ① 로 복귀하는 왕복. 어느 쪽이 깨져도 초기 건수와 어긋난다.
+test("「すべて解除」 는 조건 없음 = 초기(전체)와 같은 건수다", async () => {
+  // 종전 ② 「조회 없이 0건」은 2026-11-12 회의로 폐지됐다.
   await withPage({ role: "super" }, async (page) => {
     const initial = await enter(page);
+    const [axis] = await usableAxisIndexes(page, 1);
+    assert(axis !== undefined, "선택지 2개 이상인 축이 없습니다");
+    await narrowToFirst(page, axisBlocks(page).nth(axis));
 
-    await topButton(page, "すべて解除", { responseTimeout: 1_500 });
-    const restored = await topButton(page, "すべて選択");
-
-    assertEqual(restored, initial, "전체 해제 후 전체 선택이 초기 건수로 복귀하지 않습니다");
+    const cleared = await topButton(page, "すべて解除");
+    assertEqual(cleared, initial, "「すべて解除」 가 전체 건수가 아닙니다");
   });
 });
 
-test("「すべて選択」 은 미설정(초기)과 같은 조건이다", async () => {
-  // `null`(미설정)과 전부 체크는 **서버 조건이 같다** — `commitCategories` 가 전부 체크를
-  // `null` 로 정규화하고, ① 에 따라 둘 다 `facetCategoryIds` 를 보내지 않는다. 정규화 가드
-  // (`allCategoryIds.length > 0`)가 깨지면 여기서 건수가 튄다.
+test("「すべて選択」 은 「その他」까지 켜져 초기(전체)와 같은 건수다", async () => {
+  // 각 축의 「2Depth 전부 + その他」는 그 축의 모든 상태를 허용하므로 조건이 없다.
+  // 「その他」가 같이 켜지지 않으면 분류가 빈 자료가 빠져 초기보다 줄어든다.
   await withPage({ role: "super" }, async (page) => {
     const initial = await enter(page);
 
-    const after = await topButton(page, "すべて選択");
+    const selected = await topButton(page, "すべて選択");
+    assertEqual(selected, initial, "「すべて選択」 이 전체 건수가 아닙니다 — 「その他」가 함께 켜졌는지 확인");
 
-    assertEqual(after, initial, "「すべて選択」 이 미설정과 다른 건수를 냅니다");
+    const blocks = axisBlocks(page);
+    const axisCount = await blocks.count();
+    for (let i = 0; i < axisCount; i += 1) {
+      const block = blocks.nth(i);
+      if ((await noneCheck(block).count()) === 0) continue;
+      const title = await block.locator("h2").first().innerText();
+      assert(await noneCheck(block).isChecked(), `축 「${title}」 의 「その他」가 켜지지 않았습니다`);
+    }
   });
+});
+
+test("한 축의 「2Depth 전부」 + 「その他」 건수의 합은 전체와 같다 (API)", async () => {
+  // 「その他」 조건(그 축 연결 없음)과 2Depth 전부(그 축 연결 있음)는 자료를 둘로 나눈다.
+  // 합이 어긋나면 「その他」 번역(`none: { category: { parentId } }`)이 틀렸다는 신호다.
+  const token = await signToken("super");
+  const cookie = `qp-auth-token=${token}`;
+  const unfiltered = await unfilteredTotal();
+
+  const treeRes = await fetch(`${BASE_URL}/api/categories?activeOnly=true`, { headers: { cookie } });
+  const axes = filterAxes((await treeRes.json()).data);
+  assert(axes.length > 0, "표시 중인 분류축이 없어 판정할 수 없습니다");
+
+  const count = async (q) => {
+    const res = await fetch(`${BASE_URL}/api/contents?page=1&pageSize=1&${q}`, { headers: { cookie } });
+    assertEqual(res.status, 200, `조회 실패 — ${q}`);
+    return (await res.json()).meta?.total;
+  };
+
+  for (const axis of axes) {
+    const childIds = (axis.children ?? []).map((c) => c.id);
+    if (childIds.length === 0) continue;
+    const withValue = await count(`facetCategoryIds=${childIds.join(",")}`);
+    const withoutValue = await count(`facetNoneAxisIds=${axis.id}`);
+    assertEqual(
+      withValue + withoutValue,
+      unfiltered,
+      `축 「${axis.name}」: 값 있음 ${withValue} + 「その他」 ${withoutValue} ≠ 전체 ${unfiltered}`,
+    );
+  }
 });
 
 // 분류 컬럼 정렬은 Prisma 가 아니라 **raw SQL** 로 간다(`sortCategoryCode` 분기). 그래서
@@ -233,7 +271,7 @@ test("분류 정렬 + 키워드 조합이 500 이 되지 않는다", async () =>
   const treeRes = await fetch(`${BASE_URL}/api/categories?activeOnly=true`, {
     headers: { cookie },
   });
-  const axes = ((await treeRes.json()).data ?? []).filter((a) => a.isVisible !== false);
+  const axes = filterAxes((await treeRes.json()).data);
   assert(axes.length > 0, "표시 중인 분류축이 없어 판정할 수 없습니다");
   const axisCode = axes[0].categoryCode;
 
@@ -261,11 +299,11 @@ test("분류 정렬 + 키워드 조합이 500 이 되지 않는다", async () =>
 
 test("단독 선택이 전건을 반환하지 않는다 (예외처리 ③)", async () => {
   // ③ 은 공개 자료가 한 건도 없는 선택지를 조건에서 뺀다. 그 결과 **유효한 체크가 0개**가 되면
-  // 「전부 해제」와 같은 상태이므로 0건이다.
+  // 서버는 조회하지 않고 0건을 낸다(`unsatisfiable`) — 체크 1개인데 전건이 되면 안 된다.
   //
   // 처음 구현은 전건이었다 — 조건이 전부 걸러지면 `conditions: []` 가 되고 호출부가 그것을
   // 「조건 없음」으로 받아, **체크 1개만 켜진 상태로 published 전건**이 나왔다(2026-11-03 화면
-  // 확인에서 드러남). 「파라미터 미전송 = 전체 선택 = 전건」(①)과 구분되어야 한다.
+  // 확인에서 드러남). 「파라미터 미전송 = 조건 없음 = 전건」과 구분되어야 한다.
   //
   // 카테고리 명칭을 코드에 박지 않는다. 표시 축의 2Depth 를 **하나씩 단독으로** 걸어 보고,
   // 전체 건수와 **똑같은 결과**를 내는 선택지가 하나라도 있으면 FAIL 이다 — 그게 조건이
@@ -282,7 +320,7 @@ test("단독 선택이 전건을 반환하지 않는다 (예외처리 ③)", asy
     headers: { cookie },
   });
   assertEqual(treeRes.status, 200, "카테고리 트리 조회가 실패했습니다");
-  const axes = ((await treeRes.json()).data ?? []).filter((a) => a.isVisible !== false);
+  const axes = filterAxes((await treeRes.json()).data);
   const selectable = axes.flatMap((a) => (a.children ?? []).map((c) => c.id));
   assert(selectable.length > 0, "표시 축에 선택지가 없어 판정할 수 없습니다");
 
