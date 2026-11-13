@@ -21,6 +21,7 @@ import { CONTENT_SORT_FIELDS, type ContentSortField } from "@/lib/schemas/conten
 import { ContentsFacets, ContentsModeSwitch } from "./contents-facets";
 import type { ProductAxisGroup, ProductListRow } from "./contents-facet-utils";
 import { isProductAxisGroupActive, resolveVisibleAxes } from "./contents-facet-utils";
+import { ContentsGuideTour } from "./contents-guide-tour";
 import { ContentsSearch } from "./contents-search";
 import { ContentsTable, TARGETS_SORT_COL_ID } from "./contents-table";
 
@@ -1191,8 +1192,11 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
       {/* 모바일 상단 바 — 목업 v0.94 모바일(`assets/qp-mobile.js:152`)과 같은 구성:
           探し方 2버튼 옆에 `フィルタ` 열기 버튼. 데스크톱은 좌측 상설 사이드바가 대신한다. */}
       <div className="flex w-full items-stretch gap-[8px] lg:hidden">
-        <ContentsModeSwitch compact view={searchParams.view} onViewChange={handleViewChange} />
+        <div data-guide="mode" className="flex min-w-0 flex-1">
+          <ContentsModeSwitch compact view={searchParams.view} onViewChange={handleViewChange} />
+        </div>
         <button
+          data-guide="facets"
           type="button"
           onClick={() => setIsFacetOpenMobile((prev) => !prev)}
           className="flex shrink-0 items-center gap-[6px] rounded-[8px] border border-[#eaf0f6] bg-white px-4 py-3 font-['Noto_Sans_JP'] text-[14px] font-medium text-[#45576f]"
@@ -1207,9 +1211,10 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
           className={`${isFacetOpenMobile ? "flex" : "hidden"} flex-col gap-[14px] lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex`}
         >
           {/* 모바일은 위 상단 바가 같은 역할을 한다 — 패널 안에서 중복 노출하지 않는다 */}
-          <div className="hidden lg:block">
+          <div data-guide="mode" className="hidden lg:block">
             <ContentsModeSwitch view={searchParams.view} onViewChange={handleViewChange} />
           </div>
+          <div data-guide="facets">
           <ContentsFacets
             isInternal={isInternal}
             categories={categories}
@@ -1228,9 +1233,10 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
             onDepartmentsChange={handleDepartmentsChange}
             onInternalOnlyChange={handleInternalOnlyChange}
           />
+          </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-[10px] lg:col-start-2 lg:row-start-2 lg:gap-[18px]">
+        <div data-guide="list" className="flex min-w-0 flex-col gap-[10px] lg:col-start-2 lg:row-start-2 lg:gap-[18px]">
           {isProductAxisError && (
             <p className="font-['Noto_Sans_JP'] text-[13px] leading-[1.5] text-[#ff1a1a]">
               型番軸の読み込みに失敗しました。製品一覧の絞り込みが表示されない場合があります。
@@ -1272,6 +1278,8 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
           />
         </div>
       </div>
+      {/* 첫 진입 1회 가이드 — 위 data-guide 표시 위치에 말풍선을 단다 */}
+      <ContentsGuideTour />
     </main>
   );
 }
