@@ -5,6 +5,7 @@
 import { useState, useMemo } from "react";
 import { InputBox, SelectBox, Radio, Button, DatePicker } from "@/components/common";
 import { useTargetLabels } from "@/hooks/use-target-labels";
+import { formatJstDate } from "@/lib/jst-day";
 import type { MassMailSearchParams } from "./bulk-mail-types";
 
 interface BulkMailSearchProps {
@@ -13,6 +14,12 @@ interface BulkMailSearchProps {
   /** sessionStorage 복원값 초기 적용용. 부모(BulkMailContents)가 key prop 으로 리마운트하여
    *  복원 시점에 한 번 반영되도록 한다. 미지정 시 빈 폼으로 시작. */
   initialValues?: MassMailSearchParams;
+}
+
+function parseStoredDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00+09:00`) : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export function BulkMailSearch({ onSearch, onReset, initialValues }: BulkMailSearchProps) {
@@ -36,17 +43,10 @@ export function BulkMailSearch({ onSearch, onReset, initialValues }: BulkMailSea
   );
   const [authorQuery, setAuthorQuery] = useState(initialValues?.authorQuery ?? "");
   const [roleCode, setRoleCode] = useState(initialValues?.roleCode ?? "");
-  // ISO 문자열 → Date 역직렬화. 잘못된 형식이면 null.
-  const [startDate, setStartDate] = useState<Date | null>(() => {
-    if (!initialValues?.startDate) return null;
-    const d = new Date(initialValues.startDate);
-    return Number.isNaN(d.getTime()) ? null : d;
-  });
-  const [endDate, setEndDate] = useState<Date | null>(() => {
-    if (!initialValues?.endDate) return null;
-    const d = new Date(initialValues.endDate);
-    return Number.isNaN(d.getTime()) ? null : d;
-  });
+  // 저장된 검색 조건 → Date 역직렬화. 현재 형식은 JST 일자(YYYY-MM-DD),
+  // 이전 형식(ISO 일시)이 sessionStorage 에 남아 있어도 읽는다. 잘못된 형식이면 null.
+  const [startDate, setStartDate] = useState<Date | null>(() => parseStoredDate(initialValues?.startDate));
+  const [endDate, setEndDate] = useState<Date | null>(() => parseStoredDate(initialValues?.endDate));
 
   const handleSearch = () => {
     onSearch({
@@ -54,8 +54,9 @@ export function BulkMailSearch({ onSearch, onReset, initialValues }: BulkMailSea
       roleCode: roleCode || undefined,
       authorSearchType: authorQuery.trim() ? authorSearchType : undefined,
       authorQuery: authorQuery.trim() || undefined,
-      startDate: startDate ? startDate.toISOString() : undefined,
-      endDate: endDate ? endDate.toISOString() : undefined,
+      // 서버는 JST 일자(YYYY-MM-DD)만 받는다 — toISOString() 은 UTC 일시라 400 이 났다
+      startDate: startDate ? formatJstDate(startDate, "-") : undefined,
+      endDate: endDate ? formatJstDate(endDate, "-") : undefined,
     });
   };
 
