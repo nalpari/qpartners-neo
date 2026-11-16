@@ -18,6 +18,7 @@ import { logError } from "@/lib/log-error";
 import { cleanupAttachments } from "@/lib/mass-mail-utils";
 import type { PersistedAttachment } from "@/lib/mass-mail-utils";
 import { sanitizeContentHtml } from "@/lib/rich-editor/sanitize-html";
+import { buildDeliveryDateWhere, resolveDeliveryAt } from "@/lib/mass-mail/delivery-date";
 import { processMassMailSend } from "@/lib/mass-mail/send-processor";
 import { resolveSendSchedule, STATUS_SAVE_MESSAGE, type SavedStatus } from "@/lib/mass-mail/schedule";
 import { isInsideDir } from "@/lib/path-safety";
@@ -380,29 +381,41 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) {
-        where.createdAt.gte = new Date(`${startDate}T00:00:00+09:00`);
-      }
-      if (endDate) {
-        where.createdAt.lte = new Date(`${endDate}T23:59:59.999+09:00`);
-      }
+    // 配信日 기간 검색 — 발송일 → 예약일 → 등록일 순의 기준일 (화면설계서 대량메일발송 목록 「발송일」).
+    // 登録者 이름 검색이 이미 where.OR 를 쓰므로 덮어쓰지 않도록 AND 로 묶는다.
+    const deliveryDateWhere = buildDeliveryDateWhere(startDate, endDate);
+    if (deliveryDateWhere) {
+      where.AND = [deliveryDateWhere];
     }
 
-    const [totalCount, list] = await Promise.all([
-      prisma.massMail.count({ where }),
-      prisma.massMail.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          attachments: { select: { id: true } },
-          targets: { select: { roleCode: true } },
-        },
-      }),
-    ]);
+    // 정렬 — 「최근 발송 data 를 상위에 표시」. 기준일은 행마다 다른 컬럼에서 오므로
+    // Prisma orderBy 로 표현할 수 없다. 키 컬럼만 전부 읽어 配信日 내림차순(동률 id 내림차순)으로
+    // 정렬한 뒤 페이지 구간의 id 만 상세 조회한다. 대량메일은 발송 단위라 행 수가 작다.
+    const keys = await prisma.massMail.findMany({
+      where,
+      select: { id: true, sentAt: true, scheduledSendAt: true, createdAt: true },
+    });
+    const sortedKeys = keys
+      .map((k) => ({ id: k.id, deliveryAt: resolveDeliveryAt(k) }))
+      .sort((a, b) => b.deliveryAt.getTime() - a.deliveryAt.getTime() || b.id - a.id);
+    const totalCount = sortedKeys.length;
+    const pageIds = sortedKeys.slice((page - 1) * pageSize, page * pageSize).map((k) => k.id);
+
+    const pageRows = pageIds.length > 0
+      ? await prisma.massMail.findMany({
+          where: { id: { in: pageIds } },
+          include: {
+            attachments: { select: { id: true } },
+            targets: { select: { roleCode: true } },
+          },
+        })
+      : [];
+    const rowById = new Map(pageRows.map((row) => [row.id, row]));
+    // 키 조회와 상세 조회 사이에 삭제된 행은 건너뛴다
+    const list = pageIds.flatMap((id) => {
+      const row = rowById.get(id);
+      return row ? [row] : [];
+    });
 
     const mappedList = list.map((mail) => ({
       id: mail.id,

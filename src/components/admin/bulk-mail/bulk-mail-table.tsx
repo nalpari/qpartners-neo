@@ -94,6 +94,7 @@ export function BulkMailTable({ searchParams, pageSize: perPage, onPageSizeChang
     () => [
       {
         headerName: "配信日",
+        // 표시는 실제 발송일만 — 예약일·등록일은 기간 검색·정렬 기준으로만 쓰고 이 열에 노출하지 않는다
         field: "sentAt",
         flex: 1,
         cellStyle: CENTER_CELL_STYLE,
