@@ -3835,15 +3835,18 @@ export const openApiSpec: OpenAPIV3.Document = {
       get: {
         tags: ["MassMail"],
         summary: "대량메일 목록 조회",
-        description: "관리자 전용 — 대량메일 목록 (검색/필터/페이징)",
+        description:
+          "관리자 전용 — 대량메일 목록 (검색/필터/페이징). " +
+          "기간 검색·정렬 기준일 = sentAt(발송일) → 없으면 scheduledSendAt(예약일) → 둘 다 없으면 createdAt(등록일). " +
+          "정렬은 기준일 내림차순, 동률은 id 내림차순. 응답의 sentAt(화면 「配信日」)은 실제 발송일만이다.",
         parameters: [
           { name: "keyword", in: "query", schema: { type: "string" }, description: "제목 Like 검색" },
           { name: "roleCode", in: "query", schema: { type: "string", maxLength: 50 }, description: "발송대상 권한코드 필터 (qp_roles 동적). 단일 또는 콤마 구분 멀티 — OR 매칭." },
           { name: "draftOnly", in: "query", schema: { type: "boolean", default: false }, description: "임시저장만 보기" },
           { name: "authorSearchType", in: "query", schema: { type: "string", enum: ["name", "id"] }, description: "登録者 검색 대상 (이름/ID)" },
           { name: "authorQuery", in: "query", schema: { type: "string", minLength: 2 }, description: "登録者 검색어 (부분일치, 2文字以上)" },
-          { name: "startDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 시작 (YYYY-MM-DD, JST 기준)" },
-          { name: "endDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "登録日 범위 끝 (YYYY-MM-DD, JST 기준)" },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "기간 시작 (YYYY-MM-DD, JST 기준) — 기준일은 설명 참조" },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, description: "기간 끝 (YYYY-MM-DD, JST 기준) — 기준일은 설명 참조" },
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "pageSize", in: "query", schema: { type: "integer", default: 20 } },
         ],
