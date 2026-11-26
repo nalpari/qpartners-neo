@@ -3,7 +3,8 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
-// 컨텐츠 목록 첫 진입 가이드(코치마크). 브라우저당 1회만 노출 — 닫거나 건너뛰면 다시 뜨지 않는다.
+// 컨텐츠 목록 첫 진입 가이드(코치마크). 운영(APP_ENV=production)은 브라우저당 1회만 노출 — 닫거나 건너뛰면
+// 다시 뜨지 않는다. 그 외 환경은 확인용으로 진입할 때마다 뜬다.
 const STORAGE_KEY = "qp-contents-guide-seen";
 
 /**
@@ -65,9 +66,11 @@ function findTarget(key: string): HTMLElement | null {
   return null;
 }
 
-export function ContentsGuideTour() {
-  // 서버 스냅샷은 "봤음" — SSR 에서는 그리지 않고 하이드레이션 후 localStorage 로 판정한다.
-  const seen = useSyncExternalStore(noopSubscribe, readSeen, () => true);
+/** @param appEnv 런타임 APP_ENV — 운영(production)만 1회 노출, 그 외 환경은 확인용으로 진입할 때마다 띄운다 */
+export function ContentsGuideTour({ appEnv }: { appEnv: string | undefined }) {
+  const isProd = appEnv === "production";
+  // 서버 스냅샷은 "봤음" — SSR 에서는 그리지 않고, 하이드레이션 후 운영은 localStorage 로 판정하고 그 외 환경은 항상 띄운다.
+  const seen = useSyncExternalStore(noopSubscribe, () => isProd && readSeen(), () => true);
   const [closed, setClosed] = useState(false);
   const [pos, setPos] = useState(0);
   const [rects, setRects] = useState<(DOMRect | null)[]>([]);
