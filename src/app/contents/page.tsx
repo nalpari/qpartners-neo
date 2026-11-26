@@ -23,7 +23,8 @@ export default async function ContentsPage({
   return (
     <Suspense fallback={<div className="flex items-center justify-center w-full py-20"><Spinner size={48} /></div>}>
       {/* key 로 keyword 변경 시 리마운트 강제 — useState 초기화를 재실행해 새 keyword 흡수 */}
-      <ContentsContents key={initialKeyword} initialKeyword={initialKeyword} />
+      {/* APP_ENV 는 런타임 서버 env 라 클라이언트가 직접 못 읽으므로 prop 으로 전달 */}
+      <ContentsContents key={initialKeyword} initialKeyword={initialKeyword} appEnv={process.env.APP_ENV} />
     </Suspense>
   );
 }

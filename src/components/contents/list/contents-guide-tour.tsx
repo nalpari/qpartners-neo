@@ -65,9 +65,11 @@ function findTarget(key: string): HTMLElement | null {
   return null;
 }
 
-export function ContentsGuideTour() {
+/** @param appEnv 런타임 APP_ENV — 운영(production)만 1회 노출, 그 외 환경은 확인용으로 진입할 때마다 띄운다 */
+export function ContentsGuideTour({ appEnv }: { appEnv?: string }) {
+  const isProd = appEnv === "production";
   // 서버 스냅샷은 "봤음" — SSR 에서는 그리지 않고 하이드레이션 후 localStorage 로 판정한다.
-  const seen = useSyncExternalStore(noopSubscribe, readSeen, () => true);
+  const seen = useSyncExternalStore(noopSubscribe, () => isProd && readSeen(), () => true);
   const [closed, setClosed] = useState(false);
   const [pos, setPos] = useState(0);
   const [rects, setRects] = useState<(DOMRect | null)[]>([]);

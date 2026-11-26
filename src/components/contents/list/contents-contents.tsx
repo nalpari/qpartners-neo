@@ -356,9 +356,11 @@ interface ContentsContentsProps {
    *  page.tsx 가 key={initialKeyword} 로 리마운트를 제어하므로, keyword 변경 시
    *  본 컴포넌트가 재마운트되어 아래 useState 초기화가 재실행된다. */
   initialKeyword?: string;
+  /** 배포 환경(런타임 APP_ENV) — page.tsx 가 서버에서 읽어 전달 */
+  appEnv?: string;
 }
 
-export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps) {
+export function ContentsContents({ initialKeyword = "", appEnv }: ContentsContentsProps) {
   // 마운트 시 1회 — 복원 여부 판정 (둘 중 하나라도 참이면 복원).
   //   (1) sessionStorage 플래그: 상세/생성/편집 화면의 "一覧" 버튼 등 명시적 목록 복귀
   //   (2) popstate 로 도착한 이 entry 의 마커: 브라우저 뒤로/앞으로 복귀 (Redmine #2490)
@@ -1318,7 +1320,7 @@ export function ContentsContents({ initialKeyword = "" }: ContentsContentsProps)
         </div>
       </div>
       {/* 첫 진입 1회 가이드 — data-guide 앵커(이 파일 + contents-search.tsx)에 말풍선을 단다 */}
-      <ContentsGuideTour />
+      <ContentsGuideTour appEnv={appEnv} />
     </main>
   );
 }
