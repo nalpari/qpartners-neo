@@ -357,7 +357,7 @@ interface ContentsContentsProps {
    *  본 컴포넌트가 재마운트되어 아래 useState 초기화가 재실행된다. */
   initialKeyword?: string;
   /** 배포 환경(런타임 APP_ENV) — page.tsx 가 서버에서 읽어 전달 */
-  appEnv?: string;
+  appEnv: string | undefined;
 }
 
 export function ContentsContents({ initialKeyword = "", appEnv }: ContentsContentsProps) {
@@ -1319,7 +1319,7 @@ export function ContentsContents({ initialKeyword = "", appEnv }: ContentsConten
           />
         </div>
       </div>
-      {/* 첫 진입 1회 가이드 — data-guide 앵커(이 파일 + contents-search.tsx)에 말풍선을 단다 */}
+      {/* 컨텐츠 가이드(노출 규칙은 ContentsGuideTour 참고) — data-guide 앵커(이 파일 + contents-search.tsx)에 말풍선을 단다 */}
       <ContentsGuideTour appEnv={appEnv} />
     </main>
   );
